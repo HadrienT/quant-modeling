@@ -1,5 +1,5 @@
 {
-  "name": "quantModeling",
+  "name": "quant-modeling",
   "version-string": "0.0.1",
-  "dependencies": ["eigen3"]
+  "dependencies": ["eigen3", "gtest"]
 }

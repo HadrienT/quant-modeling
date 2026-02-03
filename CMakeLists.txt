@@ -5,18 +5,20 @@ project(quantModeling
     LANGUAGES CXX
 )
 
+# ---- Global Options  ----
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ---- Main library ----
 add_library(quantModeling)
 
 target_sources(quantModeling
     PRIVATE
         src/utils/stats.cpp
         src/engines/base.cpp
+        src/engines/mc/black_scholes.cpp
 )
 
 target_include_directories(quantModeling
@@ -27,12 +29,27 @@ target_include_directories(quantModeling
 find_package(Eigen3 CONFIG REQUIRED)
 target_link_libraries(quantModeling PUBLIC Eigen3::Eigen)
 
+# ---- CLI ----
+add_executable(quantModeling_cli main.cpp)
+target_link_libraries(quantModeling_cli PRIVATE quantModeling)
 
-add_executable(quantModeling_cli
-    main.cpp
-)
+# ---- Tests (GoogleTest) ----
+include(CTest)
+if(BUILD_TESTING)
+  enable_testing()
 
-target_link_libraries(quantModeling_cli
+  find_package(GTest CONFIG REQUIRED)
+
+  add_executable(quantModeling_tests
+    tests/testBSAna.cpp
+  )
+
+  target_link_libraries(quantModeling_tests
     PRIVATE
-        quantModeling
-)
+      quantModeling
+      GTest::gtest_main
+  )
+
+  include(GoogleTest)
+  gtest_discover_tests(quantModeling_tests)
+endif()

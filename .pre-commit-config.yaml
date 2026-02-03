@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.4
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
+        args: [--style=file]
+
+
+  - repo: local
+    hooks:
+      - id: cmake-ctest
+        name: Build + ctest (pre-push)
+        entry: bash -c 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j && ctest --test-dir build --output-on-failure'
+        language: system
+        stages: [pre-push]
