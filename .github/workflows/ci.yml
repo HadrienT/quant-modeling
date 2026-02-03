@@ -19,7 +19,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build g++ clang-format curl zip unzip tar pkg-config
 
-      # --- vcpkg: clone + bootstrap ---
       - name: Restore vcpkg cache
         uses: actions/cache@v4
         with:
@@ -30,16 +29,15 @@ jobs:
           restore-keys: |
             vcpkg-${{ runner.os }}-
 
-      - name: Clone vcpkg (if not cached)
-        if: ${{ !exists('vcpkg/.git') }}
+      - name: Ensure vcpkg is present
         run: |
-          git clone https://github.com/microsoft/vcpkg.git vcpkg
+          if [ ! -d "vcpkg/.git" ]; then
+            git clone https://github.com/microsoft/vcpkg.git vcpkg
+          fi
 
       - name: Bootstrap vcpkg
-        run: |
-          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
-      # --- Configure / Build / Test via CMake Preset ---
       - name: Configure (preset)
         run: cmake --preset default
 
