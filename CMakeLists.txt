@@ -42,6 +42,7 @@ if(BUILD_TESTING)
 
   add_executable(quantModeling_tests
     tests/testBSAna.cpp
+    tests/testBSMC.cpp
   )
 
   target_link_libraries(quantModeling_tests

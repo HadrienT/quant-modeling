@@ -19,6 +19,7 @@ struct PricingResult {
   Real npv = 0.0;
   Greeks greeks;
   std::string diagnostics;
+  Real mc_std_error;
 };
 } // namespace quantModeling
 

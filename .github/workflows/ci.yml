@@ -5,6 +5,26 @@ on:
   pull_request:
 
 jobs:
+
+  format-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: clang-format check
+        run: |
+          FILES=$(git ls-files '*.cpp' '*.cc' '*.cxx' '*.h' '*.hpp' '*.hh')
+          if [ -n "$FILES" ]; then
+            clang-format --dry-run --Werror $FILES
+          fi
+          
   build-test:
     runs-on: ubuntu-latest
     env:
@@ -46,22 +66,3 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
-
-  format-check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install clang-format
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
-
-      - name: clang-format check
-        run: |
-          FILES=$(git ls-files '*.cpp' '*.cc' '*.cxx' '*.h' '*.hpp' '*.hh')
-          if [ -n "$FILES" ]; then
-            clang-format --dry-run --Werror $FILES
-          fi

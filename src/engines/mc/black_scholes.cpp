@@ -16,28 +16,74 @@ void BSEuroVanillaMCEngine::visit(const VanillaOption &opt) {
   const Real T = opt.exercise->dates().front();
   const Real rootVariance = v * std::sqrt(T);
   const auto &payoff = *opt.payoff;
-  const OptionType type = payoff.type();
-  const Real K = payoff.strike();
 
   RngFactory rngFact(settings.mc_seed);
   Pcg32 rng = rngFact.make(0);
   NormalBoxMuller gaussianGenerator;
-  Real sum = 0.0;
-  Real itoCorrection = -0.5 * v * v;
-  Real movedSpot = S0 * std::exp((r - q + itoCorrection) * T);
 
-  for (int i = 0; i < settings.mc_paths; ++i) {
-    Real thisGaussian = gaussianGenerator(rng);
-    Real thisSpot = movedSpot * std::exp(rootVariance * thisGaussian);
-    Real thisPayoff = payoff(thisSpot);
-    sum += thisPayoff;
+  const Real itoCorrection = -0.5 * v * v;
+  const Real movedSpot = S0 * std::exp((r - q + itoCorrection) * T);
+
+  // Welford
+  Real meanPayoff = 0.0;
+  Real M2 = 0.0;
+  int n = 0;
+
+  auto welford_push = [&](Real x) {
+    ++n;
+    const Real delta = x - meanPayoff;
+    meanPayoff += delta / static_cast<Real>(n);
+    const Real delta2 = x - meanPayoff;
+    M2 += delta * delta2;
+  };
+
+  if (!settings.mc_antithetic) {
+    // ---- MC standard : n = mc_paths
+    for (int i = 0; i < settings.mc_paths; ++i) {
+      const Real z = gaussianGenerator(rng);
+      const Real ST = movedSpot * std::exp(rootVariance * z);
+      welford_push(payoff(ST));
+    }
+  } else {
+    // ---- MC antithetic : on accumule y = 0.5*(payoff(z)+payoff(-z))
+    const int nbPairs = settings.mc_paths / 2;
+    const bool hasOdd = (settings.mc_paths % 2) != 0;
+
+    for (int i = 0; i < nbPairs; ++i) {
+      const Real z = gaussianGenerator(rng);
+      const Real STp = movedSpot * std::exp(rootVariance * z);
+      const Real STm = movedSpot * std::exp(rootVariance * (-z));
+      const Real y = 0.5 * (payoff(STp) + payoff(STm));
+      welford_push(y);
+    }
+
+    // optionnel : consommer le dernier path si mc_paths impair
+    if (hasOdd) {
+      const Real z = gaussianGenerator(rng);
+      const Real ST = movedSpot * std::exp(rootVariance * z);
+      welford_push(payoff(ST));
+    }
   }
-  Real price = std::exp(-r * T) * sum / static_cast<Real>(settings.mc_paths);
+
+  Real sampleVariance = 0.0;
+  Real varMean = 0.0;
+  if (n > 1) {
+    sampleVariance = M2 / static_cast<Real>(n - 1);
+    varMean = sampleVariance / static_cast<Real>(n);
+  }
+
+  const Real disc = std::exp(-r * T);
+  const Real price = disc * meanPayoff;
+  const Real priceStdError = (n > 1) ? disc * std::sqrt(varMean) : 0.0;
+
   PricingResult out;
-  out.diagnostics = "BS MC European vanilla (flat r,q,sigma)";
+  out.diagnostics = settings.mc_antithetic
+                        ? "BS MC European vanilla (flat r,q,sigma) + antithetic"
+                        : "BS MC European vanilla (flat r,q,sigma)";
   out.npv = opt.notional * price;
+  out.mc_std_error = opt.notional * priceStdError;
   res_ = out;
-};
+}
 
 void BSEuroVanillaMCEngine::validate(const VanillaOption &opt) {
   if (!opt.payoff)

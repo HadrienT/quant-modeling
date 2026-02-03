@@ -15,6 +15,7 @@ struct PricingSettings {
   int mc_paths = 0;
   int mc_seed = 0;
   double fd_tol = 0.0;
+  bool mc_antithetic = true;
 };
 
 struct MarketView {
