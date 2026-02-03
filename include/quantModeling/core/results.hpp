@@ -5,24 +5,21 @@
 #include <optional>
 #include <string>
 
-namespace quantModeling
-{
+namespace quantModeling {
 
-    struct Greeks
-    {
-        std::optional<Real> delta;
-        std::optional<Real> gamma;
-        std::optional<Real> vega;
-        std::optional<Real> theta;
-        std::optional<Real> rho;
-    };
+struct Greeks {
+  std::optional<Real> delta;
+  std::optional<Real> gamma;
+  std::optional<Real> vega;
+  std::optional<Real> theta;
+  std::optional<Real> rho;
+};
 
-    struct PricingResult
-    {
-        Real npv = 0.0;
-        Greeks greeks;
-        std::string diagnostics;
-    };
-}
+struct PricingResult {
+  Real npv = 0.0;
+  Greeks greeks;
+  std::string diagnostics;
+};
+} // namespace quantModeling
 
 #endif

@@ -2,44 +2,41 @@
 #ifndef INSTRUMENT_EQUITY_VANILLA_HPP
 #define INSTRUMENT_EQUITY_VANILLA_HPP
 
+#include <cmath>
+#include <memory>
 #include <quantModeling/core/types.hpp>
 #include <quantModeling/instruments/base.hpp>
-#include <memory>
-namespace quantModeling
-{
-    struct IExercise;
 
-    struct VanillaOption final : Instrument
-    {
-        std::shared_ptr<const IPayoff> payoff;
-        std::shared_ptr<const IExercise> exercise;
-        Real notional = 1.0;
+namespace quantModeling {
+struct IExercise;
 
-        VanillaOption(std::shared_ptr<const IPayoff> p,
-                      std::shared_ptr<const IExercise> e,
-                      Real n = 1.0)
-            : payoff(std::move(p)), exercise(std::move(e)), notional(n) {}
+struct VanillaOption final : Instrument {
+  std::shared_ptr<const IPayoff> payoff;
+  std::shared_ptr<const IExercise> exercise;
+  Real notional = 1.0;
 
-        void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
-    };
+  VanillaOption(std::shared_ptr<const IPayoff> p,
+                std::shared_ptr<const IExercise> e, Real n = 1.0)
+      : payoff(std::move(p)), exercise(std::move(e)), notional(n) {}
 
-    struct PlainVanillaPayoff final : IPayoff
-    {
-        OptionType t_;
-        Real K_;
+  void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
+};
 
-        PlainVanillaPayoff(OptionType t, Real K) : t_(t), K_(K) {}
+struct PlainVanillaPayoff final : IPayoff {
+  OptionType t_;
+  Real K_;
 
-        OptionType type() const override { return t_; }
-        Real strike() const override { return K_; }
+  PlainVanillaPayoff(OptionType t, Real K) : t_(t), K_(K) {}
 
-        Real operator()(Real spot) const override
-        {
-            if (t_ == OptionType::Call)
-                return (spot > K_) ? (spot - K_) : 0.0;
-            return (spot < K_) ? (K_ - spot) : 0.0;
-        }
-    };
-}
+  OptionType type() const override { return t_; }
+  Real strike() const override { return K_; }
+
+  Real operator()(Real spot) const override {
+    if (t_ == OptionType::Call)
+      return std::max(spot - K_, 0.0);
+    return std::max(K_ - spot, 0.0);
+  }
+};
+} // namespace quantModeling
 
 #endif
