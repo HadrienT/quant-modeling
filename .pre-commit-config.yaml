@@ -6,6 +6,12 @@ repos:
         types_or: [c, c++]
         args: [--style=file]
 
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3
+
 
   - repo: local
     hooks:

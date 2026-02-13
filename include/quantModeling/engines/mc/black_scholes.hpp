@@ -6,14 +6,17 @@
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
 
-namespace quantModeling {
-class BSEuroVanillaMCEngine final : public EngineBase {
-public:
-  using EngineBase::EngineBase;
-  void visit(const VanillaOption &opt) override;
+namespace quantModeling
+{
+  class BSEuroVanillaMCEngine final : public EngineBase
+  {
+  public:
+    using EngineBase::EngineBase;
+    void visit(const VanillaOption &opt) override;
+    void visit(const AsianOption &) override;
 
-private:
-  static void validate(const VanillaOption &opt);
-};
+  private:
+    static void validate(const VanillaOption &opt);
+  };
 } // namespace quantModeling
 #endif

@@ -4,8 +4,7 @@
 
 #include <cmath>
 #include <memory>
-#include <quantModeling/core/types.hpp>
-#include <quantModeling/instruments/base.hpp>
+#include "quantModeling/instruments/base.hpp"
 
 namespace quantModeling {
 struct IExercise;
