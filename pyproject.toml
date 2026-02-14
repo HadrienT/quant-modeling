@@ -1,0 +1,25 @@
+[build-system]
+requires = ["scikit-build-core>=0.10.2"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "quantmodeling"
+version = "0.1.0"
+description = "Pybind11 bindings for quantModeling"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+build-dir = "build/pypkg"
+build.targets = ["quantmodeling"]
+
+[tool.scikit-build.cmake]
+version = ">=3.20"
+build-type = "Release"
+
+[tool.scikit-build.cmake.define]
+QM_BUILD_PYTHON = "ON"
+QM_BUILD_TESTS = "OFF"
+QM_BUILD_CLI = "OFF"

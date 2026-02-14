@@ -1,0 +1,173 @@
+pricing/
+  CMakeLists.txt
+  README.md
+  cmake/
+    toolchains/                 # optionnel (clang, gcc, vcpkg, etc.)
+    modules/                    # Find*.cmake, helpers
+
+  include/
+    pricing/
+      core/
+        types.hpp               # Money, Currency, Date, etc.
+        timegrid.hpp
+        results.hpp             # PriceResult, Greeks, diagnostics
+        exceptions.hpp
+
+      market/
+        marketdata.hpp          # interfaces (abstract classes) MarketDataProvider
+        curves.hpp              # DiscountCurve, ForwardCurve
+        surfaces.hpp            # VolSurface/VolSmile abstractions
+        quotes.hpp              # Quote, conventions de quoting
+        conventions.hpp         # daycount, calendars, business day rules
+        calendars.hpp
+
+      instruments/
+        base.hpp                # Instrument, Payoff, Exercise
+        equity/
+          vanilla.hpp           # EuropeanOption, AmericanOption
+          barrier.hpp
+          asian.hpp
+          cliquet.hpp
+        rates/
+          swaption.hpp
+          capfloor.hpp
+        credit/
+          cds.hpp
+
+      models/
+        base.hpp                # Model interface: simulate, pde_coeffs, etc.
+        equity/
+          black_scholes.hpp
+          heston.hpp
+          localvol.hpp
+        rates/
+          hull_white.hpp
+
+      engines/
+        base.hpp                # PricingEngine interface
+        mc/
+          engine.hpp
+          rng.hpp
+          paths.hpp
+          estimators.hpp        # control variates, antithetic, etc.
+        pde/
+          engine.hpp
+          grid.hpp
+          schemes.hpp           # CN, implicit, explicit
+          boundary.hpp
+        tree/
+          engine.hpp
+          lattice.hpp
+
+      pricers/
+        pricer.hpp              # orchestrateur: instrument + model + engine
+        registry.hpp            # mapping instrument/model -> engine
+        adapters/
+          equity_vanilla.hpp    # build PDE grid or MC config for that case
+          equity_barrier.hpp
+
+      risk/
+        greeks.hpp              # bump-and-reprice / pathwise / adjoint (plus tard)
+        scenarios.hpp
+
+      io/
+        loaders.hpp             # CSV/JSON parsers
+        serializers.hpp
+
+      utils/
+        math.hpp
+        stats.hpp
+        logging.hpp
+
+  src/
+    core/
+      types.cpp
+      timegrid.cpp
+      results.cpp
+      exceptions.cpp
+
+    market/
+      marketdata.cpp
+      curves.cpp
+      surfaces.cpp
+      quotes.cpp
+      conventions.cpp
+      calendars.cpp
+
+    instruments/
+      base.cpp
+      equity/
+        vanilla.cpp
+        barrier.cpp
+        asian.cpp
+        cliquet.cpp
+      rates/
+        swaption.cpp
+        capfloor.cpp
+      credit/
+        cds.cpp
+
+    models/
+      base.cpp
+      equity/
+        black_scholes.cpp
+        heston.cpp
+        localvol.cpp
+      rates/
+        hull_white.cpp
+
+    engines/
+      base.cpp
+      mc/
+        engine.cpp
+        rng.cpp
+        paths.cpp
+        estimators.cpp
+      pde/
+        engine.cpp
+        grid.cpp
+        schemes.cpp
+        boundary.cpp
+      tree/
+        engine.cpp
+        lattice.cpp
+
+    pricers/
+      pricer.cpp
+      registry.cpp
+      adapters/
+        equity_vanilla.cpp
+        equity_barrier.cpp
+
+    risk/
+      greeks.cpp
+      scenarios.cpp
+
+    io/
+      loaders.cpp
+      serializers.cpp
+
+    utils/
+      math.cpp
+      stats.cpp
+      logging.cpp
+
+  apps/
+    cli/
+      main.cpp                  # binaire CLI (pricing, calibration, etc.)
+    examples/
+      european_bs_mc.cpp         # démos rapides / sanity checks
+      european_bs_pde.cpp
+
+  tests/
+    CMakeLists.txt
+    unit/
+      test_payoff.cpp
+      test_curves.cpp
+      test_black_scholes_mc.cpp
+      test_black_scholes_pde.cpp
+    integration/
+      test_end_to_end_equity_vanilla.cpp
+
+  third_party/
+    # optionnel : dépendances vendorisées (sinon vcpkg/conan)

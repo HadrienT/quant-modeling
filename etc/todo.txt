@@ -1,0 +1,221 @@
+====================================================================
+7) CHECKLIST DESK GRADE — VERSION ORIENTÉE C++
+====================================================================
+
+--------------------------------------------------
+1. PRODUITS / INSTRUMENTS
+--------------------------------------------------
+- Instrument abstraction
+  * Base class Instrument
+    - virtual payoff(...)
+    - virtual exercise(...)
+    - virtual cashflows(...)
+  * No market data access inside Instrument
+  * Immutable after construction
+
+- Supported instruments
+  * Vanilla (Call / Put)
+  * Barrier (KI / KO / Double)
+  * Digital
+  * Asian (arith / geom)
+  * Lookback
+  * Basket
+  * Cliquet
+  * Autocall
+  * Swaps / Swaptions
+  * Caps / Floors
+  * CMS
+
+- Payoff design
+  * Payoff as strategy (Payoff interface)
+  * Path-dependent payoff separated from Instrument
+  * No branching on product type inside engines
+
+- Exercise
+  * Exercise base class
+    - European
+    - American
+    - Bermudan
+  * Exercise dates pre-validated (sorted, >= valuation date)
+
+--------------------------------------------------
+2. CASHFLOWS / LEGS
+--------------------------------------------------
+- Cashflow hierarchy
+  * Cashflow (abstract)
+  * FixedCashflow
+  * FloatingCashflow
+  * OISCashflow
+  * InflationCashflow
+
+- Leg construction
+  * Vector<shared_ptr<Cashflow>>
+  * DayCount convention explicit
+  * Compounding explicit
+  * Payment date adjustment via Calendar
+
+- Accrual / fixing logic
+  * Fixing lag explicit
+  * Historical fixings injected externally
+
+--------------------------------------------------
+3. MARCHÉ / DATA
+--------------------------------------------------
+- Market data container
+  * MarketData as immutable snapshot
+  * No global singletons
+  * Thread-safe read-only access
+
+- Curves
+  * YieldCurve interface
+    - discount(t)
+    - forward(t1, t2)
+  * Multi-curve support
+  * Interpolation monotonicity validated
+
+- Volatility
+  * VolSurface interface
+    - vol(T, K)
+  * Equity / FX smiles
+  * IR vol cube
+
+- Correlation
+  * CorrelationMatrix / Surface
+  * PSD check (or fallback regularization)
+
+- Calendars
+  * Calendar interface
+  * BusinessDayConvention explicit
+
+--------------------------------------------------
+4. MODÈLES
+--------------------------------------------------
+- Model abstraction
+  * Model base class
+    - state variables definition
+    - evolve(dt)
+  * Model owns parameters, not market data
+
+- Equity / FX models
+  * BlackScholes
+  * LocalVol
+  * StochasticVol
+    - Heston
+    - SABR
+  * JumpDiffusion
+
+- Rates models
+  * HullWhite
+  * Black / Kirk
+  * LMM (discretized)
+
+- Credit models
+  * HazardRate / Intensity
+  * CDS curve bootstrapped externally
+
+--------------------------------------------------
+5. CALIBRATION
+--------------------------------------------------
+- Calibration framework
+  * ObjectiveFunction interface
+  * Constraints explicit
+  * Optimizer pluggable
+
+- Numerical stability
+  * Parameter bounds enforced
+  * Finite bump size controlled
+  * Calibration reproducible (fixed seed)
+
+--------------------------------------------------
+6. PRICING ENGINES
+--------------------------------------------------
+- Engine design
+  * PricingEngine interface
+    - price()
+    - greeks()
+  * No product-specific logic inside engine
+
+- Closed-form
+  * Black-Scholes
+  * Black76
+  * Bachelier
+  * Heston (Fourier)
+
+- Lattice
+  * Binomial / Trinomial
+  * Short-rate trees
+  * LMM tree
+
+- PDE / Finite Differences
+  * Explicit / Implicit / CN
+  * ADI schemes
+  * Boundary conditions explicit
+  * Grid convergence tests
+
+- Monte Carlo
+  * RNG abstraction
+  * Path generator separated from payoff
+  * Variance reduction
+    - Antithetic
+    - Control variates
+  * Regression (LSMC)
+
+--------------------------------------------------
+7. GREEKS
+--------------------------------------------------
+- Greek computation
+  * Analytic where possible
+  * Finite differences (bump-and-reprice)
+  * Pathwise / Likelihood Ratio
+  * AAD (optional / advanced)
+
+- Bumping rules
+  * Central vs forward difference explicit
+  * Relative vs absolute bump explicit
+
+--------------------------------------------------
+8. CROSS-CUTTING C++ (DESK GRADE)
+--------------------------------------------------
+- Input validation
+  * Dates strictly increasing
+  * Maturities > 0
+  * Vol >= 0
+  * Curves monotone if required
+
+- Determinism
+  * RNG seeded explicitly
+  * No hidden randomness
+
+- Performance
+  * No dynamic allocation in inner loops
+  * Move semantics enabled
+  * const correctness everywhere
+  * Vectorisation-friendly layouts
+
+- Thread safety
+  * MarketData / Model immutable
+  * One RNG per thread
+  * No static mutable state
+
+- Error model
+  * Result<T> / StatusOr<T> preferred
+  * Diagnostics attached to result
+  * Exceptions only for unrecoverable errors
+
+- Testing
+  * Unit tests per class
+  * Pricing vs reference (QuantLib / Excel)
+  * Convergence & regression tests
+
+- Configuration
+  * Engine / model params serializable
+  * JSON / YAML
+  * Versioned schemas
+
+- API & Architecture
+  * Clear public / private headers
+  * Stable ABI if library
+  * PIMPL where needed
+  * Minimal include dependencies
+
+====================================================================
