@@ -70,14 +70,6 @@ export default function PortfolioBuilder({
 					/>
 				</label>
 				<label className="field">
-					Premium
-					<input
-						type="number"
-						value={draft.premium}
-						onChange={(event) => onDraftChange({ ...draft, premium: Number(event.target.value) })}
-					/>
-				</label>
-				<label className="field">
 					Quantity
 					<input
 						type="number"

@@ -1,17 +1,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "quantModeling/core/types.hpp"
-#include "quantModeling/engines/analytic/asian.hpp"
-#include "quantModeling/engines/analytic/black_scholes.hpp"
-#include "quantModeling/engines/mc/asian.hpp"
-#include "quantModeling/engines/mc/black_scholes.hpp"
-#include "quantModeling/instruments/base.hpp"
-#include "quantModeling/instruments/equity/asian.hpp"
-#include "quantModeling/instruments/equity/vanilla.hpp"
-#include "quantModeling/models/equity/black_scholes.hpp"
-#include "quantModeling/pricers/context.hpp"
-#include "quantModeling/pricers/pricer.hpp"
+#include "quantModeling/pricers/inputs.hpp"
+#include "quantModeling/pricers/registry.hpp"
 
 #include <memory>
 #include <string>
@@ -23,125 +14,26 @@ namespace py = pybind11;
 namespace quantModeling
 {
 
-    struct VanillaBSInput
-    {
-        Real spot;
-        Real strike;
-        Time maturity;
-        Real rate;
-        Real dividend;
-        Real vol;
-        bool is_call;
-
-        int n_paths = 200000;
-        int seed = 1;
-        Real mc_epsilon = 0.0;
-    };
-
-    struct AsianBSInput
-    {
-        Real spot;
-        Real strike;
-        Time maturity;
-        Real rate;
-        Real dividend;
-        Real vol;
-        bool is_call;
-        AsianAverageType average_type = AsianAverageType::Arithmetic;
-
-        int n_paths = 200000;
-        int seed = 1;
-        Real mc_epsilon = 0.0;
-    };
-
     static PricingResult price_vanilla_impl(const VanillaBSInput &in, bool use_mc)
     {
-        using quantModeling::OptionType;
-
-        auto payoff = std::make_shared<quantModeling::PlainVanillaPayoff>(
-            in.is_call ? OptionType::Call : OptionType::Put,
-            static_cast<quantModeling::Real>(in.strike));
-
-        auto exercise = std::make_shared<quantModeling::EuropeanExercise>(
-            static_cast<quantModeling::Real>(in.maturity));
-
-        quantModeling::VanillaOption opt(payoff, exercise, 1.0);
-
-        auto model = std::make_shared<quantModeling::BlackScholesModel>(
-            static_cast<quantModeling::Real>(in.spot),
-            static_cast<quantModeling::Real>(in.rate),
-            static_cast<quantModeling::Real>(in.dividend),
-            static_cast<quantModeling::Real>(in.vol));
-
-        quantModeling::MarketView market = {};
-        quantModeling::PricingSettings settings = {
-            use_mc ? in.n_paths : 0,
-            use_mc ? in.seed : 0,
-            in.mc_epsilon};
-
-        quantModeling::PricingContext ctx{market, settings, model};
-
-        if (use_mc)
-        {
-            quantModeling::BSEuroVanillaMCEngine engine(ctx);
-            return quantModeling::price(opt, engine);
-        }
-
-        quantModeling::BSEuroVanillaAnalyticEngine engine(ctx);
-        return quantModeling::price(opt, engine);
+        const EngineKind engine = use_mc ? EngineKind::MonteCarlo : EngineKind::Analytic;
+        PricingRequest request{
+            InstrumentKind::EquityVanillaOption,
+            ModelKind::BlackScholes,
+            engine,
+            PricingInput{in}};
+        return default_registry().price(request);
     }
 
     static PricingResult price_asian_impl(const AsianBSInput &in, bool use_mc)
     {
-        using quantModeling::OptionType;
-
-        std::shared_ptr<quantModeling::IPayoff> payoff;
-        if (in.average_type == AsianAverageType::Arithmetic)
-        {
-            payoff = std::make_shared<quantModeling::ArithmeticAsianPayoff>(
-                in.is_call ? OptionType::Call : OptionType::Put,
-                static_cast<quantModeling::Real>(in.strike));
-        }
-        else
-        {
-            payoff = std::make_shared<quantModeling::GeometricAsianPayoff>(
-                in.is_call ? OptionType::Call : OptionType::Put,
-                static_cast<quantModeling::Real>(in.strike));
-        }
-
-        auto exercise = std::make_shared<quantModeling::EuropeanExercise>(
-            static_cast<quantModeling::Real>(in.maturity));
-
-        quantModeling::AsianOption opt(payoff, exercise, in.average_type, 1.0);
-
-        auto model = std::make_shared<quantModeling::BlackScholesModel>(
-            static_cast<quantModeling::Real>(in.spot),
-            static_cast<quantModeling::Real>(in.rate),
-            static_cast<quantModeling::Real>(in.dividend),
-            static_cast<quantModeling::Real>(in.vol));
-
-        quantModeling::MarketView market = {};
-        quantModeling::PricingSettings settings = {
-            use_mc ? in.n_paths : 0,
-            use_mc ? in.seed : 0,
-            in.mc_epsilon};
-
-        quantModeling::PricingContext ctx{market, settings, model};
-
-        if (use_mc)
-        {
-            quantModeling::BSEuroAsianMCEngine engine(ctx);
-            return quantModeling::price(opt, engine);
-        }
-
-        if (in.average_type == AsianAverageType::Arithmetic)
-        {
-            quantModeling::BSEuroArithmeticAsianAnalyticEngine engine(ctx);
-            return quantModeling::price(opt, engine);
-        }
-
-        quantModeling::BSEuroGeometricAsianAnalyticEngine engine(ctx);
-        return quantModeling::price(opt, engine);
+        const EngineKind engine = use_mc ? EngineKind::MonteCarlo : EngineKind::Analytic;
+        PricingRequest request{
+            InstrumentKind::EquityAsianOption,
+            ModelKind::BlackScholes,
+            engine,
+            PricingInput{in}};
+        return default_registry().price(request);
     }
 
 } // namespace quantModeling

@@ -34,6 +34,9 @@ target_sources(quantModeling
         src/engines/mc/asian.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
+        src/pricers/registry.cpp
+        src/pricers/adapters/equity_vanilla.cpp
+        src/pricers/adapters/equity_asian.cpp
 )
 
 target_include_directories(quantModeling

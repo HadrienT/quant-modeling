@@ -5,6 +5,7 @@
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/pricers/pricer.hpp"
+#include "quantModeling/pricers/registry.hpp"
 #include <memory>
 #include <cmath>
 
@@ -47,6 +48,24 @@ namespace quantModeling
         MarketView market;
         PricingSettings settings;
         PricingContext ctx;
+
+        PricingResult price_asian_registry(bool is_call, AsianAverageType average_type, EngineKind engine_kind)
+        {
+            AsianBSInput in{S0, K, T, r, q, sigma, is_call, average_type};
+            if (engine_kind == EngineKind::MonteCarlo)
+            {
+                in.n_paths = settings.mc_paths;
+                in.seed = settings.mc_seed;
+            }
+
+            PricingRequest request{
+                InstrumentKind::EquityAsianOption,
+                ModelKind::BlackScholes,
+                engine_kind,
+                PricingInput{in}};
+
+            return default_registry().price(request);
+        }
     };
 
     // ============================================================================
@@ -118,12 +137,7 @@ namespace quantModeling
 
     TEST_F(AsianOptionTest, ArithmeticAsianAnalyticCall)
     {
-        auto payoff = std::make_shared<ArithmeticAsianPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        AsianOption option(payoff, exercise, AsianAverageType::Arithmetic, 1.0);
-
-        BSEuroArithmeticAsianAnalyticEngine engine(ctx);
-        const PricingResult result = price(option, engine);
+        const PricingResult result = price_asian_registry(true, AsianAverageType::Arithmetic, EngineKind::Analytic);
 
         // Price should be positive
         EXPECT_GT(result.npv, 0.0);
@@ -144,12 +158,7 @@ namespace quantModeling
 
     TEST_F(AsianOptionTest, ArithmeticAsianAnalyticPut)
     {
-        auto payoff = std::make_shared<ArithmeticAsianPayoff>(OptionType::Put, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        AsianOption option(payoff, exercise, AsianAverageType::Arithmetic, 1.0);
-
-        BSEuroArithmeticAsianAnalyticEngine engine(ctx);
-        const PricingResult result = price(option, engine);
+        const PricingResult result = price_asian_registry(false, AsianAverageType::Arithmetic, EngineKind::Analytic);
 
         // Price should be positive
         EXPECT_GT(result.npv, 0.0);
@@ -161,13 +170,7 @@ namespace quantModeling
 
     TEST_F(AsianOptionTest, GeometricAsianAnalyticCall)
     {
-        auto payoff = std::make_shared<GeometricAsianPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        AsianOption option(payoff, exercise, AsianAverageType::Geometric, 1.0);
-
-        BSEuroGeometricAsianAnalyticEngine engine(ctx);
-
-        const PricingResult result = price(option, engine);
+        const PricingResult result = price_asian_registry(true, AsianAverageType::Geometric, EngineKind::Analytic);
 
         // Price should be positive and less than arithmetic
         EXPECT_GT(result.npv, 0.0);
@@ -181,13 +184,9 @@ namespace quantModeling
     TEST_F(AsianOptionTest, AsianMCArithmeticCall)
     {
         ctx.settings.mc_paths = 50000;
+        settings.mc_paths = ctx.settings.mc_paths;
 
-        auto payoff = std::make_shared<ArithmeticAsianPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        AsianOption option(payoff, exercise, AsianAverageType::Arithmetic, 1.0);
-
-        BSEuroAsianMCEngine engine(ctx);
-        const PricingResult result = price(option, engine);
+        const PricingResult result = price_asian_registry(true, AsianAverageType::Arithmetic, EngineKind::MonteCarlo);
 
         // Price should be positive
         EXPECT_GT(result.npv, 0.0);
@@ -200,13 +199,9 @@ namespace quantModeling
     TEST_F(AsianOptionTest, AsianMCGeometricCall)
     {
         ctx.settings.mc_paths = 50000;
+        settings.mc_paths = ctx.settings.mc_paths;
 
-        auto payoff = std::make_shared<GeometricAsianPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        AsianOption option(payoff, exercise, AsianAverageType::Geometric, 1.0);
-
-        BSEuroAsianMCEngine engine(ctx);
-        const PricingResult result = price(option, engine);
+        const PricingResult result = price_asian_registry(true, AsianAverageType::Geometric, EngineKind::MonteCarlo);
 
         // Price should be positive
         EXPECT_GT(result.npv, 0.0);
@@ -249,19 +244,15 @@ namespace quantModeling
 
     TEST_F(AsianOptionTest, AnalyticVsMCConvergence)
     {
-        auto payoff = std::make_shared<ArithmeticAsianPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        AsianOption option(payoff, exercise, AsianAverageType::Arithmetic, 1.0);
-
-        // Get analytic price
-        BSEuroArithmeticAsianAnalyticEngine analyticEngine(ctx);
-        const PricingResult analyticResult = price(option, analyticEngine);
+        const PricingResult analyticResult =
+            price_asian_registry(true, AsianAverageType::Arithmetic, EngineKind::Analytic);
         Real analyticPrice = analyticResult.npv;
 
         // Get MC price with high paths
         ctx.settings.mc_paths = 500000;
-        BSEuroAsianMCEngine mcEngine(ctx);
-        const PricingResult mcResult = price(option, mcEngine);
+        settings.mc_paths = ctx.settings.mc_paths;
+        const PricingResult mcResult =
+            price_asian_registry(true, AsianAverageType::Arithmetic, EngineKind::MonteCarlo);
         Real mcPrice = mcResult.npv;
         Real mcStdErr = mcResult.mc_std_error;
 
@@ -274,18 +265,10 @@ namespace quantModeling
         // Geometric average <= Arithmetic average (Jensen's inequality)
         // So geometric option <= arithmetic option
 
-        auto arith_payoff = std::make_shared<ArithmeticAsianPayoff>(OptionType::Call, K);
-        auto geom_payoff = std::make_shared<GeometricAsianPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-
-        AsianOption arith_option(arith_payoff, exercise, AsianAverageType::Arithmetic, 1.0);
-        AsianOption geom_option(geom_payoff, exercise, AsianAverageType::Geometric, 1.0);
-
-        BSEuroArithmeticAsianAnalyticEngine arithEngine(ctx);
-        BSEuroGeometricAsianAnalyticEngine geomEngine(ctx);
-
-        const PricingResult arithResult = price(arith_option, arithEngine);
-        const PricingResult geomResult = price(geom_option, geomEngine);
+        const PricingResult arithResult =
+            price_asian_registry(true, AsianAverageType::Arithmetic, EngineKind::Analytic);
+        const PricingResult geomResult =
+            price_asian_registry(true, AsianAverageType::Geometric, EngineKind::Analytic);
 
         Real arithPrice = arithResult.npv;
         Real geomPrice = geomResult.npv;

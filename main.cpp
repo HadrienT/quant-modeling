@@ -1,18 +1,7 @@
-#include "quantModeling/engines/analytic/black_scholes.hpp"
-#include "quantModeling/engines/analytic/asian.hpp"
-#include "quantModeling/engines/mc/asian.hpp"
-#include "quantModeling/engines/mc/black_scholes.hpp"
-#include "quantModeling/instruments/base.hpp"
-#include "quantModeling/instruments/equity/asian.hpp"
-#include "quantModeling/instruments/equity/vanilla.hpp"
-#include "quantModeling/models/equity/black_scholes.hpp"
-#include "quantModeling/pricers/context.hpp"
-#include "quantModeling/pricers/pricer.hpp"
+#include "quantModeling/pricers/registry.hpp"
 
-#include <Eigen/Dense>
-#include <iostream>
-#include <memory>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 
 namespace quantModeling
@@ -57,165 +46,80 @@ namespace quantModeling
 int main()
 {
     using namespace quantModeling;
+    const auto &registry = default_registry();
 
-    // Market parameters
-    auto model = std::make_shared<BlackScholesModel>(100.0, 0.05, 0.02, 0.20);
-    auto exercise = std::make_shared<EuropeanExercise>(1.0);
-    MarketView market = {};
+    const Real spot = 100.0;
+    const Real strike = 100.0;
+    const Time maturity = 1.0;
+    const Real rate = 0.05;
+    const Real dividend = 0.02;
+    const Real vol = 0.20;
+
+    const auto price_vanilla = [&](const std::string &label, bool is_call)
+    {
+        VanillaBSInput in{spot, strike, maturity, rate, dividend, vol, is_call};
+        in.n_paths = 100'000;
+        in.seed = 42;
+        in.mc_epsilon = 0.0;
+
+        PricingRequest analytic_request{
+            InstrumentKind::EquityVanillaOption,
+            ModelKind::BlackScholes,
+            EngineKind::Analytic,
+            PricingInput{in}};
+
+        PricingRequest mc_request{
+            InstrumentKind::EquityVanillaOption,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+
+        std::cout << COLOR_BOLD << label << COLOR_RESET << "\n";
+        print_result("Analytic Engine", registry.price(analytic_request));
+        print_result("MC Engine", registry.price(mc_request));
+    };
+
+    const auto price_asian = [&](const std::string &label, bool is_call, AsianAverageType average_type)
+    {
+        AsianBSInput in{spot, strike, maturity, rate, dividend, vol, is_call, average_type};
+        in.n_paths = 100'000;
+        in.seed = 42;
+        in.mc_epsilon = 0.0;
+
+        PricingRequest analytic_request{
+            InstrumentKind::EquityAsianOption,
+            ModelKind::BlackScholes,
+            EngineKind::Analytic,
+            PricingInput{in}};
+
+        PricingRequest mc_request{
+            InstrumentKind::EquityAsianOption,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+
+        std::cout << COLOR_BOLD << label << COLOR_RESET << "\n";
+        print_result("Analytic Engine", registry.price(analytic_request));
+        print_result("MC Engine", registry.price(mc_request));
+    };
 
     std::cout << "==============================================\n";
     std::cout << COLOR_BOLD << COLOR_GREEN << "VANILLA OPTIONS PRICING" << COLOR_RESET << "\n";
     std::cout << "==============================================\n";
     std::cout << "S0=100, K=100, T=1y, r=5%, q=2%, sigma=20%, notional=1\n\n";
 
-    // Vanilla Call
-    {
-        std::cout << COLOR_BOLD << "--- Vanilla Call Option ---" << COLOR_RESET << "\n";
-        auto payoff = std::make_shared<PlainVanillaPayoff>(OptionType::Call, 100.0);
-        VanillaOption opt(payoff, exercise, 1.0);
-
-        PricingSettings settings_ana = {1'000'000, 1, 0.0};
-        PricingContext ctx_ana{market, settings_ana, model};
-        BSEuroVanillaAnalyticEngine engine_ana(ctx_ana);
-        print_result("Analytic Engine", price(opt, engine_ana));
-
-        PricingSettings settings_mc_std = {100'000, 42, 0.0};
-        settings_mc_std.mc_antithetic = false;
-        PricingContext ctx_mc_std{market, settings_mc_std, model};
-        BSEuroVanillaMCEngine engine_mc_std(ctx_mc_std);
-        print_result("MC Engine (standard)", price(opt, engine_mc_std));
-
-        PricingSettings settings_mc_anti = {100'000, 42, 0.0};
-        settings_mc_anti.mc_antithetic = true;
-        PricingContext ctx_mc_anti{market, settings_mc_anti, model};
-        BSEuroVanillaMCEngine engine_mc_anti(ctx_mc_anti);
-        print_result("MC Engine (antithetic)", price(opt, engine_mc_anti));
-    }
-
-    // Vanilla Put
-    {
-        std::cout << COLOR_BOLD << "--- Vanilla Put Option ---" << COLOR_RESET << "\n";
-        auto payoff = std::make_shared<PlainVanillaPayoff>(OptionType::Put, 100.0);
-        VanillaOption opt(payoff, exercise, 1.0);
-
-        PricingSettings settings_ana = {1'000'000, 1, 0.0};
-        PricingContext ctx_ana{market, settings_ana, model};
-        BSEuroVanillaAnalyticEngine engine_ana(ctx_ana);
-        print_result("Analytic Engine", price(opt, engine_ana));
-
-        PricingSettings settings_mc_std = {100'000, 42, 0.0};
-        settings_mc_std.mc_antithetic = false;
-        PricingContext ctx_mc_std{market, settings_mc_std, model};
-        BSEuroVanillaMCEngine engine_mc_std(ctx_mc_std);
-        print_result("MC Engine (standard)", price(opt, engine_mc_std));
-
-        PricingSettings settings_mc_anti = {100'000, 42, 0.0};
-        settings_mc_anti.mc_antithetic = true;
-        PricingContext ctx_mc_anti{market, settings_mc_anti, model};
-        BSEuroVanillaMCEngine engine_mc_anti(ctx_mc_anti);
-        print_result("MC Engine (antithetic)", price(opt, engine_mc_anti));
-    }
+    price_vanilla("--- Vanilla Call Option ---", true);
+    price_vanilla("--- Vanilla Put Option ---", false);
 
     std::cout << "==============================================\n";
     std::cout << COLOR_BOLD << COLOR_GREEN << "ASIAN OPTIONS PRICING" << COLOR_RESET << "\n";
     std::cout << "==============================================\n";
     std::cout << "S0=100, K=100, T=1y, r=5%, q=2%, sigma=20%, notional=1\n\n";
 
-    // Arithmetic Asian Call
-    {
-        std::cout << COLOR_BOLD << "--- Arithmetic Asian Call Option ---" << COLOR_RESET << "\n";
-        auto payoff = std::make_shared<ArithmeticAsianPayoff>(OptionType::Call, 100.0);
-        AsianOption opt(payoff, exercise, AsianAverageType::Arithmetic, 1.0);
-
-        PricingSettings settings_ana = {1'000'000, 1, 0.0};
-        PricingContext ctx_ana{market, settings_ana, model};
-        BSEuroArithmeticAsianAnalyticEngine engine_ana(ctx_ana);
-        print_result("Analytic Engine (TW approx)", price(opt, engine_ana));
-
-        PricingSettings settings_mc_std = {100'000, 42, 0.0};
-        settings_mc_std.mc_antithetic = false;
-        PricingContext ctx_mc_std{market, settings_mc_std, model};
-        BSEuroAsianMCEngine engine_mc_std(ctx_mc_std);
-        print_result("MC Engine (standard)", price(opt, engine_mc_std));
-
-        PricingSettings settings_mc_anti = {100'000, 42, 0.0};
-        settings_mc_anti.mc_antithetic = true;
-        PricingContext ctx_mc_anti{market, settings_mc_anti, model};
-        BSEuroAsianMCEngine engine_mc_anti(ctx_mc_anti);
-        print_result("MC Engine (antithetic)", price(opt, engine_mc_anti));
-    }
-
-    // Arithmetic Asian Put
-    {
-        std::cout << COLOR_BOLD << "--- Arithmetic Asian Put Option ---" << COLOR_RESET << "\n";
-        auto payoff = std::make_shared<ArithmeticAsianPayoff>(OptionType::Put, 100.0);
-        AsianOption opt(payoff, exercise, AsianAverageType::Arithmetic, 1.0);
-
-        PricingSettings settings_ana = {1'000'000, 1, 0.0};
-        PricingContext ctx_ana{market, settings_ana, model};
-        BSEuroArithmeticAsianAnalyticEngine engine_ana(ctx_ana);
-        print_result("Analytic Engine (TW approx)", price(opt, engine_ana));
-
-        PricingSettings settings_mc_std = {100'000, 42, 0.0};
-        settings_mc_std.mc_antithetic = false;
-        PricingContext ctx_mc_std{market, settings_mc_std, model};
-        BSEuroAsianMCEngine engine_mc_std(ctx_mc_std);
-        print_result("MC Engine (standard)", price(opt, engine_mc_std));
-
-        PricingSettings settings_mc_anti = {100'000, 42, 0.0};
-        settings_mc_anti.mc_antithetic = true;
-        PricingContext ctx_mc_anti{market, settings_mc_anti, model};
-        BSEuroAsianMCEngine engine_mc_anti(ctx_mc_anti);
-        print_result("MC Engine (antithetic)", price(opt, engine_mc_anti));
-    }
-
-    // Geometric Asian Call
-    {
-        std::cout << COLOR_BOLD << "--- Geometric Asian Call Option ---" << COLOR_RESET << "\n";
-        auto payoff = std::make_shared<GeometricAsianPayoff>(OptionType::Call, 100.0);
-        AsianOption opt(payoff, exercise, AsianAverageType::Geometric, 1.0);
-
-        PricingSettings settings_ana = {1'000'000, 1, 0.0};
-        PricingContext ctx_ana{market, settings_ana, model};
-        BSEuroGeometricAsianAnalyticEngine engine_ana(ctx_ana);
-        print_result("Analytic Engine (closed-form)", price(opt, engine_ana));
-
-        PricingSettings settings_mc_std = {100'000, 42, 0.0};
-        settings_mc_std.mc_antithetic = false;
-        PricingContext ctx_mc_std{market, settings_mc_std, model};
-        BSEuroAsianMCEngine engine_mc_std(ctx_mc_std);
-        print_result("MC Engine (standard)", price(opt, engine_mc_std));
-
-        PricingSettings settings_mc_anti = {100'000, 42, 0.0};
-        settings_mc_anti.mc_antithetic = true;
-        PricingContext ctx_mc_anti{market, settings_mc_anti, model};
-        BSEuroAsianMCEngine engine_mc_anti(ctx_mc_anti);
-        print_result("MC Engine (antithetic)", price(opt, engine_mc_anti));
-    }
-
-    // Geometric Asian Put
-    {
-        std::cout << COLOR_BOLD << "--- Geometric Asian Put Option ---" << COLOR_RESET << "\n";
-        auto payoff = std::make_shared<GeometricAsianPayoff>(OptionType::Put, 100.0);
-        AsianOption opt(payoff, exercise, AsianAverageType::Geometric, 1.0);
-
-        PricingSettings settings_ana = {1'000'000, 1, 0.0};
-        PricingContext ctx_ana{market, settings_ana, model};
-        BSEuroGeometricAsianAnalyticEngine engine_ana(ctx_ana);
-        print_result("Analytic Engine (closed-form)", price(opt, engine_ana));
-
-        PricingSettings settings_mc_std = {100'000, 42, 0.0};
-        settings_mc_std.mc_antithetic = false;
-        PricingContext ctx_mc_std{market, settings_mc_std, model};
-        BSEuroAsianMCEngine engine_mc_std(ctx_mc_std);
-        print_result("MC Engine (standard)", price(opt, engine_mc_std));
-
-        PricingSettings settings_mc_anti = {100'000, 42, 0.0};
-        settings_mc_anti.mc_antithetic = true;
-        PricingContext ctx_mc_anti{market, settings_mc_anti, model};
-        BSEuroAsianMCEngine engine_mc_anti(ctx_mc_anti);
-        print_result("MC Engine (antithetic)", price(opt, engine_mc_anti));
-    }
+    price_asian("--- Arithmetic Asian Call Option ---", true, AsianAverageType::Arithmetic);
+    price_asian("--- Arithmetic Asian Put Option ---", false, AsianAverageType::Arithmetic);
+    price_asian("--- Geometric Asian Call Option ---", true, AsianAverageType::Geometric);
+    price_asian("--- Geometric Asian Put Option ---", false, AsianAverageType::Geometric);
 
     std::cout << "==============================================\n";
     std::cout << COLOR_BOLD << COLOR_GREEN << "END OF PRICING REPORT" << COLOR_RESET << "\n";

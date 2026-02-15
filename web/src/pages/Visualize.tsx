@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import PnlChart, { PnlSeries } from "../components/PnlChart";
 import PortfolioBuilder, { OptionLeg, PortfolioDraft } from "../components/PortfolioBuilder";
@@ -56,6 +56,9 @@ export default function Visualize({
 	spotMax,
 	setSpotMax
 }: VisualizeProps) {
+	const isStock = singleLeg.type === "stock";
+	const [optionFamily, setOptionFamily] = useState<"vanilla" | "asian" | "exotic">("vanilla");
+	const [pricingModel, setPricingModel] = useState<"bs" | "local-vol" | "heston">("bs");
 	const grid = useMemo(() => buildSpotGrid(spotMin, spotMax, 80), [spotMin, spotMax]);
 
 	const singleSeries: PnlSeries = useMemo(
@@ -168,18 +171,34 @@ export default function Visualize({
 							/>
 						</label>
 						<label className="field">
-							Type
+							Instrument
 							<select
-								value={singleLeg.type}
-								onChange={(event) =>
-									setSingleLeg((prev) => ({ ...prev, type: event.target.value as OptionLeg["type"] }))
-								}
+								value={isStock ? "stock" : "option"}
+								onChange={(event) => {
+									const next = event.target.value;
+									setSingleLeg((prev) => ({
+										...prev,
+										type: next === "stock" ? "stock" : prev.type === "stock" ? "call" : prev.type
+									}));
+								}}
 							>
-								<option value="call">Call</option>
-								<option value="put">Put</option>
 								<option value="stock">Stock</option>
+								<option value="option">Option</option>
 							</select>
 						</label>
+						{!isStock && (
+							<label className="field">
+								Option style
+								<select
+									value={optionFamily}
+									onChange={(event) => setOptionFamily(event.target.value as typeof optionFamily)}
+								>
+									<option value="vanilla">Vanilla</option>
+									<option value="asian">Asian</option>
+									<option value="exotic">Exotics</option>
+								</select>
+							</label>
+						)}
 						<label className="field">
 							Side
 							<select
@@ -192,22 +211,41 @@ export default function Visualize({
 								<option value="short">Short</option>
 							</select>
 						</label>
+						{!isStock && (
+							<label className="field">
+								Payoff
+								<select
+									value={singleLeg.type}
+									onChange={(event) =>
+										setSingleLeg((prev) => ({ ...prev, type: event.target.value as OptionLeg["type"] }))
+									}
+								>
+									<option value="call">Call</option>
+									<option value="put">Put</option>
+								</select>
+							</label>
+						)}
 						<label className="field">
-							Strike
+							{isStock ? "Entry price" : "Strike"}
 							<input
 								type="number"
 								value={singleLeg.strike}
 								onChange={(event) => setSingleLeg((prev) => ({ ...prev, strike: Number(event.target.value) }))}
 							/>
 						</label>
-						<label className="field">
-							Premium
-							<input
-								type="number"
-								value={singleLeg.premium}
-								onChange={(event) => setSingleLeg((prev) => ({ ...prev, premium: Number(event.target.value) }))}
-							/>
-						</label>
+						{!isStock && (
+							<label className="field">
+								Model
+								<select
+									value={pricingModel}
+									onChange={(event) => setPricingModel(event.target.value as typeof pricingModel)}
+								>
+									<option value="bs">Black-Scholes</option>
+									<option value="local-vol">Local vol</option>
+									<option value="heston">Heston</option>
+								</select>
+							</label>
+						)}
 						<label className="field">
 							Quantity
 							<input
@@ -217,6 +255,12 @@ export default function Visualize({
 							/>
 						</label>
 					</div>
+					{!isStock && optionFamily === "exotic" && (
+						<div className="result-note" style={{ marginTop: 12 }}>
+							<p className="result-label">Exotics panel</p>
+							<p className="result-value">Coming next: add barrier, digital, and other bespoke structures.</p>
+						</div>
+					)}
 					<div className="chart-wrap">
 						<PnlChart title="Single option" series={[singleSeries]} />
 					</div>

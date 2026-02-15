@@ -9,6 +9,7 @@ services:
       - "8000:8000"
     volumes:
       - ./api:/app/api
+      - ./temp/quantmodeling:/tmp/quantmodeling
 
   web:
     build:
@@ -18,7 +19,8 @@ services:
     depends_on:
       - api
     environment:
-      - VITE_API_BASE=http://api:8000
+      - VITE_API_BASE=/api
+      - VITE_API_PROXY_TARGET=http://api:8000
       - CHOKIDAR_USEPOLLING=true
     ports:
       - "5173:5173"
