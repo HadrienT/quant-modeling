@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import ChartHoverCard from "./ChartHoverCard";
+import { interpolateAt } from "../utils/chartUtils";
 
 export type PnlPoint = { x: number; y: number };
 export type PnlSeries = {
@@ -27,27 +29,7 @@ const padDomain = (min: number, max: number, padding = 0.12) => {
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, value));
 
-const interpolateAt = (points: PnlPoint[], x: number) => {
-	if (points.length === 0) {
-		return 0;
-	}
-	if (x <= points[0].x) {
-		return points[0].y;
-	}
-	const last = points[points.length - 1];
-	if (x >= last.x) {
-		return last.y;
-	}
-	for (let i = 0; i < points.length - 1; i += 1) {
-		const p0 = points[i];
-		const p1 = points[i + 1];
-		if (x >= p0.x && x <= p1.x) {
-			const t = (x - p0.x) / (p1.x - p0.x);
-			return p0.y + t * (p1.y - p0.y);
-		}
-	}
-	return last.y;
-};
+const interpolatePnl = (points: PnlPoint[], x: number) => interpolateAt(points, x);
 
 export default function PnlChart({ title, series, spotNow, showLegend }: PnlChartProps) {
 	const { xMin, xMax, yMin, yMax } = useMemo(() => {
@@ -107,7 +89,7 @@ export default function PnlChart({ title, series, spotNow, showLegend }: PnlChar
 			id: s.id,
 			label: s.label,
 			color: s.color,
-			value: interpolateAt(s.points, hover.spot),
+			value: interpolatePnl(s.points, hover.spot),
 		}));
 	}, [hover, series]);
 
@@ -228,16 +210,17 @@ export default function PnlChart({ title, series, spotNow, showLegend }: PnlChar
 			</svg>
 
 			{hover && hoverValues && (
-				<div className="pnl-hover-card">
-					<div className="mono pnl-hover-title">Spot: {hover.spot.toFixed(2)}</div>
-					{hoverValues.map((v) => (
-						<div key={v.id} className="pnl-hover-row">
-							<span className="pnl-hover-swatch" style={{ background: v.color }} />
-							<span className="pnl-hover-label">{v.label}</span>
-							<span className="mono">{v.value.toFixed(2)}</span>
-						</div>
-					))}
-				</div>
+				<ChartHoverCard
+					title={`Spot: ${hover.spot.toFixed(2)}`}
+					titleClassName="mono pnl-hover-title"
+					valueClassName="mono"
+					items={hoverValues.map((v) => ({
+						key: v.id,
+						label: v.label,
+						color: v.color,
+						value: v.value.toFixed(2)
+					}))}
+				/>
 			)}
 
 			{showLegend && (

@@ -23,6 +23,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	bash \
+	bash-completion \
+	curl \
+	ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
+
+ENV SHELL=/bin/bash
+
 COPY api/requirements.txt ./api/requirements.txt
 RUN python -m pip install --upgrade pip \
 	&& python -m pip install -r api/requirements.txt

@@ -44,7 +44,10 @@ namespace quantModeling
         PricingSettings settings = {
             use_mc ? in.n_paths : 0,
             use_mc ? in.seed : 0,
-            in.mc_epsilon};
+            true,
+            0,  // tree_steps
+            0,  // pde_space_steps
+            0}; // pde_time_steps
 
         PricingContext ctx{market, settings, model};
 

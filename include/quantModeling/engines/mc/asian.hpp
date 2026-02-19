@@ -2,7 +2,10 @@
 #define ENGINE_MC_ASIAN_HPP
 
 #include "quantModeling/engines/base.hpp"
+#include "quantModeling/instruments/equity/future.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
+#include "quantModeling/instruments/rates/fixed_rate_bond.hpp"
+#include "quantModeling/instruments/rates/zero_coupon_bond.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/utils/rng.hpp"
 #include <vector>
@@ -27,6 +30,18 @@ namespace quantModeling
         {
             throw UnsupportedInstrument("BSEuroAsianMCEngine does not support Vanilla options. "
                                         "Use BSEuroVanillaMCEngine instead.");
+        }
+        void visit(const EquityFuture &) override
+        {
+            throw UnsupportedInstrument("BSEuroAsianMCEngine does not support equity futures.");
+        }
+        void visit(const ZeroCouponBond &) override
+        {
+            throw UnsupportedInstrument("BSEuroAsianMCEngine does not support bonds.");
+        }
+        void visit(const FixedRateBond &) override
+        {
+            throw UnsupportedInstrument("BSEuroAsianMCEngine does not support bonds.");
         }
 
     private:

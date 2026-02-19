@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import About from "./pages/About";
 import Price from "./pages/Price";
+import Market from "./pages/Market";
 import Visualize from "./pages/Visualize";
 import { OptionLeg, PortfolioDraft } from "./components/PortfolioBuilder";
 
@@ -49,6 +50,9 @@ export default function App() {
 					<nav className="nav-links">
 						<NavLink to="/" end className="nav-link">
 							Visualize
+						</NavLink>
+						<NavLink to="/market" className="nav-link">
+							Market
 						</NavLink>
 						<NavLink to="/price" className="nav-link">
 							Price
@@ -99,6 +103,7 @@ export default function App() {
 							/>
 						}
 					/>
+					<Route path="/market" element={<Market />} />
 					<Route path="/price" element={<Price />} />
 					<Route path="/about" element={<About />} />
 					<Route path="*" element={<Navigate to="/" replace />} />

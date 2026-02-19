@@ -8,10 +8,14 @@ namespace quantModeling
 {
   struct VanillaOption; // fwd
   struct AsianOption;
+  struct EquityFuture;
+  struct ZeroCouponBond;
+  struct FixedRateBond;
 
   enum class ExerciseType
   {
-    European
+    European,
+    American
   };
 
   struct IExercise
@@ -30,11 +34,23 @@ namespace quantModeling
     const std::vector<Time> &dates() const override { return d_; }
   };
 
+  struct AmericanExercise final : IExercise
+  {
+    std::vector<Time> d_;
+    explicit AmericanExercise(Time maturity) : d_{maturity} {}
+
+    ExerciseType type() const override { return ExerciseType::American; }
+    const std::vector<Time> &dates() const override { return d_; }
+  };
+
   struct IInstrumentVisitor
   {
     virtual ~IInstrumentVisitor() = default;
     virtual void visit(const VanillaOption &) = 0;
     virtual void visit(const AsianOption &) = 0;
+    virtual void visit(const EquityFuture &) = 0;
+    virtual void visit(const ZeroCouponBond &) = 0;
+    virtual void visit(const FixedRateBond &) = 0;
   };
 
   struct Instrument

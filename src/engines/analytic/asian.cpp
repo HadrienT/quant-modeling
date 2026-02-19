@@ -2,19 +2,23 @@
 #include "quantModeling/engines/base.hpp"
 #include "quantModeling/instruments/base.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
-#include "quantModeling/models/equity/black_scholes.hpp"
+#include "quantModeling/instruments/equity/future.hpp"
+#include "quantModeling/models/equity/local_vol_model.hpp"
 #include "quantModeling/utils/stats.hpp"
 #include <cmath>
 #include <stdexcept>
-#include <iostream>
 
 namespace quantModeling
 {
+    void BSEuroArithmeticAsianAnalyticEngine::visit(const EquityFuture &)
+    {
+        throw UnsupportedInstrument("BSEuroArithmeticAsianAnalyticEngine does not support equity futures.");
+    }
 
     void BSEuroArithmeticAsianAnalyticEngine::visit(const AsianOption &opt)
     {
         validate(opt);
-        const auto &m = require_model<IBlackScholesModel>("BSEuroArithmeticAsianAnalyticEngine");
+        const auto &m = require_model<ILocalVolModel>("BSEuroArithmeticAsianAnalyticEngine");
 
         const Real S0 = m.spot0();
         const Real r = m.rate_r();
@@ -232,7 +236,7 @@ namespace quantModeling
     void BSEuroGeometricAsianAnalyticEngine::visit(const AsianOption &opt)
     {
         validate(opt);
-        const auto &m = require_model<IBlackScholesModel>("BSEuroGeometricAsianAnalyticEngine");
+        const auto &m = require_model<ILocalVolModel>("BSEuroGeometricAsianAnalyticEngine");
 
         const Real S0 = m.spot0();
         const Real r = m.rate_r();
@@ -294,6 +298,11 @@ namespace quantModeling
         }
 
         res_ = out;
+    }
+
+    void BSEuroGeometricAsianAnalyticEngine::visit(const EquityFuture &)
+    {
+        throw UnsupportedInstrument("BSEuroGeometricAsianAnalyticEngine does not support equity futures.");
     }
 
     void BSEuroArithmeticAsianAnalyticEngine::validate(const AsianOption &opt)

@@ -7,9 +7,18 @@ services:
     command: ["uvicorn", "api.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/api"]
     ports:
       - "8000:8000"
+    environment:
+      - BQ_PROJECT_ID=${BQ_PROJECT_ID}
+      - BQ_DATASET_ID=${BQ_DATASET_ID}
+      - BQ_TABLE_ID=${BQ_TABLE_ID}
+      - API_KEY=${API_KEY}
+      - FRED_API_KEY=${FRED_API_KEY}
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/bq-key.json
+      - LOG_DIR=/var/log/quantmodeling
     volumes:
       - ./api:/app/api
-      - ./temp/quantmodeling:/tmp/quantmodeling
+      - ./logs/quantmodeling:/var/log/quantmodeling
+      - ./secrets/bq-key.json:/secrets/bq-key.json:ro
 
   web:
     build:
@@ -21,13 +30,22 @@ services:
     environment:
       - VITE_API_BASE=/api
       - VITE_API_PROXY_TARGET=http://api:8000
+      - VITE_API_KEY=${API_KEY}
       - CHOKIDAR_USEPOLLING=true
     ports:
       - "5173:5173"
     volumes:
       - ./web:/app
       - web_node_modules:/app/node_modules
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+    command:
+      - sh
+      - -c
+      - >
+        until wget -qO- http://api:8000/health >/dev/null; do
+          echo "Waiting for API...";
+          sleep 1;
+        done;
+        npm run dev -- --host 0.0.0.0 --port 5173
 
 volumes:
   web_node_modules:

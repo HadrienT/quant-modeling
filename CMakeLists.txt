@@ -30,13 +30,26 @@ target_sources(quantModeling
         src/engines/base.cpp
         src/engines/analytic/black_scholes.cpp
         src/engines/analytic/asian.cpp
+        src/engines/analytic/future.cpp
+        src/engines/analytic/bonds.cpp
         src/engines/mc/black_scholes.cpp
         src/engines/mc/asian.cpp
+        src/engines/tree/binomial.cpp
+        src/engines/tree/trinomial.cpp
+        src/engines/pde/european_vanilla.cpp
+        src/market/discount_curve.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
+        src/instruments/equity/future.cpp
+        src/instruments/rates/zero_coupon_bond.cpp
+        src/instruments/rates/fixed_rate_bond.cpp
+        src/models/rates/flat_rate.cpp
         src/pricers/registry.cpp
         src/pricers/adapters/equity_vanilla.cpp
+        src/pricers/adapters/equity_vanilla_american.cpp
         src/pricers/adapters/equity_asian.cpp
+        src/pricers/adapters/equity_future.cpp
+        src/pricers/adapters/bonds.cpp
 )
 
 target_include_directories(quantModeling
@@ -71,6 +84,8 @@ if(QM_BUILD_TESTS)
     tests/testBSAna.cpp
     tests/testBSMC.cpp
     tests/testAsianOption.cpp
+    tests/testFuture.cpp
+    tests/testBonds.cpp
   )
 
   target_link_libraries(quantModeling_tests

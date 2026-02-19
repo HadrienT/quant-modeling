@@ -1,3 +1,5 @@
+.env
+
 # === C/C++ build artifacts ===
 *.d
 *.slo
@@ -40,6 +42,7 @@ tmp/
 *.tmp
 *.swp
 *.swo
+secrets/
 
 # === Python ===
 __pycache__/

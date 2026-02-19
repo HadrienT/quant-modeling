@@ -46,7 +46,7 @@ namespace quantModeling
 
   TEST(BSMC, ReproducibleWithFixedSeed)
   {
-    PricingSettings s1 = {1'000'000, 1, 0};
+    PricingSettings s1 = {1'000'000, 1, 0, 0, 0, 0};
     PricingResult res1 = priceEuroVanillaMC(OptionType::Call, s1);
     PricingResult res2 = priceEuroVanillaMC(OptionType::Call, s1);
 
@@ -60,7 +60,7 @@ namespace quantModeling
 
   TEST(BSMC, PriceMatchesAnalyticWithin3Sigma)
   {
-    PricingSettings s1 = {1'000'000, 1, 0};
+    PricingSettings s1 = {1'000'000, 1, 0, 0, 0, 0};
 
     const PricingResult mc = priceEuroVanillaMC(OptionType::Call, s1);
     const PricingResult ana = priceEuroVanillaAnalytical(OptionType::Call);

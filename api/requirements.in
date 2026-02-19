@@ -1,3 +1,7 @@
 fastapi
 uvicorn
 pydantic
+google-cloud-bigquery
+yfinance
+numpy
+scipy

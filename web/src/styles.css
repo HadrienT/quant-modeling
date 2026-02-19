@@ -291,6 +291,94 @@ body {
   font-size: 0.95rem;
 }
 
+.span-2 {
+  grid-column: 1 / -1;
+}
+
+.bond-toggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.pill {
+  border: 1px solid var(--stroke);
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--ink-1);
+  transition: all 0.2s ease;
+}
+
+.pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(16, 20, 24, 0.12);
+}
+
+.pill.active {
+  background: rgba(31, 138, 112, 0.14);
+  color: var(--accent-1);
+  border-color: rgba(31, 138, 112, 0.4);
+}
+
+.curve-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--ink-1);
+}
+
+.curve-editor {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.88);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.curve-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.curve-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(120px, 1.2fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.curve-row input {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  font-size: 0.9rem;
+}
+
+.curve-head {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+
+.curve-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.curve-hint {
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+
 .button {
   background: var(--accent-2);
   color: #fff;
@@ -436,6 +524,26 @@ body {
   grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: center;
+}
+
+.surface-plot {
+  width: 100%;
+  min-height: 480px;
+  height: 520px;
+}
+
+.curve-panel {
+  background: #fff;
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(16, 20, 24, 0.15);
+  padding: 12px;
+}
+
+.curve-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
 }
 
 .slider {

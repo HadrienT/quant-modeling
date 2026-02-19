@@ -44,7 +44,7 @@ namespace quantModeling
         }
 
         Real S0, K, T, r, q, sigma;
-        std::shared_ptr<const IBlackScholesModel> model;
+        std::shared_ptr<const ILocalVolModel> model;
         MarketView market;
         PricingSettings settings;
         PricingContext ctx;

@@ -2,7 +2,7 @@
 #include "quantModeling/engines/base.hpp"
 #include "quantModeling/instruments/base.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
-#include "quantModeling/models/equity/black_scholes.hpp"
+#include "quantModeling/models/equity/local_vol_model.hpp"
 #include "quantModeling/utils/greeks.hpp"
 #include "quantModeling/utils/rng.hpp"
 #include <cmath>
@@ -15,7 +15,7 @@ namespace quantModeling
     void BSEuroAsianMCEngine::visit(const AsianOption &opt)
     {
         validate(opt);
-        const auto &m = require_model<IBlackScholesModel>("BSEuroAsianMCEngine");
+        const auto &m = require_model<ILocalVolModel>("BSEuroAsianMCEngine");
         PricingSettings settings = ctx_.settings;
 
         const Real S0 = m.spot0();

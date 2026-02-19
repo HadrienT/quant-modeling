@@ -8,7 +8,7 @@ namespace quantModeling
   void BSEuroVanillaMCEngine::visit(const VanillaOption &opt)
   {
     validate(opt);
-    const auto &m = require_model<IBlackScholesModel>("BSEuroVanillaMCEngine");
+    const auto &m = require_model<ILocalVolModel>("BSEuroVanillaMCEngine");
     PricingSettings settings = ctx_.settings;
 
     const Real S0 = m.spot0();
@@ -356,6 +356,21 @@ namespace quantModeling
     throw UnsupportedInstrument(
         "BSEuroVanillaMCEngine does not support Asian options. "
         "Use BSEuroAsianMCEngine instead.");
+  }
+
+  void BSEuroVanillaMCEngine::visit(const EquityFuture &)
+  {
+    throw UnsupportedInstrument("BSEuroVanillaMCEngine does not support equity futures.");
+  }
+
+  void BSEuroVanillaMCEngine::visit(const ZeroCouponBond &)
+  {
+    throw UnsupportedInstrument("BSEuroVanillaMCEngine does not support bonds.");
+  }
+
+  void BSEuroVanillaMCEngine::visit(const FixedRateBond &)
+  {
+    throw UnsupportedInstrument("BSEuroVanillaMCEngine does not support bonds.");
   }
 
 }; // namespace quantModeling

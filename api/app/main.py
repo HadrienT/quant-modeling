@@ -1,85 +1,60 @@
-import json
-import logging
-from pathlib import Path
+import os
+import time
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from .logging_utils import configure_logging, get_logger
+from .request_context import is_cache_hit, reset_cache_hit
+from .routers.market import router as market_router
+from .routers.pricing import router as pricing_router
 
 
-class JsonFormatter(logging.Formatter):
-    _standard = {
-        "args",
-        "asctime",
-        "created",
-        "exc_info",
-        "exc_text",
-        "filename",
-        "funcName",
-        "levelname",
-        "levelno",
-        "lineno",
-        "module",
-        "msecs",
-        "message",
-        "msg",
-        "name",
-        "pathname",
-        "process",
-        "processName",
-        "relativeCreated",
-        "stack_info",
-        "thread",
-        "threadName",
-    }
-
-    @staticmethod
-    def _round_floats(value):
-        if isinstance(value, float):
-            return round(value, 3)
-        if isinstance(value, dict):
-            return {key: JsonFormatter._round_floats(val) for key, val in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [JsonFormatter._round_floats(val) for val in value]
-        return value
-
-    def format(self, record: logging.LogRecord) -> str:
-        extras = {
-            key: value
-            for key, value in record.__dict__.items()
-            if key not in self._standard
-        }
-        payload = {
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
-        }
-        if extras:
-            payload["extra"] = self._round_floats(extras)
-        return json.dumps(payload, ensure_ascii=True)
+configure_logging()
+logger = get_logger()
 
 
-def _configure_logging() -> logging.Logger:
-    log_dir = Path("/tmp/quantmodeling")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "api.jsonl"
+class CacheLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to log cache hits in access logs."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Reset cache hit status for this request
+        reset_cache_hit()
+        
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        
+        # Check if this request hit cache
+        cache_indicator = " (cache)" if is_cache_hit() else ""
+        
+        # Log the request with cache indicator
+        logger.info(
+            f"{request.client.host if request.client else 'unknown'}:{request.client.port if request.client else 0} - "
+            f'"{request.method} {request.url.path}{"?" + str(request.url.query) if request.url.query else ""} '
+            f'HTTP/{request.scope.get("http_version", "1.1")}" {response.status_code}{cache_indicator} '
+            f"({process_time:.3f}s)"
+        )
+        
+        return response
 
-    handler = logging.FileHandler(log_path, encoding="utf-8")
-    handler.setFormatter(JsonFormatter())
-
-    api_logger = logging.getLogger("quantmodeling.api")
-    api_logger.setLevel(logging.INFO)
-    api_logger.handlers.clear()
-    api_logger.addHandler(handler)
-    api_logger.propagate = False
-    return api_logger
-
-from fastapi import FastAPI
-
-from .pricing_service import price_asian, price_vanilla
-from .schemas import AsianRequest, PricingResponse, VanillaRequest
-
-
-logger = _configure_logging()
 
 app = FastAPI(title="quantModeling API", version="0.1.0")
+
+cors_origins = [origin.strip() for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if origin.strip()]
+if not cors_origins:
+    cors_origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.add_middleware(CacheLoggingMiddleware)
 
 
 @app.get("/health")
@@ -87,72 +62,6 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/price/vanilla", response_model=PricingResponse)
-def price_vanilla_endpoint(req: VanillaRequest) -> PricingResponse:
-    logger.info(
-        "price_vanilla request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "engine": req.engine,
-            "n_paths": req.n_paths,
-            "seed": req.seed,
-            "mc_epsilon": req.mc_epsilon,
-        },
-    )
-    resp = price_vanilla(req)
-    logger.info(
-        "price_vanilla response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp
+app.include_router(market_router)
+app.include_router(pricing_router)
 
-
-@app.post("/price/asian", response_model=PricingResponse)
-def price_asian_endpoint(req: AsianRequest) -> PricingResponse:
-    logger.info(
-        "price_asian request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "average_type": req.average_type,
-            "engine": req.engine,
-            "n_paths": req.n_paths,
-            "seed": req.seed,
-            "mc_epsilon": req.mc_epsilon,
-        },
-    )
-    resp = price_asian(req)
-    logger.info(
-        "price_asian response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp

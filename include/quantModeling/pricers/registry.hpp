@@ -15,21 +15,29 @@ namespace quantModeling
     enum class InstrumentKind
     {
         EquityVanillaOption,
-        EquityAsianOption
+        EquityAmericanVanillaOption,
+        EquityAsianOption,
+        EquityFuture,
+        ZeroCouponBond,
+        FixedRateBond
     };
 
     enum class ModelKind
     {
-        BlackScholes
+        BlackScholes,
+        FlatRate
     };
 
     enum class EngineKind
     {
         Analytic,
-        MonteCarlo
+        MonteCarlo,
+        BinomialTree,
+        TrinomialTree,
+        PDEFiniteDifference
     };
 
-    using PricingInput = std::variant<VanillaBSInput, AsianBSInput>;
+    using PricingInput = std::variant<VanillaBSInput, AmericanVanillaBSInput, AsianBSInput, EquityFutureInput, ZeroCouponBondInput, FixedRateBondInput>;
 
     struct PricingRequest
     {

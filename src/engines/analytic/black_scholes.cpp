@@ -12,7 +12,7 @@ namespace quantModeling
     void BSEuroVanillaAnalyticEngine::visit(const VanillaOption &opt)
     {
         validate(opt);
-        const auto &m = require_model<IBlackScholesModel>("BSEuroVanillaAnalyticEngine");
+        const auto &m = require_model<ILocalVolModel>("BSEuroVanillaAnalyticEngine");
         const Real S0 = m.spot0();
         const Real r = m.rate_r();
         const Real q = m.yield_q();
@@ -71,6 +71,21 @@ namespace quantModeling
     {
         throw UnsupportedInstrument("BSEuroVanillaAnalyticEngine does not support Asian options. "
                                     "Use BSEuroArithmeticAsianAnalyticEngine or BSEuroGeometricAsianAnalyticEngine instead.");
+    }
+
+    void BSEuroVanillaAnalyticEngine::visit(const EquityFuture &)
+    {
+        throw UnsupportedInstrument("BSEuroVanillaAnalyticEngine does not support equity futures.");
+    }
+
+    void BSEuroVanillaAnalyticEngine::visit(const ZeroCouponBond &)
+    {
+        throw UnsupportedInstrument("BSEuroVanillaAnalyticEngine does not support bonds.");
+    }
+
+    void BSEuroVanillaAnalyticEngine::visit(const FixedRateBond &)
+    {
+        throw UnsupportedInstrument("BSEuroVanillaAnalyticEngine does not support bonds.");
     }
 
     void BSEuroVanillaAnalyticEngine::validate(const VanillaOption &opt)

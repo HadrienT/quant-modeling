@@ -1,7 +1,10 @@
 #include "quantModeling/pricers/registry.hpp"
 
+#include "quantModeling/pricers/adapters/bonds.hpp"
 #include "quantModeling/pricers/adapters/equity_asian.hpp"
+#include "quantModeling/pricers/adapters/equity_future.hpp"
 #include "quantModeling/pricers/adapters/equity_vanilla.hpp"
+#include "quantModeling/pricers/adapters/equity_vanilla_american.hpp"
 
 namespace quantModeling
 {
@@ -53,6 +56,54 @@ namespace quantModeling
                 });
 
             r.register_pricer(
+                {InstrumentKind::EquityVanillaOption, ModelKind::BlackScholes, EngineKind::PDEFiniteDifference},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<VanillaBSInput>(request.input);
+                    return price_equity_vanilla_bs(in, EngineKind::PDEFiniteDifference);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityVanillaOption, ModelKind::BlackScholes, EngineKind::BinomialTree},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<VanillaBSInput>(request.input);
+                    return price_equity_vanilla_bs(in, EngineKind::BinomialTree);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityVanillaOption, ModelKind::BlackScholes, EngineKind::TrinomialTree},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<VanillaBSInput>(request.input);
+                    return price_equity_vanilla_bs(in, EngineKind::TrinomialTree);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityAmericanVanillaOption, ModelKind::BlackScholes, EngineKind::BinomialTree},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<AmericanVanillaBSInput>(request.input);
+                    return price_equity_vanilla_american_bs(in, EngineKind::BinomialTree);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityAmericanVanillaOption, ModelKind::BlackScholes, EngineKind::TrinomialTree},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<AmericanVanillaBSInput>(request.input);
+                    return price_equity_vanilla_american_bs(in, EngineKind::TrinomialTree);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityAmericanVanillaOption, ModelKind::BlackScholes, EngineKind::PDEFiniteDifference},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<AmericanVanillaBSInput>(request.input);
+                    return price_equity_vanilla_american_bs(in, EngineKind::PDEFiniteDifference);
+                });
+
+            r.register_pricer(
                 {InstrumentKind::EquityAsianOption, ModelKind::BlackScholes, EngineKind::Analytic},
                 [](const PricingRequest &request)
                 {
@@ -66,6 +117,30 @@ namespace quantModeling
                 {
                     const auto &in = std::get<AsianBSInput>(request.input);
                     return price_equity_asian_bs(in, EngineKind::MonteCarlo);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityFuture, ModelKind::BlackScholes, EngineKind::Analytic},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<EquityFutureInput>(request.input);
+                    return price_equity_future_bs(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::ZeroCouponBond, ModelKind::FlatRate, EngineKind::Analytic},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<ZeroCouponBondInput>(request.input);
+                    return price_zero_coupon_bond_flat(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::FixedRateBond, ModelKind::FlatRate, EngineKind::Analytic},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<FixedRateBondInput>(request.input);
+                    return price_fixed_rate_bond_flat(in);
                 });
 
             return r;

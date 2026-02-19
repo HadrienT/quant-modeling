@@ -2,6 +2,9 @@
 
 #include "quantModeling/engines/analytic/black_scholes.hpp"
 #include "quantModeling/engines/mc/black_scholes.hpp"
+#include "quantModeling/engines/pde/european_vanilla.hpp"
+#include "quantModeling/engines/tree/binomial.hpp"
+#include "quantModeling/engines/tree/trinomial.hpp"
 #include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
@@ -31,10 +34,16 @@ namespace quantModeling
 
         MarketView market = {};
         const bool use_mc = engine == EngineKind::MonteCarlo;
+        const bool use_pde = engine == EngineKind::PDEFiniteDifference;
+        const bool use_binomial = engine == EngineKind::BinomialTree;
+        const bool use_trinomial = engine == EngineKind::TrinomialTree;
         PricingSettings settings = {
             use_mc ? in.n_paths : 0,
             use_mc ? in.seed : 0,
-            in.mc_epsilon};
+            true,
+            in.tree_steps,
+            in.pde_space_steps,
+            in.pde_time_steps};
 
         PricingContext ctx{market, settings, model};
 
@@ -42,6 +51,21 @@ namespace quantModeling
         {
             BSEuroVanillaMCEngine mc_engine(ctx);
             return price(opt, mc_engine);
+        }
+        else if (use_pde)
+        {
+            PDEEuropeanVanillaEngine pde_engine(ctx);
+            return price(opt, pde_engine);
+        }
+        else if (use_binomial)
+        {
+            BinomialVanillaEngine binomial_engine(ctx);
+            return price(opt, binomial_engine);
+        }
+        else if (use_trinomial)
+        {
+            TrinomialVanillaEngine trinomial_engine(ctx);
+            return price(opt, trinomial_engine);
         }
 
         BSEuroVanillaAnalyticEngine analytic_engine(ctx);
