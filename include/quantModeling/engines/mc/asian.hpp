@@ -2,8 +2,11 @@
 #define ENGINE_MC_ASIAN_HPP
 
 #include "quantModeling/engines/base.hpp"
-#include "quantModeling/instruments/equity/future.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
+#include "quantModeling/instruments/equity/barrier.hpp"
+#include "quantModeling/instruments/equity/digital.hpp"
+#include "quantModeling/instruments/equity/future.hpp"
+#include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/instruments/rates/fixed_rate_bond.hpp"
 #include "quantModeling/instruments/rates/zero_coupon_bond.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
@@ -42,6 +45,14 @@ namespace quantModeling
         void visit(const FixedRateBond &) override
         {
             throw UnsupportedInstrument("BSEuroAsianMCEngine does not support bonds.");
+        }
+        void visit(const BarrierOption &) override
+        {
+            throw UnsupportedInstrument("BSEuroAsianMCEngine: use BSEuroBarrierMCEngine for barrier options.");
+        }
+        void visit(const DigitalOption &) override
+        {
+            throw UnsupportedInstrument("BSEuroAsianMCEngine: use BSDigitalAnalyticEngine for digital options.");
         }
 
     private:

@@ -40,13 +40,13 @@ export default function App() {
 		<div className="app">
 			<header className="nav">
 				<div className="nav-inner">
-					<div className="nav-brand">
+					<button className="nav-brand" type="button" onClick={() => window.location.reload()}>
 						<div className="nav-mark" />
 						<div>
 							<span className="nav-title">Quant studio</span>
 							<span className="nav-subtitle">Derivatives modeling</span>
 						</div>
-					</div>
+					</button>
 					<nav className="nav-links">
 						<NavLink to="/" end className="nav-link">
 							Visualize

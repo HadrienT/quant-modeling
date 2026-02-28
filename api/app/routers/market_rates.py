@@ -13,16 +13,32 @@ from ..schemas import RatesCurveResponse
 router = APIRouter()
 logger = get_logger()
 
-_RATES_CURVE_CACHE = TTLCache[str, RatesCurveResponse](max_size=8, ttl_seconds=60 * 60)
-_RATES_ZERO_POINTS_CACHE = TTLCache[str, List[dict]](max_size=4, ttl_seconds=60 * 60)
+_RATES_CURVE_CACHE = TTLCache[str, RatesCurveResponse](max_size=12, ttl_seconds=60 * 60)
+_RATES_ZERO_POINTS_CACHE = TTLCache[str, List[dict]](max_size=6, ttl_seconds=60 * 60)
 
 _FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
+# Curve definitions — what each one represents:
+#
+# Treasury (CMT): Constant Maturity Treasury par yields from FRED. The true
+#   risk-free benchmark for government bond pricing.  Full tenor coverage
+#   from 1-month to 30-year.
+#
+# SOFR: Secured Overnight Financing Rate — the post-LIBOR standard for
+#   derivatives discounting.  The short end (overnight to 180-day) uses
+#   actual SOFR fixings from FRED.  For tenors >= 1Y, FRED does not publish
+#   SOFR swap rates, so we fall back to Treasury CMT yields as a proxy.
+#   A production desk would source SOFR swap rates from Bloomberg/Refinitiv.
+#
+# Fed Funds: Effective Federal Funds Rate (EFFR) — the rate banks charge each
+#   other for overnight reserve lending.  Pre-reform, OIS swaps referenced
+#   this rate.  Short end uses EFFR; beyond overnight the curve is extended
+#   with Treasury CMT proxies (same FRED limitation as SOFR).
+
 _CURVE_SERIES: Dict[str, List[tuple[float, str]]] = {
-    "SOFR": [
-        (1.0 / 360.0, "SOFR"),
-        (1.0 / 12.0, "SOFR30DAYAVG"),
-        (0.25, "SOFR90DAYAVG"),
-        (0.5, "SOFR180DAYAVG"),
+    "Treasury": [
+        (1.0 / 12.0, "DGS1MO"),
+        (0.25, "DGS3MO"),
+        (0.5, "DGS6MO"),
         (1.0, "DGS1"),
         (2.0, "DGS2"),
         (3.0, "DGS3"),
@@ -32,7 +48,24 @@ _CURVE_SERIES: Dict[str, List[tuple[float, str]]] = {
         (20.0, "DGS20"),
         (30.0, "DGS30"),
     ],
-    "OIS": [
+    "SOFR": [
+        (1.0 / 360.0, "SOFR"),            # overnight SOFR fixing
+        (1.0 / 12.0, "SOFR30DAYAVG"),     # 30-day average SOFR
+        (0.25, "SOFR90DAYAVG"),            # 90-day average SOFR
+        (0.5, "SOFR180DAYAVG"),            # 180-day average SOFR
+        # --- proxy zone: Treasury CMT used for 1Y+ (SOFR swaps not on FRED) ---
+        (1.0, "DGS1"),
+        (2.0, "DGS2"),
+        (3.0, "DGS3"),
+        (5.0, "DGS5"),
+        (7.0, "DGS7"),
+        (10.0, "DGS10"),
+        (20.0, "DGS20"),
+        (30.0, "DGS30"),
+    ],
+    "FedFunds": [
+        (1.0 / 360.0, "EFFR"),             # Effective Federal Funds Rate
+        # --- proxy zone: Treasury CMT used beyond overnight ---
         (1.0 / 12.0, "DGS1MO"),
         (0.25, "DGS3MO"),
         (0.5, "DGS6MO"),
@@ -150,7 +183,7 @@ def _latest_fred_observation(series_id: str, api_key: str) -> Optional[float]:
 
 @router.get("/market/rates/curve", response_model=RatesCurveResponse, dependencies=[Depends(require_api_key)])
 def rates_curve(
-    curve: str = Query("SOFR", pattern="^(SOFR|OIS)$"),
+    curve: str = Query("Treasury", pattern="^(Treasury|SOFR|FedFunds)$"),
     curve_type: str = Query("zero", pattern="^(zero|forward)$"),
     fixed_period_years: float = Query(0.5, gt=0.0, le=10.0),
 ) -> RatesCurveResponse:

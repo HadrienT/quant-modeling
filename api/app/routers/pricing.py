@@ -8,16 +8,24 @@ from ..logging_utils import get_logger
 from ..pricing_service import (
     price_american_vanilla,
     price_asian,
+    price_barrier,
+    price_basket,
+    price_digital,
     price_fixed_rate_bond,
     price_future,
+    price_lookback,
     price_vanilla,
     price_zero_coupon_bond,
 )
 from ..schemas import (
     AmericanVanillaRequest,
     AsianRequest,
+    BarrierRequest,
+    BasketRequest,
+    DigitalRequest,
     FixedRateBondRequest,
     FutureRequest,
+    LookbackRequest,
     PricingResponse,
     VanillaRequest,
     ZeroCouponBondRequest,
@@ -145,6 +153,142 @@ async def price_asian_endpoint(req: AsianRequest) -> PricingResponse:
     return resp
 
 
+@router.post("/price/option/barrier", response_model=PricingResponse)
+async def price_barrier_endpoint(req: BarrierRequest) -> PricingResponse:
+    logger.info(
+        "price_barrier request",
+        extra={
+            "spot": req.spot,
+            "strike": req.strike,
+            "maturity": req.maturity,
+            "rate": req.rate,
+            "dividend": req.dividend,
+            "vol": req.vol,
+            "is_call": req.is_call,
+            "barrier_kind": req.barrier_kind,
+            "barrier_level": req.barrier_level,
+            "rebate": req.rebate,
+            "n_paths": req.n_paths,
+            "seed": req.seed,
+            "mc_epsilon": req.mc_epsilon,
+        },
+    )
+    resp = await _run_with_timeout(price_barrier, req)
+    logger.info(
+        "price_barrier response",
+        extra={
+            "npv": resp.npv,
+            "mc_std_error": resp.mc_std_error,
+            "diagnostics": resp.diagnostics,
+            "delta": resp.greeks.delta,
+            "gamma": resp.greeks.gamma,
+            "vega": resp.greeks.vega,
+            "theta": resp.greeks.theta,
+            "rho": resp.greeks.rho,
+        },
+    )
+    return resp
+
+
+@router.post("/price/option/digital", response_model=PricingResponse)
+async def price_digital_endpoint(req: DigitalRequest) -> PricingResponse:
+    logger.info(
+        "price_digital request",
+        extra={
+            "spot": req.spot,
+            "strike": req.strike,
+            "maturity": req.maturity,
+            "rate": req.rate,
+            "dividend": req.dividend,
+            "vol": req.vol,
+            "is_call": req.is_call,
+            "payoff_type": req.payoff_type,
+            "cash_amount": req.cash_amount,
+        },
+    )
+    resp = await _run_with_timeout(price_digital, req)
+    logger.info(
+        "price_digital response",
+        extra={
+            "npv": resp.npv,
+            "diagnostics": resp.diagnostics,
+        },
+    )
+    return resp
+
+
+@router.post("/price/option/lookback", response_model=PricingResponse)
+async def price_lookback_endpoint(req: LookbackRequest) -> PricingResponse:
+    logger.info(
+        "price_lookback request",
+        extra={
+            "spot": req.spot,
+            "strike": req.strike,
+            "maturity": req.maturity,
+            "rate": req.rate,
+            "dividend": req.dividend,
+            "vol": req.vol,
+            "is_call": req.is_call,
+            "style": req.style,
+            "extremum": req.extremum,
+            "n_steps": req.n_steps,
+            "n_paths": req.n_paths,
+            "seed": req.seed,
+            "mc_antithetic": req.mc_antithetic,
+        },
+    )
+    resp = await _run_with_timeout(price_lookback, req)
+    logger.info(
+        "price_lookback response",
+        extra={
+            "npv": resp.npv,
+            "mc_std_error": resp.mc_std_error,
+            "diagnostics": resp.diagnostics,
+            "delta": resp.greeks.delta,
+            "gamma": resp.greeks.gamma,
+            "vega": resp.greeks.vega,
+            "theta": resp.greeks.theta,
+            "rho": resp.greeks.rho,
+        },
+    )
+    return resp
+
+
+@router.post("/price/option/basket", response_model=PricingResponse)
+async def price_basket_endpoint(req: BasketRequest) -> PricingResponse:
+    logger.info(
+        "price_basket request",
+        extra={
+            "n_assets": len(req.spots),
+            "spots": req.spots,
+            "vols": req.vols,
+            "weights": req.weights,
+            "pairwise_correlation": req.pairwise_correlation,
+            "strike": req.strike,
+            "maturity": req.maturity,
+            "rate": req.rate,
+            "is_call": req.is_call,
+            "n_paths": req.n_paths,
+            "seed": req.seed,
+        },
+    )
+    resp = await _run_with_timeout(price_basket, req)
+    logger.info(
+        "price_basket response",
+        extra={
+            "npv": resp.npv,
+            "mc_std_error": resp.mc_std_error,
+            "diagnostics": resp.diagnostics,
+            "delta": resp.greeks.delta,
+            "gamma": resp.greeks.gamma,
+            "vega": resp.greeks.vega,
+            "theta": resp.greeks.theta,
+            "rho": resp.greeks.rho,
+        },
+    )
+    return resp
+
+
 @router.post("/price/future", response_model=PricingResponse)
 async def price_future_endpoint(req: FutureRequest) -> PricingResponse:
     logger.info(
@@ -189,6 +333,7 @@ async def price_zero_coupon_bond_endpoint(req: ZeroCouponBondRequest) -> Pricing
             "npv": resp.npv,
             "mc_std_error": resp.mc_std_error,
             "diagnostics": resp.diagnostics,
+            "bond_analytics": resp.bond_analytics.model_dump() if resp.bond_analytics else None,
         },
     )
     return resp
@@ -215,6 +360,7 @@ async def price_fixed_rate_bond_endpoint(req: FixedRateBondRequest) -> PricingRe
             "npv": resp.npv,
             "mc_std_error": resp.mc_std_error,
             "diagnostics": resp.diagnostics,
+            "bond_analytics": resp.bond_analytics.model_dump() if resp.bond_analytics else None,
         },
     )
     return resp

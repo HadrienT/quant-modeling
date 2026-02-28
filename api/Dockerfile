@@ -15,8 +15,8 @@ COPY bindings ./bindings
 COPY include ./include
 COPY src ./src
 
-RUN python -m pip install --upgrade pip \
-	&& python -m pip install "scikit-build-core>=0.10.2" "pybind11>=3.0.1" build \
+RUN python -m pip install --upgrade pip --root-user-action=ignore \
+	&& python -m pip install --root-user-action=ignore "scikit-build-core>=0.10.2" "pybind11>=3.0.1" build \
 	&& python -m build --wheel
 
 FROM python:3.12-slim
@@ -28,17 +28,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	bash-completion \
 	curl \
 	ca-certificates \
-	&& rm -rf /var/lib/apt/lists/*
+	&& rm -rf /var/lib/apt/lists/* \
+	&& mkdir -p /app/logs
 
 ENV SHELL=/bin/bash
 
 COPY api/requirements.txt ./api/requirements.txt
-RUN python -m pip install --upgrade pip \
-	&& python -m pip install -r api/requirements.txt
+RUN python -m pip install --upgrade pip --root-user-action=ignore \
+	&& python -m pip install --root-user-action=ignore -r api/requirements.txt
 
 COPY --from=builder /app/dist/*.whl /tmp/
-RUN python -m pip install --force-reinstall /tmp/*.whl \
+RUN python -m pip install --root-user-action=ignore --force-reinstall /tmp/*.whl \
 	&& rm -rf /tmp/*.whl
+
 
 COPY api ./api
 

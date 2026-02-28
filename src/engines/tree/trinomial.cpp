@@ -251,6 +251,18 @@ namespace quantModeling
         throw UnsupportedInstrument("TrinomialVanillaEngine does not support bonds.");
     }
 
+    void TrinomialVanillaEngine::visit(const BarrierOption &)
+    {
+        throw UnsupportedInstrument("TrinomialVanillaEngine does not support barrier options.");
+    }
+
+    void TrinomialVanillaEngine::visit(const DigitalOption &)
+    {
+        throw UnsupportedInstrument(
+            "TrinomialVanillaEngine does not support digital options. "
+            "Use BSDigitalAnalyticEngine instead.");
+    }
+
     void TrinomialVanillaEngine::validate(const VanillaOption &opt)
     {
         if (!opt.payoff)

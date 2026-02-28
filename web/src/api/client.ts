@@ -49,11 +49,21 @@ export type IVSurfaceResponse = {
 };
 
 export type RatesCurveResponse = {
-	curve: "SOFR" | "OIS";
+	curve: "Treasury" | "SOFR" | "FedFunds";
 	zero: Array<{ x: number; y: number }>;
 };
 
 export type RatesCurveType = "zero" | "forward";
+
+export type SurfaceGridResponse = {
+	ticker: string;
+	spot: number;
+	strikes: number[];
+	maturities: number[];
+	values: Array<Array<number | null>>;
+	n_clean_quotes: number;
+	cleaning_summary: string;
+};
 
 export async function getMarketHistory(ticker: string, range: string): Promise<MarketHistoryResponse> {
 	const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -112,7 +122,7 @@ export async function getIVSurface(ticker: string, surface: "mid" | "bid" | "ask
 }
 
 export async function getRatesCurve(
-	curve: "SOFR" | "OIS",
+	curve: "Treasury" | "SOFR" | "FedFunds",
 	curveType: RatesCurveType = "zero",
 	fixedPeriodYears = 0.5
 ): Promise<RatesCurveResponse> {
@@ -132,5 +142,27 @@ export async function getRatesCurve(
 		throw new Error("Failed to fetch rates curve");
 	}
 
+	return response.json();
+}
+
+export async function getCleanedIVSurface(ticker: string): Promise<SurfaceGridResponse> {
+	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	if (API_KEY) headers["X-API-KEY"] = API_KEY;
+	const response = await fetch(
+		`${API_BASE}/api/local-vol/iv-surface?ticker=${encodeURIComponent(ticker)}`,
+		{ method: "GET", headers }
+	);
+	if (!response.ok) throw new Error("Failed to fetch cleaned IV surface");
+	return response.json();
+}
+
+export async function getLocalVolSurface(ticker: string): Promise<SurfaceGridResponse> {
+	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	if (API_KEY) headers["X-API-KEY"] = API_KEY;
+	const response = await fetch(
+		`${API_BASE}/api/local-vol/surface?ticker=${encodeURIComponent(ticker)}`,
+		{ method: "GET", headers }
+	);
+	if (!response.ok) throw new Error("Failed to fetch local vol surface");
 	return response.json();
 }

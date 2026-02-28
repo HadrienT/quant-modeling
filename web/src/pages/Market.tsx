@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { getIVSurface, getMarketHistory, getRatesCurve, getTickers } from "../api/client";
+import { getCleanedIVSurface, getIVSurface, getLocalVolSurface, getMarketHistory, getRatesCurve, getTickers } from "../api/client";
 import { PriceTab } from "./market/PriceTab";
 import { RatesTab } from "./market/RatesTab";
-import { VolTab } from "./market/VolTab";
+import { VolTab, type VolSubTab } from "./market/VolTab";
 import { CurvePoint, PricePoint, TimeRange } from "./market/types";
 
 type MarketTab = "price" | "vol" | "rates";
@@ -11,7 +11,7 @@ export default function Market() {
 	const [equity, setEquity] = useState("AAPL");
 	const [debouncedEquity, setDebouncedEquity] = useState("AAPL");
 	const [volEquity, setVolEquity] = useState("AAPL");
-	const [curve, setCurve] = useState("SOFR");
+	const [curve, setCurve] = useState("Treasury");
 	const [surface, setSurface] = useState("Mid vol");
 	const [ratesCurveView, setRatesCurveView] = useState<"zero" | "forward">("zero");
 	const [ratesFixedPeriodYears, setRatesFixedPeriodYears] = useState(0.5);
@@ -28,6 +28,19 @@ export default function Market() {
 	const [ivValues, setIvValues] = useState<Array<Array<number | null>>>([]);
 	const [ivLoading, setIvLoading] = useState(false);
 	const [ivError, setIvError] = useState<string | null>(null);
+	const [volSubTab, setVolSubTab] = useState<VolSubTab>("raw");
+	// Cleaned IV surface
+	const [cleanStrikes, setCleanStrikes] = useState<number[]>([]);
+	const [cleanMaturities, setCleanMaturities] = useState<number[]>([]);
+	const [cleanValues, setCleanValues] = useState<Array<Array<number | null>>>([]);
+	const [cleanLoading, setCleanLoading] = useState(false);
+	const [cleanError, setCleanError] = useState<string | null>(null);
+	// Local vol surface
+	const [lvStrikes, setLvStrikes] = useState<number[]>([]);
+	const [lvMaturities, setLvMaturities] = useState<number[]>([]);
+	const [lvValues, setLvValues] = useState<Array<Array<number | null>>>([]);
+	const [lvLoading, setLvLoading] = useState(false);
+	const [lvError, setLvError] = useState<string | null>(null);
 	const [zeroCurve, setZeroCurve] = useState<CurvePoint[]>([]);
 	const [ratesLoading, setRatesLoading] = useState(false);
 	const [ratesError, setRatesError] = useState<string | null>(null);
@@ -149,6 +162,78 @@ export default function Market() {
 		};
 	}, [volEquity, surface, tickers, tickersLoading, tab]);
 
+	// Fetch cleaned IV surface when sub-tab is "cleaned"
+	useEffect(() => {
+		let active = true;
+		setCleanError(null);
+
+		if (tab !== "vol" || volSubTab !== "cleaned") {
+			return () => { active = false; };
+		}
+
+		if (!volEquity.trim() || (!tickersLoading && !tickers.includes(volEquity))) {
+			setCleanStrikes([]);
+			setCleanMaturities([]);
+			setCleanValues([]);
+			if (volEquity.trim() && !tickersLoading) setCleanError("Unknown ticker.");
+			return () => { active = false; };
+		}
+
+		setCleanLoading(true);
+		getCleanedIVSurface(volEquity)
+			.then((data) => {
+				if (!active) return;
+				setCleanStrikes(data.strikes);
+				setCleanMaturities(data.maturities);
+				setCleanValues(data.values);
+			})
+			.catch((err) => {
+				if (!active) return;
+				setCleanError(err instanceof Error ? err.message : "Failed to load cleaned IV surface");
+			})
+			.finally(() => {
+				if (!active) return;
+				setCleanLoading(false);
+			});
+		return () => { active = false; };
+	}, [volEquity, tickers, tickersLoading, tab, volSubTab]);
+
+	// Fetch local vol surface when sub-tab is "local-vol"
+	useEffect(() => {
+		let active = true;
+		setLvError(null);
+
+		if (tab !== "vol" || volSubTab !== "local-vol") {
+			return () => { active = false; };
+		}
+
+		if (!volEquity.trim() || (!tickersLoading && !tickers.includes(volEquity))) {
+			setLvStrikes([]);
+			setLvMaturities([]);
+			setLvValues([]);
+			if (volEquity.trim() && !tickersLoading) setLvError("Unknown ticker.");
+			return () => { active = false; };
+		}
+
+		setLvLoading(true);
+		getLocalVolSurface(volEquity)
+			.then((data) => {
+				if (!active) return;
+				setLvStrikes(data.strikes);
+				setLvMaturities(data.maturities);
+				setLvValues(data.values);
+			})
+			.catch((err) => {
+				if (!active) return;
+				setLvError(err instanceof Error ? err.message : "Failed to load local vol surface");
+			})
+			.finally(() => {
+				if (!active) return;
+				setLvLoading(false);
+			});
+		return () => { active = false; };
+	}, [volEquity, tickers, tickersLoading, tab, volSubTab]);
+
 	useEffect(() => {
 		let active = true;
 		setRatesError(null);
@@ -160,7 +245,7 @@ export default function Market() {
 		}
 
 		setRatesLoading(true);
-		getRatesCurve(curve as "SOFR" | "OIS", ratesCurveView, ratesFixedPeriodYears)
+		getRatesCurve(curve as "Treasury" | "SOFR" | "FedFunds", ratesCurveView, ratesFixedPeriodYears)
 			.then((data) => {
 				if (!active) return;
 				setZeroCurve(data.zero);
@@ -262,11 +347,11 @@ export default function Market() {
 					tickersLoading={tickersLoading}
 					surface={surface}
 					onSurfaceChange={setSurface}
-					strikes={ivStrikes}
-					maturities={ivMaturities}
-					surfaceValues={ivValues}
-					loading={ivLoading}
-					error={ivError}
+					subTab={volSubTab}
+					onSubTabChange={setVolSubTab}
+					raw={{ strikes: ivStrikes, maturities: ivMaturities, values: ivValues, loading: ivLoading, error: ivError }}
+					cleaned={{ strikes: cleanStrikes, maturities: cleanMaturities, values: cleanValues, loading: cleanLoading, error: cleanError }}
+					localVol={{ strikes: lvStrikes, maturities: lvMaturities, values: lvValues, loading: lvLoading, error: lvError }}
 				/>
 			)}
 

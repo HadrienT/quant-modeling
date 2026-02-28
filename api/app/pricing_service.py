@@ -7,9 +7,17 @@ from .schemas import (
     AmericanVanillaRequest,
     AsianAverageType,
     AsianRequest,
+    BarrierKind,
+    BarrierRequest,
+    BasketRequest,
+    DigitalPayoffKind,
+    DigitalRequest,
     EngineType,
     FixedRateBondRequest,
     FutureRequest,
+    LookbackExtremum,
+    LookbackRequest,
+    LookbackStyle,
     PricingResponse,
     VanillaRequest,
     ZeroCouponBondRequest,
@@ -20,6 +28,7 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
     return PricingResponse(
         npv=result["npv"],
         greeks=result["greeks"],
+        bond_analytics=result.get("bond_analytics"),
         diagnostics=result.get("diagnostics", ""),
         mc_std_error=result.get("mc_std_error", 0.0),
     )
@@ -120,6 +129,118 @@ def price_asian(req: AsianRequest) -> PricingResponse:
     else:
         result = qm.price_asian_bs_analytic(input_data)
 
+    return _pricing_response_from_dict(result)
+
+
+_BARRIER_KIND_MAP = {
+    BarrierKind.up_and_in:   qm.BarrierType.UpAndIn,
+    BarrierKind.up_and_out:  qm.BarrierType.UpAndOut,
+    BarrierKind.down_and_in: qm.BarrierType.DownAndIn,
+    BarrierKind.down_and_out: qm.BarrierType.DownAndOut,
+}
+
+
+def price_barrier(req: BarrierRequest) -> PricingResponse:
+    input_data = qm.BarrierBSInput()
+    input_data.spot = req.spot
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.rate = req.rate
+    input_data.dividend = req.dividend
+    input_data.vol = req.vol
+    input_data.is_call = req.is_call
+    input_data.barrier_level = req.barrier_level
+    input_data.barrier_type = _BARRIER_KIND_MAP[req.barrier_kind]
+    input_data.rebate = req.rebate
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+    input_data.mc_epsilon = req.mc_epsilon
+    input_data.n_steps = req.n_steps
+    input_data.brownian_bridge = req.brownian_bridge
+    result = qm.price_barrier_bs_mc(input_data)
+    return _pricing_response_from_dict(result)
+
+
+_DIGITAL_PAYOFF_MAP = {
+    DigitalPayoffKind.cash_or_nothing:  qm.DigitalPayoffType.CashOrNothing,
+    DigitalPayoffKind.asset_or_nothing: qm.DigitalPayoffType.AssetOrNothing,
+}
+
+
+def price_digital(req: DigitalRequest) -> PricingResponse:
+    input_data = qm.DigitalBSInput()
+    input_data.spot = req.spot
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.rate = req.rate
+    input_data.dividend = req.dividend
+    input_data.vol = req.vol
+    input_data.is_call = req.is_call
+    input_data.payoff_type = _DIGITAL_PAYOFF_MAP[req.payoff_type]
+    input_data.cash_amount = req.cash_amount
+    result = qm.price_digital_bs_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
+
+_LOOKBACK_STYLE_MAP = {
+    LookbackStyle.fixed_strike:    qm.LookbackStyle.FixedStrike,
+    LookbackStyle.floating_strike: qm.LookbackStyle.FloatingStrike,
+}
+
+_LOOKBACK_EXTREMUM_MAP = {
+    LookbackExtremum.minimum: qm.LookbackExtremum.Minimum,
+    LookbackExtremum.maximum: qm.LookbackExtremum.Maximum,
+}
+
+
+def price_lookback(req: LookbackRequest) -> PricingResponse:
+    input_data = qm.LookbackBSInput()
+    input_data.spot = req.spot
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.rate = req.rate
+    input_data.dividend = req.dividend
+    input_data.vol = req.vol
+    input_data.is_call = req.is_call
+    input_data.style = _LOOKBACK_STYLE_MAP[req.style]
+    input_data.extremum = _LOOKBACK_EXTREMUM_MAP[req.extremum]
+    input_data.n_steps = req.n_steps
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+    input_data.mc_antithetic = req.mc_antithetic
+    input_data.mc_epsilon = req.mc_epsilon
+    result = qm.price_lookback_bs_mc(input_data)
+    return _pricing_response_from_dict(result)
+
+
+def price_basket(req: BasketRequest) -> PricingResponse:
+    n = len(req.spots)
+    # Per-asset dividends: use provided list or replicate a single 0.0
+    dividends = list(req.dividends) if len(req.dividends) == n else [0.0] * n
+    # Per-asset weights: use provided list or equal-weight
+    weights = list(req.weights) if len(req.weights) == n else [1.0 / n] * n
+    # Build full n×n correlation matrix from pairwise scalar
+    rho = req.pairwise_correlation
+    correlations = [
+        [1.0 if i == j else rho for j in range(n)]
+        for i in range(n)
+    ]
+
+    input_data = qm.BasketBSInput()
+    input_data.spots        = req.spots
+    input_data.vols         = req.vols
+    input_data.dividends    = dividends
+    input_data.weights      = weights
+    input_data.correlations = correlations
+    input_data.strike       = req.strike
+    input_data.maturity     = req.maturity
+    input_data.rate         = req.rate
+    input_data.is_call      = req.is_call
+    input_data.n_paths      = req.n_paths
+    input_data.seed         = req.seed
+    input_data.mc_antithetic = req.mc_antithetic
+
+    result = qm.price_basket_bs_mc(input_data)
     return _pricing_response_from_dict(result)
 
 

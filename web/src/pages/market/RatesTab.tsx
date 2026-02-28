@@ -326,8 +326,9 @@ export const RatesTab = ({
 				<label className="field">
 					Rate curve
 					<select value={curve} onChange={(event) => onCurveChange(event.target.value)}>
+						<option value="Treasury">Treasury (CMT)</option>
 						<option value="SOFR">SOFR</option>
-						<option value="OIS">OIS</option>
+						<option value="FedFunds">Fed Funds</option>
 					</select>
 				</label>
 			</div>
@@ -383,7 +384,10 @@ export const RatesTab = ({
 				]}
 			/>
 			<p className="price-muted" style={{ marginTop: 12 }}>
-				Rates shown in percent. Use the curve selector in pricing to apply consistent discounting.
+				Rates shown in percent.
+				{curve === "Treasury" && " Treasury Constant Maturity yields from FRED (DGS series)."}
+				{curve === "SOFR" && " Short end (≤180D) uses actual SOFR fixings. Tenors ≥1Y use Treasury CMT as proxy — FRED does not publish SOFR swap rates."}
+				{curve === "FedFunds" && " Overnight uses EFFR. Longer tenors use Treasury CMT as proxy — FRED does not publish Fed Funds swap rates."}
 			</p>
 		</section>
 	);

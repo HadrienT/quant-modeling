@@ -88,6 +88,20 @@ namespace quantModeling
         throw UnsupportedInstrument("BSEuroVanillaAnalyticEngine does not support bonds.");
     }
 
+    void BSEuroVanillaAnalyticEngine::visit(const BarrierOption &)
+    {
+        throw UnsupportedInstrument(
+            "BSEuroVanillaAnalyticEngine does not support barrier options. "
+            "Use BSEuroBarrierMCEngine instead.");
+    }
+
+    void BSEuroVanillaAnalyticEngine::visit(const DigitalOption &)
+    {
+        throw UnsupportedInstrument(
+            "BSEuroVanillaAnalyticEngine does not support digital options. "
+            "Use BSDigitalAnalyticEngine instead.");
+    }
+
     void BSEuroVanillaAnalyticEngine::validate(const VanillaOption &opt)
     {
         if (!opt.payoff)

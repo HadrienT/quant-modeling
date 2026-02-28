@@ -8,6 +8,10 @@ namespace quantModeling
 {
   struct VanillaOption; // fwd
   struct AsianOption;
+  struct BarrierOption;
+  struct DigitalOption;
+  struct LookbackOption;
+  struct BasketOption;
   struct EquityFuture;
   struct ZeroCouponBond;
   struct FixedRateBond;
@@ -48,6 +52,10 @@ namespace quantModeling
     virtual ~IInstrumentVisitor() = default;
     virtual void visit(const VanillaOption &) = 0;
     virtual void visit(const AsianOption &) = 0;
+    virtual void visit(const BarrierOption &) = 0;
+    virtual void visit(const DigitalOption &) = 0;
+    virtual void visit(const LookbackOption &) { throw UnsupportedInstrument("Lookback option is not supported by this engine."); }
+    virtual void visit(const BasketOption &) { throw UnsupportedInstrument("Basket option is not supported by this engine."); }
     virtual void visit(const EquityFuture &) = 0;
     virtual void visit(const ZeroCouponBond &) = 0;
     virtual void visit(const FixedRateBond &) = 0;

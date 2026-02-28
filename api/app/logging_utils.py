@@ -71,6 +71,12 @@ def configure_logging() -> logging.Logger:
     api_logger.setLevel(logging.INFO)
     api_logger.handlers.clear()
     api_logger.addHandler(handler)
+
+    # Also log to stdout so docker-compose shows the output
+    console = logging.StreamHandler()
+    console.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    api_logger.addHandler(console)
+
     api_logger.propagate = False
     return api_logger
 

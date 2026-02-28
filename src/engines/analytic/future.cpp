@@ -49,6 +49,18 @@ namespace quantModeling
         throw UnsupportedInstrument("BSEquityFutureAnalyticEngine does not support bonds.");
     }
 
+    void BSEquityFutureAnalyticEngine::visit(const BarrierOption &)
+    {
+        throw UnsupportedInstrument("BSEquityFutureAnalyticEngine does not support barrier options.");
+    }
+
+    void BSEquityFutureAnalyticEngine::visit(const DigitalOption &)
+    {
+        throw UnsupportedInstrument(
+            "BSEquityFutureAnalyticEngine does not support digital options. "
+            "Use BSDigitalAnalyticEngine instead.");
+    }
+
     void BSEquityFutureAnalyticEngine::validate(const EquityFuture &fut)
     {
         if (!(fut.maturity > 0.0))

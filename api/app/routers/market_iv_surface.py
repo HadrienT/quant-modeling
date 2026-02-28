@@ -90,8 +90,8 @@ def _collect_raw_iv_points(ticker: str, expirations: List[str]) -> List[tuple[fl
 
 def _interpolate_iv_surface(
     raw_points: List[tuple[float, float, float]],
-    num_strikes: int = 20,
-    num_maturities: int = 20,
+    num_strikes: int = 40,
+    num_maturities: int = 30,
 ) -> tuple[List[float], List[float], List[List[Optional[float]]]]:
     points_array = np.array(raw_points)
     strikes_raw = points_array[:, 0]
@@ -117,6 +117,18 @@ def _interpolate_iv_surface(
     )
 
     iv_grid = iv_grid.reshape(strike_mesh.shape)
+
+    # Fill NaN (outside convex hull) with nearest-neighbour so the surface is complete
+    nan_mask = np.isnan(iv_grid)
+    if nan_mask.any():
+        iv_nn = griddata(
+            (strikes_raw, maturities_raw),
+            ivs_raw,
+            points_to_interp,
+            method="nearest",
+        ).reshape(strike_mesh.shape)
+        iv_grid = np.where(nan_mask, iv_nn, iv_grid)
+
     strikes_sorted = list(strike_grid)
     maturities_sorted = list(maturity_grid)
 
@@ -152,7 +164,7 @@ def iv_surface(
 
         logger.info(
             "iv_surface interpolating",
-            extra={"ticker": ticker, "raw_points": len(raw_points), "grid_size": "20x20"},
+            extra={"ticker": ticker, "raw_points": len(raw_points), "grid_size": "40x30"},
         )
         strikes_sorted, maturities_sorted, values = _interpolate_iv_surface(raw_points)
 

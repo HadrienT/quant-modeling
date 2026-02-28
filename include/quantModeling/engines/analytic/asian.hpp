@@ -2,14 +2,16 @@
 #define ENGINE_ANALYTIC_ASIAN_HPP
 
 #include "quantModeling/engines/base.hpp"
-#include "quantModeling/instruments/equity/future.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
+#include "quantModeling/instruments/equity/barrier.hpp"
+#include "quantModeling/instruments/equity/digital.hpp"
+#include "quantModeling/instruments/equity/future.hpp"
+#include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/instruments/rates/fixed_rate_bond.hpp"
 #include "quantModeling/instruments/rates/zero_coupon_bond.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/utils/stats.hpp"
 
-#include "quantModeling/instruments/equity/vanilla.hpp"
 #include <cmath>
 
 namespace quantModeling
@@ -39,6 +41,14 @@ namespace quantModeling
         void visit(const FixedRateBond &) override
         {
             throw UnsupportedInstrument("BSEuroArithmeticAsianAnalyticEngine does not support bonds.");
+        }
+        void visit(const BarrierOption &) override
+        {
+            throw UnsupportedInstrument("BSEuroArithmeticAsianAnalyticEngine does not support barrier options.");
+        }
+        void visit(const DigitalOption &) override
+        {
+            throw UnsupportedInstrument("BSEuroArithmeticAsianAnalyticEngine does not support digital options.");
         }
 
     private:
@@ -70,6 +80,14 @@ namespace quantModeling
         void visit(const FixedRateBond &) override
         {
             throw UnsupportedInstrument("BSEuroGeometricAsianAnalyticEngine does not support bonds.");
+        }
+        void visit(const BarrierOption &) override
+        {
+            throw UnsupportedInstrument("BSEuroGeometricAsianAnalyticEngine does not support barrier options.");
+        }
+        void visit(const DigitalOption &) override
+        {
+            throw UnsupportedInstrument("BSEuroGeometricAsianAnalyticEngine does not support digital options.");
         }
 
     private:

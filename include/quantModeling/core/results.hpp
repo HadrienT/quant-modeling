@@ -23,10 +23,19 @@ namespace quantModeling
     std::optional<Real> rho_std_error;
   };
 
+  struct BondAnalytics
+  {
+    std::optional<Real> macaulay_duration;
+    std::optional<Real> modified_duration;
+    std::optional<Real> convexity;
+    std::optional<Real> dv01;
+  };
+
   struct PricingResult
   {
     Real npv = 0.0;
     Greeks greeks;
+    BondAnalytics bond_analytics;
     std::string diagnostics;
     Real mc_std_error;
   };

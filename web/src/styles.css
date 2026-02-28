@@ -67,6 +67,13 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
 }
 
 .nav-mark {
@@ -291,8 +298,57 @@ body {
   font-size: 0.95rem;
 }
 
+.field .input-readonly {
+  background: var(--surface-1, #f4f4f5);
+  color: var(--ink-2);
+  cursor: default;
+  font-style: italic;
+}
+
+.field select:disabled {
+  background: var(--surface-1, #f4f4f5);
+  color: var(--ink-2);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .span-2 {
   grid-column: 1 / -1;
+}
+
+/* ── Vol source toggle (Real data / Manual) ─── */
+.vol-source-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  overflow: hidden;
+  background: #fff;
+}
+
+.vol-source-btn {
+  flex: 1;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.vol-source-btn:not(:last-child) {
+  border-right: 1px solid var(--stroke);
+}
+
+.vol-source-btn.active {
+  background: rgba(31, 138, 112, 0.14);
+  color: var(--accent-1);
+}
+
+.vol-source-btn:hover:not(.active) {
+  background: rgba(16, 20, 24, 0.04);
 }
 
 .bond-toggle {
@@ -300,6 +356,13 @@ body {
   gap: 10px;
   align-items: center;
   justify-content: flex-start;
+}
+
+.category-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 
 .pill {
@@ -322,6 +385,14 @@ body {
   background: rgba(31, 138, 112, 0.14);
   color: var(--accent-1);
   border-color: rgba(31, 138, 112, 0.4);
+}
+
+.pill-disabled,
+.pill-disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .curve-toggle {
@@ -366,6 +437,13 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ink-2);
+}
+
+.curve-cell-ro {
+  font-size: 0.9rem;
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ink-1);
+  padding: 6px 0;
 }
 
 .curve-actions {
@@ -559,6 +637,12 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.vol-sub-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 720px) {

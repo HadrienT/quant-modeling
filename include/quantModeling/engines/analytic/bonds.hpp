@@ -3,6 +3,8 @@
 
 #include "quantModeling/engines/base.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
+#include "quantModeling/instruments/equity/barrier.hpp"
+#include "quantModeling/instruments/equity/digital.hpp"
 #include "quantModeling/instruments/equity/future.hpp"
 #include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/instruments/rates/fixed_rate_bond.hpp"
@@ -31,6 +33,14 @@ namespace quantModeling
         void visit(const EquityFuture &) override
         {
             throw UnsupportedInstrument("FlatRateBondAnalyticEngine does not support equity futures.");
+        }
+        void visit(const BarrierOption &) override
+        {
+            throw UnsupportedInstrument("FlatRateBondAnalyticEngine does not support barrier options.");
+        }
+        void visit(const DigitalOption &) override
+        {
+            throw UnsupportedInstrument("FlatRateBondAnalyticEngine does not support digital options.");
         }
 
     private:

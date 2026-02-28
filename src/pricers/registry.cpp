@@ -2,7 +2,14 @@
 
 #include "quantModeling/pricers/adapters/bonds.hpp"
 #include "quantModeling/pricers/adapters/equity_asian.hpp"
+#include "quantModeling/pricers/adapters/equity_asian_lv.hpp"
+#include "quantModeling/pricers/adapters/equity_barrier.hpp"
+#include "quantModeling/pricers/adapters/equity_barrier_lv.hpp"
+#include "quantModeling/pricers/adapters/equity_basket.hpp"
+#include "quantModeling/pricers/adapters/equity_digital.hpp"
 #include "quantModeling/pricers/adapters/equity_future.hpp"
+#include "quantModeling/pricers/adapters/equity_lookback.hpp"
+#include "quantModeling/pricers/adapters/equity_lookback_lv.hpp"
 #include "quantModeling/pricers/adapters/equity_vanilla.hpp"
 #include "quantModeling/pricers/adapters/equity_vanilla_american.hpp"
 
@@ -120,6 +127,38 @@ namespace quantModeling
                 });
 
             r.register_pricer(
+                {InstrumentKind::EquityBarrierOption, ModelKind::BlackScholes, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<BarrierBSInput>(request.input);
+                    return price_equity_barrier_bs_mc(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityDigitalOption, ModelKind::BlackScholes, EngineKind::Analytic},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<DigitalBSInput>(request.input);
+                    return price_equity_digital_bs_analytic(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityLookbackOption, ModelKind::BlackScholes, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<LookbackBSInput>(request.input);
+                    return price_equity_lookback_bs_mc(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityBasketOption, ModelKind::BlackScholes, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<BasketBSInput>(request.input);
+                    return price_equity_basket_bs_mc(in);
+                });
+
+            r.register_pricer(
                 {InstrumentKind::EquityFuture, ModelKind::BlackScholes, EngineKind::Analytic},
                 [](const PricingRequest &request)
                 {
@@ -141,6 +180,30 @@ namespace quantModeling
                 {
                     const auto &in = std::get<FixedRateBondInput>(request.input);
                     return price_fixed_rate_bond_flat(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityBarrierOption, ModelKind::DupireLocalVol, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<BarrierLocalVolInput>(request.input);
+                    return price_equity_barrier_lv_mc(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityLookbackOption, ModelKind::DupireLocalVol, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<LookbackLocalVolInput>(request.input);
+                    return price_equity_lookback_lv_mc(in);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityAsianOption, ModelKind::DupireLocalVol, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<AsianLocalVolInput>(request.input);
+                    return price_equity_asian_lv_mc(in);
                 });
 
             return r;

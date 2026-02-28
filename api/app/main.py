@@ -9,6 +9,7 @@ from .logging_utils import configure_logging, get_logger
 from .request_context import is_cache_hit, reset_cache_hit
 from .routers.market import router as market_router
 from .routers.pricing import router as pricing_router
+from .routers.local_vol_pricing import router as local_vol_router
 
 
 configure_logging()
@@ -64,4 +65,5 @@ def health() -> dict:
 
 app.include_router(market_router)
 app.include_router(pricing_router)
+app.include_router(local_vol_router, prefix="/api")
 

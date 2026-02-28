@@ -17,6 +17,10 @@ namespace quantModeling
         EquityVanillaOption,
         EquityAmericanVanillaOption,
         EquityAsianOption,
+        EquityBarrierOption,
+        EquityDigitalOption,
+        EquityLookbackOption,
+        EquityBasketOption,
         EquityFuture,
         ZeroCouponBond,
         FixedRateBond
@@ -25,7 +29,8 @@ namespace quantModeling
     enum class ModelKind
     {
         BlackScholes,
-        FlatRate
+        FlatRate,
+        DupireLocalVol
     };
 
     enum class EngineKind
@@ -37,7 +42,21 @@ namespace quantModeling
         PDEFiniteDifference
     };
 
-    using PricingInput = std::variant<VanillaBSInput, AmericanVanillaBSInput, AsianBSInput, EquityFutureInput, ZeroCouponBondInput, FixedRateBondInput>;
+    using PricingInput = std::variant<
+        VanillaBSInput,
+        AmericanVanillaBSInput,
+        AsianBSInput,
+        BarrierBSInput,
+        DigitalBSInput,
+        LookbackBSInput,
+        BasketBSInput,
+        EquityFutureInput,
+        ZeroCouponBondInput,
+        FixedRateBondInput,
+        LocalVolInput,
+        BarrierLocalVolInput,
+        LookbackLocalVolInput,
+        AsianLocalVolInput>;
 
     struct PricingRequest
     {

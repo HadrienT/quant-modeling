@@ -96,17 +96,12 @@ namespace quantModeling
         const Real dt_up = T_up / static_cast<Real>(num_dates_up);
         const Real dt_dn = T_dn / static_cast<Real>(num_dates_dn);
 
-        const Real sigma_sqrt_dt = sigma * std::sqrt(dt);
-        const Real sigma_sqrt_dt_up = sigma * std::sqrt(dt_up);
-        const Real sigma_sqrt_dt_dn = sigma * std::sqrt(dt_dn);
-
-        const Real drift = (r - q - 0.5 * sigma * sigma) * dt;
-        const Real drift_up = (r - q - 0.5 * sigma * sigma) * dt_up;
-        const Real drift_dn = (r - q - 0.5 * sigma * sigma) * dt_dn;
-
-        const Real exp_drift = std::exp(drift);
-        const Real exp_drift_up = std::exp(drift_up);
-        const Real exp_drift_dn = std::exp(drift_dn);
+        // Per-step volatility lookup — works for both flat vol and local-vol surfaces.
+        // sqrt(dt) values can still be precomputed since the time-step sizes are fixed.
+        const IVolatility &vol = m.vol();
+        const Real sqrt_dt = std::sqrt(dt);
+        const Real sqrt_dt_up = std::sqrt(dt_up);
+        const Real sqrt_dt_dn = std::sqrt(dt_dn);
 
         const Real df_up = std::exp(-r * T_up);
         const Real df_dn = std::exp(-r * T_dn);
@@ -142,7 +137,9 @@ namespace quantModeling
                 const Real z = gaussianGenerator(rng);
                 if (j < num_dates)
                 {
-                    S = S * exp_drift * std::exp(sigma_sqrt_dt * z);
+                    const Real t_cur = static_cast<Real>(j) * dt;
+                    const Real sig = vol.value(S, t_cur);
+                    S *= std::exp((r - q - 0.5 * sig * sig) * dt + sig * sqrt_dt * z);
                     if (is_arithmetic)
                         sum_S += S;
                     else
@@ -150,7 +147,9 @@ namespace quantModeling
                 }
                 if (j < num_dates_up)
                 {
-                    S_up = S_up * exp_drift_up * std::exp(sigma_sqrt_dt_up * z);
+                    const Real t_cur = static_cast<Real>(j) * dt_up;
+                    const Real sig = vol.value(S_up, t_cur);
+                    S_up *= std::exp((r - q - 0.5 * sig * sig) * dt_up + sig * sqrt_dt_up * z);
                     if (is_arithmetic)
                         sum_S_up += S_up;
                     else
@@ -158,7 +157,9 @@ namespace quantModeling
                 }
                 if (j < num_dates_dn)
                 {
-                    S_dn = S_dn * exp_drift_dn * std::exp(sigma_sqrt_dt_dn * z);
+                    const Real t_cur = static_cast<Real>(j) * dt_dn;
+                    const Real sig = vol.value(S_dn, t_cur);
+                    S_dn *= std::exp((r - q - 0.5 * sig * sig) * dt_dn + sig * sqrt_dt_dn * z);
                     if (is_arithmetic)
                         sum_S_dn += S_dn;
                     else
