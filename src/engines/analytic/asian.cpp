@@ -43,7 +43,7 @@ namespace quantModeling
             return;
         }
 
-        const Real df_r = std::exp(-r * T);
+        const Real df_r = m.discount_curve().discount(T);
         // const Real df_q = std::exp(-q * T);
 
         // Forward of the arithmetic average (continuous monitoring): E[A_T]
@@ -255,7 +255,7 @@ namespace quantModeling
         const Real b = r - q; // cost of carry
         const Real b_G = (b - 0.5 * sigma * sigma) / 2.0 + 0.5 * sigma_G * sigma_G;
 
-        const Real df_r = std::exp(-r * T);
+        const Real df_r = m.discount_curve().discount(T);
         const Real df_q = std::exp(-q * T);
         const Real F = S0 * std::exp(b_G * T);
 

@@ -15,6 +15,20 @@ namespace quantModeling
   struct EquityFuture;
   struct ZeroCouponBond;
   struct FixedRateBond;
+  struct BondOption;
+  struct CapFloor;
+  struct AutocallNote;
+  struct MountainOption;
+  struct Caplet;
+  struct VarianceSwap;
+  struct VolatilitySwap;
+  struct DispersionSwap;
+  struct FXForward;
+  struct FXOption;
+  struct CommodityForward;
+  struct CommodityOption;
+  struct WorstOfOption;
+  struct BestOfOption;
 
   enum class ExerciseType
   {
@@ -56,6 +70,20 @@ namespace quantModeling
     virtual void visit(const DigitalOption &) = 0;
     virtual void visit(const LookbackOption &) { throw UnsupportedInstrument("Lookback option is not supported by this engine."); }
     virtual void visit(const BasketOption &) { throw UnsupportedInstrument("Basket option is not supported by this engine."); }
+    virtual void visit(const BondOption &) { throw UnsupportedInstrument("Bond option is not supported by this engine."); }
+    virtual void visit(const CapFloor &) { throw UnsupportedInstrument("Cap/floor is not supported by this engine."); }
+    virtual void visit(const AutocallNote &) { throw UnsupportedInstrument("Autocall note is not supported by this engine."); }
+    virtual void visit(const MountainOption &) { throw UnsupportedInstrument("Mountain option is not supported by this engine."); }
+    virtual void visit(const Caplet &) { throw UnsupportedInstrument("Caplet is not supported by this engine."); }
+    virtual void visit(const VarianceSwap &) { throw UnsupportedInstrument("Variance swap is not supported by this engine."); }
+    virtual void visit(const VolatilitySwap &) { throw UnsupportedInstrument("Volatility swap is not supported by this engine."); }
+    virtual void visit(const DispersionSwap &) { throw UnsupportedInstrument("Dispersion swap is not supported by this engine."); }
+    virtual void visit(const FXForward &) { throw UnsupportedInstrument("FX forward is not supported by this engine."); }
+    virtual void visit(const FXOption &) { throw UnsupportedInstrument("FX option is not supported by this engine."); }
+    virtual void visit(const CommodityForward &) { throw UnsupportedInstrument("Commodity forward is not supported by this engine."); }
+    virtual void visit(const CommodityOption &) { throw UnsupportedInstrument("Commodity option is not supported by this engine."); }
+    virtual void visit(const WorstOfOption &) { throw UnsupportedInstrument("Worst-of option is not supported by this engine."); }
+    virtual void visit(const BestOfOption &) { throw UnsupportedInstrument("Best-of option is not supported by this engine."); }
     virtual void visit(const EquityFuture &) = 0;
     virtual void visit(const ZeroCouponBond &) = 0;
     virtual void visit(const FixedRateBond &) = 0;

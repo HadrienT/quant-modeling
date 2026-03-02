@@ -2,6 +2,7 @@
 #define EQUITY_LOCAL_VOL_MODEL_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/base.hpp"
 #include "quantModeling/models/volatility.hpp"
 #include <string>
@@ -57,6 +58,9 @@ namespace quantModeling
          * flat-vol paths are numerically identical after the upgrade.
          */
         virtual const IVolatility &vol() const = 0;
+
+        /// Discount curve for present-value computations.
+        virtual const DiscountCurve &discount_curve() const = 0;
     };
 
 } // namespace quantModeling

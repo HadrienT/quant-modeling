@@ -2,6 +2,7 @@
 #define EQUITY_DUPIRE_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/equity/local_vol_model.hpp"
 #include "quantModeling/models/volatility.hpp"
 
@@ -38,7 +39,8 @@ namespace quantModeling
                     std::vector<Real> K_grid,
                     std::vector<Real> T_grid,
                     std::vector<Real> sigma_loc)
-            : s0_(s0), r_(r), q_(q), surface_(std::move(K_grid), std::move(T_grid), std::move(sigma_loc))
+            : s0_(s0), r_(r), q_(q), surface_(std::move(K_grid), std::move(T_grid), std::move(sigma_loc)),
+              disc_curve_(r)
         {
         }
 
@@ -52,11 +54,15 @@ namespace quantModeling
         /// Full local-vol surface for per-step MC lookup.
         const IVolatility &vol() const override { return surface_; }
 
+        /// Flat discount curve built from the risk-free rate r.
+        const DiscountCurve &discount_curve() const override { return disc_curve_; }
+
         std::string model_name() const noexcept override { return "DupireModel"; }
 
     private:
         Real s0_, r_, q_;
         GridLocalVol surface_;
+        DiscountCurve disc_curve_;
     };
 
 } // namespace quantModeling

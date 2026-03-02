@@ -1,151 +1,182 @@
-import { useMemo, useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
+import { useCallback, useMemo, useState } from "react";
 import PnlChart, { PnlSeries } from "../components/PnlChart";
-import PortfolioBuilder, { OptionLeg, PortfolioDraft } from "../components/PortfolioBuilder";
+import type { Leg, LegType, StrategyKey } from "./visualize/types";
+import { buildGrid, legPayoff, portfolioPayoff, computeMetrics } from "./visualize/payoff";
+import { STRATEGIES, STRATEGY_KEYS } from "./visualize/strategies";
+import LegCard from "./visualize/LegCard";
+import MetricsPanel from "./visualize/MetricsPanel";
 
-const palette = ["#1f8a70", "#ff8c42", "#2f4858", "#f6c453", "#8c5e58"];
+const palette = [
+	"#1f8a70",
+	"#ff8c42",
+	"#2f4858",
+	"#f6c453",
+	"#8c5e58",
+	"#6b5b95",
+	"#88b04b",
+	"#d65076",
+];
 
-type VisualizeProps = {
-	singleLeg: OptionLeg;
-	setSingleLeg: Dispatch<SetStateAction<OptionLeg>>;
-	portfolio: OptionLeg[];
-	setPortfolio: Dispatch<SetStateAction<OptionLeg[]>>;
-	draft: PortfolioDraft;
-	setDraft: Dispatch<SetStateAction<PortfolioDraft>>;
-	focusAggregate: boolean;
-	setFocusAggregate: Dispatch<SetStateAction<boolean>>;
-	spotMin: number;
-	setSpotMin: Dispatch<SetStateAction<number>>;
-	spotMax: number;
-	setSpotMax: Dispatch<SetStateAction<number>>;
-};
+let _nextId = 1;
+const makeId = () => `leg-${_nextId++}`;
 
-const buildSpotGrid = (min: number, max: number, steps: number) => {
-	const out: number[] = [];
-	const dx = (max - min) / steps;
-	for (let i = 0; i <= steps; i += 1) {
-		out.push(min + dx * i);
-	}
-	return out;
-};
+const defaultLegs: Leg[] = [
+	{
+		id: makeId(),
+		label: "Call",
+		type: "call",
+		side: "long",
+		strike: 100,
+		premium: 5,
+		quantity: 1,
+		cashAmount: 1,
+	},
+];
 
-const payoffAt = (spot: number, leg: OptionLeg) => {
-	const sign = leg.side === "long" ? 1 : -1;
-	const qty = leg.quantity;
-	if (leg.type === "stock") {
-		return sign * qty * (spot - leg.strike);
-	}
-	const intrinsic = leg.type === "call" ? Math.max(spot - leg.strike, 0) : Math.max(leg.strike - spot, 0);
-	return sign * qty * (intrinsic - leg.premium);
-};
+export default function Visualize() {
+	const [legs, setLegs] = useState<Leg[]>(defaultLegs);
+	const [strategy, setStrategy] = useState<StrategyKey>("long-call");
+	const [spotMin, setSpotMin] = useState(60);
+	const [spotMax, setSpotMax] = useState(140);
+	const [focusAggregate, setFocusAggregate] = useState(true);
 
-const aggregatePayoff = (spot: number, legs: OptionLeg[]) =>
-	legs.reduce((sum, leg) => sum + payoffAt(spot, leg), 0);
+	const grid = useMemo(() => buildGrid(spotMin, spotMax, 200), [spotMin, spotMax]);
+	const metrics = useMemo(() => computeMetrics(legs, grid), [legs, grid]);
 
-export default function Visualize({
-	singleLeg,
-	setSingleLeg,
-	portfolio,
-	setPortfolio,
-	draft,
-	setDraft,
-	focusAggregate,
-	setFocusAggregate,
-	spotMin,
-	setSpotMin,
-	spotMax,
-	setSpotMax
-}: VisualizeProps) {
-	const isStock = singleLeg.type === "stock";
-	const [optionFamily, setOptionFamily] = useState<"vanilla" | "asian" | "exotic">("vanilla");
-	const [pricingModel, setPricingModel] = useState<"bs" | "local-vol" | "heston">("bs");
-	const grid = useMemo(() => buildSpotGrid(spotMin, spotMax, 80), [spotMin, spotMax]);
+	/* ---- strategy picker ---- */
+	const applyStrategy = useCallback((key: StrategyKey) => {
+		setStrategy(key);
+		if (key === "custom") return;
+		const def = STRATEGIES[key];
+		const atm = 100;
+		setLegs(def.buildLegs(atm).map((l) => ({ ...l, id: makeId() })));
+	}, []);
 
-	const singleSeries: PnlSeries = useMemo(
-		() => ({
-			id: "single",
-			label: singleLeg.name,
-			color: palette[0],
-			points: grid.map((spot) => ({ x: spot, y: payoffAt(spot, singleLeg) }))
-		}),
-		[grid, singleLeg]
-	);
-
-	const portfolioSeries: PnlSeries = useMemo(
-		() => ({
-			id: "portfolio",
-			label: "Portfolio",
-			color: palette[1],
-			points: grid.map((spot) => ({ x: spot, y: aggregatePayoff(spot, portfolio) }))
-		}),
-		[grid, portfolio]
-	);
-
-	const legSeries = useMemo(
-		() =>
-			portfolio.map((leg, idx) => ({
-				id: leg.id,
-				label: leg.name,
-				color: palette[(idx + 2) % palette.length],
-				points: grid.map((spot) => ({ x: spot, y: payoffAt(spot, leg) }))
-			})),
-		[grid, portfolio]
-	);
-
-	const portfolioChartSeries = useMemo<PnlSeries[]>(() => {
-		if (!focusAggregate) {
-			return [portfolioSeries, ...legSeries];
-		}
-		return [
-			{ ...portfolioSeries, opacity: 1 },
-			...legSeries.map((s) => ({ ...s, opacity: 0.15 }))
-		];
-	}, [focusAggregate, portfolioSeries, legSeries]);
-
-	const addLeg = () => {
-		setPortfolio((prev) => [
+	/* ---- leg CRUD ---- */
+	const addLeg = useCallback(() => {
+		setStrategy("custom");
+		setLegs((prev) => [
 			...prev,
 			{
-				id: `leg-${prev.length + 1}`,
-				name: draft.name.trim() || `Leg ${prev.length + 1}`,
-				type: draft.type,
-				side: draft.side,
-				strike: draft.strike,
-				premium: draft.premium,
-				quantity: draft.quantity
-			}
+				id: makeId(),
+				label: "New Leg",
+				type: "call" as LegType,
+				side: "long",
+				strike: 100,
+				premium: 5,
+				quantity: 1,
+				cashAmount: 1,
+			},
 		]);
-	};
+	}, []);
 
-	const clearPortfolio = () => {
-		setPortfolio([]);
-	};
+	const updateLeg = useCallback((updated: Leg) => {
+		setStrategy("custom");
+		setLegs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+	}, []);
 
-	const removeLeg = (id: string) => {
-		setPortfolio((prev) => prev.filter((leg) => leg.id !== id));
-	};
+	const removeLeg = useCallback((id: string) => {
+		setStrategy("custom");
+		setLegs((prev) => prev.filter((l) => l.id !== id));
+	}, []);
+
+	/* ---- chart series ---- */
+	const aggregateSeries: PnlSeries = useMemo(
+		() => ({
+			id: "aggregate",
+			label: "Total P&L",
+			color: palette[0],
+			points: grid.map((s) => ({ x: s, y: portfolioPayoff(s, legs) })),
+		}),
+		[grid, legs],
+	);
+
+	const legSeries: PnlSeries[] = useMemo(
+		() =>
+			legs.map((leg, idx) => ({
+				id: leg.id,
+				label: leg.label,
+				color: palette[(idx + 1) % palette.length],
+				points: grid.map((s) => ({ x: s, y: legPayoff(s, leg) })),
+				opacity: focusAggregate ? 0.18 : 1,
+			})),
+		[grid, legs, focusAggregate],
+	);
+
+	const chartSeries = useMemo<PnlSeries[]>(() => {
+		if (legs.length <= 1) return [aggregateSeries];
+		return [aggregateSeries, ...legSeries];
+	}, [aggregateSeries, legSeries, legs.length]);
 
 	return (
 		<>
 			<section className="hero">
 				<div>
-					<h1>Option payoffs, visualized as a living portfolio.</h1>
+					<h1>Strategy builder.</h1>
 					<p>
-						Explore single option shapes, then layer legs into portfolios. Every tweak updates the curves instantly so you
-						can see convexity, hedges, and cost at a glance.
+						Pick a template or build your own multi-leg portfolio.
+						Every change updates the payoff diagram instantly.
 					</p>
 				</div>
 			</section>
 
 			<section className="card">
-				<h2>Spot range</h2>
-				<div className="grid-2">
+				{/* strategy pills */}
+				<div className="category-bar">
+					{STRATEGY_KEYS.map((key) => (
+						<button
+							key={key}
+							className={`pill${strategy === key ? " active" : ""}`}
+							onClick={() => applyStrategy(key)}
+							title={STRATEGIES[key].desc}
+						>
+							{STRATEGIES[key].label}
+						</button>
+					))}
+				</div>
+
+				{/* chart */}
+				<div className="chart-wrap" style={{ marginTop: 8 }}>
+					<PnlChart
+						title="Payoff at expiry"
+						series={chartSeries}
+						showLegend={legs.length > 1}
+						showFill
+						breakevens={metrics.breakevens}
+						chartHeight={200}
+					/>
+				</div>
+
+				{/* legs */}
+				<h3 style={{ marginTop: 24, marginBottom: 12 }}>Legs</h3>
+				<div className="legs-grid">
+					{legs.map((leg, idx) => (
+						<LegCard
+							key={leg.id}
+							leg={leg}
+							color={
+								legs.length > 1
+									? palette[(idx + 1) % palette.length]
+									: palette[0]
+							}
+							onUpdate={updateLeg}
+							onRemove={() => removeLeg(leg.id)}
+						/>
+					))}
+					<button className="leg-card leg-card-add" onClick={addLeg}>
+						<span className="leg-card-add-icon">+</span>
+						<span>Add leg</span>
+					</button>
+				</div>
+
+				{/* settings row */}
+				<div className="viz-settings">
 					<label className="field">
 						Min spot
 						<input
 							type="number"
 							value={spotMin}
-							onChange={(event) => setSpotMin(Number(event.target.value))}
+							onChange={(e) => setSpotMin(Number(e.target.value))}
 						/>
 					</label>
 					<label className="field">
@@ -153,143 +184,37 @@ export default function Visualize({
 						<input
 							type="number"
 							value={spotMax}
-							onChange={(event) => setSpotMax(Number(event.target.value))}
+							onChange={(e) => setSpotMax(Number(e.target.value))}
 						/>
 					</label>
-				</div>
-			</section>
-
-			<section className="section-grid">
-				<div className="card">
-					<h2>Single option payoff</h2>
-					<div className="grid-2">
-						<label className="field">
-							Name
-							<input
-								value={singleLeg.name}
-								onChange={(event) => setSingleLeg((prev) => ({ ...prev, name: event.target.value }))}
-							/>
-						</label>
-						<label className="field">
-							Instrument
-							<select
-								value={isStock ? "stock" : "option"}
-								onChange={(event) => {
-									const next = event.target.value;
-									setSingleLeg((prev) => ({
-										...prev,
-										type: next === "stock" ? "stock" : prev.type === "stock" ? "call" : prev.type
-									}));
-								}}
-							>
-								<option value="stock">Stock</option>
-								<option value="option">Option</option>
-							</select>
-						</label>
-						{!isStock && (
-							<label className="field">
-								Option style
-								<select
-									value={optionFamily}
-									onChange={(event) => setOptionFamily(event.target.value as typeof optionFamily)}
-								>
-									<option value="vanilla">Vanilla</option>
-									<option value="asian">Asian</option>
-									<option value="exotic">Exotics</option>
-								</select>
-							</label>
-						)}
-						<label className="field">
-							Side
-							<select
-								value={singleLeg.side}
-								onChange={(event) =>
-									setSingleLeg((prev) => ({ ...prev, side: event.target.value as OptionLeg["side"] }))
-								}
-							>
-								<option value="long">Long</option>
-								<option value="short">Short</option>
-							</select>
-						</label>
-						{!isStock && (
-							<label className="field">
-								Payoff
-								<select
-									value={singleLeg.type}
-									onChange={(event) =>
-										setSingleLeg((prev) => ({ ...prev, type: event.target.value as OptionLeg["type"] }))
-									}
-								>
-									<option value="call">Call</option>
-									<option value="put">Put</option>
-								</select>
-							</label>
-						)}
-						<label className="field">
-							{isStock ? "Entry price" : "Strike"}
-							<input
-								type="number"
-								value={singleLeg.strike}
-								onChange={(event) => setSingleLeg((prev) => ({ ...prev, strike: Number(event.target.value) }))}
-							/>
-						</label>
-						{!isStock && (
-							<label className="field">
-								Model
-								<select
-									value={pricingModel}
-									onChange={(event) => setPricingModel(event.target.value as typeof pricingModel)}
-								>
-									<option value="bs">Black-Scholes</option>
-									<option value="local-vol">Local vol</option>
-									<option value="heston">Heston</option>
-								</select>
-							</label>
-						)}
-						<label className="field">
-							Quantity
-							<input
-								type="number"
-								value={singleLeg.quantity}
-								onChange={(event) => setSingleLeg((prev) => ({ ...prev, quantity: Number(event.target.value) }))}
-							/>
-						</label>
-					</div>
-					{!isStock && optionFamily === "exotic" && (
-						<div className="result-note" style={{ marginTop: 12 }}>
-							<p className="result-label">Exotics panel</p>
-							<p className="result-value">Coming next: add barrier, digital, and other bespoke structures.</p>
-						</div>
-					)}
-					<div className="chart-wrap">
-						<PnlChart title="Single option" series={[singleSeries]} />
-					</div>
-				</div>
-
-				<div className="card">
-					<h2>Portfolio payoff</h2>
-					<PortfolioBuilder
-						draft={draft}
-						onDraftChange={setDraft}
-						onAdd={addLeg}
-						onClear={clearPortfolio}
-						legs={portfolio}
-						onRemove={removeLeg}
-					/>
-					<div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-						<label className="field" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					{legs.length > 1 && (
+						<label
+							className="field"
+							style={{
+								display: "flex",
+								flexDirection: "row",
+								alignItems: "center",
+								gap: 8,
+							}}
+						>
 							<input
 								type="checkbox"
 								checked={focusAggregate}
-								onChange={(event) => setFocusAggregate(event.target.checked)}
+								onChange={(e) => setFocusAggregate(e.target.checked)}
 							/>
-							Focus aggregate PnL
+							Focus aggregate
 						</label>
-					</div>
-					<div className="chart-wrap">
-						<PnlChart title="Portfolio" series={portfolioChartSeries} showLegend />
-					</div>
+					)}
 				</div>
+
+				{/* metrics */}
+				<MetricsPanel
+					maxProfit={metrics.maxProfit}
+					maxLoss={metrics.maxLoss}
+					breakevens={metrics.breakevens}
+					netPremium={metrics.netPremium}
+					hasLegs={legs.length > 0}
+				/>
 			</section>
 		</>
 	);

@@ -79,7 +79,7 @@ namespace quantModeling
             gaussianGenerator.disable_antithetic();
         }
 
-        const Real df = std::exp(-r * T);
+        const Real df = m.discount_curve().discount(T);
 
         // FD bumps for gamma/theta (common random numbers)
         const GreeksBumps bumps;
@@ -103,8 +103,8 @@ namespace quantModeling
         const Real sqrt_dt_up = std::sqrt(dt_up);
         const Real sqrt_dt_dn = std::sqrt(dt_dn);
 
-        const Real df_up = std::exp(-r * T_up);
-        const Real df_dn = std::exp(-r * T_dn);
+        const Real df_up = m.discount_curve().discount(T_up);
+        const Real df_dn = m.discount_curve().discount(T_dn);
 
         // Means for FD gamma/theta
         Real meanPayoff_Sup = 0.0;
@@ -252,7 +252,7 @@ namespace quantModeling
             varMean = sampleVariance / static_cast<Real>(n);
         }
 
-        const Real disc = std::exp(-r * T);
+        const Real disc = m.discount_curve().discount(T);
         const Real price = disc * meanPayoff;
         const Real priceStdError = (n > 1) ? disc * std::sqrt(varMean) : 0.0;
 

@@ -33,11 +33,11 @@ namespace quantModeling
         const Real dt = T / steps_;
 
         // CRR binomial tree parameters
-        const Real u = std::exp(sigma * std::sqrt(dt)); // up factor
-        const Real d = 1.0 / u;                         // down factor
-        const Real a = std::exp((r - q) * dt);          // drift factor
-        const Real p = (a - d) / (u - d);               // risk-neutral probability
-        const Real df = std::exp(-r * dt);              // discount factor
+        const Real u = std::exp(sigma * std::sqrt(dt));  // up factor
+        const Real d = 1.0 / u;                          // down factor
+        const Real a = std::exp((r - q) * dt);           // drift factor
+        const Real p = (a - d) / (u - d);                // risk-neutral probability
+        const Real df = m.discount_curve().discount(dt); // discount factor
 
         if (!(p >= 0.0 && p <= 1.0))
             throw InvalidInput("Risk-neutral probability out of bounds [0,1]. Check model parameters.");
@@ -181,7 +181,7 @@ namespace quantModeling
             const Real d_theta = 1.0 / u_theta;
             const Real a_theta = std::exp((r - q) * dt_theta);
             const Real p_theta = (a_theta - d_theta) / (u_theta - d_theta);
-            const Real df_theta = std::exp(-r * dt_theta);
+            const Real df_theta = m.discount_curve().discount(dt_theta);
 
             std::vector<Real> values_theta(steps_);
             for (int j = 0; j < steps_; ++j)

@@ -1,4 +1,4 @@
-import type { BarrierKind, DigitalPayoffType, ExoticProductType, LookbackExtremum, LookbackStyle } from "./types";
+import type { BarrierKind, DigitalPayoffType, ExoticProductType, LookbackExtremum, LookbackStyle, RainbowKind } from "./types";
 import type { PricingHook } from "./usePricing";
 import CommonFields from "./CommonFields";
 
@@ -40,10 +40,12 @@ type Props = Pick<
 	| "basketVols" | "setBasketVols"
 	| "basketDividends" | "setBasketDividends"
 	| "basketCorrelation" | "setBasketCorrelation"
-	/* cliquet */
-	| "cliquetFloorRate" | "setCliquetFloorRate"
-	| "cliquetCapRate" | "setCliquetCapRate"
-	| "cliquetResetPeriods" | "setCliquetResetPeriods"
+	/* rainbow */
+	| "rainbowKind" | "setRainbowKind"
+	| "rainbowSpots" | "setRainbowSpots"
+	| "rainbowVols" | "setRainbowVols"
+	| "rainbowDividends" | "setRainbowDividends"
+	| "rainbowCorrelation" | "setRainbowCorrelation"
 >;
 
 export default function ExoticFields(props: Props) {
@@ -61,9 +63,10 @@ export default function ExoticFields(props: Props) {
 		/* basket */
 		basketWeights, setBasketWeights, basketSpots, setBasketSpots, basketVols, setBasketVols,
 		basketDividends, setBasketDividends, basketCorrelation, setBasketCorrelation,
-		/* cliquet */
-		cliquetFloorRate, setCliquetFloorRate, cliquetCapRate, setCliquetCapRate,
-		cliquetResetPeriods, setCliquetResetPeriods,
+		/* rainbow */
+		rainbowKind, setRainbowKind,
+		rainbowSpots, setRainbowSpots, rainbowVols, setRainbowVols,
+		rainbowDividends, setRainbowDividends, rainbowCorrelation, setRainbowCorrelation,
 		/* MC */
 		nPaths, setNPaths, seed, setSeed, mcEpsilon, setMcEpsilon,
 		/* common passthrough */
@@ -205,20 +208,38 @@ export default function ExoticFields(props: Props) {
 				</>
 			)}
 
-			{/* ── Cliquet ────────────────────────────────── */}
-			{exoticProduct === "cliquet" && (
+			{/* ── Rainbow ────────────────────────────────── */}
+			{exoticProduct === "rainbow" && (
 				<>
 					<label className="field">
-						Floor rate
-						<input type="number" step="0.01" value={cliquetFloorRate} onChange={(e) => setCliquetFloorRate(Number(e.target.value))} />
+						Rainbow type
+						<select value={rainbowKind} onChange={(e) => setRainbowKind(e.target.value as RainbowKind)}>
+							<option value="worst-of">Worst-of</option>
+							<option value="best-of">Best-of</option>
+						</select>
+					</label>
+					<label className="field span-2">
+						Spots (comma-separated)
+						<input type="text" value={rainbowSpots} onChange={(e) => setRainbowSpots(e.target.value)} />
+					</label>
+					<label className="field span-2">
+						Volatilities (comma-separated)
+						<input type="text" value={rainbowVols} onChange={(e) => setRainbowVols(e.target.value)} />
+					</label>
+					<label className="field span-2">
+						Dividend yields (comma-separated)
+						<input type="text" value={rainbowDividends} onChange={(e) => setRainbowDividends(e.target.value)} />
 					</label>
 					<label className="field">
-						Cap rate
-						<input type="number" step="0.01" value={cliquetCapRate} onChange={(e) => setCliquetCapRate(Number(e.target.value))} />
-					</label>
-					<label className="field">
-						Reset periods
-						<input type="number" step="1" value={cliquetResetPeriods} onChange={(e) => setCliquetResetPeriods(Number(e.target.value))} />
+						Pairwise correlation (ρ)
+						<input
+							type="number"
+							min={-0.999}
+							max={0.999}
+							step={0.05}
+							value={rainbowCorrelation}
+							onChange={(e) => setRainbowCorrelation(Number(e.target.value))}
+						/>
 					</label>
 				</>
 			)}

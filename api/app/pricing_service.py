@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import quantmodeling as qm
 
@@ -7,19 +7,30 @@ from .schemas import (
     AmericanVanillaRequest,
     AsianAverageType,
     AsianRequest,
+    AutocallRequest,
     BarrierKind,
     BarrierRequest,
     BasketRequest,
+    CommodityForwardRequest,
+    CommodityOptionRequest,
     DigitalPayoffKind,
     DigitalRequest,
+    DispersionSwapRequest,
     EngineType,
     FixedRateBondRequest,
     FutureRequest,
+    FXForwardRequest,
+    FXOptionRequest,
     LookbackExtremum,
     LookbackRequest,
     LookbackStyle,
+    MountainRequest,
     PricingResponse,
+    RainbowKind,
+    RainbowRequest,
     VanillaRequest,
+    VarianceSwapRequest,
+    VolatilitySwapRequest,
     ZeroCouponBondRequest,
 )
 
@@ -280,6 +291,232 @@ def price_fixed_rate_bond(req: FixedRateBondRequest) -> PricingResponse:
     input_data.discount_factors = req.discount_factors
 
     result = qm.price_fixed_rate_bond_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Autocall
+# ---------------------------------------------------------------------------
+
+def price_autocall(req: AutocallRequest) -> PricingResponse:
+    input_data = qm.AutocallBSInput()
+    input_data.spot = req.spot
+    input_data.rate = req.rate
+    input_data.dividend = req.dividend
+    input_data.vol = req.vol
+    input_data.observation_dates = req.observation_dates
+    input_data.autocall_barrier = req.autocall_barrier
+    input_data.coupon_barrier = req.coupon_barrier
+    input_data.put_barrier = req.put_barrier
+    input_data.coupon_rate = req.coupon_rate
+    input_data.notional = req.notional
+    input_data.memory_coupon = req.memory_coupon
+    input_data.ki_continuous = req.ki_continuous
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+    result = qm.price_autocall_bs_mc(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Mountain (Himalaya)
+# ---------------------------------------------------------------------------
+
+def _build_corr_matrix(n: int, corrs: List[List[float]]) -> List[List[float]]:
+    """Return provided correlation matrix or identity if empty."""
+    if corrs and len(corrs) == n:
+        return corrs
+    return [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
+
+
+def price_mountain(req: MountainRequest) -> PricingResponse:
+    n = len(req.spots)
+    input_data = qm.MountainBSInput()
+    input_data.spots = req.spots
+    input_data.vols = req.vols
+    input_data.dividends = list(req.dividends) if len(req.dividends) == n else [0.0] * n
+    input_data.correlations = _build_corr_matrix(n, req.correlations)
+    input_data.observation_dates = req.observation_dates
+    input_data.strike = req.strike
+    input_data.is_call = req.is_call
+    input_data.rate = req.rate
+    input_data.notional = req.notional
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+    result = qm.price_mountain_bs_mc(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Variance Swap
+# ---------------------------------------------------------------------------
+
+def price_variance_swap(req: VarianceSwapRequest) -> PricingResponse:
+    input_data = qm.VarianceSwapBSInput()
+    input_data.spot = req.spot
+    input_data.rate = req.rate
+    input_data.dividend = req.dividend
+    input_data.vol = req.vol
+    input_data.maturity = req.maturity
+    input_data.strike_var = req.strike_var
+    input_data.notional = req.notional
+    input_data.observation_dates = req.observation_dates
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+    if req.engine == EngineType.mc:
+        result = qm.price_variance_swap_bs_mc(input_data)
+    else:
+        result = qm.price_variance_swap_bs_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Volatility Swap
+# ---------------------------------------------------------------------------
+
+def price_volatility_swap(req: VolatilitySwapRequest) -> PricingResponse:
+    input_data = qm.VolatilitySwapBSInput()
+    input_data.spot = req.spot
+    input_data.rate = req.rate
+    input_data.dividend = req.dividend
+    input_data.vol = req.vol
+    input_data.maturity = req.maturity
+    input_data.strike_vol = req.strike_vol
+    input_data.notional = req.notional
+    input_data.observation_dates = req.observation_dates
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+    result = qm.price_volatility_swap_bs_mc(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Dispersion Swap
+# ---------------------------------------------------------------------------
+
+def price_dispersion_swap(req: DispersionSwapRequest) -> PricingResponse:
+    n = len(req.spots)
+    dividends = list(req.dividends) if len(req.dividends) == n else [0.0] * n
+    weights = list(req.weights) if len(req.weights) == n else [1.0 / n] * n
+    rho = req.pairwise_correlation
+    correlations = [[1.0 if i == j else rho for j in range(n)] for i in range(n)]
+
+    input_data = qm.DispersionBSInput()
+    input_data.spots = req.spots
+    input_data.vols = req.vols
+    input_data.dividends = dividends
+    input_data.weights = weights
+    input_data.correlations = correlations
+    input_data.maturity = req.maturity
+    input_data.strike_spread = req.strike_spread
+    input_data.rate = req.rate
+    input_data.notional = req.notional
+    input_data.observation_dates = req.observation_dates
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+    result = qm.price_dispersion_bs_mc(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# FX Forward
+# ---------------------------------------------------------------------------
+
+def price_fx_forward(req: FXForwardRequest) -> PricingResponse:
+    input_data = qm.FXForwardInput()
+    input_data.spot = req.spot
+    input_data.rate_domestic = req.rate_domestic
+    input_data.rate_foreign = req.rate_foreign
+    input_data.vol = req.vol
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.notional = req.notional
+    result = qm.price_fx_forward_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# FX Option
+# ---------------------------------------------------------------------------
+
+def price_fx_option(req: FXOptionRequest) -> PricingResponse:
+    input_data = qm.FXOptionInput()
+    input_data.spot = req.spot
+    input_data.rate_domestic = req.rate_domestic
+    input_data.rate_foreign = req.rate_foreign
+    input_data.vol = req.vol
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.is_call = req.is_call
+    input_data.notional = req.notional
+    result = qm.price_fx_option_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Commodity Forward
+# ---------------------------------------------------------------------------
+
+def price_commodity_forward(req: CommodityForwardRequest) -> PricingResponse:
+    input_data = qm.CommodityForwardInput()
+    input_data.spot = req.spot
+    input_data.rate = req.rate
+    input_data.storage_cost = req.storage_cost
+    input_data.convenience_yield = req.convenience_yield
+    input_data.vol = req.vol
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.notional = req.notional
+    result = qm.price_commodity_forward_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Commodity Option
+# ---------------------------------------------------------------------------
+
+def price_commodity_option(req: CommodityOptionRequest) -> PricingResponse:
+    input_data = qm.CommodityOptionInput()
+    input_data.spot = req.spot
+    input_data.rate = req.rate
+    input_data.storage_cost = req.storage_cost
+    input_data.convenience_yield = req.convenience_yield
+    input_data.vol = req.vol
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.is_call = req.is_call
+    input_data.notional = req.notional
+    result = qm.price_commodity_option_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
+
+# ---------------------------------------------------------------------------
+# Rainbow (worst-of / best-of)
+# ---------------------------------------------------------------------------
+
+def price_rainbow(req: RainbowRequest) -> PricingResponse:
+    n = len(req.spots)
+    dividends = list(req.dividends) if len(req.dividends) == n else [0.0] * n
+    rho = req.pairwise_correlation
+    correlations = [[1.0 if i == j else rho for j in range(n)] for i in range(n)]
+
+    input_data = qm.RainbowBSInput()
+    input_data.spots = req.spots
+    input_data.vols = req.vols
+    input_data.dividends = dividends
+    input_data.correlations = correlations
+    input_data.maturity = req.maturity
+    input_data.strike = req.strike
+    input_data.is_call = req.is_call
+    input_data.rate = req.rate
+    input_data.notional = req.notional
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
+
+    if req.rainbow_kind == RainbowKind.best_of:
+        result = qm.price_best_of_bs_mc(input_data)
+    else:
+        result = qm.price_worst_of_bs_mc(input_data)
     return _pricing_response_from_dict(result)
 
 

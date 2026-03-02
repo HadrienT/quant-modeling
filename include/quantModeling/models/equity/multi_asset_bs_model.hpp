@@ -2,6 +2,7 @@
 #define EQUITY_MULTI_ASSET_BS_MODEL_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/base.hpp"
 
 #include <Eigen/Cholesky>
@@ -48,7 +49,8 @@ namespace quantModeling
             : rate_r(r),
               spots(std::move(s)),
               vols(std::move(v)),
-              dividends(std::move(q))
+              dividends(std::move(q)),
+              disc_curve_(r)
         {
             const Eigen::LLT<Eigen::MatrixXd> llt(corr);
             if (llt.info() != Eigen::Success)
@@ -59,6 +61,12 @@ namespace quantModeling
         std::string model_name() const noexcept override { return "MultiAssetBSModel"; }
 
         int n_assets() const { return static_cast<int>(spots.size()); }
+
+        /// Flat discount curve built from the risk-free rate.
+        const DiscountCurve &discount_curve() const { return disc_curve_; }
+
+    private:
+        DiscountCurve disc_curve_;
     };
 
 } // namespace quantModeling

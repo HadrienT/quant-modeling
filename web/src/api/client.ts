@@ -1,5 +1,29 @@
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 const API_KEY = import.meta.env.VITE_API_KEY;
+const TOKEN_KEY = "qm_auth_token";
+
+function getToken(): string | null {
+	return localStorage.getItem(TOKEN_KEY);
+}
+
+function headers(json = true): Record<string, string> {
+	const h: Record<string, string> = {};
+	if (json) h["Content-Type"] = "application/json";
+	if (API_KEY) h["X-API-KEY"] = API_KEY;
+	const token = getToken();
+	if (token) h["Authorization"] = `Bearer ${token}`;
+	return h;
+}
+
+async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
+	const res = await fetch(url, init);
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(text || `HTTP ${res.status}`);
+	}
+	if (res.status === 204) return undefined as unknown as T;
+	return res.json();
+}
 
 export type VanillaQuoteRequest = {
 	spot: number;
@@ -165,4 +189,214 @@ export async function getLocalVolSurface(ticker: string): Promise<SurfaceGridRes
 	);
 	if (!response.ok) throw new Error("Failed to fetch local vol surface");
 	return response.json();
+}
+
+// ── Portfolio types ──────────────────────────────────────────────────────────
+
+export type PositionGreeks = {
+	delta?: number | null;
+	gamma?: number | null;
+	vega?: number | null;
+	theta?: number | null;
+	rho?: number | null;
+};
+
+export type PositionResult = {
+	npv: number;
+	unit_price: number;
+	greeks: PositionGreeks;
+	priced_at?: string | null;
+	engine: string;
+	diagnostics: string;
+	mc_std_error: number;
+};
+
+export type Position = {
+	id: string;
+	label: string;
+	product_type: string;
+	category: string;
+	direction: "long" | "short";
+	quantity: number;
+	entry_price: number;
+	parameters: Record<string, unknown>;
+	result?: PositionResult | null;
+};
+
+export type Portfolio = {
+	id: string;
+	name: string;
+	owner?: string;
+	created_at: string;
+	updated_at: string;
+	positions: Position[];
+};
+
+export type PortfolioSummary = {
+	id: string;
+	name: string;
+	created_at: string;
+	updated_at: string;
+	n_positions: number;
+	total_value: number;
+};
+
+export type PortfolioRiskSummary = {
+	total_npv: number;
+	total_pnl: number;
+	total_delta: number;
+	total_gamma: number;
+	total_vega: number;
+	total_theta: number;
+	total_rho: number;
+	positions_priced: number;
+	positions_total: number;
+};
+
+export type BatchPriceResponse = {
+	portfolio: Portfolio;
+	risk_summary: PortfolioRiskSummary;
+};
+
+export type StressBump = {
+	name: string;
+	spot_shift: number;
+	vol_shift: number;
+	rate_shift: number;
+};
+
+export type StressResult = {
+	name: string;
+	portfolio_pnl: number;
+	position_pnls: Record<string, number>;
+};
+
+export type VaRResult = {
+	confidence: number;
+	horizon_days: number;
+	var: number;
+	expected_shortfall: number;
+	method: string;
+};
+
+// ── Portfolio API ────────────────────────────────────────────────────────────
+
+export function listPortfolios(): Promise<PortfolioSummary[]> {
+	return apiFetch(`${API_BASE}/api/portfolios`, { headers: headers() });
+}
+
+export function createPortfolio(name: string): Promise<Portfolio> {
+	return apiFetch(`${API_BASE}/api/portfolios?name=${encodeURIComponent(name)}`, {
+		method: "POST",
+		headers: headers(),
+	});
+}
+
+export function getPortfolio(id: string): Promise<Portfolio> {
+	return apiFetch(`${API_BASE}/api/portfolios/${id}`, { headers: headers() });
+}
+
+export function updatePortfolio(pf: Portfolio): Promise<Portfolio> {
+	return apiFetch(`${API_BASE}/api/portfolios/${pf.id}`, {
+		method: "PUT",
+		headers: headers(),
+		body: JSON.stringify(pf),
+	});
+}
+
+export function deletePortfolio(id: string): Promise<void> {
+	return apiFetch(`${API_BASE}/api/portfolios/${id}`, {
+		method: "DELETE",
+		headers: headers(),
+	});
+}
+
+export function addPosition(portfolioId: string, pos: Position): Promise<Portfolio> {
+	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/positions`, {
+		method: "POST",
+		headers: headers(),
+		body: JSON.stringify(pos),
+	});
+}
+
+export function updatePosition(portfolioId: string, pos: Position): Promise<Portfolio> {
+	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/positions/${pos.id}`, {
+		method: "PUT",
+		headers: headers(),
+		body: JSON.stringify(pos),
+	});
+}
+
+export function removePosition(portfolioId: string, positionId: string): Promise<Portfolio> {
+	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/positions/${positionId}`, {
+		method: "DELETE",
+		headers: headers(),
+	});
+}
+
+export function pricePortfolio(portfolioId: string): Promise<BatchPriceResponse> {
+	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/price`, {
+		method: "POST",
+		headers: headers(),
+	});
+}
+
+export function stressTestPortfolio(portfolioId: string, bumps: StressBump[]): Promise<StressResult[]> {
+	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/stress`, {
+		method: "POST",
+		headers: headers(),
+		body: JSON.stringify(bumps),
+	});
+}
+
+export function computeVaR(
+	portfolioId: string,
+	confidence = 0.95,
+	horizonDays = 1
+): Promise<VaRResult> {
+	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/var`, {
+		method: "POST",
+		headers: headers(),
+		body: JSON.stringify({
+			portfolio_id: portfolioId,
+			confidence,
+			horizon_days: horizonDays,
+		}),
+	});
+}
+
+// ── Auth API ─────────────────────────────────────────────────────────────────
+
+export type AuthResponse = {
+	token: string;
+	username: string;
+};
+
+export type UserInfo = {
+	username: string;
+};
+
+export function loginUser(username: string, password: string): Promise<AuthResponse> {
+	return apiFetch(`${API_BASE}/api/auth/login`, {
+		method: "POST",
+		headers: headers(),
+		body: JSON.stringify({ username, password }),
+	});
+}
+
+export function registerUser(username: string, password: string): Promise<AuthResponse> {
+	return apiFetch(`${API_BASE}/api/auth/register`, {
+		method: "POST",
+		headers: headers(),
+		body: JSON.stringify({ username, password }),
+	});
+}
+
+export function getMe(token: string): Promise<UserInfo> {
+	return apiFetch(`${API_BASE}/api/auth/me`, {
+		headers: {
+			...headers(),
+			Authorization: `Bearer ${token}`,
+		},
+	});
 }

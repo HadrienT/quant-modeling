@@ -147,6 +147,148 @@ namespace quantModeling
         return default_registry().price(request);
     }
 
+    // ── Autocall ────────────────────────────────────────────────────────
+
+    static PricingResult price_autocall_impl(const AutocallBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::Autocall,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Mountain (Himalaya) ─────────────────────────────────────────────
+
+    static PricingResult price_mountain_impl(const MountainBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::Mountain,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Variance Swap ───────────────────────────────────────────────────
+
+    static PricingResult price_variance_swap_analytic_impl(const VarianceSwapBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::VarianceSwap,
+            ModelKind::BlackScholes,
+            EngineKind::Analytic,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    static PricingResult price_variance_swap_mc_impl(const VarianceSwapBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::VarianceSwap,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Volatility Swap ─────────────────────────────────────────────────
+
+    static PricingResult price_volatility_swap_mc_impl(const VolatilitySwapBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::VolatilitySwap,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Dispersion Swap ─────────────────────────────────────────────────
+
+    static PricingResult price_dispersion_mc_impl(const DispersionBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::DispersionSwap,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── FX Forward ──────────────────────────────────────────────────────
+
+    static PricingResult price_fx_forward_impl(const FXForwardInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::FXForward,
+            ModelKind::GarmanKohlhagen,
+            EngineKind::Analytic,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── FX Option ───────────────────────────────────────────────────────
+
+    static PricingResult price_fx_option_impl(const FXOptionInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::FXOption,
+            ModelKind::GarmanKohlhagen,
+            EngineKind::Analytic,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Commodity Forward ───────────────────────────────────────────────
+
+    static PricingResult price_commodity_forward_impl(const CommodityForwardInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::CommodityForward,
+            ModelKind::CommodityBlack,
+            EngineKind::Analytic,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Commodity Option ────────────────────────────────────────────────
+
+    static PricingResult price_commodity_option_impl(const CommodityOptionInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::CommodityOption,
+            ModelKind::CommodityBlack,
+            EngineKind::Analytic,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Worst-of Option ─────────────────────────────────────────────────
+
+    static PricingResult price_worst_of_impl(const RainbowBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::WorstOfOption,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
+    // ── Best-of Option ──────────────────────────────────────────────────
+
+    static PricingResult price_best_of_impl(const RainbowBSInput &in)
+    {
+        PricingRequest request{
+            InstrumentKind::BestOfOption,
+            ModelKind::BlackScholes,
+            EngineKind::MonteCarlo,
+            PricingInput{in}};
+        return default_registry().price(request);
+    }
+
 } // namespace quantModeling
 
 static py::dict pricing_result_to_dict(const quantModeling::PricingResult &res)
@@ -582,4 +724,180 @@ PYBIND11_MODULE(quantmodeling, m)
 
     m.def("price_asian_lv_mc", [](const quantModeling::AsianLocalVolInput &in)
           { return pricing_result_to_dict(quantModeling::price_asian_lv_impl(in)); }, "Price an Asian option under a Dupire local-vol surface (Monte Carlo).");
+
+    // ── Autocall ───────────────────────────────────────────────────────────────────
+    py::class_<quantModeling::AutocallBSInput>(m, "AutocallBSInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::AutocallBSInput::spot)
+        .def_readwrite("rate", &quantModeling::AutocallBSInput::rate)
+        .def_readwrite("dividend", &quantModeling::AutocallBSInput::dividend)
+        .def_readwrite("vol", &quantModeling::AutocallBSInput::vol)
+        .def_readwrite("observation_dates", &quantModeling::AutocallBSInput::observation_dates)
+        .def_readwrite("autocall_barrier", &quantModeling::AutocallBSInput::autocall_barrier)
+        .def_readwrite("coupon_barrier", &quantModeling::AutocallBSInput::coupon_barrier)
+        .def_readwrite("put_barrier", &quantModeling::AutocallBSInput::put_barrier)
+        .def_readwrite("coupon_rate", &quantModeling::AutocallBSInput::coupon_rate)
+        .def_readwrite("notional", &quantModeling::AutocallBSInput::notional)
+        .def_readwrite("memory_coupon", &quantModeling::AutocallBSInput::memory_coupon)
+        .def_readwrite("ki_continuous", &quantModeling::AutocallBSInput::ki_continuous)
+        .def_readwrite("n_paths", &quantModeling::AutocallBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::AutocallBSInput::seed);
+
+    m.def("price_autocall_bs_mc", [](const quantModeling::AutocallBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_autocall_impl(in)); }, "Price an autocallable note under Black-Scholes (Monte Carlo).");
+
+    // ── Mountain (Himalaya) ────────────────────────────────────────────────────────
+    py::class_<quantModeling::MountainBSInput>(m, "MountainBSInput")
+        .def(py::init<>())
+        .def_readwrite("spots", &quantModeling::MountainBSInput::spots)
+        .def_readwrite("vols", &quantModeling::MountainBSInput::vols)
+        .def_readwrite("dividends", &quantModeling::MountainBSInput::dividends)
+        .def_readwrite("correlations", &quantModeling::MountainBSInput::correlations)
+        .def_readwrite("observation_dates", &quantModeling::MountainBSInput::observation_dates)
+        .def_readwrite("strike", &quantModeling::MountainBSInput::strike)
+        .def_readwrite("is_call", &quantModeling::MountainBSInput::is_call)
+        .def_readwrite("rate", &quantModeling::MountainBSInput::rate)
+        .def_readwrite("notional", &quantModeling::MountainBSInput::notional)
+        .def_readwrite("n_paths", &quantModeling::MountainBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::MountainBSInput::seed);
+
+    m.def("price_mountain_bs_mc", [](const quantModeling::MountainBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_mountain_impl(in)); }, "Price a Himalaya (Mountain) option under multi-asset BS (Monte Carlo).");
+
+    // ── Variance Swap ──────────────────────────────────────────────────────────────
+    py::class_<quantModeling::VarianceSwapBSInput>(m, "VarianceSwapBSInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::VarianceSwapBSInput::spot)
+        .def_readwrite("rate", &quantModeling::VarianceSwapBSInput::rate)
+        .def_readwrite("dividend", &quantModeling::VarianceSwapBSInput::dividend)
+        .def_readwrite("vol", &quantModeling::VarianceSwapBSInput::vol)
+        .def_readwrite("maturity", &quantModeling::VarianceSwapBSInput::maturity)
+        .def_readwrite("strike_var", &quantModeling::VarianceSwapBSInput::strike_var)
+        .def_readwrite("notional", &quantModeling::VarianceSwapBSInput::notional)
+        .def_readwrite("observation_dates", &quantModeling::VarianceSwapBSInput::observation_dates)
+        .def_readwrite("n_paths", &quantModeling::VarianceSwapBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::VarianceSwapBSInput::seed);
+
+    m.def("price_variance_swap_bs_analytic", [](const quantModeling::VarianceSwapBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_variance_swap_analytic_impl(in)); }, "Price a variance swap under Black-Scholes (analytic).");
+
+    m.def("price_variance_swap_bs_mc", [](const quantModeling::VarianceSwapBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_variance_swap_mc_impl(in)); }, "Price a variance swap under Black-Scholes (Monte Carlo).");
+
+    // ── Volatility Swap ────────────────────────────────────────────────────────────
+    py::class_<quantModeling::VolatilitySwapBSInput>(m, "VolatilitySwapBSInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::VolatilitySwapBSInput::spot)
+        .def_readwrite("rate", &quantModeling::VolatilitySwapBSInput::rate)
+        .def_readwrite("dividend", &quantModeling::VolatilitySwapBSInput::dividend)
+        .def_readwrite("vol", &quantModeling::VolatilitySwapBSInput::vol)
+        .def_readwrite("maturity", &quantModeling::VolatilitySwapBSInput::maturity)
+        .def_readwrite("strike_vol", &quantModeling::VolatilitySwapBSInput::strike_vol)
+        .def_readwrite("notional", &quantModeling::VolatilitySwapBSInput::notional)
+        .def_readwrite("observation_dates", &quantModeling::VolatilitySwapBSInput::observation_dates)
+        .def_readwrite("n_paths", &quantModeling::VolatilitySwapBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::VolatilitySwapBSInput::seed);
+
+    m.def("price_volatility_swap_bs_mc", [](const quantModeling::VolatilitySwapBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_volatility_swap_mc_impl(in)); }, "Price a volatility swap under Black-Scholes (Monte Carlo).");
+
+    // ── Dispersion Swap ────────────────────────────────────────────────────────────
+    py::class_<quantModeling::DispersionBSInput>(m, "DispersionBSInput")
+        .def(py::init<>())
+        .def_readwrite("spots", &quantModeling::DispersionBSInput::spots)
+        .def_readwrite("vols", &quantModeling::DispersionBSInput::vols)
+        .def_readwrite("dividends", &quantModeling::DispersionBSInput::dividends)
+        .def_readwrite("weights", &quantModeling::DispersionBSInput::weights)
+        .def_readwrite("correlations", &quantModeling::DispersionBSInput::correlations)
+        .def_readwrite("maturity", &quantModeling::DispersionBSInput::maturity)
+        .def_readwrite("strike_spread", &quantModeling::DispersionBSInput::strike_spread)
+        .def_readwrite("rate", &quantModeling::DispersionBSInput::rate)
+        .def_readwrite("notional", &quantModeling::DispersionBSInput::notional)
+        .def_readwrite("observation_dates", &quantModeling::DispersionBSInput::observation_dates)
+        .def_readwrite("n_paths", &quantModeling::DispersionBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::DispersionBSInput::seed);
+
+    m.def("price_dispersion_bs_mc", [](const quantModeling::DispersionBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_dispersion_mc_impl(in)); }, "Price a dispersion swap under multi-asset BS (Monte Carlo).");
+
+    // ── FX Forward ─────────────────────────────────────────────────────────────────
+    py::class_<quantModeling::FXForwardInput>(m, "FXForwardInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::FXForwardInput::spot)
+        .def_readwrite("rate_domestic", &quantModeling::FXForwardInput::rate_domestic)
+        .def_readwrite("rate_foreign", &quantModeling::FXForwardInput::rate_foreign)
+        .def_readwrite("vol", &quantModeling::FXForwardInput::vol)
+        .def_readwrite("strike", &quantModeling::FXForwardInput::strike)
+        .def_readwrite("maturity", &quantModeling::FXForwardInput::maturity)
+        .def_readwrite("notional", &quantModeling::FXForwardInput::notional);
+
+    m.def("price_fx_forward_analytic", [](const quantModeling::FXForwardInput &in)
+          { return pricing_result_to_dict(quantModeling::price_fx_forward_impl(in)); }, "Price an FX forward (analytic).");
+
+    // ── FX Option ──────────────────────────────────────────────────────────────────
+    py::class_<quantModeling::FXOptionInput>(m, "FXOptionInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::FXOptionInput::spot)
+        .def_readwrite("rate_domestic", &quantModeling::FXOptionInput::rate_domestic)
+        .def_readwrite("rate_foreign", &quantModeling::FXOptionInput::rate_foreign)
+        .def_readwrite("vol", &quantModeling::FXOptionInput::vol)
+        .def_readwrite("strike", &quantModeling::FXOptionInput::strike)
+        .def_readwrite("maturity", &quantModeling::FXOptionInput::maturity)
+        .def_readwrite("is_call", &quantModeling::FXOptionInput::is_call)
+        .def_readwrite("notional", &quantModeling::FXOptionInput::notional);
+
+    m.def("price_fx_option_analytic", [](const quantModeling::FXOptionInput &in)
+          { return pricing_result_to_dict(quantModeling::price_fx_option_impl(in)); }, "Price a European FX option (Garman-Kohlhagen analytic).");
+
+    // ── Commodity Forward ──────────────────────────────────────────────────────────
+    py::class_<quantModeling::CommodityForwardInput>(m, "CommodityForwardInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::CommodityForwardInput::spot)
+        .def_readwrite("rate", &quantModeling::CommodityForwardInput::rate)
+        .def_readwrite("storage_cost", &quantModeling::CommodityForwardInput::storage_cost)
+        .def_readwrite("convenience_yield", &quantModeling::CommodityForwardInput::convenience_yield)
+        .def_readwrite("vol", &quantModeling::CommodityForwardInput::vol)
+        .def_readwrite("strike", &quantModeling::CommodityForwardInput::strike)
+        .def_readwrite("maturity", &quantModeling::CommodityForwardInput::maturity)
+        .def_readwrite("notional", &quantModeling::CommodityForwardInput::notional);
+
+    m.def("price_commodity_forward_analytic", [](const quantModeling::CommodityForwardInput &in)
+          { return pricing_result_to_dict(quantModeling::price_commodity_forward_impl(in)); }, "Price a commodity forward (analytic).");
+
+    // ── Commodity Option ───────────────────────────────────────────────────────────
+    py::class_<quantModeling::CommodityOptionInput>(m, "CommodityOptionInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::CommodityOptionInput::spot)
+        .def_readwrite("rate", &quantModeling::CommodityOptionInput::rate)
+        .def_readwrite("storage_cost", &quantModeling::CommodityOptionInput::storage_cost)
+        .def_readwrite("convenience_yield", &quantModeling::CommodityOptionInput::convenience_yield)
+        .def_readwrite("vol", &quantModeling::CommodityOptionInput::vol)
+        .def_readwrite("strike", &quantModeling::CommodityOptionInput::strike)
+        .def_readwrite("maturity", &quantModeling::CommodityOptionInput::maturity)
+        .def_readwrite("is_call", &quantModeling::CommodityOptionInput::is_call)
+        .def_readwrite("notional", &quantModeling::CommodityOptionInput::notional);
+
+    m.def("price_commodity_option_analytic", [](const quantModeling::CommodityOptionInput &in)
+          { return pricing_result_to_dict(quantModeling::price_commodity_option_impl(in)); }, "Price a European commodity option (Black 76 analytic).");
+
+    // ── Worst-of Option ────────────────────────────────────────────────────────────
+    py::class_<quantModeling::RainbowBSInput>(m, "RainbowBSInput")
+        .def(py::init<>())
+        .def_readwrite("spots", &quantModeling::RainbowBSInput::spots)
+        .def_readwrite("vols", &quantModeling::RainbowBSInput::vols)
+        .def_readwrite("dividends", &quantModeling::RainbowBSInput::dividends)
+        .def_readwrite("correlations", &quantModeling::RainbowBSInput::correlations)
+        .def_readwrite("maturity", &quantModeling::RainbowBSInput::maturity)
+        .def_readwrite("strike", &quantModeling::RainbowBSInput::strike)
+        .def_readwrite("is_call", &quantModeling::RainbowBSInput::is_call)
+        .def_readwrite("rate", &quantModeling::RainbowBSInput::rate)
+        .def_readwrite("notional", &quantModeling::RainbowBSInput::notional)
+        .def_readwrite("n_paths", &quantModeling::RainbowBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::RainbowBSInput::seed);
+
+    m.def("price_worst_of_bs_mc", [](const quantModeling::RainbowBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_worst_of_impl(in)); }, "Price a worst-of option under multi-asset BS (Monte Carlo).");
+
+    m.def("price_best_of_bs_mc", [](const quantModeling::RainbowBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_best_of_impl(in)); }, "Price a best-of option under multi-asset BS (Monte Carlo).");
 }

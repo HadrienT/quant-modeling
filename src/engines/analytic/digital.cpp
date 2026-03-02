@@ -40,7 +40,7 @@ namespace quantModeling
         const Real d2 = d1 - stddev;
 
         // ── Discount factors ──────────────────────────────────────────────────
-        const Real df_r = std::exp(-r * T);
+        const Real df_r = m.discount_curve().discount(T);
         const Real df_q = std::exp(-q * T);
 
         // ── Price ─────────────────────────────────────────────────────────────

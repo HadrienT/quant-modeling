@@ -8,26 +8,46 @@ from ..logging_utils import get_logger
 from ..pricing_service import (
     price_american_vanilla,
     price_asian,
+    price_autocall,
     price_barrier,
     price_basket,
+    price_commodity_forward,
+    price_commodity_option,
     price_digital,
+    price_dispersion_swap,
     price_fixed_rate_bond,
     price_future,
+    price_fx_forward,
+    price_fx_option,
     price_lookback,
+    price_mountain,
+    price_rainbow,
     price_vanilla,
+    price_variance_swap,
+    price_volatility_swap,
     price_zero_coupon_bond,
 )
 from ..schemas import (
     AmericanVanillaRequest,
     AsianRequest,
+    AutocallRequest,
     BarrierRequest,
     BasketRequest,
+    CommodityForwardRequest,
+    CommodityOptionRequest,
     DigitalRequest,
+    DispersionSwapRequest,
     FixedRateBondRequest,
     FutureRequest,
+    FXForwardRequest,
+    FXOptionRequest,
     LookbackRequest,
+    MountainRequest,
     PricingResponse,
+    RainbowRequest,
     VanillaRequest,
+    VarianceSwapRequest,
+    VolatilitySwapRequest,
     ZeroCouponBondRequest,
 )
 
@@ -363,4 +383,124 @@ async def price_fixed_rate_bond_endpoint(req: FixedRateBondRequest) -> PricingRe
             "bond_analytics": resp.bond_analytics.model_dump() if resp.bond_analytics else None,
         },
     )
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Autocall
+# ---------------------------------------------------------------------------
+
+@router.post("/price/structured/autocall", response_model=PricingResponse)
+async def price_autocall_endpoint(req: AutocallRequest) -> PricingResponse:
+    logger.info("price_autocall request", extra={"spot": req.spot, "vol": req.vol, "n_obs": len(req.observation_dates)})
+    resp = await _run_with_timeout(price_autocall, req)
+    logger.info("price_autocall response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Mountain (Himalaya)
+# ---------------------------------------------------------------------------
+
+@router.post("/price/structured/mountain", response_model=PricingResponse)
+async def price_mountain_endpoint(req: MountainRequest) -> PricingResponse:
+    logger.info("price_mountain request", extra={"n_assets": len(req.spots), "n_obs": len(req.observation_dates)})
+    resp = await _run_with_timeout(price_mountain, req)
+    logger.info("price_mountain response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Variance Swap
+# ---------------------------------------------------------------------------
+
+@router.post("/price/volatility/variance-swap", response_model=PricingResponse)
+async def price_variance_swap_endpoint(req: VarianceSwapRequest) -> PricingResponse:
+    logger.info("price_variance_swap request", extra={"spot": req.spot, "strike_var": req.strike_var, "engine": req.engine})
+    resp = await _run_with_timeout(price_variance_swap, req)
+    logger.info("price_variance_swap response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Volatility Swap
+# ---------------------------------------------------------------------------
+
+@router.post("/price/volatility/volatility-swap", response_model=PricingResponse)
+async def price_volatility_swap_endpoint(req: VolatilitySwapRequest) -> PricingResponse:
+    logger.info("price_volatility_swap request", extra={"spot": req.spot, "strike_vol": req.strike_vol})
+    resp = await _run_with_timeout(price_volatility_swap, req)
+    logger.info("price_volatility_swap response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Dispersion Swap
+# ---------------------------------------------------------------------------
+
+@router.post("/price/volatility/dispersion-swap", response_model=PricingResponse)
+async def price_dispersion_swap_endpoint(req: DispersionSwapRequest) -> PricingResponse:
+    logger.info("price_dispersion_swap request", extra={"n_assets": len(req.spots), "strike_spread": req.strike_spread})
+    resp = await _run_with_timeout(price_dispersion_swap, req)
+    logger.info("price_dispersion_swap response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# FX Forward
+# ---------------------------------------------------------------------------
+
+@router.post("/price/fx/forward", response_model=PricingResponse)
+async def price_fx_forward_endpoint(req: FXForwardRequest) -> PricingResponse:
+    logger.info("price_fx_forward request", extra={"spot": req.spot, "strike": req.strike, "maturity": req.maturity})
+    resp = await _run_with_timeout(price_fx_forward, req)
+    logger.info("price_fx_forward response", extra={"npv": resp.npv})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# FX Option
+# ---------------------------------------------------------------------------
+
+@router.post("/price/fx/option", response_model=PricingResponse)
+async def price_fx_option_endpoint(req: FXOptionRequest) -> PricingResponse:
+    logger.info("price_fx_option request", extra={"spot": req.spot, "strike": req.strike, "is_call": req.is_call})
+    resp = await _run_with_timeout(price_fx_option, req)
+    logger.info("price_fx_option response", extra={"npv": resp.npv})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Commodity Forward
+# ---------------------------------------------------------------------------
+
+@router.post("/price/commodity/forward", response_model=PricingResponse)
+async def price_commodity_forward_endpoint(req: CommodityForwardRequest) -> PricingResponse:
+    logger.info("price_commodity_forward request", extra={"spot": req.spot, "strike": req.strike})
+    resp = await _run_with_timeout(price_commodity_forward, req)
+    logger.info("price_commodity_forward response", extra={"npv": resp.npv})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Commodity Option
+# ---------------------------------------------------------------------------
+
+@router.post("/price/commodity/option", response_model=PricingResponse)
+async def price_commodity_option_endpoint(req: CommodityOptionRequest) -> PricingResponse:
+    logger.info("price_commodity_option request", extra={"spot": req.spot, "strike": req.strike, "is_call": req.is_call})
+    resp = await _run_with_timeout(price_commodity_option, req)
+    logger.info("price_commodity_option response", extra={"npv": resp.npv})
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Rainbow (worst-of / best-of)
+# ---------------------------------------------------------------------------
+
+@router.post("/price/option/rainbow", response_model=PricingResponse)
+async def price_rainbow_endpoint(req: RainbowRequest) -> PricingResponse:
+    logger.info("price_rainbow request", extra={"n_assets": len(req.spots), "kind": req.rainbow_kind, "is_call": req.is_call})
+    resp = await _run_with_timeout(price_rainbow, req)
+    logger.info("price_rainbow response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
     return resp

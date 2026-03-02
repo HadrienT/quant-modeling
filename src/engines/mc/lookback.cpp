@@ -51,7 +51,7 @@ namespace quantModeling
                                 ? opt.n_steps
                                 : std::max(1, static_cast<int>(252.0 * T + 0.5));
         const Real dt = T / static_cast<Real>(n_steps);
-        const Real df = std::exp(-r * T);
+        const Real df = m.discount_curve().discount(T);
 
         // --- FD bump grids for gamma / theta (common random numbers) ---
         const GreeksBumps bumps;
@@ -68,8 +68,8 @@ namespace quantModeling
 
         const Real dt_Tup = T_up / static_cast<Real>(n_steps_Tup);
         const Real dt_Tdn = T_dn / static_cast<Real>(n_steps_Tdn);
-        const Real df_Tup = std::exp(-r * T_up);
-        const Real df_Tdn = std::exp(-r * T_dn);
+        const Real df_Tup = m.discount_curve().discount(T_up);
+        const Real df_Tdn = m.discount_curve().discount(T_dn);
 
         // Per-step volatility lookup — works for flat vol and local-vol surfaces.
         // For FlatVol, vol.value(S, t) == sigma_  for all S, t (numerically equivalent
@@ -213,7 +213,7 @@ namespace quantModeling
             return (n > 1) ? std::sqrt((M2_val / static_cast<Real>(n - 1)) / static_cast<Real>(n)) : 0.0;
         };
 
-        const Real disc = std::exp(-r * T);
+        const Real disc = m.discount_curve().discount(T);
         PricingResult out;
         out.npv = opt.notional * disc * meanPayoff;
         out.mc_std_error = opt.notional * disc * std_err(M2_payoff);

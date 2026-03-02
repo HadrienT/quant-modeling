@@ -17,19 +17,12 @@ namespace quantModeling
     {
         ZeroCouponBond bond(in.maturity, in.notional);
 
-        auto model = std::make_shared<FlatRateModel>(static_cast<Real>(in.rate));
-        std::shared_ptr<const DiscountCurve> curve;
-        if (!in.discount_times.empty() || !in.discount_factors.empty())
-        {
-            curve = std::make_shared<DiscountCurve>(in.discount_times, in.discount_factors);
-        }
-        else
-        {
-            curve = std::make_shared<DiscountCurve>(static_cast<Real>(in.rate));
-        }
+        DiscountCurve curve = (!in.discount_times.empty() || !in.discount_factors.empty())
+                                  ? DiscountCurve(in.discount_times, in.discount_factors)
+                                  : DiscountCurve(static_cast<Real>(in.rate));
+        auto model = std::make_shared<FlatRateModel>(static_cast<Real>(in.rate), std::move(curve));
 
         MarketView market = {};
-        market.discount = curve;
         PricingSettings settings = {0, 0, true, 0, 0, 0};
         PricingContext ctx{market, settings, model};
 
@@ -41,19 +34,12 @@ namespace quantModeling
     {
         FixedRateBond bond(in.coupon_rate, in.maturity, in.coupon_frequency, in.notional);
 
-        auto model = std::make_shared<FlatRateModel>(static_cast<Real>(in.rate));
-        std::shared_ptr<const DiscountCurve> curve;
-        if (!in.discount_times.empty() || !in.discount_factors.empty())
-        {
-            curve = std::make_shared<DiscountCurve>(in.discount_times, in.discount_factors);
-        }
-        else
-        {
-            curve = std::make_shared<DiscountCurve>(static_cast<Real>(in.rate));
-        }
+        DiscountCurve curve = (!in.discount_times.empty() || !in.discount_factors.empty())
+                                  ? DiscountCurve(in.discount_times, in.discount_factors)
+                                  : DiscountCurve(static_cast<Real>(in.rate));
+        auto model = std::make_shared<FlatRateModel>(static_cast<Real>(in.rate), std::move(curve));
 
         MarketView market = {};
-        market.discount = curve;
         PricingSettings settings = {0, 0, true, 0, 0, 0};
         PricingContext ctx{market, settings, model};
 

@@ -44,7 +44,7 @@ namespace quantModeling
         const Real pd = 0.5 * ((sigma * sigma * dt + nu * nu * dt * dt) / (dx * dx) - nu * dt / dx);
         const Real pm = 1.0 - pu - pd;
 
-        const Real df = std::exp(-r * dt);
+        const Real df = m.discount_curve().discount(dt);
 
         if (!(pu >= 0.0 && pu <= 1.0 && pd >= 0.0 && pd <= 1.0 && pm >= 0.0 && pm <= 1.0))
             throw InvalidInput("Risk-neutral probabilities out of bounds. Check model parameters or reduce time step.");
@@ -198,7 +198,7 @@ namespace quantModeling
             const Real pu_theta = 0.5 * ((sigma * sigma * dt_theta + nu * nu * dt_theta * dt_theta) / (dx_theta * dx_theta) + nu * dt_theta / dx_theta);
             const Real pd_theta = 0.5 * ((sigma * sigma * dt_theta + nu * nu * dt_theta * dt_theta) / (dx_theta * dx_theta) - nu * dt_theta / dx_theta);
             const Real pm_theta = 1.0 - pu_theta - pd_theta;
-            const Real df_theta = std::exp(-r * dt_theta);
+            const Real df_theta = m.discount_curve().discount(dt_theta);
 
             const int max_nodes_theta = 2 * steps_minus_1 + 1;
             std::vector<Real> values_theta(max_nodes_theta);

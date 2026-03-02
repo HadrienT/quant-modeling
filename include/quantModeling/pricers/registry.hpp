@@ -23,14 +23,33 @@ namespace quantModeling
         EquityBasketOption,
         EquityFuture,
         ZeroCouponBond,
-        FixedRateBond
+        FixedRateBond,
+        BondOption,
+        CapFloor,
+        Autocall,
+        Mountain,
+        Caplet,
+        VarianceSwap,
+        VolatilitySwap,
+        DispersionSwap,
+        FXForward,
+        FXOption,
+        CommodityForward,
+        CommodityOption,
+        WorstOfOption,
+        BestOfOption
     };
 
     enum class ModelKind
     {
         BlackScholes,
         FlatRate,
-        DupireLocalVol
+        DupireLocalVol,
+        Vasicek,
+        CIR,
+        HullWhite,
+        GarmanKohlhagen,
+        CommodityBlack
     };
 
     enum class EngineKind
@@ -56,7 +75,22 @@ namespace quantModeling
         LocalVolInput,
         BarrierLocalVolInput,
         LookbackLocalVolInput,
-        AsianLocalVolInput>;
+        AsianLocalVolInput,
+        ShortRateZCBInput,
+        ShortRateBondInput,
+        ShortRateBondOptionInput,
+        ShortRateCapFloorInput,
+        AutocallBSInput,
+        MountainBSInput,
+        ShortRateCapletInput,
+        VarianceSwapBSInput,
+        VolatilitySwapBSInput,
+        DispersionBSInput,
+        FXForwardInput,
+        FXOptionInput,
+        CommodityForwardInput,
+        CommodityOptionInput,
+        RainbowBSInput>;
 
     struct PricingRequest
     {

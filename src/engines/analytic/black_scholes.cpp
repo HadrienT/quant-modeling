@@ -24,7 +24,7 @@ namespace quantModeling
         const Real K = payoff.strike();
 
         // Forward and discount factors
-        const Real df_r = std::exp(-r * T);
+        const Real df_r = m.discount_curve().discount(T);
         const Real df_q = std::exp(-q * T);
         const Real F = S0 * df_q / df_r; // forward under continuous carry
 

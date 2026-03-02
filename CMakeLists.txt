@@ -48,9 +48,34 @@ target_sources(quantModeling
         src/instruments/equity/basket.cpp
         src/instruments/equity/lookback.cpp
         src/instruments/equity/future.cpp
+        src/instruments/equity/autocall.cpp
+        src/instruments/equity/mountain.cpp
+        src/instruments/equity/variance_swap.cpp
+        src/instruments/equity/dispersion.cpp
+        src/instruments/equity/rainbow.cpp
+        src/instruments/fx/forward.cpp
+        src/instruments/fx/option.cpp
+        src/instruments/commodity/forward.cpp
+        src/instruments/commodity/option.cpp
         src/instruments/rates/zero_coupon_bond.cpp
         src/instruments/rates/fixed_rate_bond.cpp
         src/models/rates/flat_rate.cpp
+        src/models/rates/vasicek.cpp
+        src/models/rates/cir.cpp
+        src/models/rates/hull_white.cpp
+        src/instruments/rates/bond_option.cpp
+        src/instruments/rates/capfloor.cpp
+        src/instruments/rates/caplet.cpp
+        src/engines/analytic/short_rate.cpp
+        src/engines/mc/short_rate.cpp
+        src/engines/mc/autocall.cpp
+        src/engines/mc/mountain.cpp
+        src/engines/mc/variance_swap.cpp
+        src/engines/mc/dispersion.cpp
+        src/engines/mc/rainbow.cpp
+        src/engines/analytic/variance_swap.cpp
+        src/engines/analytic/fx.cpp
+        src/engines/analytic/commodity.cpp
         src/pricers/registry.cpp
         src/pricers/adapters/equity_vanilla.cpp
         src/pricers/adapters/equity_vanilla_american.cpp
@@ -63,6 +88,14 @@ target_sources(quantModeling
         src/pricers/adapters/equity_lookback_lv.cpp
         src/pricers/adapters/equity_future.cpp
         src/pricers/adapters/bonds.cpp
+        src/pricers/adapters/rates_short_rate.cpp
+        src/pricers/adapters/equity_autocall.cpp
+        src/pricers/adapters/equity_mountain.cpp
+        src/pricers/adapters/equity_vol_swap.cpp
+        src/pricers/adapters/equity_dispersion.cpp
+        src/pricers/adapters/equity_rainbow.cpp
+        src/pricers/adapters/fx.cpp
+        src/pricers/adapters/commodity.cpp
         src/engines/analytic/digital.cpp
         src/instruments/equity/digital.cpp
         src/pricers/adapters/equity_digital.cpp
@@ -104,6 +137,20 @@ if(QM_BUILD_TESTS)
     tests/testBasket.cpp
     tests/testFuture.cpp
     tests/testBonds.cpp
+    tests/testDigital.cpp
+    tests/testBarrier.cpp
+    tests/testBinomial.cpp
+    tests/testTrinomial.cpp
+    tests/testPDE.cpp
+    tests/testDiscountCurve.cpp
+    tests/testLocalVol.cpp
+    tests/testUtils.cpp
+    tests/testRegistry.cpp
+    tests/testModels.cpp
+    tests/testShortRateModels.cpp
+    tests/testStructuredProducts.cpp
+    tests/testNewProducts.cpp
+    tests/testRainbow.cpp
   )
 
   target_link_libraries(quantModeling_tests

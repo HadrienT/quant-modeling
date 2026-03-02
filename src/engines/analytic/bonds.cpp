@@ -14,10 +14,9 @@ namespace quantModeling
         validate(bond);
         const auto &m = require_model<IFlatRateModel>("FlatRateBondAnalyticEngine");
 
-        const auto *curve = ctx_.market.discount.get();
         const Real r = m.rate();
         const Real T = bond.maturity;
-        const Real df = curve ? curve->discount(T) : std::exp(-r * T);
+        const Real df = m.discount_curve().discount(T);
 
         PricingResult out;
         out.npv = bond.notional * df;
@@ -47,7 +46,6 @@ namespace quantModeling
         validate(bond);
         const auto &m = require_model<IFlatRateModel>("FlatRateBondAnalyticEngine");
 
-        const auto *curve = ctx_.market.discount.get();
         const Real r = m.rate();
         const Real T = bond.maturity;
         const int freq = bond.coupon_frequency;
@@ -57,7 +55,7 @@ namespace quantModeling
 
         auto discount = [&](Real t)
         {
-            return curve ? curve->discount(t) : std::exp(-r * t);
+            return m.discount_curve().discount(t);
         };
 
         Real pv_coupons = 0.0;

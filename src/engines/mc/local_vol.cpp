@@ -1,4 +1,5 @@
 #include "quantModeling/engines/mc/local_vol.hpp"
+#include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/volatility.hpp"
 #include "quantModeling/utils/greeks.hpp"
 #include "quantModeling/utils/rng.hpp"
@@ -92,7 +93,8 @@ namespace quantModeling
             Real r,
             bool is_call)
         {
-            const Real df = std::exp(-r * T);
+            const DiscountCurve disc(r);
+            const Real df = disc.discount(T);
             const int n = static_cast<int>(S_T.size());
 
             Real mean = 0.0, M2 = 0.0;

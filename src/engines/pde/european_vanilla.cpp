@@ -89,7 +89,7 @@ namespace quantModeling
             }
 
             // Boundary conditions
-            const Real df = std::exp(-r * (T - n * dt));
+            const Real df = m.discount_curve().discount(T - n * dt);
             if (type == OptionType::Call)
             {
                 d[0] = 0.0;
@@ -169,7 +169,7 @@ namespace quantModeling
                     const Real coeff_jp1 = alpha * lambda + drift * mu;
                     d[j] = coeff_jm1 * V_temp[j - 1] + coeff_j * V_temp[j] + coeff_jp1 * V_temp[j + 1];
                 }
-                const Real df = std::exp(-r * (T - n * dt));
+                const Real df = m.discount_curve().discount(T - n * dt);
                 if (type == OptionType::Call)
                 {
                     d[0] = 0.0;
@@ -223,7 +223,7 @@ namespace quantModeling
                     const Real coeff_jp1 = alpha * lambda + drift * mu;
                     d[j] = coeff_jm1 * V_temp[j - 1] + coeff_j * V_temp[j] + coeff_jp1 * V_temp[j + 1];
                 }
-                const Real df = std::exp(-r * (T - n * dt));
+                const Real df = m.discount_curve().discount(T - n * dt);
                 if (type == OptionType::Call)
                 {
                     d[0] = 0.0;

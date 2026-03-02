@@ -46,7 +46,7 @@ namespace quantModeling
         const Real T = opt.exercise->dates().front();
         const Real K = opt.payoff->strike();
         const bool is_call = (opt.payoff->type() == OptionType::Call);
-        const Real df = std::exp(-r * T);
+        const Real df = m.discount_curve().discount(T);
 
         // Per-asset: drift_i = (r - q_i - 0.5*sigma_i^2)*T,  sv_i = sigma_i*sqrt(T)
         Eigen::VectorXd mu(n), sv(n);
@@ -105,8 +105,8 @@ namespace quantModeling
         const Real eps_T = bumps.theta_bump;
         const Real T_up = T + eps_T;
         const Real T_dn = std::max(1e-8, T - eps_T);
-        const Real df_Tup = std::exp(-r * T_up);
-        const Real df_Tdn = std::exp(-r * T_dn);
+        const Real df_Tup = m.discount_curve().discount(T_up);
+        const Real df_Tdn = m.discount_curve().discount(T_dn);
         Eigen::VectorXd mu_Tup(n), sv_Tup(n), mu_Tdn(n), sv_Tdn(n);
         for (int k = 0; k < n; ++k)
         {

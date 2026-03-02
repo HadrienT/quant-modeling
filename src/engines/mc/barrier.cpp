@@ -91,7 +91,7 @@ namespace quantModeling
         {
             const Real dt_v = T_val / static_cast<Real>(n_steps);
             const Real sqdt_v = std::sqrt(dt_v);
-            const Real df = std::exp(-r_val * T_val);
+            const Real df = m.discount_curve().discount(T_val);
 
             Real S = S_start;
             bool hit = false;

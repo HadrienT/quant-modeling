@@ -2,6 +2,9 @@ fastapi
 uvicorn
 pydantic
 google-cloud-bigquery
+google-cloud-storage
 yfinance
 numpy
 scipy
+python-jose[cryptography]
+bcrypt

@@ -20,7 +20,7 @@ namespace quantModeling
         const Real K = fut.strike;
 
         const Real F0 = S0 * std::exp((r - q) * T);
-        const Real df = std::exp(-r * T);
+        const Real df = m.discount_curve().discount(T);
 
         PricingResult out;
         out.npv = fut.notional * (F0 - K) * df;

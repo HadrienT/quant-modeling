@@ -28,7 +28,7 @@ namespace quantModeling
 
     const Real itoCorrection = -0.5 * v * v;
     const Real movedSpot = S0 * std::exp((r - q + itoCorrection) * T);
-    const Real df = std::exp(-r * T);
+    const Real df = m.discount_curve().discount(T);
 
     // FD bumps for gamma/theta (common random numbers)
     const GreeksBumps bumps;
@@ -42,8 +42,8 @@ namespace quantModeling
     const Real rootVariance_dnT = v * std::sqrt(T_dn);
     const Real movedSpot_upT = S0 * std::exp((r - q + itoCorrection) * T_up);
     const Real movedSpot_dnT = S0 * std::exp((r - q + itoCorrection) * T_dn);
-    const Real df_upT = std::exp(-r * T_up);
-    const Real df_dnT = std::exp(-r * T_dn);
+    const Real df_upT = m.discount_curve().discount(T_up);
+    const Real df_dnT = m.discount_curve().discount(T_dn);
 
     // Welford for payoff and pathwise delta
     Real meanPayoff = 0.0;
@@ -281,7 +281,7 @@ namespace quantModeling
       varMean = sampleVariance / static_cast<Real>(n);
     }
 
-    const Real disc = std::exp(-r * T);
+    const Real disc = m.discount_curve().discount(T);
     const Real price = disc * meanPayoff;
     const Real priceStdError = (n > 1) ? disc * std::sqrt(varMean) : 0.0;
 

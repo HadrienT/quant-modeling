@@ -276,6 +276,303 @@ namespace quantModeling
         bool compute_greeks = true;
     };
 
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Short-rate model inputs
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Input for pricing a ZCB under a short-rate model (Vasicek/CIR/HW).
+     */
+    struct ShortRateZCBInput
+    {
+        std::string model_type; ///< "vasicek", "cir", or "hull_white"
+        Real a;                 ///< mean reversion speed
+        Real b;                 ///< long-term mean rate
+        Real sigma;             ///< volatility
+        Real r0;                ///< initial short rate
+        Time maturity;          ///< bond maturity
+        Real notional = 1.0;
+    };
+
+    /**
+     * @brief Input for pricing a fixed-rate bond under a short-rate model.
+     */
+    struct ShortRateBondInput
+    {
+        std::string model_type;
+        Real a;
+        Real b;
+        Real sigma;
+        Real r0;
+        Time maturity;
+        Real coupon_rate;
+        int coupon_frequency = 1;
+        Real notional = 1.0;
+    };
+
+    /**
+     * @brief Input for pricing a European bond option under a short-rate model.
+     */
+    struct ShortRateBondOptionInput
+    {
+        std::string model_type;
+        Real a;
+        Real b;
+        Real sigma;
+        Real r0;
+        Time option_maturity; ///< option expiry T
+        Time bond_maturity;   ///< underlying ZCB maturity S  (S > T)
+        Real strike;          ///< option strike K
+        bool is_call = true;
+        Real notional = 1.0;
+
+        int n_paths = 200000; ///< MC paths (used only by MC engine)
+        int seed = 1;
+    };
+
+    /**
+     * @brief Input for pricing a cap or floor under a short-rate model.
+     */
+    struct ShortRateCapFloorInput
+    {
+        std::string model_type;
+        Real a;
+        Real b;
+        Real sigma;
+        Real r0;
+        std::vector<Time> schedule; ///< tenor schedule [T_0, ..., T_n]
+        Real strike;                ///< cap/floor rate K
+        bool is_cap = true;
+        Real notional = 1.0;
+
+        int n_paths = 200000;
+        int seed = 1;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Structured products inputs
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Input for pricing an Autocallable note under Black-Scholes.
+     */
+    struct AutocallBSInput
+    {
+        Real spot;
+        Real rate;
+        Real dividend = 0.0;
+        Real vol;
+        std::vector<Time> observation_dates; ///< T_1, ..., T_n  (sorted, > 0)
+        Real autocall_barrier;               ///< fraction of S0 (e.g. 1.0 = ATM)
+        Real coupon_barrier;                 ///< fraction of S0 for coupon trigger
+        Real put_barrier;                    ///< fraction of S0 for knock-in put
+        Real coupon_rate;                    ///< per-period coupon as fraction of notional
+        Real notional = 1000.0;
+        bool memory_coupon = true;
+        bool ki_continuous = false; ///< continuous vs. terminal KI monitoring
+
+        int n_paths = 200000;
+        int seed = 1;
+    };
+
+    /**
+     * @brief Input for pricing a Himalaya (Mountain) option under multi-asset BS.
+     */
+    struct MountainBSInput
+    {
+        std::vector<Real> spots;     ///< S0_i
+        std::vector<Real> vols;      ///< σ_i
+        std::vector<Real> dividends; ///< q_i
+        /// Correlation matrix (n×n).  Empty → identity.
+        std::vector<std::vector<Real>> correlations;
+
+        std::vector<Time> observation_dates; ///< one per asset
+        Real strike = 0.0;                   ///< strike on average return
+        bool is_call = true;
+        Real rate = 0.05;
+        Real notional = 100.0;
+
+        int n_paths = 200000;
+        int seed = 1;
+    };
+
+    /**
+     * @brief Input for pricing a standalone Caplet/Floorlet under a short-rate model.
+     */
+    struct ShortRateCapletInput
+    {
+        std::string model_type; ///< "vasicek", "cir", or "hull_white"
+        Real a;
+        Real b;
+        Real sigma;
+        Real r0;
+        Time start;  ///< caplet fixing date
+        Time end;    ///< caplet payment date
+        Real strike; ///< cap/floor rate K
+        bool is_cap = true;
+        Real notional = 1.0;
+
+        int n_paths = 200000; ///< MC paths (used only by MC engine)
+        int seed = 1;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Volatility products inputs
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Input for pricing a variance swap under Black-Scholes.
+     */
+    struct VarianceSwapBSInput
+    {
+        Real spot;
+        Real rate;
+        Real dividend = 0.0;
+        Real vol;
+        Time maturity;
+        Real strike_var; ///< K_var (annualised variance strike)
+        Real notional = 100.0;
+        std::vector<Time> observation_dates; ///< optional discrete schedule
+
+        int n_paths = 200000;
+        int seed = 1;
+    };
+
+    /**
+     * @brief Input for pricing a volatility swap under Black-Scholes.
+     */
+    struct VolatilitySwapBSInput
+    {
+        Real spot;
+        Real rate;
+        Real dividend = 0.0;
+        Real vol;
+        Time maturity;
+        Real strike_vol; ///< K_vol (annualised vol strike)
+        Real notional = 100.0;
+        std::vector<Time> observation_dates; ///< optional discrete schedule
+
+        int n_paths = 200000;
+        int seed = 1;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Dispersion products inputs
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Input for pricing a dispersion swap under multi-asset BS.
+     */
+    struct DispersionBSInput
+    {
+        std::vector<Real> spots;                     ///< S0_i
+        std::vector<Real> vols;                      ///< σ_i
+        std::vector<Real> dividends;                 ///< q_i
+        std::vector<Real> weights;                   ///< index constituent weights (sum to 1)
+        std::vector<std::vector<Real>> correlations; ///< n×n correlation matrix
+
+        Time maturity;
+        Real strike_spread = 0.0; ///< K_spread (annualised variance spread)
+        Real rate = 0.05;
+        Real notional = 100.0;
+        std::vector<Time> observation_dates; ///< optional
+
+        int n_paths = 200000;
+        int seed = 1;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  FX products inputs
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Input for pricing an FX forward.
+     */
+    struct FXForwardInput
+    {
+        Real spot;          ///< spot FX rate (domestic per foreign)
+        Real rate_domestic; ///< domestic risk-free rate
+        Real rate_foreign;  ///< foreign risk-free rate
+        Real vol;           ///< FX volatility (not used for forward, included for consistency)
+        Real strike;        ///< delivery rate K
+        Time maturity;
+        Real notional = 1.0;
+    };
+
+    /**
+     * @brief Input for pricing a European FX option (Garman-Kohlhagen).
+     */
+    struct FXOptionInput
+    {
+        Real spot;
+        Real rate_domestic;
+        Real rate_foreign;
+        Real vol;
+        Real strike;
+        Time maturity;
+        bool is_call = true;
+        Real notional = 1.0;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Commodity products inputs
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Input for pricing a commodity forward.
+     */
+    struct CommodityForwardInput
+    {
+        Real spot;
+        Real rate;
+        Real storage_cost = 0.0;      ///< annualised storage cost u
+        Real convenience_yield = 0.0; ///< annualised convenience yield y
+        Real vol;                     ///< forward vol (not used for forward)
+        Real strike;
+        Time maturity;
+        Real notional = 1.0;
+    };
+
+    /**
+     * @brief Input for pricing a European commodity option (Black '76).
+     */
+    struct CommodityOptionInput
+    {
+        Real spot;
+        Real rate;
+        Real storage_cost = 0.0;
+        Real convenience_yield = 0.0;
+        Real vol;
+        Real strike;
+        Time maturity;
+        bool is_call = true;
+        Real notional = 1.0;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Rainbow (worst-of / best-of) options inputs
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Input for pricing worst-of or best-of options under multi-asset BS.
+     */
+    struct RainbowBSInput
+    {
+        std::vector<Real> spots;                     ///< S0_i
+        std::vector<Real> vols;                      ///< σ_i
+        std::vector<Real> dividends;                 ///< q_i
+        std::vector<std::vector<Real>> correlations; ///< n×n (empty → identity)
+
+        Time maturity;
+        Real strike = 1.0; ///< performance strike (1.0 = ATM)
+        bool is_call = true;
+        Real rate = 0.05;
+        Real notional = 100.0;
+
+        int n_paths = 200000;
+        int seed = 1;
+    };
+
 } // namespace quantModeling
 
 #endif

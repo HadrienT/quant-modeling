@@ -269,6 +269,183 @@ class LocalVolRequest(BaseModel):
     max_moneyness: float = Field(1.40, gt=0.0)
 
 
+# ---------------------------------------------------------------------------
+# Autocall
+# ---------------------------------------------------------------------------
+
+class AutocallRequest(BaseModel):
+    spot: float = Field(..., gt=0.0)
+    rate: float
+    dividend: float = 0.0
+    vol: float = Field(..., gt=0.0)
+    observation_dates: List[float] = Field(..., min_length=1)
+    autocall_barrier: float = Field(1.0, gt=0.0)
+    coupon_barrier: float = Field(0.8, gt=0.0)
+    put_barrier: float = Field(0.6, gt=0.0)
+    coupon_rate: float = Field(0.05, ge=0.0)
+    notional: float = 1000.0
+    memory_coupon: bool = True
+    ki_continuous: bool = False
+    n_paths: int = 200000
+    seed: int = 1
+
+
+# ---------------------------------------------------------------------------
+# Mountain / Himalaya
+# ---------------------------------------------------------------------------
+
+class MountainRequest(BaseModel):
+    spots: List[float] = Field(..., min_length=2)
+    vols: List[float] = Field(..., min_length=2)
+    dividends: List[float] = Field(default_factory=list)
+    correlations: List[List[float]] = Field(default_factory=list)
+    observation_dates: List[float] = Field(..., min_length=1)
+    strike: float = 0.0
+    is_call: bool = True
+    rate: float = 0.05
+    notional: float = 100.0
+    n_paths: int = 200000
+    seed: int = 1
+
+
+# ---------------------------------------------------------------------------
+# Variance Swap
+# ---------------------------------------------------------------------------
+
+class VarianceSwapRequest(BaseModel):
+    spot: float = Field(..., gt=0.0)
+    rate: float
+    dividend: float = 0.0
+    vol: float = Field(..., gt=0.0)
+    maturity: float = Field(..., gt=0.0)
+    strike_var: float = Field(..., ge=0.0, description="Annualised variance strike")
+    notional: float = 100.0
+    observation_dates: List[float] = Field(default_factory=list)
+    engine: EngineType = EngineType.analytic
+    n_paths: int = 200000
+    seed: int = 1
+
+
+# ---------------------------------------------------------------------------
+# Volatility Swap
+# ---------------------------------------------------------------------------
+
+class VolatilitySwapRequest(BaseModel):
+    spot: float = Field(..., gt=0.0)
+    rate: float
+    dividend: float = 0.0
+    vol: float = Field(..., gt=0.0)
+    maturity: float = Field(..., gt=0.0)
+    strike_vol: float = Field(..., ge=0.0, description="Annualised vol strike")
+    notional: float = 100.0
+    observation_dates: List[float] = Field(default_factory=list)
+    n_paths: int = 200000
+    seed: int = 1
+
+
+# ---------------------------------------------------------------------------
+# Dispersion Swap
+# ---------------------------------------------------------------------------
+
+class DispersionSwapRequest(BaseModel):
+    spots: List[float] = Field(..., min_length=2)
+    vols: List[float] = Field(..., min_length=2)
+    dividends: List[float] = Field(default_factory=list)
+    weights: List[float] = Field(default_factory=list)
+    pairwise_correlation: float = Field(0.0, ge=-0.999, le=0.999)
+    maturity: float = Field(..., gt=0.0)
+    strike_spread: float = 0.0
+    rate: float = 0.05
+    notional: float = 100.0
+    observation_dates: List[float] = Field(default_factory=list)
+    n_paths: int = 200000
+    seed: int = 1
+
+
+# ---------------------------------------------------------------------------
+# FX Forward
+# ---------------------------------------------------------------------------
+
+class FXForwardRequest(BaseModel):
+    spot: float = Field(..., gt=0.0, description="Spot FX rate (domestic per foreign)")
+    rate_domestic: float
+    rate_foreign: float
+    vol: float = Field(0.1, ge=0.0)
+    strike: float = Field(..., gt=0.0)
+    maturity: float = Field(..., gt=0.0)
+    notional: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# FX Option
+# ---------------------------------------------------------------------------
+
+class FXOptionRequest(BaseModel):
+    spot: float = Field(..., gt=0.0)
+    rate_domestic: float
+    rate_foreign: float
+    vol: float = Field(..., gt=0.0)
+    strike: float = Field(..., gt=0.0)
+    maturity: float = Field(..., gt=0.0)
+    is_call: bool = True
+    notional: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Commodity Forward
+# ---------------------------------------------------------------------------
+
+class CommodityForwardRequest(BaseModel):
+    spot: float = Field(..., gt=0.0)
+    rate: float
+    storage_cost: float = 0.0
+    convenience_yield: float = 0.0
+    vol: float = Field(0.2, ge=0.0)
+    strike: float = Field(..., gt=0.0)
+    maturity: float = Field(..., gt=0.0)
+    notional: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Commodity Option
+# ---------------------------------------------------------------------------
+
+class CommodityOptionRequest(BaseModel):
+    spot: float = Field(..., gt=0.0)
+    rate: float
+    storage_cost: float = 0.0
+    convenience_yield: float = 0.0
+    vol: float = Field(..., gt=0.0)
+    strike: float = Field(..., gt=0.0)
+    maturity: float = Field(..., gt=0.0)
+    is_call: bool = True
+    notional: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# Rainbow (worst-of / best-of)
+# ---------------------------------------------------------------------------
+
+class RainbowKind(str, Enum):
+    worst_of = "worst-of"
+    best_of = "best-of"
+
+
+class RainbowRequest(BaseModel):
+    spots: List[float] = Field(..., min_length=2)
+    vols: List[float] = Field(..., min_length=2)
+    dividends: List[float] = Field(default_factory=list)
+    pairwise_correlation: float = Field(0.0, ge=-0.999, le=0.999)
+    maturity: float = Field(..., gt=0.0)
+    strike: float = Field(1.0, description="Performance strike (1.0 = ATM)")
+    is_call: bool = True
+    rate: float = 0.05
+    notional: float = 100.0
+    rainbow_kind: RainbowKind = RainbowKind.worst_of
+    n_paths: int = 200000
+    seed: int = 1
+
+
 class LocalVolResponse(BaseModel):
     """Pricing result from the Dupire local-vol MC engine."""
     ticker: str

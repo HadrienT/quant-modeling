@@ -1,10 +1,14 @@
 import BondFields from "./pricing/BondFields";
+import CommodityFields from "./pricing/CommodityFields";
 import ExoticFields from "./pricing/ExoticFields";
 import FutureFields from "./pricing/FutureFields";
+import FXFields from "./pricing/FXFields";
 import ModelSelector from "./pricing/ModelSelector";
 import OptionFields from "./pricing/OptionFields";
 import ResultsPanel from "./pricing/ResultsPanel";
+import StructuredFields from "./pricing/StructuredFields";
 import type { CategoryType } from "./pricing/types";
+import VolatilityFields from "./pricing/VolatilityFields";
 import { usePricing } from "./pricing/usePricing";
 
 const CATEGORIES: { key: CategoryType; label: string }[] = [
@@ -12,6 +16,9 @@ const CATEGORIES: { key: CategoryType; label: string }[] = [
 	{ key: "exotics", label: "Exotics" },
 	{ key: "fixed-income", label: "Fixed Income" },
 	{ key: "structured", label: "Structured" },
+	{ key: "volatility", label: "Volatility" },
+	{ key: "fx", label: "FX" },
+	{ key: "commodity", label: "Commodity" },
 ];
 
 export default function Price() {
@@ -36,9 +43,8 @@ export default function Price() {
 						{CATEGORIES.map((c) => (
 							<button
 								key={c.key}
-								className={`pill${p.category === c.key ? " active" : ""}${c.key === "structured" ? " pill-disabled" : ""}`}
+								className={`pill${p.category === c.key ? " active" : ""}`}
 								type="button"
-								disabled={c.key === "structured"}
 								onClick={() => p.setCategory(c.key)}
 							>
 								{c.label}
@@ -85,7 +91,7 @@ export default function Price() {
 										<option value="digital">Digital</option>
 										<option value="lookback">Lookback</option>
 										<option value="basket">Basket</option>
-										<option value="cliquet">Cliquet</option>
+										<option value="rainbow">Rainbow</option>
 									</select>
 								</label>
 								<ModelSelector {...p} />
@@ -96,14 +102,66 @@ export default function Price() {
 						{/* ── Fixed Income ─────────────────────── */}
 						{p.category === "fixed-income" && <BondFields {...p} />}
 
-						{/* ── Structured (coming soon) ────────── */}
+						{/* ── Structured ──────────────────────── */}
 						{p.category === "structured" && (
-							<p className="price-muted span-2">Structured products coming soon.</p>
+							<>
+								<label className="field">
+									Structured product
+									<select value={p.structuredProduct} onChange={(e) => p.setStructuredProduct(e.target.value as typeof p.structuredProduct)}>
+										<option value="autocall">Autocall</option>
+										<option value="mountain">Mountain / Himalaya</option>
+									</select>
+								</label>
+								<StructuredFields {...p} />
+							</>
+						)}
+
+						{/* ── Volatility ──────────────────────── */}
+						{p.category === "volatility" && (
+							<>
+								<label className="field">
+									Volatility product
+									<select value={p.volProduct} onChange={(e) => p.setVolProduct(e.target.value as typeof p.volProduct)}>
+										<option value="variance-swap">Variance Swap</option>
+										<option value="volatility-swap">Volatility Swap</option>
+										<option value="dispersion-swap">Dispersion Swap</option>
+									</select>
+								</label>
+								<VolatilityFields {...p} />
+							</>
+						)}
+
+						{/* ── FX ────────────────────────────────── */}
+						{p.category === "fx" && (
+							<>
+								<label className="field">
+									FX product
+									<select value={p.fxProduct} onChange={(e) => p.setFxProduct(e.target.value as typeof p.fxProduct)}>
+										<option value="fx-forward">FX Forward</option>
+										<option value="fx-option">FX Option (Garman–Kohlhagen)</option>
+									</select>
+								</label>
+								<FXFields {...p} />
+							</>
+						)}
+
+						{/* ── Commodity ─────────────────────────── */}
+						{p.category === "commodity" && (
+							<>
+								<label className="field">
+									Commodity product
+									<select value={p.commodityProduct} onChange={(e) => p.setCommodityProduct(e.target.value as typeof p.commodityProduct)}>
+										<option value="commodity-forward">Commodity Forward</option>
+										<option value="commodity-option">Commodity Option (Black '76)</option>
+									</select>
+								</label>
+								<CommodityFields {...p} />
+							</>
 						)}
 					</div>
 
 					<div className="price-actions">
-						<button className="button" type="submit" disabled={p.loading || p.category === "structured"}>
+						<button className="button" type="submit" disabled={p.loading}>
 							{p.loading ? "Pricing..." : "Run pricing"}
 						</button>
 						{p.loading && (
