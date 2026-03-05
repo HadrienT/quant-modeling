@@ -1,0 +1,73 @@
+steps:
+  # ── 1. Build & push the API image ──────────────────
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - -t
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_API_SERVICE_NAME}:latest"
+      - -f
+      - api/Dockerfile
+      - .
+    id: build-api
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_API_SERVICE_NAME}:latest"
+    id: push-api
+    waitFor: [build-api]
+
+  # ── 2. Deploy the API to Cloud Run ─────────────────
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - run
+      - deploy
+      - ${_API_SERVICE_NAME}
+      - --image
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_API_SERVICE_NAME}:latest"
+      - --region
+      - ${_REGION}
+      - --allow-unauthenticated
+    id: deploy-api
+    waitFor: [push-api]
+
+  # ── 3. Build & push the Web image ──────────────────
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - -t
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest"
+      - -f
+      - web/Dockerfile.prod
+      - .
+    id: build-web
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest"
+    id: push-web
+    waitFor: [build-web]
+
+  # ── 4. Deploy the Web to Cloud Run ─────────────────
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest"
+      - --region
+      - ${_REGION}
+      - --set-env-vars
+      - "API_URL=${_API_URL}"
+      - --allow-unauthenticated
+    id: deploy-web
+    waitFor: [push-web, deploy-api]
+
+images:
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_API_SERVICE_NAME}:latest"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

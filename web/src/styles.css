@@ -395,6 +395,11 @@ body {
   box-shadow: none;
 }
 
+select option:disabled {
+  color: #aaa;
+  font-style: italic;
+}
+
 .curve-toggle {
   display: flex;
   align-items: center;

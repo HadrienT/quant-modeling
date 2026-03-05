@@ -67,7 +67,7 @@ def health() -> dict:
 
 app.include_router(market_router)
 app.include_router(pricing_router)
-app.include_router(local_vol_router, prefix="/api")
+app.include_router(local_vol_router)
 app.include_router(portfolio_router)
 app.include_router(auth_router)
 

@@ -1,4 +1,5 @@
-import type { ModelType, VolSourceType } from "./types";
+import { isEnabled, MODELS } from "./productRegistry";
+import type { VolSourceType } from "./types";
 import type { PricingHook } from "./usePricing";
 
 type Props = Pick<
@@ -37,12 +38,20 @@ export default function ModelSelector(props: Props) {
 				<select
 					value={analyticLocked ? "black-scholes" : model}
 					disabled={analyticLocked}
-					onChange={(e) => setModel(e.target.value as ModelType)}
+					onChange={(e) => {
+						const v = e.target.value as typeof model;
+						if (isEnabled(MODELS, v)) setModel(v);
+					}}
 				>
-					<option value="black-scholes">Black-Scholes (flat vol)</option>
-					{!analyticLocked && (
-						<option value="dupire-local-vol">Dupire Local Vol</option>
-					)}
+					{MODELS.map((m) => (
+						<option
+							key={m.key}
+							value={m.key}
+							disabled={!m.enabled || (analyticLocked && m.key !== "black-scholes")}
+						>
+							{m.label}{!m.enabled ? " (Too unstable)" : ""}
+						</option>
+					))}
 				</select>
 			</label>
 

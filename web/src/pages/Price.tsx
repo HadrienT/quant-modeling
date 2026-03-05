@@ -5,21 +5,30 @@ import FutureFields from "./pricing/FutureFields";
 import FXFields from "./pricing/FXFields";
 import ModelSelector from "./pricing/ModelSelector";
 import OptionFields from "./pricing/OptionFields";
+import {
+	CATEGORIES,
+	COMMODITY_PRODUCTS,
+	EXOTIC_PRODUCTS,
+	FX_PRODUCTS,
+	isEnabled,
+	type ProductEntry,
+	STRUCTURED_PRODUCTS,
+	VANILLA_INSTRUMENTS,
+	VOL_PRODUCTS,
+} from "./pricing/productRegistry";
 import ResultsPanel from "./pricing/ResultsPanel";
 import StructuredFields from "./pricing/StructuredFields";
-import type { CategoryType } from "./pricing/types";
 import VolatilityFields from "./pricing/VolatilityFields";
 import { usePricing } from "./pricing/usePricing";
 
-const CATEGORIES: { key: CategoryType; label: string }[] = [
-	{ key: "vanilla", label: "Vanilla" },
-	{ key: "exotics", label: "Exotics" },
-	{ key: "fixed-income", label: "Fixed Income" },
-	{ key: "structured", label: "Structured" },
-	{ key: "volatility", label: "Volatility" },
-	{ key: "fx", label: "FX" },
-	{ key: "commodity", label: "Commodity" },
-];
+/** Render <option> elements from a registry list, greying out disabled ones. */
+function registryOptions<K extends string>(list: ProductEntry<K>[]) {
+	return list.map((p) => (
+		<option key={p.key} value={p.key} disabled={!p.enabled}>
+			{p.label}{!p.enabled ? " (coming soon)" : ""}
+		</option>
+	));
+}
 
 export default function Price() {
 	const p = usePricing();
@@ -43,9 +52,10 @@ export default function Price() {
 						{CATEGORIES.map((c) => (
 							<button
 								key={c.key}
-								className={`pill${p.category === c.key ? " active" : ""}`}
+								className={`pill${p.category === c.key ? " active" : ""}${!c.enabled ? " pill-disabled" : ""}`}
 								type="button"
-								onClick={() => p.setCategory(c.key)}
+								onClick={() => c.enabled && p.setCategory(c.key)}
+								title={!c.enabled ? "Not yet vetted" : undefined}
 							>
 								{c.label}
 							</button>
@@ -59,9 +69,14 @@ export default function Price() {
 							<>
 								<label className="field">
 									Instrument
-									<select value={p.instrument} onChange={(e) => p.setInstrument(e.target.value as typeof p.instrument)}>
-										<option value="option">Option</option>
-										<option value="future">Future</option>
+								<select
+									value={p.instrument}
+									onChange={(e) => {
+										const v = e.target.value as typeof p.instrument;
+										if (isEnabled(VANILLA_INSTRUMENTS, v)) p.setInstrument(v);
+									}}
+								>
+									{registryOptions(VANILLA_INSTRUMENTS)}
 									</select>
 								</label>
 								{p.instrument === "option" && (
@@ -86,12 +101,14 @@ export default function Price() {
 							<>
 								<label className="field">
 									Exotic product
-									<select value={p.exoticProduct} onChange={(e) => p.setExoticProduct(e.target.value as typeof p.exoticProduct)}>
-										<option value="barrier">Barrier</option>
-										<option value="digital">Digital</option>
-										<option value="lookback">Lookback</option>
-										<option value="basket">Basket</option>
-										<option value="rainbow">Rainbow</option>
+								<select
+									value={p.exoticProduct}
+									onChange={(e) => {
+										const v = e.target.value as typeof p.exoticProduct;
+										if (isEnabled(EXOTIC_PRODUCTS, v)) p.setExoticProduct(v);
+									}}
+								>
+									{registryOptions(EXOTIC_PRODUCTS)}
 									</select>
 								</label>
 								<ModelSelector {...p} />
@@ -107,9 +124,14 @@ export default function Price() {
 							<>
 								<label className="field">
 									Structured product
-									<select value={p.structuredProduct} onChange={(e) => p.setStructuredProduct(e.target.value as typeof p.structuredProduct)}>
-										<option value="autocall">Autocall</option>
-										<option value="mountain">Mountain / Himalaya</option>
+								<select
+									value={p.structuredProduct}
+									onChange={(e) => {
+										const v = e.target.value as typeof p.structuredProduct;
+										if (isEnabled(STRUCTURED_PRODUCTS, v)) p.setStructuredProduct(v);
+									}}
+								>
+									{registryOptions(STRUCTURED_PRODUCTS)}
 									</select>
 								</label>
 								<StructuredFields {...p} />
@@ -121,10 +143,14 @@ export default function Price() {
 							<>
 								<label className="field">
 									Volatility product
-									<select value={p.volProduct} onChange={(e) => p.setVolProduct(e.target.value as typeof p.volProduct)}>
-										<option value="variance-swap">Variance Swap</option>
-										<option value="volatility-swap">Volatility Swap</option>
-										<option value="dispersion-swap">Dispersion Swap</option>
+								<select
+									value={p.volProduct}
+									onChange={(e) => {
+										const v = e.target.value as typeof p.volProduct;
+										if (isEnabled(VOL_PRODUCTS, v)) p.setVolProduct(v);
+									}}
+								>
+									{registryOptions(VOL_PRODUCTS)}
 									</select>
 								</label>
 								<VolatilityFields {...p} />
@@ -136,9 +162,14 @@ export default function Price() {
 							<>
 								<label className="field">
 									FX product
-									<select value={p.fxProduct} onChange={(e) => p.setFxProduct(e.target.value as typeof p.fxProduct)}>
-										<option value="fx-forward">FX Forward</option>
-										<option value="fx-option">FX Option (Garman–Kohlhagen)</option>
+								<select
+									value={p.fxProduct}
+									onChange={(e) => {
+										const v = e.target.value as typeof p.fxProduct;
+										if (isEnabled(FX_PRODUCTS, v)) p.setFxProduct(v);
+									}}
+								>
+									{registryOptions(FX_PRODUCTS)}
 									</select>
 								</label>
 								<FXFields {...p} />
@@ -150,9 +181,14 @@ export default function Price() {
 							<>
 								<label className="field">
 									Commodity product
-									<select value={p.commodityProduct} onChange={(e) => p.setCommodityProduct(e.target.value as typeof p.commodityProduct)}>
-										<option value="commodity-forward">Commodity Forward</option>
-										<option value="commodity-option">Commodity Option (Black '76)</option>
+								<select
+									value={p.commodityProduct}
+									onChange={(e) => {
+										const v = e.target.value as typeof p.commodityProduct;
+										if (isEnabled(COMMODITY_PRODUCTS, v)) p.setCommodityProduct(v);
+									}}
+								>
+									{registryOptions(COMMODITY_PRODUCTS)}
 									</select>
 								</label>
 								<CommodityFields {...p} />

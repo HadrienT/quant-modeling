@@ -1,0 +1,26 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/ ./
+
+ARG VITE_API_BASE=/api
+ENV VITE_API_BASE=${VITE_API_BASE}
+
+RUN npm run build
+
+# ── production stage: nginx ──────────────────────────
+FROM nginx:1.27-alpine
+
+# envsubst template for runtime API_URL injection
+COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
+
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Cloud Run sends traffic on $PORT (default 8080)
+ENV PORT=8080
+ENV API_URL=http://localhost:8000
+
+EXPOSE 8080
