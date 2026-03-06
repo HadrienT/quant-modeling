@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import About from "./pages/About";
+import BacktestPage from "./pages/Backtest";
 import Price from "./pages/Price";
 import Market from "./pages/Market";
 import PortfolioPage from "./pages/Portfolio";
@@ -125,6 +126,9 @@ function AppInner() {
 						<NavLink to="/portfolio" className="nav-link">
 							Portfolio
 						</NavLink>
+						<NavLink to="/backtest" className="nav-link">
+							Backtest
+						</NavLink>
 						<NavLink to="/about" className="nav-link">
 							About
 						</NavLink>
@@ -139,6 +143,7 @@ function AppInner() {
 					<Route path="/market" element={<Market />} />
 					<Route path="/price" element={<Price />} />
 					<Route path="/portfolio" element={<PortfolioPage />} />
+					<Route path="/backtest" element={<BacktestPage />} />
 					<Route path="/about" element={<About />} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>

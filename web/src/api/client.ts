@@ -400,3 +400,60 @@ export function getMe(token: string): Promise<UserInfo> {
 		},
 	});
 }
+
+// ── Backtest types ────────────────────────────────────────────────────────────
+
+export type BacktestRequest = {
+	tickers: string[];
+	opt_start: string;   // ISO date "YYYY-MM-DD"
+	opt_end: string;     // ISO date "YYYY-MM-DD"
+	initial_capital: number;
+	max_share: number;
+	min_share: number;
+	rebalance_freq: number;
+};
+
+export type AllocationRow = {
+	ticker: string;
+	weight: number;
+	start_price: number;
+	end_price: number;
+	return_pct: number;
+};
+
+export type PortfolioPoint = {
+	date: string;
+	value: number;
+};
+
+export type BacktestMetrics = {
+	ath: number;
+	atl: number;
+	total_return_pct: number;
+	annualized_return_pct: number;
+	max_drawdown: number;
+	sharpe_ratio: number;
+	optimal_sharpe: number;
+	alpha: number | null;
+	beta: number | null;
+};
+
+export type BacktestResponse = {
+	opt_start: string;
+	opt_end: string;
+	allocation: AllocationRow[];
+	portfolio_values: PortfolioPoint[];
+	sp500_values: PortfolioPoint[] | null;
+	metrics: BacktestMetrics;
+	warnings: string[];
+};
+
+// ── Backtest API ──────────────────────────────────────────────────────────────
+
+export function runBacktest(req: BacktestRequest): Promise<BacktestResponse> {
+	return apiFetch(`${API_BASE}/api/backtest/run`, {
+		method: "POST",
+		headers: headers(),
+		body: JSON.stringify(req),
+	});
+}
