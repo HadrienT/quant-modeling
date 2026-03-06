@@ -1,6 +1,10 @@
+limit_req_zone $binary_remote_addr zone=per_ip:10m rate=10r/s;
+
 server {
     listen ${PORT};
     server_name _;
+
+    limit_req zone=per_ip burst=20 nodelay;
 
     root /usr/share/nginx/html;
     index index.html;

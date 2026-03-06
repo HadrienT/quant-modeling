@@ -28,6 +28,9 @@ steps:
       - --region
       - ${_REGION}
       - --allow-unauthenticated
+      - --min-instances=0
+      - --max-instances=1
+      - --concurrency=80
     id: deploy-web
     waitFor: [push-web]
 
