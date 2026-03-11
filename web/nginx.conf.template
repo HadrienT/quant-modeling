@@ -26,6 +26,16 @@ server {
         proxy_read_timeout 120s;
     }
 
+    # ── Block scanner/bot paths ──────────────────────────
+    # This site has no PHP — drop any .php request silently
+    location ~* \.(php|asp|aspx|jsp|cgi|sh|bash|env|git)$ {
+        return 444;
+    }
+    # Block WordPress and other common CMS/admin scanner paths
+    location ~* ^/(wp-admin|wp-includes|wp-content|wp-login|wordpress|xmlrpc|phpmyadmin|admin|administrator|cgi-bin) {
+        return 444;
+    }
+
     # ── SPA fallback ─────────────────────────────────────
     location / {
         try_files $uri $uri/ /index.html;
