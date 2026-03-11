@@ -37,7 +37,11 @@ server {
     }
 
     # ── SPA fallback ─────────────────────────────────────
+    # Only GET/HEAD/OPTIONS are valid for the SPA — drop everything else silently
     location / {
+        limit_except GET HEAD OPTIONS {
+            return 444;
+        }
         try_files $uri $uri/ /index.html;
     }
 
