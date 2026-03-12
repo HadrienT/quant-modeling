@@ -113,9 +113,6 @@ function AppInner() {
 							<span className="nav-subtitle">Derivatives modeling</span>
 						</div>
 					</button>
-					{__COMMIT_SHA__ !== "dev" && (
-						<span className="nav-version" title={`Build ${__COMMIT_SHA__}`}>{__COMMIT_SHA__}</span>
-					)}
 					<nav className="nav-links">
 						<NavLink to="/" end className="nav-link">
 							Visualize
@@ -151,6 +148,7 @@ function AppInner() {
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
 			</main>
+			<footer className="build-footer" title={`Build ${import.meta.env.VITE_COMMIT_SHA || "dev"}`}>{import.meta.env.VITE_COMMIT_SHA || "dev"}</footer>
 		</div>
 	);
 }

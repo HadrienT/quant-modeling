@@ -96,13 +96,17 @@ body {
   color: var(--ink-2);
 }
 
-.nav-version {
-  font-size: 0.65rem;
+.build-footer {
+  position: fixed;
+  bottom: 6px;
+  right: 10px;
+  font-size: 0.75rem;
   font-family: "SF Mono", "Fira Code", monospace;
-  color: var(--ink-3, #aaa);
-  opacity: 0.5;
-  align-self: center;
+  color: var(--ink-2, #777);
+  opacity: 0.55;
   user-select: all;
+  pointer-events: auto;
+  z-index: 1;
 }
 
 .nav-links {
