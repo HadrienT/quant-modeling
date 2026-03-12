@@ -30,7 +30,9 @@ RUN npm ci
 COPY web/ ./
 
 ARG VITE_API_BASE=/api
+ARG VITE_COMMIT_SHA=dev
 ENV VITE_API_BASE=${VITE_API_BASE}
+ENV VITE_COMMIT_SHA=${VITE_COMMIT_SHA}
 
 RUN npm run build
 
@@ -73,6 +75,8 @@ COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
 # Cloud Run sends traffic on $PORT (default 8080)
 ENV PORT=8080
 ENV API_URL=http://127.0.0.1:8000
+ARG VITE_COMMIT_SHA=dev
+ENV COMMIT_SHA=${VITE_COMMIT_SHA}
 
 EXPOSE 8080
 

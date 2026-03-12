@@ -3,6 +3,9 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
 	plugins: [react()],
+	define: {
+		__COMMIT_SHA__: JSON.stringify(process.env.VITE_COMMIT_SHA ?? "dev"),
+	},
 	server: {
 		port: 5173,
 		host: true,

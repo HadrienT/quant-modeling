@@ -63,7 +63,7 @@ app.add_middleware(CacheLoggingMiddleware)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "version": os.getenv("COMMIT_SHA", "dev")}
 
 
 app.include_router(market_router)

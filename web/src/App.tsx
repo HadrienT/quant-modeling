@@ -113,6 +113,9 @@ function AppInner() {
 							<span className="nav-subtitle">Derivatives modeling</span>
 						</div>
 					</button>
+					{__COMMIT_SHA__ !== "dev" && (
+						<span className="nav-version" title={`Build ${__COMMIT_SHA__}`}>{__COMMIT_SHA__}</span>
+					)}
 					<nav className="nav-links">
 						<NavLink to="/" end className="nav-link">
 							Visualize
