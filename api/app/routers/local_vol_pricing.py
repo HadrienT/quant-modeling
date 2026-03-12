@@ -33,7 +33,7 @@ from ..schemas import (
 
 logger = get_logger()
 
-router = APIRouter(prefix="/local-vol", tags=["local-vol"])
+router = APIRouter(prefix="/api/local-vol", tags=["local-vol"])
 
 
 def _get_spot(ticker: str) -> float:
@@ -97,7 +97,7 @@ def price_local_vol(
 
     # --- Stage 1: fetch ---
     try:
-        raw_quotes = fetch_option_chain(ticker)
+        raw_quotes = fetch_option_chain(ticker, spot=spot, rate=rate)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -194,7 +194,7 @@ def _fetch_and_clean(
     )
 
     try:
-        raw_quotes = fetch_option_chain(ticker)
+        raw_quotes = fetch_option_chain(ticker, spot=spot, rate=rate)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

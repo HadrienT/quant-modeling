@@ -60,19 +60,29 @@ def _liquidity_ok(
     min_oi: int,
     min_bid: float,
     max_spread_ratio: float,
+    oi_data_available: bool = True,
 ) -> str | None:
     """Return None if OK, or a short reason string if the quote fails."""
-    if q.open_interest < min_oi:
-        return "low_oi"
+    # When OI data is unavailable (yfinance returning zeros), fall back to volume
+    if oi_data_available:
+        if q.open_interest < min_oi:
+            return "low_oi"
+    else:
+        if q.volume < min_oi:
+            return "low_volume"
     if q.implied_volatility is None or q.implied_volatility <= 0:
         return "no_iv"
     if q.mid <= 0:
         return "mid_le0"
-    if q.bid < min_bid:
-        return "low_bid"
-    spread = q.ask - q.bid
-    if q.mid > 0 and spread / q.mid > max_spread_ratio:
-        return "wide_spread"
+    # When bid/ask are unavailable (both zero), skip bid floor and spread checks
+    if q.bid == 0 and q.ask == 0:
+        pass  # rely on mid (from lastPrice) and volume for liquidity
+    else:
+        if q.bid < min_bid:
+            return "low_bid"
+        spread = q.ask - q.bid
+        if q.mid > 0 and spread / q.mid > max_spread_ratio:
+            return "wide_spread"
     return None
 
 
@@ -197,11 +207,18 @@ def clean_chain(
     )
 
     # --- 1. Liquidity ---
+    # Detect whether yfinance is actually providing OI data.
+    # If most quotes have OI == 0, fall back to volume-based filtering.
+    oi_populated = sum(1 for q in quotes if q.open_interest > 0)
+    oi_data_available = oi_populated > len(quotes) * 0.05  # >5 % have OI
+    if not oi_data_available:
+        logger.info("cleaner: OI data mostly absent (%d/%d have OI>0), falling back to volume", oi_populated, len(quotes))
+
     from collections import Counter as _Counter
     liq = []
     reject_reasons: dict[str, int] = {}
     for q in quotes:
-        reason = _liquidity_ok(q, min_open_interest, min_bid, max_spread_ratio)
+        reason = _liquidity_ok(q, min_open_interest, min_bid, max_spread_ratio, oi_data_available)
         if reason is None:
             liq.append(q)
         else:
