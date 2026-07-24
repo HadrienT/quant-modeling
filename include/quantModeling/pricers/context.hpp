@@ -13,6 +13,15 @@ namespace quantModeling
   struct VolSurface;
   struct Fixings;
 
+  /// How N(0,1) samples are produced by MC engines.
+  /// BoxMuller reproduces the historical draw sequence; InverseNormal is the
+  /// stateless transform required by QMC (Sobol) and the CUDA backend.
+  enum class GaussianKind
+  {
+    BoxMuller,
+    InverseNormal
+  };
+
   struct PricingSettings
   {
     int mc_paths = 0;
@@ -21,6 +30,8 @@ namespace quantModeling
     int tree_steps = 0;
     int pde_space_steps = 0;
     int pde_time_steps = 0;
+    // Last field: keeps aggregate initialization of the fields above intact.
+    GaussianKind mc_gaussian = GaussianKind::BoxMuller;
   };
 
   struct MarketView

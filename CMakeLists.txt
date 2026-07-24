@@ -9,6 +9,8 @@ project(quantModeling
 option(QM_BUILD_CLI "Build CLI executable" OFF)
 option(QM_BUILD_TESTS "Build unit tests (GoogleTest)" OFF)
 option(QM_BUILD_PYTHON "Build Python bindings (pybind11)" OFF)
+option(QM_BUILD_BENCHMARKS "Build benchmarks (google-benchmark)" OFF)
+option(QM_NATIVE_ARCH "Optimize for the host CPU (-march=native)" OFF)
 
 # ---- Global Options  ----
 set(CMAKE_CXX_STANDARD 20)
@@ -113,6 +115,12 @@ target_compile_options(quantModeling PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
 )
 
+if(QM_NATIVE_ARCH)
+  target_compile_options(quantModeling PUBLIC
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-march=native>
+  )
+endif()
+
 # ---- CLI ----
 if(QM_BUILD_CLI)
   add_executable(quantModeling_cli main.cpp)
@@ -151,6 +159,7 @@ if(QM_BUILD_TESTS)
     tests/testStructuredProducts.cpp
     tests/testNewProducts.cpp
     tests/testRainbow.cpp
+    tests/testInverseNormal.cpp
   )
 
   target_link_libraries(quantModeling_tests
@@ -165,6 +174,23 @@ if(QM_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(quantModeling_tests)
+endif()
+
+# ---- Benchmarks (google-benchmark) ----
+if(QM_BUILD_BENCHMARKS)
+  find_package(benchmark CONFIG REQUIRED)
+
+  add_executable(quantModeling_bench
+    benchmarks/bench_vanilla_mc.cpp
+  )
+  target_link_libraries(quantModeling_bench
+    PRIVATE
+      quantModeling
+      benchmark::benchmark_main
+  )
+  target_compile_options(quantModeling_bench PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra>
+  )
 endif()
 
 # ---- Python binding (pybind11) ----

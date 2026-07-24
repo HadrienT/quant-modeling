@@ -7,6 +7,7 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": true,
         "QM_BUILD_CLI": "ON",
         "QM_BUILD_TESTS": "ON",
@@ -34,6 +35,8 @@
       "inherits": "default",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "QM_NATIVE_ARCH": "ON",
+        "QM_BUILD_BENCHMARKS": "ON",
         "QM_BUILD_PYTHON": "OFF"
       }
     },
