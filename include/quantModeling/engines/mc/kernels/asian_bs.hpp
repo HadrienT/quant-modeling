@@ -82,10 +82,10 @@ namespace quantModeling::mc
     struct AsianWorkspace
     {
         BrownianBridge bridge;
-        std::vector<Real> times;  ///< fixing times t_1..t_n
-        std::vector<Real> drift;  ///< (r−q−σ²/2)·t_j precomputed
-        std::vector<double> z;    ///< Sobol gaussian point
-        std::vector<Real> w;      ///< Brownian path W(t_j)
+        std::vector<Real> times; ///< fixing times t_1..t_n
+        std::vector<Real> drift; ///< (r−q−σ²/2)·t_j precomputed
+        std::vector<double> z;   ///< Sobol gaussian point
+        std::vector<Real> w;     ///< Brownian path W(t_j)
 
         explicit AsianWorkspace(const AsianSpec &s)
             : bridge(make_times(s)), times(make_times(s)),

@@ -7,6 +7,7 @@
 
 #include <Eigen/Cholesky>
 #include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include <string>
 #include <vector>
 
@@ -31,15 +32,15 @@ namespace quantModeling
         std::vector<Real> spots;     ///< S0_i  (n)
         std::vector<Real> vols;      ///< sigma_i (n)
         std::vector<Real> dividends; ///< q_i   (n)
-        Eigen::MatrixXd chol;        ///< lower-triangular L s.t. L L^T = corr
+        Eigen::MatrixXd chol;        ///< mixing matrix A s.t. A A^T = corr
 
         /**
          * @param r   Risk-free rate
          * @param s   Initial spots S0_i
          * @param v   Volatilities sigma_i
          * @param q   Dividend yields q_i
-         * @param corr  n×n correlation matrix (must be positive definite)
-         * @throws InvalidInput if corr is not positive definite
+         * @param corr  n×n correlation matrix (must be positive semi-definite)
+         * @throws InvalidInput if corr is not positive semi-definite
          */
         MultiAssetBSModel(Real r,
                           std::vector<Real> s,
@@ -53,9 +54,23 @@ namespace quantModeling
               disc_curve_(r)
         {
             const Eigen::LLT<Eigen::MatrixXd> llt(corr);
-            if (llt.info() != Eigen::Success)
-                throw InvalidInput("MultiAssetBSModel: correlation matrix is not positive definite");
-            chol = llt.matrixL();
+            if (llt.info() == Eigen::Success)
+            {
+                chol = llt.matrixL();
+            }
+            else
+            {
+                // Positive *semi*-definite matrices (e.g. rho = 1 blocks) have
+                // no strict Cholesky factor. Any A with A A^T = C works as a
+                // mixing matrix, so fall back to the spectral square root
+                // A = V diag(sqrt(max(lambda, 0))).
+                const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(corr);
+                if (es.info() != Eigen::Success ||
+                    es.eigenvalues().minCoeff() < -1e-10 * corr.rows())
+                    throw InvalidInput("MultiAssetBSModel: correlation matrix is not positive semi-definite");
+                chol = es.eigenvectors() *
+                       es.eigenvalues().cwiseMax(0.0).cwiseSqrt().asDiagonal();
+            }
         }
 
         std::string model_name() const noexcept override { return "MultiAssetBSModel"; }

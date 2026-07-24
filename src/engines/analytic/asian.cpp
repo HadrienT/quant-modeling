@@ -138,8 +138,12 @@ namespace quantModeling
         // Total log-volatility used in Black d1 (stddev over horizon)
         const Real sigma_tot = stddev_A; // already represents total stddev used in d1
 
-        // Delta: dPrice/dS0 = dPrice/dF_A * dF_A/dS0 ; dPrice/dF_A (Black) = df_r * N(d1)
-        out.greeks.delta = opt.notional * (df_r * Nd1 * dF_dS);
+        // Delta: dPrice/dS0 = dPrice/dF_A * dF_A/dS0
+        // Black w.r.t. forward: call dP/dF = df_r * N(d1), put dP/dF = -df_r * N(-d1)
+        if (type == OptionType::Call)
+            out.greeks.delta = opt.notional * (df_r * Nd1 * dF_dS);
+        else
+            out.greeks.delta = opt.notional * (-df_r * norm_cdf(-d1) * dF_dS);
 
         // Gamma: derived via chain rule. da/dS0 == 0 since F_A = S0 * g(mu,T)
         if (sigma_tot > 0.0)
@@ -171,15 +175,19 @@ namespace quantModeling
                 return opt.notional * std::exp(-r_p * T_p) * intrinsic;
             }
 
-            const Real x_p = (sigma_p * sigma_p) * T_p;
-            const Real y_p = 0.5 * x_p;
-            const Real a_p = std::expm1(y_p);
-            const Real term_p = a_p - y_p;
-            Real M_p;
-            if (std::abs(x_p) < 1e-8)
-                M_p = 0.25;
-            else
-                M_p = (2.0 * std::exp(y_p) * term_p) / (x_p * x_p);
+            // Same moment-matching as the main path: M = E[A^2] / E[A]^2
+            const Real alpha_p = mu_p;
+            const Real beta_p = sigma_p * sigma_p;
+            const Real B_p = 2.0 * alpha_p + beta_p;
+
+            const Real t1_p = (std::abs(B_p) < 1e-16) ? T_p : (std::expm1(B_p * T_p) / B_p);
+            const Real t2_p = (std::abs(alpha_p) < 1e-16) ? T_p : (std::expm1(alpha_p * T_p) / alpha_p);
+
+            const Real EA2_p = (2.0 * S0 * S0 / (T_p * T_p * (alpha_p + beta_p))) * (t1_p - t2_p);
+
+            Real M_p = 0.0;
+            if (EA2_p > 0.0)
+                M_p = EA2_p / (Fp * Fp);
 
             if (!(M_p > 0.0))
             {
