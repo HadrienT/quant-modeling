@@ -22,6 +22,16 @@ namespace quantModeling
     InverseNormal
   };
 
+  /// Point-set driving the Monte-Carlo paths.
+  /// PseudoRandom: PCG32 stream. Sobol: scrambled low-discrepancy sequence
+  /// (randomized QMC — paths are split into mc_rqmc_batches independent
+  /// digital shifts; the reported std error is the spread of batch means).
+  enum class SamplerKind
+  {
+    PseudoRandom,
+    Sobol
+  };
+
   struct PricingSettings
   {
     int mc_paths = 0;
@@ -30,8 +40,10 @@ namespace quantModeling
     int tree_steps = 0;
     int pde_space_steps = 0;
     int pde_time_steps = 0;
-    // Last field: keeps aggregate initialization of the fields above intact.
+    // New fields last: keeps aggregate initialization of the fields above intact.
     GaussianKind mc_gaussian = GaussianKind::BoxMuller;
+    SamplerKind mc_sampler = SamplerKind::PseudoRandom;
+    int mc_rqmc_batches = 16; ///< RQMC replicates when mc_sampler == Sobol
   };
 
   struct MarketView

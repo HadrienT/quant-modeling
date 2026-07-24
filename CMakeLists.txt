@@ -160,6 +160,7 @@ if(QM_BUILD_TESTS)
     tests/testNewProducts.cpp
     tests/testRainbow.cpp
     tests/testInverseNormal.cpp
+    tests/testSobol.cpp
   )
 
   target_link_libraries(quantModeling_tests

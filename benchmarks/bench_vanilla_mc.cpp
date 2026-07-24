@@ -14,7 +14,8 @@ namespace
 {
     constexpr qm::Real S0 = 100.0, K = 100.0, T = 1.0, r = 0.05, q = 0.02, sigma = 0.20;
 
-    qm::PricingContext make_ctx(int n_paths, bool antithetic, qm::GaussianKind kind)
+    qm::PricingContext make_ctx(int n_paths, bool antithetic, qm::GaussianKind kind,
+                                qm::SamplerKind sampler = qm::SamplerKind::PseudoRandom)
     {
         qm::PricingContext ctx;
         ctx.model = std::make_shared<qm::BlackScholesModel>(S0, r, q, sigma);
@@ -22,14 +23,16 @@ namespace
         ctx.settings.mc_seed = 42;
         ctx.settings.mc_antithetic = antithetic;
         ctx.settings.mc_gaussian = kind;
+        ctx.settings.mc_sampler = sampler;
         return ctx;
     }
 
     // Full engine benchmark: visitor + kernel + result assembly.
-    void bench_engine(benchmark::State &state, bool antithetic, qm::GaussianKind kind)
+    void bench_engine(benchmark::State &state, bool antithetic, qm::GaussianKind kind,
+                      qm::SamplerKind sampler = qm::SamplerKind::PseudoRandom)
     {
         const int n_paths = static_cast<int>(state.range(0));
-        const auto ctx = make_ctx(n_paths, antithetic, kind);
+        const auto ctx = make_ctx(n_paths, antithetic, kind, sampler);
         const qm::VanillaOption opt(
             std::make_shared<qm::PlainVanillaPayoff>(qm::OptionType::Call, K),
             std::make_shared<qm::EuropeanExercise>(T));
@@ -61,8 +64,13 @@ static void BM_VanillaMC_InverseNormal_Antithetic(benchmark::State &state)
 {
     bench_engine(state, true, qm::GaussianKind::InverseNormal);
 }
+static void BM_VanillaMC_SobolRQMC(benchmark::State &state)
+{
+  bench_engine(state, false, qm::GaussianKind::InverseNormal, qm::SamplerKind::Sobol);
+}
 
 BENCHMARK(BM_VanillaMC_BoxMuller)->Arg(1 << 20);
 BENCHMARK(BM_VanillaMC_BoxMuller_Antithetic)->Arg(1 << 20);
 BENCHMARK(BM_VanillaMC_InverseNormal)->Arg(1 << 20);
 BENCHMARK(BM_VanillaMC_InverseNormal_Antithetic)->Arg(1 << 20);
+BENCHMARK(BM_VanillaMC_SobolRQMC)->Arg(1 << 20);

@@ -3,6 +3,9 @@
 #include "quantModeling/utils/gaussian_source.hpp"
 #include "quantModeling/utils/greeks.hpp"
 #include "quantModeling/utils/rng.hpp"
+#include "quantModeling/utils/sobol.hpp"
+
+#include <algorithm>
 
 namespace quantModeling
 {
@@ -71,20 +74,53 @@ namespace quantModeling
     spec.df_upT = m.discount_curve().discount(T_up);
     spec.df_dnT = m.discount_curve().discount(T_dn);
 
-    // ---- Run the templated kernel with the selected Gaussian source
-    RngFactory rngFact(static_cast<uint64_t>(settings.mc_seed));
+    // ---- Run the paths
     mc::VanillaStats stats;
-    if (settings.mc_gaussian == GaussianKind::InverseNormal)
+    std::string diag;
+    if (settings.mc_sampler == SamplerKind::Sobol)
     {
-      InverseNormalSource gauss(rngFact.make(0));
-      stats = run_vanilla_kernel(spec, optType, settings.mc_antithetic,
-                                 settings.mc_paths, gauss);
+      // Randomized QMC: B independent digital shifts; each batch mean is one
+      // i.i.d. sample, so the Welford accumulators over batch means give the
+      // grand mean and an unbiased RQMC standard error. Antithetic is
+      // redundant with scrambled Sobol and is ignored here.
+      const int B = std::max(2, settings.mc_rqmc_batches);
+      const int per_batch = std::max(1, settings.mc_paths / B);
+      for (int b = 0; b < B; ++b)
+      {
+        const uint64_t scramble_seed =
+            (static_cast<uint64_t>(static_cast<uint32_t>(settings.mc_seed)) << 32) |
+            static_cast<uint64_t>(b);
+        SobolGaussianSource gauss(/*dimension=*/1, scramble_seed);
+        const mc::VanillaStats batch = run_vanilla_kernel(
+            spec, optType, /*antithetic=*/false, per_batch, gauss);
+        stats.payoff.add(batch.payoff.mean);
+        stats.delta.add(batch.delta.mean);
+        stats.vega.add(batch.vega.mean);
+        stats.rho.add(batch.rho.mean);
+        stats.gamma.add(batch.gamma.mean);
+        stats.theta.add(batch.theta.mean);
+      }
+      diag = "BS MC European vanilla (flat r,q,sigma) + Sobol RQMC (" +
+             std::to_string(B) + " digital shifts)";
     }
     else
     {
-      BoxMullerSource gauss(rngFact.make(0));
-      stats = run_vanilla_kernel(spec, optType, settings.mc_antithetic,
-                                 settings.mc_paths, gauss);
+      RngFactory rngFact(static_cast<uint64_t>(settings.mc_seed));
+      if (settings.mc_gaussian == GaussianKind::InverseNormal)
+      {
+        InverseNormalSource gauss(rngFact.make(0));
+        stats = run_vanilla_kernel(spec, optType, settings.mc_antithetic,
+                                   settings.mc_paths, gauss);
+      }
+      else
+      {
+        BoxMullerSource gauss(rngFact.make(0));
+        stats = run_vanilla_kernel(spec, optType, settings.mc_antithetic,
+                                   settings.mc_paths, gauss);
+      }
+      diag = settings.mc_antithetic
+                 ? "BS MC European vanilla (flat r,q,sigma) + antithetic"
+                 : "BS MC European vanilla (flat r,q,sigma)";
     }
 
     // ---- Assemble result
@@ -92,9 +128,7 @@ namespace quantModeling
     const Real N = opt.notional;
 
     PricingResult out;
-    out.diagnostics = settings.mc_antithetic
-                          ? "BS MC European vanilla (flat r,q,sigma) + antithetic"
-                          : "BS MC European vanilla (flat r,q,sigma)";
+    out.diagnostics = diag;
     out.npv = N * disc * stats.payoff.mean;
     out.mc_std_error = N * disc * stats.payoff.std_error();
 
