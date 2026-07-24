@@ -43,7 +43,8 @@ namespace quantModeling
     // New fields last: keeps aggregate initialization of the fields above intact.
     GaussianKind mc_gaussian = GaussianKind::BoxMuller;
     SamplerKind mc_sampler = SamplerKind::PseudoRandom;
-    int mc_rqmc_batches = 16; ///< RQMC replicates when mc_sampler == Sobol
+    int mc_rqmc_batches = 16;      ///< RQMC replicates when mc_sampler == Sobol
+    bool mc_control_variate = true; ///< use analytic controls where available
   };
 
   struct MarketView

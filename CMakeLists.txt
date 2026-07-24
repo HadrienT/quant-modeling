@@ -141,6 +141,7 @@ if(QM_BUILD_TESTS)
     tests/testBSAna.cpp
     tests/testBSMC.cpp
     tests/testAsianOption.cpp
+    tests/testAsianVR.cpp
     tests/testLookback.cpp
     tests/testBasket.cpp
     tests/testFuture.cpp

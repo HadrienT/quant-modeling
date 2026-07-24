@@ -66,7 +66,7 @@ static void BM_VanillaMC_InverseNormal_Antithetic(benchmark::State &state)
 }
 static void BM_VanillaMC_SobolRQMC(benchmark::State &state)
 {
-  bench_engine(state, false, qm::GaussianKind::InverseNormal, qm::SamplerKind::Sobol);
+    bench_engine(state, false, qm::GaussianKind::InverseNormal, qm::SamplerKind::Sobol);
 }
 
 BENCHMARK(BM_VanillaMC_BoxMuller)->Arg(1 << 20);

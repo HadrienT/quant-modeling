@@ -1,16 +1,93 @@
 #include "quantModeling/engines/mc/asian.hpp"
 #include "quantModeling/engines/base.hpp"
+#include "quantModeling/engines/mc/kernels/asian_bs.hpp"
 #include "quantModeling/instruments/base.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
+#include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/models/equity/local_vol_model.hpp"
 #include "quantModeling/utils/greeks.hpp"
 #include "quantModeling/utils/rng.hpp"
+#include "quantModeling/utils/sobol_directions.hpp"
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
 
 namespace quantModeling
 {
+
+    namespace
+    {
+        /// QMC pricing path: Sobol + Brownian bridge + geometric control
+        /// variate. Flat-vol Black-Scholes only (the closed-form control
+        /// expectation must match the simulated dynamics exactly).
+        PricingResult price_asian_qmc(const AsianOption &opt,
+                                      const ILocalVolModel &m,
+                                      const PricingSettings &settings)
+        {
+            const Real T = opt.exercise->dates().front();
+            const OptionType optType = opt.payoff->type();
+
+            mc::AsianSpec spec;
+            spec.S0 = m.spot0();
+            spec.K = opt.payoff->strike();
+            spec.r = m.rate_r();
+            spec.q = m.yield_q();
+            spec.sigma = m.vol_sigma();
+            spec.T = T;
+            spec.n_fixings = std::max(1, static_cast<int>(T * 252.0 + 0.5));
+            spec.df = m.discount_curve().discount(T);
+
+            const bool is_arith = (opt.average_type == AsianAverageType::Arithmetic);
+            const bool use_cv = settings.mc_control_variate && is_arith;
+            const Real geo_price = mc::discrete_geometric_asian_price(spec, optType);
+
+            mc::AsianWorkspace ws(spec);
+
+            auto run_batch = [&](SobolSequence &seq, int paths) -> mc::AsianBatchStats
+            {
+                using enum AsianAverageType;
+                if (optType == OptionType::Call)
+                    return is_arith
+                               ? mc::simulate_asian_batch<OptionType::Call, Arithmetic>(spec, ws, paths, seq)
+                               : mc::simulate_asian_batch<OptionType::Call, Geometric>(spec, ws, paths, seq);
+                return is_arith
+                           ? mc::simulate_asian_batch<OptionType::Put, Arithmetic>(spec, ws, paths, seq)
+                           : mc::simulate_asian_batch<OptionType::Put, Geometric>(spec, ws, paths, seq);
+            };
+
+            // Randomized QMC: each digital shift is one i.i.d. replicate.
+            const int B = std::max(2, settings.mc_rqmc_batches);
+            const int per_batch = std::max(1, settings.mc_paths / B);
+
+            WelfordAccumulator price_acc;
+            WelfordAccumulator delta_acc;
+            for (int b = 0; b < B; ++b)
+            {
+                const uint64_t scramble_seed =
+                    (static_cast<uint64_t>(static_cast<uint32_t>(settings.mc_seed)) << 32) |
+                    static_cast<uint64_t>(b);
+                SobolSequence seq(spec.n_fixings, scramble_seed);
+                const mc::AsianBatchStats batch = run_batch(seq, per_batch);
+
+                const Real estimate = use_cv ? batch.cv.estimate(geo_price)
+                                             : batch.cv.y.mean;
+                price_acc.add(estimate);
+                delta_acc.add(batch.delta.mean);
+            }
+
+            PricingResult out;
+            out.diagnostics = std::string("BS MC Asian, Sobol RQMC + Brownian bridge") +
+                              (use_cv ? " + geometric CV (discrete Kemna-Vorst)" : "") +
+                              " (" + std::to_string(B) + " digital shifts)";
+            out.npv = opt.notional * price_acc.mean;
+            out.mc_std_error = opt.notional * price_acc.std_error();
+            out.greeks.delta = opt.notional * delta_acc.mean;
+            out.greeks.delta_std_error = opt.notional * delta_acc.std_error();
+            // Other greeks: available via the PRNG path; AAD will supersede.
+            return out;
+        }
+    } // namespace
 
     void BSEuroAsianMCEngine::visit(const AsianOption &opt)
     {
@@ -24,6 +101,22 @@ namespace quantModeling
         const Real sigma = m.vol_sigma();
 
         const Real T = opt.exercise->dates().front();
+
+        // ---- QMC path (Sobol + BB + CV): flat-vol models only, and only if
+        // the fixing count fits the Sobol dimension budget.
+        if (settings.mc_sampler == SamplerKind::Sobol)
+        {
+            const bool flat_vol =
+                dynamic_cast<const BlackScholesModel *>(ctx_.model.get()) != nullptr;
+            const int n_fixings = std::max(1, static_cast<int>(T * 252.0 + 0.5));
+            if (flat_vol && n_fixings <= sobol_detail::kMaxDimension)
+            {
+                res_ = price_asian_qmc(opt, m, settings);
+                return;
+            }
+            // Otherwise fall through to the pseudo-random engine below.
+        }
+
         const auto &payoff = *opt.payoff;
         const OptionType optType = payoff.type();
         const Real K = payoff.strike();
