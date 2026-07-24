@@ -1,9 +1,11 @@
 #include "quantModeling/engines/mc/black_scholes.hpp"
 #include "quantModeling/engines/mc/kernels/vanilla_bs.hpp"
+#include "quantModeling/instruments/equity/digital.hpp"
 #include "quantModeling/utils/gaussian_source.hpp"
 #include "quantModeling/utils/greeks.hpp"
 #include "quantModeling/utils/rng.hpp"
 #include "quantModeling/utils/sobol.hpp"
+#include "quantModeling/utils/stats.hpp"
 
 #include <algorithm>
 
@@ -235,11 +237,130 @@ namespace quantModeling
         "Use BSEuroBarrierMCEngine instead.");
   }
 
-  void BSEuroVanillaMCEngine::visit(const DigitalOption &)
+  void BSEuroVanillaMCEngine::visit(const DigitalOption &opt)
   {
-    throw UnsupportedInstrument(
-        "BSEuroVanillaMCEngine does not support digital options. "
-        "Use BSDigitalAnalyticEngine instead.");
+    if (!opt.payoff)
+      throw InvalidInput("DigitalOption: payoff is null");
+    if (!opt.exercise || opt.exercise->dates().empty())
+      throw InvalidInput("DigitalOption: exercise is null or has no dates");
+    const auto &m = require_model<ILocalVolModel>("BSEuroVanillaMCEngine");
+    const PricingSettings &settings = ctx_.settings;
+
+    const Real S0 = m.spot0();
+    const Real r = m.rate_r();
+    const Real q = m.yield_q();
+    const Real v = m.vol_sigma();
+    const Real T = opt.exercise->dates().front();
+    const Real K = opt.payoff->strike();
+    const bool is_call = (opt.payoff->type() == OptionType::Call);
+    const bool cash = (opt.payoff_type == DigitalPayoffType::CashOrNothing);
+    const Real df = m.discount_curve().discount(T);
+    const Real mu = r - q - 0.5 * v * v;
+
+    WelfordAccumulator pay, del;
+
+    if (settings.mc_cmc)
+    {
+      // Conditional Monte Carlo: simulate only S(t*) with t* = T/2, then
+      // close the remaining leg with the exact conditional expectation
+      //   E[payoff | S(t*)] = Phi(+-d)  (cash)  or  S* e^{(r-q)d} Phi(+-d1) (asset).
+      // The indicator is replaced by a smooth function of S(t*):
+      // Var(E[f|X]) <= Var(f) guarantees a variance reduction, and the
+      // smoothed payoff admits an exact pathwise delta (impossible for the
+      // raw 0/1 indicator). In path-dependent products t* would be the last
+      // monitoring date; here any t* in (0,T) gives an unbiased estimator.
+      const Real ts = 0.5 * T;
+      const Real dlt = T - ts;
+      const Real sq_ts = std::sqrt(ts);
+      const Real sq_dlt = std::sqrt(dlt);
+      const Real vol_dlt = v * sq_dlt;
+      const Real growth = std::exp((r - q) * dlt);
+      const Real sgn = is_call ? 1.0 : -1.0;
+
+      auto run = [&](auto &src)
+      {
+        for (int i = 0; i < settings.mc_paths; ++i)
+        {
+          const Real z = src.next();
+          const Real Sstar = S0 * std::exp(mu * ts + v * sq_ts * z);
+          const Real d2 = (std::log(Sstar / K) + mu * dlt) / vol_dlt;
+          const Real d1 = d2 + vol_dlt;
+
+          Real pv, dpv;
+          if (cash)
+          {
+            pv = opt.cash_amount * norm_cdf(sgn * d2);
+            dpv = sgn * opt.cash_amount * norm_pdf(d2) / (S0 * vol_dlt);
+          }
+          else if (is_call)
+          {
+            pv = Sstar * growth * norm_cdf(d1);
+            dpv = growth * (norm_cdf(d1) + norm_pdf(d1) / vol_dlt) * (Sstar / S0);
+          }
+          else
+          {
+            pv = Sstar * growth * norm_cdf(-d1);
+            dpv = growth * (norm_cdf(-d1) - norm_pdf(d1) / vol_dlt) * (Sstar / S0);
+          }
+          pay.add(pv);
+          del.add(dpv);
+        }
+      };
+
+      RngFactory f(static_cast<uint64_t>(settings.mc_seed));
+      if (settings.mc_gaussian == GaussianKind::InverseNormal)
+      {
+        InverseNormalSource src(f.make(0));
+        run(src);
+      }
+      else
+      {
+        BoxMullerSource src(f.make(0));
+        run(src);
+      }
+    }
+    else
+    {
+      // Plain indicator MC (baseline; no pathwise greeks possible).
+      const Real sqT = std::sqrt(T);
+      auto run = [&](auto &src)
+      {
+        for (int i = 0; i < settings.mc_paths; ++i)
+        {
+          const Real ST = S0 * std::exp(mu * T + v * sqT * src.next());
+          const bool itm = is_call ? (ST > K) : (ST < K);
+          pay.add(itm ? (cash ? opt.cash_amount : ST) : Real(0));
+        }
+      };
+
+      RngFactory f(static_cast<uint64_t>(settings.mc_seed));
+      if (settings.mc_gaussian == GaussianKind::InverseNormal)
+      {
+        InverseNormalSource src(f.make(0));
+        run(src);
+      }
+      else
+      {
+        BoxMullerSource src(f.make(0));
+        run(src);
+      }
+    }
+
+    PricingResult out;
+    out.npv = opt.notional * df * pay.mean;
+    out.mc_std_error = opt.notional * df * pay.std_error();
+    if (settings.mc_cmc)
+    {
+      out.greeks.delta = opt.notional * df * del.mean;
+      out.greeks.delta_std_error = opt.notional * df * del.std_error();
+    }
+    out.diagnostics = std::string("BS MC digital ") +
+                      (cash ? "cash-or-nothing " : "asset-or-nothing ") +
+                      (is_call ? "call" : "put") +
+                      (settings.mc_cmc
+                           ? " + conditional MC (last leg closed analytically)"
+                           : " (raw indicator)");
+    res_ = out;
   }
 
 }; // namespace quantModeling

@@ -83,6 +83,13 @@ namespace quantModeling
         std::vector<Real> zs(n_steps); // Gaussian draws
         std::vector<Real> us(n_steps); // uniform [0,1] for BB correction
 
+        // Conditional MC: instead of sampling the bridge crossing (Bernoulli,
+        // us[j] < p_j), carry the exact conditional survival probability
+        // prod_j (1 - p_j) and weight the payoff by it. Same estimand as the
+        // sampled BB correction, but the 0/1 knock noise integrates out —
+        // the estimator becomes a smooth function of the path skeleton.
+        const bool use_cmc = settings.mc_cmc;
+
         // ── sim_one ─────────────────────────────────────────────────────────────
         // Simulates one complete path (ALL n_steps, no early exit) with the
         // given parameters, using the pre-drawn zs[] and us[] arrays.
@@ -94,7 +101,7 @@ namespace quantModeling
             const Real df = m.discount_curve().discount(T_val);
 
             Real S = S_start;
-            bool hit = false;
+            Real survival = 1.0; // P(no knock so far | skeleton); 0/1 in sampled mode
 
             for (int j = 0; j < n_steps; ++j)
             {
@@ -106,26 +113,34 @@ namespace quantModeling
                 const Real S_prev = S;
                 S *= std::exp(drift + voldt * zs[j]);
 
-                if (!hit)
+                if (survival > 0.0)
                 {
                     // ── discrete barrier check ────────────────────────────────
                     if (is_up ? (S >= H) : (S <= H))
                     {
-                        hit = true;
+                        survival = 0.0;
                     }
-                    // ── Brownian-bridge correction for continuous monitoring ──
-                    // P(continuous path crosses H | S_prev, S, no discrete cross)
-                    // = exp( -2 ln(H/S_prev) ln(H/S) / (σ² Δt) )
-                    // Valid only when both endpoints are on the same side of H,
-                    // which is guaranteed since we already checked discrete crossing.
-                    else if (opt.brownian_bridge)
+                    else if (use_cmc || opt.brownian_bridge)
                     {
+                        // ── Brownian-bridge crossing between the endpoints ──
+                        // p = P(continuous path crosses H | S_prev, S)
+                        //   = exp( -2 ln(H/S_prev) ln(H/S) / (σ² Δt) )
+                        // Both endpoints are on the same side of H here, so
+                        // the exponent is negative.
                         const Real log_Ha = std::log(H / S_prev);
                         const Real log_Hb = std::log(H / S);
                         const Real exponent = -2.0 * log_Ha * log_Hb / (sig * sig * dt_v);
-                        // exponent < 0 when log_Ha and log_Hb same sign (same side of H)
-                        if (exponent < 0.0 && us[j] < std::exp(exponent))
-                            hit = true;
+                        if (exponent < 0.0)
+                        {
+                            if (use_cmc)
+                                survival *= 1.0 - std::exp(exponent); // exact conditional expectation
+                            else if (us[j] < std::exp(exponent))
+                                survival = 0.0; // sampled crossing
+                        }
+                        else
+                        {
+                            survival = 0.0; // endpoint on the barrier
+                        }
                     }
                 }
             }
@@ -136,9 +151,10 @@ namespace quantModeling
                                     : std::max(K - S, 0.0) * opt.notional * df;
             const Real reb_pv = opt.rebate * opt.notional * df;
 
-            // Apply knock-in / knock-out logic
-            return is_in ? (hit ? raw_pv : reb_pv)
-                         : (hit ? reb_pv : raw_pv);
+            // Knock-in / knock-out logic, weighted by the survival probability
+            // (collapses to the old hit/no-hit branch when survival is 0 or 1).
+            return is_in ? raw_pv * (1.0 - survival) + reb_pv * survival
+                         : raw_pv * survival + reb_pv * (1.0 - survival);
         };
 
         // FlatVol objects for the 9 CRN variants.
@@ -172,7 +188,7 @@ namespace quantModeling
             for (int j = 0; j < n_steps; ++j)
             {
                 zs[j] = gauss(rng_gauss);
-                us[j] = uniform01(rng_bb);
+                us[j] = use_cmc ? 0.0 : uniform01(rng_bb);
             }
 
             ++cnt;
@@ -244,7 +260,7 @@ namespace quantModeling
             return "?";
         };
 
-        out.diagnostics = "Barrier MC (BS): " + bt_str() + ", H=" + std::to_string(H) + ", K=" + std::to_string(K) + ", T=" + std::to_string(T) + ", paths=" + std::to_string(N) + ", steps/path=" + std::to_string(n_steps) + (opt.brownian_bridge ? " [BB corrected]" : " [discrete]");
+        out.diagnostics = "Barrier MC (BS): " + bt_str() + ", H=" + std::to_string(H) + ", K=" + std::to_string(K) + ", T=" + std::to_string(T) + ", paths=" + std::to_string(N) + ", steps/path=" + std::to_string(n_steps) + (use_cmc ? " [CMC survival probability]" : (opt.brownian_bridge ? " [BB corrected]" : " [discrete]"));
 
         res_ = out;
     }

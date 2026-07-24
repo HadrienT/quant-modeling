@@ -135,8 +135,38 @@ namespace quantModeling
         // --- Monte Carlo loop ---
         const int max_steps = std::max(n_steps, std::max(n_steps_Tup, n_steps_Tdn));
 
+        // --- Bridge extrema sampling ---
+        // The discrete max/min over the step grid under-estimates the
+        // continuous extremum with an O(sqrt(dt)) bias. Given a step from
+        // S_prev to S_new, the continuous max M of the log-space bridge has
+        //   P(ln M >= h) = exp(-2 (h-a)(h-b) / (sigma^2 dt)),  a=ln S_prev, b=ln S_new,
+        // which inverts to  ln M = (a + b + sqrt((b-a)^2 - 2 sigma^2 dt ln u)) / 2
+        // for u ~ U(0,1) (minus the root for the minimum). Sampling the exact
+        // extremum per step removes the discretisation bias entirely.
+        // Only the extremum the payoff depends on is bridge-sampled.
+        const bool bridge = settings.mc_bridge_extrema;
+        const bool need_max = is_float ? (optType == OptionType::Put)
+                                       : (opt.extremum == LookbackExtremum::Maximum);
+        Pcg32 rng_u = rng_factory.make(1); // separate stream: CRN across variants
+        std::vector<Real> us(bridge ? static_cast<size_t>(max_steps) : 0);
+
+        auto bridge_extreme = [](Real S_prev, Real S_new, Real sig, Real dt_v,
+                                 Real u, bool want_max) -> Real
+        {
+            const Real la = std::log(S_prev);
+            const Real lb = std::log(S_new);
+            const Real d = lb - la;
+            const Real root = std::sqrt(d * d - 2.0 * sig * sig * dt_v *
+                                                    std::log(std::max(u, Real(1e-16))));
+            return std::exp(0.5 * (la + lb + (want_max ? root : -root)));
+        };
+
         for (int i = 0; i < settings.mc_paths; ++i)
         {
+            if (bridge)
+                for (int j = 0; j < max_steps; ++j)
+                    us[static_cast<size_t>(j)] = uniform01(rng_u);
+
             // Simulate base path + T-bumped paths in one pass (common random numbers for theta).
             Real S_base = S0, path_min = S0, path_max = S0;
             Real S_Tup = S0, min_Tup = S0, max_Tup = S0;
@@ -149,25 +179,55 @@ namespace quantModeling
                 {
                     const Real t_cur = static_cast<Real>(j) * dt;
                     const Real sig = vol.value(S_base, t_cur);
+                    const Real S_prev = S_base;
                     S_base *= std::exp((r - q - 0.5 * sig * sig) * dt + sig * sqrt_dt * z);
                     path_min = std::min(path_min, S_base);
                     path_max = std::max(path_max, S_base);
+                    if (bridge)
+                    {
+                        const Real ex = bridge_extreme(S_prev, S_base, sig, dt,
+                                                       us[static_cast<size_t>(j)], need_max);
+                        if (need_max)
+                            path_max = std::max(path_max, ex);
+                        else
+                            path_min = std::min(path_min, ex);
+                    }
                 }
                 if (j < n_steps_Tup)
                 {
                     const Real t_cur = static_cast<Real>(j) * dt_Tup;
                     const Real sig = vol.value(S_Tup, t_cur);
+                    const Real S_prev = S_Tup;
                     S_Tup *= std::exp((r - q - 0.5 * sig * sig) * dt_Tup + sig * sqrt_dt_up * z);
                     min_Tup = std::min(min_Tup, S_Tup);
                     max_Tup = std::max(max_Tup, S_Tup);
+                    if (bridge)
+                    {
+                        const Real ex = bridge_extreme(S_prev, S_Tup, sig, dt_Tup,
+                                                       us[static_cast<size_t>(j)], need_max);
+                        if (need_max)
+                            max_Tup = std::max(max_Tup, ex);
+                        else
+                            min_Tup = std::min(min_Tup, ex);
+                    }
                 }
                 if (j < n_steps_Tdn)
                 {
                     const Real t_cur = static_cast<Real>(j) * dt_Tdn;
                     const Real sig = vol.value(S_Tdn, t_cur);
+                    const Real S_prev = S_Tdn;
                     S_Tdn *= std::exp((r - q - 0.5 * sig * sig) * dt_Tdn + sig * sqrt_dt_dn * z);
                     min_Tdn = std::min(min_Tdn, S_Tdn);
                     max_Tdn = std::max(max_Tdn, S_Tdn);
+                    if (bridge)
+                    {
+                        const Real ex = bridge_extreme(S_prev, S_Tdn, sig, dt_Tdn,
+                                                       us[static_cast<size_t>(j)], need_max);
+                        if (need_max)
+                            max_Tdn = std::max(max_Tdn, ex);
+                        else
+                            min_Tdn = std::min(min_Tdn, ex);
+                    }
                 }
             }
 
@@ -236,6 +296,7 @@ namespace quantModeling
         out.diagnostics =
             std::string("BS MC European Lookback (flat r,q,sigma)") +
             (settings.mc_antithetic ? " + antithetic" : "") +
+            (bridge ? " + bridge extrema (continuous monitoring)" : "") +
             ": style=" + (opt.style == LookbackStyle::FixedStrike ? "fixed" : "floating") +
             ", extremum=" + (opt.extremum == LookbackExtremum::Minimum ? "min" : "max") +
             ", K=" + std::to_string(K) +
