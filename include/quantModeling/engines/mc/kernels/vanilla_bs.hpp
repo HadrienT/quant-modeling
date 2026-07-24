@@ -117,8 +117,11 @@ namespace quantModeling::mc
         else
             out.delta = (ST < s.K) ? -s.df * (ST / s.S0) : Real(0);
 
-        // Likelihood-ratio scores
-        const Real score_sigma = (z * z - 1.0) / s.sigma;
+        // Likelihood-ratio scores. For x = ln(ST/S0) ~ N(m, s^2) with
+        // m = (r-q-sigma^2/2)T and s = sigma*sqrt(T):
+        //   dlogp/dsigma = (z^2-1)/sigma - z*sqrt(T)   (dm/dsigma = -sigma*T)
+        //   dlogp/dr     = z*sqrt(T)/sigma             (dm/dr = T)
+        const Real score_sigma = (z * z - 1.0) / s.sigma - z * s.sqrtT;
         const Real score_r = (z * s.sqrtT) / s.sigma;
         out.vega = out.payoff * score_sigma;
         out.rho = -s.T * out.payoff + out.payoff * score_r;
@@ -151,18 +154,63 @@ namespace quantModeling::mc
         return out;
     }
 
+    QM_HOST_DEVICE inline VanillaPathValues
+    scale(const VanillaPathValues &v, Real w)
+    {
+        VanillaPathValues out;
+        out.payoff = w * v.payoff;
+        out.delta = w * v.delta;
+        out.vega = w * v.vega;
+        out.rho = w * v.rho;
+        out.gamma = w * v.gamma;
+        out.theta = w * v.theta;
+        return out;
+    }
+
+    /**
+     * @brief Drift shift that centres the terminal distribution on the strike
+     *        (importance sampling for OTM options).
+     *
+     * Under the shifted measure z = z̃ + θ with θ = ln(K / movedSpot) / σ√T,
+     * the median terminal spot equals K, so roughly half the paths finish in
+     * the money instead of almost none. Each path carries the Radon-Nikodym
+     * weight dP/dQ = exp(−θ z̃ − θ²/2), keeping every estimator unbiased.
+     */
+    QM_HOST_DEVICE inline Real optimal_is_shift(const VanillaTerminalSpec &s)
+    {
+        return std::log(s.K / s.movedSpot) / s.rootVariance;
+    }
+
     /**
      * @brief Run the full simulation.
      *
      * With Antithetic = true, paths are consumed as (z, -z) pairs whose
      * estimator values are averaged before accumulation (one Welford sample
      * per pair); a trailing odd path is processed alone.
+     *
+     * With IS = true, each raw draw z̃ is shifted to z = z̃ + is_shift and
+     * every estimator is multiplied by the likelihood ratio
+     * exp(−θ z̃ − θ²/2). Antithetic pairs weight each leg separately.
      */
-    template <OptionType CP, bool Antithetic, GaussianSource Source>
+    template <OptionType CP, bool Antithetic, bool IS = false, GaussianSource Source>
     VanillaStats simulate_vanilla_terminal(const VanillaTerminalSpec &spec,
-                                           int n_paths, Source &gauss)
+                                           int n_paths, Source &gauss,
+                                           Real is_shift = Real(0))
     {
         VanillaStats stats;
+
+        auto eval_one = [&](Real z_raw) -> VanillaPathValues
+        {
+            if constexpr (IS)
+            {
+                const Real w = std::exp(-is_shift * z_raw - 0.5 * is_shift * is_shift);
+                return scale(eval_vanilla_path<CP>(spec, z_raw + is_shift), w);
+            }
+            else
+            {
+                return eval_vanilla_path<CP>(spec, z_raw);
+            }
+        };
 
         if constexpr (Antithetic)
         {
@@ -172,22 +220,18 @@ namespace quantModeling::mc
             for (int i = 0; i < n_pairs; ++i)
             {
                 const Real z = gauss.next();
-                const VanillaPathValues p = eval_vanilla_path<CP>(spec, z);
-                const VanillaPathValues m = eval_vanilla_path<CP>(spec, -z);
-                stats.add(average_pair(p, m));
+                stats.add(average_pair(eval_one(z), eval_one(-z)));
             }
             if (has_odd)
             {
-                const Real z = gauss.next();
-                stats.add(eval_vanilla_path<CP>(spec, z));
+                stats.add(eval_one(gauss.next()));
             }
         }
         else
         {
             for (int i = 0; i < n_paths; ++i)
             {
-                const Real z = gauss.next();
-                stats.add(eval_vanilla_path<CP>(spec, z));
+                stats.add(eval_one(gauss.next()));
             }
         }
 

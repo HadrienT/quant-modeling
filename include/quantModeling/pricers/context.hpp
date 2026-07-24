@@ -26,10 +26,13 @@ namespace quantModeling
   /// PseudoRandom: PCG32 stream. Sobol: scrambled low-discrepancy sequence
   /// (randomized QMC — paths are split into mc_rqmc_batches independent
   /// digital shifts; the reported std error is the spread of batch means).
+  /// Stratified: jittered equiprobable strata of the first uniform — same
+  /// batching scheme as Sobol for the error bars.
   enum class SamplerKind
   {
     PseudoRandom,
-    Sobol
+    Sobol,
+    Stratified
   };
 
   struct PricingSettings
@@ -45,6 +48,7 @@ namespace quantModeling
     SamplerKind mc_sampler = SamplerKind::PseudoRandom;
     int mc_rqmc_batches = 16;       ///< RQMC replicates when mc_sampler == Sobol
     bool mc_control_variate = true; ///< use analytic controls where available
+    bool mc_importance_sampling = false; ///< drift-shift IS (OTM vanillas)
   };
 
   struct MarketView

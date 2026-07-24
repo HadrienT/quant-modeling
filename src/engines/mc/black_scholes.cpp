@@ -12,20 +12,31 @@ namespace quantModeling
 
   namespace
   {
-    /// Compile-time dispatch (payoff type × antithetic) into the templated
-    /// kernel — the only runtime branches left are per *request*, not per path.
+    /// Compile-time dispatch (payoff type × antithetic × IS) into the
+    /// templated kernel — the only runtime branches left are per *request*,
+    /// not per path.
     template <GaussianSource Source>
     mc::VanillaStats run_vanilla_kernel(const mc::VanillaTerminalSpec &spec,
                                         OptionType optType, bool antithetic,
-                                        int n_paths, Source &gauss)
+                                        int n_paths, Source &gauss,
+                                        Real is_shift = Real(0))
     {
       using mc::simulate_vanilla_terminal;
+      const bool is = (is_shift != Real(0));
       if (optType == OptionType::Call)
       {
+        if (is)
+          return antithetic
+                     ? simulate_vanilla_terminal<OptionType::Call, true, true>(spec, n_paths, gauss, is_shift)
+                     : simulate_vanilla_terminal<OptionType::Call, false, true>(spec, n_paths, gauss, is_shift);
         return antithetic
                    ? simulate_vanilla_terminal<OptionType::Call, true>(spec, n_paths, gauss)
                    : simulate_vanilla_terminal<OptionType::Call, false>(spec, n_paths, gauss);
       }
+      if (is)
+        return antithetic
+                   ? simulate_vanilla_terminal<OptionType::Put, true, true>(spec, n_paths, gauss, is_shift)
+                   : simulate_vanilla_terminal<OptionType::Put, false, true>(spec, n_paths, gauss, is_shift);
       return antithetic
                  ? simulate_vanilla_terminal<OptionType::Put, true>(spec, n_paths, gauss)
                  : simulate_vanilla_terminal<OptionType::Put, false>(spec, n_paths, gauss);
@@ -75,24 +86,40 @@ namespace quantModeling
     spec.df_dnT = m.discount_curve().discount(T_dn);
 
     // ---- Run the paths
+    const Real is_shift = settings.mc_importance_sampling
+                              ? mc::optimal_is_shift(spec)
+                              : Real(0);
+
     mc::VanillaStats stats;
     std::string diag;
-    if (settings.mc_sampler == SamplerKind::Sobol)
+    if (settings.mc_sampler == SamplerKind::Sobol ||
+        settings.mc_sampler == SamplerKind::Stratified)
     {
-      // Randomized QMC: B independent digital shifts; each batch mean is one
-      // i.i.d. sample, so the Welford accumulators over batch means give the
-      // grand mean and an unbiased RQMC standard error. Antithetic is
-      // redundant with scrambled Sobol and is ignored here.
+      // Batched estimators (RQMC digital shifts / stratified jitter seeds):
+      // draws within a batch are not i.i.d., but batch means are, so the
+      // Welford accumulators over batch means give the grand mean and an
+      // unbiased standard error. Antithetic is redundant here and ignored.
+      const bool sobol = (settings.mc_sampler == SamplerKind::Sobol);
       const int B = std::max(2, settings.mc_rqmc_batches);
       const int per_batch = std::max(1, settings.mc_paths / B);
       for (int b = 0; b < B; ++b)
       {
-        const uint64_t scramble_seed =
+        const uint64_t batch_seed =
             (static_cast<uint64_t>(static_cast<uint32_t>(settings.mc_seed)) << 32) |
             static_cast<uint64_t>(b);
-        SobolGaussianSource gauss(/*dimension=*/1, scramble_seed);
-        const mc::VanillaStats batch = run_vanilla_kernel(
-            spec, optType, /*antithetic=*/false, per_batch, gauss);
+        mc::VanillaStats batch;
+        if (sobol)
+        {
+          SobolGaussianSource gauss(/*dimension=*/1, batch_seed);
+          batch = run_vanilla_kernel(spec, optType, /*antithetic=*/false,
+                                     per_batch, gauss, is_shift);
+        }
+        else
+        {
+          StratifiedGaussianSource gauss(Pcg32(batch_seed, 0x5717a7ull), per_batch);
+          batch = run_vanilla_kernel(spec, optType, /*antithetic=*/false,
+                                     per_batch, gauss, is_shift);
+        }
         stats.payoff.add(batch.payoff.mean);
         stats.delta.add(batch.delta.mean);
         stats.vega.add(batch.vega.mean);
@@ -100,8 +127,9 @@ namespace quantModeling
         stats.gamma.add(batch.gamma.mean);
         stats.theta.add(batch.theta.mean);
       }
-      diag = "BS MC European vanilla (flat r,q,sigma) + Sobol RQMC (" +
-             std::to_string(B) + " digital shifts)";
+      diag = std::string("BS MC European vanilla (flat r,q,sigma) + ") +
+             (sobol ? "Sobol RQMC" : "stratified sampling") + " (" +
+             std::to_string(B) + " batches)";
     }
     else
     {
@@ -110,18 +138,20 @@ namespace quantModeling
       {
         InverseNormalSource gauss(rngFact.make(0));
         stats = run_vanilla_kernel(spec, optType, settings.mc_antithetic,
-                                   settings.mc_paths, gauss);
+                                   settings.mc_paths, gauss, is_shift);
       }
       else
       {
         BoxMullerSource gauss(rngFact.make(0));
         stats = run_vanilla_kernel(spec, optType, settings.mc_antithetic,
-                                   settings.mc_paths, gauss);
+                                   settings.mc_paths, gauss, is_shift);
       }
       diag = settings.mc_antithetic
                  ? "BS MC European vanilla (flat r,q,sigma) + antithetic"
                  : "BS MC European vanilla (flat r,q,sigma)";
     }
+    if (is_shift != Real(0))
+      diag += " + importance sampling (drift shift to strike)";
 
     // ---- Assemble result
     const Real disc = spec.df;
