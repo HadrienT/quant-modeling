@@ -301,6 +301,88 @@ body {
   color: var(--ink-2);
 }
 
+/* ── Product info popover (ⓘ next to a product selector) ─────────── */
+.field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.product-info-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-1);
+  background: transparent;
+  color: var(--accent-1);
+  font: italic 600 0.68rem Georgia, serif;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+.product-info-trigger:hover {
+  background: var(--accent-1);
+  color: #fff;
+}
+
+.product-info-panel {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+.product-info-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.product-info-header h4 {
+  margin: 0;
+}
+.product-info-summary {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+.product-info-heading {
+  margin-bottom: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.product-info-section ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 18px;
+}
+.product-info-section li {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--ink-1);
+}
+.formula-block {
+  display: block;
+  overflow-x: auto;
+  padding: 6px 0;
+}
+.formula-inline {
+  display: inline-block;
+}
+
 .field input,
 .field select {
   padding: 10px 12px;

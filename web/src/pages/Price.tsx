@@ -1,3 +1,4 @@
+import ProductInfo from "../components/ProductInfo";
 import BondFields from "./pricing/BondFields";
 import CommodityFields from "./pricing/CommodityFields";
 import ExoticFields from "./pricing/ExoticFields";
@@ -5,6 +6,7 @@ import FutureFields from "./pricing/FutureFields";
 import FXFields from "./pricing/FXFields";
 import ModelSelector from "./pricing/ModelSelector";
 import OptionFields from "./pricing/OptionFields";
+import { PRODUCT_DOCS } from "./pricing/productDocs";
 import {
 	CATEGORIES,
 	COMMODITY_PRODUCTS,
@@ -68,7 +70,10 @@ export default function Price() {
 						{p.category === "vanilla" && (
 							<>
 								<label className="field">
-									Instrument
+									<span className="field-label-row">
+										Instrument
+										<ProductInfo doc={PRODUCT_DOCS[p.instrument]} />
+									</span>
 								<select
 									value={p.instrument}
 									onChange={(e) => {
@@ -100,7 +105,10 @@ export default function Price() {
 						{p.category === "exotics" && (
 							<>
 								<label className="field">
-									Exotic product
+									<span className="field-label-row">
+										Exotic product
+										<ProductInfo doc={PRODUCT_DOCS[p.exoticProduct]} />
+									</span>
 								<select
 									value={p.exoticProduct}
 									onChange={(e) => {
@@ -123,7 +131,10 @@ export default function Price() {
 						{p.category === "structured" && (
 							<>
 								<label className="field">
-									Structured product
+									<span className="field-label-row">
+										Structured product
+										<ProductInfo doc={PRODUCT_DOCS[p.structuredProduct]} />
+									</span>
 								<select
 									value={p.structuredProduct}
 									onChange={(e) => {
@@ -142,7 +153,10 @@ export default function Price() {
 						{p.category === "volatility" && (
 							<>
 								<label className="field">
-									Volatility product
+									<span className="field-label-row">
+										Volatility product
+										<ProductInfo doc={PRODUCT_DOCS[p.volProduct]} />
+									</span>
 								<select
 									value={p.volProduct}
 									onChange={(e) => {
@@ -161,7 +175,10 @@ export default function Price() {
 						{p.category === "fx" && (
 							<>
 								<label className="field">
-									FX product
+									<span className="field-label-row">
+										FX product
+										<ProductInfo doc={PRODUCT_DOCS[p.fxProduct]} />
+									</span>
 								<select
 									value={p.fxProduct}
 									onChange={(e) => {
@@ -180,7 +197,10 @@ export default function Price() {
 						{p.category === "commodity" && (
 							<>
 								<label className="field">
-									Commodity product
+									<span className="field-label-row">
+										Commodity product
+										<ProductInfo doc={PRODUCT_DOCS[p.commodityProduct]} />
+									</span>
 								<select
 									value={p.commodityProduct}
 									onChange={(e) => {
