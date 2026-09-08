@@ -15,16 +15,18 @@
 
 		"strict": true,
 		"noUncheckedIndexedAccess": true,
-		"exactOptionalPropertyTypes": true,
 		"noImplicitOverride": true,
 		"noFallthroughCasesInSwitch": true,
 		"verbatimModuleSyntax": true,
+		// exactOptionalPropertyTypes: dropped. See blueprint/decisions.md ADR-010.
+		// It fought every optional React prop passed a `| undefined` value for
+		// near-zero bug-catching upside; noUncheckedIndexedAccess (the flag that
+		// matters for the grid-with-holes code) is kept.
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 
-		"baseUrl": ".",
 		"paths": {
-			"@/*": ["src/*"]
+			"@/*": ["./src/*"]
 		},
 
 		"types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]

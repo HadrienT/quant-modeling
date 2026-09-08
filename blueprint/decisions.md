@@ -185,3 +185,24 @@ d'écran, à l'impression et aux environnements lumineux.
 **Rupture assumée.** La palette actuelle (crème, orange, dégradés radiaux) est
 abandonnée. Elle est chaleureuse mais elle ne dit pas « outil financier », et
 elle rend la lecture de tableaux denses difficile.
+
+---
+
+## ADR-010 — `exactOptionalPropertyTypes` retiré des cinq drapeaux stricts
+
+**Décision.** Le `tsconfig.json` du front active quatre des cinq drapeaux
+demandés par le [WP 00](wp/00-foundations.md) : `noUncheckedIndexedAccess`,
+`noImplicitOverride`, `noFallthroughCasesInSwitch`, `verbatimModuleSyntax`.
+`exactOptionalPropertyTypes` est **retiré**.
+
+**Pourquoi.** Le drapeau ne distingue `{ a?: T }` de `{ a: T | undefined }`.
+En React, chaque prop optionnelle à laquelle on passe une valeur qui peut être
+`undefined` (`table={maybeUndefined}`, `error={query.error}`) devient une
+erreur, ce qui force soit un `| undefined` explicite sur chaque prop de chaque
+composant, soit une construction conditionnelle de props. Le coût est réparti
+sur tout le code de composant pour un gain de détection de bug quasi nul dans ce
+projet. Le drapeau qui compte vraiment ici — celui qui attrape les accès aux
+grilles à trous — est `noUncheckedIndexedAccess`, conservé.
+
+**Écarté.** *Garder le drapeau et suffixer `| undefined` partout* : bruit de
+lecture permanent sur des centaines de props pour rien.
