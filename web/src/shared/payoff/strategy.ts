@@ -84,7 +84,11 @@ export type PayoffResult = {
 	breakevens: number[];
 	maxGain: number | "unbounded";
 	maxLoss: number | "unbounded";
-	netCost: number; // >0 debit, <0 credit
+	/**
+	 * Net premium cash flow at inception, from the buyer's point of view.
+	 * Negative = you pay net (a debit), positive = you receive net (a credit).
+	 */
+	netPremium: number;
 };
 
 export function evaluateStrategy(
@@ -184,8 +188,15 @@ export function evaluateStrategy(
 	const maxLoss =
 		slopeRight < -EPS || slopeLeft > EPS ? "unbounded" : Math.min(...values);
 
-	const netCost = legs.reduce(
-		(a, l) => a + (l.direction === "long" ? 1 : -1) * l.quantity * l.premium,
+	// Option premium cash flow at inception, from the buyer's side: premium paid
+	// on long legs is an outflow (negative), received on short legs an inflow
+	// (positive). Underlying legs are a capital outlay, not a premium, so they
+	// are excluded here (they still enter the payoff and P&L).
+	const netPremium = legs.reduce(
+		(a, l) =>
+			l.kind === "underlying"
+				? a
+				: a + (l.direction === "long" ? -1 : 1) * l.quantity * l.premium,
 		0,
 	);
 
@@ -198,7 +209,7 @@ export function evaluateStrategy(
 		breakevens: dedupe(breakevens),
 		maxGain,
 		maxLoss,
-		netCost,
+		netPremium,
 	};
 }
 

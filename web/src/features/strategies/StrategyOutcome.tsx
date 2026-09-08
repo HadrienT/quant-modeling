@@ -23,9 +23,17 @@ export function StrategyOutcome({
 		<div className="flex flex-col gap-4">
 			<MetricRow>
 				<Metric
-					label="Net cost"
-					value={<NumberCell value={result.netCost} magnitude="price" signed />}
-					footnote={result.netCost > 0 ? "debit" : "credit"}
+					label="Net premium"
+					value={
+						<NumberCell value={result.netPremium} magnitude="price" signed />
+					}
+					footnote={
+						result.netPremium < 0
+							? "debit — you pay"
+							: result.netPremium > 0
+								? "credit — you receive"
+								: "even"
+					}
 				/>
 				<Metric
 					label="Max gain"
