@@ -1,5 +1,13 @@
 limit_req_zone $binary_remote_addr zone=per_ip:10m rate=10r/s;
 
+# gzip everything text-ish (brotli too when the module is present — see Dockerfile)
+gzip on;
+gzip_comp_level 6;
+gzip_min_length 1024;
+gzip_types text/plain text/css application/javascript application/json
+           image/svg+xml application/wasm font/woff2;
+gzip_vary on;
+
 server {
     listen ${PORT};
     server_name _;
@@ -9,42 +17,59 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # ── health check — proxy to API so Cloud Run sees a 200 ─────
+    # ── Security headers (blueprint WP 14 §3) ─────────────────────
+    # CSP: no third-party origin is allowed. WebGL needs blob: workers and
+    # data: images; fonts are self-hosted; the API is same-origin (/api).
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # ── health check — proxied to the API ────────────────────────
     location = /health {
         proxy_pass         ${API_URL}/health;
         proxy_http_version 1.1;
     }
 
-    # ── reverse-proxy /api → backend API ─────────────────────────
+    # ── runtime config — read by the app before its first request ─
+    location = /config.json {
+        default_type application/json;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # ── reverse-proxy /api → backend API ────────────────────────
     location /api/ {
-        proxy_pass         ${API_URL}/;
+        proxy_pass         ${API_URL}/api/;
         proxy_http_version 1.1;
         proxy_set_header   Host              $proxy_host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 120s;
+        proxy_read_timeout 180s;
+    }
+    location ~ ^/(market|price)/ {
+        proxy_pass         ${API_URL};
+        proxy_http_version 1.1;
+        proxy_read_timeout 180s;
     }
 
-    # ── Block scanner/bot paths ──────────────────────────
-    # This site has no PHP — drop any .php request silently
-    location ~* \.(php|asp|aspx|jsp|cgi|sh|bash|env|git)$ {
-        return 444;
-    }
-    # Block WordPress and other common CMS/admin scanner paths
-    location ~* ^/(wp-admin|wp-includes|wp-content|wp-login|wordpress|xmlrpc|phpmyadmin|admin|administrator|cgi-bin) {
-        return 444;
-    }
+    # ── Block scanner/bot paths ─────────────────────────────────
+    location ~* \.(php|asp|aspx|jsp|cgi|env|git)$ { return 444; }
+    location ~* ^/(wp-admin|wp-includes|wp-content|wp-login|wordpress|xmlrpc|phpmyadmin|admin|administrator|cgi-bin) { return 444; }
 
-    # ── SPA fallback ─────────────────────────────────────
+    # ── SPA fallback ───────────────────────────────────────────
     location / {
-        limit_except GET HEAD OPTIONS {
-            deny all;
-        }
+        limit_except GET HEAD OPTIONS { deny all; }
         try_files $uri $uri/ /index.html;
     }
 
-    # ── cache static assets ──────────────────────────────
+    # ── never cache the shell ──────────────────────────────────
+    location = /index.html {
+        add_header Cache-Control "no-store" always;
+    }
+
+    # ── immutable hashed assets ────────────────────────────────
     location /assets/ {
         expires 1y;
         add_header Cache-Control "public, immutable";

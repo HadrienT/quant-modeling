@@ -1,0 +1,55 @@
+# Production stack — blueprint WP 14. Self-hosted, no Google Cloud.
+# Built images (no code volume, no HMR), TLS terminated by a reverse proxy,
+# named volumes for the data that replaced GCS.
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+services:
+  app:
+    build:
+      context: .
+      dockerfile: web/Dockerfile.prod
+      args:
+        VITE_COMMIT_SHA: ${COMMIT_SHA:-dev}
+    image: ghcr.io/hadrient/quant-modeling:${COMMIT_SHA:-latest}
+    container_name: quant-modeling
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+      - API_URL=http://127.0.0.1:8000
+      - COMMIT_SHA=${COMMIT_SHA:-dev}
+      # Runtime app config — same origin, so apiBase stays empty.
+      - APP_API_BASE=
+      - QM_STORAGE=local
+      - QM_DATA_DIR=/app/data
+      - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET}
+      - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
+      - FRED_API_KEY=${FRED_API_KEY:-}
+      - BQ_PROJECT_ID=${BQ_PROJECT_ID:-}
+      - BQ_DATASET_ID=${BQ_DATASET_ID:-}
+      - BQ_TABLE_ID=${BQ_TABLE_ID:-}
+      - LOG_DIR=/app/logs
+    ports:
+      - "${QM_WEB_PORT:-5180}:8080"
+    volumes:
+      - qm_data:/app/data
+      - qm_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  qm_data:
+  qm_logs:
