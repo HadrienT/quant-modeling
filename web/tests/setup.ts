@@ -27,3 +27,9 @@ if (!window.ResizeObserver) {
 		disconnect() {}
 	};
 }
+
+// jsdom does not implement these; TanStack Router scroll restoration calls them.
+window.scrollTo = () => {};
+if (!Element.prototype.scrollIntoView) {
+	Element.prototype.scrollIntoView = () => {};
+}

@@ -169,6 +169,17 @@ export default tseslint.config(
 		},
 	},
 
+	/* App composition modules export routers / stores next to components */
+	{
+		files: [
+			"src/app/router.tsx",
+			"src/app/theme.ts",
+			"src/app/**/index.ts",
+			"src/**/*.stories.tsx",
+		],
+		rules: { "react-refresh/only-export-components": "off" },
+	},
+
 	/* Config files & tooling (Node scripts) */
 	{
 		files: [
