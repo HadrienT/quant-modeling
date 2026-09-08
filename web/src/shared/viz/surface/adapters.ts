@@ -12,8 +12,16 @@ import { type SurfaceGrid, makeGrid } from "./SurfaceGrid";
 
 const VOL_AXES = {
 	x: { label: "Strike", format: (v: number) => v.toFixed(0) },
-	y: { label: "Maturity", unit: "y", format: (v: number) => (v < 1 ? `${Math.round(v * 12)}m` : `${v}y`) },
-	z: { label: "Implied vol", unit: "%", format: (v: number) => `${(v * 100).toFixed(1)}%` },
+	y: {
+		label: "Maturity",
+		unit: "y",
+		format: (v: number) => (v < 1 ? `${Math.round(v * 12)}m` : `${v}y`),
+	},
+	z: {
+		label: "Implied vol",
+		unit: "%",
+		format: (v: number) => `${(v * 100).toFixed(1)}%`,
+	},
 } as const;
 
 export function ivSurfaceToGrid(r: IVSurfaceResponse): SurfaceGrid {
@@ -24,7 +32,9 @@ export function ivSurfaceToGrid(r: IVSurfaceResponse): SurfaceGrid {
 	});
 }
 
-export function cleanedIvSurfaceToGrid(r: CleanedIVSurfaceResponse): SurfaceGrid {
+export function cleanedIvSurfaceToGrid(
+	r: CleanedIVSurfaceResponse,
+): SurfaceGrid {
 	return makeGrid(r.strikes, r.maturities, r.values, {
 		x: { ...VOL_AXES.x },
 		y: { ...VOL_AXES.y },
@@ -52,6 +62,13 @@ export function differenceGrid(a: SurfaceGrid, b: SurfaceGrid): SurfaceGrid {
 		x: a.x,
 		y: a.y,
 		z,
-		axes: { ...a.axes, z: { label: "Difference", unit: "%", format: (v) => `${(v * 100).toFixed(2)}%` } },
+		axes: {
+			...a.axes,
+			z: {
+				label: "Difference",
+				unit: "%",
+				format: (v) => `${(v * 100).toFixed(2)}%`,
+			},
+		},
 	};
 }

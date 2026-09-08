@@ -14,3 +14,4 @@ export {
 	differenceGrid,
 } from "./adapters";
 export { SurfaceView } from "./SurfaceView";
+export { checkArbitrage, coverage, type ArbViolation } from "./arbitrage";

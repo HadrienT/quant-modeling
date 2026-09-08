@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { makeGrid, zExtent } from "./SurfaceGrid";
 import { buildSurfaceGeometry, nearestNode } from "./geometry";
 
-function gaussian(nx: number, ny: number, holeMask?: (xi: number, yi: number) => boolean) {
+function gaussian(
+	nx: number,
+	ny: number,
+	holeMask?: (xi: number, yi: number) => boolean,
+) {
 	const x = Array.from({ length: nx }, (_, i) => i);
 	const y = Array.from({ length: ny }, (_, i) => i);
 	const z = y.map((_, yi) =>
@@ -36,9 +40,13 @@ describe("buildSurfaceGeometry", () => {
 	});
 
 	it("holes carry the -1 hole flag in the value channel, real nodes carry 0..1", () => {
-		const g = buildSurfaceGeometry(gaussian(5, 5, (xi, yi) => xi === 0 && yi === 0));
+		const g = buildSurfaceGeometry(
+			gaussian(5, 5, (xi, yi) => xi === 0 && yi === 0),
+		);
 		expect(g.uv[1]).toBe(-1); // node (0,0) value slot
-		expect(Math.max(...g.uv.filter((_, i) => i % 2 === 1 && _ >= 0))).toBeLessThanOrEqual(1);
+		expect(
+			Math.max(...g.uv.filter((_, i) => i % 2 === 1 && _ >= 0)),
+		).toBeLessThanOrEqual(1);
 	});
 
 	it("normals are unit length on real nodes", () => {

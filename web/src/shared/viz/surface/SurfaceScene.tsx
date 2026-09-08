@@ -40,7 +40,13 @@ function SurfaceMesh({
 		const g = new THREE.BufferGeometry();
 		g.setAttribute("position", new THREE.BufferAttribute(geom.positions, 3));
 		g.setAttribute("normal", new THREE.BufferAttribute(geom.normals, 3));
-		g.setAttribute("aValue", new THREE.BufferAttribute(geom.uv.filter((_, i) => i % 2 === 1), 1));
+		g.setAttribute(
+			"aValue",
+			new THREE.BufferAttribute(
+				geom.uv.filter((_, i) => i % 2 === 1),
+				1,
+			),
+		);
 		g.setIndex(new THREE.BufferAttribute(geom.indices, 1));
 		return g;
 	}, [geom]);

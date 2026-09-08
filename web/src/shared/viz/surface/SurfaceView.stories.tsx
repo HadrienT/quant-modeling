@@ -53,7 +53,10 @@ export const Difference: Story = {
 				{
 					x: { label: "Strike" },
 					y: { label: "Maturity" },
-					z: { label: "Local − implied", format: (v) => `${(v * 100).toFixed(2)}%` },
+					z: {
+						label: "Local − implied",
+						format: (v) => `${(v * 100).toFixed(2)}%`,
+					},
 				},
 			)}
 			mode="divergent"

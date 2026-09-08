@@ -74,8 +74,12 @@ export function buildSurfaceGeometry(
 			const hD = h(xi, Math.max(0, yi - 1));
 			const hU = h(xi, Math.min(ny - 1, yi + 1));
 			const hi = h(xi, yi);
-			const dhdx = (Number.isNaN(hR) ? hi : Number.isNaN(hL) ? hi : (hR - hL) / 2) / dxWorld;
-			const dhdz = (Number.isNaN(hU) ? hi : Number.isNaN(hD) ? hi : (hU - hD) / 2) / dzWorld;
+			const dhdx =
+				(Number.isNaN(hR) ? hi : Number.isNaN(hL) ? hi : (hR - hL) / 2) /
+				dxWorld;
+			const dhdz =
+				(Number.isNaN(hU) ? hi : Number.isNaN(hD) ? hi : (hU - hD) / 2) /
+				dzWorld;
 			// normal of surface y = h(x,z): (-dh/dx, 1, -dh/dz), normalised
 			const len = Math.hypot(dhdx, 1, dhdz) || 1;
 			normals[i * 3] = -dhdx / len;

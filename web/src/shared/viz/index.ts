@@ -25,3 +25,18 @@ export {
 	type Candle,
 	type LinePoint,
 } from "./charts/lightweight";
+export {
+	SurfaceView,
+	makeGrid,
+	zAt,
+	zExtent,
+	holeFraction,
+	ivSurfaceToGrid,
+	cleanedIvSurfaceToGrid,
+	localVolSurfaceToGrid,
+	differenceGrid,
+	checkArbitrage,
+	coverage,
+	type SurfaceGrid,
+	type ArbViolation,
+} from "./surface";
