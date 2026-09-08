@@ -28,7 +28,9 @@ export default defineConfig({
 		port: 5173,
 		host: true,
 		proxy: Object.fromEntries(
-			["/api", "/market", "/price", "/health", "/openapi.json"].map((p) => [
+			// `^/market/` (not `/market`) so the SPA routes /market and /price are
+			// served by Vite while the API's /market/* and /price/* are proxied.
+			["/api", "^/market/", "^/price/", "/health", "/openapi.json"].map((p) => [
 				p,
 				{
 					target: process.env.VITE_API_PROXY_TARGET ?? "http://localhost:8000",
