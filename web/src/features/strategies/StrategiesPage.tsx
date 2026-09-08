@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Copy, Plus } from "lucide-react";
 import {
@@ -71,6 +71,10 @@ export default function StrategiesPage() {
 		[state],
 	);
 
+	// Which leg is currently highlighted — set from either the leg card or the
+	// dashed payoff line, so hovering one lights up the other.
+	const [hoveredLeg, setHoveredLeg] = useState<number | null>(null);
+
 	return (
 		<div className="mx-auto flex max-w-6xl flex-col gap-5">
 			<header className="flex items-center justify-between">
@@ -136,6 +140,8 @@ export default function StrategiesPage() {
 						<LegCard
 							key={leg.id}
 							leg={leg}
+							highlighted={hoveredLeg === i}
+							onHover={(over) => setHoveredLeg(over ? i : null)}
 							onChange={(next) =>
 								update({
 									...state,
@@ -175,7 +181,13 @@ export default function StrategiesPage() {
 					</Button>
 				</div>
 
-				<StrategyOutcome result={result} mkt={state.mkt} legs={state.legs} />
+				<StrategyOutcome
+					result={result}
+					mkt={state.mkt}
+					legs={state.legs}
+					hoveredLeg={hoveredLeg}
+					onLegHover={setHoveredLeg}
+				/>
 			</div>
 		</div>
 	);

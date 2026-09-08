@@ -7,10 +7,14 @@ export function StrategyOutcome({
 	result,
 	mkt,
 	legs,
+	hoveredLeg,
+	onLegHover,
 }: {
 	result: PayoffResult;
 	mkt: MarketInputs;
 	legs: Leg[];
+	hoveredLeg?: number | null;
+	onLegHover?: (index: number | null) => void;
 }) {
 	const probProfit =
 		result.atMaturity.filter((v) => v > 0).length / result.atMaturity.length;
@@ -87,6 +91,8 @@ export function StrategyOutcome({
 						.filter((l) => l.kind !== "underlying")
 						.map((l) => l.strike),
 				}}
+				hoveredLeg={hoveredLeg}
+				onLegHover={onLegHover}
 			/>
 			<GreekProfileChart currentSpot={mkt.spot} profiles={result.greeks} />
 		</div>

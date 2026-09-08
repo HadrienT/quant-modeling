@@ -26,12 +26,18 @@ export function PayoffChart({
 	isLoading,
 	error,
 	height = 300,
+	hoveredLeg,
+	onLegHover,
 }: {
 	data?: PayoffSeries;
 	title?: string;
 	isLoading?: boolean;
 	error?: unknown;
 	height?: number;
+	/** Index of the leg whose dashed line should be emphasised. */
+	hoveredLeg?: number | null;
+	/** Reports which per-leg line the pointer is over (null on leave). */
+	onLegHover?: (index: number | null) => void;
 }) {
 	const t = useChartTheme();
 	const isEmpty = !data || data.spot.length === 0;
@@ -97,17 +103,37 @@ export function PayoffChart({
 								opacity={0.05}
 							/>
 
-							{data.legs?.map((leg) => (
-								<LinePath
-									key={leg.label}
-									data={data.spot.map((s, i) => [s, leg.values[i] ?? 0])}
-									x={(d) => xScale(d[0]!)}
-									y={(d) => yScale(d[1]!)}
-									stroke={t.inkMuted}
-									strokeWidth={0.75}
-									strokeDasharray="2 2"
-								/>
-							))}
+							{data.legs?.map((leg, li) => {
+								const pts = data.spot.map(
+									(s, i) => [s, leg.values[i] ?? 0] as [number, number],
+								);
+								const active = hoveredLeg === li;
+								return (
+									<g key={li}>
+										<LinePath
+											data={pts}
+											x={(d) => xScale(d[0]!)}
+											y={(d) => yScale(d[1]!)}
+											stroke={active ? t.series[1]! : t.inkMuted}
+											strokeWidth={active ? 1.75 : 0.75}
+											{...(active ? {} : { strokeDasharray: "2 2" })}
+										/>
+										{onLegHover && (
+											<LinePath
+												data={pts}
+												x={(d) => xScale(d[0]!)}
+												y={(d) => yScale(d[1]!)}
+												stroke="transparent"
+												strokeWidth={12}
+												pointerEvents="stroke"
+												style={{ cursor: "pointer" }}
+												onMouseEnter={() => onLegHover(li)}
+												onMouseLeave={() => onLegHover(null)}
+											/>
+										)}
+									</g>
+								);
+							})}
 
 							{data.atT && (
 								<LinePath

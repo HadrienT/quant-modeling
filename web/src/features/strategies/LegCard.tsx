@@ -6,13 +6,26 @@ export function LegCard({
 	leg,
 	onChange,
 	onRemove,
+	highlighted,
+	onHover,
 }: {
 	leg: Leg;
 	onChange: (l: Leg) => void;
 	onRemove: () => void;
+	/** Emphasise this card while its payoff line is hovered on the chart. */
+	highlighted?: boolean;
+	/** Report pointer enter / leave so the chart line lights up in return. */
+	onHover?: (over: boolean) => void;
 }) {
 	return (
-		<div className="flex flex-col gap-2 rounded-md border border-hairline bg-surface p-2.5">
+		<div
+			onMouseEnter={() => onHover?.(true)}
+			onMouseLeave={() => onHover?.(false)}
+			className={cn(
+				"flex flex-col gap-2 rounded-md border bg-surface p-2.5 transition-colors",
+				highlighted ? "border-accent ring-1 ring-accent" : "border-hairline",
+			)}
+		>
 			<div className="flex items-center gap-1.5">
 				<button
 					type="button"
