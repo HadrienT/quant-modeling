@@ -88,36 +88,14 @@ export default tseslint.config(
 							message:
 								"shared/ must not import features/ or app/ (dependencies.md §5).",
 						},
-						{
-							target: "src/features/pricing",
-							from: ["src/features"],
-							except: ["src/features/pricing"],
-							message: "A feature must not import another feature.",
-						},
-						{
-							target: "src/features/market",
-							from: ["src/features"],
-							except: ["src/features/market"],
-							message: "A feature must not import another feature.",
-						},
-						{
-							target: "src/features/portfolio",
-							from: ["src/features"],
-							except: ["src/features/portfolio"],
-							message: "A feature must not import another feature.",
-						},
-						{
-							target: "src/features/strategies",
-							from: ["src/features"],
-							except: ["src/features/strategies"],
-							message: "A feature must not import another feature.",
-						},
-						{
-							target: "src/features/backtest",
-							from: ["src/features"],
-							except: ["src/features/backtest"],
-							message: "A feature must not import another feature.",
-						},
+						...["pricing", "market", "portfolio", "strategies", "backtest"].map(
+							(name) => ({
+								target: `src/features/${name}`,
+								from: "src/features",
+								except: [name],
+								message: "A feature must not import another feature.",
+							}),
+						),
 					],
 				},
 			],
