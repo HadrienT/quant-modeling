@@ -45,7 +45,28 @@ function baseOptions() {
 		rightPriceScale: { borderColor: t.axis },
 		timeScale: { borderColor: t.axis },
 		crosshair: { mode: 1 as const },
-		autoSize: true,
+		// Explicit sizing (see `fitToContainer`) rather than autoSize: autoSize
+		// occasionally leaves a fresh mount at 0×0 until an unrelated resize.
+		autoSize: false,
+	};
+}
+
+/** Size a chart to its container now, and keep it in sync on resize. Returns a cleanup. */
+function fitToContainer(chart: IChartApi, container: HTMLElement): () => void {
+	const apply = () => {
+		const { clientWidth, clientHeight } = container;
+		if (clientWidth > 0) {
+			chart.resize(clientWidth, clientHeight || 300);
+		}
+	};
+	apply();
+	const ro = new ResizeObserver(apply);
+	ro.observe(container);
+	// one more tick in case layout isn't settled on the mount frame
+	const raf = requestAnimationFrame(apply);
+	return () => {
+		ro.disconnect();
+		cancelAnimationFrame(raf);
 	};
 }
 
@@ -118,8 +139,12 @@ export function PriceSeriesChart({
 			);
 		}
 
+		const stopFit = fitToContainer(c, el.current);
 		c.timeScale().fitContent();
-		return () => c.remove();
+		return () => {
+			stopFit();
+			c.remove();
+		};
 	}, [candles, kind, height, t]);
 
 	return (
@@ -138,7 +163,7 @@ export function PriceSeriesChart({
 					: undefined
 			}
 		>
-			<div ref={el} style={{ height }} />
+			<div ref={el} style={{ height, width: "100%" }} />
 		</ChartFrame>
 	);
 }
@@ -216,9 +241,13 @@ export function EquityAndDrawdownChart({
 		};
 		sync(top, bot);
 		sync(bot, top);
+		const stopTop = fitToContainer(top, topEl.current);
+		const stopBot = fitToContainer(bot, botEl.current);
 		top.timeScale().fitContent();
 
 		return () => {
+			stopTop();
+			stopBot();
 			top.remove();
 			bot.remove();
 		};
@@ -245,8 +274,8 @@ export function EquityAndDrawdownChart({
 			]}
 		>
 			<div className="flex flex-col gap-1">
-				<div ref={topEl} style={{ height: 260 }} />
-				<div ref={botEl} style={{ height: 120 }} />
+				<div ref={topEl} style={{ height: 260, width: "100%" }} />
+				<div ref={botEl} style={{ height: 120, width: "100%" }} />
 			</div>
 		</ChartFrame>
 	);

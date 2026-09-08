@@ -45,7 +45,17 @@ export function ChartFrame({
 	actions?: ReactNode;
 }) {
 	const [showTable, setShowTable] = useState(false);
+	// Bumped every time we return to the chart, so canvas engines
+	// (lightweight-charts) get a clean re-init rather than a blank instance.
+	const [chartMount, setChartMount] = useState(0);
 	const headingId = useId();
+
+	function toggleTable() {
+		setShowTable((v) => {
+			if (v) setChartMount((n) => n + 1);
+			return !v;
+		});
+	}
 
 	const csv = useMemo(() => {
 		if (!table) return "";
@@ -93,7 +103,7 @@ export function ChartFrame({
 								size="icon"
 								aria-pressed={showTable}
 								aria-label="Toggle data table"
-								onClick={() => setShowTable((v) => !v)}
+								onClick={toggleTable}
 							>
 								<Table2 className="size-3.5" />
 							</Button>
@@ -137,20 +147,15 @@ export function ChartFrame({
 					<div className="flex h-full items-center justify-center py-10 text-xs text-ink-muted">
 						{emptyLabel}
 					</div>
+				) : showTable && table ? (
+					// The area is dedicated to one view at a time.
+					<DataTable table={table} />
 				) : (
-					<>
-						{/*
-						 * Keep the chart mounted and sized even when the table is shown,
-						 * so canvas engines (lightweight-charts) don't lose their instance
-						 * and come back blank on toggle-off. The table sits on top.
-						 */}
+					// `key` forces a fresh mount when returning from the table, so a
+					// canvas engine (lightweight-charts) re-initialises cleanly.
+					<div key={chartMount} className="h-full w-full">
 						{children}
-						{showTable && table && (
-							<div className="absolute inset-0 overflow-auto bg-surface">
-								<DataTable table={table} />
-							</div>
-						)}
-					</>
+					</div>
 				)}
 			</div>
 		</figure>
