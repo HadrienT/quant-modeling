@@ -1,11 +1,12 @@
 import math
+import os
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 import requests
 
+from .. import db
 from ..cache import TTLCache
-from ..dependencies import fred_api_key
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
 from ..schemas import RatesCurveResponse
@@ -49,10 +50,10 @@ _CURVE_SERIES: Dict[str, List[tuple[float, str]]] = {
         (30.0, "DGS30"),
     ],
     "SOFR": [
-        (1.0 / 360.0, "SOFR"),            # overnight SOFR fixing
-        (1.0 / 12.0, "SOFR30DAYAVG"),     # 30-day average SOFR
-        (0.25, "SOFR90DAYAVG"),            # 90-day average SOFR
-        (0.5, "SOFR180DAYAVG"),            # 180-day average SOFR
+        (1.0 / 360.0, "SOFR"),  # overnight SOFR fixing
+        (1.0 / 12.0, "SOFR30DAYAVG"),  # 30-day average SOFR
+        (0.25, "SOFR90DAYAVG"),  # 90-day average SOFR
+        (0.5, "SOFR180DAYAVG"),  # 180-day average SOFR
         # --- proxy zone: Treasury CMT used for 1Y+ (SOFR swaps not on FRED) ---
         (1.0, "DGS1"),
         (2.0, "DGS2"),
@@ -64,7 +65,7 @@ _CURVE_SERIES: Dict[str, List[tuple[float, str]]] = {
         (30.0, "DGS30"),
     ],
     "FedFunds": [
-        (1.0 / 360.0, "EFFR"),             # Effective Federal Funds Rate
+        (1.0 / 360.0, "EFFR"),  # Effective Federal Funds Rate
         # --- proxy zone: Treasury CMT used beyond overnight ---
         (1.0 / 12.0, "DGS1MO"),
         (0.25, "DGS3MO"),
@@ -85,20 +86,36 @@ def _normalize_fixed_period_years(value: float) -> float:
     return round(value, 6)
 
 
-def _fetch_zero_points(curve: str, api_key: str) -> tuple[List[dict], List[str]]:
+def _fetch_zero_points(
+    curve: str, api_key: Optional[str]
+) -> tuple[List[dict], List[str]]:
+    """Each curve tenor: try the local macro store first (data-ingest's
+    fred-macro), then fall back to a live FRED call if that series isn't
+    ingested and an API key is available."""
     series = _CURVE_SERIES[curve]
     zero_points: List[dict] = []
     missing: List[str] = []
 
     for tenor, series_id in series:
+        rate_value: Optional[float] = None
         try:
-            rate_value = _latest_fred_observation(series_id, api_key)
-        except requests.RequestException as exc:
-            logger.warning(
-                "rates_curve series_fetch_failed",
-                extra={"curve": curve, "series": series_id, "error": str(exc)[:120]},
-            )
+            rate_value = db.fred_latest_value(series_id)
+        except db.StoreUnavailable:
             rate_value = None
+
+        if rate_value is None and api_key:
+            try:
+                rate_value = _latest_fred_observation(series_id, api_key)
+            except requests.RequestException as exc:
+                logger.warning(
+                    "rates_curve series_fetch_failed",
+                    extra={
+                        "curve": curve,
+                        "series": series_id,
+                        "error": str(exc)[:120],
+                    },
+                )
+
         if rate_value is None:
             missing.append(series_id)
             continue
@@ -128,7 +145,9 @@ def _interpolate_linear(points: List[dict], x: float) -> float:
     return float(sorted_points[-1]["y"])
 
 
-def _compute_forward_curve(zero_points: List[dict], fixed_period_years: float) -> List[dict]:
+def _compute_forward_curve(
+    zero_points: List[dict], fixed_period_years: float
+) -> List[dict]:
     if len(zero_points) < 2 or fixed_period_years <= 0:
         return []
 
@@ -138,7 +157,9 @@ def _compute_forward_curve(zero_points: List[dict], fixed_period_years: float) -
     if cutoff <= float(sorted_zero[0]["x"]):
         return []
 
-    start_tenors = [float(point["x"]) for point in sorted_zero if float(point["x"]) <= cutoff]
+    start_tenors = [
+        float(point["x"]) for point in sorted_zero if float(point["x"]) <= cutoff
+    ]
     if not any(abs(t - cutoff) < 1e-10 for t in start_tenors):
         start_tenors.append(cutoff)
     start_tenors = sorted(set(start_tenors))
@@ -192,22 +213,34 @@ def rates_curve(
     cached = _RATES_CURVE_CACHE.get(cache_key)
     if cached:
         set_cache_hit()
-        logger.info("rates_curve cache_hit", extra={"curve": curve, "curve_type": curve_type, "points": len(cached.zero)})
+        logger.info(
+            "rates_curve cache_hit",
+            extra={
+                "curve": curve,
+                "curve_type": curve_type,
+                "points": len(cached.zero),
+            },
+        )
         return cached
 
-    api_key = fred_api_key()
+    api_key = os.getenv("FRED_API_KEY") or None  # optional: local store is primary
     base_cached = _RATES_ZERO_POINTS_CACHE.get(curve)
     if base_cached is not None:
         zero_points = [dict(point) for point in base_cached]
         missing: List[str] = []
         set_cache_hit()
-        logger.info("rates_curve zero_points_cache_hit", extra={"curve": curve, "points": len(zero_points)})
+        logger.info(
+            "rates_curve zero_points_cache_hit",
+            extra={"curve": curve, "points": len(zero_points)},
+        )
     else:
         zero_points, missing = _fetch_zero_points(curve, api_key)
         _RATES_ZERO_POINTS_CACHE.set(curve, [dict(point) for point in zero_points])
 
     if len(zero_points) < 2:
-        raise HTTPException(status_code=503, detail=f"Insufficient FRED data for {curve} curve")
+        raise HTTPException(
+            status_code=503, detail=f"Insufficient FRED data for {curve} curve"
+        )
 
     output_points = zero_points
     if curve_type == "forward":

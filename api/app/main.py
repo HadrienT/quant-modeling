@@ -18,25 +18,24 @@ from .routers.portfolio import router as portfolio_router
 from .routers.auth import router as auth_router
 from .routers.backtest import router as backtest_router
 
-
 configure_logging()
 logger = get_logger()
 
 
 class CacheLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware to log cache hits in access logs."""
-    
+
     async def dispatch(self, request: Request, call_next):
         # Reset cache hit status for this request
         reset_cache_hit()
-        
+
         start_time = time.time()
         response = await call_next(request)
         process_time = time.time() - start_time
-        
+
         # Check if this request hit cache
         cache_indicator = " (cache)" if is_cache_hit() else ""
-        
+
         # Log the request with cache indicator
         logger.info(
             f"{request.client.host if request.client else 'unknown'}:{request.client.port if request.client else 0} - "
@@ -44,7 +43,7 @@ class CacheLoggingMiddleware(BaseHTTPMiddleware):
             f'HTTP/{request.scope.get("http_version", "1.1")}" {response.status_code}{cache_indicator} '
             f"({process_time:.3f}s)"
         )
-        
+
         return response
 
 
@@ -74,8 +73,15 @@ class ApiError(BaseModel):
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
-    codes = {400: "bad_request", 401: "unauthorized", 403: "forbidden",
-             404: "not_found", 409: "conflict", 422: "unprocessable", 429: "rate_limited"}
+    codes = {
+        400: "bad_request",
+        401: "unauthorized",
+        403: "forbidden",
+        404: "not_found",
+        409: "conflict",
+        422: "unprocessable",
+        429: "rate_limited",
+    }
     return JSONResponse(
         status_code=exc.status_code,
         content=ApiError(
@@ -99,7 +105,12 @@ async def _validation_exception_handler(
         ).model_dump(),
     )
 
-cors_origins = [origin.strip() for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if origin.strip()]
+
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",")
+    if origin.strip()
+]
 if not cors_origins:
     cors_origins = ["*"]
 
@@ -124,10 +135,19 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", version=os.getenv("COMMIT_SHA", "dev"))
 
 
+@app.on_event("shutdown")
+def _close_db_pool() -> None:
+    from .db import close_pool
+
+    try:
+        close_pool()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 app.include_router(market_router)
 app.include_router(pricing_router)
 app.include_router(local_vol_router)
 app.include_router(portfolio_router)
 app.include_router(auth_router)
 app.include_router(backtest_router)
-

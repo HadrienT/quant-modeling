@@ -1,11 +1,16 @@
 fastapi
 uvicorn
 pydantic
-yfinance
+# Market data (prices, macro) is read from the local Postgres filled by the
+# `data-ingest` service — no cloud.
+psycopg[binary]
+psycopg-pool
+pandas
 numpy
 scipy
-pandas
 requests
+# yfinance stays for option chains only (data-ingest doesn't ingest them yet).
+yfinance
 python-jose[cryptography]
 bcrypt
 # Optional cloud storage backend (QM_STORAGE=gcs). Uncomment to enable.

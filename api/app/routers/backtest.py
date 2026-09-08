@@ -7,19 +7,17 @@ from the investment start date. Supports periodic rebalancing.
 
 from __future__ import annotations
 
-import os
 from datetime import date, datetime
 from typing import List, Optional
 
 import numpy as np
 import pandas as pd
-import requests
-import yfinance as yf
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from scipy.optimize import minimize
 from starlette.concurrency import run_in_threadpool
 
+from .. import db
 from ..cache import TTLCache
 from ..logging_utils import get_logger
 
@@ -42,10 +40,19 @@ _SP500_TICKER = "^GSPC"
 class BacktestRequest(BaseModel):
     tickers: List[str] = Field(..., min_length=1, max_length=30)
     opt_start: date = Field(..., description="Start of look-back / optimisation window")
-    opt_end: date = Field(..., description="End of optimisation window and start of investment")
+    opt_end: date = Field(
+        ..., description="End of optimisation window and start of investment"
+    )
     initial_capital: float = Field(10_000.0, gt=0)
-    max_share: float = Field(0.4, gt=0, le=1.0, description="Maximum weight for any single asset")
-    min_share: float = Field(0.0, ge=0, lt=1.0, description="Minimum weight threshold; assets below are dropped")
+    max_share: float = Field(
+        0.4, gt=0, le=1.0, description="Maximum weight for any single asset"
+    )
+    min_share: float = Field(
+        0.0,
+        ge=0,
+        lt=1.0,
+        description="Minimum weight threshold; assets below are dropped",
+    )
     rebalance_freq: int = Field(
         0, ge=0, description="Rebalance every N business days. 0 = static allocation"
     )
@@ -90,77 +97,48 @@ class BacktestResponse(BaseModel):
 
 
 def _fetch_risk_free_rate() -> float:
-    """Fetch the latest 10Y Treasury rate from FRED.  Returns 0.04 as fallback."""
+    """Latest 10-year Treasury rate from the local macro store (data-ingest's
+    fred-macro source, series GS10). 0.04 fallback if it isn't ingested yet."""
     cached = _RF_RATE_CACHE.get("rf")
     if cached is not None:
         return cached
 
-    api_key = os.getenv("FRED_API_KEY")
-    if not api_key:
-        logger.warning("backtest: FRED_API_KEY not set, using fallback rf=0.04")
-        return 0.04
+    for series_id in ("GS10", "DGS10"):
+        try:
+            value = db.fred_latest_value(series_id)
+        except db.StoreUnavailable:
+            value = None
+        if value is not None:
+            rate = value / 100.0
+            _RF_RATE_CACHE.set("rf", rate)
+            return rate
 
-    try:
-        resp = requests.get(
-            "https://api.stlouisfed.org/fred/series/observations",
-            params={
-                "series_id": "DGS10",
-                "api_key": api_key,
-                "file_type": "json",
-                "sort_order": "desc",
-                "limit": 5,
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
-        observations = resp.json().get("observations", [])
-        for obs in observations:
-            val_str = obs.get("value", ".")
-            if val_str != ".":
-                rate = float(val_str) / 100.0
-                _RF_RATE_CACHE.set("rf", rate)
-                return rate
-    except Exception as exc:
-        logger.warning("backtest: failed to fetch FRED rate", extra={"error": str(exc)})
-
+    logger.warning("backtest: no risk-free rate in the macro store, using rf=0.04")
     return 0.04
 
 
 def _load_prices(tickers: List[str], start: str | None = None) -> pd.DataFrame:
-    """Fetch and pivot adjusted close prices from yfinance (no cloud)."""
+    """Pivoted close prices from the local Postgres (data-ingest sp500-prices)."""
     all_tickers = sorted(set(tickers) | {_SP500_TICKER})
     cache_key = ",".join(all_tickers)
     cached = _PRICES_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
+    since = pd.Timestamp(start).date() if start else None
     try:
-        raw = yf.download(
-            all_tickers,
-            start=start or "2000-01-01",
-            auto_adjust=True,
-            progress=False,
-            group_by="column",
+        prices = db.prices_wide(all_tickers, since)
+    except db.StoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+
+    if prices.empty:
+        raise HTTPException(
+            status_code=404, detail="No price data for the requested tickers"
         )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Price provider error: {exc}") from exc
 
-    if raw is None or raw.empty:
-        raise HTTPException(status_code=404, detail="No price data for the requested tickers")
-
-    # yfinance returns a column MultiIndex (field, ticker) for multiple tickers,
-    # or a flat frame for a single one.
-    if isinstance(raw.columns, pd.MultiIndex):
-        prices = raw["Close"].copy()
-    else:
-        prices = raw[["Close"]].rename(columns={"Close": all_tickers[0]})
-
-    prices = prices.dropna(how="all").interpolate(method="linear")
-    prices.index = pd.to_datetime(prices.index)
-    if prices.index.tz is None:
-        prices.index = prices.index.tz_localize("UTC")
-    prices.sort_index(inplace=True)
-
+    prices = prices.interpolate(method="linear")
     _PRICES_CACHE.set(cache_key, prices)
     return prices
 
@@ -274,7 +252,9 @@ def _compute_metrics(
     log_rets = np.log(v / v.shift(1)).dropna()
     rf_daily = rf_annual / 252.0
     excess = log_rets - rf_daily
-    sharpe = float(excess.mean() / excess.std() * np.sqrt(252)) if excess.std() > 0 else 0.0
+    sharpe = (
+        float(excess.mean() / excess.std() * np.sqrt(252)) if excess.std() > 0 else 0.0
+    )
     return {
         "ath": ath,
         "atl": atl,
@@ -314,7 +294,9 @@ def _run_backtest(req: BacktestRequest) -> BacktestResponse:
     if missing:
         warnings.append(f"Tickers not found in data and excluded: {sorted(missing)}")
     if not tickers_in_data:
-        raise HTTPException(status_code=422, detail="None of the requested tickers have data")
+        raise HTTPException(
+            status_code=422, detail="None of the requested tickers have data"
+        )
 
     rf_annual = _fetch_risk_free_rate()
     rf_daily = rf_annual / 252.0
@@ -331,7 +313,9 @@ def _run_backtest(req: BacktestRequest) -> BacktestResponse:
         raise HTTPException(status_code=422, detail="opt_start must be before opt_end")
 
     if opt_start_ts != pd.Timestamp(req.opt_start).tz_localize("UTC"):
-        warnings.append(f"opt_start snapped from {req.opt_start} to {opt_start_ts.date()}")
+        warnings.append(
+            f"opt_start snapped from {req.opt_start} to {opt_start_ts.date()}"
+        )
     if opt_end_ts != pd.Timestamp(req.opt_end).tz_localize("UTC"):
         warnings.append(f"opt_end snapped from {req.opt_end} to {opt_end_ts.date()}")
 
@@ -353,11 +337,18 @@ def _run_backtest(req: BacktestRequest) -> BacktestResponse:
     opt_returns = opt_returns.loc[:, valid_col_mask].dropna()
     tickers_in_data = list(opt_returns.columns)
     if not tickers_in_data:
-        raise HTTPException(status_code=422, detail="No tickers have sufficient data in the optimisation window")
+        raise HTTPException(
+            status_code=422,
+            detail="No tickers have sufficient data in the optimisation window",
+        )
 
     # ── Portfolio optimisation ────────────────────────────────────────────────
-    raw_weights, optimal_sharpe = _optimise_weights(opt_returns, rf_daily, req.max_share)
-    sorted_tickers, sorted_weights = _filter_weights(raw_weights, tickers_in_data, req.min_share)
+    raw_weights, optimal_sharpe = _optimise_weights(
+        opt_returns, rf_daily, req.max_share
+    )
+    sorted_tickers, sorted_weights = _filter_weights(
+        raw_weights, tickers_in_data, req.min_share
+    )
     optimal_sharpe_ann = optimal_sharpe * np.sqrt(252)
 
     # ── Run backtest ──────────────────────────────────────────────────────────
@@ -379,7 +370,10 @@ def _run_backtest(req: BacktestRequest) -> BacktestResponse:
         )
 
     if portfolio_values.empty:
-        raise HTTPException(status_code=422, detail="No price data available after the investment start date")
+        raise HTTPException(
+            status_code=422,
+            detail="No price data available after the investment start date",
+        )
 
     # ── Allocation summary (at investment start date) ─────────────────────────
     invest_start = portfolio_values.index[0]
@@ -389,7 +383,9 @@ def _run_backtest(req: BacktestRequest) -> BacktestResponse:
         if ticker not in prices.columns:
             continue
         col = prices[ticker]
-        start_p = float(col.loc[invest_start]) if invest_start in col.index else float("nan")
+        start_p = (
+            float(col.loc[invest_start]) if invest_start in col.index else float("nan")
+        )
         end_p = float(col.loc[invest_end]) if invest_end in col.index else float("nan")
         ret_pct = (end_p / start_p - 1) * 100 if start_p and end_p else float("nan")
         allocation.append(
@@ -472,7 +468,9 @@ def _run_rebalanced_backtest(
     for i, current_date in enumerate(trading_days):
         if i == 0 or current_date in rebalance_dates:
             # Re-optimise on returns up to current_date
-            hist_returns = _log_returns(prices[tickers]).loc[:current_date].dropna(how="all")
+            hist_returns = (
+                _log_returns(prices[tickers]).loc[:current_date].dropna(how="all")
+            )
             if len(hist_returns) >= 10:
                 valid_mask = hist_returns.notna().mean() >= 0.5
                 valid_hist = hist_returns.loc[:, valid_mask].dropna()
@@ -484,8 +482,12 @@ def _run_rebalanced_backtest(
                     # Track value until previous rebalance to get current capital
                     if i > 0:
                         tracked = _track_value(
-                            prices, current_tickers, current_weights, capital,
-                            last_rebalance, current_date,
+                            prices,
+                            current_tickers,
+                            current_weights,
+                            capital,
+                            last_rebalance,
+                            current_date,
                         )
                         if not tracked.empty:
                             all_values.extend(tracked.values[1:])
@@ -534,5 +536,5 @@ async def run_backtest(req: BacktestRequest) -> BacktestResponse:
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("backtest_run_failed", extra={"error": str(exc)})
+        logger.exception("backtest_run_failed")
         raise HTTPException(status_code=500, detail=f"Backtest failed: {exc}") from exc

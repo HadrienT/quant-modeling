@@ -1,13 +1,14 @@
-"""Price tape — sourced from yfinance (no cloud, blueprint self-hosting)."""
+"""Price tape — read from the local Postgres filled by `data-ingest` (no cloud,
+no live yfinance calls here)."""
 
+from datetime import date, timedelta
 from typing import Dict, List
 
-import pandas as pd
-import yfinance as yf
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from .. import db
 from ..cache import TTLCache
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
@@ -21,33 +22,37 @@ class TickersResponse(BaseModel):
     tickers: List[str]
 
 
-# Curated liquid universe. yfinance has no "list every ticker" endpoint, and a
-# self-hosted deployment does not need one — these cover the demo surface.
-_UNIVERSE: List[str] = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V",
-    "MA", "UNH", "XOM", "CVX", "LLY", "HD", "COST", "PG", "KO", "PEP",
-    "NFLX", "AMD", "INTC", "CSCO", "CRM", "ORCL", "ADBE", "QCOM", "TXN", "IBM",
-    "BAC", "WFC", "GS", "MS", "DIS", "NKE", "MCD", "SBUX", "BA", "CAT",
-    "SPY", "QQQ", "IWM", "DIA", "GLD", "TLT", "HYG", "VTI", "EFA", "EEM",
-]
-
-_RANGE_PERIOD: Dict[str, str] = {
-    "1M": "1mo",
-    "3M": "3mo",
-    "6M": "6mo",
-    "YTD": "ytd",
-    "1Y": "1y",
-    "2Y": "2y",
-    "5Y": "5y",
-    "max": "max",
+_RANGE_DAYS: Dict[str, int] = {
+    "1M": 31,
+    "3M": 93,
+    "6M": 186,
+    "YTD": 0,  # handled specially
+    "1Y": 372,
+    "2Y": 744,
+    "5Y": 1860,
+    "max": 100_000,
 }
 
-_HISTORY_CACHE = TTLCache[str, MarketHistoryResponse](max_size=256, ttl_seconds=60 * 30)
+_HISTORY_CACHE = TTLCache[str, MarketHistoryResponse](max_size=512, ttl_seconds=60 * 30)
+_TICKERS_CACHE = TTLCache[str, TickersResponse](max_size=1, ttl_seconds=60 * 60)
 
 
 @router.get("/market/tickers", response_model=TickersResponse)
-def list_tickers() -> TickersResponse:
-    return TickersResponse(tickers=_UNIVERSE)
+async def list_tickers() -> TickersResponse:
+    cached = _TICKERS_CACHE.get("all")
+    if cached:
+        set_cache_hit()
+        return cached
+    try:
+        tickers = await run_in_threadpool(db.sp500_tickers)
+    except db.StoreUnavailable as exc:
+        logger.error("list_tickers: store unavailable", extra={"error": str(exc)})
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+    response = TickersResponse(tickers=tickers)
+    _TICKERS_CACHE.set("all", response)
+    return response
 
 
 @router.get("/market/prices/history", response_model=MarketHistoryResponse)
@@ -63,24 +68,31 @@ async def market_history(
         set_cache_hit()
         return cached
 
-    period = _RANGE_PERIOD.get(range, "6mo")
-    try:
-        hist: pd.DataFrame = await run_in_threadpool(
-            lambda: yf.Ticker(ticker).history(period=period, auto_adjust=True)
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("market_history failed", extra={"ticker": ticker, "error": str(exc)})
-        raise HTTPException(status_code=502, detail="Price provider unavailable") from exc
+    if range == "YTD":
+        since = date(date.today().year, 1, 1)
+    else:
+        since = date.today() - timedelta(days=_RANGE_DAYS[range])
 
-    if hist is None or hist.empty or "Close" not in hist:
+    try:
+        rows = await run_in_threadpool(db.price_history, ticker, since)
+    except db.StoreUnavailable as exc:
+        logger.error(
+            "market_history: store unavailable",
+            extra={"ticker": ticker, "error": str(exc)},
+        )
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+
+    if not rows:
         raise HTTPException(status_code=404, detail=f"No price history for {ticker}")
 
-    points = [
-        MarketHistoryPoint(date=idx.date(), close=float(row["Close"]))
-        for idx, row in hist.iterrows()
-        if pd.notna(row["Close"])
-    ]
-    response = MarketHistoryResponse(ticker=ticker, points=points)
+    response = MarketHistoryResponse(
+        ticker=ticker,
+        points=[MarketHistoryPoint(date=d, close=c) for d, c in rows],
+    )
     _HISTORY_CACHE.set(cache_key, response)
-    logger.info("market_history", extra={"ticker": ticker, "range": range, "points": len(points)})
+    logger.info(
+        "market_history", extra={"ticker": ticker, "range": range, "points": len(rows)}
+    )
     return response

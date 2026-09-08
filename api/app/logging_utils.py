@@ -56,6 +56,8 @@ class JsonFormatter(logging.Formatter):
         }
         if extras:
             payload["extra"] = self._round_floats(extras)
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=True)
 
 
@@ -74,7 +76,7 @@ def configure_logging() -> logging.Logger:
 
     # Also log to stdout so docker-compose shows the output
     console = logging.StreamHandler()
-    console.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    console.setFormatter(JsonFormatter())
     api_logger.addHandler(console)
 
     api_logger.propagate = False
