@@ -2,8 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { loadConfig } from "@/shared/config";
 import "@/shared/styles/theme.css";
-import "katex/dist/katex.min.css";
 import "./styles.css";
+// KaTeX CSS is loaded lazily by shared/products/Formula when a doc card opens.
 import { App } from "@/app/App";
 
 const root = document.getElementById("root");
