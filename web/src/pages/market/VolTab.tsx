@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import Plot from "react-plotly.js";
 
 export type VolSubTab = "raw" | "cleaned" | "local-vol";
@@ -30,7 +31,10 @@ const SUB_TABS: { key: VolSubTab; label: string }[] = [
 	{ key: "local-vol", label: "Local vol" },
 ];
 
-const SURFACE_META: Record<VolSubTab, { title: string; zLabel: string; colorscale: string; note: string }> = {
+const SURFACE_META: Record<
+	VolSubTab,
+	{ title: string; zLabel: string; colorscale: string; note: string }
+> = {
 	raw: {
 		title: "Raw implied volatility surface",
 		zLabel: "Implied vol",
@@ -64,12 +68,15 @@ export const VolTab = ({
 	cleaned,
 	localVol,
 }: VolTabProps) => {
-	const data = subTab === "raw" ? raw : subTab === "cleaned" ? cleaned : localVol;
+	const data =
+		subTab === "raw" ? raw : subTab === "cleaned" ? cleaned : localVol;
 	const meta = SURFACE_META[subTab];
 	const hasData = data.strikes.length > 0 && !data.loading && !data.error;
 
 	// Replace null with NaN so Plotly's WebGL renderer doesn't choke
-	const safeZ = data.values.map((row) => row.map((v) => (v === null ? NaN : v)));
+	const safeZ = data.values.map((row) =>
+		row.map((v) => (v === null ? NaN : v)),
+	);
 
 	return (
 		<section className="card">
@@ -97,7 +104,10 @@ export const VolTab = ({
 				<div className="grid-2" style={{ marginBottom: 18 }}>
 					<label className="field">
 						Vol surface
-						<select value={surface} onChange={(e) => onSurfaceChange(e.target.value)}>
+						<select
+							value={surface}
+							onChange={(e) => onSurfaceChange(e.target.value)}
+						>
 							<option value="Mid vol">Mid vol</option>
 							<option value="Bid vol">Bid vol</option>
 							<option value="Ask vol">Ask vol</option>
@@ -125,7 +135,16 @@ export const VolTab = ({
 			{data.loading && <p className="price-muted">Loading surface…</p>}
 
 			{hasData && (
-				<div className="price-muted" style={{ marginBottom: 12, padding: "10px 12px", background: subTab === "raw" ? "#fff3cd" : "#d1ecf1", borderRadius: "8px", border: `1px solid ${subTab === "raw" ? "#ffc107" : "#bee5eb"}` }}>
+				<div
+					className="price-muted"
+					style={{
+						marginBottom: 12,
+						padding: "10px 12px",
+						background: subTab === "raw" ? "#fff3cd" : "#d1ecf1",
+						borderRadius: "8px",
+						border: `1px solid ${subTab === "raw" ? "#ffc107" : "#bee5eb"}`,
+					}}
+				>
 					{subTab === "raw" ? "⚠️" : "ℹ️"} {meta.note}
 				</div>
 			)}
@@ -160,7 +179,8 @@ export const VolTab = ({
 			</div>
 
 			<p className="price-muted" style={{ marginTop: 12 }}>
-				Drag to rotate the surface. Use this view to choose the curve/surface later in pricing.
+				Drag to rotate the surface. Use this view to choose the curve/surface
+				later in pricing.
 			</p>
 		</section>
 	);

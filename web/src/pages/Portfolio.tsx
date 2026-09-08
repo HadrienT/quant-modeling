@@ -37,13 +37,18 @@ import PositionTable from "./portfolio/PositionTable";
 import RiskPanel from "./portfolio/RiskPanel";
 
 const DEFAULT_BUMPS: StressBump[] = [
-	{ name: "Spot −10 %", spot_shift: -0.10, vol_shift: 0, rate_shift: 0 },
-	{ name: "Spot +10 %", spot_shift: 0.10, vol_shift: 0, rate_shift: 0 },
+	{ name: "Spot −10 %", spot_shift: -0.1, vol_shift: 0, rate_shift: 0 },
+	{ name: "Spot +10 %", spot_shift: 0.1, vol_shift: 0, rate_shift: 0 },
 	{ name: "Vol +5 pts", spot_shift: 0, vol_shift: 0.05, rate_shift: 0 },
 	{ name: "Vol −5 pts", spot_shift: 0, vol_shift: -0.05, rate_shift: 0 },
 	{ name: "Rate +100 bps", spot_shift: 0, vol_shift: 0, rate_shift: 0.01 },
 	{ name: "Rate −100 bps", spot_shift: 0, vol_shift: 0, rate_shift: -0.01 },
-	{ name: "Crash (spot −20 %, vol +10)", spot_shift: -0.20, vol_shift: 0.10, rate_shift: -0.005 },
+	{
+		name: "Crash (spot −20 %, vol +10)",
+		spot_shift: -0.2,
+		vol_shift: 0.1,
+		rate_shift: -0.005,
+	},
 ];
 
 export default function PortfolioPage() {
@@ -57,7 +62,9 @@ export default function PortfolioPage() {
 
 	// ── UI state ────────────────────────────────────────
 	const [showAddForm, setShowAddForm] = useState(false);
-	const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+	const [selectedPosition, setSelectedPosition] = useState<Position | null>(
+		null,
+	);
 	const [loading, setLoading] = useState(false);
 	const [riskLoading, setRiskLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -242,7 +249,10 @@ export default function PortfolioPage() {
 	// ── VaR ──────────────────────────────────────────────
 	const handleVaR = async () => {
 		if (!activeId) return;
-		if (!isLoggedIn) { setError("Log in to compute VaR."); return; }
+		if (!isLoggedIn) {
+			setError("Log in to compute VaR.");
+			return;
+		}
 		setRiskLoading(true);
 		try {
 			const res = await computeVaR(activeId);
@@ -257,7 +267,10 @@ export default function PortfolioPage() {
 	// ── Stress ───────────────────────────────────────────
 	const handleStress = async () => {
 		if (!activeId) return;
-		if (!isLoggedIn) { setError("Log in to run stress tests."); return; }
+		if (!isLoggedIn) {
+			setError("Log in to run stress tests.");
+			return;
+		}
 		setRiskLoading(true);
 		try {
 			const res = await stressTestPortfolio(activeId, DEFAULT_BUMPS);
@@ -275,8 +288,9 @@ export default function PortfolioPage() {
 				<div>
 					<h1>Portfolio desk.</h1>
 					<p>
-						Create portfolios, add positions across all asset classes, price with the C++ engine, and
-						monitor risk with Greeks, VaR, and stress tests.
+						Create portfolios, add positions across all asset classes, price
+						with the C++ engine, and monitor risk with Greeks, VaR, and stress
+						tests.
 					</p>
 				</div>
 			</section>
@@ -299,22 +313,37 @@ export default function PortfolioPage() {
 							onChange={(e) => setNewName(e.target.value)}
 							onKeyDown={(e) => e.key === "Enter" && handleCreate()}
 						/>
-						<button type="button" className="btn-primary btn-sm" onClick={handleCreate} disabled={loading}>
+						<button
+							type="button"
+							className="btn-primary btn-sm"
+							onClick={handleCreate}
+							disabled={loading}
+						>
 							+
 						</button>
 					</div>
 					<ul className="pf-list">
 						{summaries.map((s) => (
-							<li key={s.id} className={`pf-list-item${activeId === s.id ? " active" : ""}`}>
+							<li
+								key={s.id}
+								className={`pf-list-item${activeId === s.id ? "active" : ""}`}
+							>
 								<button type="button" onClick={() => setActiveId(s.id)}>
 									<span className="pf-name">{s.name}</span>
 									<span className="pf-meta">
-										{s.n_positions} pos · {s.total_value !== 0 ? s.total_value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
+										{s.n_positions} pos ·{" "}
+										{s.total_value !== 0
+											? s.total_value.toLocaleString(undefined, {
+													maximumFractionDigits: 2,
+												})
+											: "—"}
 									</span>
 								</button>
 							</li>
 						))}
-						{summaries.length === 0 && <li className="pf-empty">No portfolios yet</li>}
+						{summaries.length === 0 && (
+							<li className="pf-empty">No portfolios yet</li>
+						)}
 					</ul>
 				</aside>
 
@@ -331,12 +360,16 @@ export default function PortfolioPage() {
 								<div className="pf-header-left">
 									<h2>{portfolio.name}</h2>
 									<span className="pf-meta-text">
-										{portfolio.positions.length} positions ·
-										Updated {new Date(portfolio.updated_at).toLocaleString()}
+										{portfolio.positions.length} positions · Updated{" "}
+										{new Date(portfolio.updated_at).toLocaleString()}
 									</span>
 								</div>
 								<div className="pf-header-actions">
-									<button type="button" className="btn-primary" onClick={() => setShowAddForm(true)}>
+									<button
+										type="button"
+										className="btn-primary"
+										onClick={() => setShowAddForm(true)}
+									>
 										Add Position
 									</button>
 									<button
@@ -347,7 +380,11 @@ export default function PortfolioPage() {
 									>
 										{loading ? "Pricing…" : "Price All"}
 									</button>
-									<button type="button" className="btn-danger btn-sm" onClick={handleDelete}>
+									<button
+										type="button"
+										className="btn-danger btn-sm"
+										onClick={handleDelete}
+									>
 										Delete
 									</button>
 								</div>
@@ -378,7 +415,10 @@ export default function PortfolioPage() {
 
 			{/* ── Add position overlay ── */}
 			{showAddForm && (
-				<AddPositionForm onAdd={handleAddPosition} onCancel={() => setShowAddForm(false)} />
+				<AddPositionForm
+					onAdd={handleAddPosition}
+					onCancel={() => setShowAddForm(false)}
+				/>
 			)}
 
 			{/* ── Position detail / edit overlay ── */}

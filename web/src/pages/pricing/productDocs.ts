@@ -44,7 +44,8 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		title: "Vanilla European Option",
 		summary:
 			"The right, but not the obligation, to buy (call) or sell (put) the underlying at a fixed strike $K$ on a single maturity date $T$. No path dependency — only the terminal spot $S_T$ enters the payoff.",
-		payoff: "\\text{Payoff} = \\max(S_T - K,\\ 0)\\ \\text{(call)} \\qquad \\max(K - S_T,\\ 0)\\ \\text{(put)}",
+		payoff:
+			"\\text{Payoff} = \\max(S_T - K,\\ 0)\\ \\text{(call)} \\qquad \\max(K - S_T,\\ 0)\\ \\text{(put)}",
 		assumptions: [
 			"The underlying follows geometric Brownian motion under the risk-neutral measure: $dS_t = (r-q)S_t\\,dt + \\sigma S_t\\,dW_t$, with constant risk-free rate $r$, dividend yield $q$ and volatility $\\sigma$ (flat — no smile, no term structure).",
 			"European exercise only, at $T$. Selecting a tree or PDE engine below still prices this European payoff; American exercise is a separate instrument in this codebase's registry, not a flag on this one.",
@@ -82,12 +83,12 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 	barrier: {
 		title: "Barrier Option",
 		summary:
-			"A vanilla call or put that only comes alive if the spot touches a barrier level $H$ before maturity (\"knock-in\"), or that dies if it does (\"knock-out\"). Four flavours: up/down × in/out.",
+			'A vanilla call or put that only comes alive if the spot touches a barrier level $H$ before maturity ("knock-in"), or that dies if it does ("knock-out"). Four flavours: up/down × in/out.',
 		payoff:
 			"\\text{Payoff} = \\underbrace{\\max(\\phi(S_T-K),\\,0)}_{\\text{vanilla payoff},\\ \\phi=\\pm1}\\times\\mathbb{1}\\{\\text{barrier condition met}\\}\\ +\\ R\\times\\mathbb{1}\\{\\text{barrier condition not met}\\}",
 		assumptions: [
 			"Same Black-Scholes GBM dynamics as the vanilla option: constant $r$, $q$, $\\sigma$.",
-			"For a knock-out, \"condition met\" means the barrier was never breached; for a knock-in, it means the barrier was breached — the rebate $R$ (default 0) applies to the opposite, \"dead\", case in each.",
+			'For a knock-out, "condition met" means the barrier was never breached; for a knock-in, it means the barrier was breached — the rebate $R$ (default 0) applies to the opposite, "dead", case in each.',
 			"Monitoring is discrete (weekly, i.e. 52 dates/year, by default), not truly continuous — the toggle below controls whether the gaps between those dates are corrected for or ignored.",
 		],
 		pricingMethods: [
@@ -100,7 +101,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		notes: [
 			"Greeks use common random numbers (CRN): every bumped repricing (for $\\Delta,\\Gamma,\\text{vega},\\theta,\\rho$) reuses the exact same random draws as the base path, so the finite-difference Greeks are far less noisy than if each bump redrew fresh paths.",
 			"In + Out = Vanilla: an up-and-in and an up-and-out call with the same strike and barrier must sum to the plain vanilla call price. A gap beyond MC noise signals a bug — a useful free correctness test.",
-			"The rebate, if any, is paid at expiry $T$ for a \"dead\" path in this implementation, not at the moment the barrier is hit — a simplifying convention; some real-world barrier notes pay the rebate at the hit date instead, which is worth more (it arrives earlier).",
+			'The rebate, if any, is paid at expiry $T$ for a "dead" path in this implementation, not at the moment the barrier is hit — a simplifying convention; some real-world barrier notes pay the rebate at the hit date instead, which is worth more (it arrives earlier).',
 			"Daily monitoring (252/year) is more accurate than the weekly default but costs roughly $9\\times$ more compute per path here (one base path plus eight bumped variants for the five Greeks) — weekly is kept as the default to stay well inside the API's response-time budget.",
 		],
 	},
@@ -117,7 +118,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		assumptions: [
 			"Single underlying, same Black-Scholes GBM dynamics as the vanilla option.",
 			"All barriers ($B_{ac}$, $B_{cpn}$, $B_{ki}$) are expressed as a fraction of $S_0$ — e.g. $B_{ac}=1.0$ means the autocall trigger is at-the-money.",
-			"\"Memory\" coupons (on by default): a coupon missed at an earlier date because the coupon barrier wasn't met is paid later if a subsequent date clears it, rather than being permanently lost.",
+			'"Memory" coupons (on by default): a coupon missed at an earlier date because the coupon barrier wasn\'t met is paid later if a subsequent date clears it, rather than being permanently lost.',
 		],
 		pricingMethods: [
 			{
@@ -127,7 +128,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			},
 		],
 		notes: [
-			"Unlike the barrier engine, the \"continuous knock-in\" flag here does not apply a Brownian-bridge correction — it only checks the knock-in barrier at every observation date instead of only the final one. Genuine continuous-time touches between observation dates aren't captured; read \"continuous\" as \"checked more often\", not as true continuous monitoring.",
+			'Unlike the barrier engine, the "continuous knock-in" flag here does not apply a Brownian-bridge correction — it only checks the knock-in barrier at every observation date instead of only the final one. Genuine continuous-time touches between observation dates aren\'t captured; read "continuous" as "checked more often", not as true continuous monitoring.',
 			"An autocall is economically short a knock-in put struck at $B_{ki}S_0$ dressed up with a coupon — worth stating plainly, since the coupon can make the product look lower-risk than the downside it's actually carrying.",
 		],
 	},

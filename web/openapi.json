@@ -1,0 +1,5073 @@
+{
+	"components": {
+		"schemas": {
+			"AllocationRow": {
+				"properties": {
+					"end_price": {
+						"title": "End Price",
+						"type": "number"
+					},
+					"return_pct": {
+						"title": "Return Pct",
+						"type": "number"
+					},
+					"start_price": {
+						"title": "Start Price",
+						"type": "number"
+					},
+					"ticker": {
+						"title": "Ticker",
+						"type": "string"
+					},
+					"weight": {
+						"title": "Weight",
+						"type": "number"
+					}
+				},
+				"required": [
+					"ticker",
+					"weight",
+					"start_price",
+					"end_price",
+					"return_pct"
+				],
+				"title": "AllocationRow",
+				"type": "object"
+			},
+			"AmericanEngineType": {
+				"enum": ["binomial", "trinomial"],
+				"title": "AmericanEngineType",
+				"type": "string"
+			},
+			"AmericanVanillaRequest": {
+				"properties": {
+					"dividend": {
+						"title": "Dividend",
+						"type": "number"
+					},
+					"engine": {
+						"$ref": "#/components/schemas/AmericanEngineType",
+						"default": "binomial"
+					},
+					"is_call": {
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"pde_space_steps": {
+						"default": 100,
+						"minimum": 10.0,
+						"title": "Pde Space Steps",
+						"type": "integer"
+					},
+					"pde_time_steps": {
+						"default": 100,
+						"minimum": 10.0,
+						"title": "Pde Time Steps",
+						"type": "integer"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"tree_steps": {
+						"default": 100,
+						"minimum": 10.0,
+						"title": "Tree Steps",
+						"type": "integer"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"strike",
+					"maturity",
+					"rate",
+					"dividend",
+					"vol",
+					"is_call"
+				],
+				"title": "AmericanVanillaRequest",
+				"type": "object"
+			},
+			"AsianAverageType": {
+				"enum": ["arithmetic", "geometric"],
+				"title": "AsianAverageType",
+				"type": "string"
+			},
+			"AsianRequest": {
+				"properties": {
+					"average_type": {
+						"$ref": "#/components/schemas/AsianAverageType",
+						"default": "arithmetic"
+					},
+					"dividend": {
+						"title": "Dividend",
+						"type": "number"
+					},
+					"engine": {
+						"$ref": "#/components/schemas/EngineType",
+						"default": "analytic"
+					},
+					"is_call": {
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"mc_epsilon": {
+						"default": 0.0,
+						"title": "Mc Epsilon",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"strike",
+					"maturity",
+					"rate",
+					"dividend",
+					"vol",
+					"is_call"
+				],
+				"title": "AsianRequest",
+				"type": "object"
+			},
+			"AuthRequest": {
+				"properties": {
+					"password": {
+						"title": "Password",
+						"type": "string"
+					},
+					"username": {
+						"title": "Username",
+						"type": "string"
+					}
+				},
+				"required": ["username", "password"],
+				"title": "AuthRequest",
+				"type": "object"
+			},
+			"AuthResponse": {
+				"properties": {
+					"token": {
+						"title": "Token",
+						"type": "string"
+					},
+					"username": {
+						"title": "Username",
+						"type": "string"
+					}
+				},
+				"required": ["token", "username"],
+				"title": "AuthResponse",
+				"type": "object"
+			},
+			"AutocallRequest": {
+				"properties": {
+					"autocall_barrier": {
+						"default": 1.0,
+						"exclusiveMinimum": 0.0,
+						"title": "Autocall Barrier",
+						"type": "number"
+					},
+					"coupon_barrier": {
+						"default": 0.8,
+						"exclusiveMinimum": 0.0,
+						"title": "Coupon Barrier",
+						"type": "number"
+					},
+					"coupon_rate": {
+						"default": 0.05,
+						"minimum": 0.0,
+						"title": "Coupon Rate",
+						"type": "number"
+					},
+					"dividend": {
+						"default": 0.0,
+						"title": "Dividend",
+						"type": "number"
+					},
+					"ki_continuous": {
+						"default": false,
+						"title": "Ki Continuous",
+						"type": "boolean"
+					},
+					"memory_coupon": {
+						"default": true,
+						"title": "Memory Coupon",
+						"type": "boolean"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"notional": {
+						"default": 1000.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"observation_dates": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 1,
+						"title": "Observation Dates",
+						"type": "array"
+					},
+					"put_barrier": {
+						"default": 0.6,
+						"exclusiveMinimum": 0.0,
+						"title": "Put Barrier",
+						"type": "number"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": ["spot", "rate", "vol", "observation_dates"],
+				"title": "AutocallRequest",
+				"type": "object"
+			},
+			"BacktestMetrics": {
+				"properties": {
+					"alpha": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Alpha"
+					},
+					"annualized_return_pct": {
+						"title": "Annualized Return Pct",
+						"type": "number"
+					},
+					"ath": {
+						"title": "Ath",
+						"type": "number"
+					},
+					"atl": {
+						"title": "Atl",
+						"type": "number"
+					},
+					"beta": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Beta"
+					},
+					"max_drawdown": {
+						"title": "Max Drawdown",
+						"type": "number"
+					},
+					"optimal_sharpe": {
+						"title": "Optimal Sharpe",
+						"type": "number"
+					},
+					"sharpe_ratio": {
+						"title": "Sharpe Ratio",
+						"type": "number"
+					},
+					"total_return_pct": {
+						"title": "Total Return Pct",
+						"type": "number"
+					}
+				},
+				"required": [
+					"ath",
+					"atl",
+					"total_return_pct",
+					"annualized_return_pct",
+					"max_drawdown",
+					"sharpe_ratio",
+					"optimal_sharpe"
+				],
+				"title": "BacktestMetrics",
+				"type": "object"
+			},
+			"BacktestRequest": {
+				"properties": {
+					"initial_capital": {
+						"default": 10000.0,
+						"exclusiveMinimum": 0.0,
+						"title": "Initial Capital",
+						"type": "number"
+					},
+					"max_share": {
+						"default": 0.4,
+						"description": "Maximum weight for any single asset",
+						"exclusiveMinimum": 0.0,
+						"maximum": 1.0,
+						"title": "Max Share",
+						"type": "number"
+					},
+					"min_share": {
+						"default": 0.0,
+						"description": "Minimum weight threshold; assets below are dropped",
+						"exclusiveMaximum": 1.0,
+						"minimum": 0.0,
+						"title": "Min Share",
+						"type": "number"
+					},
+					"opt_end": {
+						"description": "End of optimisation window and start of investment",
+						"format": "date",
+						"title": "Opt End",
+						"type": "string"
+					},
+					"opt_start": {
+						"description": "Start of look-back / optimisation window",
+						"format": "date",
+						"title": "Opt Start",
+						"type": "string"
+					},
+					"rebalance_freq": {
+						"default": 0,
+						"description": "Rebalance every N business days. 0 = static allocation",
+						"minimum": 0.0,
+						"title": "Rebalance Freq",
+						"type": "integer"
+					},
+					"tickers": {
+						"items": {
+							"type": "string"
+						},
+						"maxItems": 30,
+						"minItems": 1,
+						"title": "Tickers",
+						"type": "array"
+					}
+				},
+				"required": ["tickers", "opt_start", "opt_end"],
+				"title": "BacktestRequest",
+				"type": "object"
+			},
+			"BacktestResponse": {
+				"properties": {
+					"allocation": {
+						"items": {
+							"$ref": "#/components/schemas/AllocationRow"
+						},
+						"title": "Allocation",
+						"type": "array"
+					},
+					"metrics": {
+						"$ref": "#/components/schemas/BacktestMetrics"
+					},
+					"opt_end": {
+						"title": "Opt End",
+						"type": "string"
+					},
+					"opt_start": {
+						"title": "Opt Start",
+						"type": "string"
+					},
+					"portfolio_values": {
+						"items": {
+							"$ref": "#/components/schemas/PortfolioPoint"
+						},
+						"title": "Portfolio Values",
+						"type": "array"
+					},
+					"sp500_values": {
+						"anyOf": [
+							{
+								"items": {
+									"$ref": "#/components/schemas/PortfolioPoint"
+								},
+								"type": "array"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Sp500 Values"
+					},
+					"warnings": {
+						"items": {
+							"type": "string"
+						},
+						"title": "Warnings",
+						"type": "array"
+					}
+				},
+				"required": [
+					"opt_start",
+					"opt_end",
+					"allocation",
+					"portfolio_values",
+					"metrics",
+					"warnings"
+				],
+				"title": "BacktestResponse",
+				"type": "object"
+			},
+			"BarrierKind": {
+				"enum": ["up-and-in", "up-and-out", "down-and-in", "down-and-out"],
+				"title": "BarrierKind",
+				"type": "string"
+			},
+			"BarrierRequest": {
+				"properties": {
+					"barrier_kind": {
+						"$ref": "#/components/schemas/BarrierKind"
+					},
+					"barrier_level": {
+						"exclusiveMinimum": 0.0,
+						"title": "Barrier Level",
+						"type": "number"
+					},
+					"brownian_bridge": {
+						"default": true,
+						"title": "Brownian Bridge",
+						"type": "boolean"
+					},
+					"dividend": {
+						"title": "Dividend",
+						"type": "number"
+					},
+					"is_call": {
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"mc_epsilon": {
+						"default": 0.0,
+						"title": "Mc Epsilon",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 50000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"n_steps": {
+						"default": 0,
+						"title": "N Steps",
+						"type": "integer"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"rebate": {
+						"default": 0.0,
+						"title": "Rebate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"strike",
+					"maturity",
+					"rate",
+					"dividend",
+					"vol",
+					"is_call",
+					"barrier_level",
+					"barrier_kind"
+				],
+				"title": "BarrierRequest",
+				"type": "object"
+			},
+			"BasketRequest": {
+				"properties": {
+					"dividends": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Dividends",
+						"type": "array"
+					},
+					"is_call": {
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"mc_antithetic": {
+						"default": true,
+						"title": "Mc Antithetic",
+						"type": "boolean"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"pairwise_correlation": {
+						"default": 0.0,
+						"maximum": 0.999,
+						"minimum": -0.999,
+						"title": "Pairwise Correlation",
+						"type": "number"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spots": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Spots",
+						"type": "array"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vols": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Vols",
+						"type": "array"
+					},
+					"weights": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Weights",
+						"type": "array"
+					}
+				},
+				"required": ["spots", "vols", "strike", "maturity", "rate", "is_call"],
+				"title": "BasketRequest",
+				"type": "object"
+			},
+			"BatchPriceResponse": {
+				"properties": {
+					"portfolio": {
+						"$ref": "#/components/schemas/Portfolio-Output"
+					},
+					"risk_summary": {
+						"$ref": "#/components/schemas/PortfolioRiskSummary"
+					}
+				},
+				"required": ["portfolio", "risk_summary"],
+				"title": "BatchPriceResponse",
+				"type": "object"
+			},
+			"BondAnalytics": {
+				"properties": {
+					"convexity": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Convexity"
+					},
+					"dv01": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Dv01"
+					},
+					"macaulay_duration": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Macaulay Duration"
+					},
+					"modified_duration": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Modified Duration"
+					}
+				},
+				"title": "BondAnalytics",
+				"type": "object"
+			},
+			"CleanedIVSurfaceResponse": {
+				"description": "Cleaned & smoothed IV surface grid (bicubic spline evaluated on a regular mesh).",
+				"properties": {
+					"cleaning_summary": {
+						"title": "Cleaning Summary",
+						"type": "string"
+					},
+					"maturities": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Maturities",
+						"type": "array"
+					},
+					"n_clean_quotes": {
+						"title": "N Clean Quotes",
+						"type": "integer"
+					},
+					"spot": {
+						"title": "Spot",
+						"type": "number"
+					},
+					"strikes": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Strikes",
+						"type": "array"
+					},
+					"ticker": {
+						"title": "Ticker",
+						"type": "string"
+					},
+					"values": {
+						"items": {
+							"items": {
+								"anyOf": [
+									{
+										"type": "number"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"type": "array"
+						},
+						"title": "Values",
+						"type": "array"
+					}
+				},
+				"required": [
+					"ticker",
+					"spot",
+					"strikes",
+					"maturities",
+					"values",
+					"n_clean_quotes",
+					"cleaning_summary"
+				],
+				"title": "CleanedIVSurfaceResponse",
+				"type": "object"
+			},
+			"CommodityForwardRequest": {
+				"properties": {
+					"convenience_yield": {
+						"default": 0.0,
+						"title": "Convenience Yield",
+						"type": "number"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"notional": {
+						"default": 1.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"storage_cost": {
+						"default": 0.0,
+						"title": "Storage Cost",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vol": {
+						"default": 0.2,
+						"minimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": ["spot", "rate", "strike", "maturity"],
+				"title": "CommodityForwardRequest",
+				"type": "object"
+			},
+			"CommodityOptionRequest": {
+				"properties": {
+					"convenience_yield": {
+						"default": 0.0,
+						"title": "Convenience Yield",
+						"type": "number"
+					},
+					"is_call": {
+						"default": true,
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"notional": {
+						"default": 1.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"storage_cost": {
+						"default": 0.0,
+						"title": "Storage Cost",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": ["spot", "rate", "vol", "strike", "maturity"],
+				"title": "CommodityOptionRequest",
+				"type": "object"
+			},
+			"CurvePointResponse": {
+				"properties": {
+					"x": {
+						"title": "X",
+						"type": "number"
+					},
+					"y": {
+						"title": "Y",
+						"type": "number"
+					}
+				},
+				"required": ["x", "y"],
+				"title": "CurvePointResponse",
+				"type": "object"
+			},
+			"DigitalPayoffKind": {
+				"enum": ["cash-or-nothing", "asset-or-nothing"],
+				"title": "DigitalPayoffKind",
+				"type": "string"
+			},
+			"DigitalRequest": {
+				"properties": {
+					"cash_amount": {
+						"default": 1.0,
+						"exclusiveMinimum": 0.0,
+						"title": "Cash Amount",
+						"type": "number"
+					},
+					"dividend": {
+						"title": "Dividend",
+						"type": "number"
+					},
+					"is_call": {
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"payoff_type": {
+						"$ref": "#/components/schemas/DigitalPayoffKind",
+						"default": "cash-or-nothing"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"strike",
+					"maturity",
+					"rate",
+					"dividend",
+					"vol",
+					"is_call"
+				],
+				"title": "DigitalRequest",
+				"type": "object"
+			},
+			"DispersionSwapRequest": {
+				"properties": {
+					"dividends": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Dividends",
+						"type": "array"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"notional": {
+						"default": 100.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"observation_dates": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Observation Dates",
+						"type": "array"
+					},
+					"pairwise_correlation": {
+						"default": 0.0,
+						"maximum": 0.999,
+						"minimum": -0.999,
+						"title": "Pairwise Correlation",
+						"type": "number"
+					},
+					"rate": {
+						"default": 0.05,
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spots": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Spots",
+						"type": "array"
+					},
+					"strike_spread": {
+						"default": 0.0,
+						"title": "Strike Spread",
+						"type": "number"
+					},
+					"vols": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Vols",
+						"type": "array"
+					},
+					"weights": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Weights",
+						"type": "array"
+					}
+				},
+				"required": ["spots", "vols", "maturity"],
+				"title": "DispersionSwapRequest",
+				"type": "object"
+			},
+			"EngineType": {
+				"enum": ["analytic", "mc", "binomial", "trinomial", "pde"],
+				"title": "EngineType",
+				"type": "string"
+			},
+			"FXForwardRequest": {
+				"properties": {
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"notional": {
+						"default": 1.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"rate_domestic": {
+						"title": "Rate Domestic",
+						"type": "number"
+					},
+					"rate_foreign": {
+						"title": "Rate Foreign",
+						"type": "number"
+					},
+					"spot": {
+						"description": "Spot FX rate (domestic per foreign)",
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vol": {
+						"default": 0.1,
+						"minimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"rate_domestic",
+					"rate_foreign",
+					"strike",
+					"maturity"
+				],
+				"title": "FXForwardRequest",
+				"type": "object"
+			},
+			"FXOptionRequest": {
+				"properties": {
+					"is_call": {
+						"default": true,
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"notional": {
+						"default": 1.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"rate_domestic": {
+						"title": "Rate Domestic",
+						"type": "number"
+					},
+					"rate_foreign": {
+						"title": "Rate Foreign",
+						"type": "number"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"rate_domestic",
+					"rate_foreign",
+					"vol",
+					"strike",
+					"maturity"
+				],
+				"title": "FXOptionRequest",
+				"type": "object"
+			},
+			"FixedRateBondRequest": {
+				"properties": {
+					"coupon_frequency": {
+						"default": 1,
+						"minimum": 1.0,
+						"title": "Coupon Frequency",
+						"type": "integer"
+					},
+					"coupon_rate": {
+						"minimum": 0.0,
+						"title": "Coupon Rate",
+						"type": "number"
+					},
+					"discount_factors": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Discount Factors",
+						"type": "array"
+					},
+					"discount_times": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Discount Times",
+						"type": "array"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"notional": {
+						"default": 1.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					}
+				},
+				"required": ["maturity", "rate", "coupon_rate"],
+				"title": "FixedRateBondRequest",
+				"type": "object"
+			},
+			"FutureRequest": {
+				"properties": {
+					"dividend": {
+						"title": "Dividend",
+						"type": "number"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"notional": {
+						"default": 1.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					}
+				},
+				"required": ["spot", "strike", "maturity", "rate", "dividend"],
+				"title": "FutureRequest",
+				"type": "object"
+			},
+			"Greeks": {
+				"properties": {
+					"delta": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Delta"
+					},
+					"delta_std_error": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Delta Std Error"
+					},
+					"gamma": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Gamma"
+					},
+					"gamma_std_error": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Gamma Std Error"
+					},
+					"rho": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Rho"
+					},
+					"rho_std_error": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Rho Std Error"
+					},
+					"theta": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Theta"
+					},
+					"theta_std_error": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Theta Std Error"
+					},
+					"vega": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Vega"
+					},
+					"vega_std_error": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Vega Std Error"
+					}
+				},
+				"title": "Greeks",
+				"type": "object"
+			},
+			"HTTPValidationError": {
+				"properties": {
+					"detail": {
+						"items": {
+							"$ref": "#/components/schemas/ValidationError"
+						},
+						"title": "Detail",
+						"type": "array"
+					}
+				},
+				"title": "HTTPValidationError",
+				"type": "object"
+			},
+			"IVSurfaceResponse": {
+				"properties": {
+					"maturities": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Maturities",
+						"type": "array"
+					},
+					"strikes": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Strikes",
+						"type": "array"
+					},
+					"surface": {
+						"title": "Surface",
+						"type": "string"
+					},
+					"ticker": {
+						"title": "Ticker",
+						"type": "string"
+					},
+					"values": {
+						"items": {
+							"items": {
+								"anyOf": [
+									{
+										"type": "number"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"type": "array"
+						},
+						"title": "Values",
+						"type": "array"
+					}
+				},
+				"required": ["ticker", "surface", "strikes", "maturities", "values"],
+				"title": "IVSurfaceResponse",
+				"type": "object"
+			},
+			"LocalVolResponse": {
+				"description": "Pricing result from the Dupire local-vol MC engine.",
+				"properties": {
+					"cleaning_summary": {
+						"title": "Cleaning Summary",
+						"type": "string"
+					},
+					"delta": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Delta"
+					},
+					"diagnostics": {
+						"title": "Diagnostics",
+						"type": "string"
+					},
+					"gamma": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Gamma"
+					},
+					"mc_std_error": {
+						"title": "Mc Std Error",
+						"type": "number"
+					},
+					"n_clean_quotes": {
+						"title": "N Clean Quotes",
+						"type": "integer"
+					},
+					"npv": {
+						"title": "Npv",
+						"type": "number"
+					},
+					"rho": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Rho"
+					},
+					"spot": {
+						"title": "Spot",
+						"type": "number"
+					},
+					"theta": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Theta"
+					},
+					"ticker": {
+						"title": "Ticker",
+						"type": "string"
+					},
+					"vega_parallel": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Vega Parallel"
+					}
+				},
+				"required": [
+					"ticker",
+					"spot",
+					"npv",
+					"mc_std_error",
+					"n_clean_quotes",
+					"cleaning_summary",
+					"diagnostics"
+				],
+				"title": "LocalVolResponse",
+				"type": "object"
+			},
+			"LocalVolSurfaceResponse": {
+				"description": "Dupire local-volatility surface grid.",
+				"properties": {
+					"cleaning_summary": {
+						"title": "Cleaning Summary",
+						"type": "string"
+					},
+					"maturities": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Maturities",
+						"type": "array"
+					},
+					"n_clean_quotes": {
+						"title": "N Clean Quotes",
+						"type": "integer"
+					},
+					"spot": {
+						"title": "Spot",
+						"type": "number"
+					},
+					"strikes": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Strikes",
+						"type": "array"
+					},
+					"ticker": {
+						"title": "Ticker",
+						"type": "string"
+					},
+					"values": {
+						"items": {
+							"items": {
+								"anyOf": [
+									{
+										"type": "number"
+									},
+									{
+										"type": "null"
+									}
+								]
+							},
+							"type": "array"
+						},
+						"title": "Values",
+						"type": "array"
+					}
+				},
+				"required": [
+					"ticker",
+					"spot",
+					"strikes",
+					"maturities",
+					"values",
+					"n_clean_quotes",
+					"cleaning_summary"
+				],
+				"title": "LocalVolSurfaceResponse",
+				"type": "object"
+			},
+			"LookbackExtremum": {
+				"enum": ["minimum", "maximum"],
+				"title": "LookbackExtremum",
+				"type": "string"
+			},
+			"LookbackRequest": {
+				"properties": {
+					"dividend": {
+						"title": "Dividend",
+						"type": "number"
+					},
+					"extremum": {
+						"$ref": "#/components/schemas/LookbackExtremum",
+						"default": "maximum"
+					},
+					"is_call": {
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"mc_antithetic": {
+						"default": true,
+						"title": "Mc Antithetic",
+						"type": "boolean"
+					},
+					"mc_epsilon": {
+						"default": 0.0,
+						"title": "Mc Epsilon",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"n_steps": {
+						"default": 0,
+						"title": "N Steps",
+						"type": "integer"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"style": {
+						"$ref": "#/components/schemas/LookbackStyle",
+						"default": "fixed-strike"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"strike",
+					"maturity",
+					"rate",
+					"dividend",
+					"vol",
+					"is_call"
+				],
+				"title": "LookbackRequest",
+				"type": "object"
+			},
+			"LookbackStyle": {
+				"enum": ["fixed-strike", "floating-strike"],
+				"title": "LookbackStyle",
+				"type": "string"
+			},
+			"MarketHistoryPoint": {
+				"properties": {
+					"close": {
+						"title": "Close",
+						"type": "number"
+					},
+					"date": {
+						"format": "date",
+						"title": "Date",
+						"type": "string"
+					}
+				},
+				"required": ["date", "close"],
+				"title": "MarketHistoryPoint",
+				"type": "object"
+			},
+			"MarketHistoryResponse": {
+				"properties": {
+					"points": {
+						"items": {
+							"$ref": "#/components/schemas/MarketHistoryPoint"
+						},
+						"title": "Points",
+						"type": "array"
+					},
+					"ticker": {
+						"title": "Ticker",
+						"type": "string"
+					}
+				},
+				"required": ["ticker", "points"],
+				"title": "MarketHistoryResponse",
+				"type": "object"
+			},
+			"MountainRequest": {
+				"properties": {
+					"correlations": {
+						"items": {
+							"items": {
+								"type": "number"
+							},
+							"type": "array"
+						},
+						"title": "Correlations",
+						"type": "array"
+					},
+					"dividends": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Dividends",
+						"type": "array"
+					},
+					"is_call": {
+						"default": true,
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"notional": {
+						"default": 100.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"observation_dates": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 1,
+						"title": "Observation Dates",
+						"type": "array"
+					},
+					"rate": {
+						"default": 0.05,
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spots": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Spots",
+						"type": "array"
+					},
+					"strike": {
+						"default": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"vols": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Vols",
+						"type": "array"
+					}
+				},
+				"required": ["spots", "vols", "observation_dates"],
+				"title": "MountainRequest",
+				"type": "object"
+			},
+			"Portfolio-Input": {
+				"description": "Full portfolio model stored as JSON in GCS.",
+				"properties": {
+					"created_at": {
+						"title": "Created At",
+						"type": "string"
+					},
+					"id": {
+						"title": "Id",
+						"type": "string"
+					},
+					"name": {
+						"default": "Untitled Portfolio",
+						"title": "Name",
+						"type": "string"
+					},
+					"owner": {
+						"default": "",
+						"title": "Owner",
+						"type": "string"
+					},
+					"positions": {
+						"items": {
+							"$ref": "#/components/schemas/Position-Input"
+						},
+						"title": "Positions",
+						"type": "array"
+					},
+					"updated_at": {
+						"title": "Updated At",
+						"type": "string"
+					}
+				},
+				"required": ["id"],
+				"title": "Portfolio",
+				"type": "object"
+			},
+			"Portfolio-Output": {
+				"description": "Full portfolio model stored as JSON in GCS.",
+				"properties": {
+					"created_at": {
+						"title": "Created At",
+						"type": "string"
+					},
+					"id": {
+						"title": "Id",
+						"type": "string"
+					},
+					"name": {
+						"default": "Untitled Portfolio",
+						"title": "Name",
+						"type": "string"
+					},
+					"owner": {
+						"default": "",
+						"title": "Owner",
+						"type": "string"
+					},
+					"positions": {
+						"items": {
+							"$ref": "#/components/schemas/Position-Output"
+						},
+						"title": "Positions",
+						"type": "array"
+					},
+					"updated_at": {
+						"title": "Updated At",
+						"type": "string"
+					}
+				},
+				"required": ["id"],
+				"title": "Portfolio",
+				"type": "object"
+			},
+			"PortfolioPoint": {
+				"properties": {
+					"date": {
+						"title": "Date",
+						"type": "string"
+					},
+					"value": {
+						"title": "Value",
+						"type": "number"
+					}
+				},
+				"required": ["date", "value"],
+				"title": "PortfolioPoint",
+				"type": "object"
+			},
+			"PortfolioRiskSummary": {
+				"description": "Aggregated risk metrics for a portfolio.",
+				"properties": {
+					"positions_priced": {
+						"title": "Positions Priced",
+						"type": "integer"
+					},
+					"positions_total": {
+						"title": "Positions Total",
+						"type": "integer"
+					},
+					"total_delta": {
+						"title": "Total Delta",
+						"type": "number"
+					},
+					"total_gamma": {
+						"title": "Total Gamma",
+						"type": "number"
+					},
+					"total_npv": {
+						"title": "Total Npv",
+						"type": "number"
+					},
+					"total_pnl": {
+						"title": "Total Pnl",
+						"type": "number"
+					},
+					"total_rho": {
+						"title": "Total Rho",
+						"type": "number"
+					},
+					"total_theta": {
+						"title": "Total Theta",
+						"type": "number"
+					},
+					"total_vega": {
+						"title": "Total Vega",
+						"type": "number"
+					}
+				},
+				"required": [
+					"total_npv",
+					"total_pnl",
+					"total_delta",
+					"total_gamma",
+					"total_vega",
+					"total_theta",
+					"total_rho",
+					"positions_priced",
+					"positions_total"
+				],
+				"title": "PortfolioRiskSummary",
+				"type": "object"
+			},
+			"PortfolioSummary": {
+				"description": "Lightweight portfolio info for list endpoint.",
+				"properties": {
+					"created_at": {
+						"title": "Created At",
+						"type": "string"
+					},
+					"id": {
+						"title": "Id",
+						"type": "string"
+					},
+					"n_positions": {
+						"title": "N Positions",
+						"type": "integer"
+					},
+					"name": {
+						"title": "Name",
+						"type": "string"
+					},
+					"total_value": {
+						"title": "Total Value",
+						"type": "number"
+					},
+					"updated_at": {
+						"title": "Updated At",
+						"type": "string"
+					}
+				},
+				"required": [
+					"id",
+					"name",
+					"created_at",
+					"updated_at",
+					"n_positions",
+					"total_value"
+				],
+				"title": "PortfolioSummary",
+				"type": "object"
+			},
+			"Position-Input": {
+				"description": "A single position in a portfolio.",
+				"properties": {
+					"category": {
+						"$ref": "#/components/schemas/ProductCategory"
+					},
+					"direction": {
+						"default": "long",
+						"title": "Direction",
+						"type": "string"
+					},
+					"entry_price": {
+						"default": 0.0,
+						"title": "Entry Price",
+						"type": "number"
+					},
+					"id": {
+						"title": "Id",
+						"type": "string"
+					},
+					"label": {
+						"default": "Untitled",
+						"title": "Label",
+						"type": "string"
+					},
+					"parameters": {
+						"additionalProperties": true,
+						"title": "Parameters",
+						"type": "object"
+					},
+					"product_type": {
+						"$ref": "#/components/schemas/ProductType"
+					},
+					"quantity": {
+						"default": 1.0,
+						"title": "Quantity",
+						"type": "number"
+					},
+					"result": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/PositionResult"
+							},
+							{
+								"type": "null"
+							}
+						]
+					}
+				},
+				"required": ["id", "product_type", "category"],
+				"title": "Position",
+				"type": "object"
+			},
+			"Position-Output": {
+				"description": "A single position in a portfolio.",
+				"properties": {
+					"category": {
+						"$ref": "#/components/schemas/ProductCategory"
+					},
+					"direction": {
+						"default": "long",
+						"title": "Direction",
+						"type": "string"
+					},
+					"entry_price": {
+						"default": 0.0,
+						"title": "Entry Price",
+						"type": "number"
+					},
+					"id": {
+						"title": "Id",
+						"type": "string"
+					},
+					"label": {
+						"default": "Untitled",
+						"title": "Label",
+						"type": "string"
+					},
+					"parameters": {
+						"additionalProperties": true,
+						"title": "Parameters",
+						"type": "object"
+					},
+					"product_type": {
+						"$ref": "#/components/schemas/ProductType"
+					},
+					"quantity": {
+						"default": 1.0,
+						"title": "Quantity",
+						"type": "number"
+					},
+					"result": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/PositionResult"
+							},
+							{
+								"type": "null"
+							}
+						]
+					}
+				},
+				"required": ["id", "product_type", "category"],
+				"title": "Position",
+				"type": "object"
+			},
+			"PositionGreeks": {
+				"properties": {
+					"delta": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Delta"
+					},
+					"gamma": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Gamma"
+					},
+					"rho": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Rho"
+					},
+					"theta": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Theta"
+					},
+					"vega": {
+						"anyOf": [
+							{
+								"type": "number"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Vega"
+					}
+				},
+				"title": "PositionGreeks",
+				"type": "object"
+			},
+			"PositionResult": {
+				"description": "Cached pricing result for a position.",
+				"properties": {
+					"diagnostics": {
+						"default": "",
+						"title": "Diagnostics",
+						"type": "string"
+					},
+					"engine": {
+						"default": "",
+						"title": "Engine",
+						"type": "string"
+					},
+					"greeks": {
+						"$ref": "#/components/schemas/PositionGreeks"
+					},
+					"mc_std_error": {
+						"default": 0.0,
+						"title": "Mc Std Error",
+						"type": "number"
+					},
+					"npv": {
+						"default": 0.0,
+						"title": "Npv",
+						"type": "number"
+					},
+					"priced_at": {
+						"anyOf": [
+							{
+								"type": "string"
+							},
+							{
+								"type": "null"
+							}
+						],
+						"title": "Priced At"
+					},
+					"unit_price": {
+						"default": 0.0,
+						"title": "Unit Price",
+						"type": "number"
+					}
+				},
+				"title": "PositionResult",
+				"type": "object"
+			},
+			"PricingResponse": {
+				"properties": {
+					"bond_analytics": {
+						"anyOf": [
+							{
+								"$ref": "#/components/schemas/BondAnalytics"
+							},
+							{
+								"type": "null"
+							}
+						]
+					},
+					"diagnostics": {
+						"title": "Diagnostics",
+						"type": "string"
+					},
+					"greeks": {
+						"$ref": "#/components/schemas/Greeks"
+					},
+					"mc_std_error": {
+						"title": "Mc Std Error",
+						"type": "number"
+					},
+					"npv": {
+						"title": "Npv",
+						"type": "number"
+					}
+				},
+				"required": ["npv", "greeks", "diagnostics", "mc_std_error"],
+				"title": "PricingResponse",
+				"type": "object"
+			},
+			"ProductCategory": {
+				"enum": [
+					"vanilla",
+					"exotic",
+					"fixed-income",
+					"structured",
+					"volatility",
+					"fx",
+					"commodity",
+					"rainbow"
+				],
+				"title": "ProductCategory",
+				"type": "string"
+			},
+			"ProductType": {
+				"enum": [
+					"european-call",
+					"european-put",
+					"american-call",
+					"american-put",
+					"asian",
+					"barrier",
+					"digital",
+					"lookback",
+					"basket",
+					"zero-coupon-bond",
+					"fixed-rate-bond",
+					"future",
+					"autocall",
+					"mountain",
+					"variance-swap",
+					"volatility-swap",
+					"dispersion-swap",
+					"fx-forward",
+					"fx-option",
+					"commodity-forward",
+					"commodity-option",
+					"rainbow"
+				],
+				"title": "ProductType",
+				"type": "string"
+			},
+			"RainbowKind": {
+				"enum": ["worst-of", "best-of"],
+				"title": "RainbowKind",
+				"type": "string"
+			},
+			"RainbowRequest": {
+				"properties": {
+					"dividends": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Dividends",
+						"type": "array"
+					},
+					"is_call": {
+						"default": true,
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"notional": {
+						"default": 100.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"pairwise_correlation": {
+						"default": 0.0,
+						"maximum": 0.999,
+						"minimum": -0.999,
+						"title": "Pairwise Correlation",
+						"type": "number"
+					},
+					"rainbow_kind": {
+						"$ref": "#/components/schemas/RainbowKind",
+						"default": "worst-of"
+					},
+					"rate": {
+						"default": 0.05,
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spots": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Spots",
+						"type": "array"
+					},
+					"strike": {
+						"default": 1.0,
+						"description": "Performance strike (1.0 = ATM)",
+						"title": "Strike",
+						"type": "number"
+					},
+					"vols": {
+						"items": {
+							"type": "number"
+						},
+						"minItems": 2,
+						"title": "Vols",
+						"type": "array"
+					}
+				},
+				"required": ["spots", "vols", "maturity"],
+				"title": "RainbowRequest",
+				"type": "object"
+			},
+			"RatesCurveResponse": {
+				"properties": {
+					"curve": {
+						"title": "Curve",
+						"type": "string"
+					},
+					"zero": {
+						"items": {
+							"$ref": "#/components/schemas/CurvePointResponse"
+						},
+						"title": "Zero",
+						"type": "array"
+					}
+				},
+				"required": ["curve", "zero"],
+				"title": "RatesCurveResponse",
+				"type": "object"
+			},
+			"StressBump": {
+				"description": "A single scenario bump.",
+				"properties": {
+					"name": {
+						"default": "Custom",
+						"title": "Name",
+						"type": "string"
+					},
+					"rate_shift": {
+						"default": 0.0,
+						"title": "Rate Shift",
+						"type": "number"
+					},
+					"spot_shift": {
+						"default": 0.0,
+						"title": "Spot Shift",
+						"type": "number"
+					},
+					"vol_shift": {
+						"default": 0.0,
+						"title": "Vol Shift",
+						"type": "number"
+					}
+				},
+				"title": "StressBump",
+				"type": "object"
+			},
+			"StressResult": {
+				"description": "Result for one stress scenario.",
+				"properties": {
+					"name": {
+						"title": "Name",
+						"type": "string"
+					},
+					"portfolio_pnl": {
+						"title": "Portfolio Pnl",
+						"type": "number"
+					},
+					"position_pnls": {
+						"additionalProperties": {
+							"type": "number"
+						},
+						"title": "Position Pnls",
+						"type": "object"
+					}
+				},
+				"required": ["name", "portfolio_pnl", "position_pnls"],
+				"title": "StressResult",
+				"type": "object"
+			},
+			"TickersResponse": {
+				"properties": {
+					"tickers": {
+						"items": {
+							"type": "string"
+						},
+						"title": "Tickers",
+						"type": "array"
+					}
+				},
+				"required": ["tickers"],
+				"title": "TickersResponse",
+				"type": "object"
+			},
+			"UserInfo": {
+				"properties": {
+					"username": {
+						"title": "Username",
+						"type": "string"
+					}
+				},
+				"required": ["username"],
+				"title": "UserInfo",
+				"type": "object"
+			},
+			"VaRRequest": {
+				"properties": {
+					"confidence": {
+						"default": 0.95,
+						"maximum": 0.999,
+						"minimum": 0.5,
+						"title": "Confidence",
+						"type": "number"
+					},
+					"horizon_days": {
+						"default": 1,
+						"maximum": 30.0,
+						"minimum": 1.0,
+						"title": "Horizon Days",
+						"type": "integer"
+					},
+					"method": {
+						"default": "parametric",
+						"title": "Method",
+						"type": "string"
+					},
+					"portfolio_id": {
+						"title": "Portfolio Id",
+						"type": "string"
+					}
+				},
+				"required": ["portfolio_id"],
+				"title": "VaRRequest",
+				"type": "object"
+			},
+			"VaRResult": {
+				"properties": {
+					"confidence": {
+						"title": "Confidence",
+						"type": "number"
+					},
+					"expected_shortfall": {
+						"title": "Expected Shortfall",
+						"type": "number"
+					},
+					"horizon_days": {
+						"title": "Horizon Days",
+						"type": "integer"
+					},
+					"method": {
+						"title": "Method",
+						"type": "string"
+					},
+					"var": {
+						"title": "Var",
+						"type": "number"
+					}
+				},
+				"required": [
+					"confidence",
+					"horizon_days",
+					"var",
+					"expected_shortfall",
+					"method"
+				],
+				"title": "VaRResult",
+				"type": "object"
+			},
+			"ValidationError": {
+				"properties": {
+					"ctx": {
+						"title": "Context",
+						"type": "object"
+					},
+					"input": {
+						"title": "Input"
+					},
+					"loc": {
+						"items": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "integer"
+								}
+							]
+						},
+						"title": "Location",
+						"type": "array"
+					},
+					"msg": {
+						"title": "Message",
+						"type": "string"
+					},
+					"type": {
+						"title": "Error Type",
+						"type": "string"
+					}
+				},
+				"required": ["loc", "msg", "type"],
+				"title": "ValidationError",
+				"type": "object"
+			},
+			"VanillaRequest": {
+				"properties": {
+					"dividend": {
+						"title": "Dividend",
+						"type": "number"
+					},
+					"engine": {
+						"$ref": "#/components/schemas/EngineType",
+						"default": "analytic"
+					},
+					"is_american": {
+						"default": false,
+						"title": "Is American",
+						"type": "boolean"
+					},
+					"is_call": {
+						"title": "Is Call",
+						"type": "boolean"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"mc_epsilon": {
+						"default": 0.0,
+						"title": "Mc Epsilon",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"pde_space_steps": {
+						"default": 100,
+						"minimum": 10.0,
+						"title": "Pde Space Steps",
+						"type": "integer"
+					},
+					"pde_time_steps": {
+						"default": 100,
+						"minimum": 10.0,
+						"title": "Pde Time Steps",
+						"type": "integer"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike": {
+						"exclusiveMinimum": 0.0,
+						"title": "Strike",
+						"type": "number"
+					},
+					"tree_steps": {
+						"default": 100,
+						"minimum": 10.0,
+						"title": "Tree Steps",
+						"type": "integer"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": [
+					"spot",
+					"strike",
+					"maturity",
+					"rate",
+					"dividend",
+					"vol",
+					"is_call"
+				],
+				"title": "VanillaRequest",
+				"type": "object"
+			},
+			"VarianceSwapRequest": {
+				"properties": {
+					"dividend": {
+						"default": 0.0,
+						"title": "Dividend",
+						"type": "number"
+					},
+					"engine": {
+						"$ref": "#/components/schemas/EngineType",
+						"default": "analytic"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"notional": {
+						"default": 100.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"observation_dates": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Observation Dates",
+						"type": "array"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike_var": {
+						"description": "Annualised variance strike",
+						"minimum": 0.0,
+						"title": "Strike Var",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": ["spot", "rate", "vol", "maturity", "strike_var"],
+				"title": "VarianceSwapRequest",
+				"type": "object"
+			},
+			"VolatilitySwapRequest": {
+				"properties": {
+					"dividend": {
+						"default": 0.0,
+						"title": "Dividend",
+						"type": "number"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"n_paths": {
+						"default": 200000,
+						"title": "N Paths",
+						"type": "integer"
+					},
+					"notional": {
+						"default": 100.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"observation_dates": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Observation Dates",
+						"type": "array"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					},
+					"seed": {
+						"default": 1,
+						"title": "Seed",
+						"type": "integer"
+					},
+					"spot": {
+						"exclusiveMinimum": 0.0,
+						"title": "Spot",
+						"type": "number"
+					},
+					"strike_vol": {
+						"description": "Annualised vol strike",
+						"minimum": 0.0,
+						"title": "Strike Vol",
+						"type": "number"
+					},
+					"vol": {
+						"exclusiveMinimum": 0.0,
+						"title": "Vol",
+						"type": "number"
+					}
+				},
+				"required": ["spot", "rate", "vol", "maturity", "strike_vol"],
+				"title": "VolatilitySwapRequest",
+				"type": "object"
+			},
+			"ZeroCouponBondRequest": {
+				"properties": {
+					"discount_factors": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Discount Factors",
+						"type": "array"
+					},
+					"discount_times": {
+						"items": {
+							"type": "number"
+						},
+						"title": "Discount Times",
+						"type": "array"
+					},
+					"maturity": {
+						"exclusiveMinimum": 0.0,
+						"title": "Maturity",
+						"type": "number"
+					},
+					"notional": {
+						"default": 1.0,
+						"title": "Notional",
+						"type": "number"
+					},
+					"rate": {
+						"title": "Rate",
+						"type": "number"
+					}
+				},
+				"required": ["maturity", "rate"],
+				"title": "ZeroCouponBondRequest",
+				"type": "object"
+			}
+		}
+	},
+	"info": {
+		"title": "quantModeling API",
+		"version": "0.1.0"
+	},
+	"openapi": "3.1.0",
+	"paths": {
+		"/api/auth/login": {
+			"post": {
+				"operationId": "api_login_api_auth_login_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AuthRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AuthResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Login",
+				"tags": ["auth"]
+			}
+		},
+		"/api/auth/me": {
+			"get": {
+				"operationId": "api_me_api_auth_me_get",
+				"parameters": [
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/UserInfo"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Me",
+				"tags": ["auth"]
+			}
+		},
+		"/api/auth/register": {
+			"post": {
+				"operationId": "api_register_api_auth_register_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AuthRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/AuthResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Register",
+				"tags": ["auth"]
+			}
+		},
+		"/api/backtest/run": {
+			"post": {
+				"description": "Optimise a portfolio of assets over a historical window, then track its\nperformance forward. Returns allocation, portfolio value time series,\nperformance metrics, and CAPM alpha/beta vs S&P 500.",
+				"operationId": "run_backtest_api_backtest_run_post",
+				"parameters": [
+					{
+						"in": "header",
+						"name": "x-api-key",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Api-Key"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/BacktestRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/BacktestResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Run Backtest",
+				"tags": ["backtest"]
+			}
+		},
+		"/api/local-vol/iv-surface": {
+			"get": {
+				"description": "Return the cleaned & bicubic-smoothed implied-volatility surface\n(stages 0-3 of the Dupire pipeline) as a grid suitable for 3-D plotting.",
+				"operationId": "cleaned_iv_surface_api_local_vol_iv_surface_get",
+				"parameters": [
+					{
+						"description": "Stock ticker",
+						"in": "query",
+						"name": "ticker",
+						"required": true,
+						"schema": {
+							"description": "Stock ticker",
+							"title": "Ticker",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Risk-free rate",
+						"in": "query",
+						"name": "rate",
+						"required": false,
+						"schema": {
+							"default": 0.05,
+							"description": "Risk-free rate",
+							"title": "Rate",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_open_interest",
+						"required": false,
+						"schema": {
+							"default": 10,
+							"minimum": 1,
+							"title": "Min Open Interest",
+							"type": "integer"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_bid",
+						"required": false,
+						"schema": {
+							"default": 0.05,
+							"minimum": 0.0,
+							"title": "Min Bid",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "max_spread_ratio",
+						"required": false,
+						"schema": {
+							"default": 0.5,
+							"exclusiveMinimum": 0.0,
+							"maximum": 1.0,
+							"title": "Max Spread Ratio",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_moneyness",
+						"required": false,
+						"schema": {
+							"default": 0.7,
+							"exclusiveMinimum": 0.0,
+							"title": "Min Moneyness",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "max_moneyness",
+						"required": false,
+						"schema": {
+							"default": 1.4,
+							"exclusiveMinimum": 0.0,
+							"title": "Max Moneyness",
+							"type": "number"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/CleanedIVSurfaceResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Cleaned Iv Surface",
+				"tags": ["local-vol"]
+			}
+		},
+		"/api/local-vol/price": {
+			"get": {
+				"description": "Price a European vanilla option using a Dupire local-volatility surface\ncalibrated live from the ticker's option chain.\n\nSteps:\n1. Fetch spot price and live option chain (yfinance).\n2. Clean quotes: liquidity, moneyness, calendar & butterfly arbitrage filters.\n3. Build smooth bicubic IV surface in log-moneyness space.\n4. Apply Gatheral (2004) formula to obtain the local-vol surface.\n5. Price via Euler-Maruyama MC with optional CRN greeks.",
+				"operationId": "price_local_vol_api_local_vol_price_get",
+				"parameters": [
+					{
+						"description": "Stock ticker, e.g. 'AAPL'",
+						"in": "query",
+						"name": "ticker",
+						"required": true,
+						"schema": {
+							"description": "Stock ticker, e.g. 'AAPL'",
+							"title": "Ticker",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Option strike price",
+						"in": "query",
+						"name": "strike",
+						"required": true,
+						"schema": {
+							"description": "Option strike price",
+							"exclusiveMinimum": 0,
+							"title": "Strike",
+							"type": "number"
+						}
+					},
+					{
+						"description": "Time to maturity in years",
+						"in": "query",
+						"name": "maturity",
+						"required": true,
+						"schema": {
+							"description": "Time to maturity in years",
+							"exclusiveMinimum": 0,
+							"title": "Maturity",
+							"type": "number"
+						}
+					},
+					{
+						"description": "True for call, False for put",
+						"in": "query",
+						"name": "is_call",
+						"required": false,
+						"schema": {
+							"default": true,
+							"description": "True for call, False for put",
+							"title": "Is Call",
+							"type": "boolean"
+						}
+					},
+					{
+						"description": "Continuously compounded risk-free rate",
+						"in": "query",
+						"name": "rate",
+						"required": false,
+						"schema": {
+							"default": 0.05,
+							"description": "Continuously compounded risk-free rate",
+							"title": "Rate",
+							"type": "number"
+						}
+					},
+					{
+						"description": "MC simulation paths",
+						"in": "query",
+						"name": "n_paths",
+						"required": false,
+						"schema": {
+							"default": 50000,
+							"description": "MC simulation paths",
+							"maximum": 500000,
+							"minimum": 1000,
+							"title": "N Paths",
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Euler steps per year",
+						"in": "query",
+						"name": "n_steps_per_year",
+						"required": false,
+						"schema": {
+							"default": 252,
+							"description": "Euler steps per year",
+							"maximum": 2520,
+							"minimum": 12,
+							"title": "N Steps Per Year",
+							"type": "integer"
+						}
+					},
+					{
+						"description": "RNG seed",
+						"in": "query",
+						"name": "seed",
+						"required": false,
+						"schema": {
+							"default": 1,
+							"description": "RNG seed",
+							"title": "Seed",
+							"type": "integer"
+						}
+					},
+					{
+						"description": "Compute finite-difference greeks",
+						"in": "query",
+						"name": "compute_greeks",
+						"required": false,
+						"schema": {
+							"default": true,
+							"description": "Compute finite-difference greeks",
+							"title": "Compute Greeks",
+							"type": "boolean"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_open_interest",
+						"required": false,
+						"schema": {
+							"default": 10,
+							"minimum": 1,
+							"title": "Min Open Interest",
+							"type": "integer"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_bid",
+						"required": false,
+						"schema": {
+							"default": 0.05,
+							"minimum": 0.0,
+							"title": "Min Bid",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "max_spread_ratio",
+						"required": false,
+						"schema": {
+							"default": 0.5,
+							"exclusiveMinimum": 0.0,
+							"maximum": 1.0,
+							"title": "Max Spread Ratio",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_moneyness",
+						"required": false,
+						"schema": {
+							"default": 0.7,
+							"exclusiveMinimum": 0.0,
+							"title": "Min Moneyness",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "max_moneyness",
+						"required": false,
+						"schema": {
+							"default": 1.4,
+							"exclusiveMinimum": 0.0,
+							"title": "Max Moneyness",
+							"type": "number"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/LocalVolResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Local Vol",
+				"tags": ["local-vol"]
+			}
+		},
+		"/api/local-vol/surface": {
+			"get": {
+				"description": "Return the Dupire local-volatility surface (stages 0-4) as a grid.",
+				"operationId": "local_vol_surface_api_local_vol_surface_get",
+				"parameters": [
+					{
+						"description": "Stock ticker",
+						"in": "query",
+						"name": "ticker",
+						"required": true,
+						"schema": {
+							"description": "Stock ticker",
+							"title": "Ticker",
+							"type": "string"
+						}
+					},
+					{
+						"description": "Risk-free rate",
+						"in": "query",
+						"name": "rate",
+						"required": false,
+						"schema": {
+							"default": 0.05,
+							"description": "Risk-free rate",
+							"title": "Rate",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_open_interest",
+						"required": false,
+						"schema": {
+							"default": 10,
+							"minimum": 1,
+							"title": "Min Open Interest",
+							"type": "integer"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_bid",
+						"required": false,
+						"schema": {
+							"default": 0.05,
+							"minimum": 0.0,
+							"title": "Min Bid",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "max_spread_ratio",
+						"required": false,
+						"schema": {
+							"default": 0.5,
+							"exclusiveMinimum": 0.0,
+							"maximum": 1.0,
+							"title": "Max Spread Ratio",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "min_moneyness",
+						"required": false,
+						"schema": {
+							"default": 0.7,
+							"exclusiveMinimum": 0.0,
+							"title": "Min Moneyness",
+							"type": "number"
+						}
+					},
+					{
+						"in": "query",
+						"name": "max_moneyness",
+						"required": false,
+						"schema": {
+							"default": 1.4,
+							"exclusiveMinimum": 0.0,
+							"title": "Max Moneyness",
+							"type": "number"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/LocalVolSurfaceResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Local Vol Surface",
+				"tags": ["local-vol"]
+			}
+		},
+		"/api/portfolios": {
+			"get": {
+				"operationId": "api_list_portfolios_api_portfolios_get",
+				"parameters": [
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"$ref": "#/components/schemas/PortfolioSummary"
+									},
+									"title": "Response Api List Portfolios Api Portfolios Get",
+									"type": "array"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api List Portfolios",
+				"tags": ["portfolios"]
+			},
+			"post": {
+				"operationId": "api_create_portfolio_api_portfolios_post",
+				"parameters": [
+					{
+						"in": "query",
+						"name": "name",
+						"required": false,
+						"schema": {
+							"default": "Untitled Portfolio",
+							"title": "Name",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Portfolio-Output"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Create Portfolio",
+				"tags": ["portfolios"]
+			}
+		},
+		"/api/portfolios/{portfolio_id}": {
+			"delete": {
+				"operationId": "api_delete_portfolio_api_portfolios__portfolio_id__delete",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"responses": {
+					"204": {
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Delete Portfolio",
+				"tags": ["portfolios"]
+			},
+			"get": {
+				"operationId": "api_get_portfolio_api_portfolios__portfolio_id__get",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Portfolio-Output"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Get Portfolio",
+				"tags": ["portfolios"]
+			},
+			"put": {
+				"operationId": "api_update_portfolio_api_portfolios__portfolio_id__put",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/Portfolio-Input"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Portfolio-Output"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Update Portfolio",
+				"tags": ["portfolios"]
+			}
+		},
+		"/api/portfolios/{portfolio_id}/positions": {
+			"post": {
+				"operationId": "api_add_position_api_portfolios__portfolio_id__positions_post",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/Position-Input"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"201": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Portfolio-Output"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Add Position",
+				"tags": ["portfolios"]
+			}
+		},
+		"/api/portfolios/{portfolio_id}/positions/{position_id}": {
+			"delete": {
+				"operationId": "api_remove_position_api_portfolios__portfolio_id__positions__position_id__delete",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "path",
+						"name": "position_id",
+						"required": true,
+						"schema": {
+							"title": "Position Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Portfolio-Output"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Remove Position",
+				"tags": ["portfolios"]
+			},
+			"put": {
+				"operationId": "api_update_position_api_portfolios__portfolio_id__positions__position_id__put",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "path",
+						"name": "position_id",
+						"required": true,
+						"schema": {
+							"title": "Position Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/Position-Input"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/Portfolio-Output"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Update Position",
+				"tags": ["portfolios"]
+			}
+		},
+		"/api/portfolios/{portfolio_id}/price": {
+			"post": {
+				"operationId": "api_price_portfolio_api_portfolios__portfolio_id__price_post",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/BatchPriceResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Price Portfolio",
+				"tags": ["portfolios"]
+			}
+		},
+		"/api/portfolios/{portfolio_id}/stress": {
+			"post": {
+				"operationId": "api_stress_test_api_portfolios__portfolio_id__stress_post",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"items": {
+									"$ref": "#/components/schemas/StressBump"
+								},
+								"title": "Bumps",
+								"type": "array"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"items": {
+										"$ref": "#/components/schemas/StressResult"
+									},
+									"title": "Response Api Stress Test Api Portfolios  Portfolio Id  Stress Post",
+									"type": "array"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Stress Test",
+				"tags": ["portfolios"]
+			}
+		},
+		"/api/portfolios/{portfolio_id}/var": {
+			"post": {
+				"description": "Delta-gamma VaR with Cornish-Fisher skewness adjustment.\n\nFor each position i with underlying spot S_i, implied vol \u03c3_i:\n  daily return std  = \u03c3_i / \u221a252\n  horizon std       = daily_\u03c3 \u00d7 \u221ah\n  dollar move std   = S_i \u00d7 horizon_\u03c3\n\nPosition P&L (second-order Taylor):\n  \u0394P_i \u2248 \u03b4_i\u00b7\u0394S + \u00bd\u00b7\u0393_i\u00b7(\u0394S)\u00b2\n\nPortfolio moments of the P&L under Gaussian \u0394S:\n  \u03bc\u2081 = \u03a3 \u00bd\u00b7\u0393_i\u00b7\u03c3\u00b2_$  (mean from gamma)\n  \u03bc\u2082 = \u03a3 \u03b4_i\u00b2\u00b7\u03c3\u00b2_$ + \u00bd\u00b7\u0393_i\u00b2\u00b7\u03c3\u2074_$\u00b72  (variance)\n  \u03bc\u2083 = \u03a3 3\u00b7\u03b4_i\u00b7\u0393_i\u00b2\u00b7\u03c3\u2074_$\u00b7... \u2192 skewness from gamma\n\nThen Cornish-Fisher expansion adjusts the z-quantile for\nthe non-zero skewness induced by gamma.",
+				"operationId": "api_compute_var_api_portfolios__portfolio_id__var_post",
+				"parameters": [
+					{
+						"in": "path",
+						"name": "portfolio_id",
+						"required": true,
+						"schema": {
+							"title": "Portfolio Id",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "authorization",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "Authorization"
+						}
+					}
+				],
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/VaRRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/VaRResult"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Api Compute Var",
+				"tags": ["portfolios"]
+			}
+		},
+		"/health": {
+			"get": {
+				"operationId": "health_health_get",
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"additionalProperties": true,
+									"title": "Response Health Health Get",
+									"type": "object"
+								}
+							}
+						},
+						"description": "Successful Response"
+					}
+				},
+				"summary": "Health"
+			}
+		},
+		"/market/iv/surface": {
+			"get": {
+				"operationId": "iv_surface_market_iv_surface_get",
+				"parameters": [
+					{
+						"in": "query",
+						"name": "ticker",
+						"required": true,
+						"schema": {
+							"minLength": 1,
+							"title": "Ticker",
+							"type": "string"
+						}
+					},
+					{
+						"in": "query",
+						"name": "surface",
+						"required": false,
+						"schema": {
+							"default": "mid",
+							"pattern": "^(mid|bid|ask)$",
+							"title": "Surface",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "x-api-key",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Api-Key"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/IVSurfaceResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Iv Surface"
+			}
+		},
+		"/market/prices/history": {
+			"get": {
+				"operationId": "market_history_market_prices_history_get",
+				"parameters": [
+					{
+						"in": "query",
+						"name": "ticker",
+						"required": true,
+						"schema": {
+							"minLength": 1,
+							"title": "Ticker",
+							"type": "string"
+						}
+					},
+					{
+						"in": "query",
+						"name": "range",
+						"required": false,
+						"schema": {
+							"default": "6M",
+							"pattern": "^(1M|3M|6M|YTD|1Y|2Y)$",
+							"title": "Range",
+							"type": "string"
+						}
+					},
+					{
+						"in": "header",
+						"name": "x-api-key",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Api-Key"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/MarketHistoryResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Market History"
+			}
+		},
+		"/market/rates/curve": {
+			"get": {
+				"operationId": "rates_curve_market_rates_curve_get",
+				"parameters": [
+					{
+						"in": "query",
+						"name": "curve",
+						"required": false,
+						"schema": {
+							"default": "Treasury",
+							"pattern": "^(Treasury|SOFR|FedFunds)$",
+							"title": "Curve",
+							"type": "string"
+						}
+					},
+					{
+						"in": "query",
+						"name": "curve_type",
+						"required": false,
+						"schema": {
+							"default": "zero",
+							"pattern": "^(zero|forward)$",
+							"title": "Curve Type",
+							"type": "string"
+						}
+					},
+					{
+						"in": "query",
+						"name": "fixed_period_years",
+						"required": false,
+						"schema": {
+							"default": 0.5,
+							"exclusiveMinimum": 0.0,
+							"maximum": 10.0,
+							"title": "Fixed Period Years",
+							"type": "number"
+						}
+					},
+					{
+						"in": "header",
+						"name": "x-api-key",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Api-Key"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/RatesCurveResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Rates Curve"
+			}
+		},
+		"/market/tickers": {
+			"get": {
+				"operationId": "list_tickers_market_tickers_get",
+				"parameters": [
+					{
+						"in": "header",
+						"name": "x-api-key",
+						"required": false,
+						"schema": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "null"
+								}
+							],
+							"title": "X-Api-Key"
+						}
+					}
+				],
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/TickersResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "List Tickers"
+			}
+		},
+		"/price/bond/fixed-rate": {
+			"post": {
+				"operationId": "price_fixed_rate_bond_endpoint_price_bond_fixed_rate_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/FixedRateBondRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Fixed Rate Bond Endpoint"
+			}
+		},
+		"/price/bond/zero-coupon": {
+			"post": {
+				"operationId": "price_zero_coupon_bond_endpoint_price_bond_zero_coupon_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/ZeroCouponBondRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Zero Coupon Bond Endpoint"
+			}
+		},
+		"/price/commodity/forward": {
+			"post": {
+				"operationId": "price_commodity_forward_endpoint_price_commodity_forward_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CommodityForwardRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Commodity Forward Endpoint"
+			}
+		},
+		"/price/commodity/option": {
+			"post": {
+				"operationId": "price_commodity_option_endpoint_price_commodity_option_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/CommodityOptionRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Commodity Option Endpoint"
+			}
+		},
+		"/price/future": {
+			"post": {
+				"operationId": "price_future_endpoint_price_future_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/FutureRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Future Endpoint"
+			}
+		},
+		"/price/fx/forward": {
+			"post": {
+				"operationId": "price_fx_forward_endpoint_price_fx_forward_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/FXForwardRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Fx Forward Endpoint"
+			}
+		},
+		"/price/fx/option": {
+			"post": {
+				"operationId": "price_fx_option_endpoint_price_fx_option_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/FXOptionRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Fx Option Endpoint"
+			}
+		},
+		"/price/option/american-vanilla": {
+			"post": {
+				"operationId": "price_american_vanilla_endpoint_price_option_american_vanilla_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AmericanVanillaRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price American Vanilla Endpoint"
+			}
+		},
+		"/price/option/asian": {
+			"post": {
+				"operationId": "price_asian_endpoint_price_option_asian_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AsianRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Asian Endpoint"
+			}
+		},
+		"/price/option/barrier": {
+			"post": {
+				"operationId": "price_barrier_endpoint_price_option_barrier_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/BarrierRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Barrier Endpoint"
+			}
+		},
+		"/price/option/basket": {
+			"post": {
+				"operationId": "price_basket_endpoint_price_option_basket_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/BasketRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Basket Endpoint"
+			}
+		},
+		"/price/option/digital": {
+			"post": {
+				"operationId": "price_digital_endpoint_price_option_digital_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/DigitalRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Digital Endpoint"
+			}
+		},
+		"/price/option/lookback": {
+			"post": {
+				"operationId": "price_lookback_endpoint_price_option_lookback_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/LookbackRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Lookback Endpoint"
+			}
+		},
+		"/price/option/rainbow": {
+			"post": {
+				"operationId": "price_rainbow_endpoint_price_option_rainbow_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/RainbowRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Rainbow Endpoint"
+			}
+		},
+		"/price/option/vanilla": {
+			"post": {
+				"operationId": "price_vanilla_endpoint_price_option_vanilla_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/VanillaRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Vanilla Endpoint"
+			}
+		},
+		"/price/structured/autocall": {
+			"post": {
+				"operationId": "price_autocall_endpoint_price_structured_autocall_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/AutocallRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Autocall Endpoint"
+			}
+		},
+		"/price/structured/mountain": {
+			"post": {
+				"operationId": "price_mountain_endpoint_price_structured_mountain_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/MountainRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Mountain Endpoint"
+			}
+		},
+		"/price/volatility/dispersion-swap": {
+			"post": {
+				"operationId": "price_dispersion_swap_endpoint_price_volatility_dispersion_swap_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/DispersionSwapRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Dispersion Swap Endpoint"
+			}
+		},
+		"/price/volatility/variance-swap": {
+			"post": {
+				"operationId": "price_variance_swap_endpoint_price_volatility_variance_swap_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/VarianceSwapRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Variance Swap Endpoint"
+			}
+		},
+		"/price/volatility/volatility-swap": {
+			"post": {
+				"operationId": "price_volatility_swap_endpoint_price_volatility_volatility_swap_post",
+				"requestBody": {
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/VolatilitySwapRequest"
+							}
+						}
+					},
+					"required": true
+				},
+				"responses": {
+					"200": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/PricingResponse"
+								}
+							}
+						},
+						"description": "Successful Response"
+					},
+					"422": {
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/HTTPValidationError"
+								}
+							}
+						},
+						"description": "Validation Error"
+					}
+				},
+				"summary": "Price Volatility Swap Endpoint"
+			}
+		}
+	}
+}

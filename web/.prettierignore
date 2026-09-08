@@ -1,0 +1,8 @@
+dist
+storybook-static
+coverage
+playwright-report
+node_modules
+src/shared/api/schema.gen.ts
+src/routeTree.gen.ts
+package-lock.json

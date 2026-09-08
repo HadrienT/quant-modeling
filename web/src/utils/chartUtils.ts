@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 export type Point2D = { x: number; y: number };
 
 export const interpolateAt = (points: Point2D[], x: number) => {

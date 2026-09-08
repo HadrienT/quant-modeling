@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 /**
  * Product registry – single place to enable / disable every product
  * shown on the pricing page.
@@ -90,7 +91,11 @@ export const FX_PRODUCTS: ProductEntry<FXProductType>[] = [
 
 export const COMMODITY_PRODUCTS: ProductEntry<CommodityProductType>[] = [
 	{ key: "commodity-forward", label: "Commodity Forward", enabled: true },
-	{ key: "commodity-option", label: "Commodity Option (Black '76)", enabled: true },
+	{
+		key: "commodity-option",
+		label: "Commodity Option (Black '76)",
+		enabled: true,
+	},
 ];
 
 /* ── utility: render a <select> that respects enabled flags ── */
@@ -106,7 +111,10 @@ export function firstEnabled<K extends string>(list: ProductEntry<K>[]): K {
 /**
  * Returns true when the given key is enabled in its list.
  */
-export function isEnabled<K extends string>(list: ProductEntry<K>[], key: K): boolean {
+export function isEnabled<K extends string>(
+	list: ProductEntry<K>[],
+	key: K,
+): boolean {
 	const entry = list.find((p) => p.key === key);
 	return entry?.enabled ?? false;
 }

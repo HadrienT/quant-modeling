@@ -1,5 +1,12 @@
 /* ── category / instrument ────────────────────────── */
-export type CategoryType = "vanilla" | "exotics" | "fixed-income" | "structured" | "volatility" | "fx" | "commodity";
+export type CategoryType =
+	| "vanilla"
+	| "exotics"
+	| "fixed-income"
+	| "structured"
+	| "volatility"
+	| "fx"
+	| "commodity";
 export type InstrumentType = "option" | "future" | "bond";
 
 /* ── model selection ─────────────────────────────── */
@@ -12,8 +19,10 @@ export type ProductType = "vanilla" | "asian" | "american";
 export type AverageType = "arithmetic" | "geometric";
 
 /* ── exotic options ──────────────────────────────── */
-export type ExoticProductType = "barrier" | "digital" | "lookback" | "basket" | "rainbow";
-export type BarrierKind = "up-and-in" | "up-and-out" | "down-and-in" | "down-and-out";
+export type ExoticProductType =
+	"barrier" | "digital" | "lookback" | "basket" | "rainbow";
+export type BarrierKind =
+	"up-and-in" | "up-and-out" | "down-and-in" | "down-and-out";
 export type DigitalPayoffType = "cash-or-nothing" | "asset-or-nothing";
 export type LookbackStyle = "fixed-strike" | "floating-strike";
 export type LookbackExtremum = "minimum" | "maximum";
@@ -23,7 +32,8 @@ export type RainbowKind = "worst-of" | "best-of";
 export type StructuredProductType = "autocall" | "mountain";
 
 /* ── volatility products ─────────────────────────── */
-export type VolProductType = "variance-swap" | "volatility-swap" | "dispersion-swap";
+export type VolProductType =
+	"variance-swap" | "volatility-swap" | "dispersion-swap";
 
 /* ── FX products ─────────────────────────────────── */
 export type FXProductType = "fx-forward" | "fx-option";

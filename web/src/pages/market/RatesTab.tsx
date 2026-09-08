@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import { useMemo, useState } from "react";
 import ChartHoverCard from "../../components/ChartHoverCard";
 import { interpolateAt } from "../../utils/chartUtils";
@@ -26,16 +27,20 @@ type CurveView = "zero" | "forward";
 const maxYearsByWindow: Record<MaturityWindow, number> = {
 	"5Y": 5,
 	"10Y": 10,
-	"15Y": 15
+	"15Y": 15,
 };
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const clamp = (value: number, min: number, max: number) =>
+	Math.min(max, Math.max(min, value));
 
-const interpolateCurve = (points: CurvePoint[], x: number) => interpolateAt(points, x);
+const interpolateCurve = (points: CurvePoint[], x: number) =>
+	interpolateAt(points, x);
 
 const formatTenor = (value: number) => {
 	if (value >= 1) {
-		return Number.isInteger(value) ? `${value.toFixed(0)}Y` : `${value.toFixed(1)}Y`;
+		return Number.isInteger(value)
+			? `${value.toFixed(0)}Y`
+			: `${value.toFixed(1)}Y`;
 	}
 	if (value >= 1 / 12) {
 		return `${Math.round(value * 12)}M`;
@@ -60,30 +65,47 @@ const CurveChart = ({ title, series }: CurveChartProps) => {
 	const yMin = yMinRaw - yPad;
 	const yMax = yMaxRaw + yPad;
 	const scaleX = (x: number) =>
-		padding.left + ((x - xMin) / (xMax - xMin)) * (width - padding.left - padding.right);
+		padding.left +
+		((x - xMin) / (xMax - xMin)) * (width - padding.left - padding.right);
 	const scaleY = (y: number) =>
-		padding.top + (1 - (y - yMin) / (yMax - yMin)) * (height - padding.top - padding.bottom);
+		padding.top +
+		(1 - (y - yMin) / (yMax - yMin)) * (height - padding.top - padding.bottom);
 	const tickCount = 4;
-	const ticks = Array.from({ length: tickCount + 1 }, (_, idx) => yMin + ((yMax - yMin) / tickCount) * idx);
-	const tenorTicks = Array.from(new Set(allPoints.map((p) => p.x))).sort((a, b) => a - b);
-	const displayedTenorTicks = tenorTicks.reduce<{ ticks: number[]; lastKeptX: number }>((acc, tenor, idx) => {
-		const minLabelSpacingPx = 34;
-		const x = scaleX(tenor);
-		const isEdge = idx === 0 || idx === tenorTicks.length - 1;
-		if (isEdge || x - acc.lastKeptX >= minLabelSpacingPx) {
-			return { ticks: [...acc.ticks, tenor], lastKeptX: x };
-		}
-		return acc;
-	}, { ticks: [], lastKeptX: -Infinity }).ticks;
+	const ticks = Array.from(
+		{ length: tickCount + 1 },
+		(_, idx) => yMin + ((yMax - yMin) / tickCount) * idx,
+	);
+	const tenorTicks = Array.from(new Set(allPoints.map((p) => p.x))).sort(
+		(a, b) => a - b,
+	);
+	const displayedTenorTicks = tenorTicks.reduce<{
+		ticks: number[];
+		lastKeptX: number;
+	}>(
+		(acc, tenor, idx) => {
+			const minLabelSpacingPx = 34;
+			const x = scaleX(tenor);
+			const isEdge = idx === 0 || idx === tenorTicks.length - 1;
+			if (isEdge || x - acc.lastKeptX >= minLabelSpacingPx) {
+				return { ticks: [...acc.ticks, tenor], lastKeptX: x };
+			}
+			return acc;
+		},
+		{ ticks: [], lastKeptX: -Infinity },
+	).ticks;
 
-	const [hover, setHover] = useState<{ xPx: number; yPx: number; xVal: number } | null>(null);
+	const [hover, setHover] = useState<{
+		xPx: number;
+		yPx: number;
+		xVal: number;
+	} | null>(null);
 
 	const hoverValues = useMemo(() => {
 		if (!hover) return null;
 		return series.map((s) => ({
 			label: s.label,
 			color: s.color,
-			value: interpolateCurve(s.points, hover.xVal)
+			value: interpolateCurve(s.points, hover.xVal),
 		}));
 	}, [hover, series]);
 
@@ -106,7 +128,14 @@ const CurveChart = ({ title, series }: CurveChartProps) => {
 				<span className="mono">% rate</span>
 			</div>
 			<svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%">
-				<rect x={0} y={0} width={width} height={height} rx={16} fill="#fbfbfb" />
+				<rect
+					x={0}
+					y={0}
+					width={width}
+					height={height}
+					rx={16}
+					fill="#fbfbfb"
+				/>
 				{ticks.map((tick) => {
 					const y = scaleY(tick);
 					return (
@@ -183,7 +212,10 @@ const CurveChart = ({ title, series }: CurveChartProps) => {
 				)}
 				{series.map((s) => {
 					const path = s.points
-						.map((p, idx) => `${idx === 0 ? "M" : "L"} ${scaleX(p.x)} ${scaleY(p.y)}`)
+						.map(
+							(p, idx) =>
+								`${idx === 0 ? "M" : "L"} ${scaleX(p.x)} ${scaleY(p.y)}`,
+						)
 						.join(" ");
 					return (
 						<g key={s.label}>
@@ -235,14 +267,17 @@ const CurveChart = ({ title, series }: CurveChartProps) => {
 						const xPx = clamp(
 							padding.left + (event.clientX - rect.left) * scaleXFactor,
 							padding.left,
-							width - padding.right
+							width - padding.right,
 						);
 						const yPx = clamp(
 							padding.top + (event.clientY - rect.top) * scaleYFactor,
 							padding.top,
-							height - padding.bottom
+							height - padding.bottom,
 						);
-						const xVal = xMin + ((xPx - padding.left) / (width - padding.left - padding.right)) * (xMax - xMin);
+						const xVal =
+							xMin +
+							((xPx - padding.left) / (width - padding.left - padding.right)) *
+								(xMax - xMin);
 						setHover({ xPx, yPx, xVal });
 					}}
 					onMouseLeave={() => setHover(null)}
@@ -254,7 +289,7 @@ const CurveChart = ({ title, series }: CurveChartProps) => {
 					items={hoverValues.map((v) => ({
 						label: v.label,
 						color: v.color,
-						value: `${v.value.toFixed(2)}%`
+						value: `${v.value.toFixed(2)}%`,
 					}))}
 				/>
 			)}
@@ -279,7 +314,7 @@ export const RatesTab = ({
 	fixedPeriodYears,
 	onFixedPeriodYearsChange,
 	loading,
-	error
+	error,
 }: RatesTabProps) => {
 	const [maturityWindow, setMaturityWindow] = useState<MaturityWindow>("5Y");
 
@@ -325,14 +360,24 @@ export const RatesTab = ({
 			<div className="grid-2" style={{ marginBottom: 18 }}>
 				<label className="field">
 					Rate curve
-					<select value={curve} onChange={(event) => onCurveChange(event.target.value)}>
+					<select
+						value={curve}
+						onChange={(event) => onCurveChange(event.target.value)}
+					>
 						<option value="Treasury">Treasury (CMT)</option>
 						<option value="SOFR">SOFR</option>
 						<option value="FedFunds">Fed Funds</option>
 					</select>
 				</label>
 			</div>
-			<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+			<div
+				style={{
+					display: "flex",
+					justifyContent: "space-between",
+					alignItems: "center",
+					gap: 16,
+				}}
+			>
 				<h2>Rate curves</h2>
 				<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
 					<button
@@ -370,7 +415,11 @@ export const RatesTab = ({
 							min="0.01"
 							step="0.25"
 							value={fixedPeriodYears}
-							onChange={(event) => onFixedPeriodYearsChange(Math.max(0.01, Number(event.target.value) || 0.5))}
+							onChange={(event) =>
+								onFixedPeriodYearsChange(
+									Math.max(0.01, Number(event.target.value) || 0.5),
+								)
+							}
 						/>
 					</label>
 				</div>
@@ -380,14 +429,22 @@ export const RatesTab = ({
 			<CurveChart
 				title={`${curveView === "zero" ? "Zero" : "Forward"} curve (up to ${maturityWindow})`}
 				series={[
-					{ label: curveView === "zero" ? "Zero" : `Forward (${fixedPeriodYears}Y)`, color: "#1f8a70", points: filteredCurve }
+					{
+						label:
+							curveView === "zero" ? "Zero" : `Forward (${fixedPeriodYears}Y)`,
+						color: "#1f8a70",
+						points: filteredCurve,
+					},
 				]}
 			/>
 			<p className="price-muted" style={{ marginTop: 12 }}>
 				Rates shown in percent.
-				{curve === "Treasury" && " Treasury Constant Maturity yields from FRED (DGS series)."}
-				{curve === "SOFR" && " Short end (≤180D) uses actual SOFR fixings. Tenors ≥1Y use Treasury CMT as proxy — FRED does not publish SOFR swap rates."}
-				{curve === "FedFunds" && " Overnight uses EFFR. Longer tenors use Treasury CMT as proxy — FRED does not publish Fed Funds swap rates."}
+				{curve === "Treasury" &&
+					" Treasury Constant Maturity yields from FRED (DGS series)."}
+				{curve === "SOFR" &&
+					" Short end (≤180D) uses actual SOFR fixings. Tenors ≥1Y use Treasury CMT as proxy — FRED does not publish SOFR swap rates."}
+				{curve === "FedFunds" &&
+					" Overnight uses EFFR. Longer tenors use Treasury CMT as proxy — FRED does not publish Fed Funds swap rates."}
 			</p>
 		</section>
 	);

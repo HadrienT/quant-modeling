@@ -40,7 +40,7 @@ export async function priceVanilla(payload: VanillaQuoteRequest) {
 	const response = await fetch(`${API_BASE}/price/option/vanilla`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload)
+		body: JSON.stringify(payload),
 	});
 
 	if (!response.ok) {
@@ -89,16 +89,22 @@ export type SurfaceGridResponse = {
 	cleaning_summary: string;
 };
 
-export async function getMarketHistory(ticker: string, range: string): Promise<MarketHistoryResponse> {
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
+export async function getMarketHistory(
+	ticker: string,
+	range: string,
+): Promise<MarketHistoryResponse> {
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 	if (API_KEY) {
 		headers["X-API-KEY"] = API_KEY;
 	}
-	const response = await fetch(`${API_BASE}/market/prices/history?ticker=${encodeURIComponent(ticker)}&range=${range}`,
+	const response = await fetch(
+		`${API_BASE}/market/prices/history?ticker=${encodeURIComponent(ticker)}&range=${range}`,
 		{
 			method: "GET",
-			headers
-		}
+			headers,
+		},
 	);
 
 	if (!response.ok) {
@@ -109,13 +115,15 @@ export async function getMarketHistory(ticker: string, range: string): Promise<M
 }
 
 export async function getTickers(): Promise<TickersResponse> {
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 	if (API_KEY) {
 		headers["X-API-KEY"] = API_KEY;
 	}
 	const response = await fetch(`${API_BASE}/market/tickers`, {
 		method: "GET",
-		headers
+		headers,
 	});
 
 	if (!response.ok) {
@@ -125,8 +133,13 @@ export async function getTickers(): Promise<TickersResponse> {
 	return response.json();
 }
 
-export async function getIVSurface(ticker: string, surface: "mid" | "bid" | "ask"): Promise<IVSurfaceResponse> {
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
+export async function getIVSurface(
+	ticker: string,
+	surface: "mid" | "bid" | "ask",
+): Promise<IVSurfaceResponse> {
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 	if (API_KEY) {
 		headers["X-API-KEY"] = API_KEY;
 	}
@@ -134,8 +147,8 @@ export async function getIVSurface(ticker: string, surface: "mid" | "bid" | "ask
 		`${API_BASE}/market/iv/surface?ticker=${encodeURIComponent(ticker)}&surface=${surface}`,
 		{
 			method: "GET",
-			headers
-		}
+			headers,
+		},
 	);
 
 	if (!response.ok) {
@@ -148,9 +161,11 @@ export async function getIVSurface(ticker: string, surface: "mid" | "bid" | "ask
 export async function getRatesCurve(
 	curve: "Treasury" | "SOFR" | "FedFunds",
 	curveType: RatesCurveType = "zero",
-	fixedPeriodYears = 0.5
+	fixedPeriodYears = 0.5,
 ): Promise<RatesCurveResponse> {
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 	if (API_KEY) {
 		headers["X-API-KEY"] = API_KEY;
 	}
@@ -158,8 +173,8 @@ export async function getRatesCurve(
 		`${API_BASE}/market/rates/curve?curve=${encodeURIComponent(curve)}&curve_type=${encodeURIComponent(curveType)}&fixed_period_years=${fixedPeriodYears}`,
 		{
 			method: "GET",
-			headers
-		}
+			headers,
+		},
 	);
 
 	if (!response.ok) {
@@ -169,23 +184,31 @@ export async function getRatesCurve(
 	return response.json();
 }
 
-export async function getCleanedIVSurface(ticker: string): Promise<SurfaceGridResponse> {
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
+export async function getCleanedIVSurface(
+	ticker: string,
+): Promise<SurfaceGridResponse> {
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 	if (API_KEY) headers["X-API-KEY"] = API_KEY;
 	const response = await fetch(
 		`${API_BASE}/api/local-vol/iv-surface?ticker=${encodeURIComponent(ticker)}`,
-		{ method: "GET", headers }
+		{ method: "GET", headers },
 	);
 	if (!response.ok) throw new Error("Failed to fetch cleaned IV surface");
 	return response.json();
 }
 
-export async function getLocalVolSurface(ticker: string): Promise<SurfaceGridResponse> {
-	const headers: Record<string, string> = { "Content-Type": "application/json" };
+export async function getLocalVolSurface(
+	ticker: string,
+): Promise<SurfaceGridResponse> {
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+	};
 	if (API_KEY) headers["X-API-KEY"] = API_KEY;
 	const response = await fetch(
 		`${API_BASE}/api/local-vol/surface?ticker=${encodeURIComponent(ticker)}`,
-		{ method: "GET", headers }
+		{ method: "GET", headers },
 	);
 	if (!response.ok) throw new Error("Failed to fetch local vol surface");
 	return response.json();
@@ -286,10 +309,13 @@ export function listPortfolios(): Promise<PortfolioSummary[]> {
 }
 
 export function createPortfolio(name: string): Promise<Portfolio> {
-	return apiFetch(`${API_BASE}/api/portfolios?name=${encodeURIComponent(name)}`, {
-		method: "POST",
-		headers: headers(),
-	});
+	return apiFetch(
+		`${API_BASE}/api/portfolios?name=${encodeURIComponent(name)}`,
+		{
+			method: "POST",
+			headers: headers(),
+		},
+	);
 }
 
 export function getPortfolio(id: string): Promise<Portfolio> {
@@ -311,7 +337,10 @@ export function deletePortfolio(id: string): Promise<void> {
 	});
 }
 
-export function addPosition(portfolioId: string, pos: Position): Promise<Portfolio> {
+export function addPosition(
+	portfolioId: string,
+	pos: Position,
+): Promise<Portfolio> {
 	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/positions`, {
 		method: "POST",
 		headers: headers(),
@@ -319,29 +348,46 @@ export function addPosition(portfolioId: string, pos: Position): Promise<Portfol
 	});
 }
 
-export function updatePosition(portfolioId: string, pos: Position): Promise<Portfolio> {
-	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/positions/${pos.id}`, {
-		method: "PUT",
-		headers: headers(),
-		body: JSON.stringify(pos),
-	});
+export function updatePosition(
+	portfolioId: string,
+	pos: Position,
+): Promise<Portfolio> {
+	return apiFetch(
+		`${API_BASE}/api/portfolios/${portfolioId}/positions/${pos.id}`,
+		{
+			method: "PUT",
+			headers: headers(),
+			body: JSON.stringify(pos),
+		},
+	);
 }
 
-export function removePosition(portfolioId: string, positionId: string): Promise<Portfolio> {
-	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/positions/${positionId}`, {
-		method: "DELETE",
-		headers: headers(),
-	});
+export function removePosition(
+	portfolioId: string,
+	positionId: string,
+): Promise<Portfolio> {
+	return apiFetch(
+		`${API_BASE}/api/portfolios/${portfolioId}/positions/${positionId}`,
+		{
+			method: "DELETE",
+			headers: headers(),
+		},
+	);
 }
 
-export function pricePortfolio(portfolioId: string): Promise<BatchPriceResponse> {
+export function pricePortfolio(
+	portfolioId: string,
+): Promise<BatchPriceResponse> {
 	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/price`, {
 		method: "POST",
 		headers: headers(),
 	});
 }
 
-export function stressTestPortfolio(portfolioId: string, bumps: StressBump[]): Promise<StressResult[]> {
+export function stressTestPortfolio(
+	portfolioId: string,
+	bumps: StressBump[],
+): Promise<StressResult[]> {
 	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/stress`, {
 		method: "POST",
 		headers: headers(),
@@ -352,7 +398,7 @@ export function stressTestPortfolio(portfolioId: string, bumps: StressBump[]): P
 export function computeVaR(
 	portfolioId: string,
 	confidence = 0.95,
-	horizonDays = 1
+	horizonDays = 1,
 ): Promise<VaRResult> {
 	return apiFetch(`${API_BASE}/api/portfolios/${portfolioId}/var`, {
 		method: "POST",
@@ -376,7 +422,10 @@ export type UserInfo = {
 	username: string;
 };
 
-export function loginUser(username: string, password: string): Promise<AuthResponse> {
+export function loginUser(
+	username: string,
+	password: string,
+): Promise<AuthResponse> {
 	return apiFetch(`${API_BASE}/api/auth/login`, {
 		method: "POST",
 		headers: headers(),
@@ -384,7 +433,10 @@ export function loginUser(username: string, password: string): Promise<AuthRespo
 	});
 }
 
-export function registerUser(username: string, password: string): Promise<AuthResponse> {
+export function registerUser(
+	username: string,
+	password: string,
+): Promise<AuthResponse> {
 	return apiFetch(`${API_BASE}/api/auth/register`, {
 		method: "POST",
 		headers: headers(),
@@ -405,8 +457,8 @@ export function getMe(token: string): Promise<UserInfo> {
 
 export type BacktestRequest = {
 	tickers: string[];
-	opt_start: string;   // ISO date "YYYY-MM-DD"
-	opt_end: string;     // ISO date "YYYY-MM-DD"
+	opt_start: string; // ISO date "YYYY-MM-DD"
+	opt_end: string; // ISO date "YYYY-MM-DD"
 	initial_capital: number;
 	max_share: number;
 	min_share: number;

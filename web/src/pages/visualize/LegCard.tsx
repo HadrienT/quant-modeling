@@ -24,7 +24,11 @@ export default function LegCard({ leg, color, onUpdate, onRemove }: Props) {
 					value={leg.label}
 					onChange={(e) => set("label", e.target.value)}
 				/>
-				<button className="leg-card-remove" onClick={onRemove} title="Remove leg">
+				<button
+					className="leg-card-remove"
+					onClick={onRemove}
+					title="Remove leg"
+				>
 					×
 				</button>
 			</div>
@@ -82,7 +86,9 @@ export default function LegCard({ leg, color, onUpdate, onRemove }: Props) {
 						type="number"
 						min={1}
 						value={leg.quantity}
-						onChange={(e) => set("quantity", Math.max(1, Number(e.target.value)))}
+						onChange={(e) =>
+							set("quantity", Math.max(1, Number(e.target.value)))
+						}
 					/>
 				</label>
 

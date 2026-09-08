@@ -1,0 +1,14 @@
+[
+	{
+		"name": "initial (shell + home route)",
+		"path": "dist/assets/index-*.js",
+		"limit": "180 kB",
+		"gzip": true
+	},
+	{
+		"name": "css",
+		"path": "dist/assets/*.css",
+		"limit": "20 kB",
+		"gzip": true
+	}
+]

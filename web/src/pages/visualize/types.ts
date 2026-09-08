@@ -1,4 +1,5 @@
-export type LegType = "call" | "put" | "stock" | "forward" | "digital-call" | "digital-put";
+export type LegType =
+	"call" | "put" | "stock" | "forward" | "digital-call" | "digital-put";
 export type LegSide = "long" | "short";
 
 export type Leg = {

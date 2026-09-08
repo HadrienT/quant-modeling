@@ -1,6 +1,13 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import { useCallback, useMemo, useState } from "react";
 import type { Position } from "../../api/client";
-import { CATEGORIES, catalogFor, findProduct, type ProductCategoryKey, type ProductTypeKey } from "./catalog";
+import {
+	CATEGORIES,
+	catalogFor,
+	findProduct,
+	type ProductCategoryKey,
+	type ProductTypeKey,
+} from "./catalog";
 
 type Props = {
 	onAdd: (pos: Position) => void;
@@ -21,46 +28,43 @@ function initDefaults(type: ProductTypeKey): Record<string, unknown> {
 
 export default function AddPositionForm({ onAdd, onCancel }: Props) {
 	const [category, setCategory] = useState<ProductCategoryKey>("vanilla");
-	const [productType, setProductType] = useState<ProductTypeKey>("european-call");
+	const [productType, setProductType] =
+		useState<ProductTypeKey>("european-call");
 	const [direction, setDirection] = useState<"long" | "short">("long");
 	const [quantity, setQuantity] = useState(1);
 	const [entryPrice, setEntryPrice] = useState(0);
 	const [label, setLabel] = useState("European Call");
-	const [params, setParams] = useState<Record<string, unknown>>(() => initDefaults("european-call"));
+	const [params, setParams] = useState<Record<string, unknown>>(() =>
+		initDefaults("european-call"),
+	);
 
 	const products = useMemo(() => catalogFor(category), [category]);
 	const productDef = useMemo(() => findProduct(productType), [productType]);
 
 	// When category changes, reset to first product
-	const handleCategoryChange = useCallback(
-		(cat: ProductCategoryKey) => {
-			setCategory(cat);
-			const prods = catalogFor(cat);
-			if (prods.length > 0) {
-				setProductType(prods[0].type);
-				const defaults: Record<string, unknown> = {};
-				for (const p of prods[0].params) defaults[p.key] = p.default;
-				setParams(defaults);
-				setLabel(prods[0].label);
-			}
-		},
-		[]
-	);
+	const handleCategoryChange = useCallback((cat: ProductCategoryKey) => {
+		setCategory(cat);
+		const prods = catalogFor(cat);
+		if (prods.length > 0) {
+			setProductType(prods[0].type);
+			const defaults: Record<string, unknown> = {};
+			for (const p of prods[0].params) defaults[p.key] = p.default;
+			setParams(defaults);
+			setLabel(prods[0].label);
+		}
+	}, []);
 
 	// When product type changes, reset params
-	const handleProductChange = useCallback(
-		(type: ProductTypeKey) => {
-			setProductType(type);
-			const def = findProduct(type);
-			if (def) {
-				const defaults: Record<string, unknown> = {};
-				for (const p of def.params) defaults[p.key] = p.default;
-				setParams(defaults);
-				setLabel(def.label);
-			}
-		},
-		[]
-	);
+	const handleProductChange = useCallback((type: ProductTypeKey) => {
+		setProductType(type);
+		const def = findProduct(type);
+		if (def) {
+			const defaults: Record<string, unknown> = {};
+			for (const p of def.params) defaults[p.key] = p.default;
+			setParams(defaults);
+			setLabel(def.label);
+		}
+	}, []);
 
 	const setParam = useCallback((key: string, value: unknown) => {
 		setParams((prev) => ({ ...prev, [key]: value }));
@@ -93,7 +97,9 @@ export default function AddPositionForm({ onAdd, onCancel }: Props) {
 			<div className="add-position-form card">
 				<div className="add-pos-header">
 					<h3>Add Position</h3>
-					<button className="btn-icon" type="button" onClick={onCancel}>✕</button>
+					<button className="btn-icon" type="button" onClick={onCancel}>
+						✕
+					</button>
 				</div>
 
 				{/* ── Category pills ── */}
@@ -102,7 +108,7 @@ export default function AddPositionForm({ onAdd, onCancel }: Props) {
 						<button
 							key={c.key}
 							type="button"
-							className={`pill${category === c.key ? " active" : ""}`}
+							className={`pill${category === c.key ? "active" : ""}`}
 							onClick={() => handleCategoryChange(c.key)}
 						>
 							{c.label}
@@ -114,33 +120,59 @@ export default function AddPositionForm({ onAdd, onCancel }: Props) {
 				<div className="add-pos-row">
 					<label className="field">
 						Product
-						<select value={productType} onChange={(e) => handleProductChange(e.target.value as ProductTypeKey)}>
+						<select
+							value={productType}
+							onChange={(e) =>
+								handleProductChange(e.target.value as ProductTypeKey)
+							}
+						>
 							{products.map((p) => (
-								<option key={p.type} value={p.type}>{p.label}</option>
+								<option key={p.type} value={p.type}>
+									{p.label}
+								</option>
 							))}
 						</select>
 					</label>
 					<label className="field">
 						Direction
-						<select value={direction} onChange={(e) => setDirection(e.target.value as "long" | "short")}>
+						<select
+							value={direction}
+							onChange={(e) => setDirection(e.target.value as "long" | "short")}
+						>
 							<option value="long">Long</option>
 							<option value="short">Short</option>
 						</select>
 					</label>
 					<label className="field">
 						Quantity
-						<input type="number" value={quantity} min={0} step={1} onChange={(e) => setQuantity(+e.target.value)} />
+						<input
+							type="number"
+							value={quantity}
+							min={0}
+							step={1}
+							onChange={(e) => setQuantity(+e.target.value)}
+						/>
 					</label>
 					<label className="field">
 						Entry price
-						<input type="number" value={entryPrice} step={0.01} onChange={(e) => setEntryPrice(+e.target.value)} />
+						<input
+							type="number"
+							value={entryPrice}
+							step={0.01}
+							onChange={(e) => setEntryPrice(+e.target.value)}
+						/>
 					</label>
 				</div>
 
 				{/* ── Label ── */}
 				<label className="field" style={{ marginBottom: 8 }}>
 					Label
-					<input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={productDef?.label || ""} />
+					<input
+						type="text"
+						value={label}
+						onChange={(e) => setLabel(e.target.value)}
+						placeholder={productDef?.label || ""}
+					/>
 				</label>
 
 				{/* ── Dynamic parameters ── */}
@@ -154,7 +186,9 @@ export default function AddPositionForm({ onAdd, onCancel }: Props) {
 									onChange={(e) => setParam(p.key, e.target.value)}
 								>
 									{p.options?.map((o) => (
-										<option key={o.value} value={o.value}>{o.label}</option>
+										<option key={o.value} value={o.value}>
+											{o.label}
+										</option>
 									))}
 								</select>
 							) : p.type === "boolean" ? (
@@ -168,9 +202,16 @@ export default function AddPositionForm({ onAdd, onCancel }: Props) {
 							) : p.type === "number[]" ? (
 								<input
 									type="text"
-									value={Array.isArray(params[p.key]) ? (params[p.key] as number[]).join(", ") : String(params[p.key] ?? "")}
+									value={
+										Array.isArray(params[p.key])
+											? (params[p.key] as number[]).join(", ")
+											: String(params[p.key] ?? "")
+									}
 									onChange={(e) => {
-										const nums = e.target.value.split(",").map((s) => Number(s.trim())).filter((n) => !isNaN(n));
+										const nums = e.target.value
+											.split(",")
+											.map((s) => Number(s.trim()))
+											.filter((n) => !isNaN(n));
 										setParam(p.key, nums);
 									}}
 									placeholder="e.g. 100, 100"
@@ -178,7 +219,11 @@ export default function AddPositionForm({ onAdd, onCancel }: Props) {
 							) : (
 								<input
 									type="number"
-									value={params[p.key] != null ? Number(params[p.key]) : (p.default as number) ?? 0}
+									value={
+										params[p.key] != null
+											? Number(params[p.key])
+											: ((p.default as number) ?? 0)
+									}
 									min={p.min}
 									step={p.step ?? 0.01}
 									onChange={(e) => setParam(p.key, +e.target.value)}
@@ -190,8 +235,12 @@ export default function AddPositionForm({ onAdd, onCancel }: Props) {
 
 				{/* ── Actions ── */}
 				<div className="add-pos-actions">
-					<button type="button" className="btn-secondary" onClick={onCancel}>Cancel</button>
-					<button type="button" className="btn-primary" onClick={handleSubmit}>Add Position</button>
+					<button type="button" className="btn-secondary" onClick={onCancel}>
+						Cancel
+					</button>
+					<button type="button" className="btn-primary" onClick={handleSubmit}>
+						Add Position
+					</button>
 				</div>
 			</div>
 		</div>

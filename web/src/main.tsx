@@ -1,14 +1,18 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import App from "./App";
+import "@/shared/styles/theme.css";
 import "katex/dist/katex.min.css";
 import "./styles.css";
+import App from "./App";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-	<React.StrictMode>
+const root = document.getElementById("root");
+if (!root) throw new Error("#root not found");
+
+createRoot(root).render(
+	<StrictMode>
 		<BrowserRouter>
 			<App />
 		</BrowserRouter>
-	</React.StrictMode>
+	</StrictMode>,
 );

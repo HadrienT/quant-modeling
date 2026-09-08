@@ -1,7 +1,13 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import { useCallback, useMemo, useState } from "react";
 import PnlChart, { PnlSeries } from "../components/PnlChart";
 import type { Leg, LegType, StrategyKey } from "./visualize/types";
-import { buildGrid, legPayoff, portfolioPayoff, computeMetrics } from "./visualize/payoff";
+import {
+	buildGrid,
+	legPayoff,
+	portfolioPayoff,
+	computeMetrics,
+} from "./visualize/payoff";
 import { STRATEGIES, STRATEGY_KEYS } from "./visualize/strategies";
 import LegCard from "./visualize/LegCard";
 import MetricsPanel from "./visualize/MetricsPanel";
@@ -40,7 +46,10 @@ export default function Visualize() {
 	const [spotMax, setSpotMax] = useState(140);
 	const [focusAggregate, setFocusAggregate] = useState(true);
 
-	const grid = useMemo(() => buildGrid(spotMin, spotMax, 200), [spotMin, spotMax]);
+	const grid = useMemo(
+		() => buildGrid(spotMin, spotMax, 200),
+		[spotMin, spotMax],
+	);
 	const metrics = useMemo(() => computeMetrics(legs, grid), [legs, grid]);
 
 	/* ---- strategy picker ---- */
@@ -114,8 +123,8 @@ export default function Visualize() {
 				<div>
 					<h1>Strategy builder.</h1>
 					<p>
-						Pick a template or build your own multi-leg portfolio.
-						Every change updates the payoff diagram instantly.
+						Pick a template or build your own multi-leg portfolio. Every change
+						updates the payoff diagram instantly.
 					</p>
 				</div>
 			</section>
@@ -126,7 +135,7 @@ export default function Visualize() {
 					{STRATEGY_KEYS.map((key) => (
 						<button
 							key={key}
-							className={`pill${strategy === key ? " active" : ""}`}
+							className={`pill${strategy === key ? "active" : ""}`}
 							onClick={() => applyStrategy(key)}
 							title={STRATEGIES[key].desc}
 						>

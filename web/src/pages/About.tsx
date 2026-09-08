@@ -3,7 +3,8 @@ export default function About() {
 		<section className="page-simple">
 			<h1>About</h1>
 			<p>
-				Quant Modeling is a focused space to explore option payoffs, pricing, and portfolio intuition.
+				Quant Modeling is a focused space to explore option payoffs, pricing,
+				and portfolio intuition.
 			</p>
 		</section>
 	);

@@ -12,7 +12,13 @@ type Props = {
 function renderMathText(text: string, keyPrefix: string): ReactNode {
 	return text
 		.split(/\$([^$]+)\$/g)
-		.map((part, i) => (i % 2 === 1 ? <Formula key={`${keyPrefix}-${i}`} tex={part} /> : <span key={`${keyPrefix}-${i}`}>{part}</span>));
+		.map((part, i) =>
+			i % 2 === 1 ? (
+				<Formula key={`${keyPrefix}-${i}`} tex={part} />
+			) : (
+				<span key={`${keyPrefix}-${i}`}>{part}</span>
+			),
+		);
 }
 
 const PANEL_WIDTH = 380;
@@ -37,7 +43,11 @@ export default function ProductInfo({ doc }: Props) {
 
 		const onDocClick = (e: MouseEvent) => {
 			const target = e.target as Node;
-			if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+			if (
+				triggerRef.current?.contains(target) ||
+				panelRef.current?.contains(target)
+			)
+				return;
 			setOpen(false);
 		};
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -63,7 +73,10 @@ export default function ProductInfo({ doc }: Props) {
 	const toggle = () => {
 		if (!open && triggerRef.current) {
 			const rect = triggerRef.current.getBoundingClientRect();
-			const left = Math.min(Math.max(16, rect.left), window.innerWidth - PANEL_WIDTH - 16);
+			const left = Math.min(
+				Math.max(16, rect.left),
+				window.innerWidth - PANEL_WIDTH - 16,
+			);
 			setPos({ top: rect.bottom + 8, left });
 		}
 		setOpen((o) => !o);
@@ -94,7 +107,12 @@ export default function ProductInfo({ doc }: Props) {
 					>
 						<div className="product-info-header">
 							<h4>{doc.title}</h4>
-							<button type="button" className="btn-icon" aria-label="Close" onClick={() => setOpen(false)}>
+							<button
+								type="button"
+								className="btn-icon"
+								aria-label="Close"
+								onClick={() => setOpen(false)}
+							>
 								✕
 							</button>
 						</div>
@@ -122,7 +140,8 @@ export default function ProductInfo({ doc }: Props) {
 							<ul>
 								{doc.pricingMethods.map((m, i) => (
 									<li key={i}>
-										<strong>{m.engine}:</strong> {renderMathText(m.detail, `m${i}`)}
+										<strong>{m.engine}:</strong>{" "}
+										{renderMathText(m.detail, `m${i}`)}
 									</li>
 								))}
 							</ul>

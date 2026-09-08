@@ -1,5 +1,13 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import { useEffect, useMemo, useState } from "react";
-import { getCleanedIVSurface, getIVSurface, getLocalVolSurface, getMarketHistory, getRatesCurve, getTickers } from "../api/client";
+import {
+	getCleanedIVSurface,
+	getIVSurface,
+	getLocalVolSurface,
+	getMarketHistory,
+	getRatesCurve,
+	getTickers,
+} from "../api/client";
 import { PriceTab } from "./market/PriceTab";
 import { RatesTab } from "./market/RatesTab";
 import { VolTab, type VolSubTab } from "./market/VolTab";
@@ -13,7 +21,9 @@ export default function Market() {
 	const [volEquity, setVolEquity] = useState("AAPL");
 	const [curve, setCurve] = useState("Treasury");
 	const [surface, setSurface] = useState("Mid vol");
-	const [ratesCurveView, setRatesCurveView] = useState<"zero" | "forward">("zero");
+	const [ratesCurveView, setRatesCurveView] = useState<"zero" | "forward">(
+		"zero",
+	);
 	const [ratesFixedPeriodYears, setRatesFixedPeriodYears] = useState(0.5);
 	const [range, setRange] = useState<TimeRange>("6M");
 	const [tab, setTab] = useState<MarketTab>("price");
@@ -32,7 +42,9 @@ export default function Market() {
 	// Cleaned IV surface
 	const [cleanStrikes, setCleanStrikes] = useState<number[]>([]);
 	const [cleanMaturities, setCleanMaturities] = useState<number[]>([]);
-	const [cleanValues, setCleanValues] = useState<Array<Array<number | null>>>([]);
+	const [cleanValues, setCleanValues] = useState<Array<Array<number | null>>>(
+		[],
+	);
 	const [cleanLoading, setCleanLoading] = useState(false);
 	const [cleanError, setCleanError] = useState<string | null>(null);
 	// Local vol surface
@@ -91,11 +103,17 @@ export default function Market() {
 		getMarketHistory(debouncedEquity, range)
 			.then((data) => {
 				if (!active) return;
-				setPriceSeries(data.points.map((point) => ({ date: point.date, price: point.close })));
+				setPriceSeries(
+					data.points.map((point) => ({
+						date: point.date,
+						price: point.close,
+					})),
+				);
 			})
 			.catch((err) => {
 				if (!active) return;
-				const message = err instanceof Error ? err.message : "Failed to load prices";
+				const message =
+					err instanceof Error ? err.message : "Failed to load prices";
 				setPriceError(message);
 			})
 			.finally(() => {
@@ -139,7 +157,8 @@ export default function Market() {
 			};
 		}
 
-		const surfaceKey = surface === "Bid vol" ? "bid" : surface === "Ask vol" ? "ask" : "mid";
+		const surfaceKey =
+			surface === "Bid vol" ? "bid" : surface === "Ask vol" ? "ask" : "mid";
 		setIvLoading(true);
 		getIVSurface(volEquity, surfaceKey)
 			.then((data) => {
@@ -150,7 +169,8 @@ export default function Market() {
 			})
 			.catch((err) => {
 				if (!active) return;
-				const message = err instanceof Error ? err.message : "Failed to load IV surface";
+				const message =
+					err instanceof Error ? err.message : "Failed to load IV surface";
 				setIvError(message);
 			})
 			.finally(() => {
@@ -168,15 +188,22 @@ export default function Market() {
 		setCleanError(null);
 
 		if (tab !== "vol" || volSubTab !== "cleaned") {
-			return () => { active = false; };
+			return () => {
+				active = false;
+			};
 		}
 
-		if (!volEquity.trim() || (!tickersLoading && !tickers.includes(volEquity))) {
+		if (
+			!volEquity.trim() ||
+			(!tickersLoading && !tickers.includes(volEquity))
+		) {
 			setCleanStrikes([]);
 			setCleanMaturities([]);
 			setCleanValues([]);
 			if (volEquity.trim() && !tickersLoading) setCleanError("Unknown ticker.");
-			return () => { active = false; };
+			return () => {
+				active = false;
+			};
 		}
 
 		setCleanLoading(true);
@@ -189,13 +216,19 @@ export default function Market() {
 			})
 			.catch((err) => {
 				if (!active) return;
-				setCleanError(err instanceof Error ? err.message : "Failed to load cleaned IV surface");
+				setCleanError(
+					err instanceof Error
+						? err.message
+						: "Failed to load cleaned IV surface",
+				);
 			})
 			.finally(() => {
 				if (!active) return;
 				setCleanLoading(false);
 			});
-		return () => { active = false; };
+		return () => {
+			active = false;
+		};
 	}, [volEquity, tickers, tickersLoading, tab, volSubTab]);
 
 	// Fetch local vol surface when sub-tab is "local-vol"
@@ -204,15 +237,22 @@ export default function Market() {
 		setLvError(null);
 
 		if (tab !== "vol" || volSubTab !== "local-vol") {
-			return () => { active = false; };
+			return () => {
+				active = false;
+			};
 		}
 
-		if (!volEquity.trim() || (!tickersLoading && !tickers.includes(volEquity))) {
+		if (
+			!volEquity.trim() ||
+			(!tickersLoading && !tickers.includes(volEquity))
+		) {
 			setLvStrikes([]);
 			setLvMaturities([]);
 			setLvValues([]);
 			if (volEquity.trim() && !tickersLoading) setLvError("Unknown ticker.");
-			return () => { active = false; };
+			return () => {
+				active = false;
+			};
 		}
 
 		setLvLoading(true);
@@ -225,13 +265,19 @@ export default function Market() {
 			})
 			.catch((err) => {
 				if (!active) return;
-				setLvError(err instanceof Error ? err.message : "Failed to load local vol surface");
+				setLvError(
+					err instanceof Error
+						? err.message
+						: "Failed to load local vol surface",
+				);
 			})
 			.finally(() => {
 				if (!active) return;
 				setLvLoading(false);
 			});
-		return () => { active = false; };
+		return () => {
+			active = false;
+		};
 	}, [volEquity, tickers, tickersLoading, tab, volSubTab]);
 
 	useEffect(() => {
@@ -245,14 +291,19 @@ export default function Market() {
 		}
 
 		setRatesLoading(true);
-		getRatesCurve(curve as "Treasury" | "SOFR" | "FedFunds", ratesCurveView, ratesFixedPeriodYears)
+		getRatesCurve(
+			curve as "Treasury" | "SOFR" | "FedFunds",
+			ratesCurveView,
+			ratesFixedPeriodYears,
+		)
 			.then((data) => {
 				if (!active) return;
 				setZeroCurve(data.zero);
 			})
 			.catch((err) => {
 				if (!active) return;
-				const message = err instanceof Error ? err.message : "Failed to load rates curve";
+				const message =
+					err instanceof Error ? err.message : "Failed to load rates curve";
 				setRatesError(message);
 			})
 			.finally(() => {
@@ -266,8 +317,12 @@ export default function Market() {
 	}, [curve, ratesCurveView, ratesFixedPeriodYears, tab]);
 
 	const visibleSeries = priceSeries;
-	const latest = visibleSeries.length > 0 ? visibleSeries[visibleSeries.length - 1] : undefined;
-	const previous = visibleSeries.length > 1 ? visibleSeries[visibleSeries.length - 2] : latest;
+	const latest =
+		visibleSeries.length > 0
+			? visibleSeries[visibleSeries.length - 1]
+			: undefined;
+	const previous =
+		visibleSeries.length > 1 ? visibleSeries[visibleSeries.length - 2] : latest;
 	const change = latest && previous ? latest.price - previous.price : 0;
 	const changePct = latest && previous ? (change / previous.price) * 100 : 0;
 
@@ -286,16 +341,20 @@ export default function Market() {
 				<div>
 					<h1>Market surfaces and curves.</h1>
 					<p>
-						Track the implied vol landscape and the term structure that feeds pricing. Pick a curve or surface here, then
-						use it in pricing.
+						Track the implied vol landscape and the term structure that feeds
+						pricing. Pick a curve or surface here, then use it in pricing.
 					</p>
 				</div>
 			</section>
 
 			<section className="card" style={{ marginBottom: 24 }}>
 				<h2>Desk views</h2>
-				<p className="price-muted">Switch between pricing, volatility, and curve analytics.</p>
-				<div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+				<p className="price-muted">
+					Switch between pricing, volatility, and curve analytics.
+				</p>
+				<div
+					style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}
+				>
 					<button
 						className={`button ${tab === "price" ? "primary" : "secondary"}`}
 						onClick={() => setTab("price")}
@@ -349,9 +408,27 @@ export default function Market() {
 					onSurfaceChange={setSurface}
 					subTab={volSubTab}
 					onSubTabChange={setVolSubTab}
-					raw={{ strikes: ivStrikes, maturities: ivMaturities, values: ivValues, loading: ivLoading, error: ivError }}
-					cleaned={{ strikes: cleanStrikes, maturities: cleanMaturities, values: cleanValues, loading: cleanLoading, error: cleanError }}
-					localVol={{ strikes: lvStrikes, maturities: lvMaturities, values: lvValues, loading: lvLoading, error: lvError }}
+					raw={{
+						strikes: ivStrikes,
+						maturities: ivMaturities,
+						values: ivValues,
+						loading: ivLoading,
+						error: ivError,
+					}}
+					cleaned={{
+						strikes: cleanStrikes,
+						maturities: cleanMaturities,
+						values: cleanValues,
+						loading: cleanLoading,
+						error: cleanError,
+					}}
+					localVol={{
+						strikes: lvStrikes,
+						maturities: lvMaturities,
+						values: lvValues,
+						loading: lvLoading,
+						error: lvError,
+					}}
 				/>
 			)}
 

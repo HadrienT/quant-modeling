@@ -67,3 +67,72 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Storybook build
+        run: npm run build-storybook
+
+  api-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install API deps
+        run: pip install -r api/requirements.txt
+
+      - name: Regenerate OpenAPI types and check drift
+        run: |
+          # A stub stands in for the native pybind11 module — the OpenAPI shape
+          # does not depend on it. See scripts/gen_openapi.py.
+          python scripts/gen_openapi.py web/openapi.json
+          cd web
+          npm ci
+          npx openapi-typescript ../openapi.json -o src/shared/api/schema.gen.ts
+          if ! git diff --exit-code -- openapi.json src/shared/api/schema.gen.ts; then
+            echo "::error::OpenAPI drift. Run: python scripts/gen_openapi.py web/openapi.json && cd web && npm run api:types:local"
+            exit 1
+          fi

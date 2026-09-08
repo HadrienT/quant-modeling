@@ -21,5 +21,10 @@ export default function Formula({ tex, block = false }: FormulaProps) {
 		displayMode: block,
 	});
 	// KaTeX's own trusted output, not user input.
-	return <span className={block ? "formula-block" : "formula-inline"} dangerouslySetInnerHTML={{ __html: html }} />;
+	return (
+		<span
+			className={block ? "formula-block" : "formula-inline"}
+			dangerouslySetInnerHTML={{ __html: html }}
+		/>
+	);
 }

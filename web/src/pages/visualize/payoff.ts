@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import type { Leg, Metrics } from "./types";
 
 /* ── single-leg payoff at expiry ───────────────────── */
@@ -14,9 +15,13 @@ export function legPayoff(spot: number, leg: Leg): number {
 		case "forward":
 			return sign * q * (spot - leg.strike);
 		case "digital-call":
-			return sign * q * ((spot >= leg.strike ? leg.cashAmount : 0) - leg.premium);
+			return (
+				sign * q * ((spot >= leg.strike ? leg.cashAmount : 0) - leg.premium)
+			);
 		case "digital-put":
-			return sign * q * ((spot <= leg.strike ? leg.cashAmount : 0) - leg.premium);
+			return (
+				sign * q * ((spot <= leg.strike ? leg.cashAmount : 0) - leg.premium)
+			);
 		default:
 			return 0;
 	}
@@ -55,7 +60,8 @@ export function findBreakevens(legs: Leg[], grid: number[]): number[] {
 /* ── key metrics ───────────────────────────────────── */
 
 export function computeMetrics(legs: Leg[], grid: number[]): Metrics {
-	if (legs.length === 0) return { maxProfit: 0, maxLoss: 0, breakevens: [], netPremium: 0 };
+	if (legs.length === 0)
+		return { maxProfit: 0, maxLoss: 0, breakevens: [], netPremium: 0 };
 
 	const payoffs = grid.map((s) => portfolioPayoff(s, legs));
 	const maxProfit = Math.max(...payoffs);

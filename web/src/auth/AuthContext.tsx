@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useRef,
+	useState,
+	type ReactNode,
+} from "react";
 import { loginUser, registerUser, getMe } from "../api/client";
 
 type AuthState = {
@@ -21,7 +29,6 @@ const AuthContext = createContext<AuthState>({
 	logout: () => {},
 });
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthState {
 	return useContext(AuthContext);
 }
@@ -69,7 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	return (
-		<AuthContext.Provider value={{ token, username, loading, login, register, logout }}>
+		<AuthContext.Provider
+			value={{ token, username, loading, login, register, logout }}
+		>
 			{children}
 		</AuthContext.Provider>
 	);

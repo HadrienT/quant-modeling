@@ -1,0 +1,4 @@
+src/shared/api/schema.gen.ts linguist-generated=true
+src/routeTree.gen.ts linguist-generated=true
+openapi.json linguist-generated=true
+package-lock.json linguist-generated=true

@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChartHoverCard from "./ChartHoverCard";
 import { interpolateAt } from "../utils/chartUtils";
@@ -32,9 +33,18 @@ const padDomain = (min: number, max: number, padding = 0.12) => {
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, value));
 
-const interpolatePnl = (points: PnlPoint[], x: number) => interpolateAt(points, x);
+const interpolatePnl = (points: PnlPoint[], x: number) =>
+	interpolateAt(points, x);
 
-export default function PnlChart({ title, series, spotNow, showLegend, showFill, breakevens, chartHeight }: PnlChartProps) {
+export default function PnlChart({
+	title,
+	series,
+	spotNow,
+	showLegend,
+	showFill,
+	breakevens,
+	chartHeight,
+}: PnlChartProps) {
 	const { xMinData, xMaxData, yMinData, yMaxData } = useMemo(() => {
 		const all = series.flatMap((s) => s.points);
 		const xs = all.map((p) => p.x);
@@ -46,7 +56,9 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 
 	const [yZoom, setYZoom] = useState(1);
 	const [xOffset, setXOffset] = useState(0);
-	const dragRef = useRef<{ startClientX: number; offsetSnap: number } | null>(null);
+	const dragRef = useRef<{ startClientX: number; offsetSnap: number } | null>(
+		null,
+	);
 	const svgRef = useRef<SVGSVGElement | null>(null);
 
 	// Apply y-zoom anchored at y=0 so the zero line stays fixed
@@ -57,25 +69,36 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 
 	// Reset view state when data changes
 	const prevDataRef = useRef({ xMinData, xMaxData });
-	if (prevDataRef.current.xMinData !== xMinData || prevDataRef.current.xMaxData !== xMaxData) {
+	if (
+		prevDataRef.current.xMinData !== xMinData ||
+		prevDataRef.current.xMaxData !== xMaxData
+	) {
 		prevDataRef.current = { xMinData, xMaxData };
 		if (xOffset !== 0) setXOffset(0);
 		if (yZoom !== 1) setYZoom(1);
 	}
 
-	const [hover, setHover] = useState<{ xPx: number; yPx: number; spot: number } | null>(null);
+	const [hover, setHover] = useState<{
+		xPx: number;
+		yPx: number;
+		spot: number;
+	} | null>(null);
 
 	const width = 560;
 	const height = chartHeight ?? 300;
 	const padding = { top: 18, right: 20, bottom: 28, left: 48 };
 
 	const scaleX = (x: number) =>
-		padding.left + ((x - xMin) / (xMax - xMin)) * (width - padding.left - padding.right);
+		padding.left +
+		((x - xMin) / (xMax - xMin)) * (width - padding.left - padding.right);
 	const scaleY = (y: number) =>
-		padding.top + (1 - (y - yMin) / (yMax - yMin)) * (height - padding.top - padding.bottom);
+		padding.top +
+		(1 - (y - yMin) / (yMax - yMin)) * (height - padding.top - padding.bottom);
 
 	const invertX = (xPx: number) =>
-		xMin + ((xPx - padding.left) / (width - padding.left - padding.right)) * (xMax - xMin);
+		xMin +
+		((xPx - padding.left) / (width - padding.left - padding.right)) *
+			(xMax - xMin);
 
 	// Native non-passive wheel listener so preventDefault actually stops page scroll
 	useEffect(() => {
@@ -110,15 +133,24 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 
 			if (dragRef.current) {
 				const dxPx = e.clientX - dragRef.current.startClientX;
-				const plotW = rect.width * ((width - padding.left - padding.right) / width);
+				const plotW =
+					rect.width * ((width - padding.left - padding.right) / width);
 				const span = xMaxData - xMinData;
 				const dxData = -(dxPx / plotW) * span;
 				setXOffset(dragRef.current.offsetSnap + dxData);
 				return;
 			}
 
-			const xPx = clamp((e.clientX - rect.left) * scaleXFactor, padding.left, width - padding.right);
-			const yPx = clamp((e.clientY - rect.top) * scaleYFactor, padding.top, height - padding.bottom);
+			const xPx = clamp(
+				(e.clientX - rect.left) * scaleXFactor,
+				padding.left,
+				width - padding.right,
+			);
+			const yPx = clamp(
+				(e.clientY - rect.top) * scaleYFactor,
+				padding.top,
+				height - padding.bottom,
+			);
 			const spot = invertX(xPx);
 			setHover({ xPx, yPx, spot });
 		},
@@ -141,7 +173,7 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 		const magnitude = Math.pow(10, Math.floor(Math.log10(approxStep || 1)));
 		const candidates = [1, 2, 5, 10].map((base) => base * magnitude);
 		const step = candidates.reduce((best, value) =>
-			Math.abs(value - approxStep) < Math.abs(best - approxStep) ? value : best
+			Math.abs(value - approxStep) < Math.abs(best - approxStep) ? value : best,
 		);
 		const first = Math.ceil(xMin / step) * step;
 		const ticks: number[] = [];
@@ -170,7 +202,13 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 
 	return (
 		<div style={{ position: "relative" }}>
-			<div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+			<div
+				style={{
+					display: "flex",
+					justifyContent: "space-between",
+					alignItems: "baseline",
+				}}
+			>
 				<h3>{title}</h3>
 				<span className="mono">PnL</span>
 			</div>
@@ -178,17 +216,35 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 				ref={svgRef}
 				viewBox={`0 0 ${width} ${height}`}
 				width="100%"
-				style={{ display: 'block', cursor: dragRef.current ? 'grabbing' : 'grab' }}
+				style={{
+					display: "block",
+					cursor: dragRef.current ? "grabbing" : "grab",
+				}}
 				onMouseDown={handleMouseDown}
 				onMouseMove={handleMouseMoveOrDrag}
 				onMouseUp={handleMouseUp}
-				onMouseLeave={() => { dragRef.current = null; setHover(null); }}
+				onMouseLeave={() => {
+					dragRef.current = null;
+					setHover(null);
+				}}
 			>
 				<rect x={0} y={0} width={width} height={height} rx={16} fill="#fff" />
 				{gridLines.map((gl, idx) => (
 					<g key={`grid-${idx}`}>
-						<line x1={padding.left} y1={gl.y} x2={width - padding.right} y2={gl.y} stroke="rgba(16,20,24,0.08)" />
-						<text x={padding.left - 6} y={gl.y + 3.5} fontSize={9} textAnchor="end" fill="#59626a">
+						<line
+							x1={padding.left}
+							y1={gl.y}
+							x2={width - padding.right}
+							y2={gl.y}
+							stroke="rgba(16,20,24,0.08)"
+						/>
+						<text
+							x={padding.left - 6}
+							y={gl.y + 3.5}
+							fontSize={9}
+							textAnchor="end"
+							fill="#59626a"
+						>
 							{Math.abs(gl.val) < 0.005 ? "0" : gl.val.toFixed(1)}
 						</text>
 					</g>
@@ -213,46 +269,93 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 				)}
 
 				{/* fill profit / loss areas for first series */}
-				{showFill && series.length > 0 && (() => {
-					const pts = series[0].points;
-					if (pts.length < 2) return null;
-					const zeroY0 = clamp(scaleY(0), padding.top, height - padding.bottom);
-					const fillD =
-						pts.map((p, i) => `${i === 0 ? "M" : "L"}${scaleX(p.x)},${scaleY(p.y)}`).join(" ") +
-						` L${scaleX(pts[pts.length - 1].x)},${zeroY0} L${scaleX(pts[0].x)},${zeroY0} Z`;
-					return (
-						<>
-							<defs>
-								<clipPath id="clip-profit">
-									<rect x={padding.left} y={padding.top} width={width - padding.left - padding.right} height={Math.max(zeroY0 - padding.top, 0)} />
-								</clipPath>
-								<clipPath id="clip-loss">
-									<rect x={padding.left} y={zeroY0} width={width - padding.left - padding.right} height={Math.max(height - padding.bottom - zeroY0, 0)} />
-								</clipPath>
-							</defs>
-							<path d={fillD} fill="rgba(31,138,112,0.10)" clipPath="url(#clip-profit)" />
-							<path d={fillD} fill="rgba(180,35,24,0.10)" clipPath="url(#clip-loss)" />
-						</>
-					);
-				})()}
+				{showFill &&
+					series.length > 0 &&
+					(() => {
+						const pts = series[0].points;
+						if (pts.length < 2) return null;
+						const zeroY0 = clamp(
+							scaleY(0),
+							padding.top,
+							height - padding.bottom,
+						);
+						const fillD =
+							pts
+								.map(
+									(p, i) =>
+										`${i === 0 ? "M" : "L"}${scaleX(p.x)},${scaleY(p.y)}`,
+								)
+								.join(" ") +
+							` L${scaleX(pts[pts.length - 1].x)},${zeroY0} L${scaleX(pts[0].x)},${zeroY0} Z`;
+						return (
+							<>
+								<defs>
+									<clipPath id="clip-profit">
+										<rect
+											x={padding.left}
+											y={padding.top}
+											width={width - padding.left - padding.right}
+											height={Math.max(zeroY0 - padding.top, 0)}
+										/>
+									</clipPath>
+									<clipPath id="clip-loss">
+										<rect
+											x={padding.left}
+											y={zeroY0}
+											width={width - padding.left - padding.right}
+											height={Math.max(height - padding.bottom - zeroY0, 0)}
+										/>
+									</clipPath>
+								</defs>
+								<path
+									d={fillD}
+									fill="rgba(31,138,112,0.10)"
+									clipPath="url(#clip-profit)"
+								/>
+								<path
+									d={fillD}
+									fill="rgba(180,35,24,0.10)"
+									clipPath="url(#clip-loss)"
+								/>
+							</>
+						);
+					})()}
 
 				{/* breakeven markers */}
-				{breakevens && breakevens.map((be, i) => {
-					const bx = scaleX(be);
-					const by = clamp(scaleY(0), padding.top, height - padding.bottom);
-					return (
-						<g key={`be-${i}`}>
-							<circle cx={bx} cy={by} r={4} fill="#ff8c42" stroke="#fff" strokeWidth={1.5} />
-							<text x={bx} y={by - 8} fontSize={9} textAnchor="middle" fill="#ff8c42" fontWeight={600}>
-								{be.toFixed(1)}
-							</text>
-						</g>
-					);
-				})}
+				{breakevens &&
+					breakevens.map((be, i) => {
+						const bx = scaleX(be);
+						const by = clamp(scaleY(0), padding.top, height - padding.bottom);
+						return (
+							<g key={`be-${i}`}>
+								<circle
+									cx={bx}
+									cy={by}
+									r={4}
+									fill="#ff8c42"
+									stroke="#fff"
+									strokeWidth={1.5}
+								/>
+								<text
+									x={bx}
+									y={by - 8}
+									fontSize={9}
+									textAnchor="middle"
+									fill="#ff8c42"
+									fontWeight={600}
+								>
+									{be.toFixed(1)}
+								</text>
+							</g>
+						);
+					})}
 
 				{series.map((s) => {
 					const path = s.points
-						.map((p, idx) => `${idx === 0 ? "M" : "L"} ${scaleX(p.x)} ${scaleY(p.y)}`)
+						.map(
+							(p, idx) =>
+								`${idx === 0 ? "M" : "L"} ${scaleX(p.x)} ${scaleY(p.y)}`,
+						)
 						.join(" ");
 					return (
 						<path
@@ -332,7 +435,7 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 						key: v.id,
 						label: v.label,
 						color: v.color,
-						value: v.value.toFixed(2)
+						value: v.value.toFixed(2),
 					}))}
 				/>
 			)}
@@ -341,7 +444,10 @@ export default function PnlChart({ title, series, spotNow, showLegend, showFill,
 				<div className="legend">
 					{series.map((s) => (
 						<div key={s.id} className="legend-item">
-							<span className="legend-swatch" style={{ background: s.color, opacity: s.opacity ?? 1 }} />
+							<span
+								className="legend-swatch"
+								style={{ background: s.color, opacity: s.opacity ?? 1 }}
+							/>
 							<span>{s.label}</span>
 						</div>
 					))}

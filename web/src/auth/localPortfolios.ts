@@ -2,11 +2,7 @@
  * Local-storage backed portfolio management for anonymous (not logged-in) users.
  * Mirrors the API contract so the Portfolio page can swap seamlessly.
  */
-import type {
-	Portfolio,
-	PortfolioSummary,
-	Position,
-} from "../api/client";
+import type { Portfolio, PortfolioSummary, Position } from "../api/client";
 
 const LS_KEY = "qm_local_portfolios";
 
@@ -66,7 +62,10 @@ export function localDeletePortfolio(id: string): void {
 	saveAll(loadAll().filter((p) => p.id !== id));
 }
 
-export function localAddPosition(portfolioId: string, pos: Position): Portfolio {
+export function localAddPosition(
+	portfolioId: string,
+	pos: Position,
+): Portfolio {
 	const all = loadAll();
 	const pf = all.find((p) => p.id === portfolioId);
 	if (!pf) throw new Error("Portfolio not found");
@@ -77,7 +76,10 @@ export function localAddPosition(portfolioId: string, pos: Position): Portfolio 
 	return { ...pf };
 }
 
-export function localUpdatePosition(portfolioId: string, pos: Position): Portfolio {
+export function localUpdatePosition(
+	portfolioId: string,
+	pos: Position,
+): Portfolio {
 	const all = loadAll();
 	const pf = all.find((p) => p.id === portfolioId);
 	if (!pf) throw new Error("Portfolio not found");
@@ -89,7 +91,10 @@ export function localUpdatePosition(portfolioId: string, pos: Position): Portfol
 	return { ...pf };
 }
 
-export function localRemovePosition(portfolioId: string, positionId: string): Portfolio {
+export function localRemovePosition(
+	portfolioId: string,
+	positionId: string,
+): Portfolio {
 	const all = loadAll();
 	const pf = all.find((p) => p.id === portfolioId);
 	if (!pf) throw new Error("Portfolio not found");

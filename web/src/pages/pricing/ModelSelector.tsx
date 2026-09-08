@@ -4,12 +4,17 @@ import type { PricingHook } from "./usePricing";
 
 type Props = Pick<
 	PricingHook,
-	| "model" | "setModel"
+	| "model"
+	| "setModel"
 	| "engine"
-	| "volSource" | "setVolSource"
-	| "ticker" | "setTicker"
-	| "isDupire" | "isLiveVol"
-	| "lvNStepsPerYear" | "setLvNStepsPerYear"
+	| "volSource"
+	| "setVolSource"
+	| "ticker"
+	| "setTicker"
+	| "isDupire"
+	| "isLiveVol"
+	| "lvNStepsPerYear"
+	| "setLvNStepsPerYear"
 >;
 
 /**
@@ -20,12 +25,17 @@ type Props = Pick<
  */
 export default function ModelSelector(props: Props) {
 	const {
-		model, setModel,
+		model,
+		setModel,
 		engine,
-		volSource, setVolSource,
-		ticker, setTicker,
-		isDupire, isLiveVol,
-		lvNStepsPerYear, setLvNStepsPerYear,
+		volSource,
+		setVolSource,
+		ticker,
+		setTicker,
+		isDupire,
+		isLiveVol,
+		lvNStepsPerYear,
+		setLvNStepsPerYear,
 	} = props;
 
 	/* Analytic engines assume flat vol — lock model to Black-Scholes */
@@ -47,9 +57,12 @@ export default function ModelSelector(props: Props) {
 						<option
 							key={m.key}
 							value={m.key}
-							disabled={!m.enabled || (analyticLocked && m.key !== "black-scholes")}
+							disabled={
+								!m.enabled || (analyticLocked && m.key !== "black-scholes")
+							}
 						>
-							{m.label}{!m.enabled ? " (Too unstable)" : ""}
+							{m.label}
+							{!m.enabled ? " (Too unstable)" : ""}
 						</option>
 					))}
 				</select>
@@ -62,14 +75,14 @@ export default function ModelSelector(props: Props) {
 						<div className="vol-source-toggle">
 							<button
 								type="button"
-								className={`vol-source-btn${volSource === "real" ? " active" : ""}`}
+								className={`vol-source-btn${volSource === "real" ? "active" : ""}`}
 								onClick={() => setVolSource("real" as VolSourceType)}
 							>
 								Real data
 							</button>
 							<button
 								type="button"
-								className={`vol-source-btn${volSource === "manual" ? " active" : ""}`}
+								className={`vol-source-btn${volSource === "manual" ? "active" : ""}`}
 								onClick={() => setVolSource("manual" as VolSourceType)}
 							>
 								Manual input
@@ -88,7 +101,8 @@ export default function ModelSelector(props: Props) {
 									onChange={(e) => setTicker(e.target.value.toUpperCase())}
 								/>
 								<small>
-									The IV surface will be extracted from this stock's option chain
+									The IV surface will be extracted from this stock's option
+									chain
 								</small>
 							</label>
 							<label className="field">

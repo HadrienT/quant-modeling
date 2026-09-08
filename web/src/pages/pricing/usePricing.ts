@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import { useCallback, useMemo, useRef, useState } from "react";
 import type {
 	AverageType,
@@ -56,16 +57,20 @@ export function usePricing() {
 	const [lvNStepsPerYear, setLvNStepsPerYear] = useState(252);
 
 	/* ── exotic state ─────────────────────────────── */
-	const [exoticProduct, setExoticProduct] = useState<ExoticProductType>("barrier");
+	const [exoticProduct, setExoticProduct] =
+		useState<ExoticProductType>("barrier");
 	const [barrierLevel, setBarrierLevel] = useState(120);
 	const [barrierKind, setBarrierKind] = useState<BarrierKind>("up-and-out");
 	const [rebate, setRebate] = useState(0);
 	const [brownianBridge, setBrownianBridge] = useState(true);
-	const [digitalPayoff, setDigitalPayoff] = useState<DigitalPayoffType>("cash-or-nothing");
+	const [digitalPayoff, setDigitalPayoff] =
+		useState<DigitalPayoffType>("cash-or-nothing");
 	const [cashAmount, setCashAmount] = useState(1);
 	/* lookback */
-	const [lookbackStyle, setLookbackStyle] = useState<LookbackStyle>("fixed-strike");
-	const [lookbackExtremum, setLookbackExtremum] = useState<LookbackExtremum>("maximum");
+	const [lookbackStyle, setLookbackStyle] =
+		useState<LookbackStyle>("fixed-strike");
+	const [lookbackExtremum, setLookbackExtremum] =
+		useState<LookbackExtremum>("maximum");
 	const [lookbackNSteps, setLookbackNSteps] = useState(0);
 	const [basketWeights, setBasketWeights] = useState("0.5,0.5");
 	const [basketSpots, setBasketSpots] = useState("100,120");
@@ -82,7 +87,8 @@ export function usePricing() {
 	const [rainbowCorrelation, setRainbowCorrelation] = useState(0.5);
 
 	/* ── structured state ────────────────────────── */
-	const [structuredProduct, setStructuredProduct] = useState<StructuredProductType>("autocall");
+	const [structuredProduct, setStructuredProduct] =
+		useState<StructuredProductType>("autocall");
 	/* autocall */
 	const [autocallBarrier, setAutocallBarrier] = useState(1.0);
 	const [couponBarrier, setCouponBarrier] = useState(0.8);
@@ -102,7 +108,9 @@ export function usePricing() {
 	const [volProduct, setVolProduct] = useState<VolProductType>("variance-swap");
 	const [strikeVar, setStrikeVar] = useState(0.04);
 	const [strikeVol, setStrikeVol] = useState(0.2);
-	const [varSwapEngine, setVarSwapEngine] = useState<"analytic" | "mc">("analytic");
+	const [varSwapEngine, setVarSwapEngine] = useState<"analytic" | "mc">(
+		"analytic",
+	);
 	const [volObsDates, setVolObsDates] = useState("");
 	/* dispersion */
 	const [dispersionSpots, setDispersionSpots] = useState("100,120");
@@ -118,7 +126,8 @@ export function usePricing() {
 	const [rateForeign, setRateForeign] = useState(0.02);
 
 	/* ── Commodity product state ────────────────── */
-	const [commodityProduct, setCommodityProduct] = useState<CommodityProductType>("commodity-forward");
+	const [commodityProduct, setCommodityProduct] =
+		useState<CommodityProductType>("commodity-forward");
 	const [storageCost, setStorageCost] = useState(0.0);
 	const [convenienceYield, setConvenienceYield] = useState(0.0);
 	const [bondType, setBondType] = useState<BondType>("fixed-rate");
@@ -133,9 +142,11 @@ export function usePricing() {
 	const [faceValue, setFaceValue] = useState(1000);
 	const [couponRate, setCouponRate] = useState(0.05);
 	const [yieldRate, setYieldRate] = useState(0.04);
-	const [couponFrequency, setCouponFrequency] = useState<CouponFrequency>("annual");
+	const [couponFrequency, setCouponFrequency] =
+		useState<CouponFrequency>("annual");
 	const [useCurve, setUseCurve] = useState(true);
-	const [bondCurveSource, setBondCurveSource] = useState<BondCurveSource>("Treasury");
+	const [bondCurveSource, setBondCurveSource] =
+		useState<BondCurveSource>("Treasury");
 	const [curvePoints, setCurvePoints] = useState<CurvePoint[]>([
 		{ time: 0.5, df: 0.985 },
 		{ time: 1, df: 0.97 },
@@ -185,41 +196,49 @@ export function usePricing() {
 
 	/* ── load a market rate curve → discount factors ── */
 
-	const loadMarketCurve = useCallback(async (curveName: string) => {
-		setCurveLoading(true);
-		try {
-			const apiKey = import.meta.env.VITE_API_KEY;
-			const headers: Record<string, string> = { "Content-Type": "application/json" };
-			if (apiKey) headers["X-API-KEY"] = apiKey;
+	const loadMarketCurve = useCallback(
+		async (curveName: string) => {
+			setCurveLoading(true);
+			try {
+				const apiKey = import.meta.env.VITE_API_KEY;
+				const headers: Record<string, string> = {
+					"Content-Type": "application/json",
+				};
+				if (apiKey) headers["X-API-KEY"] = apiKey;
 
-			const res = await fetch(
-				`${apiBase}/market/rates/curve?curve=${encodeURIComponent(curveName)}&curve_type=zero`,
-				{ headers },
-			);
-			if (!res.ok) throw new Error(`Failed to fetch ${curveName} curve`);
+				const res = await fetch(
+					`${apiBase}/market/rates/curve?curve=${encodeURIComponent(curveName)}&curve_type=zero`,
+					{ headers },
+				);
+				if (!res.ok) throw new Error(`Failed to fetch ${curveName} curve`);
 
-			const data = (await res.json()) as { zero: { x: number; y: number }[] };
-			const points: CurvePoint[] = data.zero.map((p) => ({
-				time: p.x,
-				df: Math.exp(-(p.y / 100) * p.x),   // continuous DF from yield proxy
-			}));
-			if (points.length > 0) {
-				setCurvePoints(points);
-				setUseCurve(true);
+				const data = (await res.json()) as { zero: { x: number; y: number }[] };
+				const points: CurvePoint[] = data.zero.map((p) => ({
+					time: p.x,
+					df: Math.exp(-(p.y / 100) * p.x), // continuous DF from yield proxy
+				}));
+				if (points.length > 0) {
+					setCurvePoints(points);
+					setUseCurve(true);
+				}
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Curve fetch failed");
+			} finally {
+				setCurveLoading(false);
 			}
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Curve fetch failed");
-		} finally {
-			setCurveLoading(false);
-		}
-	}, [apiBase]);
+		},
+		[apiBase],
+	);
 
 	/* ── helpers ───────────────────────────────────── */
 
 	const formatNumber = (value?: number | null) =>
 		value === null || value === undefined ? "-" : value.toFixed(3);
 
-	const formatWithError = (value?: number | null, errorValue?: number | null) => {
+	const formatWithError = (
+		value?: number | null,
+		errorValue?: number | null,
+	) => {
 		const formatted = formatNumber(value);
 		if (formatted === "-") return "-";
 		const errorFormatted = formatNumber(errorValue);
@@ -228,10 +247,20 @@ export function usePricing() {
 	};
 
 	const buildCurvePayload = () => {
-		if (!useCurve) return { discount_times: [] as number[], discount_factors: [] as number[] };
+		if (!useCurve)
+			return {
+				discount_times: [] as number[],
+				discount_factors: [] as number[],
+			};
 		const cleaned = curvePoints
 			.map((p) => ({ time: Number(p.time), df: Number(p.df) }))
-			.filter((p) => Number.isFinite(p.time) && Number.isFinite(p.df) && p.time > 0 && p.df > 0)
+			.filter(
+				(p) =>
+					Number.isFinite(p.time) &&
+					Number.isFinite(p.df) &&
+					p.time > 0 &&
+					p.df > 0,
+			)
 			.sort((a, b) => a.time - b.time);
 		return {
 			discount_times: cleaned.map((p) => p.time),
@@ -272,7 +301,8 @@ export function usePricing() {
 
 			/* ── Dupire local-vol with live ticker ───────────── */
 			if (isDupire && isLiveVol) {
-				if (!ticker.trim()) throw new Error("Ticker is required for real-data local vol.");
+				if (!ticker.trim())
+					throw new Error("Ticker is required for real-data local vol.");
 				method = "GET";
 				const params = new URLSearchParams({
 					ticker: ticker.trim().toUpperCase(),
@@ -286,10 +316,18 @@ export function usePricing() {
 					compute_greeks: "true",
 				});
 				endpoint = `/local-vol/price?${params.toString()}`;
-			/* ── Bond pricing ───────────────────────────────── */
+				/* ── Bond pricing ───────────────────────────────── */
 			} else if (category === "fixed-income") {
-				endpoint = bondType === "zero-coupon" ? "/price/bond/zero-coupon" : "/price/bond/fixed-rate";
-				payload = { maturity, rate: yieldRate, notional: faceValue, ...curvePayload };
+				endpoint =
+					bondType === "zero-coupon"
+						? "/price/bond/zero-coupon"
+						: "/price/bond/fixed-rate";
+				payload = {
+					maturity,
+					rate: yieldRate,
+					notional: faceValue,
+					...curvePayload,
+				};
 				if (bondType === "fixed-rate") {
 					payload.coupon_rate = couponRate;
 					payload.coupon_frequency = BOND_FREQ_MAP[couponFrequency];
@@ -297,7 +335,12 @@ export function usePricing() {
 			} else if (category === "exotics") {
 				/* Exotic options — endpoint per product, payload varies */
 				const base = {
-					spot, strike, maturity, rate, dividend, vol,
+					spot,
+					strike,
+					maturity,
+					rate,
+					dividend,
+					vol,
 					is_call: isCall,
 					engine: "mc" as const,
 					n_paths: nPaths,
@@ -307,26 +350,39 @@ export function usePricing() {
 				switch (exoticProduct) {
 					case "barrier":
 						endpoint = "/price/option/barrier";
-						payload = { ...base, barrier_level: barrierLevel, barrier_kind: barrierKind, rebate, brownian_bridge: brownianBridge };
+						payload = {
+							...base,
+							barrier_level: barrierLevel,
+							barrier_kind: barrierKind,
+							rebate,
+							brownian_bridge: brownianBridge,
+						};
 						break;
 					case "digital":
 						endpoint = "/price/option/digital";
-						payload = { ...base, payoff_type: digitalPayoff, cash_amount: cashAmount };
+						payload = {
+							...base,
+							payoff_type: digitalPayoff,
+							cash_amount: cashAmount,
+						};
 						break;
 					case "lookback":
 						endpoint = "/price/option/lookback";
-					payload = {
-						...base,
-						style: lookbackStyle,
-						extremum: lookbackExtremum,
-						n_steps: lookbackNSteps,
-						mc_antithetic: true,
-					};
+						payload = {
+							...base,
+							style: lookbackStyle,
+							extremum: lookbackExtremum,
+							n_steps: lookbackNSteps,
+							mc_antithetic: true,
+						};
 						break;
 					case "basket":
 						endpoint = "/price/option/basket";
 						payload = {
-							spot, strike, maturity, rate,
+							spot,
+							strike,
+							maturity,
+							rate,
 							is_call: isCall,
 							n_paths: nPaths,
 							seed,
@@ -345,9 +401,14 @@ export function usePricing() {
 							vols: rainbowVols.split(",").map(Number),
 							dividends: rainbowDividends.split(",").map(Number),
 							pairwise_correlation: rainbowCorrelation,
-							maturity, strike, is_call: isCall, rate,
-							notional, rainbow_kind: rainbowKind,
-							n_paths: nPaths, seed,
+							maturity,
+							strike,
+							is_call: isCall,
+							rate,
+							notional,
+							rainbow_kind: rainbowKind,
+							n_paths: nPaths,
+							seed,
 						};
 						break;
 				}
@@ -355,20 +416,25 @@ export function usePricing() {
 				endpoint = "/price/future";
 				payload = { spot, strike, maturity, rate, dividend, notional };
 
-			/* ── Structured products ─────────────────────── */
+				/* ── Structured products ─────────────────────── */
 			} else if (category === "structured") {
 				if (structuredProduct === "autocall") {
 					endpoint = "/price/structured/autocall";
 					payload = {
-						spot, rate, dividend, vol,
+						spot,
+						rate,
+						dividend,
+						vol,
 						observation_dates: observationDates.split(",").map(Number),
 						autocall_barrier: autocallBarrier,
 						coupon_barrier: couponBarrier,
 						put_barrier: putBarrier,
 						coupon_rate: autocallCouponRate,
-						notional, memory_coupon: memoryCoupon,
+						notional,
+						memory_coupon: memoryCoupon,
 						ki_continuous: kiContinuous,
-						n_paths: nPaths, seed,
+						n_paths: nPaths,
+						seed,
 					};
 				} else {
 					endpoint = "/price/structured/mountain";
@@ -380,37 +446,60 @@ export function usePricing() {
 						const flat = mountainCorrelations.split(",").map(Number);
 						const n = mSpots.length;
 						correlations = Array.from({ length: n }, (_, i) =>
-							Array.from({ length: n }, (_, j) => flat[i * n + j] ?? (i === j ? 1 : 0)),
+							Array.from(
+								{ length: n },
+								(_, j) => flat[i * n + j] ?? (i === j ? 1 : 0),
+							),
 						);
 					}
 					payload = {
-						spots: mSpots, vols: mVols, dividends: mDivs,
+						spots: mSpots,
+						vols: mVols,
+						dividends: mDivs,
 						correlations,
 						observation_dates: mountainObsDates.split(",").map(Number),
-						strike, is_call: isCall, rate, notional,
-						n_paths: nPaths, seed,
+						strike,
+						is_call: isCall,
+						rate,
+						notional,
+						n_paths: nPaths,
+						seed,
 					};
 				}
 
-			/* ── Volatility products ─────────────────────── */
+				/* ── Volatility products ─────────────────────── */
 			} else if (category === "volatility") {
-				const obsDates = volObsDates.trim() ? volObsDates.split(",").map(Number) : [];
+				const obsDates = volObsDates.trim()
+					? volObsDates.split(",").map(Number)
+					: [];
 				if (volProduct === "variance-swap") {
 					endpoint = "/price/volatility/variance-swap";
 					payload = {
-						spot, rate, dividend, vol, maturity,
-						strike_var: strikeVar, notional,
+						spot,
+						rate,
+						dividend,
+						vol,
+						maturity,
+						strike_var: strikeVar,
+						notional,
 						observation_dates: obsDates,
 						engine: varSwapEngine,
-						n_paths: nPaths, seed,
+						n_paths: nPaths,
+						seed,
 					};
 				} else if (volProduct === "volatility-swap") {
 					endpoint = "/price/volatility/volatility-swap";
 					payload = {
-						spot, rate, dividend, vol, maturity,
-						strike_vol: strikeVol, notional,
+						spot,
+						rate,
+						dividend,
+						vol,
+						maturity,
+						strike_vol: strikeVol,
+						notional,
 						observation_dates: obsDates,
-						n_paths: nPaths, seed,
+						n_paths: nPaths,
+						seed,
 					};
 				} else {
 					endpoint = "/price/volatility/dispersion-swap";
@@ -420,52 +509,81 @@ export function usePricing() {
 						dividends: dispersionDividends.split(",").map(Number),
 						weights: dispersionWeights.split(",").map(Number),
 						pairwise_correlation: dispersionCorrelation,
-						maturity, strike_spread: strikeSpread,
-						rate, notional,
+						maturity,
+						strike_spread: strikeSpread,
+						rate,
+						notional,
 						observation_dates: obsDates,
-						n_paths: nPaths, seed,
+						n_paths: nPaths,
+						seed,
 					};
 				}
 
-			/* ── FX products ─────────────────────────────── */
+				/* ── FX products ─────────────────────────────── */
 			} else if (category === "fx") {
 				if (fxProduct === "fx-forward") {
 					endpoint = "/price/fx/forward";
 					payload = {
-						spot, rate_domestic: rateDomestic, rate_foreign: rateForeign,
-						vol, strike, maturity, notional,
+						spot,
+						rate_domestic: rateDomestic,
+						rate_foreign: rateForeign,
+						vol,
+						strike,
+						maturity,
+						notional,
 					};
 				} else {
 					endpoint = "/price/fx/option";
 					payload = {
-						spot, rate_domestic: rateDomestic, rate_foreign: rateForeign,
-						vol, strike, maturity, is_call: isCall, notional,
+						spot,
+						rate_domestic: rateDomestic,
+						rate_foreign: rateForeign,
+						vol,
+						strike,
+						maturity,
+						is_call: isCall,
+						notional,
 					};
 				}
 
-			/* ── Commodity products ──────────────────────── */
+				/* ── Commodity products ──────────────────────── */
 			} else if (category === "commodity") {
 				if (commodityProduct === "commodity-forward") {
 					endpoint = "/price/commodity/forward";
 					payload = {
-						spot, rate, storage_cost: storageCost,
+						spot,
+						rate,
+						storage_cost: storageCost,
 						convenience_yield: convenienceYield,
-						vol, strike, maturity, notional,
+						vol,
+						strike,
+						maturity,
+						notional,
 					};
 				} else {
 					endpoint = "/price/commodity/option";
 					payload = {
-						spot, rate, storage_cost: storageCost,
+						spot,
+						rate,
+						storage_cost: storageCost,
 						convenience_yield: convenienceYield,
-						vol, strike, maturity, is_call: isCall, notional,
+						vol,
+						strike,
+						maturity,
+						is_call: isCall,
+						notional,
 					};
 				}
-
 			} else {
 				/* Vanilla options (european, american, asian) */
 				endpoint = "/price/option/vanilla";
 				payload = {
-					spot, strike, maturity, rate, dividend, vol,
+					spot,
+					strike,
+					maturity,
+					rate,
+					dividend,
+					vol,
 					is_call: isCall,
 					is_american: product === "american",
 					engine,
@@ -485,7 +603,9 @@ export function usePricing() {
 			}
 
 			const apiKey = import.meta.env.VITE_API_KEY;
-			const headers: Record<string, string> = { "Content-Type": "application/json" };
+			const headers: Record<string, string> = {
+				"Content-Type": "application/json",
+			};
 			if (apiKey) headers["X-API-KEY"] = apiKey;
 
 			const fetchOpts: RequestInit = {
@@ -519,7 +639,9 @@ export function usePricing() {
 						rho: raw.rho ?? null,
 					},
 					mc_std_error: raw.mc_std_error ?? null,
-					diagnostics: raw.diagnostics ?? `${raw.n_clean_quotes} clean quotes · ${raw.cleaning_summary ?? ""}`,
+					diagnostics:
+						raw.diagnostics ??
+						`${raw.n_clean_quotes} clean quotes · ${raw.cleaning_summary ?? ""}`,
 				};
 			} else {
 				data = raw as PricingResponse;
@@ -537,117 +659,205 @@ export function usePricing() {
 			setError(message);
 		} finally {
 			window.clearTimeout(timeoutId);
-			if (abortControllerRef.current === controller) abortControllerRef.current = null;
+			if (abortControllerRef.current === controller)
+				abortControllerRef.current = null;
 			setLoading(false);
 		}
 	};
 
 	return {
 		/* category */
-		category, setCategory,
+		category,
+		setCategory,
 		/* model selection */
-		model, setModel,
-		volSource, setVolSource,
-		ticker, setTicker,
-		tickerLoading, tickerError,
-		isDupire, isLiveVol,
-		lvNStepsPerYear, setLvNStepsPerYear,
+		model,
+		setModel,
+		volSource,
+		setVolSource,
+		ticker,
+		setTicker,
+		tickerLoading,
+		tickerError,
+		isDupire,
+		isLiveVol,
+		lvNStepsPerYear,
+		setLvNStepsPerYear,
 		/* instrument / product */
-		instrument, setInstrument,
-		product, setProduct,
-		engine, setEngine: setEngineWrapped,
-		isCall, setIsCall,
-		averageType, setAverageType,
+		instrument,
+		setInstrument,
+		product,
+		setProduct,
+		engine,
+		setEngine: setEngineWrapped,
+		isCall,
+		setIsCall,
+		averageType,
+		setAverageType,
 		/* exotic fields */
-		exoticProduct, setExoticProduct,
-		barrierLevel, setBarrierLevel,
-		barrierKind, setBarrierKind,
-		rebate, setRebate,
-		brownianBridge, setBrownianBridge,
-		digitalPayoff, setDigitalPayoff,
-		cashAmount, setCashAmount,
+		exoticProduct,
+		setExoticProduct,
+		barrierLevel,
+		setBarrierLevel,
+		barrierKind,
+		setBarrierKind,
+		rebate,
+		setRebate,
+		brownianBridge,
+		setBrownianBridge,
+		digitalPayoff,
+		setDigitalPayoff,
+		cashAmount,
+		setCashAmount,
 		/* lookback */
-		lookbackStyle, setLookbackStyle,
-		lookbackExtremum, setLookbackExtremum,
-		lookbackNSteps, setLookbackNSteps,
-		basketWeights, setBasketWeights,
-		basketSpots, setBasketSpots,
-		basketVols, setBasketVols,
-		basketDividends, setBasketDividends,
-		basketCorrelation, setBasketCorrelation,
+		lookbackStyle,
+		setLookbackStyle,
+		lookbackExtremum,
+		setLookbackExtremum,
+		lookbackNSteps,
+		setLookbackNSteps,
+		basketWeights,
+		setBasketWeights,
+		basketSpots,
+		setBasketSpots,
+		basketVols,
+		setBasketVols,
+		basketDividends,
+		setBasketDividends,
+		basketCorrelation,
+		setBasketCorrelation,
 		/* rainbow */
-		rainbowKind, setRainbowKind,
-		rainbowSpots, setRainbowSpots,
-		rainbowVols, setRainbowVols,
-		rainbowDividends, setRainbowDividends,
-		rainbowCorrelation, setRainbowCorrelation,
+		rainbowKind,
+		setRainbowKind,
+		rainbowSpots,
+		setRainbowSpots,
+		rainbowVols,
+		setRainbowVols,
+		rainbowDividends,
+		setRainbowDividends,
+		rainbowCorrelation,
+		setRainbowCorrelation,
 		/* structured */
-		structuredProduct, setStructuredProduct,
-		autocallBarrier, setAutocallBarrier,
-		couponBarrier, setCouponBarrier,
-		putBarrier, setPutBarrier,
-		autocallCouponRate, setAutocallCouponRate,
-		memoryCoupon, setMemoryCoupon,
-		kiContinuous, setKiContinuous,
-		observationDates, setObservationDates,
-		mountainSpots, setMountainSpots,
-		mountainVols, setMountainVols,
-		mountainDividends, setMountainDividends,
-		mountainCorrelations, setMountainCorrelations,
-		mountainObsDates, setMountainObsDates,
+		structuredProduct,
+		setStructuredProduct,
+		autocallBarrier,
+		setAutocallBarrier,
+		couponBarrier,
+		setCouponBarrier,
+		putBarrier,
+		setPutBarrier,
+		autocallCouponRate,
+		setAutocallCouponRate,
+		memoryCoupon,
+		setMemoryCoupon,
+		kiContinuous,
+		setKiContinuous,
+		observationDates,
+		setObservationDates,
+		mountainSpots,
+		setMountainSpots,
+		mountainVols,
+		setMountainVols,
+		mountainDividends,
+		setMountainDividends,
+		mountainCorrelations,
+		setMountainCorrelations,
+		mountainObsDates,
+		setMountainObsDates,
 		/* volatility products */
-		volProduct, setVolProduct,
-		strikeVar, setStrikeVar,
-		strikeVol, setStrikeVol,
-		varSwapEngine, setVarSwapEngine,
-		volObsDates, setVolObsDates,
-		dispersionSpots, setDispersionSpots,
-		dispersionVols, setDispersionVols,
-		dispersionDividends, setDispersionDividends,
-		dispersionWeights, setDispersionWeights,
-		dispersionCorrelation, setDispersionCorrelation,
-		strikeSpread, setStrikeSpread,
+		volProduct,
+		setVolProduct,
+		strikeVar,
+		setStrikeVar,
+		strikeVol,
+		setStrikeVol,
+		varSwapEngine,
+		setVarSwapEngine,
+		volObsDates,
+		setVolObsDates,
+		dispersionSpots,
+		setDispersionSpots,
+		dispersionVols,
+		setDispersionVols,
+		dispersionDividends,
+		setDispersionDividends,
+		dispersionWeights,
+		setDispersionWeights,
+		dispersionCorrelation,
+		setDispersionCorrelation,
+		strikeSpread,
+		setStrikeSpread,
 		/* FX */
-		fxProduct, setFxProduct,
-		rateDomestic, setRateDomestic,
-		rateForeign, setRateForeign,
+		fxProduct,
+		setFxProduct,
+		rateDomestic,
+		setRateDomestic,
+		rateForeign,
+		setRateForeign,
 		/* commodity */
-		commodityProduct, setCommodityProduct,
-		storageCost, setStorageCost,
-		convenienceYield, setConvenienceYield,
+		commodityProduct,
+		setCommodityProduct,
+		storageCost,
+		setStorageCost,
+		convenienceYield,
+		setConvenienceYield,
 		/* option / future fields */
-		spot, setSpot,
-		strike, setStrike,
-		maturity, setMaturity,
-		rate, setRate,
-		dividend, setDividend,
-		vol, setVol,
-		notional, setNotional,
+		spot,
+		setSpot,
+		strike,
+		setStrike,
+		maturity,
+		setMaturity,
+		rate,
+		setRate,
+		dividend,
+		setDividend,
+		vol,
+		setVol,
+		notional,
+		setNotional,
 		/* MC / tree / PDE params */
-		nPaths, setNPaths,
-		seed, setSeed,
-		mcEpsilon, setMcEpsilon,
-		treeSteps, setTreeSteps,
-		pdeSpaceSteps, setPdeSpaceSteps,
-		pdeTimeSteps, setPdeTimeSteps,
+		nPaths,
+		setNPaths,
+		seed,
+		setSeed,
+		mcEpsilon,
+		setMcEpsilon,
+		treeSteps,
+		setTreeSteps,
+		pdeSpaceSteps,
+		setPdeSpaceSteps,
+		pdeTimeSteps,
+		setPdeTimeSteps,
 		/* bond fields */
-		bondType, setBondType,
-		faceValue, setFaceValue,
-		couponRate, setCouponRate,
-		yieldRate, setYieldRate,
-		couponFrequency, setCouponFrequency,
-		useCurve, setUseCurve,
-		bondCurveSource, setBondCurveSource,
-		curvePoints, setCurvePoints,
+		bondType,
+		setBondType,
+		faceValue,
+		setFaceValue,
+		couponRate,
+		setCouponRate,
+		yieldRate,
+		setYieldRate,
+		couponFrequency,
+		setCouponFrequency,
+		useCurve,
+		setUseCurve,
+		bondCurveSource,
+		setBondCurveSource,
+		curvePoints,
+		setCurvePoints,
 		sampleCurve: SAMPLE_CURVE,
 		loadMarketCurve,
 		curveLoading,
 		/* derived / results */
 		fairForward,
-		loading, error, result,
+		loading,
+		error,
+		result,
 		/* actions */
-		handleSubmit, stopPricing,
-		formatNumber, formatWithError,
+		handleSubmit,
+		stopPricing,
+		formatNumber,
+		formatWithError,
 	};
 }
 

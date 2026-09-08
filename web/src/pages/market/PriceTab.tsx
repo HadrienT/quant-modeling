@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy front, deleted incrementally across the web/ rewrite (blueprint)
 import Plot from "react-plotly.js";
 import { PricePoint, TimeRange } from "./types";
 
@@ -40,7 +41,7 @@ export const PriceTab = ({
 	change,
 	changePct,
 	visibleSeries,
-	yAxisRange
+	yAxisRange,
 }: PriceTabProps) => (
 	<section className="card" style={{ marginBottom: 24 }}>
 		<div className="grid-2" style={{ marginBottom: 18 }}>
@@ -62,7 +63,14 @@ export const PriceTab = ({
 				</datalist>
 			</label>
 		</div>
-		<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+		<div
+			style={{
+				display: "flex",
+				justifyContent: "space-between",
+				alignItems: "center",
+				gap: 16,
+			}}
+		>
 			<div>
 				<h2 style={{ marginBottom: 6 }}>Price tape</h2>
 				<p className="price-muted">
@@ -81,8 +89,18 @@ export const PriceTab = ({
 				))}
 			</div>
 		</div>
-		<div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
-			<label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#5c6f7b" }}>
+		<div
+			style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}
+		>
+			<label
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					fontSize: 14,
+					color: "#5c6f7b",
+				}}
+			>
 				Y-axis padding:
 				<input
 					type="range"
@@ -93,7 +111,9 @@ export const PriceTab = ({
 					onChange={(e) => onPaddingChange(Number(e.target.value))}
 					style={{ width: 150 }}
 				/>
-				<span className="mono" style={{ minWidth: 45 }}>{yAxisPadding}%</span>
+				<span className="mono" style={{ minWidth: 45 }}>
+					{yAxisPadding}%
+				</span>
 			</label>
 		</div>
 		{priceError && <p className="price-muted">{priceError}</p>}
@@ -102,7 +122,7 @@ export const PriceTab = ({
 				display: "grid",
 				gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
 				gap: 12,
-				marginTop: 18
+				marginTop: 18,
 			}}
 		>
 			<div className="hero-card" style={{ minHeight: 86 }}>
@@ -112,10 +132,14 @@ export const PriceTab = ({
 			<div className="hero-card" style={{ minHeight: 86 }}>
 				<p className="price-muted">Change (1D)</p>
 				<h3>
-					{latest && previous ? `${change >= 0 ? "+" : ""}${formatPrice(change)}` : "-"}
+					{latest && previous
+						? `${change >= 0 ? "+" : ""}${formatPrice(change)}`
+						: "-"}
 				</h3>
 				<p className="price-muted">
-					{latest && previous ? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%` : ""}
+					{latest && previous
+						? `${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%`
+						: ""}
 				</p>
 			</div>
 			<div className="hero-card" style={{ minHeight: 86 }}>
@@ -135,8 +159,8 @@ export const PriceTab = ({
 						line: { color: "#1f8a70", width: 2.4 },
 						fill: "tozeroy",
 						fillcolor: "rgba(31,138,112,0.12)",
-						name: debouncedEquity
-					}
+						name: debouncedEquity,
+					},
 				]}
 				layout={{
 					autosize: true,
@@ -147,14 +171,14 @@ export const PriceTab = ({
 					xaxis: {
 						showgrid: false,
 						tickfont: { color: "#5c6f7b" },
-						rangeslider: { visible: true, thickness: 0.08 }
+						rangeslider: { visible: true, thickness: 0.08 },
 					},
 					yaxis: {
 						tickfont: { color: "#5c6f7b" },
 						gridcolor: "rgba(18,32,45,0.08)",
 						zeroline: false,
-						range: yAxisRange
-					}
+						range: yAxisRange,
+					},
 				}}
 				config={{ responsive: true, displayModeBar: false }}
 				style={{ width: "100%", height: "100%" }}

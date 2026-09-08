@@ -53,50 +53,79 @@ function AuthButton() {
 
 	return (
 		<>
-			<button type="button" className="btn-primary btn-sm" onClick={() => { setShowModal(true); setIsRegister(false); setError(""); }}>
+			<button
+				type="button"
+				className="btn-primary btn-sm"
+				onClick={() => {
+					setShowModal(true);
+					setIsRegister(false);
+					setError("");
+				}}
+			>
 				Log in
 			</button>
-			{showModal && createPortal(
-				<div className="auth-overlay" onClick={() => setShowModal(false)}>
-					<div className="auth-modal card" onClick={(e) => e.stopPropagation()}>
-						<div className="auth-modal-header">
-							<h3>{isRegister ? "Create account" : "Log in"}</h3>
-							<button className="btn-icon" type="button" onClick={() => setShowModal(false)}>✕</button>
-						</div>
-						{error && <div className="auth-error">{error}</div>}
-						<label className="field">
-							Username
-							<input
-								type="text"
-								value={user}
-								onChange={(e) => setUser(e.target.value)}
-								onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-								autoFocus
-							/>
-						</label>
-						<label className="field">
-							Password
-							<input
-								type="password"
-								value={pass}
-								onChange={(e) => setPass(e.target.value)}
-								onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-							/>
-						</label>
-						<button type="button" className="btn-primary" onClick={handleSubmit} disabled={submitting} style={{ marginTop: 8, width: "100%" }}>
-							{submitting ? "…" : isRegister ? "Register" : "Log in"}
-						</button>
-						<button
-							type="button"
-							className="auth-toggle"
-							onClick={() => { setIsRegister(!isRegister); setError(""); }}
+			{showModal &&
+				createPortal(
+					<div className="auth-overlay" onClick={() => setShowModal(false)}>
+						<div
+							className="auth-modal card"
+							onClick={(e) => e.stopPropagation()}
 						>
-							{isRegister ? "Already have an account? Log in" : "No account? Register"}
-						</button>
-					</div>
-				</div>,
-				document.body
-			)}
+							<div className="auth-modal-header">
+								<h3>{isRegister ? "Create account" : "Log in"}</h3>
+								<button
+									className="btn-icon"
+									type="button"
+									onClick={() => setShowModal(false)}
+								>
+									✕
+								</button>
+							</div>
+							{error && <div className="auth-error">{error}</div>}
+							<label className="field">
+								Username
+								<input
+									type="text"
+									value={user}
+									onChange={(e) => setUser(e.target.value)}
+									onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+									autoFocus
+								/>
+							</label>
+							<label className="field">
+								Password
+								<input
+									type="password"
+									value={pass}
+									onChange={(e) => setPass(e.target.value)}
+									onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+								/>
+							</label>
+							<button
+								type="button"
+								className="btn-primary"
+								onClick={handleSubmit}
+								disabled={submitting}
+								style={{ marginTop: 8, width: "100%" }}
+							>
+								{submitting ? "…" : isRegister ? "Register" : "Log in"}
+							</button>
+							<button
+								type="button"
+								className="auth-toggle"
+								onClick={() => {
+									setIsRegister(!isRegister);
+									setError("");
+								}}
+							>
+								{isRegister
+									? "Already have an account? Log in"
+									: "No account? Register"}
+							</button>
+						</div>
+					</div>,
+					document.body,
+				)}
 		</>
 	);
 }
@@ -106,7 +135,11 @@ function AppInner() {
 		<div className="app">
 			<header className="nav">
 				<div className="nav-inner">
-					<button className="nav-brand" type="button" onClick={() => window.location.reload()}>
+					<button
+						className="nav-brand"
+						type="button"
+						onClick={() => window.location.reload()}
+					>
 						<div className="nav-mark" />
 						<div>
 							<span className="nav-title">Quant studio</span>
@@ -148,7 +181,12 @@ function AppInner() {
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
 			</main>
-			<footer className="build-footer" title={`Build ${import.meta.env.VITE_COMMIT_SHA || "dev"}`}>{import.meta.env.VITE_COMMIT_SHA || "dev"}</footer>
+			<footer
+				className="build-footer"
+				title={`Build ${import.meta.env.VITE_COMMIT_SHA || "dev"}`}
+			>
+				{import.meta.env.VITE_COMMIT_SHA || "dev"}
+			</footer>
 		</div>
 	);
 }

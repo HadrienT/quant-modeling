@@ -28,7 +28,7 @@ export default function PortfolioBuilder({
 	onAdd,
 	onClear,
 	legs,
-	onRemove
+	onRemove,
 }: PortfolioBuilderProps) {
 	return (
 		<div>
@@ -37,14 +37,21 @@ export default function PortfolioBuilder({
 					Name
 					<input
 						value={draft.name}
-						onChange={(event) => onDraftChange({ ...draft, name: event.target.value })}
+						onChange={(event) =>
+							onDraftChange({ ...draft, name: event.target.value })
+						}
 					/>
 				</label>
 				<label className="field">
 					Type
 					<select
 						value={draft.type}
-						onChange={(event) => onDraftChange({ ...draft, type: event.target.value as OptionType })}
+						onChange={(event) =>
+							onDraftChange({
+								...draft,
+								type: event.target.value as OptionType,
+							})
+						}
 					>
 						<option value="call">Call</option>
 						<option value="put">Put</option>
@@ -55,7 +62,12 @@ export default function PortfolioBuilder({
 					Side
 					<select
 						value={draft.side}
-						onChange={(event) => onDraftChange({ ...draft, side: event.target.value as OptionSide })}
+						onChange={(event) =>
+							onDraftChange({
+								...draft,
+								side: event.target.value as OptionSide,
+							})
+						}
 					>
 						<option value="long">Long</option>
 						<option value="short">Short</option>
@@ -66,7 +78,9 @@ export default function PortfolioBuilder({
 					<input
 						type="number"
 						value={draft.strike}
-						onChange={(event) => onDraftChange({ ...draft, strike: Number(event.target.value) })}
+						onChange={(event) =>
+							onDraftChange({ ...draft, strike: Number(event.target.value) })
+						}
 					/>
 				</label>
 				<label className="field">
@@ -74,7 +88,9 @@ export default function PortfolioBuilder({
 					<input
 						type="number"
 						value={draft.quantity}
-						onChange={(event) => onDraftChange({ ...draft, quantity: Number(event.target.value) })}
+						onChange={(event) =>
+							onDraftChange({ ...draft, quantity: Number(event.target.value) })
+						}
 					/>
 				</label>
 			</div>
@@ -82,11 +98,7 @@ export default function PortfolioBuilder({
 				<button className="button" type="button" onClick={onAdd}>
 					Add leg
 				</button>
-				<button
-					className="button secondary"
-					type="button"
-					onClick={onClear}
-				>
+				<button className="button secondary" type="button" onClick={onClear}>
 					Clear portfolio
 				</button>
 			</div>
@@ -101,7 +113,11 @@ export default function PortfolioBuilder({
 								K {leg.strike} · premium {leg.premium} · qty {leg.quantity}
 							</span>
 						</div>
-						<button className="button ghost" type="button" onClick={() => onRemove(leg.id)}>
+						<button
+							className="button ghost"
+							type="button"
+							onClick={() => onRemove(leg.id)}
+						>
 							Remove
 						</button>
 					</div>

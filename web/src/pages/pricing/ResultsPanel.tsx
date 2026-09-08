@@ -12,7 +12,12 @@ function fmt(v?: number | null): string {
 	return v.toFixed(6);
 }
 
-export default function ResultsPanel({ result, loading, category, formatWithError }: Props) {
+export default function ResultsPanel({
+	result,
+	loading,
+	category,
+	formatWithError,
+}: Props) {
 	const isBond = category === "fixed-income";
 	const ba = result?.bond_analytics;
 
@@ -26,7 +31,9 @@ export default function ResultsPanel({ result, loading, category, formatWithErro
 				<div className="result-stack">
 					<div className="result-kv">
 						<span className="result-label">NPV</span>
-						<span className="result-value">{formatWithError(result.npv, result.mc_std_error)}</span>
+						<span className="result-value">
+							{formatWithError(result.npv, result.mc_std_error)}
+						</span>
 					</div>
 
 					{/* ── Greeks (options / futures only) ─── */}
@@ -34,23 +41,48 @@ export default function ResultsPanel({ result, loading, category, formatWithErro
 						<div className="result-grid">
 							<div>
 								<span className="result-label">Delta</span>
-								<span className="result-value">{formatWithError(result.greeks.delta, result.greeks.delta_std_error)}</span>
+								<span className="result-value">
+									{formatWithError(
+										result.greeks.delta,
+										result.greeks.delta_std_error,
+									)}
+								</span>
 							</div>
 							<div>
 								<span className="result-label">Gamma</span>
-								<span className="result-value">{formatWithError(result.greeks.gamma, result.greeks.gamma_std_error)}</span>
+								<span className="result-value">
+									{formatWithError(
+										result.greeks.gamma,
+										result.greeks.gamma_std_error,
+									)}
+								</span>
 							</div>
 							<div>
 								<span className="result-label">Vega</span>
-								<span className="result-value">{formatWithError(result.greeks.vega, result.greeks.vega_std_error)}</span>
+								<span className="result-value">
+									{formatWithError(
+										result.greeks.vega,
+										result.greeks.vega_std_error,
+									)}
+								</span>
 							</div>
 							<div>
 								<span className="result-label">Theta</span>
-								<span className="result-value">{formatWithError(result.greeks.theta, result.greeks.theta_std_error)}</span>
+								<span className="result-value">
+									{formatWithError(
+										result.greeks.theta,
+										result.greeks.theta_std_error,
+									)}
+								</span>
 							</div>
 							<div>
 								<span className="result-label">Rho</span>
-								<span className="result-value">{formatWithError(result.greeks.rho, result.greeks.rho_std_error)}</span>
+								<span className="result-value">
+									{formatWithError(
+										result.greeks.rho,
+										result.greeks.rho_std_error,
+									)}
+								</span>
 							</div>
 						</div>
 					)}
@@ -60,11 +92,15 @@ export default function ResultsPanel({ result, loading, category, formatWithErro
 						<div className="result-grid">
 							<div>
 								<span className="result-label">Macaulay Duration</span>
-								<span className="result-value">{fmt(ba.macaulay_duration)}</span>
+								<span className="result-value">
+									{fmt(ba.macaulay_duration)}
+								</span>
 							</div>
 							<div>
 								<span className="result-label">Modified Duration</span>
-								<span className="result-value">{fmt(ba.modified_duration)}</span>
+								<span className="result-value">
+									{fmt(ba.modified_duration)}
+								</span>
 							</div>
 							<div>
 								<span className="result-label">Convexity</span>
