@@ -16,11 +16,15 @@ services:
       - BQ_DATASET_ID=${BQ_DATASET_ID:-}
       - BQ_TABLE_ID=${BQ_TABLE_ID:-}
       - FRED_API_KEY=${FRED_API_KEY:-}
+      # Optional: BigQuery price tape / backtest. If secrets/bq-key.json isn't a
+      # real key file those routes just return 500 — the rest of the app works.
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/bq-key.json
       - LOG_DIR=/app/logs
       - COMMIT_SHA=${COMMIT_SHA:-dev}
     volumes:
       - ./api:/app/api
       - ./logs/quantmodeling:/app/logs
+      - ./secrets/bq-key.json:/secrets/bq-key.json:ro
       - qm_data:/app/data
 
   web:
