@@ -45,17 +45,7 @@ export function ChartFrame({
 	actions?: ReactNode;
 }) {
 	const [showTable, setShowTable] = useState(false);
-	// Bumped every time we return to the chart, so canvas engines
-	// (lightweight-charts) get a clean re-init rather than a blank instance.
-	const [chartMount, setChartMount] = useState(0);
 	const headingId = useId();
-
-	function toggleTable() {
-		setShowTable((v) => {
-			if (v) setChartMount((n) => n + 1);
-			return !v;
-		});
-	}
 
 	const csv = useMemo(() => {
 		if (!table) return "";
@@ -103,7 +93,7 @@ export function ChartFrame({
 								size="icon"
 								aria-pressed={showTable}
 								aria-label="Toggle data table"
-								onClick={toggleTable}
+								onClick={() => setShowTable((v) => !v)}
 							>
 								<Table2 className="size-3.5" />
 							</Button>
@@ -148,14 +138,10 @@ export function ChartFrame({
 						{emptyLabel}
 					</div>
 				) : showTable && table ? (
-					// The area is dedicated to one view at a time.
+					// The plot area shows one view at a time — chart or table.
 					<DataTable table={table} />
 				) : (
-					// `key` forces a fresh mount when returning from the table, so a
-					// canvas engine (lightweight-charts) re-initialises cleanly.
-					<div key={chartMount} className="h-full w-full">
-						{children}
-					</div>
+					children
 				)}
 			</div>
 		</figure>

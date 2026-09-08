@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
 	type IChartApi,
 	type ISeriesApi,
@@ -87,13 +87,18 @@ export function PriceSeriesChart({
 	height?: number;
 }) {
 	const t = useChartTheme();
-	const el = useRef<HTMLDivElement>(null);
-	const chart = useRef<IChartApi>(null);
+	// Callback ref → state, so the chart is (re)built whenever the container DOM
+	// node mounts. ChartFrame swaps the plot area between chart and table without
+	// re-rendering this component, so a plain effect + ref would never re-run.
+	const [el, setEl] = useState<HTMLDivElement | null>(null);
+	const setContainer = useCallback(
+		(node: HTMLDivElement | null) => setEl(node),
+		[],
+	);
 
 	useEffect(() => {
-		if (!el.current || !candles?.length) return;
-		const c = createChart(el.current, { ...baseOptions(), height });
-		chart.current = c;
+		if (!el || !candles?.length) return;
+		const c = createChart(el, { ...baseOptions(), height });
 
 		const price =
 			kind === "candles"
@@ -139,13 +144,13 @@ export function PriceSeriesChart({
 			);
 		}
 
-		const stopFit = fitToContainer(c, el.current);
+		const stopFit = fitToContainer(c, el);
 		c.timeScale().fitContent();
 		return () => {
 			stopFit();
 			c.remove();
 		};
-	}, [candles, kind, height, t]);
+	}, [el, candles, kind, height, t]);
 
 	return (
 		<ChartFrame
@@ -163,7 +168,7 @@ export function PriceSeriesChart({
 					: undefined
 			}
 		>
-			<div ref={el} style={{ height, width: "100%" }} />
+			<div ref={setContainer} style={{ height, width: "100%" }} />
 		</ChartFrame>
 	);
 }
@@ -187,11 +192,13 @@ export function EquityAndDrawdownChart({
 	error?: unknown;
 }) {
 	const t = useChartTheme();
-	const topEl = useRef<HTMLDivElement>(null);
-	const botEl = useRef<HTMLDivElement>(null);
+	const [topEl, setTopEl] = useState<HTMLDivElement | null>(null);
+	const [botEl, setBotEl] = useState<HTMLDivElement | null>(null);
+	const setTop = useCallback((n: HTMLDivElement | null) => setTopEl(n), []);
+	const setBot = useCallback((n: HTMLDivElement | null) => setBotEl(n), []);
 
 	useEffect(() => {
-		if (!topEl.current || !botEl.current || !portfolio?.length) return;
+		if (!topEl || !botEl || !portfolio?.length) return;
 
 		const index100 = (s: LinePoint[]) => {
 			const base = s[0]?.value || 1;
@@ -208,8 +215,8 @@ export function EquityAndDrawdownChart({
 			});
 		};
 
-		const top = createChart(topEl.current, { ...baseOptions(), height: 260 });
-		const bot = createChart(botEl.current, { ...baseOptions(), height: 120 });
+		const top = createChart(topEl, { ...baseOptions(), height: 260 });
+		const bot = createChart(botEl, { ...baseOptions(), height: 120 });
 
 		const pLine = top.addSeries(LineSeries, {
 			color: t.series[0],
@@ -241,8 +248,8 @@ export function EquityAndDrawdownChart({
 		};
 		sync(top, bot);
 		sync(bot, top);
-		const stopTop = fitToContainer(top, topEl.current);
-		const stopBot = fitToContainer(bot, botEl.current);
+		const stopTop = fitToContainer(top, topEl);
+		const stopBot = fitToContainer(bot, botEl);
 		top.timeScale().fitContent();
 
 		return () => {
@@ -251,7 +258,7 @@ export function EquityAndDrawdownChart({
 			top.remove();
 			bot.remove();
 		};
-	}, [portfolio, benchmark, t]);
+	}, [topEl, botEl, portfolio, benchmark, t]);
 
 	return (
 		<ChartFrame
@@ -274,8 +281,8 @@ export function EquityAndDrawdownChart({
 			]}
 		>
 			<div className="flex flex-col gap-1">
-				<div ref={topEl} style={{ height: 260, width: "100%" }} />
-				<div ref={botEl} style={{ height: 120, width: "100%" }} />
+				<div ref={setTop} style={{ height: 260, width: "100%" }} />
+				<div ref={setBot} style={{ height: 120, width: "100%" }} />
 			</div>
 		</ChartFrame>
 	);
