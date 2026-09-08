@@ -40,6 +40,11 @@ def _install_stub() -> None:
     mod = types.ModuleType("quantmodeling")
     mod.__getattr__ = lambda _name: _Any()  # type: ignore[attr-defined]
     sys.modules["quantmodeling"] = mod
+    # auth.py fails fast without a real secret; provide one for the schema dump.
+    import os
+
+    os.environ.setdefault("JWT_SECRET", "openapi-dump-secret-not-for-runtime")
+    os.environ.setdefault("QM_STORAGE", "local")
 
 
 def main() -> int:

@@ -4,7 +4,7 @@ import { Command, Moon, Sun } from "lucide-react";
 import { Button, cn } from "@/shared/ui";
 import { setTheme, useTheme } from "@/app/theme";
 import { ROUTES } from "@/app/router";
-import { SessionMenu } from "@/app/session/SessionMenu";
+import { SessionMenu } from "@/features/auth";
 
 const CommandPalette = lazy(() => import("@/app/command/CommandPalette"));
 

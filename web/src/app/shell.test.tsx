@@ -10,6 +10,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { makeQueryClient } from "@/shared/api";
+import { SessionProvider } from "@/shared/session";
+import { TooltipProvider } from "@/shared/ui";
 import { AppLayout } from "./layout/AppLayout";
 import { RouteError } from "./layout/RouteError";
 
@@ -37,7 +39,11 @@ function renderShell(initialPath = "/ok") {
 	const qc = makeQueryClient();
 	return render(
 		<QueryClientProvider client={qc}>
-			<RouterProvider router={router as never} />
+			<SessionProvider>
+				<TooltipProvider>
+					<RouterProvider router={router as never} />
+				</TooltipProvider>
+			</SessionProvider>
 		</QueryClientProvider>,
 	);
 }

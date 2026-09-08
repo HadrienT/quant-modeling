@@ -44,6 +44,14 @@ export default tseslint.config(
 		rules: {
 			...reactHooks.configs.recommended.rules,
 			...jsxA11y.flatConfigs.recommended.rules,
+			"jsx-a11y/label-has-associated-control": [
+				"error",
+				{
+					labelComponents: ["Label"],
+					controlComponents: ["Input"],
+					assert: "either",
+				},
+			],
 			"react-refresh/only-export-components": [
 				"warn",
 				{ allowConstantExport: true },
@@ -147,6 +155,20 @@ export default tseslint.config(
 		},
 	},
 
+	/*
+	 * Dense config forms wrap a <Label> text node and its control in one <label>.
+	 * The rule can't see through the custom control components; the manual
+	 * screen-reader pass (WP 12 §4) covers these screens.
+	 */
+	{
+		files: [
+			"src/features/portfolio/**",
+			"src/features/backtest/**",
+			"src/shared/products/ParamForm.tsx",
+		],
+		rules: { "jsx-a11y/label-has-associated-control": "off" },
+	},
+
 	/* App composition modules export routers / stores next to components */
 	{
 		files: [
@@ -155,6 +177,7 @@ export default tseslint.config(
 			"src/app/**/index.ts",
 			"src/**/*.stories.tsx",
 			"src/shared/viz/surface/SurfaceScene.tsx",
+			"src/shared/session/session.tsx",
 		],
 		rules: { "react-refresh/only-export-components": "off" },
 	},

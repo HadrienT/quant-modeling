@@ -7,8 +7,8 @@ from ..auth import (
     AuthResponse,
     UserInfo,
     login_user,
-    optional_user,
     register_user,
+    require_user,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -25,7 +25,6 @@ async def api_login(body: AuthRequest):
 
 
 @router.get("/me", response_model=UserInfo)
-async def api_me(user: str = Depends(optional_user)):
-    if user is None:
-        return UserInfo(username="")
+async def api_me(user: str = Depends(require_user)):
+    # 401 on an invalid/absent token (was 200 with an empty username — WP 04).
     return UserInfo(username=user)

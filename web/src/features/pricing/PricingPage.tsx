@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Copy, GitCompareArrows } from "lucide-react";
 import { CATALOG_BY_KEY, ProductInfo } from "@/shared/products";
 import { Button, cn, toast } from "@/shared/ui";
-import { ParamForm } from "./ParamForm";
+import { ParamForm } from "@/shared/products";
 import { ProductPicker } from "./ProductPicker";
 import { ResultsPanel } from "./ResultsPanel";
 import { useWorkbench } from "./useWorkbench";

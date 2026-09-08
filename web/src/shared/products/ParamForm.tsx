@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ProductDescriptor } from "@/shared/products";
 import { Input, Label } from "@/shared/ui";
+import type { ProductDescriptor } from "./types";
 import { fieldsFromSchema } from "./zodFields";
 
 /**
