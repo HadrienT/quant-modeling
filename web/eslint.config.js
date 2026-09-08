@@ -119,33 +119,6 @@ export default tseslint.config(
 		},
 	},
 
-	/* Legacy front — deleted WP by WP; keep it merely lint-clean, not strict */
-	{
-		files: [
-			"src/App.tsx",
-			"src/main.tsx",
-			"src/api/**",
-			"src/auth/**",
-			"src/components/**",
-			"src/pages/**",
-			"src/utils/**",
-			"src/vite-env.d.ts",
-		],
-		rules: {
-			"import/order": "off",
-			"jsx-a11y/no-autofocus": "off",
-			"jsx-a11y/click-events-have-key-events": "off",
-			"jsx-a11y/no-static-element-interactions": "off",
-			"jsx-a11y/label-has-associated-control": "off",
-			"@typescript-eslint/consistent-type-imports": "off",
-			"@typescript-eslint/no-explicit-any": "off",
-			"@typescript-eslint/no-unused-vars": "off",
-			"@typescript-eslint/ban-ts-comment": "off",
-			"react-hooks/exhaustive-deps": "off",
-			"react-refresh/only-export-components": "off",
-		},
-	},
-
 	/* Design-system dir: components legitimately co-export variants & types */
 	{
 		files: ["src/shared/ui/**"],
