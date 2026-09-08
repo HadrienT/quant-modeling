@@ -68,7 +68,6 @@ export default tseslint.config(
 						"index",
 					],
 					"newlines-between": "never",
-					alphabetize: { order: "asc", caseInsensitive: true },
 				},
 			],
 			"no-console": ["error", { allow: ["warn", "error"] }],
@@ -161,9 +160,25 @@ export default tseslint.config(
 		},
 	},
 
-	/* Config files & tooling */
+	/* Design-system dir: components legitimately co-export variants & types */
 	{
-		files: ["*.config.{ts,js}", ".storybook/**", "e2e/**", "scripts/**"],
-		rules: { "no-console": "off", "import/order": "off" },
+		files: ["src/shared/ui/**"],
+		rules: {
+			"react-refresh/only-export-components": "off",
+			"jsx-a11y/label-has-associated-control": "off",
+		},
+	},
+
+	/* Config files & tooling (Node scripts) */
+	{
+		files: [
+			"*.config.{ts,js}",
+			".storybook/**",
+			"e2e/**",
+			"scripts/**",
+			"tests/**",
+		],
+		languageOptions: { globals: { ...globals.node } },
+		rules: { "no-console": "off", "import/order": "off", "no-undef": "off" },
 	},
 );

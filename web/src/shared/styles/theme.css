@@ -5,6 +5,11 @@
  * Dark is the default (ADR-009). Light is complete and maintained.
  * WebGL cannot read these variables: shared/styles/tokens.ts bridges them.
  * No hard-coded hex outside this file (enforced by a discipline test, WP 12).
+ *
+ * Structure: @theme declares the DEFAULT (dark) palette and registers the
+ * Tailwind utility names (bg-canvas, text-ink, border-hairline, …). Utilities
+ * emit `var(--color-*)`, so overriding the raw custom property in a more
+ * specific selector re-themes every utility without regenerating classes.
  */
 
 @theme {
@@ -14,7 +19,7 @@
 		"JetBrains Mono", ui-monospace, "SF Mono", "Menlo", "Consolas",
 		"Liberation Mono", monospace;
 
-	/* Restricted type scale — 5 sizes, density comes from line-height (WP 01 §5) */
+	/* Restricted type scale — 5 sizes; density comes from line-height (WP 01 §5) */
 	--text-2xs: 0.6875rem;
 	--text-2xs--line-height: 1rem;
 	--text-xs: 0.75rem;
@@ -32,12 +37,8 @@
 	--radius-sm: 5px;
 	--radius-md: 8px;
 	--radius-lg: 12px;
-}
 
-/* ── Dark palette (default) ─────────────────────────────────────────────── */
-:root {
-	color-scheme: dark;
-
+	/* ── Dark palette (default) ──────────────────────────────────────────── */
 	--color-canvas: #0b0e13;
 	--color-surface: #141922;
 	--color-surface-raised: #1b212c;
@@ -49,6 +50,7 @@
 
 	--color-accent: #3987e5;
 	--color-accent-ink: #ffffff;
+	--color-focus: #7fb2ee;
 
 	/* Series palette — fixed order, never cycled (WP 01 §2) */
 	--color-series-1: #3987e5;
@@ -60,13 +62,13 @@
 	--color-series-7: #9085e9;
 	--color-series-8: #e66767;
 
-	/* Reserved status colors — never reused as "series 5" (WP 01 §3) */
-	--color-status-good: #0ca30c;
-	--color-status-warning: #fab219;
-	--color-status-serious: #ec835a;
-	--color-status-critical: #d03b3b;
+	/* Reserved status colours — never reused as "series 5" (WP 01 §3) */
+	--color-good: #0ca30c;
+	--color-warning: #fab219;
+	--color-serious: #ec835a;
+	--color-critical: #d03b3b;
 
-	/* Discrete P&L (with sign + arrow, always) */
+	/* Discrete P&L (always shown with sign + arrow) */
 	--color-pnl-up: #0ca30c;
 	--color-pnl-down: #d03b3b;
 
@@ -81,12 +83,9 @@
 	--color-seq-2: #3987e5;
 	--color-seq-3: #1f5bb0;
 	--color-seq-4: #0d366b;
-
-	--color-focus: #7fb2ee;
-	--color-overlay: rgb(6 8 12 / 0.72);
 }
 
-/* Explicit dark override so the toggle wins over an OS light setting */
+/* Explicit dark — the toggle wins over an OS light setting */
 :root[data-theme="dark"] {
 	color-scheme: dark;
 }
@@ -106,6 +105,7 @@
 
 	--color-accent: #2a78d6;
 	--color-accent-ink: #ffffff;
+	--color-focus: #2a78d6;
 
 	--color-series-1: #2a78d6;
 	--color-series-2: #eb6834;
@@ -116,11 +116,10 @@
 	--color-series-7: #4a3aa7;
 	--color-series-8: #e34948;
 
-	--color-status-good: #0a8a0a;
-	--color-status-warning: #b9820f;
-	--color-status-serious: #c25f2f;
-	--color-status-critical: #c0392b;
-
+	--color-good: #0a8a0a;
+	--color-warning: #b9820f;
+	--color-serious: #c25f2f;
+	--color-critical: #c0392b;
 	--color-pnl-up: #0a8a0a;
 	--color-pnl-down: #c0392b;
 
@@ -133,12 +132,9 @@
 	--color-seq-2: #4f92e4;
 	--color-seq-3: #2a5fae;
 	--color-seq-4: #12386e;
-
-	--color-focus: #2a78d6;
-	--color-overlay: rgb(20 20 18 / 0.4);
 }
 
-/* Follow prefers-color-scheme only when the user has not chosen explicitly */
+/* Follow the OS only when the user has not chosen explicitly */
 @media (prefers-color-scheme: light) {
 	:root:not([data-theme="dark"]):not([data-theme="light"]) {
 		color-scheme: light;
@@ -152,7 +148,8 @@
 		--color-hairline: #e4e4e1;
 		--color-axis: #c3c2b7;
 		--color-accent: #2a78d6;
-
+		--color-accent-ink: #ffffff;
+		--color-focus: #2a78d6;
 		--color-series-1: #2a78d6;
 		--color-series-2: #eb6834;
 		--color-series-3: #1baf7a;
@@ -161,11 +158,10 @@
 		--color-series-6: #008300;
 		--color-series-7: #4a3aa7;
 		--color-series-8: #e34948;
-
-		--color-status-good: #0a8a0a;
-		--color-status-warning: #b9820f;
-		--color-status-serious: #c25f2f;
-		--color-status-critical: #c0392b;
+		--color-good: #0a8a0a;
+		--color-warning: #b9820f;
+		--color-serious: #c25f2f;
+		--color-critical: #c0392b;
 		--color-pnl-up: #0a8a0a;
 		--color-pnl-down: #c0392b;
 		--color-diverge-low: #2a78d6;
@@ -176,37 +172,10 @@
 		--color-seq-2: #4f92e4;
 		--color-seq-3: #2a5fae;
 		--color-seq-4: #12386e;
-		--color-focus: #2a78d6;
-		--color-overlay: rgb(20 20 18 / 0.4);
 	}
-}
-
-/* Map tokens into Tailwind's color namespace so utilities work */
-@theme inline {
-	--color-canvas: var(--color-canvas);
-	--color-surface: var(--color-surface);
-	--color-surface-raised: var(--color-surface-raised);
-	--color-ink: var(--color-ink);
-	--color-ink-secondary: var(--color-ink-secondary);
-	--color-ink-muted: var(--color-ink-muted);
-	--color-hairline: var(--color-hairline);
-	--color-axis: var(--color-axis);
-	--color-accent: var(--color-accent);
-	--color-accent-ink: var(--color-accent-ink);
-	--color-good: var(--color-status-good);
-	--color-warning: var(--color-status-warning);
-	--color-serious: var(--color-status-serious);
-	--color-critical: var(--color-status-critical);
-	--color-pnl-up: var(--color-pnl-up);
-	--color-pnl-down: var(--color-pnl-down);
-	--color-focus: var(--color-focus);
 }
 
 @layer base {
-	* {
-		border-color: var(--color-hairline);
-	}
-
 	html {
 		background-color: var(--color-canvas);
 	}
@@ -223,9 +192,9 @@
 	}
 
 	/* Tabular figures wherever numbers line up in columns (WP 01 §5) */
-	.tabular-nums,
 	th,
 	td,
+	.tabular-nums,
 	.font-mono {
 		font-variant-numeric: tabular-nums;
 	}
