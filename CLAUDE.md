@@ -21,8 +21,9 @@ de donnée de marché.
 | Front | `web/src/` | React 18 + Vite + TypeScript |
 | CLI | `main.cpp` | binaire de démo |
 
-Les données de marché viennent de **yfinance** et **BigQuery** (price tape,
-chaînes d'options), les courbes de taux de **FRED**.
+Les données de marché viennent de **yfinance** (price tape, chaînes d'options,
+historique de backtest), les courbes de taux de **FRED**. Plus de BigQuery —
+le projet est entièrement hors cloud.
 
 ## Commandes
 

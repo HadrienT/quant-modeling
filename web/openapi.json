@@ -4297,6 +4297,7 @@
             "name": "ticker",
             "required": true,
             "schema": {
+              "maxLength": 12,
               "minLength": 1,
               "title": "Ticker",
               "type": "string"
@@ -4308,7 +4309,7 @@
             "required": false,
             "schema": {
               "default": "6M",
-              "pattern": "^(1M|3M|6M|YTD|1Y|2Y)$",
+              "pattern": "^(1M|3M|6M|YTD|1Y|2Y|5Y|max)$",
               "title": "Range",
               "type": "string"
             }

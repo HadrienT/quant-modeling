@@ -14,14 +14,13 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 import requests
-from fastapi import APIRouter, Depends, HTTPException
-from google.cloud import bigquery
+import yfinance as yf
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from scipy.optimize import minimize
 from starlette.concurrency import run_in_threadpool
 
 from ..cache import TTLCache
-from ..dependencies import bq_project_id, bq_table_ref
 from ..logging_utils import get_logger
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -127,44 +126,39 @@ def _fetch_risk_free_rate() -> float:
     return 0.04
 
 
-def _load_prices(tickers: List[str], project_id: str, table_ref: str) -> pd.DataFrame:
-    """Fetch and pivot close prices from BigQuery for the given tickers."""
+def _load_prices(tickers: List[str], start: str | None = None) -> pd.DataFrame:
+    """Fetch and pivot adjusted close prices from yfinance (no cloud)."""
     all_tickers = sorted(set(tickers) | {_SP500_TICKER})
     cache_key = ",".join(all_tickers)
     cached = _PRICES_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
-    # Use UNNEST with array parameter to avoid any string interpolation.
-    # We still need the table ref in the query string (it's from our own config,
-    # not user input), but ticker values go through query parameters.
-    query = f"""
-    SELECT Date, Ticker, Close
-    FROM `{table_ref}`
-    WHERE Ticker IN UNNEST(@tickers)
-    ORDER BY Date ASC
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ArrayQueryParameter("tickers", "STRING", all_tickers),
-        ]
-    )
     try:
-        client = bigquery.Client(project=project_id)
-        rows = list(client.query(query, job_config=job_config).result())
-        df = pd.DataFrame(
-            [(row["Date"], row["Ticker"], row["Close"]) for row in rows],
-            columns=["Date", "Ticker", "Close"],
+        raw = yf.download(
+            all_tickers,
+            start=start or "2000-01-01",
+            auto_adjust=True,
+            progress=False,
+            group_by="column",
         )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"BigQuery error: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Price provider error: {exc}") from exc
 
-    if df.empty:
-        raise HTTPException(status_code=404, detail="No price data found for the requested tickers")
+    if raw is None or raw.empty:
+        raise HTTPException(status_code=404, detail="No price data for the requested tickers")
 
-    prices = df.pivot(index="Date", columns="Ticker", values="Close")
-    prices = prices.infer_objects().interpolate(method="linear")
-    prices.index = pd.to_datetime(prices.index).tz_localize("UTC")
+    # yfinance returns a column MultiIndex (field, ticker) for multiple tickers,
+    # or a flat frame for a single one.
+    if isinstance(raw.columns, pd.MultiIndex):
+        prices = raw["Close"].copy()
+    else:
+        prices = raw[["Close"]].rename(columns={"Close": all_tickers[0]})
+
+    prices = prices.dropna(how="all").interpolate(method="linear")
+    prices.index = pd.to_datetime(prices.index)
+    if prices.index.tz is None:
+        prices.index = prices.index.tz_localize("UTC")
     prices.sort_index(inplace=True)
 
     _PRICES_CACHE.set(cache_key, prices)
@@ -313,9 +307,7 @@ def _capm(
 def _run_backtest(req: BacktestRequest) -> BacktestResponse:
     warnings: List[str] = []
 
-    project_id = bq_project_id()
-    table_ref = bq_table_ref()
-    prices = _load_prices(req.tickers, project_id, table_ref)
+    prices = _load_prices(req.tickers, start=req.opt_start)
 
     tickers_in_data = [t for t in req.tickers if t in prices.columns]
     missing = set(req.tickers) - set(tickers_in_data)

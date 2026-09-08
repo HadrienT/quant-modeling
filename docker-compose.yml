@@ -12,19 +12,14 @@ services:
       - QM_DATA_DIR=/app/data
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
-      - BQ_PROJECT_ID=${BQ_PROJECT_ID:-}
-      - BQ_DATASET_ID=${BQ_DATASET_ID:-}
-      - BQ_TABLE_ID=${BQ_TABLE_ID:-}
+      # Price tape + backtest history come from yfinance now — no BigQuery.
+      # FRED (rates curve + backtest risk-free) is the only external key left.
       - FRED_API_KEY=${FRED_API_KEY:-}
-      # Optional: BigQuery price tape / backtest. If secrets/bq-key.json isn't a
-      # real key file those routes just return 500 — the rest of the app works.
-      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/bq-key.json
       - LOG_DIR=/app/logs
       - COMMIT_SHA=${COMMIT_SHA:-dev}
     volumes:
       - ./api:/app/api
       - ./logs/quantmodeling:/app/logs
-      - ./secrets/bq-key.json:/secrets/bq-key.json:ro
       - qm_data:/app/data
 
   web:
@@ -46,6 +41,8 @@ services:
       - sh
       - -c
       - >
+        echo "Syncing node_modules...";
+        npm install --no-audit --no-fund;
         until wget -qO- http://api:8000/health >/dev/null; do
           echo "Waiting for API...";
           sleep 1;

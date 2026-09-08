@@ -1,12 +1,14 @@
-from datetime import datetime
+"""Price tape — sourced from yfinance (no cloud, blueprint self-hosting)."""
+
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from google.cloud import bigquery
+import pandas as pd
+import yfinance as yf
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from ..cache import TTLCache
-from ..dependencies import bq_project_id, bq_table_ref
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
 from ..schemas import MarketHistoryPoint, MarketHistoryResponse
@@ -19,107 +21,66 @@ class TickersResponse(BaseModel):
     tickers: List[str]
 
 
-_RANGE_LIMITS: Dict[str, int] = {
-    "1M": 21,
-    "3M": 63,
-    "6M": 126,
-    "1Y": 252,
-    "2Y": 504,
+# Curated liquid universe. yfinance has no "list every ticker" endpoint, and a
+# self-hosted deployment does not need one — these cover the demo surface.
+_UNIVERSE: List[str] = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "JPM", "V",
+    "MA", "UNH", "XOM", "CVX", "LLY", "HD", "COST", "PG", "KO", "PEP",
+    "NFLX", "AMD", "INTC", "CSCO", "CRM", "ORCL", "ADBE", "QCOM", "TXN", "IBM",
+    "BAC", "WFC", "GS", "MS", "DIS", "NKE", "MCD", "SBUX", "BA", "CAT",
+    "SPY", "QQQ", "IWM", "DIA", "GLD", "TLT", "HYG", "VTI", "EFA", "EEM",
+]
+
+_RANGE_PERIOD: Dict[str, str] = {
+    "1M": "1mo",
+    "3M": "3mo",
+    "6M": "6mo",
+    "YTD": "ytd",
+    "1Y": "1y",
+    "2Y": "2y",
+    "5Y": "5y",
+    "max": "max",
 }
 
-
-def _get_range_limit(range_key: str) -> int:
-    if range_key == "YTD":
-        today = datetime.now()
-        start_of_year = datetime(today.year, 1, 1)
-        days_elapsed = (today - start_of_year).days
-        return max(1, int(days_elapsed * 0.7))
-    return _RANGE_LIMITS.get(range_key, 126)
-
-
 _HISTORY_CACHE = TTLCache[str, MarketHistoryResponse](max_size=256, ttl_seconds=60 * 30)
-_TICKERS_CACHE = TTLCache[str, TickersResponse](max_size=1, ttl_seconds=60 * 60 * 24)
 
 
 @router.get("/market/tickers", response_model=TickersResponse)
 def list_tickers() -> TickersResponse:
-    cache_key = "all_tickers"
-    cached = _TICKERS_CACHE.get(cache_key)
-    if cached:
-        set_cache_hit()
-        logger.info("list_tickers cache_hit", extra={"count": len(cached.tickers)})
-        return cached
-
-    project_id = bq_project_id()
-    try:
-        client = bigquery.Client(project=project_id)
-        query = f"""
-        SELECT DISTINCT Ticker
-        FROM `{bq_table_ref()}`
-        ORDER BY Ticker ASC
-        """
-        rows = list(client.query(query).result())
-        tickers = [row["Ticker"] for row in rows if row["Ticker"]]
-        response = TickersResponse(tickers=tickers)
-        _TICKERS_CACHE.set(cache_key, response)
-        logger.info("list_tickers cache_miss", extra={"count": len(tickers)})
-        return response
-    except Exception as exc:
-        logger.error("list_tickers failed", extra={"error": str(exc)})
-        raise HTTPException(status_code=500, detail="Failed to fetch tickers from BigQuery")
+    return TickersResponse(tickers=_UNIVERSE)
 
 
 @router.get("/market/prices/history", response_model=MarketHistoryResponse)
-def market_history(
-    ticker: str = Query(..., min_length=1),
-    range: str = Query("6M", pattern="^(1M|3M|6M|YTD|1Y|2Y)$"),
+async def market_history(
+    ticker: str = Query(..., min_length=1, max_length=12),
+    range: str = Query("6M", pattern="^(1M|3M|6M|YTD|1Y|2Y|5Y|max)$"),
 ) -> MarketHistoryResponse:
-    limit = _get_range_limit(range)
-    cache_key = ticker
+    ticker = ticker.strip().upper()
+    cache_key = f"{ticker}:{range}"
 
     cached = _HISTORY_CACHE.get(cache_key)
-    if cached and len(cached.points) >= limit:
+    if cached:
         set_cache_hit()
-        sliced = cached.points[-limit:]
-        logger.info(
-            "market_history cache_hit",
-            extra={"ticker": ticker, "range": range, "points": len(sliced)},
-        )
-        return MarketHistoryResponse(ticker=ticker, points=sliced)
+        return cached
 
-    max_limit = _RANGE_LIMITS["2Y"]
-    project_id = bq_project_id()
+    period = _RANGE_PERIOD.get(range, "6mo")
     try:
-        client = bigquery.Client(project=project_id)
-        query = f"""
-        SELECT Date, Close
-        FROM `{bq_table_ref()}`
-        WHERE Ticker = @ticker
-        ORDER BY Date DESC
-        LIMIT @limit
-        """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("ticker", "STRING", ticker),
-                bigquery.ScalarQueryParameter("limit", "INT64", max_limit),
-            ]
+        hist: pd.DataFrame = await run_in_threadpool(
+            lambda: yf.Ticker(ticker).history(period=period, auto_adjust=True)
         )
-        rows = list(client.query(query, job_config=job_config).result())
-        full_points: List[MarketHistoryPoint] = [
-            MarketHistoryPoint(date=row["Date"], close=float(row["Close"]))
-            for row in reversed(rows)
-            if row["Close"] is not None
-        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("market_history failed", extra={"ticker": ticker, "error": str(exc)})
+        raise HTTPException(status_code=502, detail="Price provider unavailable") from exc
 
-        response = MarketHistoryResponse(ticker=ticker, points=full_points)
-        _HISTORY_CACHE.set(cache_key, response)
+    if hist is None or hist.empty or "Close" not in hist:
+        raise HTTPException(status_code=404, detail=f"No price history for {ticker}")
 
-        sliced = full_points[-limit:]
-        logger.info(
-            "market_history cache_miss",
-            extra={"ticker": ticker, "range": range, "cached_points": len(full_points), "returned_points": len(sliced)},
-        )
-        return MarketHistoryResponse(ticker=ticker, points=sliced)
-    except Exception as exc:
-        logger.error("market_history failed", extra={"ticker": ticker, "range": range, "error": str(exc)})
-        raise HTTPException(status_code=500, detail="BigQuery query failed")
+    points = [
+        MarketHistoryPoint(date=idx.date(), close=float(row["Close"]))
+        for idx, row in hist.iterrows()
+        if pd.notna(row["Close"])
+    ]
+    response = MarketHistoryResponse(ticker=ticker, points=points)
+    _HISTORY_CACHE.set(cache_key, response)
+    logger.info("market_history", extra={"ticker": ticker, "range": range, "points": len(points)})
+    return response
