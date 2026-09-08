@@ -176,6 +176,7 @@ export default tseslint.config(
 			"src/app/theme.ts",
 			"src/app/**/index.ts",
 			"src/**/*.stories.tsx",
+			"src/shared/viz/surface/SurfaceScene.tsx",
 		],
 		rules: { "react-refresh/only-export-components": "off" },
 	},
