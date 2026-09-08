@@ -1,15 +1,15 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, Plus } from "lucide-react";
 import {
 	type Leg,
 	type MarketInputs,
 	evaluateStrategy,
 	preset,
 } from "@/shared/payoff";
-import { Button, Input, Label, cn, toast } from "@/shared/ui";
-import { Metric, MetricRow, NumberCell } from "@/shared/ui";
-import { GreekProfileChart, PayoffChart } from "@/shared/viz";
+import { Button, Input, Label, toast } from "@/shared/ui";
+import { LegCard } from "./LegCard";
+import { StrategyOutcome } from "./StrategyOutcome";
 
 /**
  * Strategy visualiser & home page (WP 10). Build a multi-leg position, see its
@@ -70,17 +70,6 @@ export default function StrategiesPage() {
 		() => evaluateStrategy(state.legs, state.mkt),
 		[state],
 	);
-
-	const probProfit = useMemo(() => {
-		// fraction of the plotted spot grid (equal-weighted proxy) with payoff > 0
-		const wins = result.atMaturity.filter((v) => v > 0).length;
-		return wins / result.atMaturity.length;
-	}, [result]);
-
-	const rr =
-		typeof result.maxGain === "number" && typeof result.maxLoss === "number"
-			? Math.abs(result.maxGain / result.maxLoss)
-			: null;
 
 	return (
 		<div className="mx-auto flex max-w-6xl flex-col gap-5">
@@ -186,178 +175,8 @@ export default function StrategiesPage() {
 					</Button>
 				</div>
 
-				<div className="flex flex-col gap-4">
-					<MetricRow>
-						<Metric
-							label="Net cost"
-							value={
-								<NumberCell value={result.netCost} magnitude="price" signed />
-							}
-							footnote={result.netCost > 0 ? "debit" : "credit"}
-						/>
-						<Metric
-							label="Max gain"
-							value={
-								result.maxGain === "unbounded" ? (
-									"unbounded"
-								) : (
-									<NumberCell value={result.maxGain} magnitude="price" />
-								)
-							}
-						/>
-						<Metric
-							label="Max loss"
-							value={
-								result.maxLoss === "unbounded" ? (
-									"unbounded"
-								) : (
-									<NumberCell value={result.maxLoss} magnitude="price" />
-								)
-							}
-						/>
-						<Metric
-							label="Breakevens"
-							value={
-								result.breakevens.length
-									? result.breakevens.map((b) => b.toFixed(1)).join(" · ")
-									: "—"
-							}
-						/>
-						<Metric
-							label="Prob. of profit"
-							value={`${(probProfit * 100).toFixed(0)}%`}
-							footnote="risk-neutral proxy, not real-world"
-						/>
-					</MetricRow>
-					{rr != null && (
-						<p className="text-2xs text-ink-muted">
-							Risk / reward ≈ {rr.toFixed(2)}
-						</p>
-					)}
-
-					<PayoffChart
-						data={{
-							spot: result.spot,
-							atMaturity: result.atMaturity,
-							atT: result.atT,
-							legs: result.legs,
-							breakevens: result.breakevens,
-							currentSpot: state.mkt.spot,
-							strikes: state.legs
-								.filter((l) => l.kind !== "underlying")
-								.map((l) => l.strike),
-						}}
-					/>
-					<GreekProfileChart
-						currentSpot={state.mkt.spot}
-						profiles={result.greeks}
-					/>
-				</div>
+				<StrategyOutcome result={result} mkt={state.mkt} legs={state.legs} />
 			</div>
 		</div>
-	);
-}
-
-function LegCard({
-	leg,
-	onChange,
-	onRemove,
-}: {
-	leg: Leg;
-	onChange: (l: Leg) => void;
-	onRemove: () => void;
-}) {
-	return (
-		<div className="flex flex-col gap-2 rounded-md border border-hairline bg-surface p-2.5">
-			<div className="flex items-center gap-1.5">
-				<button
-					type="button"
-					className={cn(
-						"rounded-xs px-1.5 py-0.5 text-2xs font-medium",
-						leg.direction === "long"
-							? "bg-pnl-up/15 text-pnl-up"
-							: "bg-pnl-down/15 text-pnl-down",
-					)}
-					onClick={() =>
-						onChange({
-							...leg,
-							direction: leg.direction === "long" ? "short" : "long",
-						})
-					}
-				>
-					{leg.direction}
-				</button>
-				<select
-					className="h-7 rounded-sm border border-hairline bg-surface px-1 text-xs text-ink"
-					value={leg.kind}
-					onChange={(e) =>
-						onChange({ ...leg, kind: e.target.value as Leg["kind"] })
-					}
-				>
-					{["call", "put", "underlying", "forward"].map((k) => (
-						<option key={k}>{k}</option>
-					))}
-				</select>
-				<button
-					type="button"
-					aria-label="Remove leg"
-					className="ml-auto text-ink-muted hover:text-critical"
-					onClick={onRemove}
-				>
-					<Trash2 className="size-3.5" />
-				</button>
-			</div>
-			<div className="grid grid-cols-2 gap-1.5 text-xs">
-				<Field
-					label="Qty"
-					value={leg.quantity}
-					onChange={(v) => onChange({ ...leg, quantity: v })}
-				/>
-				{leg.kind !== "underlying" && (
-					<Field
-						label="Strike"
-						value={leg.strike}
-						onChange={(v) => onChange({ ...leg, strike: v })}
-					/>
-				)}
-				<Field
-					label="Maturity (y)"
-					value={leg.maturity}
-					step={0.05}
-					onChange={(v) => onChange({ ...leg, maturity: v })}
-				/>
-				<Field
-					label="Premium"
-					value={leg.premium}
-					step={0.1}
-					onChange={(v) => onChange({ ...leg, premium: v })}
-				/>
-			</div>
-		</div>
-	);
-}
-
-function Field({
-	label,
-	value,
-	step,
-	onChange,
-}: {
-	label: string;
-	value: number;
-	step?: number;
-	onChange: (v: number) => void;
-}) {
-	return (
-		<label className="flex flex-col gap-0.5">
-			<span className="text-2xs text-ink-muted">{label}</span>
-			<Input
-				type="number"
-				step={step}
-				value={value}
-				onChange={(e) => onChange(Number(e.target.value))}
-				className="h-7"
-			/>
-		</label>
 	);
 }

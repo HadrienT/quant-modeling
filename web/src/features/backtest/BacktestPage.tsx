@@ -6,17 +6,9 @@ import {
 	useTickers,
 	type BacktestResponse,
 } from "@/shared/api";
-import {
-	Badge,
-	Button,
-	Combobox,
-	Input,
-	Label,
-	Metric,
-	MetricRow,
-} from "@/shared/ui";
+import { Badge, Button, Combobox, Field, Label } from "@/shared/ui";
 import { ErrorState } from "@/shared/ui/states";
-import { AllocationChart, EquityAndDrawdownChart } from "@/shared/viz";
+import { Results } from "./BacktestResults";
 
 /** Backtest (WP 11). Files kept under ~200 lines by splitting form / run / results. */
 
@@ -138,39 +130,39 @@ export default function BacktestPage() {
 					label="Optimisation start"
 					type="date"
 					value={cfg.opt_start}
-					onChange={(v) => setCfg({ opt_start: v })}
+					onChange={(e) => setCfg({ opt_start: e.target.value })}
 				/>
 				<Field
 					label="Investment start (opt end)"
 					type="date"
 					value={cfg.opt_end}
-					onChange={(v) => setCfg({ opt_end: v })}
+					onChange={(e) => setCfg({ opt_end: e.target.value })}
 				/>
 				<Field
 					label="Initial capital"
 					type="number"
 					value={cfg.initial_capital}
-					onChange={(v) => setCfg({ initial_capital: Number(v) })}
+					onChange={(e) => setCfg({ initial_capital: Number(e.target.value) })}
 				/>
 				<Field
 					label="Rebalance every N days (0 = static)"
 					type="number"
 					value={cfg.rebalance_freq}
-					onChange={(v) => setCfg({ rebalance_freq: Number(v) })}
+					onChange={(e) => setCfg({ rebalance_freq: Number(e.target.value) })}
 				/>
 				<Field
 					label="Max weight"
 					type="number"
 					step={0.05}
 					value={cfg.max_share}
-					onChange={(v) => setCfg({ max_share: Number(v) })}
+					onChange={(e) => setCfg({ max_share: Number(e.target.value) })}
 				/>
 				<Field
 					label="Min weight (drop below)"
 					type="number"
 					step={0.01}
 					value={cfg.min_share}
-					onChange={(v) => setCfg({ min_share: Number(v) })}
+					onChange={(e) => setCfg({ min_share: Number(e.target.value) })}
 				/>
 			</div>
 
@@ -212,111 +204,5 @@ export default function BacktestPage() {
 
 			{result && <Results result={result} optWindow={cfg} pinned={runs} />}
 		</div>
-	);
-}
-
-function Results({
-	result,
-	optWindow,
-	pinned,
-}: {
-	result: BacktestResponse;
-	optWindow: { opt_start: string; opt_end: string };
-	pinned: { label: string; data: BacktestResponse }[];
-}) {
-	const m = result.metrics;
-	const fmt = (v: number | null | undefined, suffix = "") =>
-		v == null ? "n/d" : `${v.toFixed(2)}${suffix}`;
-
-	return (
-		<div className="flex flex-col gap-4">
-			{result.warnings.length > 0 && (
-				<div className="rounded-md border border-warning/40 bg-warning/5 p-3">
-					<p className="text-xs font-medium text-warning">Warnings</p>
-					<ul className="mt-1 list-disc pl-4 text-xs text-ink-secondary">
-						{result.warnings.map((w, i) => (
-							<li key={i}>{w}</li>
-						))}
-					</ul>
-				</div>
-			)}
-
-			<p className="text-2xs text-ink-muted">
-				The grey band is the in-sample optimisation window (
-				{optWindow.opt_start} → {optWindow.opt_end}). Not modelled: transaction
-				costs, slippage, survivorship bias, dividend treatment. Sharpe uses the
-				API's risk-free assumption and √252 annualisation.
-			</p>
-
-			<EquityAndDrawdownChart
-				portfolio={result.portfolio_values.map((p) => ({
-					time: p.date,
-					value: p.value,
-				}))}
-				benchmark={result.sp500_values?.map((p) => ({
-					time: p.date,
-					value: p.value,
-				}))}
-				optWindow={{ start: optWindow.opt_start, end: optWindow.opt_end }}
-			/>
-
-			<MetricRow>
-				<Metric label="Total return" value={fmt(m.total_return_pct, "%")} />
-				<Metric label="Annualised" value={fmt(m.annualized_return_pct, "%")} />
-				<Metric label="Max drawdown" value={fmt(m.max_drawdown * 100, "%")} />
-				<Metric
-					label="Sharpe (realised)"
-					value={fmt(m.sharpe_ratio)}
-					footnote={`in-sample optimum ${fmt(m.optimal_sharpe)}`}
-				/>
-				<Metric
-					label="Alpha / Beta"
-					value={`${fmt(m.alpha)} / ${fmt(m.beta)}`}
-					footnote={m.alpha == null ? "not computable" : undefined}
-				/>
-			</MetricRow>
-
-			<AllocationChart
-				title="Optimised allocation"
-				rows={result.allocation.map((a) => ({
-					label: a.ticker,
-					weight: a.weight,
-					returnPct: a.return_pct,
-				}))}
-			/>
-
-			{pinned.length > 0 && (
-				<div className="text-2xs text-ink-muted">
-					{pinned.length} run(s) pinned — overlay comparison shows parameter
-					sensitivity.
-				</div>
-			)}
-		</div>
-	);
-}
-
-function Field({
-	label,
-	type,
-	value,
-	step,
-	onChange,
-}: {
-	label: string;
-	type: string;
-	value: string | number;
-	step?: number;
-	onChange: (v: string) => void;
-}) {
-	return (
-		<label className="flex flex-col gap-1">
-			<Label>{label}</Label>
-			<Input
-				type={type}
-				step={step}
-				value={value}
-				onChange={(e) => onChange(e.target.value)}
-			/>
-		</label>
 	);
 }

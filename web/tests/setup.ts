@@ -1,6 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { toHaveNoViolations } from "jest-axe";
+import { afterAll, afterEach, beforeAll, expect } from "vitest";
 import { server } from "@/shared/test/msw-server";
+
+expect.extend(toHaveNoViolations);
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => server.resetHandlers());

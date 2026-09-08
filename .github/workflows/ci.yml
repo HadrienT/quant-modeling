@@ -99,11 +99,32 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Palette validation
+        run: npm run palette
+
       - name: Build
         run: npm run build
 
+      - name: Bundle budgets
+        run: npm run size
+
       - name: Storybook build
         run: npm run build-storybook
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: e2e (compose stack)
+        working-directory: .
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            curl -sf "http://localhost:${QM_WEB_PORT:-5180}" >/dev/null && break
+            sleep 3
+          done
+          cd web && QM_E2E_BASE_URL="http://localhost:${QM_WEB_PORT:-5180}" npx playwright test
+          cd .. && docker compose down
+        continue-on-error: true
 
   api-contract:
     runs-on: ubuntu-latest

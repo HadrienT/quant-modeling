@@ -1,14 +1,30 @@
 [
 	{
-		"name": "initial (shell + home route)",
-		"path": "dist/assets/index-*.js",
-		"limit": "180 kB",
+		"name": "initial (React + router + query + shell + home route)",
+		"path": [
+			"dist/assets/index-*.js",
+			"dist/assets/react-vendor-*.js",
+			"dist/assets/router-vendor-*.js"
+		],
+		"limit": "185 kB",
 		"gzip": true
 	},
 	{
-		"name": "css",
+		"name": "css (Tailwind, purged)",
 		"path": "dist/assets/*.css",
 		"limit": "20 kB",
+		"gzip": true
+	},
+	{
+		"name": "three.js + R3F (surface route only)",
+		"path": "dist/assets/SurfaceScene-*.js",
+		"limit": "250 kB",
+		"gzip": true
+	},
+	{
+		"name": "pricing route",
+		"path": "dist/assets/PricingPage-*.js",
+		"limit": "120 kB",
 		"gzip": true
 	}
 ]

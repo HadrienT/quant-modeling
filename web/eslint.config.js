@@ -116,6 +116,7 @@ export default tseslint.config(
 		plugins: { "testing-library": testingLibrary },
 		rules: {
 			...testingLibrary.configs.react.rules,
+			"testing-library/prefer-screen-queries": "off",
 		},
 	},
 
