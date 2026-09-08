@@ -6,7 +6,7 @@ from google.cloud import bigquery
 from pydantic import BaseModel
 
 from ..cache import TTLCache
-from ..dependencies import bq_project_id, bq_table_ref, require_api_key
+from ..dependencies import bq_project_id, bq_table_ref
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
 from ..schemas import MarketHistoryPoint, MarketHistoryResponse
@@ -41,7 +41,7 @@ _HISTORY_CACHE = TTLCache[str, MarketHistoryResponse](max_size=256, ttl_seconds=
 _TICKERS_CACHE = TTLCache[str, TickersResponse](max_size=1, ttl_seconds=60 * 60 * 24)
 
 
-@router.get("/market/tickers", response_model=TickersResponse, dependencies=[Depends(require_api_key)])
+@router.get("/market/tickers", response_model=TickersResponse)
 def list_tickers() -> TickersResponse:
     cache_key = "all_tickers"
     cached = _TICKERS_CACHE.get(cache_key)
@@ -69,7 +69,7 @@ def list_tickers() -> TickersResponse:
         raise HTTPException(status_code=500, detail="Failed to fetch tickers from BigQuery")
 
 
-@router.get("/market/prices/history", response_model=MarketHistoryResponse, dependencies=[Depends(require_api_key)])
+@router.get("/market/prices/history", response_model=MarketHistoryResponse)
 def market_history(
     ticker: str = Query(..., min_length=1),
     range: str = Query("6M", pattern="^(1M|3M|6M|YTD|1Y|2Y)$"),

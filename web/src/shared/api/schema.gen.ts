@@ -14,7 +14,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Api Login */
-        post: operations["api_login_api_auth_login_post"];
+        post: operations["api_login"];
         delete?: never;
         options?: never;
         head?: never;
@@ -29,7 +29,7 @@ export interface paths {
             cookie?: never;
         };
         /** Api Me */
-        get: operations["api_me_api_auth_me_get"];
+        get: operations["api_me"];
         put?: never;
         post?: never;
         delete?: never;
@@ -48,7 +48,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Api Register */
-        post: operations["api_register_api_auth_register_post"];
+        post: operations["api_register"];
         delete?: never;
         options?: never;
         head?: never;
@@ -70,7 +70,7 @@ export interface paths {
          *     performance forward. Returns allocation, portfolio value time series,
          *     performance metrics, and CAPM alpha/beta vs S&P 500.
          */
-        post: operations["run_backtest_api_backtest_run_post"];
+        post: operations["run_backtest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -89,7 +89,7 @@ export interface paths {
          * @description Return the cleaned & bicubic-smoothed implied-volatility surface
          *     (stages 0-3 of the Dupire pipeline) as a grid suitable for 3-D plotting.
          */
-        get: operations["cleaned_iv_surface_api_local_vol_iv_surface_get"];
+        get: operations["cleaned_iv_surface"];
         put?: never;
         post?: never;
         delete?: never;
@@ -117,7 +117,7 @@ export interface paths {
          *     4. Apply Gatheral (2004) formula to obtain the local-vol surface.
          *     5. Price via Euler-Maruyama MC with optional CRN greeks.
          */
-        get: operations["price_local_vol_api_local_vol_price_get"];
+        get: operations["price_local_vol"];
         put?: never;
         post?: never;
         delete?: never;
@@ -137,7 +137,7 @@ export interface paths {
          * Local Vol Surface
          * @description Return the Dupire local-volatility surface (stages 0-4) as a grid.
          */
-        get: operations["local_vol_surface_api_local_vol_surface_get"];
+        get: operations["local_vol_surface"];
         put?: never;
         post?: never;
         delete?: never;
@@ -154,10 +154,10 @@ export interface paths {
             cookie?: never;
         };
         /** Api List Portfolios */
-        get: operations["api_list_portfolios_api_portfolios_get"];
+        get: operations["api_list_portfolios"];
         put?: never;
         /** Api Create Portfolio */
-        post: operations["api_create_portfolio_api_portfolios_post"];
+        post: operations["api_create_portfolio"];
         delete?: never;
         options?: never;
         head?: never;
@@ -172,12 +172,12 @@ export interface paths {
             cookie?: never;
         };
         /** Api Get Portfolio */
-        get: operations["api_get_portfolio_api_portfolios__portfolio_id__get"];
+        get: operations["api_get_portfolio"];
         /** Api Update Portfolio */
-        put: operations["api_update_portfolio_api_portfolios__portfolio_id__put"];
+        put: operations["api_update_portfolio"];
         post?: never;
         /** Api Delete Portfolio */
-        delete: operations["api_delete_portfolio_api_portfolios__portfolio_id__delete"];
+        delete: operations["api_delete_portfolio"];
         options?: never;
         head?: never;
         patch?: never;
@@ -193,7 +193,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Api Add Position */
-        post: operations["api_add_position_api_portfolios__portfolio_id__positions_post"];
+        post: operations["api_add_position"];
         delete?: never;
         options?: never;
         head?: never;
@@ -209,10 +209,10 @@ export interface paths {
         };
         get?: never;
         /** Api Update Position */
-        put: operations["api_update_position_api_portfolios__portfolio_id__positions__position_id__put"];
+        put: operations["api_update_position"];
         post?: never;
         /** Api Remove Position */
-        delete: operations["api_remove_position_api_portfolios__portfolio_id__positions__position_id__delete"];
+        delete: operations["api_remove_position"];
         options?: never;
         head?: never;
         patch?: never;
@@ -228,7 +228,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Api Price Portfolio */
-        post: operations["api_price_portfolio_api_portfolios__portfolio_id__price_post"];
+        post: operations["api_price_portfolio"];
         delete?: never;
         options?: never;
         head?: never;
@@ -245,7 +245,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Api Stress Test */
-        post: operations["api_stress_test_api_portfolios__portfolio_id__stress_post"];
+        post: operations["api_stress_test"];
         delete?: never;
         options?: never;
         head?: never;
@@ -281,7 +281,7 @@ export interface paths {
          *     Then Cornish-Fisher expansion adjusts the z-quantile for
          *     the non-zero skewness induced by gamma.
          */
-        post: operations["api_compute_var_api_portfolios__portfolio_id__var_post"];
+        post: operations["api_compute_var"];
         delete?: never;
         options?: never;
         head?: never;
@@ -296,7 +296,7 @@ export interface paths {
             cookie?: never;
         };
         /** Health */
-        get: operations["health_health_get"];
+        get: operations["health"];
         put?: never;
         post?: never;
         delete?: never;
@@ -313,7 +313,7 @@ export interface paths {
             cookie?: never;
         };
         /** Iv Surface */
-        get: operations["iv_surface_market_iv_surface_get"];
+        get: operations["iv_surface"];
         put?: never;
         post?: never;
         delete?: never;
@@ -330,7 +330,7 @@ export interface paths {
             cookie?: never;
         };
         /** Market History */
-        get: operations["market_history_market_prices_history_get"];
+        get: operations["market_history"];
         put?: never;
         post?: never;
         delete?: never;
@@ -347,7 +347,7 @@ export interface paths {
             cookie?: never;
         };
         /** Rates Curve */
-        get: operations["rates_curve_market_rates_curve_get"];
+        get: operations["rates_curve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -364,7 +364,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Tickers */
-        get: operations["list_tickers_market_tickers_get"];
+        get: operations["list_tickers"];
         put?: never;
         post?: never;
         delete?: never;
@@ -383,7 +383,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Fixed Rate Bond Endpoint */
-        post: operations["price_fixed_rate_bond_endpoint_price_bond_fixed_rate_post"];
+        post: operations["price_fixed_rate_bond"];
         delete?: never;
         options?: never;
         head?: never;
@@ -400,7 +400,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Zero Coupon Bond Endpoint */
-        post: operations["price_zero_coupon_bond_endpoint_price_bond_zero_coupon_post"];
+        post: operations["price_zero_coupon_bond"];
         delete?: never;
         options?: never;
         head?: never;
@@ -417,7 +417,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Commodity Forward Endpoint */
-        post: operations["price_commodity_forward_endpoint_price_commodity_forward_post"];
+        post: operations["price_commodity_forward"];
         delete?: never;
         options?: never;
         head?: never;
@@ -434,7 +434,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Commodity Option Endpoint */
-        post: operations["price_commodity_option_endpoint_price_commodity_option_post"];
+        post: operations["price_commodity_option"];
         delete?: never;
         options?: never;
         head?: never;
@@ -451,7 +451,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Future Endpoint */
-        post: operations["price_future_endpoint_price_future_post"];
+        post: operations["price_future"];
         delete?: never;
         options?: never;
         head?: never;
@@ -468,7 +468,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Fx Forward Endpoint */
-        post: operations["price_fx_forward_endpoint_price_fx_forward_post"];
+        post: operations["price_fx_forward"];
         delete?: never;
         options?: never;
         head?: never;
@@ -485,7 +485,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Fx Option Endpoint */
-        post: operations["price_fx_option_endpoint_price_fx_option_post"];
+        post: operations["price_fx_option"];
         delete?: never;
         options?: never;
         head?: never;
@@ -502,7 +502,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price American Vanilla Endpoint */
-        post: operations["price_american_vanilla_endpoint_price_option_american_vanilla_post"];
+        post: operations["price_american_vanilla"];
         delete?: never;
         options?: never;
         head?: never;
@@ -519,7 +519,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Asian Endpoint */
-        post: operations["price_asian_endpoint_price_option_asian_post"];
+        post: operations["price_asian"];
         delete?: never;
         options?: never;
         head?: never;
@@ -536,7 +536,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Barrier Endpoint */
-        post: operations["price_barrier_endpoint_price_option_barrier_post"];
+        post: operations["price_barrier"];
         delete?: never;
         options?: never;
         head?: never;
@@ -553,7 +553,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Basket Endpoint */
-        post: operations["price_basket_endpoint_price_option_basket_post"];
+        post: operations["price_basket"];
         delete?: never;
         options?: never;
         head?: never;
@@ -570,7 +570,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Digital Endpoint */
-        post: operations["price_digital_endpoint_price_option_digital_post"];
+        post: operations["price_digital"];
         delete?: never;
         options?: never;
         head?: never;
@@ -587,7 +587,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Lookback Endpoint */
-        post: operations["price_lookback_endpoint_price_option_lookback_post"];
+        post: operations["price_lookback"];
         delete?: never;
         options?: never;
         head?: never;
@@ -604,7 +604,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Rainbow Endpoint */
-        post: operations["price_rainbow_endpoint_price_option_rainbow_post"];
+        post: operations["price_rainbow"];
         delete?: never;
         options?: never;
         head?: never;
@@ -621,7 +621,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Vanilla Endpoint */
-        post: operations["price_vanilla_endpoint_price_option_vanilla_post"];
+        post: operations["price_vanilla"];
         delete?: never;
         options?: never;
         head?: never;
@@ -638,7 +638,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Autocall Endpoint */
-        post: operations["price_autocall_endpoint_price_structured_autocall_post"];
+        post: operations["price_autocall"];
         delete?: never;
         options?: never;
         head?: never;
@@ -655,7 +655,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Mountain Endpoint */
-        post: operations["price_mountain_endpoint_price_structured_mountain_post"];
+        post: operations["price_mountain"];
         delete?: never;
         options?: never;
         head?: never;
@@ -672,7 +672,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Dispersion Swap Endpoint */
-        post: operations["price_dispersion_swap_endpoint_price_volatility_dispersion_swap_post"];
+        post: operations["price_dispersion_swap"];
         delete?: never;
         options?: never;
         head?: never;
@@ -689,7 +689,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Variance Swap Endpoint */
-        post: operations["price_variance_swap_endpoint_price_volatility_variance_swap_post"];
+        post: operations["price_variance_swap"];
         delete?: never;
         options?: never;
         head?: never;
@@ -706,7 +706,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Price Volatility Swap Endpoint */
-        post: operations["price_volatility_swap_endpoint_price_volatility_volatility_swap_post"];
+        post: operations["price_volatility_swap"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1361,6 +1361,13 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HealthResponse */
+        HealthResponse: {
+            /** Status */
+            status: string;
+            /** Version */
+            version: string;
         };
         /** IVSurfaceResponse */
         IVSurfaceResponse: {
@@ -2090,7 +2097,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    api_login_api_auth_login_post: {
+    api_login: {
         parameters: {
             query?: never;
             header?: never;
@@ -2123,7 +2130,7 @@ export interface operations {
             };
         };
     };
-    api_me_api_auth_me_get: {
+    api_me: {
         parameters: {
             query?: never;
             header?: {
@@ -2154,7 +2161,7 @@ export interface operations {
             };
         };
     };
-    api_register_api_auth_register_post: {
+    api_register: {
         parameters: {
             query?: never;
             header?: never;
@@ -2187,12 +2194,10 @@ export interface operations {
             };
         };
     };
-    run_backtest_api_backtest_run_post: {
+    run_backtest: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2222,7 +2227,7 @@ export interface operations {
             };
         };
     };
-    cleaned_iv_surface_api_local_vol_iv_surface_get: {
+    cleaned_iv_surface: {
         parameters: {
             query: {
                 /** @description Stock ticker */
@@ -2261,7 +2266,7 @@ export interface operations {
             };
         };
     };
-    price_local_vol_api_local_vol_price_get: {
+    price_local_vol: {
         parameters: {
             query: {
                 /** @description Stock ticker, e.g. 'AAPL' */
@@ -2314,7 +2319,7 @@ export interface operations {
             };
         };
     };
-    local_vol_surface_api_local_vol_surface_get: {
+    local_vol_surface: {
         parameters: {
             query: {
                 /** @description Stock ticker */
@@ -2353,7 +2358,7 @@ export interface operations {
             };
         };
     };
-    api_list_portfolios_api_portfolios_get: {
+    api_list_portfolios: {
         parameters: {
             query?: never;
             header?: {
@@ -2384,7 +2389,7 @@ export interface operations {
             };
         };
     };
-    api_create_portfolio_api_portfolios_post: {
+    api_create_portfolio: {
         parameters: {
             query?: {
                 name?: string;
@@ -2417,7 +2422,7 @@ export interface operations {
             };
         };
     };
-    api_get_portfolio_api_portfolios__portfolio_id__get: {
+    api_get_portfolio: {
         parameters: {
             query?: never;
             header?: {
@@ -2450,7 +2455,7 @@ export interface operations {
             };
         };
     };
-    api_update_portfolio_api_portfolios__portfolio_id__put: {
+    api_update_portfolio: {
         parameters: {
             query?: never;
             header?: {
@@ -2487,7 +2492,7 @@ export interface operations {
             };
         };
     };
-    api_delete_portfolio_api_portfolios__portfolio_id__delete: {
+    api_delete_portfolio: {
         parameters: {
             query?: never;
             header?: {
@@ -2518,7 +2523,7 @@ export interface operations {
             };
         };
     };
-    api_add_position_api_portfolios__portfolio_id__positions_post: {
+    api_add_position: {
         parameters: {
             query?: never;
             header?: {
@@ -2555,7 +2560,7 @@ export interface operations {
             };
         };
     };
-    api_update_position_api_portfolios__portfolio_id__positions__position_id__put: {
+    api_update_position: {
         parameters: {
             query?: never;
             header?: {
@@ -2593,7 +2598,7 @@ export interface operations {
             };
         };
     };
-    api_remove_position_api_portfolios__portfolio_id__positions__position_id__delete: {
+    api_remove_position: {
         parameters: {
             query?: never;
             header?: {
@@ -2627,7 +2632,7 @@ export interface operations {
             };
         };
     };
-    api_price_portfolio_api_portfolios__portfolio_id__price_post: {
+    api_price_portfolio: {
         parameters: {
             query?: never;
             header?: {
@@ -2660,7 +2665,7 @@ export interface operations {
             };
         };
     };
-    api_stress_test_api_portfolios__portfolio_id__stress_post: {
+    api_stress_test: {
         parameters: {
             query?: never;
             header?: {
@@ -2697,7 +2702,7 @@ export interface operations {
             };
         };
     };
-    api_compute_var_api_portfolios__portfolio_id__var_post: {
+    api_compute_var: {
         parameters: {
             query?: never;
             header?: {
@@ -2734,7 +2739,7 @@ export interface operations {
             };
         };
     };
-    health_health_get: {
+    health: {
         parameters: {
             query?: never;
             header?: never;
@@ -2749,22 +2754,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["HealthResponse"];
                 };
             };
         };
     };
-    iv_surface_market_iv_surface_get: {
+    iv_surface: {
         parameters: {
             query: {
                 ticker: string;
                 surface?: string;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2790,15 +2791,13 @@ export interface operations {
             };
         };
     };
-    market_history_market_prices_history_get: {
+    market_history: {
         parameters: {
             query: {
                 ticker: string;
                 range?: string;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2824,16 +2823,14 @@ export interface operations {
             };
         };
     };
-    rates_curve_market_rates_curve_get: {
+    rates_curve: {
         parameters: {
             query?: {
                 curve?: string;
                 curve_type?: string;
                 fixed_period_years?: number;
             };
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2859,12 +2856,10 @@ export interface operations {
             };
         };
     };
-    list_tickers_market_tickers_get: {
+    list_tickers: {
         parameters: {
             query?: never;
-            header?: {
-                "x-api-key"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2879,18 +2874,9 @@ export interface operations {
                     "application/json": components["schemas"]["TickersResponse"];
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
-    price_fixed_rate_bond_endpoint_price_bond_fixed_rate_post: {
+    price_fixed_rate_bond: {
         parameters: {
             query?: never;
             header?: never;
@@ -2923,7 +2909,7 @@ export interface operations {
             };
         };
     };
-    price_zero_coupon_bond_endpoint_price_bond_zero_coupon_post: {
+    price_zero_coupon_bond: {
         parameters: {
             query?: never;
             header?: never;
@@ -2956,7 +2942,7 @@ export interface operations {
             };
         };
     };
-    price_commodity_forward_endpoint_price_commodity_forward_post: {
+    price_commodity_forward: {
         parameters: {
             query?: never;
             header?: never;
@@ -2989,7 +2975,7 @@ export interface operations {
             };
         };
     };
-    price_commodity_option_endpoint_price_commodity_option_post: {
+    price_commodity_option: {
         parameters: {
             query?: never;
             header?: never;
@@ -3022,7 +3008,7 @@ export interface operations {
             };
         };
     };
-    price_future_endpoint_price_future_post: {
+    price_future: {
         parameters: {
             query?: never;
             header?: never;
@@ -3055,7 +3041,7 @@ export interface operations {
             };
         };
     };
-    price_fx_forward_endpoint_price_fx_forward_post: {
+    price_fx_forward: {
         parameters: {
             query?: never;
             header?: never;
@@ -3088,7 +3074,7 @@ export interface operations {
             };
         };
     };
-    price_fx_option_endpoint_price_fx_option_post: {
+    price_fx_option: {
         parameters: {
             query?: never;
             header?: never;
@@ -3121,7 +3107,7 @@ export interface operations {
             };
         };
     };
-    price_american_vanilla_endpoint_price_option_american_vanilla_post: {
+    price_american_vanilla: {
         parameters: {
             query?: never;
             header?: never;
@@ -3154,7 +3140,7 @@ export interface operations {
             };
         };
     };
-    price_asian_endpoint_price_option_asian_post: {
+    price_asian: {
         parameters: {
             query?: never;
             header?: never;
@@ -3187,7 +3173,7 @@ export interface operations {
             };
         };
     };
-    price_barrier_endpoint_price_option_barrier_post: {
+    price_barrier: {
         parameters: {
             query?: never;
             header?: never;
@@ -3220,7 +3206,7 @@ export interface operations {
             };
         };
     };
-    price_basket_endpoint_price_option_basket_post: {
+    price_basket: {
         parameters: {
             query?: never;
             header?: never;
@@ -3253,7 +3239,7 @@ export interface operations {
             };
         };
     };
-    price_digital_endpoint_price_option_digital_post: {
+    price_digital: {
         parameters: {
             query?: never;
             header?: never;
@@ -3286,7 +3272,7 @@ export interface operations {
             };
         };
     };
-    price_lookback_endpoint_price_option_lookback_post: {
+    price_lookback: {
         parameters: {
             query?: never;
             header?: never;
@@ -3319,7 +3305,7 @@ export interface operations {
             };
         };
     };
-    price_rainbow_endpoint_price_option_rainbow_post: {
+    price_rainbow: {
         parameters: {
             query?: never;
             header?: never;
@@ -3352,7 +3338,7 @@ export interface operations {
             };
         };
     };
-    price_vanilla_endpoint_price_option_vanilla_post: {
+    price_vanilla: {
         parameters: {
             query?: never;
             header?: never;
@@ -3385,7 +3371,7 @@ export interface operations {
             };
         };
     };
-    price_autocall_endpoint_price_structured_autocall_post: {
+    price_autocall: {
         parameters: {
             query?: never;
             header?: never;
@@ -3418,7 +3404,7 @@ export interface operations {
             };
         };
     };
-    price_mountain_endpoint_price_structured_mountain_post: {
+    price_mountain: {
         parameters: {
             query?: never;
             header?: never;
@@ -3451,7 +3437,7 @@ export interface operations {
             };
         };
     };
-    price_dispersion_swap_endpoint_price_volatility_dispersion_swap_post: {
+    price_dispersion_swap: {
         parameters: {
             query?: never;
             header?: never;
@@ -3484,7 +3470,7 @@ export interface operations {
             };
         };
     };
-    price_variance_swap_endpoint_price_volatility_variance_swap_post: {
+    price_variance_swap: {
         parameters: {
             query?: never;
             header?: never;
@@ -3517,7 +3503,7 @@ export interface operations {
             };
         };
     };
-    price_volatility_swap_endpoint_price_volatility_volatility_swap_post: {
+    price_volatility_swap: {
         parameters: {
             query?: never;
             header?: never;

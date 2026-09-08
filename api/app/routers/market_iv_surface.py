@@ -7,7 +7,6 @@ import yfinance as yf
 from scipy.interpolate import griddata
 
 from ..cache import TTLCache
-from ..dependencies import require_api_key
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
 from ..schemas import IVSurfaceResponse
@@ -143,7 +142,7 @@ def _interpolate_iv_surface(
     return strikes_sorted, maturities_sorted, values
 
 
-@router.get("/market/iv/surface", response_model=IVSurfaceResponse, dependencies=[Depends(require_api_key)])
+@router.get("/market/iv/surface", response_model=IVSurfaceResponse)
 def iv_surface(
     ticker: str = Query(..., min_length=1),
     surface: str = Query("mid", pattern="^(mid|bid|ask)$"),

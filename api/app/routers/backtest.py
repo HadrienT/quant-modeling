@@ -21,7 +21,7 @@ from scipy.optimize import minimize
 from starlette.concurrency import run_in_threadpool
 
 from ..cache import TTLCache
-from ..dependencies import bq_project_id, bq_table_ref, require_api_key
+from ..dependencies import bq_project_id, bq_table_ref
 from ..logging_utils import get_logger
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -521,7 +521,7 @@ def _run_rebalanced_backtest(
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
 
-@router.post("/run", response_model=BacktestResponse, dependencies=[Depends(require_api_key)])
+@router.post("/run", response_model=BacktestResponse)
 async def run_backtest(req: BacktestRequest) -> BacktestResponse:
     """
     Optimise a portfolio of assets over a historical window, then track its

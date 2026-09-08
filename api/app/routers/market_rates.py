@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import requests
 
 from ..cache import TTLCache
-from ..dependencies import fred_api_key, require_api_key
+from ..dependencies import fred_api_key
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
 from ..schemas import RatesCurveResponse
@@ -181,7 +181,7 @@ def _latest_fred_observation(series_id: str, api_key: str) -> Optional[float]:
     return None
 
 
-@router.get("/market/rates/curve", response_model=RatesCurveResponse, dependencies=[Depends(require_api_key)])
+@router.get("/market/rates/curve", response_model=RatesCurveResponse)
 def rates_curve(
     curve: str = Query("Treasury", pattern="^(Treasury|SOFR|FedFunds)$"),
     curve_type: str = Query("zero", pattern="^(zero|forward)$"),
