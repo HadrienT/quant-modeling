@@ -32,8 +32,49 @@ export type ThemeTokens = {
 	pnl: { up: string; down: string };
 };
 
+/**
+ * Dark-theme defaults, mirroring theme.css. Used when getComputedStyle can't
+ * resolve a custom property yet — the stylesheet not being applied at the moment
+ * a chart or the WebGL bridge first reads a token (early module init, jsdom,
+ * SSR-style first paint). Without this a chart draws with stroke="" (invisible).
+ * Keep in sync with @theme in shared/styles/theme.css.
+ */
+const DEFAULTS: Record<string, string> = {
+	"--color-canvas": "#0b0e13",
+	"--color-surface": "#141922",
+	"--color-surface-raised": "#1b212c",
+	"--color-ink": "#f2f5f8",
+	"--color-ink-secondary": "#a9b4c2",
+	"--color-ink-muted": "#7d8899",
+	"--color-hairline": "#212936",
+	"--color-axis": "#38414f",
+	"--color-accent": "#3987e5",
+	"--color-series-1": "#3987e5",
+	"--color-series-2": "#d95926",
+	"--color-series-3": "#199e70",
+	"--color-series-4": "#c98500",
+	"--color-series-5": "#d55181",
+	"--color-series-6": "#008300",
+	"--color-series-7": "#9085e9",
+	"--color-series-8": "#e66767",
+	"--color-seq-0": "#cde2fb",
+	"--color-seq-1": "#7fb2ee",
+	"--color-seq-2": "#3987e5",
+	"--color-seq-3": "#1f5bb0",
+	"--color-seq-4": "#0d366b",
+	"--color-diverge-low": "#2a78d6",
+	"--color-diverge-mid": "#7d8899",
+	"--color-diverge-high": "#d03b3b",
+	"--color-good": "#0ca30c",
+	"--color-warning": "#fab219",
+	"--color-serious": "#ec835a",
+	"--color-critical": "#d03b3b",
+	"--color-pnl-up": "#0ca30c",
+	"--color-pnl-down": "#d03b3b",
+};
+
 function readVar(style: CSSStyleDeclaration, name: string): string {
-	return style.getPropertyValue(name).trim();
+	return style.getPropertyValue(name).trim() || DEFAULTS[name] || "#000000";
 }
 
 export function readThemeTokens(): ThemeTokens {

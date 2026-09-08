@@ -137,10 +137,20 @@ export function ChartFrame({
 					<div className="flex h-full items-center justify-center py-10 text-xs text-ink-muted">
 						{emptyLabel}
 					</div>
-				) : showTable && table ? (
-					<DataTable table={table} />
 				) : (
-					children
+					<>
+						{/*
+						 * Keep the chart mounted and sized even when the table is shown,
+						 * so canvas engines (lightweight-charts) don't lose their instance
+						 * and come back blank on toggle-off. The table sits on top.
+						 */}
+						{children}
+						{showTable && table && (
+							<div className="absolute inset-0 overflow-auto bg-surface">
+								<DataTable table={table} />
+							</div>
+						)}
+					</>
 				)}
 			</div>
 		</figure>

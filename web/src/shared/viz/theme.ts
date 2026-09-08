@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import {
 	type ThemeTokens,
 	onThemeTokensChange,
@@ -49,6 +49,18 @@ function fallback(): ThemeTokens {
 	};
 }
 
+function refresh() {
+	if (typeof document === "undefined") return;
+	const next = readThemeTokens();
+	if (
+		next.series[0] !== snapshot.series[0] ||
+		next.canvas !== snapshot.canvas
+	) {
+		snapshot = next;
+		listeners.forEach((l) => l());
+	}
+}
+
 function ensureStarted() {
 	if (started || typeof document === "undefined") return;
 	started = true;
@@ -60,6 +72,9 @@ function ensureStarted() {
 
 export function useChartTheme(): ThemeTokens {
 	ensureStarted();
+	// The module-load snapshot can be taken before the stylesheet is applied;
+	// re-read once the component is mounted.
+	useEffect(refresh, []);
 	return useSyncExternalStore(
 		(cb) => {
 			listeners.add(cb);
