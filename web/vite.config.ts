@@ -27,6 +27,12 @@ export default defineConfig({
 	server: {
 		port: 5173,
 		host: true,
+		// Vite 6 rejects requests whose Host header isn't localhost/an IP. This
+		// dev server is self-hosted and usually reached by hostname or through a
+		// reverse proxy — allow it. Narrow with QM_ALLOWED_HOSTS="a.com,b.com".
+		allowedHosts: process.env.QM_ALLOWED_HOSTS
+			? process.env.QM_ALLOWED_HOSTS.split(",").map((h) => h.trim())
+			: true,
 		proxy: Object.fromEntries(
 			// `^/market/` (not `/market`) so the SPA routes /market and /price are
 			// served by Vite while the API's /market/* and /price/* are proxied.
