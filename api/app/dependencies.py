@@ -9,10 +9,3 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = os.getenv("API_KEY")
     if expected and x_api_key != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-
-def fred_api_key() -> str:
-    key = os.getenv("FRED_API_KEY")
-    if not key:
-        raise HTTPException(status_code=500, detail="FRED API key is not configured")
-    return key

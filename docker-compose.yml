@@ -6,24 +6,22 @@ services:
     container_name: quant-modeling-api
     ports:
       - "${QM_API_PORT:-8010}:8000"
-    extra_hosts:
-      # reach the data-ingest Postgres published on the host at 127.0.0.1:5433
-      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - dataplatform
     environment:
       # Local storage by default — no GCP credentials required (blueprint WP 04).
       - QM_STORAGE=${QM_STORAGE:-local}
       - QM_DATA_DIR=/app/data
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
-      # Market data (prices, macro) comes from the data-ingest Postgres.
-      - PGHOST=${PGHOST:-host.docker.internal}
-      - PGPORT=${PGPORT:-5433}
+      # Market data (prices, macro) comes from the data-ingest Postgres, reached
+      # over the shared `dataplatform` network by container name.
+      - PGHOST=${PGHOST:-data-ingest-postgres}
+      - PGPORT=${PGPORT:-5432}
       - PGDATABASE=${PGDATABASE:-dataingest}
       - PGUSER=${PGUSER:-dataingest}
       - PGPASSWORD=${PGPASSWORD:?set PGPASSWORD in .env (same as data-ingest/.env)}
-      # FRED key only used as a live fallback for rate-curve tenors not yet
-      # ingested locally — optional.
-      - FRED_API_KEY=${FRED_API_KEY:-}
       - LOG_DIR=/app/logs
       - COMMIT_SHA=${COMMIT_SHA:-dev}
     volumes:
@@ -64,3 +62,9 @@ services:
 volumes:
   web_node_modules:
   qm_data:
+
+networks:
+  # shared with the data-ingest stack (its Postgres). Create it once:
+  #   docker network create dataplatform
+  dataplatform:
+    external: true

@@ -14,8 +14,9 @@ services:
     image: ghcr.io/hadrient/quant-modeling:${COMMIT_SHA:-latest}
     container_name: quant-modeling
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - dataplatform
     environment:
       - PORT=8080
       - API_URL=http://127.0.0.1:8000
@@ -26,13 +27,12 @@ services:
       - QM_DATA_DIR=/app/data
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
-      # data-ingest Postgres (market data)
-      - PGHOST=${PGHOST:-host.docker.internal}
-      - PGPORT=${PGPORT:-5433}
+      # data-ingest Postgres (market data), over the shared network
+      - PGHOST=${PGHOST:-data-ingest-postgres}
+      - PGPORT=${PGPORT:-5432}
       - PGDATABASE=${PGDATABASE:-dataingest}
       - PGUSER=${PGUSER:-dataingest}
       - PGPASSWORD=${PGPASSWORD:?set PGPASSWORD}
-      - FRED_API_KEY=${FRED_API_KEY:-}
       - LOG_DIR=/app/logs
     ports:
       - "${QM_WEB_PORT:-5180}:8080"
@@ -58,3 +58,7 @@ services:
 volumes:
   qm_data:
   qm_logs:
+
+networks:
+  dataplatform:
+    external: true

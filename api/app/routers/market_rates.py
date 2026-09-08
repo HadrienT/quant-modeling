@@ -1,9 +1,7 @@
 import math
-import os
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-import requests
 
 from .. import db
 from ..cache import TTLCache
@@ -17,7 +15,6 @@ logger = get_logger()
 _RATES_CURVE_CACHE = TTLCache[str, RatesCurveResponse](max_size=12, ttl_seconds=60 * 60)
 _RATES_ZERO_POINTS_CACHE = TTLCache[str, List[dict]](max_size=6, ttl_seconds=60 * 60)
 
-_FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
 # Curve definitions — what each one represents:
 #
 # Treasury (CMT): Constant Maturity Treasury par yields from FRED. The true
@@ -86,41 +83,22 @@ def _normalize_fixed_period_years(value: float) -> float:
     return round(value, 6)
 
 
-def _fetch_zero_points(
-    curve: str, api_key: Optional[str]
-) -> tuple[List[dict], List[str]]:
-    """Each curve tenor: try the local macro store first (data-ingest's
-    fred-macro), then fall back to a live FRED call if that series isn't
-    ingested and an API key is available."""
-    series = _CURVE_SERIES[curve]
+def _fetch_zero_points(curve: str) -> tuple[List[dict], List[str]]:
+    """Every curve tenor comes from the local macro store (data-ingest's
+    fred-macro source). Fully local: no live FRED call."""
     zero_points: List[dict] = []
     missing: List[str] = []
-
-    for tenor, series_id in series:
-        rate_value: Optional[float] = None
+    for tenor, series_id in _CURVE_SERIES[curve]:
         try:
-            rate_value = db.fred_latest_value(series_id)
-        except db.StoreUnavailable:
-            rate_value = None
-
-        if rate_value is None and api_key:
-            try:
-                rate_value = _latest_fred_observation(series_id, api_key)
-            except requests.RequestException as exc:
-                logger.warning(
-                    "rates_curve series_fetch_failed",
-                    extra={
-                        "curve": curve,
-                        "series": series_id,
-                        "error": str(exc)[:120],
-                    },
-                )
-
-        if rate_value is None:
+            value = db.fred_latest_value(series_id)
+        except db.StoreUnavailable as exc:
+            raise HTTPException(
+                status_code=503, detail="Rates store unavailable"
+            ) from exc
+        if value is None:
             missing.append(series_id)
             continue
-        zero_points.append({"x": tenor, "y": rate_value})
-
+        zero_points.append({"x": tenor, "y": value})
     return sorted(zero_points, key=lambda p: p["x"]), missing
 
 
@@ -175,33 +153,6 @@ def _compute_forward_curve(
     return forwards
 
 
-def _latest_fred_observation(series_id: str, api_key: str) -> Optional[float]:
-    response = requests.get(
-        _FRED_OBS_URL,
-        params={
-            "series_id": series_id,
-            "api_key": api_key,
-            "file_type": "json",
-            "sort_order": "desc",
-            "limit": 200,
-        },
-        timeout=8,
-    )
-    response.raise_for_status()
-    observations = response.json().get("observations", [])
-    for item in observations:
-        raw_value = item.get("value")
-        if raw_value in (None, "."):
-            continue
-        try:
-            value = float(raw_value)
-        except (TypeError, ValueError):
-            continue
-        if not math.isnan(value):
-            return value
-    return None
-
-
 @router.get("/market/rates/curve", response_model=RatesCurveResponse)
 def rates_curve(
     curve: str = Query("Treasury", pattern="^(Treasury|SOFR|FedFunds)$"),
@@ -223,7 +174,6 @@ def rates_curve(
         )
         return cached
 
-    api_key = os.getenv("FRED_API_KEY") or None  # optional: local store is primary
     base_cached = _RATES_ZERO_POINTS_CACHE.get(curve)
     if base_cached is not None:
         zero_points = [dict(point) for point in base_cached]
@@ -234,12 +184,16 @@ def rates_curve(
             extra={"curve": curve, "points": len(zero_points)},
         )
     else:
-        zero_points, missing = _fetch_zero_points(curve, api_key)
+        zero_points, missing = _fetch_zero_points(curve)
         _RATES_ZERO_POINTS_CACHE.set(curve, [dict(point) for point in zero_points])
 
     if len(zero_points) < 2:
         raise HTTPException(
-            status_code=503, detail=f"Insufficient FRED data for {curve} curve"
+            status_code=503,
+            detail=(
+                f"The {curve} curve series are not in the local store yet. "
+                "Run: docker compose run --rm ingest run fred-macro --full"
+            ),
         )
 
     output_points = zero_points

@@ -48,7 +48,17 @@ def _dsn() -> str:
 def _pool() -> "ConnectionPool":
     if psycopg is None or ConnectionPool is None:
         raise RuntimeError("psycopg is not installed")
-    pool = ConnectionPool(_dsn(), min_size=1, max_size=4, open=False)
+    # timeout: fail a checkout in 10s (→ 503) rather than hang a request;
+    # check: validate a pooled connection before handing it out.
+    pool = ConnectionPool(
+        _dsn(),
+        min_size=1,
+        max_size=4,
+        timeout=10.0,
+        max_waiting=8,
+        check=ConnectionPool.check_connection,
+        open=False,
+    )
     pool.open()
     return pool
 
