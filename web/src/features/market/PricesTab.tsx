@@ -11,7 +11,7 @@ import {
 import { PriceSeriesChart } from "@/shared/viz";
 import { realizedVol } from "./realizedVol";
 
-const RANGES = ["1M", "3M", "1Y", "5Y", "max"];
+const RANGES = ["1M", "3M", "YTD", "1Y", "5Y", "max"];
 
 export function PricesTab({
 	ticker,

@@ -9,4 +9,5 @@ export * from "./tabs";
 export { Combobox } from "./combobox";
 export { Field } from "./field";
 export { Toaster, toast } from "./toast";
+export { copyText } from "./clipboard";
 export * from "./density";

@@ -23,6 +23,7 @@ export function ParamForm({
 	const {
 		register,
 		watch,
+		setValue,
 		formState: { errors },
 	} = useForm({
 		resolver: zodResolver(descriptor.schema as never),
@@ -56,10 +57,26 @@ export function ParamForm({
 								return (
 									<div key={f.name} className="flex flex-col gap-1">
 										<Label htmlFor={`f-${f.name}`}>
-											{f.label}
+											{f.name === "is_call" ? "Option type" : f.label}
 											{f.unit ? ` (${f.unit})` : ""}
 										</Label>
-										{f.kind === "boolean" ? (
+										{f.name === "is_call" ? (
+											<button
+												type="button"
+												id={`f-${f.name}`}
+												title="Click to switch between a call and a put"
+												onClick={() =>
+													setValue(
+														"is_call" as never,
+														!watch("is_call" as never) as never,
+														{ shouldValidate: true, shouldDirty: true },
+													)
+												}
+												className="h-9 rounded-sm border border-accent bg-accent/10 px-3 text-left text-sm font-medium text-ink"
+											>
+												{watch("is_call" as never) ? "Call" : "Put"}
+											</button>
+										) : f.kind === "boolean" ? (
 											<label className="flex h-9 items-center gap-2 text-sm text-ink">
 												<input
 													id={`f-${f.name}`}

@@ -5,7 +5,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Link2, Moon, Sun } from "lucide-react";
 import { ROUTES } from "@/app/router";
 import { toggleTheme, useTheme } from "@/app/theme";
-import { toast } from "@/shared/ui";
+import { copyText, toast } from "@/shared/ui";
 
 /**
  * ⌘K palette (WP 03 §3) — the way to move fast in a seven-screen tool.
@@ -86,8 +86,13 @@ export default function CommandPalette({
 								<Item
 									onSelect={() =>
 										run(() => {
-											void navigator.clipboard?.writeText(window.location.href);
-											toast.success("URL copied");
+											void copyText(window.location.href).then((ok) =>
+												ok
+													? toast.success("URL copied")
+													: toast.error(
+															"Couldn't reach the clipboard — copy the URL from the address bar",
+														),
+											);
 										})
 									}
 								>

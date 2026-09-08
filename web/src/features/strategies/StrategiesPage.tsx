@@ -7,7 +7,7 @@ import {
 	evaluateStrategy,
 	preset,
 } from "@/shared/payoff";
-import { Button, Input, Label, toast } from "@/shared/ui";
+import { Button, Input, Label, copyText, toast } from "@/shared/ui";
 import { LegCard } from "./LegCard";
 import { StrategyOutcome } from "./StrategyOutcome";
 
@@ -98,9 +98,15 @@ export default function StrategiesPage() {
 					<Button
 						size="sm"
 						variant="secondary"
+						title="Copy a link that reopens this page with the same market inputs and legs"
 						onClick={() => {
-							void navigator.clipboard?.writeText(window.location.href);
-							toast.success("Strategy link copied");
+							void copyText(window.location.href).then((ok) =>
+								ok
+									? toast.success("Link copied — it reopens this strategy")
+									: toast.error(
+											"Couldn't reach the clipboard (needs HTTPS or localhost) — copy the URL from the address bar",
+										),
+							);
 						}}
 					>
 						<Copy className="size-3.5" /> Share

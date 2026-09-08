@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Copy, GitCompareArrows } from "lucide-react";
 import { CATALOG_BY_KEY, ProductInfo } from "@/shared/products";
-import { Button, cn, toast } from "@/shared/ui";
+import { Button, cn, copyText, toast } from "@/shared/ui";
 import { ParamForm } from "@/shared/products";
 import { ProductPicker } from "./ProductPicker";
 import { ResultsPanel } from "./ResultsPanel";
@@ -57,9 +57,15 @@ export default function PricingPage() {
 					<Button
 						size="sm"
 						variant="secondary"
+						title="Copy a link that reopens this workbench with the same product, engine and inputs"
 						onClick={() => {
-							void navigator.clipboard?.writeText(window.location.href);
-							toast.success("Pricing link copied");
+							void copyText(window.location.href).then((ok) =>
+								ok
+									? toast.success("Link copied — it reopens this exact setup")
+									: toast.error(
+											"Couldn't reach the clipboard (needs HTTPS or localhost) — copy the URL from the address bar",
+										),
+							);
 						}}
 					>
 						<Copy className="size-3.5" /> Copy link
@@ -68,6 +74,7 @@ export default function PricingPage() {
 						size="sm"
 						variant="ghost"
 						aria-pressed={showCompare}
+						title="Freeze the current inputs as scenario B, then keep editing to see how scenario A moves against it"
 						onClick={() => {
 							const next = !showCompare;
 							setShowCompare(next);
@@ -76,14 +83,33 @@ export default function PricingPage() {
 					>
 						<GitCompareArrows className="size-3.5" /> A/B compare
 					</Button>
+					{showCompare && (
+						<Button
+							size="sm"
+							variant="ghost"
+							title="Re-freeze scenario B to the inputs shown now"
+							onClick={() => wb.setCompare(wb.values)}
+						>
+							Snapshot B
+						</Button>
+					)}
 				</div>
+				{showCompare && (
+					<p className="text-2xs text-ink-muted">
+						Scenario <span className="text-ink-secondary">B</span> is frozen at
+						the inputs from when you enabled compare. Edit the form to move{" "}
+						<span className="text-ink-secondary">A</span>; both are priced with
+						the same engine so you read off the effect of the change.
+					</p>
+				)}
 			</section>
 
 			<section className="flex flex-col gap-4">
 				<div className={cn(showCompare && "grid gap-4 xl:grid-cols-2")}>
 					<div>
 						<h2 className="mb-2 text-xs font-semibold text-ink-muted uppercase">
-							A · {wb.engine}
+							{showCompare ? "A · live · " : ""}
+							{wb.engine}
 						</h2>
 						<ResultsPanel
 							descriptor={wb.descriptor}
@@ -94,7 +120,7 @@ export default function PricingPage() {
 					{showCompare && wb.compare && (
 						<div>
 							<h2 className="mb-2 text-xs font-semibold text-ink-muted uppercase">
-								B
+								B · frozen
 							</h2>
 							<ResultsPanel
 								descriptor={CATALOG_BY_KEY.get(wb.productKey) ?? wb.descriptor}
