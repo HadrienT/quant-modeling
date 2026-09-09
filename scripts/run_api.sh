@@ -13,11 +13,8 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r api/requirements.txt
 
-# Build and install the pybind wheel if not present
-if ! ls dist/quantmodeling-*.whl >/dev/null 2>&1; then
-  scripts/build_wheel.sh
-fi
-
-python -m pip install --force-reinstall dist/quantmodeling-*.whl
+# Editable, incrementally-rebuilding install of the C++ bindings. Idempotent:
+# after the first run this only recompiles the .cpp files that changed.
+scripts/dev_install.sh
 
 exec uvicorn api.app.main:app --reload

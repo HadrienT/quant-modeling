@@ -15,6 +15,12 @@ minimum-version = "build-system.requires"
 build-dir = "build/pypkg"
 build.targets = ["quantmodeling"]
 
+# Editable installs (scripts/dev_install.sh) recompile only the C++ files that
+# changed, on `import quantmodeling`, reusing the persistent build-dir above.
+# Release wheels (scripts/build_wheel.sh, python -m build) are unaffected.
+editable.rebuild = true
+editable.verbose = false
+
 [tool.scikit-build.cmake]
 version = ">=3.20"
 build-type = "Release"
