@@ -20,6 +20,24 @@ describe("product docs", () => {
 		}
 	});
 
+	it("every doc carries at least one well-formed reference", () => {
+		for (const [key, doc] of Object.entries(PRODUCT_DOCS)) {
+			expect(
+				doc!.references.length,
+				`${key} has no references`,
+			).toBeGreaterThan(0);
+			for (const r of doc!.references) {
+				expect(["paper", "book", "note"], `${key}: bad kind`).toContain(r.kind);
+				expect(r.label.length, `${key}: empty label`).toBeGreaterThan(0);
+				expect(r.cite.length, `${key}: empty cite`).toBeGreaterThan(10);
+				if (r.url)
+					expect(r.url, `${key}: ${r.label} url not https`).toMatch(
+						/^https:\/\//,
+					);
+			}
+		}
+	});
+
 	it("every KaTeX formula renders without throwing (WP 99 acceptance)", () => {
 		for (const [key, doc] of Object.entries(PRODUCT_DOCS)) {
 			const payoffs = Array.isArray(doc!.payoff) ? doc!.payoff : [doc!.payoff];

@@ -43,3 +43,19 @@ export function Formula({
 		/>
 	);
 }
+
+/** Render a prose string, turning inline `$...$` spans into KaTeX. */
+export function InlineMath({ text }: { text: string }) {
+	const parts = text.split(/(\$[^$]+\$)/g);
+	return (
+		<>
+			{parts.map((p, i) =>
+				p.startsWith("$") && p.endsWith("$") ? (
+					<Formula key={i} tex={p.slice(1, -1)} />
+				) : (
+					<span key={i}>{p}</span>
+				),
+			)}
+		</>
+	);
+}

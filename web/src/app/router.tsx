@@ -71,6 +71,15 @@ const priceRoute = createRoute({
 	component: PricingPage,
 });
 
+// ── Products (reference) ─────────────────────────────────────────────────
+const ProductsPage = lazy(() => import("@/features/products/ProductsPage"));
+const productsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/products",
+	validateSearch: z.object({ product: z.string().optional() }).parse,
+	component: ProductsPage,
+});
+
 // ── Portfolio ────────────────────────────────────────────────────────────
 const PortfolioPage = lazy(() => import("@/features/portfolio/PortfolioPage"));
 const portfolioRoute = createRoute({
@@ -102,6 +111,7 @@ const routeTree = rootRoute.addChildren([
 	visualizeRoute,
 	marketRoute,
 	priceRoute,
+	productsRoute,
 	portfolioRoute,
 	backtestRoute,
 	aboutRoute,
@@ -124,6 +134,7 @@ export const ROUTES = [
 	{ path: "/visualize", label: "Strategies" },
 	{ path: "/market", label: "Market" },
 	{ path: "/price", label: "Pricing" },
+	{ path: "/products", label: "Products" },
 	{ path: "/portfolio", label: "Portfolio" },
 	{ path: "/backtest", label: "Backtest" },
 	{ path: "/about", label: "About" },

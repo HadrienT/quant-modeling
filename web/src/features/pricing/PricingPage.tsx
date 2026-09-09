@@ -1,9 +1,13 @@
 import { useState } from "react";
-import { Copy, GitCompareArrows } from "lucide-react";
-import { CATALOG_BY_KEY, ProductInfo } from "@/shared/products";
+import { Link } from "@tanstack/react-router";
+import { BookText, Copy, GitCompareArrows } from "lucide-react";
+import {
+	CATALOG_BY_KEY,
+	ParamForm,
+	ProductInfo,
+	ProductPicker,
+} from "@/shared/products";
 import { Button, cn, copyText, toast } from "@/shared/ui";
-import { ParamForm } from "@/shared/products";
-import { ProductPicker } from "./ProductPicker";
 import { ResultsPanel } from "./ResultsPanel";
 import { useWorkbench } from "./useWorkbench";
 
@@ -24,6 +28,15 @@ export default function PricingPage() {
 						{wb.descriptor.label}
 					</h1>
 					<ProductInfo docKey={wb.descriptor.docKey} />
+					<Link
+						to="/products"
+						search={{ product: wb.productKey }}
+						title="Full reference: payoff, assumptions, sources"
+						className="ml-auto inline-flex items-center gap-1 text-2xs text-ink-muted transition-colors hover:text-accent"
+					>
+						<BookText className="size-3.5" />
+						Reference
+					</Link>
 				</header>
 
 				{wb.descriptor.engines.length > 1 && (
