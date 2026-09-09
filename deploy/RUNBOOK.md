@@ -267,15 +267,20 @@ unit analogue pour `~/data-ingest` (même modèle : `Type=oneshot`,
 
 ### Sauvegarde quotidienne (volume `qm_data`)
 
-Choisis une **destination hors-machine** (NAS monté, disque USB, cible rclone) —
-une sauvegarde sur le même disque ne protège de rien.
-
 ```bash
-echo 'BACKUP_DEST=/mnt/offsite/quant' | sudo tee /etc/quant-modeling-backup.conf
 sudo cp deploy/quant-modeling-backup.service deploy/quant-modeling-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now quant-modeling-backup.timer
 systemctl list-timers quant-modeling-backup.timer      # prochaine exécution
+```
+
+Par défaut ça écrit dans `/var/backups/quant-modeling` (local). **Fais mieux :**
+pointe-le vers une **destination hors-machine** (NAS monté, disque USB, cible
+rclone) — une sauvegarde sur le même disque ne protège pas d'une panne de disque :
+
+```bash
+echo 'BACKUP_DEST=/mnt/nas/quant' | sudo tee /etc/quant-modeling-backup.conf
+sudo systemctl restart quant-modeling-backup.service     # test immédiat
 ```
 
 ### Restauration — À TESTER (critère WP 14)

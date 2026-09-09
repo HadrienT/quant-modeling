@@ -12,15 +12,17 @@
 [Unit]
 Description=quant-modeling production stack (docker compose)
 Requires=docker.service
-After=docker.service network-online.target
-Wants=network-online.target
+After=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/home/hadriensuper/quant-modeling-prod
+# The tunnel lives in the `tunnel` compose profile; the site is unreachable
+# without it, so the boot unit always includes it.
+Environment=COMPOSE_PROFILES=tunnel
 ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d --remove-orphans
-ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml stop
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
 TimeoutStartSec=0
 
 [Install]

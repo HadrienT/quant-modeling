@@ -1,12 +1,13 @@
 # One-shot backup of the accounts/portfolios volume. Driven by the .timer.
 #
 # Install:
-#   echo 'BACKUP_DEST=/mnt/offsite/quant' | sudo tee /etc/quant-modeling-backup.conf
 #   sudo cp deploy/quant-modeling-backup.service deploy/quant-modeling-backup.timer /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now quant-modeling-backup.timer
 #
-# BACKUP_DEST should be an OFF-machine location (a mounted NAS/USB/rclone target).
+# Writes to /var/backups/quant-modeling by default. Override with an OFF-machine
+# path (mounted NAS/USB/rclone target):
+#   echo 'BACKUP_DEST=/mnt/nas/quant' | sudo tee /etc/quant-modeling-backup.conf
 
 [Unit]
 Description=quant-modeling data backup
@@ -15,6 +16,7 @@ After=docker.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/quant-modeling-backup.conf
+# Optional: `BACKUP_DEST=...` in this file overrides the local default below.
+EnvironmentFile=-/etc/quant-modeling-backup.conf
 WorkingDirectory=/home/hadriensuper/quant-modeling-prod
-ExecStart=/bin/bash scripts/backup_data.sh ${BACKUP_DEST}
+ExecStart=/bin/bash -c 'scripts/backup_data.sh "${BACKUP_DEST:-/var/backups/quant-modeling}"'
