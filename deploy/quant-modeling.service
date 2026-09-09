@@ -18,11 +18,13 @@ After=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/home/hadriensuper/quant-modeling-prod
-# The tunnel lives in the `tunnel` compose profile; the site is unreachable
-# without it, so the boot unit always includes it.
-Environment=COMPOSE_PROFILES=tunnel
-ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d --remove-orphans
-ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+User=hadriensuper
+SupplementaryGroups=docker
+# deploy.sh is idempotent and boot-safe: it syncs the checkout (non-fatal if
+# offline), rebuilds (Docker layer cache → fast), records the tag in .env, and
+# brings up the stack including the `tunnel` profile.
+ExecStart=/bin/bash scripts/deploy.sh
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml --profile tunnel down
 TimeoutStartSec=0
 
 [Install]

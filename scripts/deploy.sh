@@ -3,35 +3,33 @@
 #
 #   ~/quant-modeling-prod/scripts/deploy.sh
 #
-# Idempotent. Run it after every `git pull` on this branch. The running
-# containers stop depending on the working tree once built, so other sessions
-# switching branches elsewhere do not affect a live deployment — only the next
-# deploy.
+# Idempotent, and safe on boot (the systemd unit calls it). Records the deployed
+# commit in .env so that a bare `docker compose up -d` brings up the SAME image.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 COMPOSE=(docker compose -f docker-compose.prod.yml)
 
 if [[ ! -f .env ]]; then
-  echo "✗ .env is missing. Copy .env.placeholder and fill JWT_SECRET / PGPASSWORD." >&2
+  echo "✗ .env is missing. Copy .env.placeholder and fill it in." >&2
   exit 1
 fi
 
-# Fast-forward this branch if it tracks a remote (no-op for a local-only branch).
+# Fast-forward to the remote when reachable. Non-fatal: on boot the network may
+# not be up yet, and a stale checkout still deploys a working (older) site.
 if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-  echo "→ git pull --ff-only"
-  git pull --ff-only
+  git pull --ff-only --quiet 2>/dev/null \
+    && echo "→ synced with $(git rev-parse --abbrev-ref '@{u}')" \
+    || echo "⚠ git pull skipped (offline or diverged) — deploying the current checkout"
 fi
 
-# The shared docker network with the data-ingest stack.
 docker network inspect dataplatform >/dev/null 2>&1 || docker network create dataplatform
 
 COMMIT_SHA="$(git rev-parse --short HEAD)"
 export COMMIT_SHA
 echo "→ deploying $COMMIT_SHA"
 
-# The tunnel is in the `tunnel` compose profile and only makes sense once
-# CLOUDFLARE_TUNNEL_TOKEN is set (RUNBOOK §3).
+# The tunnel is in the `tunnel` compose profile; include it once the token is set.
 if grep -qE '^CLOUDFLARE_TUNNEL_TOKEN=.+' .env; then
   COMPOSE+=(--profile tunnel)
 else
@@ -40,6 +38,14 @@ fi
 
 "${COMPOSE[@]}" build
 "${COMPOSE[@]}" up -d --remove-orphans
+
+# Persist the tag so `docker compose up -d` (systemd unit, or a bare call) runs
+# THIS image, not whatever ${COMMIT_SHA:-latest} last resolved to (e.g. :dev).
+if grep -qE '^COMMIT_SHA=' .env; then
+  sed -i "s/^COMMIT_SHA=.*/COMMIT_SHA=${COMMIT_SHA}/" .env
+else
+  printf '\nCOMMIT_SHA=%s\n' "${COMMIT_SHA}" >> .env
+fi
 
 # Health gate — poll the container's own healthcheck endpoint.
 port="$(grep -E '^QM_WEB_PORT=' .env | cut -d= -f2)"; port="${port:-8091}"
