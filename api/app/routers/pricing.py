@@ -13,6 +13,7 @@ from ..pricing_service import (
     price_basket,
     price_commodity_forward,
     price_commodity_option,
+    price_dated_asian,
     price_digital,
     price_dispersion_swap,
     price_fixed_rate_bond,
@@ -35,6 +36,7 @@ from ..schemas import (
     BasketRequest,
     CommodityForwardRequest,
     CommodityOptionRequest,
+    DatedAsianRequest,
     DigitalRequest,
     DispersionSwapRequest,
     FixedRateBondRequest,
@@ -169,6 +171,27 @@ async def price_asian_endpoint(req: AsianRequest) -> PricingResponse:
             "theta": resp.greeks.theta,
             "rho": resp.greeks.rho,
         },
+    )
+    return resp
+
+
+@router.post("/price/option/dated-asian", response_model=PricingResponse)
+async def price_dated_asian_endpoint(req: DatedAsianRequest) -> PricingResponse:
+    logger.info(
+        "price_dated_asian request",
+        extra={
+            "valuation_date": req.valuation_date.isoformat(),
+            "n_fixings": len(req.fixing_dates),
+            "geometric": req.geometric,
+            "day_count": req.day_count,
+            "sampler": req.sampler,
+            "n_paths": req.n_paths,
+        },
+    )
+    resp = await _run_with_timeout(price_dated_asian, req)
+    logger.info(
+        "price_dated_asian response",
+        extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error},
     )
     return resp
 

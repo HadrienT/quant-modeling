@@ -5,7 +5,16 @@
 #include "quantModeling/pricers/registry.hpp"
 #include "quantModeling/engines/mc/local_vol.hpp"
 
+#include "quantModeling/core/date.hpp"
+#include "quantModeling/engines/mc/simulation_engine.hpp"
+#include "quantModeling/instruments/equity/simulatable_asian.hpp"
+#include "quantModeling/market/calendars.hpp"
+#include "quantModeling/market/conventions.hpp"
+#include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/models/equity/bs_sim_model.hpp"
+
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -448,6 +457,72 @@ static py::dict price_local_vol_mc_impl(const quantModeling::LocalVolInput &in)
     return pricing_result_to_dict(res);
 }
 
+// ── Dated Asian: the timeline / calendar architecture, end to end ──────────
+//
+// Fixings arrive as ISO-8601 date strings and are resolved to year-fractions
+// against a valuation date and a day-count basis, then priced by the generic
+// SimulationMCEngine + BlackScholesSimModel. No registry, no PricingInput
+// variant — this is the new architecture, wired directly.
+
+static const quantModeling::DayCounter &day_counter_by_name(const std::string &name)
+{
+    using namespace quantModeling;
+    if (name == "ACT/360")
+        return Actual360::instance();
+    if (name == "30/360")
+        return Thirty360::instance();
+    if (name == "ACT/ACT")
+        return ActualActualISDA::instance();
+    if (name == "ACT/365F" || name.empty())
+        return Actual365Fixed::instance();
+    throw std::invalid_argument("unknown day-count basis: " + name);
+}
+
+static py::dict price_dated_asian(double spot, double rate, double dividend,
+                                  double vol, const std::string &valuation_date,
+                                  const std::vector<std::string> &fixing_dates,
+                                  double strike, bool is_call, bool geometric,
+                                  const std::string &day_count, int n_paths,
+                                  int seed, const std::string &sampler)
+{
+    using namespace quantModeling;
+
+    const Date valuation = Date::from_iso(valuation_date);
+    const DayCounter &basis = day_counter_by_name(day_count);
+    const ValuationContext ctx{valuation, &basis, &NullCalendar::instance()};
+
+    std::vector<Time> fixings;
+    fixings.reserve(fixing_dates.size());
+    for (const std::string &iso : fixing_dates)
+    {
+        const Date d = Date::from_iso(iso);
+        if (!(valuation < d))
+            throw std::invalid_argument("fixing date " + iso +
+                                        " must fall after the valuation date");
+        fixings.push_back(ctx.t(d));
+    }
+
+    SimulatableAsian<Real> product(std::move(fixings), strike, is_call, geometric);
+    BlackScholesSimModel<Real> model(spot, rate, dividend, vol);
+
+    PricingSettings settings;
+    settings.mc_paths = n_paths > 0 ? n_paths : 200000;
+    settings.mc_seed = seed > 0 ? seed : 1;
+    settings.mc_antithetic = true;
+    settings.mc_sampler =
+        (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
+
+    const SimulationMCResult mc = simulate<Real>(product, model, settings);
+
+    PricingResult res;
+    res.npv = mc.npv();
+    res.mc_std_error = mc.std_error();
+    res.diagnostics = mc.diagnostics + " | " +
+                      std::to_string(fixing_dates.size()) + " fixings, basis " +
+                      basis.name();
+    return pricing_result_to_dict(res);
+}
+
 PYBIND11_MODULE(quantmodeling, m)
 {
     m.doc() = "quantModeling C++ bindings (pybind11)";
@@ -624,6 +699,13 @@ PYBIND11_MODULE(quantmodeling, m)
           "Price Asian option under Black-Scholes (analytic).");
     m.def("price_asian_bs_mc", &price_asian_bs_mc,
           "Price Asian option under Black-Scholes (Monte Carlo).");
+    m.def("price_dated_asian", &price_dated_asian, py::arg("spot"),
+          py::arg("rate"), py::arg("dividend"), py::arg("vol"),
+          py::arg("valuation_date"), py::arg("fixing_dates"), py::arg("strike"),
+          py::arg("is_call"), py::arg("geometric"), py::arg("day_count"),
+          py::arg("n_paths"), py::arg("seed"), py::arg("sampler"),
+          "Price an average-price Asian from ISO-8601 fixing dates via the "
+          "timeline simulation engine (calendar / day-count layer).");
     m.def("price_future_bs_analytic", &price_future_bs_analytic,
           "Price equity future under Black-Scholes (analytic).");
     m.def("price_zero_coupon_bond_analytic", &price_zero_coupon_bond_analytic,

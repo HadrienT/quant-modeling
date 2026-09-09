@@ -13,6 +13,7 @@ from .schemas import (
     BasketRequest,
     CommodityForwardRequest,
     CommodityOptionRequest,
+    DatedAsianRequest,
     DigitalPayoffKind,
     DigitalRequest,
     DispersionSwapRequest,
@@ -140,6 +141,25 @@ def price_asian(req: AsianRequest) -> PricingResponse:
     else:
         result = qm.price_asian_bs_analytic(input_data)
 
+    return _pricing_response_from_dict(result)
+
+
+def price_dated_asian(req: DatedAsianRequest) -> PricingResponse:
+    result = qm.price_dated_asian(
+        req.spot,
+        req.rate,
+        req.dividend,
+        req.vol,
+        req.valuation_date.isoformat(),
+        [d.isoformat() for d in req.fixing_dates],
+        req.strike,
+        req.is_call,
+        req.geometric,
+        req.day_count,
+        req.n_paths,
+        req.seed,
+        req.sampler,
+    )
     return _pricing_response_from_dict(result)
 
 

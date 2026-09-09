@@ -1,12 +1,14 @@
 #include <gtest/gtest.h>
 
 #include "quantModeling/engines/mc/simulation_engine.hpp"
+#include "quantModeling/instruments/equity/simulatable_asian.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/utils/stats.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace quantModeling
 {
@@ -145,6 +147,45 @@ namespace quantModeling
         const double ref = bs_call(S0, K, r, q, v, T);
         EXPECT_NEAR(r_sobol.npv(), ref, 4.0 * r_sobol.std_error() + 1e-3);
         EXPECT_LT(r_sobol.std_error(), r_pseudo.std_error());
+    }
+
+    TEST(SimulatableAsian, GeometricMatchesClosedForm)
+    {
+        const double S0 = 100, K = 95, r = 0.03, q = 0.01, v = 0.3;
+        TimeLine fixings;
+        for (int i = 1; i <= 10; ++i)
+            fixings.push_back(0.1 * i);
+
+        SimulatableAsian<Real> prod(fixings, K, /*is_call=*/true, /*geometric=*/true);
+        BlackScholesSimModel<Real> model(S0, r, q, v);
+        const auto res = simulate<Real>(prod, model, mc_settings());
+        EXPECT_NEAR(res.npv(), geo_asian_call(S0, K, r, q, v, prod.timeline()),
+                    4.0 * res.std_error());
+    }
+
+    TEST(SimulatableAsian, ArithmeticDominatesGeometric)
+    {
+        // AM >= GM pointwise, so the arithmetic-average call is worth at least
+        // the geometric-average call at the same strike.
+        const double S0 = 100, K = 100, r = 0.05, q = 0.0, v = 0.35;
+        TimeLine fixings;
+        for (int i = 1; i <= 12; ++i)
+            fixings.push_back(i / 12.0);
+
+        BlackScholesSimModel<Real> m1(S0, r, q, v), m2(S0, r, q, v);
+        SimulatableAsian<Real> ari(fixings, K, true, false);
+        SimulatableAsian<Real> geo(fixings, K, true, true);
+        const auto a = simulate<Real>(ari, m1, mc_settings());
+        const auto g = simulate<Real>(geo, m2, mc_settings());
+        EXPECT_GT(a.npv(), g.npv() - 4.0 * (a.std_error() + g.std_error()));
+    }
+
+    TEST(SimulatableAsian, RejectsNonPositiveFixing)
+    {
+        EXPECT_THROW(SimulatableAsian<Real>({-0.25, 1.0}, 100.0, true, false),
+                     std::invalid_argument);
+        EXPECT_THROW(SimulatableAsian<Real>({}, 100.0, true, false),
+                     std::invalid_argument);
     }
 
     TEST(SimulationEngine, AntitheticHalvesTheDrawStream)

@@ -109,7 +109,7 @@ namespace quantModeling
     std::string Date::to_iso() const
     {
         const auto y_m_d = ymd();
-        std::array<char, 11> buf{};
+        std::array<char, 16> buf{};
         std::snprintf(buf.data(), buf.size(), "%04d-%02u-%02u",
                       static_cast<int>(y_m_d.year()),
                       static_cast<unsigned>(y_m_d.month()),
