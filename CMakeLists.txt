@@ -29,6 +29,12 @@ target_sources(quantModeling
     PRIVATE
         src/utils/stats.cpp
         src/utils/greeks.cpp
+        src/core/date.cpp
+        src/core/period.cpp
+        src/core/timegrid.cpp
+        src/market/conventions.cpp
+        src/market/calendars.cpp
+        src/market/schedule.cpp
         src/engines/base.cpp
         src/engines/analytic/black_scholes.cpp
         src/engines/analytic/asian.cpp
@@ -138,6 +144,12 @@ if(QM_BUILD_TESTS)
   find_package(GTest CONFIG REQUIRED)
 
   add_executable(quantModeling_tests
+    tests/testDate.cpp
+    tests/testConventions.cpp
+    tests/testCalendars.cpp
+    tests/testSchedule.cpp
+    tests/testTimeline.cpp
+    tests/testSimulationEngine.cpp
     tests/testBSAna.cpp
     tests/testBSMC.cpp
     tests/testAsianOption.cpp
