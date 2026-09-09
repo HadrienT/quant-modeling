@@ -14,7 +14,7 @@ Navigateur ─HTTPS→ Cloudflare ─tunnel sortant→ conteneur cloudflared ─
 ```
 
 Tout se passe dans le **worktree dédié** `~/quant-modeling-prod` (branche
-`web/14-deploy`), isolé de `~/quant-modeling` où d'autres sessions travaillent.
+`main`), isolé de `~/quant-modeling` où d'autres sessions travaillent.
 
 ---
 
@@ -26,7 +26,7 @@ Il y a **deux dossiers**, chacun son rôle. Ils partagent le même dépôt git
 | Dossier | Rôle | Ce que tu y fais |
 |---|---|---|
 | `~/quant-modeling` | **Développement**. Branches, éditions, `npm run dev`, commits, PRs. Les sessions Claude travaillent ici. | tout le dev |
-| `~/quant-modeling-prod` | **Le site en ligne, uniquement.** Toujours sur la branche de déploiement. | `./scripts/deploy.sh` — c'est à peu près tout |
+| `~/quant-modeling-prod` | **Le site en ligne, uniquement.** Toujours sur `main`. | `./scripts/deploy.sh` — c'est à peu près tout |
 
 **Pourquoi un dossier séparé ?** Pour que le site en prod ne soit jamais cassé
 par une édition de dev en cours. Ce n'est pas plus compliqué : c'est la
@@ -40,20 +40,21 @@ fois démarré — seul `deploy.sh` s'en sert (pour reconstruire l'image).
 cd ~/quant-modeling-prod && ./scripts/deploy.sh
 ```
 
-`deploy.sh` fait tout : `git pull` de la branche de déploiement → reconstruit
-l'image en l'étiquetant avec le SHA du commit → `up -d` → attend que `/health`
-réponde. Idempotent, tu peux le relancer sans risque.
+`deploy.sh` fait tout : `git pull` de `main` → reconstruit l'image en
+l'étiquetant avec le SHA du commit → `up -d` → attend que `/health` réponde.
+Idempotent, tu peux le relancer sans risque.
 
 ### D'où vient le nouveau code ?
 
-Aujourd'hui la prod suit `web/14-deploy`. **L'état cible, plus simple :** fusionner
-la réécriture dans `main` et faire suivre `main` à la prod.
+La réécriture (blueprint WP 00–14) **est fusionnée dans `main`** ; les branches
+`web/rewrite` et `web/14-deploy` ont été supprimées. Un seul tronc désormais.
 
-1. Fusionner la PR #9 (`web/14-deploy` → `web/rewrite`), puis la PR #8
-   (`web/rewrite` → `main`).
-2. Repointer la prod : `cd ~/quant-modeling-prod && git fetch && git checkout main && git pull && ./scripts/deploy.sh`.
-3. Ensuite : dev sur des branches dans `~/quant-modeling` → PR vers `main` →
-   `./scripts/deploy.sh` dans `~/quant-modeling-prod`. Rien d'autre.
+- **Développer** : une branche dans `~/quant-modeling` → commit → `gh pr create`
+  vers `main` → merge.
+- **Mettre en ligne** : `cd ~/quant-modeling-prod && ./scripts/deploy.sh`.
+
+C'est tout. (La branche `core/dates-conventions`, si elle existe encore, est du
+travail C++ séparé qui devra être rebasé sur `main`.)
 
 ### Ce qui tourne tout seul
 
@@ -116,7 +117,7 @@ Déjà créé si tu lis ceci depuis `~/quant-modeling-prod`. Pour le recréer :
 ```bash
 cd ~/quant-modeling
 git fetch origin
-git worktree add -b web/14-deploy ~/quant-modeling-prod web/rewrite
+git worktree add ~/quant-modeling-prod main
 cd ~/quant-modeling-prod
 ```
 
@@ -331,7 +332,7 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 | Logs de l'app | `dc logs -f app` |
 | Logs du tunnel | `dc --profile tunnel logs -f cloudflared` |
 | Santé (local / public) | `curl -s http://127.0.0.1:8091/health` · `curl -s https://tramonihadrien.com/health` |
-| Rollback | `git switch --detach <sha-précédent> && ./scripts/deploy.sh` (repasser sur la branche ensuite : `git switch web/14-deploy`) |
+| Rollback | `git switch --detach <sha-précédent> && ./scripts/deploy.sh` (revenir ensuite : `git switch main`) |
 | Redémarrer | `sudo systemctl restart quant-modeling.service` |
 | Arrêter (temporaire) | `dc --profile tunnel down` — systemd le relancera au prochain boot ou `start` |
 | Changer d'adresse publique | dashboard Cloudflare → tunnel `quant-modeling` → Public Hostname ; puis `dc --profile tunnel up -d` |
