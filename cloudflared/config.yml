@@ -19,7 +19,9 @@ originRequest:
 ingress:
   # The app's own nginx handles TLS-terminated concerns (headers, gzip, SPA,
   # /api proxy). cloudflared just forwards plain HTTP to it on the compose network.
-  - hostname: quant.tramonihadrien.com
+  - hostname: tramonihadrien.com
+    service: http://app:8080
+  - hostname: www.tramonihadrien.com
     service: http://app:8080
   # Everything else the tunnel might receive: refuse.
   - service: http_status:404

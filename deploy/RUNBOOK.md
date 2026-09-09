@@ -1,7 +1,7 @@
 # Runbook — quant-modeling auto-hébergé (blueprint WP 14)
 
 Le site est servi **depuis le serveur perso**, joignable en HTTPS sur
-`https://quant.tramonihadrien.com` **via un tunnel Cloudflare** : aucun port
+`https://tramonihadrien.com` **via un tunnel Cloudflare** : aucun port
 n'est ouvert sur la box, l'IP résidentielle reste masquée, le certificat TLS est
 géré par Cloudflare.
 
@@ -27,7 +27,8 @@ Tout se passe dans le **worktree dédié** `~/quant-modeling-prod` (branche
   ```
 - La stack `~/data-ingest` up (Postgres des prix/macro). Sans elle, l'app démarre
   quand même mais les pages *Market* affichent une erreur.
-- Un compte Cloudflare (gratuit) — créé à l'étape §2.
+- L'accès au **compte Cloudflare qui gère déjà `tramonihadrien.com`** (le domaine
+  y est déjà délégué — cf. §2).
 
 ---
 
@@ -47,36 +48,43 @@ Pour le supprimer proprement un jour : `git worktree remove ~/quant-modeling-pro
 
 ---
 
-## §2 — Mettre `tramonihadrien.com` sur Cloudflare
+## §2 — Cloudflare : c'est déjà fait, presque rien à toucher
 
-Cloudflare doit gérer le DNS du domaine pour que le tunnel fonctionne. C'est
-gratuit et réversible.
+`tramonihadrien.com` est **déjà géré par Cloudflare** (le DNS est délégué). Rien
+à faire côté registrar. La zone sert aujourd'hui un site Google Sites (apex +
+`www`) et la messagerie Google Workspace (enregistrements `MX`).
 
-1. Crée un compte sur <https://dash.cloudflare.com/sign-up>.
-2. **Add a site** → tape `tramonihadrien.com` → choisis le plan **Free**.
-3. Cloudflare scanne tes enregistrements DNS actuels puis affiche **deux serveurs
-   de noms**, du type :
-   ```
-   dana.ns.cloudflare.com
-   rick.ns.cloudflare.com
-   ```
-4. Va chez le **registrar** où tu as acheté le domaine (OVH, Gandi, Namecheap,
-   Google Domains / Squarespace…). Si tu ne sais plus lequel :
-   `whois tramonihadrien.com` (ou <https://lookup.icann.org>) → ligne *Registrar*.
-5. Dans l'espace du registrar, cherche **« Serveurs DNS »**, **« Nameservers »**
-   ou **« Gérer les DNS »**, choisis **« serveurs DNS personnalisés »** et
-   **remplace** les serveurs existants par les deux de Cloudflare. Enregistre.
-6. Retour sur Cloudflare : **Check nameservers**. La propagation prend de
-   quelques minutes à ~24 h. Cloudflare envoie un mail **« … is now active »**.
+**Cible : `tramonihadrien.com` (et `www`) doit afficher l'app quant-modeling.**
 
-Une fois la zone active, règle dans le dashboard Cloudflare :
+### 2.1 — Réglages de la zone (dashboard Cloudflare)
 
 | Réglage | Où | Valeur |
 |---|---|---|
 | Mode SSL/TLS | SSL/TLS → Overview | **Full (strict)** |
 | Always Use HTTPS | SSL/TLS → Edge Certificates | **On** |
 | Rocket Loader | Speed → Optimization → Content Optimization | **Off** (casse les SPA) |
-| Auto Minify | idem | Off (ou absent, retiré par CF en 2024) |
+
+### 2.2 — Nettoyer les enregistrements DNS de l'ancien site
+
+Dans **DNS → Records**, **supprime** ces 5 lignes (ce sont les pointeurs vers
+Google Sites) :
+
+| Type | Nom | Contenu |
+|---|---|---|
+| A | `tramonihadrien.com` | `216.239.32.21` |
+| A | `tramonihadrien.com` | `216.239.34.21` |
+| A | `tramonihadrien.com` | `216.239.36.21` |
+| A | `tramonihadrien.com` | `216.239.38.21` |
+| CNAME | `www` | `ghs.googlehosted.com` |
+
+**Ne touche à RIEN d'autre.** En particulier, **garde** :
+- les 5 `MX` (`*.aspmx.l.google.com`) → ta messagerie Gmail continue de marcher ;
+- le `TXT` `google-site-verification=…` ;
+- le `CNAME _domainconnect` (inoffensif).
+
+Les 2 enregistrements `tramonihadrien.com` et `www` qui pointent vers le tunnel
+seront **créés automatiquement** par la commande de l'étape §3. (Cloudflare sait
+mettre un CNAME à la racine — « CNAME flattening ».)
 
 ---
 
@@ -90,28 +98,28 @@ est versionné, `cert.pem` et `*.json` sont des **secrets gitignorés**.
 cd ~/quant-modeling-prod
 CFD="docker run --rm -it -v $PWD/cloudflared:/home/nonroot/.cloudflared cloudflare/cloudflared:2026.8.3"
 
-# 1. Lie cloudflared à ton compte (ouvre un navigateur : choisis la zone tramonihadrien.com)
+# 1. Lie cloudflared à ton compte (ouvre un lien navigateur : choisis la zone tramonihadrien.com)
 $CFD tunnel login                       # → cloudflared/cert.pem
 
 # 2. Crée le tunnel nommé "quant-modeling"
-$CFD tunnel create quant-modeling       # → cloudflared/<UUID>.json  + affiche l'UUID
+$CFD tunnel create quant-modeling       # → cloudflared/<UUID>.json + affiche l'UUID
 
 # 3. Renomme le fichier d'identifiants pour matcher config.yml
 mv cloudflared/*.json cloudflared/quant-modeling.json
 
-# 4. Crée l'enregistrement DNS (CNAME proxifié quant → <UUID>.cfargotunnel.com)
-$CFD tunnel route dns quant-modeling quant.tramonihadrien.com
+# 4. Crée les 2 enregistrements DNS (CNAME proxifiés vers <UUID>.cfargotunnel.com)
+$CFD tunnel route dns quant-modeling tramonihadrien.com
+$CFD tunnel route dns quant-modeling www.tramonihadrien.com
 
 # 5. Vérifie
 $CFD tunnel list
 ```
 
-> Si un jour tu veux servir aussi l'apex : `... route dns quant-modeling tramonihadrien.com`
-> puis ajoute la `hostname:` correspondante dans `cloudflared/config.yml`.
-
-`cloudflared/config.yml` (déjà dans le repo) mappe
-`quant.tramonihadrien.com → http://app:8080`. `app` est le nom du service dans
-`docker-compose.prod.yml`, résolu sur le réseau docker interne.
+`cloudflared/config.yml` (déjà dans le repo) mappe `tramonihadrien.com` **et**
+`www.tramonihadrien.com` → `http://app:8080` (`app` = le service
+`docker-compose.prod.yml`, résolu sur le réseau docker interne). L'app sert les
+deux hôtes à l'identique ; si tu veux plus tard rediriger `www` → apex, une
+*Redirect Rule* Cloudflare le fait en 30 s.
 
 Rends les fichiers lisibles par le conteneur (utilisateur non-root) :
 ```bash
@@ -134,7 +142,9 @@ cp .env.placeholder .env
 | `JWT_SECRET` | `openssl rand -hex 32` (nouveau) — ou recopie celui de `~/quant-modeling/.env` pour garder les sessions existantes |
 | `PGPASSWORD` | **identique** à `~/data-ingest/.env` |
 | `QM_WEB_PORT` | `8091` (port de debug local, lié à 127.0.0.1 uniquement) |
-| `PUBLIC_ORIGIN` | `https://quant.tramonihadrien.com` |
+
+(`CORS_ALLOW_ORIGINS` peut rester vide : le défaut couvre `tramonihadrien.com` +
+`www`. Le `COMMIT_SHA` est posé par `deploy.sh`.)
 
 Puis :
 
@@ -160,15 +170,15 @@ docker compose -f docker-compose.prod.yml logs cloudflared | grep -i "Registered
 Une fois la zone Cloudflare active, **depuis n'importe où** :
 
 ```bash
-curl -sf https://quant.tramonihadrien.com/health
+curl -sf https://tramonihadrien.com/health
 ```
 
-Puis ouvre `https://quant.tramonihadrien.com` dans un navigateur et contrôle :
+Puis ouvre `https://tramonihadrien.com` dans un navigateur et contrôle :
 
 - Console : **aucune violation CSP** (teste aussi la page *Products* et la page
   *surface WebGL*, pas seulement l'accueil).
 - Onglet Réseau : **aucune requête vers un domaine tiers**.
-- `curl -sI -H 'Accept-Encoding: gzip' https://quant.tramonihadrien.com/ | grep -i content-encoding`
+- `curl -sI -H 'Accept-Encoding: gzip' https://tramonihadrien.com/ | grep -i content-encoding`
   → `gzip`.
 
 ---
@@ -222,7 +232,7 @@ docker volume rm qm_data_restore_check      # nettoyage
 ```bash
 sudo reboot
 # … au retour, SANS rien lancer à la main :
-curl -sf https://quant.tramonihadrien.com/health
+curl -sf https://tramonihadrien.com/health
 ```
 
 Si ça répond `ok`, les critères « redémarre proprement après reboot » et
@@ -256,7 +266,7 @@ Dans le dashboard de la zone :
 | Rollback | `git checkout <sha-précédent> -- . && COMMIT_SHA=<sha> docker compose -f docker-compose.prod.yml up -d --build` (ou `git switch -d <sha>` puis `./scripts/deploy.sh`) |
 | Redémarrer le stack | `sudo systemctl restart quant-modeling.service` |
 | Arrêter | `docker compose -f docker-compose.prod.yml down` (systemd le relancera au prochain boot) |
-| Changer le hostname public | éditer `cloudflared/config.yml` + `PUBLIC_ORIGIN` dans `.env`, `... route dns quant-modeling <nouveau>`, `docker compose -f docker-compose.prod.yml up -d` |
+| Changer le hostname public | éditer `cloudflared/config.yml` (+ `CORS_ALLOW_ORIGINS` dans `.env` si besoin), `$CFD tunnel route dns quant-modeling <nouveau>`, `docker compose -f docker-compose.prod.yml up -d` |
 
 ---
 

@@ -29,7 +29,7 @@ services:
       # Runtime app config — same origin, so apiBase stays empty.
       - APP_API_BASE=
       # Same-origin in practice; set explicitly so a stray cross-origin call is refused.
-      - CORS_ALLOW_ORIGINS=${PUBLIC_ORIGIN:-https://quant.tramonihadrien.com}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-https://tramonihadrien.com,https://www.tramonihadrien.com}
       - QM_STORAGE=local
       - QM_DATA_DIR=/app/data
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
