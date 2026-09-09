@@ -18,6 +18,83 @@ Tout se passe dans le **worktree dédié** `~/quant-modeling-prod` (branche
 
 ---
 
+## Le modèle de maintenance (à lire en premier)
+
+Il y a **deux dossiers**, chacun son rôle. Ils partagent le même dépôt git
+(`git worktree`) — pas de duplication, presque pas d'espace disque en plus.
+
+| Dossier | Rôle | Ce que tu y fais |
+|---|---|---|
+| `~/quant-modeling` | **Développement**. Branches, éditions, `npm run dev`, commits, PRs. Les sessions Claude travaillent ici. | tout le dev |
+| `~/quant-modeling-prod` | **Le site en ligne, uniquement.** Toujours sur la branche de déploiement. | `./scripts/deploy.sh` — c'est à peu près tout |
+
+**Pourquoi un dossier séparé ?** Pour que le site en prod ne soit jamais cassé
+par une édition de dev en cours. Ce n'est pas plus compliqué : c'est la
+séparation dev/prod standard sur une machine. Le conteneur qui tourne est
+construit à partir d'une **image**, il ne lit plus les fichiers du dossier une
+fois démarré — seul `deploy.sh` s'en sert (pour reconstruire l'image).
+
+### La boucle quotidienne : une commande
+
+```bash
+cd ~/quant-modeling-prod && ./scripts/deploy.sh
+```
+
+`deploy.sh` fait tout : `git pull` de la branche de déploiement → reconstruit
+l'image en l'étiquetant avec le SHA du commit → `up -d` → attend que `/health`
+réponde. Idempotent, tu peux le relancer sans risque.
+
+### D'où vient le nouveau code ?
+
+Aujourd'hui la prod suit `web/14-deploy`. **L'état cible, plus simple :** fusionner
+la réécriture dans `main` et faire suivre `main` à la prod.
+
+1. Fusionner la PR #9 (`web/14-deploy` → `web/rewrite`), puis la PR #8
+   (`web/rewrite` → `main`).
+2. Repointer la prod : `cd ~/quant-modeling-prod && git fetch && git checkout main && git pull && ./scripts/deploy.sh`.
+3. Ensuite : dev sur des branches dans `~/quant-modeling` → PR vers `main` →
+   `./scripts/deploy.sh` dans `~/quant-modeling-prod`. Rien d'autre.
+
+### Ce qui tourne tout seul
+
+- **Reboot** : `systemd` relance la stack (§5) — rien à faire.
+- **Sauvegardes** : le timer `systemd` fait un dump chaque nuit (§5) — rien à
+  faire une fois installé.
+- **Auto-guérison** : `restart: unless-stopped` sur les conteneurs — si l'app
+  ou le tunnel plante, Docker les relance.
+
+### Le seul fichier non versionné : `.env`
+
+`~/quant-modeling-prod/.env` contient les secrets (JWT, mot de passe PG, jeton du
+tunnel) et **n'est nulle part dans git**. Garde-en une copie hors du dossier :
+
+```bash
+cp ~/quant-modeling-prod/.env ~/quant-modeling-prod-env.bak   # à refaire si tu changes .env
+```
+
+Ce n'est pas critique si tu le perds (JWT régénérable, mot de passe PG dans
+`~/data-ingest/.env`, jeton récupérable dans le dashboard Cloudflare), juste
+pénible.
+
+### Si le worktree part en vrille
+
+Il ne peut pas vraiment : `~/quant-modeling-prod/.git` est juste un petit
+fichier qui pointe vers le vrai dépôt. En cas de doute, on le recrée en 2 s
+sans toucher au site (qui tourne depuis l'image) :
+
+```bash
+git worktree remove --force ~/quant-modeling-prod
+git worktree add ~/quant-modeling-prod <branche-de-déploiement>
+cp ~/quant-modeling-prod-env.bak ~/quant-modeling-prod/.env
+cd ~/quant-modeling-prod && ./scripts/deploy.sh
+```
+
+**Deux règles :** ne jamais `rm -rf ~/quant-modeling-prod` (utiliser
+`git worktree remove`), et ne pas y faire `git checkout` d'une branche au hasard
+(la prod suit UNE branche).
+
+---
+
 ## Prérequis serveur (une fois)
 
 - Docker + plugin `docker compose` v2, l'utilisateur dans le groupe `docker`.
@@ -245,17 +322,20 @@ Dans le dashboard de la zone :
 
 ## Opérations courantes
 
-| Tâche | Commande (depuis `~/quant-modeling-prod`) |
+Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.yml`.
+
+| Tâche | Commande |
 |---|---|
-| Déployer une mise à jour | `git pull --ff-only && ./scripts/deploy.sh` |
-| Voir l'état | `docker compose -f docker-compose.prod.yml ps` |
-| Logs applicatifs | `docker compose -f docker-compose.prod.yml logs -f app` |
-| Logs tunnel | `docker compose -f docker-compose.prod.yml logs -f cloudflared` |
-| Santé | `curl -s http://127.0.0.1:8091/health` |
-| Rollback | `git checkout <sha-précédent> -- . && COMMIT_SHA=<sha> docker compose -f docker-compose.prod.yml up -d --build` (ou `git switch -d <sha>` puis `./scripts/deploy.sh`) |
-| Redémarrer le stack | `sudo systemctl restart quant-modeling.service` |
-| Arrêter | `docker compose -f docker-compose.prod.yml down` (systemd le relancera au prochain boot) |
-| Changer le hostname public | dashboard Cloudflare → tunnel `quant-modeling` → Public Hostname (ajoute/retire) ; ajuste `CORS_ALLOW_ORIGINS` dans `.env` si besoin puis `docker compose -f docker-compose.prod.yml up -d cloudflared app` |
+| **Déployer une mise à jour** | `./scripts/deploy.sh` (fait le `git pull` lui-même) |
+| Voir l'état | `dc ps` |
+| Logs de l'app | `dc logs -f app` |
+| Logs du tunnel | `dc --profile tunnel logs -f cloudflared` |
+| Santé (local / public) | `curl -s http://127.0.0.1:8091/health` · `curl -s https://tramonihadrien.com/health` |
+| Rollback | `git switch --detach <sha-précédent> && ./scripts/deploy.sh` (repasser sur la branche ensuite : `git switch web/14-deploy`) |
+| Redémarrer | `sudo systemctl restart quant-modeling.service` |
+| Arrêter (temporaire) | `dc --profile tunnel down` — systemd le relancera au prochain boot ou `start` |
+| Changer d'adresse publique | dashboard Cloudflare → tunnel `quant-modeling` → Public Hostname ; puis `dc --profile tunnel up -d` |
+| Mettre à jour l'image cloudflared | changer le tag dans `docker-compose.prod.yml`, `./scripts/deploy.sh` |
 
 ---
 
