@@ -1,0 +1,27 @@
+# Brings the production stack up on boot and keeps it defined across reboots,
+# even after a manual `docker compose down`. The containers themselves carry
+# `restart: unless-stopped`, so this unit is belt-and-braces.
+#
+# Install:
+#   sudo cp deploy/quant-modeling.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now quant-modeling.service
+#
+# The worktree path below must match where `git worktree add` put it.
+
+[Unit]
+Description=quant-modeling production stack (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/hadriensuper/quant-modeling-prod
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml stop
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

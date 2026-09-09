@@ -1,12 +1,21 @@
 limit_req_zone $binary_remote_addr zone=per_ip:10m rate=10r/s;
 
-# gzip everything text-ish (brotli too when the module is present — see Dockerfile)
+# gzip everything text-ish (the stock `gzip on;` is stripped in the Dockerfile so
+# this block is the single source of truth)
 gzip on;
 gzip_comp_level 6;
 gzip_min_length 1024;
 gzip_types text/plain text/css application/javascript application/json
            image/svg+xml application/wasm font/woff2;
 gzip_vary on;
+
+# The request reaches nginx over plain HTTP (from cloudflared on the compose
+# network), but the browser terminated TLS at Cloudflare. Trust the proto the
+# edge reports; fall back to the scheme nginx itself saw if the header is absent.
+map $http_x_forwarded_proto $forwarded_proto {
+    default    $scheme;
+    "~^https?$" $http_x_forwarded_proto;
+}
 
 server {
     listen ${PORT};
@@ -17,23 +26,26 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # ── Security headers (blueprint WP 14 §3) ─────────────────────
-    # CSP: no third-party origin is allowed. WebGL needs blob: workers and
-    # data: images; fonts are self-hosted; the API is same-origin (/api).
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    # Security headers — see the snippet's comment: nginx does not merge
+    # add_header across levels, so every location that sets a header of its own
+    # must include this again.
+    include /etc/nginx/snippets/security-headers.conf;
+
+    # ── shared proxy headers (inherited by every location that proxies) ──
+    proxy_http_version 1.1;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Real-IP         $remote_addr;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $forwarded_proto;
 
     # ── health check — proxied to the API ────────────────────────
     location = /health {
-        proxy_pass         ${API_URL}/health;
-        proxy_http_version 1.1;
+        proxy_pass ${API_URL}/health;
     }
 
     # ── runtime config — read by the app before its first request ─
     location = /config.json {
+        include /etc/nginx/snippets/security-headers.conf;
         default_type application/json;
         add_header Cache-Control "no-store" always;
     }
@@ -41,16 +53,10 @@ server {
     # ── reverse-proxy /api → backend API ────────────────────────
     location /api/ {
         proxy_pass         ${API_URL}/api/;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              $proxy_host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_read_timeout 180s;
     }
     location ~ ^/(market|price)/ {
         proxy_pass         ${API_URL};
-        proxy_http_version 1.1;
         proxy_read_timeout 180s;
     }
 
@@ -66,12 +72,13 @@ server {
 
     # ── never cache the shell ──────────────────────────────────
     location = /index.html {
+        include /etc/nginx/snippets/security-headers.conf;
         add_header Cache-Control "no-store" always;
     }
 
-    # ── immutable hashed assets ────────────────────────────────
+    # ── immutable hashed assets (filename carries a content hash) ──
     location /assets/ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
     }
 }

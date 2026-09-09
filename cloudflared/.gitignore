@@ -1,0 +1,4 @@
+# Never commit tunnel secrets. Only config.yml is versioned.
+*
+!.gitignore
+!config.yml

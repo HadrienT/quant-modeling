@@ -46,7 +46,11 @@ export default defineConfig({
 		),
 	},
 	build: {
-		sourcemap: true,
+		// No sourcemaps in the shipped bundle: they expose the full original
+		// source on a public site and inflate the image. Opt in with
+		// VITE_BUILD_SOURCEMAP=1 for a local debugging build. `vite dev` keeps
+		// its own inline maps regardless.
+		sourcemap: process.env.VITE_BUILD_SOURCEMAP === "1",
 		rollupOptions: {
 			output: {
 				manualChunks: {

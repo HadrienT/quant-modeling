@@ -96,11 +96,12 @@ adjoints, GPU) bat la largeur.
 ## Déploiement
 
 Le projet est **auto-hébergé**, pas sur Google Cloud — le coût GCP était le
-motif de la bascule. `cloudbuild.yaml` et la cible Cloud Run de
-`web/Dockerfile.prod` sont l'héritage de l'ancien déploiement : les traiter
-comme du legacy, ne pas construire dessus. La cible actuelle est le
-`docker compose` derrière un reverse proxy sur le serveur (voir
-`blueprint/wp/13-deploy-selfhost.md`).
+motif de la bascule. La cible : `docker-compose.prod.yml` sur le serveur perso,
+exposé en HTTPS par un **tunnel Cloudflare** (aucun port ouvert). Tout se pilote
+depuis le worktree dédié `~/quant-modeling-prod` (branche `web/14-deploy`) —
+procédure complète dans `deploy/RUNBOOK.md`, conception dans
+`blueprint/wp/14-deploy-selfhost.md`. L'ancien `web/Dockerfile.prod` reste le
+socle (multi-étage wheel C++ → build Vite → nginx + uvicorn).
 
 Attention au piège classique de Vite : les variables `VITE_*` sont **inlinées
 au build**, pas lues au runtime. Changer `VITE_API_BASE` impose de rebuilder

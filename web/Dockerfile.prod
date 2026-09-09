@@ -38,6 +38,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx bash curl ca-certificates gettext-base \
     && rm -rf /var/lib/apt/lists/* \
+    # Debian ships a default :80 vhost; we render our own into conf.d. Drop it at
+    # build time — the non-root runtime user can't remove it from sites-enabled.
+    && rm -f /etc/nginx/sites-enabled/default \
+    # Adapt the main nginx.conf to a non-root runtime and to our conf.d vhost:
+    #  - drop `user` (ignored + warns when not root)
+    #  - pid file under a dir the `quant` user owns (passing pid via -g clashes)
+    #  - drop the stock `gzip on;` — our default.conf sets the full gzip block
+    #    and nginx rejects the directive as duplicate in the same (http) context
+    && sed -i -e 's|^user .*|# user directive dropped (non-root runtime);|' \
+              -e 's|^pid .*|pid /tmp/nginx/nginx.pid;|' \
+              -e '/^\s*gzip on;/d' /etc/nginx/nginx.conf \
     && mkdir -p /app/logs /app/data /var/cache/nginx /tmp/nginx \
     && useradd --system --uid 1001 quant \
     && chown -R quant:quant /app /var/lib/nginx /var/log/nginx /var/cache/nginx \
@@ -53,11 +64,15 @@ COPY --from=cpp-builder /app/dist/*.whl /tmp/
 RUN python -m pip install --root-user-action=ignore --force-reinstall /tmp/*.whl \
     && rm -rf /tmp/*.whl
 
-COPY api ./api
-COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+COPY --chown=quant:quant api ./api
+COPY --chown=quant:quant --from=frontend-builder /app/dist /usr/share/nginx/html
 COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY web/nginx-security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY web/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh && chown quant:quant /entrypoint.sh
+# COPY resets ownership to root; re-assert it so the non-root runtime user can
+# write /usr/share/nginx/html/config.json and read everything it serves.
+RUN chmod +x /entrypoint.sh \
+    && chown -R quant:quant /entrypoint.sh /usr/share/nginx/html /app
 
 USER quant
 

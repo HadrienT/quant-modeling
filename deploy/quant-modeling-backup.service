@@ -1,0 +1,20 @@
+# One-shot backup of the accounts/portfolios volume. Driven by the .timer.
+#
+# Install:
+#   echo 'BACKUP_DEST=/mnt/offsite/quant' | sudo tee /etc/quant-modeling-backup.conf
+#   sudo cp deploy/quant-modeling-backup.service deploy/quant-modeling-backup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now quant-modeling-backup.timer
+#
+# BACKUP_DEST should be an OFF-machine location (a mounted NAS/USB/rclone target).
+
+[Unit]
+Description=quant-modeling data backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/quant-modeling-backup.conf
+WorkingDirectory=/home/hadriensuper/quant-modeling-prod
+ExecStart=/bin/bash scripts/backup_data.sh ${BACKUP_DEST}

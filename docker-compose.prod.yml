@@ -1,9 +1,14 @@
 # Production stack — blueprint WP 14. Self-hosted, no Google Cloud.
-# Built images (no code volume, no HMR), TLS terminated by a reverse proxy,
-# named volumes for the data that replaced GCS.
+# Built image (no code volume, no HMR), reached from the internet only through a
+# Cloudflare Tunnel (no inbound port), named volumes for the data that replaced GCS.
 #
-#   docker compose -f docker-compose.prod.yml up -d
+#   cp .env.placeholder .env   # fill JWT_SECRET, PGPASSWORD
+#   ./scripts/deploy.sh        # build + up -d + health gate
 #
+# See deploy/RUNBOOK.md for the one-time Cloudflare + systemd setup.
+
+name: quant-modeling-prod
+
 services:
   app:
     build:
@@ -23,19 +28,23 @@ services:
       - COMMIT_SHA=${COMMIT_SHA:-dev}
       # Runtime app config — same origin, so apiBase stays empty.
       - APP_API_BASE=
+      # Same-origin in practice; set explicitly so a stray cross-origin call is refused.
+      - CORS_ALLOW_ORIGINS=${PUBLIC_ORIGIN:-https://quant.tramonihadrien.com}
       - QM_STORAGE=local
       - QM_DATA_DIR=/app/data
-      - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
       # data-ingest Postgres (market data), over the shared network
       - PGHOST=${PGHOST:-data-ingest-postgres}
       - PGPORT=${PGPORT:-5432}
       - PGDATABASE=${PGDATABASE:-dataingest}
       - PGUSER=${PGUSER:-dataingest}
-      - PGPASSWORD=${PGPASSWORD:?set PGPASSWORD}
+      - PGPASSWORD=${PGPASSWORD:?set PGPASSWORD in .env (same as data-ingest/.env)}
       - LOG_DIR=/app/logs
+    # Local debug only — the tunnel reaches the container over the compose
+    # network, not through a host port. 8091 avoids the dev stack on 5180.
     ports:
-      - "${QM_WEB_PORT:-5180}:8080"
+      - "127.0.0.1:${QM_WEB_PORT:-8091}:8080"
     volumes:
       - qm_data:/app/data
       - qm_logs:/app/logs
@@ -44,6 +53,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -54,6 +64,27 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+  # Outbound-only connection to Cloudflare's edge. No inbound port is opened on
+  # the host or the router. Config + credentials live in ./cloudflared (the
+  # credentials file is gitignored — see deploy/RUNBOOK.md §2).
+  cloudflared:
+    image: cloudflare/cloudflared:2026.8.3
+    container_name: quant-modeling-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   qm_data:

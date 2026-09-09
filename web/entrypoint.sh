@@ -7,7 +7,6 @@ set -e
 envsubst '${PORT} ${API_URL}' \
   < /etc/nginx/templates/default.conf.template \
   > /etc/nginx/conf.d/default.conf
-rm -f /etc/nginx/sites-enabled/default
 
 # ── Runtime app configuration (blueprint WP 14 §1) ──────────────
 # One image, many environments: the app reads /config.json before its first
@@ -20,13 +19,26 @@ cat > /usr/share/nginx/html/config.json <<EOF
 EOF
 
 # ── Start uvicorn (API) then nginx ─────────────────────────────
-uvicorn api.app.main:app --host 127.0.0.1 --port 8000 &
+# --proxy-headers: uvicorn is behind nginx (127.0.0.1), itself behind cloudflared
+# and Cloudflare. Trust the immediate peer's X-Forwarded-* so request.url.scheme
+# and the logged client IP are the real ones, not nginx's loopback address.
+uvicorn api.app.main:app --host 127.0.0.1 --port 8000 \
+  --proxy-headers --forwarded-allow-ips=127.0.0.1 &
+uvicorn_pid=$!
 
 echo "Waiting for uvicorn on port 8000..."
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1 && { echo "uvicorn ready"; break; }
+  kill -0 "$uvicorn_pid" 2>/dev/null || { echo "uvicorn exited during startup" >&2; exit 1; }
   sleep 1
 done
 
-# Non-root worker: keep the pid and temp paths writable.
-exec nginx -g 'daemon off; pid /tmp/nginx/nginx.pid;'
+# pid path + `user` are already set for a non-root runtime in the image's
+# /etc/nginx/nginx.conf (see Dockerfile.prod).
+nginx -g 'daemon off;' &
+nginx_pid=$!
+
+# Exit as soon as either process stops, so Docker restarts the whole container
+# instead of leaving it half-alive (a dead API behind a live nginx, or vice versa).
+wait -n "$uvicorn_pid" "$nginx_pid"
+exit $?

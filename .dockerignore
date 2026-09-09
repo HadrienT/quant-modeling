@@ -1,0 +1,64 @@
+# Build context is the repo root (see docker-compose.prod.yml). Without this file
+# the whole tree — .git, node_modules, the C++ build dir, the venv, vcpkg — is
+# shipped to the daemon on every build, and `COPY web/ ./` would overlay the
+# host's node_modules on top of the image's freshly installed one.
+
+# ── VCS ───────────────────────────────────────────────────────────────
+.git
+.gitignore
+.github
+
+# ── Python ────────────────────────────────────────────────────────────
+**/__pycache__
+**/*.py[cod]
+.venv
+venv
+env
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+.coverage
+.coverage.*
+
+# ── C++ build artefacts ──────────────────────────────────────────────
+build/
+cmake-build-*/
+vcpkg/
+vcpkg_installed/
+compile_commands.json
+
+# ── Node / frontend ──────────────────────────────────────────────────
+**/node_modules
+web/dist
+web/storybook-static
+web/playwright-report
+web/test-results
+web/coverage
+web/.vite
+web/bundle-report.html
+web/palette-report.txt
+
+# ── Local ops, secrets, data, logs ──────────────────────────────────
+.env
+.env.*
+!.env.placeholder
+logs/
+secrets/
+cloudflared/
+data/
+
+# ── Not needed in the image ─────────────────────────────────────────
+notebooks/
+benchmarks/
+blueprint/
+deploy/
+etc/
+**/*.md
+!README.md
+
+# ── Editor / OS ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+*.code-workspace

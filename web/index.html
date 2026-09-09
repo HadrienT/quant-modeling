@@ -5,19 +5,9 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta name="color-scheme" content="dark light" />
 		<title>Quant Modeling Workbench</title>
-		<script>
-			// Blocking: set the theme attribute before first paint to avoid a flash.
-			(function () {
-				try {
-					var stored = localStorage.getItem("qm-theme");
-					if (stored === "dark" || stored === "light") {
-						document.documentElement.setAttribute("data-theme", stored);
-					}
-				} catch (e) {
-					/* private mode — fall back to prefers-color-scheme */
-				}
-			})();
-		</script>
+		<!-- Render-blocking, external (not inline) so the prod CSP can forbid
+		     inline scripts. Sets data-theme before first paint to avoid a flash. -->
+		<script src="/theme-init.js"></script>
 	</head>
 	<body>
 		<div id="root"></div>

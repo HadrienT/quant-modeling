@@ -1,5 +1,9 @@
 .env
 
+# Cloudflare Tunnel credentials (see cloudflared/.gitignore — only config.yml is tracked)
+cloudflared/*.json
+cloudflared/*.pem
+
 # === C/C++ build artifacts ===
 *.d
 *.slo
