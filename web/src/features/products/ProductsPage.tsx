@@ -23,6 +23,7 @@ export default function ProductsPage() {
 					selected={key}
 					onSelect={(k) => navigate({ search: { product: k } })}
 					allowDisabled
+					showInfo={false}
 				/>
 			</aside>
 			<ProductReference descriptor={descriptor} />

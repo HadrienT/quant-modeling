@@ -5,19 +5,23 @@ import type { ProductCategory } from "./types";
 
 /**
  * Categorised product list (WP 07 §1). Two consumers:
- *   - the pricing workbench, where a disabled product is greyed and inert;
+ *   - the pricing workbench, where a disabled product is greyed and inert and
+ *     the ⓘ popover is the quick way to peek at the doc;
  *   - the Products reference page (`allowDisabled`), where every product is
- *     clickable because you can still read about one you cannot price.
- * The ⓘ popover and the row button are always SIBLINGS, never nested.
+ *     clickable because you can still read about one you cannot price, and the
+ *     ⓘ popover is dropped (`showInfo={false}`) — the full sheet is right there.
+ * When shown, the ⓘ popover and the row button are always SIBLINGS, never nested.
  */
 export function ProductPicker({
 	selected,
 	onSelect,
 	allowDisabled = false,
+	showInfo = true,
 }: {
 	selected: string;
 	onSelect: (key: string) => void;
 	allowDisabled?: boolean;
+	showInfo?: boolean;
 }) {
 	const cats = [
 		...new Set(CATALOG.map((p) => p.category)),
@@ -68,7 +72,7 @@ export function ProductPicker({
 										<TooltipContent>{p.disabledReason}</TooltipContent>
 									</Tooltip>
 								)}
-								<ProductInfo docKey={p.docKey} />
+								{showInfo && <ProductInfo docKey={p.docKey} />}
 							</div>
 						);
 					})}
