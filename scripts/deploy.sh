@@ -30,16 +30,16 @@ COMMIT_SHA="$(git rev-parse --short HEAD)"
 export COMMIT_SHA
 echo "→ deploying $COMMIT_SHA"
 
-# The tunnel only starts once its credentials exist (RUNBOOK §3). Until then,
-# deploy just the app so `cloudflared` doesn't crash-loop in the logs.
-services=()
-if [[ ! -f cloudflared/quant-modeling.json ]]; then
-  echo "⚠ cloudflared/quant-modeling.json missing — deploying 'app' only (see deploy/RUNBOOK.md §3)"
-  services=(app)
+# The tunnel is in the `tunnel` compose profile and only makes sense once
+# CLOUDFLARE_TUNNEL_TOKEN is set (RUNBOOK §3).
+if grep -qE '^CLOUDFLARE_TUNNEL_TOKEN=.+' .env; then
+  COMPOSE+=(--profile tunnel)
+else
+  echo "⚠ CLOUDFLARE_TUNNEL_TOKEN not set in .env — deploying 'app' only (see deploy/RUNBOOK.md §3)"
 fi
 
-"${COMPOSE[@]}" build "${services[@]}"
-"${COMPOSE[@]}" up -d --remove-orphans "${services[@]}"
+"${COMPOSE[@]}" build
+"${COMPOSE[@]}" up -d --remove-orphans
 
 # Health gate — poll the container's own healthcheck endpoint.
 port="$(grep -E '^QM_WEB_PORT=' .env | cut -d= -f2)"; port="${port:-8091}"

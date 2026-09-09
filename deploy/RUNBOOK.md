@@ -64,73 +64,54 @@ Pour le supprimer proprement un jour : `git worktree remove ~/quant-modeling-pro
 | Always Use HTTPS | SSL/TLS → Edge Certificates | **On** |
 | Rocket Loader | Speed → Optimization → Content Optimization | **Off** (casse les SPA) |
 
-### 2.2 — Nettoyer les enregistrements DNS de l'ancien site
+### 2.2 — L'ancien site
 
-Dans **DNS → Records**, **supprime** ces 5 lignes (ce sont les pointeurs vers
-Google Sites) :
-
-| Type | Nom | Contenu |
-|---|---|---|
-| A | `tramonihadrien.com` | `216.239.32.21` |
-| A | `tramonihadrien.com` | `216.239.34.21` |
-| A | `tramonihadrien.com` | `216.239.36.21` |
-| A | `tramonihadrien.com` | `216.239.38.21` |
-| CNAME | `www` | `ghs.googlehosted.com` |
-
-**Ne touche à RIEN d'autre.** En particulier, **garde** :
-- les 5 `MX` (`*.aspmx.l.google.com`) → ta messagerie Gmail continue de marcher ;
-- le `TXT` `google-site-verification=…` ;
-- le `CNAME _domainconnect` (inoffensif).
-
-Les 2 enregistrements `tramonihadrien.com` et `www` qui pointent vers le tunnel
-seront **créés automatiquement** par la commande de l'étape §3. (Cloudflare sait
-mettre un CNAME à la racine — « CNAME flattening ».)
+Les enregistrements qui font pointer `tramonihadrien.com` / `www` vers Google
+Sites (4 `A` en `216.239.x` + le `CNAME www → ghs.googlehosted.com`) seront
+**remplacés automatiquement** quand tu ajoutes les hôtes publics du tunnel
+(§3.3) — Cloudflare te proposera d'écraser l'enregistrement existant, tu
+acceptes. **Ne touche pas** aux `MX` (ta messagerie Gmail), au `TXT`
+`google-site-verification`, ni au `CNAME _domainconnect`.
 
 ---
 
-## §3 — Créer le tunnel (`cloudflared`)
+## §3 — Créer le tunnel (dans le dashboard Cloudflare)
 
-On utilise l'image docker pour ne rien installer sur l'hôte. Les fichiers
-produits restent dans `~/quant-modeling-prod/cloudflared/` ; seul `config.yml`
-est versionné, `cert.pem` et `*.json` sont des **secrets gitignorés**.
+Approche par **jeton** : rien à installer, rien à authentifier en ligne de
+commande, aucun fichier de secret à gérer — juste un copier-coller.
 
-```bash
-cd ~/quant-modeling-prod
+### 3.1 — Créer le tunnel
 
-# --user : l'image tourne en uid 65532 et ne peut pas écrire dans le montage
-# (possédé par toi). On force le conteneur à tourner sous ton compte.
-CFD="docker run --rm -it --user $(id -u):$(id -g) -e HOME=/home/nonroot \
-  -v $PWD/cloudflared:/home/nonroot/.cloudflared cloudflare/cloudflared:2026.8.3"
+1. <https://one.dash.cloudflare.com> → **Networks → Tunnels → Create a tunnel**.
+2. Type **Cloudflared**. Nom : `quant-modeling`. **Save tunnel**.
+3. L'écran « Install and run a connector » affiche une commande du type
+   `cloudflared service install eyJhI...`. **Copie juste le long jeton** (la
+   partie après `install`, `eyJ...`) — pas toute la commande.
 
-# 1. Lie cloudflared à ton compte (ouvre le lien, connecte-toi, choisis tramonihadrien.com)
-$CFD tunnel login                       # → cloudflared/cert.pem
+### 3.2 — Coller le jeton
 
-# 2. Crée le tunnel nommé "quant-modeling"
-$CFD tunnel create quant-modeling       # → cloudflared/<UUID>.json + affiche l'UUID
+Dans `~/quant-modeling-prod/.env` :
 
-# 3. Renomme le fichier d'identifiants pour matcher config.yml
-mv cloudflared/*.json cloudflared/quant-modeling.json
-
-# 4. Crée les 2 enregistrements DNS (CNAME proxifiés vers <UUID>.cfargotunnel.com)
-#    ⚠ à faire APRÈS avoir supprimé les lignes A de l'ancien site (§2.2)
-$CFD tunnel route dns quant-modeling tramonihadrien.com
-$CFD tunnel route dns quant-modeling www.tramonihadrien.com
-
-# 5. Vérifie
-$CFD tunnel list
+```
+CLOUDFLARE_TUNNEL_TOKEN=eyJhI...            # le jeton copié
 ```
 
-`cloudflared/config.yml` (déjà dans le repo) mappe `tramonihadrien.com` **et**
-`www.tramonihadrien.com` → `http://app:8080` (`app` = le service
-`docker-compose.prod.yml`, résolu sur le réseau docker interne). L'app sert les
-deux hôtes à l'identique ; si tu veux plus tard rediriger `www` → apex, une
-*Redirect Rule* Cloudflare le fait en 30 s.
+### 3.3 — Ajouter les hôtes publics
 
-Rends les fichiers lisibles par le conteneur `cloudflared` de la stack (il
-tourne en `nonroot`, uid 65532, et monte `./cloudflared` en lecture seule) :
-```bash
-chmod 644 cloudflared/config.yml cloudflared/quant-modeling.json
-```
+Toujours dans la page du tunnel, onglet **Public Hostname → Add a public
+hostname**, deux fois :
+
+| Subdomain | Domain | Path | Type | URL |
+|---|---|---|---|---|
+| *(vide)* | `tramonihadrien.com` | *(vide)* | HTTP | `app:8080` |
+| `www` | `tramonihadrien.com` | *(vide)* | HTTP | `app:8080` |
+
+Cloudflare crée/écrase les enregistrements DNS tout seul (accepte l'écrasement
+de l'ancien `A`/`CNAME`). `app:8080` = le conteneur de l'app, joint par
+`cloudflared` sur le réseau docker interne.
+
+> `www` et l'apex montreront la même app. Pour rediriger `www` → apex plus tard :
+> **Rules → Redirect Rules**, 30 secondes.
 
 ---
 
@@ -145,12 +126,14 @@ cp .env.placeholder .env
 
 | Variable | Valeur |
 |---|---|
+| `CLOUDFLARE_TUNNEL_TOKEN` | le jeton copié en §3.1 (`eyJ...`) |
 | `JWT_SECRET` | `openssl rand -hex 32` (nouveau) — ou recopie celui de `~/quant-modeling/.env` pour garder les sessions existantes |
 | `PGPASSWORD` | **identique** à `~/data-ingest/.env` |
 | `QM_WEB_PORT` | `8091` (port de debug local, lié à 127.0.0.1 uniquement) |
 
 (`CORS_ALLOW_ORIGINS` peut rester vide : le défaut couvre `tramonihadrien.com` +
-`www`. Le `COMMIT_SHA` est posé par `deploy.sh`.)
+`www`. Le `COMMIT_SHA` est posé par `deploy.sh`. Si le jeton n'est pas encore
+là, `deploy.sh` ne lance que `app` — c'est normal, relance-le après.)
 
 Puis :
 
@@ -272,7 +255,7 @@ Dans le dashboard de la zone :
 | Rollback | `git checkout <sha-précédent> -- . && COMMIT_SHA=<sha> docker compose -f docker-compose.prod.yml up -d --build` (ou `git switch -d <sha>` puis `./scripts/deploy.sh`) |
 | Redémarrer le stack | `sudo systemctl restart quant-modeling.service` |
 | Arrêter | `docker compose -f docker-compose.prod.yml down` (systemd le relancera au prochain boot) |
-| Changer le hostname public | éditer `cloudflared/config.yml` (+ `CORS_ALLOW_ORIGINS` dans `.env` si besoin), `$CFD tunnel route dns quant-modeling <nouveau>`, `docker compose -f docker-compose.prod.yml up -d` |
+| Changer le hostname public | dashboard Cloudflare → tunnel `quant-modeling` → Public Hostname (ajoute/retire) ; ajuste `CORS_ALLOW_ORIGINS` dans `.env` si besoin puis `docker compose -f docker-compose.prod.yml up -d cloudflared app` |
 
 ---
 
@@ -284,7 +267,8 @@ Dans le dashboard de la zone :
 | Boucle de redirection HTTPS | Mode SSL/TLS Cloudflare sur *Flexible* → passer à **Full (strict)**. |
 | Page blanche / JS non exécuté | **Rocket Loader** encore activé → Off. Vider le cache Cloudflare (Caching → Purge Everything). |
 | Violations CSP dans la console | Une ressource externe s'est glissée dans le build. La CSP interdit toute origine tierce — c'est voulu (blueprint WP 14 §3). |
-| `cloudflared` : `tunnel credentials file not found` | `cloudflared/quant-modeling.json` absent ou mal nommé, ou pas `chmod 644`. Re-voir §3. |
+| `cloudflared` refuse de démarrer | `CLOUDFLARE_TUNNEL_TOKEN` absent/mauvais dans `.env`. Recopie le jeton depuis la page du tunnel (§3.1). |
+| `https://…` → erreur 1016 / DNS | l'hôte public n'est pas ajouté dans le tunnel (§3.3), ou le DNS de l'ancien site n'a pas été écrasé. |
 | Market en erreur, le reste OK | `data-ingest-postgres` down ou pas sur le réseau `dataplatform`. |
 | `deploy.sh` : `.env is missing` | `cp .env.placeholder .env` puis remplir. |
 | Le port 8091 est pris | changer `QM_WEB_PORT` dans `.env` (n'importe quel port libre en 127.0.0.1). |

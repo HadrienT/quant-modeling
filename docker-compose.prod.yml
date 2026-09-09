@@ -66,15 +66,19 @@ services:
         max-file: "5"
 
   # Outbound-only connection to Cloudflare's edge. No inbound port is opened on
-  # the host or the router. Config + credentials live in ./cloudflared (the
-  # credentials file is gitignored — see deploy/RUNBOOK.md §2).
+  # the host or the router. The tunnel is dashboard-managed: create it in
+  # Cloudflare Zero Trust, add the public hostnames there, paste the token into
+  # .env as CLOUDFLARE_TUNNEL_TOKEN (see deploy/RUNBOOK.md §3).
   cloudflared:
     image: cloudflare/cloudflared:2026.8.3
     container_name: quant-modeling-tunnel
     restart: unless-stopped
-    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
-    volumes:
-      - ./cloudflared:/etc/cloudflared:ro
+    # In the `tunnel` profile: a bare `docker compose up -d` starts only `app`;
+    # deploy.sh adds `--profile tunnel` once CLOUDFLARE_TUNNEL_TOKEN is set.
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
       app:
         condition: service_healthy
