@@ -36,9 +36,19 @@ python -m pip install \
   "cmake>=3.20" \
   ninja
 
+# If vcpkg is set up, point the CMake configure at its toolchain so the wheel
+# build finds the same Eigen / pybind11 as ./scripts/make.sh. Without vcpkg the
+# build falls back to system packages (e.g. libeigen3-dev).
+CONFIG_ARGS=()
+TOOLCHAIN="${VCPKG_ROOT:-}/scripts/buildsystems/vcpkg.cmake"
+if [[ -n "${VCPKG_ROOT:-}" && -f "$TOOLCHAIN" ]]; then
+  echo "→ using vcpkg toolchain: $TOOLCHAIN"
+  CONFIG_ARGS+=("--config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE=$TOOLCHAIN")
+fi
+
 # Editable install. editable.rebuild (pyproject.toml) makes `import quantmodeling`
 # re-run `cmake --build build/pypkg` when sources change.
-python -m pip install --no-build-isolation -ve .
+python -m pip install --no-build-isolation -ve . "${CONFIG_ARGS[@]}"
 
 echo
 echo "quantmodeling installed editable."
