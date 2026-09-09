@@ -96,9 +96,13 @@ est versionné, `cert.pem` et `*.json` sont des **secrets gitignorés**.
 
 ```bash
 cd ~/quant-modeling-prod
-CFD="docker run --rm -it -v $PWD/cloudflared:/home/nonroot/.cloudflared cloudflare/cloudflared:2026.8.3"
 
-# 1. Lie cloudflared à ton compte (ouvre un lien navigateur : choisis la zone tramonihadrien.com)
+# --user : l'image tourne en uid 65532 et ne peut pas écrire dans le montage
+# (possédé par toi). On force le conteneur à tourner sous ton compte.
+CFD="docker run --rm -it --user $(id -u):$(id -g) -e HOME=/home/nonroot \
+  -v $PWD/cloudflared:/home/nonroot/.cloudflared cloudflare/cloudflared:2026.8.3"
+
+# 1. Lie cloudflared à ton compte (ouvre le lien, connecte-toi, choisis tramonihadrien.com)
 $CFD tunnel login                       # → cloudflared/cert.pem
 
 # 2. Crée le tunnel nommé "quant-modeling"
@@ -108,6 +112,7 @@ $CFD tunnel create quant-modeling       # → cloudflared/<UUID>.json + affiche 
 mv cloudflared/*.json cloudflared/quant-modeling.json
 
 # 4. Crée les 2 enregistrements DNS (CNAME proxifiés vers <UUID>.cfargotunnel.com)
+#    ⚠ à faire APRÈS avoir supprimé les lignes A de l'ancien site (§2.2)
 $CFD tunnel route dns quant-modeling tramonihadrien.com
 $CFD tunnel route dns quant-modeling www.tramonihadrien.com
 
@@ -121,7 +126,8 @@ $CFD tunnel list
 deux hôtes à l'identique ; si tu veux plus tard rediriger `www` → apex, une
 *Redirect Rule* Cloudflare le fait en 30 s.
 
-Rends les fichiers lisibles par le conteneur (utilisateur non-root) :
+Rends les fichiers lisibles par le conteneur `cloudflared` de la stack (il
+tourne en `nonroot`, uid 65532, et monte `./cloudflared` en lecture seule) :
 ```bash
 chmod 644 cloudflared/config.yml cloudflared/quant-modeling.json
 ```
