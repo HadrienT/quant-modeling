@@ -42,20 +42,24 @@ fi
 
 # Build backend + tools installed into THIS environment so the install below can
 # run with --no-build-isolation (no throwaway build venv on every rebuild).
+#
+# Deliberately NOT via vcpkg: the wheel needs only pybind11 (this pip package)
+# and Eigen (system libeigen3-dev). Routing it through the vcpkg toolchain drags
+# in vcpkg's own python port, whose find_package(Python) wrapper then fights the
+# venv interpreter ("missing: Development.Module"). scripts/make.sh keeps vcpkg
+# for the full C++ build, which does not touch pybind11.
 "${PIP[@]}" install \
   "scikit-build-core>=0.10.2" \
   "pybind11>=3.0.1" \
   "cmake>=3.20" \
   ninja
 
-# If vcpkg is set up, point the CMake configure at its toolchain so the wheel
-# build finds the same Eigen / pybind11 as ./scripts/make.sh. Without vcpkg the
-# build falls back to system packages (e.g. libeigen3-dev).
+# Point CMake at the pip pybind11's config package explicitly (no vcpkg to
+# provide it, and scikit-build-core does not add it on its own).
 CONFIG_ARGS=()
-TOOLCHAIN="${VCPKG_ROOT:-}/scripts/buildsystems/vcpkg.cmake"
-if [[ -n "${VCPKG_ROOT:-}" && -f "$TOOLCHAIN" ]]; then
-  echo "→ using vcpkg toolchain: $TOOLCHAIN"
-  CONFIG_ARGS+=("--config-settings=cmake.define.CMAKE_TOOLCHAIN_FILE=$TOOLCHAIN")
+PYBIND11_CMAKE_DIR="$(python -m pybind11 --cmakedir 2>/dev/null || true)"
+if [[ -n "$PYBIND11_CMAKE_DIR" ]]; then
+  CONFIG_ARGS+=("--config-settings=cmake.define.pybind11_DIR=$PYBIND11_CMAKE_DIR")
 fi
 
 # Editable install. editable.rebuild (pyproject.toml) makes `import quantmodeling`
