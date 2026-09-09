@@ -20,17 +20,29 @@ cd "$ROOT_DIR"
 # Reuse an already-active virtualenv; otherwise fall back to .venv.
 if [[ -z "${VIRTUAL_ENV:-}" ]]; then
   if [[ ! -d .venv ]]; then
-    python3 -m venv .venv
+    python3 -m venv .venv 2>/dev/null || uv venv .venv
   fi
   # shellcheck disable=SC1091
   source .venv/bin/activate
 fi
 
-python -m pip install --upgrade pip
+# Package installer: uv (fast, and what typically creates .venv here) if present,
+# otherwise pip. A uv-created venv has no pip, so uv must win when available.
+if command -v uv >/dev/null 2>&1; then
+  PIP=(uv pip)
+elif python -m pip --version >/dev/null 2>&1; then
+  PIP=(python -m pip)
+  python -m pip install --upgrade pip
+else
+  echo "✗ neither uv nor pip is available in this environment." >&2
+  echo "  Install uv (https://docs.astral.sh/uv/) or add pip with:" >&2
+  echo "    python -m ensurepip --upgrade   # needs the python3-venv system package" >&2
+  exit 1
+fi
 
 # Build backend + tools installed into THIS environment so the install below can
 # run with --no-build-isolation (no throwaway build venv on every rebuild).
-python -m pip install \
+"${PIP[@]}" install \
   "scikit-build-core>=0.10.2" \
   "pybind11>=3.0.1" \
   "cmake>=3.20" \
@@ -48,7 +60,7 @@ fi
 
 # Editable install. editable.rebuild (pyproject.toml) makes `import quantmodeling`
 # re-run `cmake --build build/pypkg` when sources change.
-python -m pip install --no-build-isolation -ve . "${CONFIG_ARGS[@]}"
+"${PIP[@]}" install --no-build-isolation -ve . "${CONFIG_ARGS[@]}"
 
 echo
 echo "quantmodeling installed editable."
