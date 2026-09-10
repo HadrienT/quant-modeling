@@ -40,8 +40,37 @@ namespace quantModeling
         EXPECT_TRUE(c.is_holiday(Date(2023, 5, 1)));  // Early May BH
         EXPECT_TRUE(c.is_holiday(Date(2023, 5, 29))); // Spring BH
         EXPECT_TRUE(c.is_holiday(Date(2023, 8, 28))); // Summer BH
-        // 1 Jan 2023 was a Sunday -> observed Monday 2 Jan.
+    }
+
+    TEST(Calendar, UnitedKingdomNewYearSubstitute)
+    {
+        const auto &c = UnitedKingdom::instance();
+        // 1 Jan 2023 was a Sunday -> observed Monday 2 Jan; Tuesday 3 Jan trades.
         EXPECT_TRUE(c.is_holiday(Date(2023, 1, 2)));
+        EXPECT_TRUE(c.is_business_day(Date(2023, 1, 3)));
+        // 1 Jan 2022 was a Saturday -> observed Monday 3 Jan; Tuesday 4 Jan trades.
+        EXPECT_TRUE(c.is_holiday(Date(2022, 1, 3)));
+        EXPECT_TRUE(c.is_business_day(Date(2022, 1, 4)));
+        // 1 Jan 2021 was a Friday -> the day itself, no substitute.
+        EXPECT_TRUE(c.is_holiday(Date(2021, 1, 1)));
+        EXPECT_TRUE(c.is_business_day(Date(2021, 1, 4)));
+    }
+
+    TEST(Calendar, UnitedKingdomChristmasSubstitute)
+    {
+        const auto &c = UnitedKingdom::instance();
+        // 25 Dec 2021 was a Saturday: Christmas -> Mon 27, Boxing Day -> Tue 28.
+        EXPECT_TRUE(c.is_holiday(Date(2021, 12, 27)));
+        EXPECT_TRUE(c.is_holiday(Date(2021, 12, 28)));
+        EXPECT_TRUE(c.is_business_day(Date(2021, 12, 29)));
+        // 25 Dec 2022 was a Sunday: Boxing Day stays Mon 26, Christmas -> Tue 27.
+        EXPECT_TRUE(c.is_holiday(Date(2022, 12, 26)));
+        EXPECT_TRUE(c.is_holiday(Date(2022, 12, 27)));
+        EXPECT_TRUE(c.is_business_day(Date(2022, 12, 28)));
+        // 25 Dec 2020 was a Friday: Christmas stays 25, Boxing Day -> Mon 28.
+        EXPECT_TRUE(c.is_holiday(Date(2020, 12, 25)));
+        EXPECT_TRUE(c.is_holiday(Date(2020, 12, 28)));
+        EXPECT_TRUE(c.is_business_day(Date(2020, 12, 29)));
     }
 
     TEST(Calendar, AdjustModifiedFollowingStaysInMonth)

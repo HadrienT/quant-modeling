@@ -52,14 +52,26 @@ namespace quantModeling
             return d == h;
         }
 
-        /// Observed date of a fixed UK holiday: any weekend hit rolls forward
-        /// to the next non-weekend day (used for New Year, Christmas, Boxing Day).
-        Date uk_observed(int y, Month month, unsigned day)
+        /// New Year's Day observed: a weekend New Year rolls to the next
+        /// weekday (Saturday -> Monday, Sunday -> Monday).
+        Date uk_new_year_observed(int y)
         {
-            Date h(y, month, day);
+            Date h(y, Month::January, 1);
             if (h.weekday() == Weekday::Saturday)
                 h += 2;
             else if (h.weekday() == Weekday::Sunday)
+                h += 1;
+            return h;
+        }
+
+        /// Christmas Day / Boxing Day substitute: when the fixed date lands on
+        /// a weekend the bank holiday moves two days on, so a weekend Christmas
+        /// + Boxing pair becomes the following Monday and Tuesday.
+        Date uk_substitute_bank_holiday(int y, Month month, unsigned day)
+        {
+            Date h(y, month, day);
+            if (h.weekday() == Weekday::Saturday ||
+                h.weekday() == Weekday::Sunday)
                 h += 2;
             return h;
         }
@@ -247,7 +259,7 @@ namespace quantModeling
         const Weekday wd = d.weekday();
         const int y = d.year();
 
-        if (d == uk_observed(y, Month::January, 1))
+        if (d == uk_new_year_observed(y))
             return true; // New Year's Day
         if (d == good_friday(y) || d == easter_monday(y))
             return true;
@@ -260,9 +272,9 @@ namespace quantModeling
         // Summer Bank Holiday: last Monday of August.
         if (m == Month::August && wd == Weekday::Monday && dd >= 25)
             return true;
-        // Christmas Day and Boxing Day (both rolled past any weekend).
-        if (d == uk_observed(y, Month::December, 25) ||
-            d == uk_observed(y, Month::December, 26))
+        // Christmas Day and Boxing Day (weekend hits move to Mon / Tue).
+        if (d == uk_substitute_bank_holiday(y, Month::December, 25) ||
+            d == uk_substitute_bank_holiday(y, Month::December, 26))
             return true;
 
         return false;
