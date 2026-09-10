@@ -23,7 +23,8 @@ namespace quantModeling::scripting
      *
      * Keywords and function names are case-insensitive. An ISO-8601 date
      * `YYYY-MM-DD` is lexed as one DateEvent token before `-` is considered a
-     * minus, so `2025-06-16` is never `2025 - 6 - 16`.
+     * minus, so `2025-06-16` is never `2025 - 6 - 16`. A `#` starts a comment
+     * that runs to the end of the line.
      *
      * On malformed input the lexer throws ScriptError with the offending
      * line / column and a pointed extract.

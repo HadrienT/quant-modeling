@@ -1,0 +1,13 @@
+# Arithmetic-average Asian call, strike 100, four quarterly fixings.
+# `acc` accumulates the spot at each fixing; the average is paid at the last one.
+#   ./build/qm_price_script examples/scripting/arithmetic_asian.qms
+
+2026-12-10
+    acc = spot()
+
+2027-03-10  2027-06-10
+    acc = acc + spot()
+
+2027-09-10
+    acc = acc + spot()
+    pays max(acc / 4 - 100, 0)
