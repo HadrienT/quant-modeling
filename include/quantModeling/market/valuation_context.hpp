@@ -21,9 +21,20 @@ namespace quantModeling
      *
      * Instruments store Date; engines and adapters call this to obtain the
      * TimeLine the simulation architecture consumes.
+     *
+     * There is no default constructor on purpose: a context without a
+     * valuation date would silently anchor Time 0 to the epoch (1970-01-01).
+     * Pass the date explicitly — Date::today() for a live valuation.
      */
     struct ValuationContext
     {
+        explicit ValuationContext(
+            Date as_of, const DayCounter *day_counter = &Actual365Fixed::instance(),
+            const Calendar *cal = &NullCalendar::instance())
+            : valuation_date(as_of), basis(day_counter), calendar(cal)
+        {
+        }
+
         Date valuation_date;
         const DayCounter *basis = &Actual365Fixed::instance();
         const Calendar *calendar = &NullCalendar::instance();

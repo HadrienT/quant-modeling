@@ -32,6 +32,10 @@ target_sources(quantModeling
         src/core/date.cpp
         src/core/period.cpp
         src/core/timegrid.cpp
+        src/scripting/token.cpp
+        src/scripting/script_error.cpp
+        src/scripting/lexer.cpp
+        src/scripting/parser.cpp
         src/market/conventions.cpp
         src/market/calendars.cpp
         src/market/schedule.cpp
@@ -149,6 +153,9 @@ if(QM_BUILD_TESTS)
     tests/testCalendars.cpp
     tests/testSchedule.cpp
     tests/testTimeline.cpp
+    tests/testScriptParser.cpp
+    tests/testScriptEval.cpp
+    tests/testScriptParity.cpp
     tests/testSimulationEngine.cpp
     tests/testBSAna.cpp
     tests/testBSMC.cpp

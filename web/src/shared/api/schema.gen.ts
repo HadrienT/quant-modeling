@@ -1235,8 +1235,9 @@ export interface components {
             /**
              * Valuation Date
              * Format: date
+             * @description Time 0. Defaults to today (UTC) when omitted.
              */
-            valuation_date: string;
+            valuation_date?: string;
             /** Vol */
             vol: number;
         };

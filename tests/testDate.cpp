@@ -3,9 +3,31 @@
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/core/period.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/valuation_context.hpp"
+
+#include <type_traits>
 
 namespace quantModeling
 {
+
+    TEST(Date, TodayIsAfterTheProjectStartAndBeforeFarFuture)
+    {
+        const Date now = Date::today();
+        EXPECT_GT(now - Date::from_iso("2024-01-01"), 0);
+        EXPECT_LT(now - Date::from_iso("2100-01-01"), 0);
+        // idempotent within a run, and a real weekday
+        EXPECT_EQ(Date::today(), now);
+        EXPECT_LE(static_cast<unsigned>(now.weekday()), 6u);
+    }
+
+    TEST(ValuationContext, AnchorsTimeZeroToTheGivenDate)
+    {
+        const ValuationContext ctx{Date::from_iso("2024-06-03")};
+        EXPECT_DOUBLE_EQ(ctx.t(Date::from_iso("2024-06-03")), 0.0);
+        EXPECT_NEAR(ctx.t(Date::from_iso("2025-06-03")), 1.0, 1e-9);
+        static_assert(!std::is_default_constructible_v<ValuationContext>,
+                      "a ValuationContext must be given a valuation date");
+    }
 
     TEST(Date, IsoRoundTrip)
     {
