@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { blackScholes } from "./blackScholes";
+import { blackScholes, normCdf } from "./blackScholes";
 import { evaluateStrategy, preset, type Leg } from "./strategy";
 
 const mkt = { spot: 100, rate: 0.05, dividend: 0, vol: 0.2 };
+
+/** z-score of a terminal spot S under the risk-neutral lognormal law of S_T. */
+function zOf(S: number, T: number, m = mkt) {
+	return (
+		(Math.log(S / m.spot) - (m.rate - m.dividend - (m.vol * m.vol) / 2) * T) /
+		(m.vol * Math.sqrt(T))
+	);
+}
 
 describe("blackScholes", () => {
 	it("matches the classic Hull reference (S=K=100, r=5%, σ=20%, T=1)", () => {
@@ -118,5 +126,85 @@ describe("value at t → payoff at maturity", () => {
 		for (let i = 0; i < r.spot.length; i++) {
 			expect(Math.abs(r.atT[i]! - r.atMaturity[i]!)).toBeLessThan(0.5);
 		}
+	});
+});
+
+describe("risk-neutral probability of profit", () => {
+	const T = 0.25;
+	const leg = (o: Partial<Leg>): Leg => ({
+		id: Math.random().toString(36).slice(2),
+		kind: "call",
+		direction: "long",
+		quantity: 1,
+		strike: 100,
+		maturity: T,
+		premium: 0,
+		...o,
+	});
+
+	it("a long call = P(S_T > breakeven), matched to the lognormal law", () => {
+		const legs = [leg({ premium: 4 })]; // breakeven 104
+		const r = evaluateStrategy(legs, mkt);
+		expect(r.probProfit).toBeCloseTo(1 - normCdf(zOf(104, T)), 6);
+	});
+
+	it("a long straddle = P(S_T < be_low) + P(S_T > be_high)", () => {
+		const r = evaluateStrategy(preset("straddle", 100)!, mkt);
+		const [lo, hi] = r.breakevens;
+		expect(r.probProfit).toBeCloseTo(
+			normCdf(zOf(lo!, T)) + (1 - normCdf(zOf(hi!, T))),
+			6,
+		);
+	});
+
+	it("a long butterfly = P(be_low < S_T < be_high) and stays below 1", () => {
+		const r = evaluateStrategy(preset("butterfly", 100)!, mkt);
+		const [lo, hi] = r.breakevens;
+		expect(r.probProfit).toBeCloseTo(
+			normCdf(zOf(hi!, T)) - normCdf(zOf(lo!, T)),
+			6,
+		);
+		expect(r.probProfit!).toBeLessThan(1);
+		expect(r.probProfit!).toBeGreaterThan(0);
+	});
+
+	it("is a probability in [0, 1] for every preset", () => {
+		for (const name of [
+			"straddle",
+			"strangle",
+			"call-spread",
+			"put-spread",
+			"butterfly",
+			"condor",
+			"collar",
+			"risk-reversal",
+			"covered-call",
+			"protective-put",
+		]) {
+			const r = evaluateStrategy(preset(name, 100)!, mkt);
+			expect(r.probProfit, name).not.toBeNull();
+			expect(r.probProfit!, name).toBeGreaterThanOrEqual(0);
+			expect(r.probProfit!, name).toBeLessThanOrEqual(1);
+		}
+	});
+
+	it("rises with vol for a long straddle, falls for a long butterfly", () => {
+		const straddle = preset("straddle", 100)!;
+		const fly = preset("butterfly", 100)!;
+		const p = (legs: Leg[], vol: number) =>
+			evaluateStrategy(legs, { ...mkt, vol }).probProfit!;
+		expect(p(straddle, 0.35)).toBeGreaterThan(p(straddle, 0.15));
+		expect(p(fly, 0.35)).toBeLessThan(p(fly, 0.15));
+	});
+
+	it("is null when S_T is deterministic (σ·√T ≈ 0)", () => {
+		expect(
+			evaluateStrategy(preset("straddle", 100)!, { ...mkt, vol: 0 }).probProfit,
+		).toBeNull();
+	});
+
+	it("a long underlying at zero cost is a certain winner (P → 1)", () => {
+		const legs = [leg({ kind: "underlying", strike: 0, premium: 0 })];
+		expect(evaluateStrategy(legs, mkt).probProfit).toBeCloseTo(1, 10);
 	});
 });

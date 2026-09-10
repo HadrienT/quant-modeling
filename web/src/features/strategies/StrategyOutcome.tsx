@@ -16,8 +16,6 @@ export function StrategyOutcome({
 	hoveredLeg?: number | null;
 	onLegHover?: (index: number | null) => void;
 }) {
-	const probProfit =
-		result.atMaturity.filter((v) => v > 0).length / result.atMaturity.length;
 	const rr =
 		typeof result.maxGain === "number" && typeof result.maxLoss === "number"
 			? Math.abs(result.maxGain / result.maxLoss)
@@ -69,8 +67,12 @@ export function StrategyOutcome({
 				/>
 				<Metric
 					label="Prob. of profit"
-					value={`${(probProfit * 100).toFixed(0)}%`}
-					footnote="risk-neutral proxy, not real-world"
+					value={
+						result.probProfit == null
+							? "—"
+							: `${(result.probProfit * 100).toFixed(0)}%`
+					}
+					footnote="risk-neutral, flat BS vol, to the longest maturity"
 				/>
 			</MetricRow>
 			{rr != null && (
