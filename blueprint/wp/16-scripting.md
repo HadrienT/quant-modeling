@@ -570,6 +570,35 @@ autocall se décrit par « le 15 décembre », pas par « 0,4548 ». Et ça rend
 script **indépendant de la date de valorisation** — le même texte se reprice le
 lendemain sans réécriture.
 
+### ADR-S6 — `DomainProcessor` insensible au flot en v1
+
+**Décision.** Le domaine d'une variable est l'**union de tous** ses membres
+droits d'affectation dans le script (une variable jamais affectée vaut `{0}`,
+comme l'initialisation de l'évaluateur). Une condition voit ce domaine global,
+pas celui qui l'atteint réellement.
+
+**Pourquoi.** Le livre propage les domaines instruction par instruction et
+unionne les branches d'un `if`. La version globale est une **sur-approximation
+conservatrice** : elle peut lisser là où une analyse fine replierait
+(`alwaysTrue` / `alwaysFalse`), jamais l'inverse — elle ne rend jamais `discrete`
+une condition qui ne l'est pas. Suffisant pour les scripts réels, où les
+drapeaux ne reçoivent que des littéraux. La version sensible au flot est un
+raffinement ultérieur.
+
+### ADR-S7 — Call spread centré, pas de widening d'intervalle
+
+**Décision.** Le lissage d'une comparaison est le call spread centré
+`clamp((x + eps)/(2 eps), 0, 1)` (ordre 2), pas la rampe unilatérale (ordre 1,
+monotone). Le `Domain` n'a pas de widening : `x^y` et les formes non modélisées
+retombent sur la droite réelle.
+
+**Pourquoi.** Le call spread centré est celui du livre et converge plus vite ;
+sa convergence n'est pas monotone terme à terme (l'erreur passe sous un plancher
+de bruit Monte-Carlo), donc le test de [§9](#9-tests) mesure l'**ordre** dans le
+régime où le biais domine plutôt qu'une décroissance stricte. Le widening
+d'intervalle (abstraction de `total = total + x`) n'apporte rien tant qu'aucune
+condition ne porte sur une variable accumulée.
+
 ---
 
 ## 13. Bibliographie
