@@ -7,10 +7,12 @@ alternatives rejetées dans [`decisions.md`](decisions.md).
 
 > **Portée.** Ce blueprint couvre le front et ce que l'API doit changer pour le
 > servir. Il ne couvre pas la roadmap quant (Heston, AAD, CUDA, xVA) qui vit
-> dans [`../etc/roadmap.md`](../etc/roadmap.md) — sauf pour un point : le
+> dans [`../etc/roadmap.md`](../etc/roadmap.md) — sauf pour deux points : le
 > lot [15](wp/15-future-quant-surfaces.md) définit les emplacements que le
 > nouveau front doit réserver pour ces sujets, afin de ne pas avoir à le
-> re-découper dans six mois.
+> re-découper dans six mois ; et le lot [16](wp/16-scripting.md) est un gros
+> morceau de conception du **cœur C++** — il est ici parce que la convention du
+> projet veut que ceux-là vivent dans `blueprint/wp/`.
 
 ---
 
@@ -86,6 +88,7 @@ est à remplacer, pas à déplacer : c'est le préalable du
 | [13](wp/13-perf-budget.md) | Performance & budgets | Découpage par route, budgets de bundle, Web Vitals, budget d'images 3D |
 | [14](wp/14-deploy-selfhost.md) | Déploiement auto-hébergé | Config runtime (fin du `VITE_*` inliné), compose de prod, en-têtes de sécurité, TLS |
 | [15](wp/15-future-quant-surfaces.md) | Surfaces quant à venir | Emplacements réservés : calibration, AAD vs bump, bench GPU, profils xVA, validation |
+| [16](wp/16-scripting.md) | Scripting de payoffs *(cœur C++)* | Langage de payoff façon Andreasen & Savine : lexer, AST, visiteurs, logique floue, un seul moteur MC pour tout produit |
 | [99](wp/99-recovered-work.md) | Travail perdu à refaire | Fiches produit disparues avec la VM |
 
 ## 5. Graphe de dépendances
