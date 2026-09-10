@@ -1,0 +1,139 @@
+#ifndef QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP
+#define QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP
+
+#include "quantModeling/core/sample.hpp"
+#include "quantModeling/core/timegrid.hpp"
+#include "quantModeling/core/types.hpp"
+#include "quantModeling/instruments/simulatable.hpp"
+#include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/scripting/evaluator.hpp"
+#include "quantModeling/scripting/event.hpp"
+#include "quantModeling/scripting/parser.hpp"
+#include "quantModeling/scripting/visitors/const_cond.hpp"
+#include "quantModeling/scripting/visitors/defline_builder.hpp"
+#include "quantModeling/scripting/visitors/if_processor.hpp"
+#include "quantModeling/scripting/visitors/var_indexer.hpp"
+
+#include <algorithm>
+#include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace quantModeling
+{
+
+    struct ScriptSettings
+    {
+        bool fuzzy = false;       ///< 16c — FuzzyEvaluator; hard only for now
+        double default_eps = 0.01;
+    };
+
+    /**
+     * @brief A product described by a script, priced by the one generic
+     *        Monte-Carlo engine (blueprint/wp/16-scripting.md §6).
+     *
+     * ScriptedProduct<T> is just one more ISimulatableProduct<T>: no engine, no
+     * model and no sampler is modified. The constructor runs the whole
+     * front-end once — parse, VarIndexer, ConstCondProcessor, IfProcessor,
+     * DeflineBuilder — then resolves the script's calendar dates to the numeric
+     * timeline through the ValuationContext (ADR-S5). payoffs() replays the
+     * events of one simulated path through a hard Evaluator<T>.
+     *
+     * v1 limits (WP §11): a single underlying via `spot()`, and every event
+     * must fall strictly after the valuation date — historical fixings arrive
+     * with language v2 (lot 16e).
+     */
+    template <class T = Real>
+    class ScriptedProduct final : public ISimulatableProduct<T>
+    {
+      public:
+        ScriptedProduct(const std::string &script, const ValuationContext &ctx,
+                        const ScriptSettings &settings = {})
+        {
+            (void)settings; // fuzzy path lands in 16c
+
+            std::vector<scripting::Event> events = scripting::parse_script(script);
+            std::stable_sort(events.begin(), events.end(),
+                             [](const scripting::Event &a,
+                                const scripting::Event &b)
+                             { return a.date < b.date; });
+
+            scripting::VarIndexer indexer;
+            indexer.index(events);
+            variable_names_ = indexer.names();
+
+            scripting::ConstCondProcessor().process(events);
+            scripting::IfProcessor().process(events);
+
+            resolve_timeline(std::move(events), ctx);
+
+            defline_ = scripting::build_defline(events_);
+            evaluator_.set_variable_count(indexer.count());
+        }
+
+        const TimeLine &timeline() const override { return timeline_; }
+        const std::vector<SampleDef> &defline() const override { return defline_; }
+        const std::vector<std::string> &payoff_labels() const override
+        {
+            return labels_;
+        }
+        std::size_t n_underlyings() const override { return 1; }
+
+        const std::vector<std::string> &variable_names() const
+        {
+            return variable_names_;
+        }
+
+        void payoffs(const Scenario<T> &path, std::vector<T> &out) const override
+        {
+            evaluator_.initialize();
+            for (std::size_t i = 0; i < events_.size(); ++i)
+            {
+                evaluator_.set_event(path, i);
+                for (const scripting::ExprTree &statement : events_[i].statements)
+                    evaluator_.run(*statement);
+            }
+            out.assign(1, evaluator_.payoff());
+        }
+
+      private:
+        /// Sort-merge the events onto a canonical Time axis. Events sorted by
+        /// date already; those within TIMELINE_EPS of each other collapse to one
+        /// (statements concatenated in date order — WP §7).
+        void resolve_timeline(std::vector<scripting::Event> events,
+                              const ValuationContext &ctx)
+        {
+            for (scripting::Event &event : events)
+            {
+                const Time t = ctx.t(event.date);
+                if (t <= TIMELINE_EPS)
+                    throw InvalidInput(
+                        "ScriptedProduct: event " + event.date.to_iso() +
+                        " must fall strictly after the valuation date "
+                        "(historical fixings are not supported yet)");
+
+                if (!timeline_.empty() && t - timeline_.back() < TIMELINE_EPS)
+                {
+                    for (scripting::ExprTree &s : event.statements)
+                        events_.back().statements.push_back(std::move(s));
+                }
+                else
+                {
+                    timeline_.push_back(t);
+                    events_.push_back(std::move(event));
+                }
+            }
+        }
+
+        std::vector<scripting::Event> events_; ///< AST, const after construction
+        TimeLine timeline_;
+        std::vector<SampleDef> defline_;
+        std::vector<std::string> variable_names_;
+        std::vector<std::string> labels_{"price"};
+        mutable scripting::Evaluator<T> evaluator_; ///< per-path state (§5.4)
+    };
+
+} // namespace quantModeling
+
+#endif // QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP

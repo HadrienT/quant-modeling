@@ -3,73 +3,84 @@
 
 #include "quantModeling/scripting/node.hpp"
 
+#include <type_traits>
+
 namespace quantModeling::scripting
 {
 
     /**
-     * @brief Const visitor over the AST — the "cold path" dispatch.
+     * @brief Visitor over the AST — the "cold path" dispatch.
      *
-     * The pre-processing passes of WP 16b/16c (VarIndexer, DomainProcessor, …)
-     * and the Debugger are ConstVisitors: a handful of calls per script, run
-     * once at product construction, where a virtual call costs nothing and the
-     * plain visitor reads best (ADR-S2). The hot per-path Evaluator will use a
-     * separate CRTP mechanism, added in WP 16b.
+     * `BasicVisitor<true>` (ConstVisitor) reads the tree: the Debugger, the
+     * ScriptWriter, the hard Evaluator. `BasicVisitor<false>` (Visitor) mutates
+     * it in place: the pre-processing passes (VarIndexer fills NodeVar::index,
+     * IfProcessor fills NodeIf::affectedVars, …). These run once at product
+     * construction, where a virtual call costs nothing and the plain visitor
+     * reads best (ADR-S2). A hot per-path CRTP evaluator can be layered on later
+     * without disturbing this.
      *
-     * Every `visit` has a default that recurses into the node's children, so a
-     * concrete visitor overrides only the nodes it cares about. Override without
-     * calling visit_children() to stop the descent.
+     * Every `visit` defaults to recursing into the node's children, so a
+     * concrete visitor overrides only what it needs. Override without calling
+     * visit_children() to stop the descent.
      */
-    class ConstVisitor
+    template <bool Const>
+    class BasicVisitor
     {
+        template <class N>
+        using Ref = std::conditional_t<Const, const N &, N &>;
+
       public:
-        virtual ~ConstVisitor() = default;
+        virtual ~BasicVisitor() = default;
 
-        virtual void visit(const NodeConst &n) { visit_children(n); }
-        virtual void visit(const NodeVar &n) { visit_children(n); }
-        virtual void visit(const NodeSpot &n) { visit_children(n); }
+        virtual void visit(Ref<NodeConst> n) { visit_children(n); }
+        virtual void visit(Ref<NodeVar> n) { visit_children(n); }
+        virtual void visit(Ref<NodeSpot> n) { visit_children(n); }
 
-        virtual void visit(const NodeAdd &n) { visit_children(n); }
-        virtual void visit(const NodeSub &n) { visit_children(n); }
-        virtual void visit(const NodeMult &n) { visit_children(n); }
-        virtual void visit(const NodeDiv &n) { visit_children(n); }
-        virtual void visit(const NodePow &n) { visit_children(n); }
-        virtual void visit(const NodeUplus &n) { visit_children(n); }
-        virtual void visit(const NodeUminus &n) { visit_children(n); }
+        virtual void visit(Ref<NodeAdd> n) { visit_children(n); }
+        virtual void visit(Ref<NodeSub> n) { visit_children(n); }
+        virtual void visit(Ref<NodeMult> n) { visit_children(n); }
+        virtual void visit(Ref<NodeDiv> n) { visit_children(n); }
+        virtual void visit(Ref<NodePow> n) { visit_children(n); }
+        virtual void visit(Ref<NodeUplus> n) { visit_children(n); }
+        virtual void visit(Ref<NodeUminus> n) { visit_children(n); }
 
-        virtual void visit(const NodeMin &n) { visit_children(n); }
-        virtual void visit(const NodeMax &n) { visit_children(n); }
-        virtual void visit(const NodeLog &n) { visit_children(n); }
-        virtual void visit(const NodeExp &n) { visit_children(n); }
-        virtual void visit(const NodeSqrt &n) { visit_children(n); }
-        virtual void visit(const NodeAbs &n) { visit_children(n); }
-        virtual void visit(const NodeSmooth &n) { visit_children(n); }
+        virtual void visit(Ref<NodeMin> n) { visit_children(n); }
+        virtual void visit(Ref<NodeMax> n) { visit_children(n); }
+        virtual void visit(Ref<NodeLog> n) { visit_children(n); }
+        virtual void visit(Ref<NodeExp> n) { visit_children(n); }
+        virtual void visit(Ref<NodeSqrt> n) { visit_children(n); }
+        virtual void visit(Ref<NodeAbs> n) { visit_children(n); }
+        virtual void visit(Ref<NodeSmooth> n) { visit_children(n); }
 
-        virtual void visit(const NodeEqual &n) { visit_children(n); }
-        virtual void visit(const NodeNotEqual &n) { visit_children(n); }
-        virtual void visit(const NodeSuperior &n) { visit_children(n); }
-        virtual void visit(const NodeSupEqual &n) { visit_children(n); }
-        virtual void visit(const NodeInferior &n) { visit_children(n); }
-        virtual void visit(const NodeInfEqual &n) { visit_children(n); }
-        virtual void visit(const NodeAnd &n) { visit_children(n); }
-        virtual void visit(const NodeOr &n) { visit_children(n); }
-        virtual void visit(const NodeNot &n) { visit_children(n); }
+        virtual void visit(Ref<NodeEqual> n) { visit_children(n); }
+        virtual void visit(Ref<NodeNotEqual> n) { visit_children(n); }
+        virtual void visit(Ref<NodeSuperior> n) { visit_children(n); }
+        virtual void visit(Ref<NodeSupEqual> n) { visit_children(n); }
+        virtual void visit(Ref<NodeInferior> n) { visit_children(n); }
+        virtual void visit(Ref<NodeInfEqual> n) { visit_children(n); }
+        virtual void visit(Ref<NodeAnd> n) { visit_children(n); }
+        virtual void visit(Ref<NodeOr> n) { visit_children(n); }
+        virtual void visit(Ref<NodeNot> n) { visit_children(n); }
 
-        virtual void visit(const NodeAssign &n) { visit_children(n); }
-        virtual void visit(const NodePays &n) { visit_children(n); }
-        virtual void visit(const NodeIf &n) { visit_children(n); }
+        virtual void visit(Ref<NodeAssign> n) { visit_children(n); }
+        virtual void visit(Ref<NodePays> n) { visit_children(n); }
+        virtual void visit(Ref<NodeIf> n) { visit_children(n); }
 
-        virtual void visit(const NodeCollect &n) { visit_children(n); }
+        virtual void visit(Ref<NodeCollect> n) { visit_children(n); }
 
       protected:
-        void visit_children(const Node &n)
+        void visit_children(Ref<Node> n)
         {
-            for (const ExprTree &child : n.arguments)
+            for (Ref<ExprTree> child : n.arguments)
                 if (child)
                     child->accept(*this);
         }
     };
 
-    // ── out-of-line CRTP accept(), now that ConstVisitor is complete ──────────
+    using ConstVisitor = BasicVisitor<true>;
+    using Visitor = BasicVisitor<false>;
+
+    // ── out-of-line CRTP accept(), now that the visitors are complete ─────────
 
     template <class Derived>
     inline void NodeT<Derived>::accept(ConstVisitor &visitor) const
@@ -78,9 +89,21 @@ namespace quantModeling::scripting
     }
 
     template <class Derived>
+    inline void NodeT<Derived>::accept(Visitor &visitor)
+    {
+        visitor.visit(static_cast<Derived &>(*this));
+    }
+
+    template <class Derived>
     inline void ComparisonT<Derived>::accept(ConstVisitor &visitor) const
     {
         visitor.visit(static_cast<const Derived &>(*this));
+    }
+
+    template <class Derived>
+    inline void ComparisonT<Derived>::accept(Visitor &visitor)
+    {
+        visitor.visit(static_cast<Derived &>(*this));
     }
 
 } // namespace quantModeling::scripting

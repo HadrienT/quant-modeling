@@ -154,6 +154,8 @@ if(QM_BUILD_TESTS)
     tests/testSchedule.cpp
     tests/testTimeline.cpp
     tests/testScriptParser.cpp
+    tests/testScriptEval.cpp
+    tests/testScriptParity.cpp
     tests/testSimulationEngine.cpp
     tests/testBSAna.cpp
     tests/testBSMC.cpp

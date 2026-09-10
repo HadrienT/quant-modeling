@@ -10,7 +10,10 @@
 namespace quantModeling::scripting
 {
 
-    class ConstVisitor;
+    template <bool Const>
+    class BasicVisitor;
+    using ConstVisitor = BasicVisitor<true>;
+    using Visitor = BasicVisitor<false>;
 
     struct Node;
     /// Sole ownership of an AST subtree — never shared_ptr (ADR-S4): a node has
@@ -47,6 +50,7 @@ namespace quantModeling::scripting
         Node &operator=(Node &&) = default;
 
         virtual void accept(ConstVisitor &visitor) const = 0;
+        virtual void accept(Visitor &visitor) = 0;
 
         /// Deep copy: same concrete type, same scalar data, cloned children.
         ExprTree clone() const
@@ -70,6 +74,7 @@ namespace quantModeling::scripting
     struct NodeT : Node
     {
         void accept(ConstVisitor &visitor) const override;
+        void accept(Visitor &visitor) override;
 
       protected:
         ExprTree shallow_copy() const override
@@ -169,6 +174,7 @@ namespace quantModeling::scripting
     struct ComparisonT : NodeComparison
     {
         void accept(ConstVisitor &visitor) const override;
+        void accept(Visitor &visitor) override;
 
       protected:
         ExprTree shallow_copy() const override
