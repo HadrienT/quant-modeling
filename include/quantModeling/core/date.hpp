@@ -63,6 +63,11 @@ namespace quantModeling
         ///         (e.g. "2023-02-29").
         static Date from_iso(const std::string &s);
 
+        /// Today's date in UTC, read from the system clock. A pure query: it
+        /// stores nothing. There is no global evaluation date (etc/todo.md §8);
+        /// callers pass this explicitly, e.g. ValuationContext{Date::today()}.
+        static Date today();
+
         /// n-th occurrence of a weekday in a given month (n = 1..5).
         /// nth_weekday(2024, Month::March, Weekday::Wednesday, 3) is the 3rd
         /// Wednesday of March 2024. @throws InvalidInput if that occurrence does

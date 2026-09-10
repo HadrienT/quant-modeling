@@ -1010,6 +1010,7 @@
             "type": "number"
           },
           "valuation_date": {
+            "description": "Time 0. Defaults to today (UTC) when omitted.",
             "format": "date",
             "title": "Valuation Date",
             "type": "string"
@@ -1024,7 +1025,6 @@
           "spot",
           "rate",
           "vol",
-          "valuation_date",
           "fixing_dates",
           "strike"
         ],

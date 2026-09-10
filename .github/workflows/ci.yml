@@ -152,7 +152,7 @@ jobs:
           python scripts/gen_openapi.py web/openapi.json
           cd web
           npm ci
-          npx openapi-typescript ../openapi.json -o src/shared/api/schema.gen.ts
+          npx openapi-typescript openapi.json -o src/shared/api/schema.gen.ts
           if ! git diff --exit-code -- openapi.json src/shared/api/schema.gen.ts; then
             echo "::error::OpenAPI drift. Run: python scripts/gen_openapi.py web/openapi.json && cd web && npm run api:types:local"
             exit 1

@@ -1,8 +1,13 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+def _today_utc() -> date:
+    """Today's date in UTC — matches the C++ Date::today()."""
+    return datetime.now(timezone.utc).date()
 
 
 class EngineType(str, Enum):
@@ -101,7 +106,10 @@ class DatedAsianRequest(BaseModel):
     rate: float
     dividend: float = 0.0
     vol: float = Field(..., gt=0.0)
-    valuation_date: date
+    valuation_date: date = Field(
+        default_factory=_today_utc,
+        description="Time 0. Defaults to today (UTC) when omitted.",
+    )
     fixing_dates: List[date] = Field(..., min_length=1)
     strike: float = Field(..., gt=0.0)
     is_call: bool = True

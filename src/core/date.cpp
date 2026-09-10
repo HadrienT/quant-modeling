@@ -2,6 +2,7 @@
 
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cstdio>
 
 namespace quantModeling
@@ -54,6 +55,12 @@ namespace quantModeling
         const int m = parse(5, 2, "month");
         const int d = parse(8, 2, "day");
         return Date(y, static_cast<unsigned>(m), static_cast<unsigned>(d));
+    }
+
+    Date Date::today()
+    {
+        return Date(std::chrono::floor<std::chrono::days>(
+            std::chrono::system_clock::now()));
     }
 
     Date Date::nth_weekday(int year, Month month, Weekday wd, unsigned n)
