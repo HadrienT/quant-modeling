@@ -501,7 +501,9 @@ n'importe quel script — validé contre mes engines dédiés. »
 - **Taux et crédit.** `libor()`, `df()` et les courbes multiples attendent le
   chantier taux. La `SampleDef` a déjà les champs, ils resteront vides.
 - **AAD.** Le lot livre `Evaluator<T>` templé et instancié en `Real` seulement.
-  L'instanciation `Number` est le chantier 2 de la roadmap.
+  L'instanciation `Number` vient avec le [lot 17](17-aad.md) — et c'est grâce à
+  [ADR-S3](#adr-s3--last-nest-pas-templé-sur-le-type-numérique) qu'elle ne
+  demandera aucune modification de l'AST.
 - **Suppression des engines dédiés.** Ils restent comme témoins de test. On ne
   les retire qu'après plusieurs mois de parité verte.
 
