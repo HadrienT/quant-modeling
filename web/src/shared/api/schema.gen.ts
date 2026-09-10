@@ -560,6 +560,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/dated-asian": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Dated Asian Endpoint */
+        post: operations["price_dated_asian"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/digital": {
         parameters: {
             query?: never;
@@ -1162,6 +1179,66 @@ export interface components {
             x: number;
             /** Y */
             y: number;
+        };
+        /**
+         * DatedAsianRequest
+         * @description Average-price Asian priced from calendar fixing dates through the
+         *     timeline / day-count architecture (distinct from the legacy AsianRequest,
+         *     which takes a single float maturity).
+         */
+        DatedAsianRequest: {
+            /**
+             * Day Count
+             * @default ACT/365F
+             * @enum {string}
+             */
+            day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
+            /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /** Fixing Dates */
+            fixing_dates: string[];
+            /**
+             * Geometric
+             * @default false
+             */
+            geometric: boolean;
+            /**
+             * Is Call
+             * @default true
+             */
+            is_call: boolean;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /** Rate */
+            rate: number;
+            /**
+             * Sampler
+             * @default pseudo
+             * @enum {string}
+             */
+            sampler: "pseudo" | "sobol";
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /**
+             * Valuation Date
+             * Format: date
+             */
+            valuation_date: string;
+            /** Vol */
+            vol: number;
         };
         /**
          * DigitalPayoffKind
@@ -3216,6 +3293,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BasketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_dated_asian: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatedAsianRequest"];
             };
         };
         responses: {

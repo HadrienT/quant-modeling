@@ -71,6 +71,18 @@ const priceRoute = createRoute({
 	component: PricingPage,
 });
 
+// ── Dated Asian (preview of the timeline / calendar engine) ──────────────
+// Not under /price/* — the Vite dev proxy sends every /price/<...> path to the
+// API, so an SPA route there is unreachable in dev.
+const DatedAsianPreview = lazy(
+	() => import("@/features/pricing/DatedAsianPreview"),
+);
+const datedAsianRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/dated-asian",
+	component: DatedAsianPreview,
+});
+
 // ── Products (reference) ─────────────────────────────────────────────────
 const ProductsPage = lazy(() => import("@/features/products/ProductsPage"));
 const productsRoute = createRoute({
@@ -111,6 +123,7 @@ const routeTree = rootRoute.addChildren([
 	visualizeRoute,
 	marketRoute,
 	priceRoute,
+	datedAsianRoute,
 	productsRoute,
 	portfolioRoute,
 	backtestRoute,
@@ -134,6 +147,7 @@ export const ROUTES = [
 	{ path: "/visualize", label: "Strategies" },
 	{ path: "/market", label: "Market" },
 	{ path: "/price", label: "Pricing" },
+	{ path: "/dated-asian", label: "Dated Asian" },
 	{ path: "/products", label: "Products" },
 	{ path: "/portfolio", label: "Portfolio" },
 	{ path: "/backtest", label: "Backtest" },

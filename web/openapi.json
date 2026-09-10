@@ -936,6 +936,101 @@
         "title": "CurvePointResponse",
         "type": "object"
       },
+      "DatedAsianRequest": {
+        "description": "Average-price Asian priced from calendar fixing dates through the\ntimeline / day-count architecture (distinct from the legacy AsianRequest,\nwhich takes a single float maturity).",
+        "properties": {
+          "day_count": {
+            "default": "ACT/365F",
+            "enum": [
+              "ACT/365F",
+              "ACT/360",
+              "30/360",
+              "ACT/ACT"
+            ],
+            "title": "Day Count",
+            "type": "string"
+          },
+          "dividend": {
+            "default": 0.0,
+            "title": "Dividend",
+            "type": "number"
+          },
+          "fixing_dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Fixing Dates",
+            "type": "array"
+          },
+          "geometric": {
+            "default": false,
+            "title": "Geometric",
+            "type": "boolean"
+          },
+          "is_call": {
+            "default": true,
+            "title": "Is Call",
+            "type": "boolean"
+          },
+          "n_paths": {
+            "default": 200000,
+            "maximum": 5000000.0,
+            "minimum": 1000.0,
+            "title": "N Paths",
+            "type": "integer"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "sampler": {
+            "default": "pseudo",
+            "enum": [
+              "pseudo",
+              "sobol"
+            ],
+            "title": "Sampler",
+            "type": "string"
+          },
+          "seed": {
+            "default": 1,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "spot": {
+            "exclusiveMinimum": 0.0,
+            "title": "Spot",
+            "type": "number"
+          },
+          "strike": {
+            "exclusiveMinimum": 0.0,
+            "title": "Strike",
+            "type": "number"
+          },
+          "valuation_date": {
+            "format": "date",
+            "title": "Valuation Date",
+            "type": "string"
+          },
+          "vol": {
+            "exclusiveMinimum": 0.0,
+            "title": "Vol",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spot",
+          "rate",
+          "vol",
+          "valuation_date",
+          "fixing_dates",
+          "strike"
+        ],
+        "title": "DatedAsianRequest",
+        "type": "object"
+      },
       "DigitalPayoffKind": {
         "enum": [
           "cash-or-nothing",
@@ -4838,6 +4933,44 @@
           }
         },
         "summary": "Price Basket Endpoint"
+      }
+    },
+    "/price/option/dated-asian": {
+      "post": {
+        "operationId": "price_dated_asian",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatedAsianRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Price Dated Asian Endpoint"
       }
     },
     "/price/option/digital": {

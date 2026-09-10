@@ -1,6 +1,6 @@
 from datetime import date
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -90,6 +90,26 @@ class AsianRequest(BaseModel):
     n_paths: int = 200000
     seed: int = 1
     mc_epsilon: float = 0.0
+
+
+class DatedAsianRequest(BaseModel):
+    """Average-price Asian priced from calendar fixing dates through the
+    timeline / day-count architecture (distinct from the legacy AsianRequest,
+    which takes a single float maturity)."""
+
+    spot: float = Field(..., gt=0.0)
+    rate: float
+    dividend: float = 0.0
+    vol: float = Field(..., gt=0.0)
+    valuation_date: date
+    fixing_dates: List[date] = Field(..., min_length=1)
+    strike: float = Field(..., gt=0.0)
+    is_call: bool = True
+    geometric: bool = False
+    day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"
+    sampler: Literal["pseudo", "sobol"] = "pseudo"
+    n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
+    seed: int = 1
 
 
 class BarrierRequest(BaseModel):
