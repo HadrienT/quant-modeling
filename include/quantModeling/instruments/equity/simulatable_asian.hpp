@@ -54,26 +54,31 @@ namespace quantModeling
 
         void payoffs(const Scenario<T> &path, std::vector<T> &out) const override
         {
-            const T n = static_cast<T>(path.size());
-            T avg;
-            if (geometric_)
-            {
-                T acc(0);
-                for (const Sample<T> &s : path)
-                    acc += std::log(s.spots[0]);
-                avg = std::exp(acc / n);
-            }
-            else
-            {
-                T acc(0);
-                for (const Sample<T> &s : path)
-                    acc += s.spots[0];
-                avg = acc / n;
-            }
+            // Unqualified on purpose (blueprint §5.5): with T = aad::Number,
+            // argument-dependent lookup must find aad::log/exp/max instead of
+            // the double-only std:: overloads, which do not compile for
+            // Number at all (its conversion to double is explicit) -- the
+            // safe failure mode of getting this wrong. For T = Real these
+            // still resolve to std:: via the using-declarations.
+            using std::exp;
+            using std::log;
+            using std::max;
 
-            const T k = T(strike_);
-            const T intrinsic = is_call_ ? std::max(avg - k, T(0))
-                                         : std::max(k - avg, T(0));
+            const double n = static_cast<double>(path.size());
+            // The accumulator starts from the path's own first term rather
+            // than a synthetic T(0): that would put a wasted leaf node on
+            // the tape every path for an additive identity that is not a
+            // real quantity.
+            T avg = geometric_ ? log(path.front().spots[0]) : path.front().spots[0];
+            for (std::size_t i = 1; i < path.size(); ++i)
+                avg += geometric_ ? log(path[i].spots[0]) : path[i].spots[0];
+            avg = geometric_ ? exp(avg / n) : avg / n;
+
+            // Mixed (T minus double) rather than building a T(strike_) leaf
+            // for the constant first -- see blueprint §5.2 on why a mixed
+            // operation records one node instead of wasting one on a leaf.
+            const T intrinsic = is_call_ ? max(avg - strike_, 0.0)
+                                         : max(strike_ - avg, 0.0);
             out.assign(1, intrinsic / path.back().numeraire);
         }
 

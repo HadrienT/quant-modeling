@@ -160,6 +160,7 @@ if(QM_BUILD_TESTS)
   add_executable(quantModeling_tests
     tests/testAADNumber.cpp
     tests/testAADTape.cpp
+    tests/testAADSimulation.cpp
     tests/testDate.cpp
     tests/testConventions.cpp
     tests/testCalendars.cpp
