@@ -8,14 +8,17 @@
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/evaluator.hpp"
 #include "quantModeling/scripting/event.hpp"
+#include "quantModeling/scripting/fuzzy_evaluator.hpp"
 #include "quantModeling/scripting/parser.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
+#include "quantModeling/scripting/visitors/domain_processor.hpp"
 #include "quantModeling/scripting/visitors/if_processor.hpp"
 #include "quantModeling/scripting/visitors/var_indexer.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,9 +39,12 @@ namespace quantModeling
      * ScriptedProduct<T> is just one more ISimulatableProduct<T>: no engine, no
      * model and no sampler is modified. The constructor runs the whole
      * front-end once — parse, VarIndexer, ConstCondProcessor, IfProcessor,
-     * DeflineBuilder — then resolves the script's calendar dates to the numeric
-     * timeline through the ValuationContext (ADR-S5). payoffs() replays the
-     * events of one simulated path through a hard Evaluator<T>.
+     * DomainProcessor, DeflineBuilder — then resolves the script's calendar
+     * dates to the numeric timeline through the ValuationContext (ADR-S5).
+     * payoffs() replays the events of one simulated path through an
+     * Evaluator<T>: hard by default, or the FuzzyEvaluator<T> when
+     * ScriptSettings::fuzzy — a payoff smoothed for a correct pathwise delta on
+     * digitals and barriers.
      *
      * v1 limits (WP §11): a single underlying via `spot()`, and every event
      * must fall strictly after the valuation date — historical fixings arrive
@@ -51,8 +57,6 @@ namespace quantModeling
         ScriptedProduct(const std::string &script, const ValuationContext &ctx,
                         const ScriptSettings &settings = {})
         {
-            (void)settings; // fuzzy path lands in 16c
-
             std::vector<scripting::Event> events = scripting::parse_script(script);
             std::stable_sort(events.begin(), events.end(),
                              [](const scripting::Event &a,
@@ -65,11 +69,18 @@ namespace quantModeling
 
             scripting::ConstCondProcessor().process(events);
             scripting::IfProcessor().process(events);
+            scripting::DomainProcessor(indexer.count(), settings.default_eps)
+                .process(events);
 
             resolve_timeline(std::move(events), ctx);
 
             defline_ = scripting::build_defline(events_);
-            evaluator_.set_variable_count(indexer.count());
+
+            if (settings.fuzzy)
+                evaluator_ = std::make_unique<scripting::FuzzyEvaluator<T>>();
+            else
+                evaluator_ = std::make_unique<scripting::Evaluator<T>>();
+            evaluator_->set_variable_count(indexer.count());
         }
 
         const TimeLine &timeline() const override { return timeline_; }
@@ -87,14 +98,14 @@ namespace quantModeling
 
         void payoffs(const Scenario<T> &path, std::vector<T> &out) const override
         {
-            evaluator_.initialize();
+            evaluator_->initialize();
             for (std::size_t i = 0; i < events_.size(); ++i)
             {
-                evaluator_.set_event(path, i);
+                evaluator_->set_event(path, i);
                 for (const scripting::ExprTree &statement : events_[i].statements)
-                    evaluator_.run(*statement);
+                    evaluator_->run(*statement);
             }
-            out.assign(1, evaluator_.payoff());
+            out.assign(1, evaluator_->payoff());
         }
 
       private:
@@ -131,7 +142,8 @@ namespace quantModeling
         std::vector<SampleDef> defline_;
         std::vector<std::string> variable_names_;
         std::vector<std::string> labels_{"price"};
-        mutable scripting::Evaluator<T> evaluator_; ///< per-path state (§5.4)
+        mutable std::unique_ptr<scripting::Evaluator<T>>
+            evaluator_; ///< per-path state (§5.4); hard or fuzzy
     };
 
 } // namespace quantModeling

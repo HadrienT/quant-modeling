@@ -28,18 +28,19 @@ namespace quantModeling::scripting
      * `Number` differentiates the very same tree. All maths goes through
      * unqualified calls after `using std::…` so ADL picks the AAD overloads
      * when T = Number (ADR-A/§5.5). Control flow is not differentiated — a hard
-     * `if` picks a branch; smoothing is the job of FuzzyEvaluator (WP 16c).
+     * `if` picks a branch; the derivable version is FuzzyEvaluator (WP 16c),
+     * which subclasses this.
      *
      * Not thread-safe: one Evaluator per thread, the AST shared const (§5.4).
      */
     template <class T = Real>
-    class Evaluator final : public ConstVisitor
+    class Evaluator : public ConstVisitor
     {
       public:
         void set_variable_count(std::size_t n) { variables_.assign(n, T(0)); }
 
         /// Reset for a new path. Call once, then run every event in order.
-        void initialize()
+        virtual void initialize()
         {
             std::fill(variables_.begin(), variables_.end(), T(0));
             payoff_ = T(0);
@@ -229,7 +230,7 @@ namespace quantModeling::scripting
             n.arguments[0]->accept(*this);
         }
 
-      private:
+      protected:
         void push(T value) { stack_.push_back(std::move(value)); }
         T pop()
         {

@@ -36,6 +36,7 @@ target_sources(quantModeling
         src/scripting/script_error.cpp
         src/scripting/lexer.cpp
         src/scripting/parser.cpp
+        src/scripting/domain.cpp
         src/market/conventions.cpp
         src/market/calendars.cpp
         src/market/schedule.cpp
@@ -161,6 +162,8 @@ if(QM_BUILD_TESTS)
     tests/testTimeline.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp
+    tests/testScriptDomain.cpp
+    tests/testScriptFuzzy.cpp
     tests/testScriptParity.cpp
     tests/testSimulationEngine.cpp
     tests/testBSAna.cpp
