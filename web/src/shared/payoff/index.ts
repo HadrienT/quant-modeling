@@ -1,4 +1,9 @@
-export { blackScholes, type BsInputs, type BsResult } from "./blackScholes";
+export {
+	blackScholes,
+	normCdf,
+	type BsInputs,
+	type BsResult,
+} from "./blackScholes";
 export {
 	evaluateStrategy,
 	preset,

@@ -1,4 +1,4 @@
-import { type BsInputs, blackScholes } from "./blackScholes";
+import { type BsInputs, blackScholes, normCdf } from "./blackScholes";
 
 /**
  * Multi-leg strategy payoff engine — blueprint WP 10 §1. Pure, no React,
@@ -89,7 +89,86 @@ export type PayoffResult = {
 	 * Negative = you pay net (a debit), positive = you receive net (a credit).
 	 */
 	netPremium: number;
+	/**
+	 * Risk-neutral probability that the position shows a profit at expiry, under
+	 * the flat Black-Scholes dynamics the rest of the page assumes. `null` when
+	 * S_T is deterministic (σ·√T ≈ 0) — the answer is then 0 or 1, not a
+	 * probability. See `riskNeutralProfitProbability`.
+	 */
+	probProfit: number | null;
 };
+
+/**
+ * P( payoff-at-expiry > 0 ) under the risk-neutral lognormal law of S_T:
+ *
+ *   S_T = S_0 · exp( (r − q − σ²/2)·T + σ·√T·Z ),   Z ~ N(0, 1)
+ *
+ * The maturity payoff `f(S)` is piecewise-affine with kinks only at the option
+ * strikes, so its roots (the breakevens) are found exactly, one per inter-strike
+ * segment. The profit region is the union of the segments where `f > 0`; its
+ * risk-neutral mass is a sum of standard-normal CDF differences.
+ *
+ * Horizon: the longest leg maturity (consistent with `atMaturity`, which already
+ * evaluates every leg at its own intrinsic). Not a real-world probability — it
+ * uses the risk-free drift, not an expected return.
+ */
+function riskNeutralProfitProbability(
+	legs: Leg[],
+	mkt: MarketInputs,
+): number | null {
+	const T = Math.max(...legs.map((l) => l.maturity), 0);
+	const sigmaRootT = mkt.vol * Math.sqrt(T);
+	const drift = (mkt.rate - mkt.dividend - (mkt.vol * mkt.vol) / 2) * T;
+	const f = (S: number) =>
+		legs.reduce((a, l) => a + legPayoffAtExpiry(l, S), 0);
+
+	// S_T is (near-)deterministic: this is not a probability, it's a certainty.
+	if (!(sigmaRootT > 1e-9)) return null;
+
+	// f is affine on each segment between consecutive strikes (and on (0, Kmin)
+	// and (Kmax, ∞)). Fit the line from two interior points, take its root.
+	const strikes = [
+		...new Set(
+			legs
+				.filter((l) => l.kind === "call" || l.kind === "put")
+				.map((l) => l.strike),
+		),
+	].sort((a, b) => a - b);
+	const bounds = [0, ...strikes, Number.POSITIVE_INFINITY];
+	const breakevens: number[] = [];
+	for (let i = 0; i < bounds.length - 1; i++) {
+		const lo = bounds[i]!;
+		const hi = bounds[i + 1]!;
+		const anchor = Number.isFinite(hi) ? hi : lo > 0 ? lo : mkt.spot;
+		const s1 = Number.isFinite(hi) ? lo + (hi - lo) * 0.25 : anchor * 1.5;
+		const s2 = Number.isFinite(hi) ? lo + (hi - lo) * 0.75 : anchor * 3;
+		const y1 = f(s1);
+		const slope = (f(s2) - y1) / (s2 - s1);
+		if (Math.abs(slope) < 1e-12) continue; // flat piece — no crossing
+		const root = s1 - y1 / slope;
+		if (root > Math.max(lo, 1e-9) && (!Number.isFinite(hi) || root < hi)) {
+			breakevens.push(root);
+		}
+	}
+	breakevens.sort((a, b) => a - b);
+
+	const zOf = (S: number) => (Math.log(S / mkt.spot) - drift) / sigmaRootT;
+	const edges = [0, ...breakevens, Number.POSITIVE_INFINITY];
+	let p = 0;
+	for (let i = 0; i < edges.length - 1; i++) {
+		const a = edges[i]!;
+		const b = edges[i + 1]!;
+		const mid = Number.isFinite(b)
+			? (Math.max(a, 1e-9) + b) / 2
+			: (a > 0 ? a : mkt.spot) * 2;
+		if (f(mid) > 0) {
+			const loMass = a <= 0 ? 0 : normCdf(zOf(a));
+			const hiMass = Number.isFinite(b) ? normCdf(zOf(b)) : 1;
+			p += hiMass - loMass;
+		}
+	}
+	return Math.min(1, Math.max(0, p));
+}
 
 export function evaluateStrategy(
 	legs: Leg[],
@@ -210,6 +289,7 @@ export function evaluateStrategy(
 		maxGain,
 		maxLoss,
 		netPremium,
+		probProfit: riskNeutralProfitProbability(legs, mkt),
 	};
 }
 

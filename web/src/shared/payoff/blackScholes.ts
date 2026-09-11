@@ -9,7 +9,8 @@
  * Continuous dividend yield q. Rates and vol are decimals (0.04, 0.2).
  */
 
-function cnd(x: number): number {
+/** Standard normal CDF Φ(x). Abramowitz & Stegun 7.1.26 (|error| < 7.5e-8). */
+export function normCdf(x: number): number {
 	// Abramowitz & Stegun 7.1.26
 	const t = 1 / (1 + 0.2316419 * Math.abs(x));
 	const d =
@@ -73,8 +74,8 @@ export function blackScholes(i: BsInputs): BsResult {
 	const d2 = d1 - v * sqrtT;
 	const dfq = Math.exp(-q * T);
 	const dfr = Math.exp(-r * T);
-	const Nd1 = cnd(d1);
-	const Nd2 = cnd(d2);
+	const Nd1 = normCdf(d1);
+	const Nd2 = normCdf(d2);
 
 	if (isCall) {
 		return {
@@ -90,14 +91,14 @@ export function blackScholes(i: BsInputs): BsResult {
 		};
 	}
 	return {
-		price: K * dfr * cnd(-d2) - S * dfq * cnd(-d1),
-		delta: -dfq * cnd(-d1),
+		price: K * dfr * normCdf(-d2) - S * dfq * normCdf(-d1),
+		delta: -dfq * normCdf(-d1),
 		gamma: (dfq * npdf(d1)) / (S * v * sqrtT),
 		vega: S * dfq * npdf(d1) * sqrtT,
 		theta:
 			-(S * dfq * npdf(d1) * v) / (2 * sqrtT) +
-			r * K * dfr * cnd(-d2) -
-			q * S * dfq * cnd(-d1),
-		rho: -K * T * dfr * cnd(-d2),
+			r * K * dfr * normCdf(-d2) -
+			q * S * dfq * normCdf(-d1),
+		rho: -K * T * dfr * normCdf(-d2),
 	};
 }
