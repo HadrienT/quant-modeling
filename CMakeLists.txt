@@ -27,6 +27,8 @@ set_target_properties(quantModeling PROPERTIES
 
 target_sources(quantModeling
     PRIVATE
+        src/aad/tape.cpp
+        src/aad/number.cpp
         src/utils/stats.cpp
         src/utils/greeks.cpp
         src/core/date.cpp
@@ -156,6 +158,8 @@ if(QM_BUILD_TESTS)
   find_package(GTest CONFIG REQUIRED)
 
   add_executable(quantModeling_tests
+    tests/testAADNumber.cpp
+    tests/testAADTape.cpp
     tests/testDate.cpp
     tests/testConventions.cpp
     tests/testCalendars.cpp
