@@ -58,6 +58,7 @@ target_sources(quantModeling
         src/engines/pde/european_vanilla.cpp
         src/market/discount_curve.cpp
         src/market/curve_bootstrap.cpp
+        src/market/raw_vol_surface.cpp
         src/market/calibration/levenberg_marquardt.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
@@ -191,6 +192,7 @@ if(QM_BUILD_TESTS)
     tests/testDiscountCurve.cpp
     tests/testCurveBootstrap.cpp
     tests/testCurveAwareBSSimModel.cpp
+    tests/testRawVolSurface.cpp
     tests/testLocalVol.cpp
     tests/testUtils.cpp
     tests/testRegistry.cpp
