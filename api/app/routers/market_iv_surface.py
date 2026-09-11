@@ -1,11 +1,24 @@
-from datetime import date, datetime
+"""
+Router — Raw implied-volatility surface: scatter griddata'd onto a regular
+mesh, no fitting, no arbitrage guarantee. This is the "brute" point on
+blueprint/wp/08-market-data.md's brute / nettoyée / local-vol progression;
+/api/local-vol/iv-surface (SVI-fitted) and /api/local-vol/surface (Dupire)
+are the other two, in routers/local_vol_pricing.py.
+
+Used to hit yfinance with its own independent fetch (_fetch_all_expirations /
+_collect_raw_iv_points) -- an entirely separate implementation from
+api/app/local_vol/fetcher.py, drifted apart from it over time. Both now
+share vol_surface.fetch_option_chain: one fetch path (stored data-ingest
+snapshot, else live yfinance), not two.
+"""
+
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
 import numpy as np
-import yfinance as yf
+from fastapi import APIRouter, HTTPException, Query
 from scipy.interpolate import griddata
 
+from .. import vol_surface
 from ..cache import TTLCache
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
@@ -15,80 +28,28 @@ router = APIRouter()
 logger = get_logger()
 
 _NO_OPTIONS_DETAIL = "No options chain available"
+_MIN_OPEN_INTEREST = 50
 
 _IV_SURFACE_CACHE = TTLCache[str, IVSurfaceResponse](max_size=128, ttl_seconds=60 * 10)
 
 
-def _extract_iv_point(call, ttm: float, min_open_interest: int) -> Optional[tuple[float, float, float]]:
-    try:
-        strike = float(call.get("strike", 0))
-        if strike <= 0:
-            return None
+def _raw_iv_points(ticker: str) -> List[tuple]:
+    """(strike, ttm, iv) for every liquid call with a usable implied vol.
 
-        open_interest = call.get("openInterest", 0)
-        if open_interest is None or open_interest < min_open_interest:
-            return None
-
-        iv = call.get("impliedVolatility")
-        if iv is None or (isinstance(iv, float) and (iv <= 0 or iv != iv)):
-            return None
-
-        iv_value = float(iv)
-        if iv_value <= 0:
-            return None
-        return (strike, ttm, iv_value)
-    except (ValueError, TypeError):
-        return None
-
-
-def _fetch_all_expirations(ticker: str) -> List[str]:
-    try:
-        tick = yf.Ticker(ticker)
-        expirations = tick.options
-        if not expirations:
-            raise HTTPException(status_code=404, detail=_NO_OPTIONS_DETAIL)
-        return expirations
-    except Exception as e:
-        logger.error(
-            "iv_surface fetch_expirations_failed",
-            extra={"ticker": ticker, "error": str(e)[:100]},
-        )
-        raise HTTPException(status_code=503, detail="Yahoo Finance temporarily unavailable")
-
-
-def _collect_raw_iv_points(ticker: str, expirations: List[str]) -> List[tuple[float, float, float]]:
-    raw_points: List[tuple[float, float, float]] = []
-    today = date.today()
-    tick = yf.Ticker(ticker)
-    min_open_interest = 50
-
-    for exp_str in expirations:
-        try:
-            exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
-            ttm = max((exp_date - today).days, 0) / 365.0
-            if ttm <= 0:
-                continue
-
-            opt_chain = tick.option_chain(exp_str)
-            if opt_chain.calls is None or opt_chain.calls.empty:
-                continue
-
-            for _, call in opt_chain.calls.iterrows():
-                point = _extract_iv_point(call, ttm, min_open_interest)
-                if point is not None:
-                    raw_points.append(point)
-        except Exception as e:
-            logger.warning(
-                "iv_surface expiration_failed",
-                extra={"ticker": ticker, "expiration": exp_str, "error": str(e)[:100]},
-            )
-            continue
-
-    return raw_points
+    Calls only, matching the old implementation -- put-call parity gives
+    the same surface, and RawVolSurface's own butterfly check draws the same
+    line for the same reason (market/raw_vol_surface.hpp).
+    """
+    quotes = vol_surface.fetch_option_chain(ticker)
+    return [
+        (q.strike, q.ttm, q.implied_vol)
+        for q in quotes
+        if q.is_call and q.has_iv and q.open_interest >= _MIN_OPEN_INTEREST
+    ]
 
 
 def _interpolate_iv_surface(
-    raw_points: List[tuple[float, float, float]],
+    raw_points: List[tuple],
     num_strikes: int = 40,
     num_maturities: int = 30,
 ) -> tuple[List[float], List[float], List[List[Optional[float]]]]:
@@ -114,7 +75,6 @@ def _interpolate_iv_surface(
         method="linear",
         fill_value=np.nan,
     )
-
     iv_grid = iv_grid.reshape(strike_mesh.shape)
 
     # Fill NaN (outside convex hull) with nearest-neighbour so the surface is complete
@@ -147,23 +107,28 @@ def iv_surface(
     ticker: str = Query(..., min_length=1),
     surface: str = Query("mid", pattern="^(mid|bid|ask)$"),
 ) -> IVSurfaceResponse:
+    ticker = ticker.upper().strip()
     cache_key = f"{ticker}:{surface}"
     cached = _IV_SURFACE_CACHE.get(cache_key)
     if cached:
         set_cache_hit()
-        logger.info("iv_surface cache_hit", extra={"ticker": ticker, "surface": surface})
+        logger.info(
+            "iv_surface cache_hit", extra={"ticker": ticker, "surface": surface}
+        )
         return cached
 
     try:
-        expirations = _fetch_all_expirations(ticker)
-        raw_points = _collect_raw_iv_points(ticker, expirations)
-
+        raw_points = _raw_iv_points(ticker)
         if not raw_points:
             raise HTTPException(status_code=404, detail=_NO_OPTIONS_DETAIL)
 
         logger.info(
             "iv_surface interpolating",
-            extra={"ticker": ticker, "raw_points": len(raw_points), "grid_size": "40x30"},
+            extra={
+                "ticker": ticker,
+                "raw_points": len(raw_points),
+                "grid_size": "40x30",
+            },
         )
         strikes_sorted, maturities_sorted, values = _interpolate_iv_surface(raw_points)
 
@@ -181,13 +146,23 @@ def iv_surface(
                 "ticker": ticker,
                 "surface": surface,
                 "raw_points": len(raw_points),
-                "grid_size": "20x20",
-                "note": "griddata linear interpolation (not arbitrage-free)",
+                "note": "griddata linear interpolation (not arbitrage-free) -- "
+                "see /api/local-vol/iv-surface for the SVI-fitted, arbitrage-checked surface",
             },
         )
         return response
     except HTTPException:
         raise
+    except RuntimeError as exc:
+        logger.error(
+            "iv_surface fetch_failed", extra={"ticker": ticker, "error": str(exc)[:200]}
+        )
+        raise HTTPException(
+            status_code=503, detail="Yahoo Finance temporarily unavailable"
+        ) from exc
     except Exception as exc:
-        logger.error("iv_surface failed", extra={"ticker": ticker, "surface": surface, "error": str(exc)[:200]})
+        logger.error(
+            "iv_surface failed",
+            extra={"ticker": ticker, "surface": surface, "error": str(exc)[:200]},
+        )
         raise HTTPException(status_code=500, detail="Failed to fetch IV surface")

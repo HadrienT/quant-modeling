@@ -7,6 +7,9 @@ This module is read-only — it never creates tables or writes rows.
 Tables it reads:
   prices.sp500_daily          (date, ticker, open, high, low, close, volume)
   macro.fred_series_latest    (series_id, date, value)  — current vintage view
+  options.chain_snapshot      (date, ticker, expiry, option_type, strike,
+                                bid, ask, last_price, volume, open_interest,
+                                implied_volatility)
 
 If PGHOST is unset or the store is unreachable, callers get a clear 503 rather
 than a silent fallback to a different data source.
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from typing import Iterator, List, Optional, Sequence, Tuple
@@ -164,3 +168,76 @@ def fred_latest_value(series_id: str) -> Optional[float]:
         )
         row = cur.fetchone()
         return float(row[0]) if row else None
+
+
+# ── options.chain_snapshot ───────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class OptionChainRow:
+    """One row of options.chain_snapshot, as written by data-ingest's
+    options-chain-snapshot source — see ~/data-ingest's README for the
+    schema and why history can only be built by running that source daily,
+    never backfilled from yfinance."""
+
+    snapshot_date: date
+    expiry: date
+    option_type: str  # "call" or "put"
+    strike: float
+    bid: Optional[float]
+    ask: Optional[float]
+    last_price: Optional[float]
+    volume: int
+    open_interest: int
+    implied_volatility: Optional[float]
+
+
+def latest_options_snapshot_date(ticker: str) -> Optional[date]:
+    """The most recent date data-ingest captured a chain for this ticker, if any."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT MAX(date) FROM options.chain_snapshot WHERE ticker = %s",
+            (ticker.upper(),),
+        )
+        row = cur.fetchone()
+        return row[0] if row and row[0] is not None else None
+
+
+def options_chain_snapshot(
+    ticker: str, as_of: Optional[date] = None
+) -> List[OptionChainRow]:
+    """One ticker's full chain on `as_of` (or its latest stored date, if
+    omitted). Empty list if data-ingest has never captured this ticker —
+    options-chain-snapshot tracks a small fixed universe
+    (OPTIONS_CHAIN_TICKERS), not every ticker sp500-prices does, so an empty
+    result here is routine, not an error; callers fall back to a live fetch.
+    """
+    snapshot_date = as_of or latest_options_snapshot_date(ticker)
+    if snapshot_date is None:
+        return []
+
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, expiry, option_type, strike, bid, ask, last_price, "
+            "volume, open_interest, implied_volatility "
+            "FROM options.chain_snapshot WHERE ticker = %s AND date = %s "
+            "ORDER BY expiry, option_type, strike",
+            (ticker.upper(), snapshot_date),
+        )
+        rows = cur.fetchall()
+
+    return [
+        OptionChainRow(
+            snapshot_date=r[0],
+            expiry=r[1],
+            option_type=r[2],
+            strike=float(r[3]),
+            bid=float(r[4]) if r[4] is not None else None,
+            ask=float(r[5]) if r[5] is not None else None,
+            last_price=float(r[6]) if r[6] is not None else None,
+            volume=int(r[7]),
+            open_interest=int(r[8]),
+            implied_volatility=float(r[9]) if r[9] is not None else None,
+        )
+        for r in rows
+    ]
