@@ -26,7 +26,14 @@
 		"size": "size-limit"
 	},
 	"dependencies": {
+		"@codemirror/autocomplete": "^6.20.3",
+		"@codemirror/commands": "^6.11.0",
+		"@codemirror/language": "^6.12.4",
+		"@codemirror/lint": "^6.9.7",
+		"@codemirror/state": "^6.7.4",
+		"@codemirror/view": "^6.43.11",
 		"@hookform/resolvers": "^4.1.0",
+		"@lezer/highlight": "^1.2.3",
 		"@radix-ui/react-dialog": "^1.1.6",
 		"@radix-ui/react-dropdown-menu": "^2.1.6",
 		"@radix-ui/react-popover": "^1.1.6",

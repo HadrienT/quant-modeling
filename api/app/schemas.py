@@ -143,6 +143,30 @@ class ScriptRequest(BaseModel):
     seed: int = 1
 
 
+class ScriptValidateRequest(BaseModel):
+    """Parse a script and resolve its timeline, without pricing it — no
+    market inputs needed. For an editor's "Validate" action: instant, and
+    surfaces a malformed script before a 200k-path simulation is even
+    considered."""
+
+    script: str = Field(..., min_length=1, description="The script source text.")
+    valuation_date: date = Field(
+        default_factory=_today_utc,
+        description="Time 0. Defaults to today (UTC) when omitted.",
+    )
+    day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"
+
+
+class ScriptEvent(BaseModel):
+    date: date
+    t: float = Field(..., description="Year-fraction from the valuation date.")
+
+
+class ScriptValidateResponse(BaseModel):
+    events: List[ScriptEvent]
+    variables: List[str]
+
+
 class BarrierRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
     strike: float = Field(..., gt=0.0)

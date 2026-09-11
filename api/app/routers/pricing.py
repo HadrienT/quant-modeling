@@ -28,6 +28,7 @@ from ..pricing_service import (
     price_variance_swap,
     price_volatility_swap,
     price_zero_coupon_bond,
+    validate_script,
 )
 from ..schemas import (
     AmericanVanillaRequest,
@@ -49,6 +50,8 @@ from ..schemas import (
     PricingResponse,
     RainbowRequest,
     ScriptRequest,
+    ScriptValidateRequest,
+    ScriptValidateResponse,
     VanillaRequest,
     VarianceSwapRequest,
     VolatilitySwapRequest,
@@ -222,6 +225,18 @@ async def price_script_endpoint(req: ScriptRequest) -> PricingResponse:
         extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error},
     )
     return resp
+
+
+@router.post("/price/scripted/validate", response_model=ScriptValidateResponse)
+async def validate_script_endpoint(
+    req: ScriptValidateRequest,
+) -> ScriptValidateResponse:
+    """Parse-only companion to /price/scripted: no market inputs, no
+    simulation — an editor's "Validate" action against this is instant."""
+    try:
+        return await _run_with_timeout(validate_script, req)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/price/option/barrier", response_model=PricingResponse)

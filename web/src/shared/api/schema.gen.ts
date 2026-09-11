@@ -666,6 +666,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/scripted/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Script Endpoint
+         * @description Parse-only companion to /price/scripted: no market inputs, no
+         *     simulation — an editor's "Validate" action against this is instant.
+         */
+        post: operations["validate_script"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/structured/autocall": {
         parameters: {
             query?: never;
@@ -1943,6 +1964,19 @@ export interface components {
             /** Zero */
             zero: components["schemas"]["CurvePointResponse"][];
         };
+        /** ScriptEvent */
+        ScriptEvent: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /**
+             * T
+             * @description Year-fraction from the valuation date.
+             */
+            t: number;
+        };
         /**
          * ScriptRequest
          * @description Price a payoff described in text (blueprint/wp/16-scripting.md) — a
@@ -2005,6 +2039,39 @@ export interface components {
             valuation_date?: string;
             /** Vol */
             vol: number;
+        };
+        /**
+         * ScriptValidateRequest
+         * @description Parse a script and resolve its timeline, without pricing it — no
+         *     market inputs needed. For an editor's "Validate" action: instant, and
+         *     surfaces a malformed script before a 200k-path simulation is even
+         *     considered.
+         */
+        ScriptValidateRequest: {
+            /**
+             * Day Count
+             * @default ACT/365F
+             * @enum {string}
+             */
+            day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
+            /**
+             * Script
+             * @description The script source text.
+             */
+            script: string;
+            /**
+             * Valuation Date
+             * Format: date
+             * @description Time 0. Defaults to today (UTC) when omitted.
+             */
+            valuation_date?: string;
+        };
+        /** ScriptValidateResponse */
+        ScriptValidateResponse: {
+            /** Events */
+            events: components["schemas"]["ScriptEvent"][];
+            /** Variables */
+            variables: string[];
         };
         /**
          * StressBump
@@ -3586,6 +3653,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_script: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptValidateResponse"];
                 };
             };
             /** @description Validation Error */

@@ -563,6 +563,44 @@ static py::dict price_script(const std::string &script, double spot, double rate
     return pricing_result_to_dict(res);
 }
 
+// ── Validate a script without pricing it: parse + the pre-processing passes
+//    only, no model, no Monte-Carlo. Lets a UI show the resolved timeline and
+//    the detected variables (or the pointed parse error) instantly, before
+//    committing to a full simulation.
+static py::dict validate_script(const std::string &script,
+                                const std::string &valuation_date,
+                                const std::string &day_count)
+{
+    using namespace quantModeling;
+
+    const Date valuation = Date::from_iso(valuation_date);
+    const DayCounter &basis = day_counter_by_name(day_count);
+    const ValuationContext ctx{valuation, &basis, &NullCalendar::instance()};
+
+    const ScriptedProduct<Real> product(script, ctx);
+
+    const std::vector<Date> dates = product.event_dates();
+    const TimeLine &times = product.timeline();
+
+    py::list events;
+    for (std::size_t i = 0; i < dates.size(); ++i)
+    {
+        py::dict e;
+        e["date"] = dates[i].to_iso();
+        e["t"] = times[i];
+        events.append(e);
+    }
+
+    py::list variables;
+    for (const std::string &name : product.variable_names())
+        variables.append(name);
+
+    py::dict out;
+    out["events"] = events;
+    out["variables"] = variables;
+    return out;
+}
+
 PYBIND11_MODULE(quantmodeling, m)
 {
     m.doc() = "quantModeling C++ bindings (pybind11)";
@@ -755,6 +793,10 @@ PYBIND11_MODULE(quantmodeling, m)
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message.");
+    m.def("validate_script", &validate_script, py::arg("script"),
+          py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
+          "Parse a payoff script and resolve its timeline without pricing "
+          "it. Raises the same way price_script does on a malformed script.");
     m.def("price_future_bs_analytic", &price_future_bs_analytic,
           "Price equity future under Black-Scholes (analytic).");
     m.def("price_zero_coupon_bond_analytic", &price_zero_coupon_bond_analytic,

@@ -96,6 +96,18 @@ namespace quantModeling
             return variable_names_;
         }
 
+        /// The calendar date of each timeline() entry, same order — for
+        /// diagnostics (e.g. a "validate this script" UI): what the parser
+        /// actually resolved each event to.
+        std::vector<Date> event_dates() const
+        {
+            std::vector<Date> out;
+            out.reserve(events_.size());
+            for (const scripting::Event &event : events_)
+                out.push_back(event.date);
+            return out;
+        }
+
         void payoffs(const Scenario<T> &path, std::vector<T> &out) const override
         {
             evaluator_->initialize();

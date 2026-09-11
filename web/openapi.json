@@ -2561,6 +2561,26 @@
         "title": "RatesCurveResponse",
         "type": "object"
       },
+      "ScriptEvent": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "t": {
+            "description": "Year-fraction from the valuation date.",
+            "title": "T",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "t"
+        ],
+        "title": "ScriptEvent",
+        "type": "object"
+      },
       "ScriptRequest": {
         "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.",
         "properties": {
@@ -2646,6 +2666,63 @@
           "vol"
         ],
         "title": "ScriptRequest",
+        "type": "object"
+      },
+      "ScriptValidateRequest": {
+        "description": "Parse a script and resolve its timeline, without pricing it \u2014 no\nmarket inputs needed. For an editor's \"Validate\" action: instant, and\nsurfaces a malformed script before a 200k-path simulation is even\nconsidered.",
+        "properties": {
+          "day_count": {
+            "default": "ACT/365F",
+            "enum": [
+              "ACT/365F",
+              "ACT/360",
+              "30/360",
+              "ACT/ACT"
+            ],
+            "title": "Day Count",
+            "type": "string"
+          },
+          "script": {
+            "description": "The script source text.",
+            "minLength": 1,
+            "title": "Script",
+            "type": "string"
+          },
+          "valuation_date": {
+            "description": "Time 0. Defaults to today (UTC) when omitted.",
+            "format": "date",
+            "title": "Valuation Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "script"
+        ],
+        "title": "ScriptValidateRequest",
+        "type": "object"
+      },
+      "ScriptValidateResponse": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "variables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Variables",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events",
+          "variables"
+        ],
+        "title": "ScriptValidateResponse",
         "type": "object"
       },
       "StressBump": {
@@ -5249,6 +5326,45 @@
           }
         },
         "summary": "Price Script Endpoint"
+      }
+    },
+    "/price/scripted/validate": {
+      "post": {
+        "description": "Parse-only companion to /price/scripted: no market inputs, no\nsimulation \u2014 an editor's \"Validate\" action against this is instant.",
+        "operationId": "validate_script",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptValidateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Script Endpoint"
       }
     },
     "/price/structured/autocall": {

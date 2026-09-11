@@ -1,5 +1,6 @@
 /** Example scripts for ScriptingPreview — kept out of the component so its
- * own file stays under the 230-line feature-file cap (WP 07/11). */
+ * own file stays under the 230-line feature-file cap (WP 07/11). Mirrors
+ * examples/scripting/*.qms; keep the two in sync by hand. */
 export const SCRIPTING_EXAMPLES: Record<string, string> = {
 	"European call": "2027-09-10\n    pays max(spot() - 100, 0)\n",
 	"Arithmetic Asian":
@@ -8,6 +9,19 @@ export const SCRIPTING_EXAMPLES: Record<string, string> = {
 		"2027-09-10\n    acc = acc + spot()\n    pays max(acc / 4 - 100, 0)\n",
 	"Digital (try fuzzy)":
 		"2027-09-10\n    if spot() > 100 then pays 100 endIf\n",
+	"Up-and-out barrier":
+		"2026-12-10\n    alive = 1\n\n" +
+		"2027-03-10  2027-06-10  2027-09-10\n" +
+		"    if spot() >= 130 then alive = 0 endIf\n\n" +
+		"2027-12-10\n" +
+		"    if alive = 1 then pays max(spot() - 100, 0) endIf\n",
+	Cliquet:
+		"2026-12-10\n    ref = spot()\n    total = 0\n\n" +
+		"2027-03-10  2027-06-10  2027-09-10  2027-12-10\n" +
+		"    r = spot() / ref - 1\n" +
+		"    total = total + min(max(r, 0), 0.03)\n" +
+		"    ref = spot()\n\n" +
+		"2028-01-10\n    pays 1000 * total\n",
 	"Memory autocall":
 		"2026-12-10\n    s0 = spot()\n    miss = 0\n    alive = 1\n\n" +
 		"2027-06-10  2027-12-10\n" +
