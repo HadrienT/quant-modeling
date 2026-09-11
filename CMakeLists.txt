@@ -58,6 +58,7 @@ target_sources(quantModeling
         src/engines/pde/european_vanilla.cpp
         src/market/discount_curve.cpp
         src/market/curve_bootstrap.cpp
+        src/market/calibration/levenberg_marquardt.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
         src/instruments/equity/barrier.cpp
@@ -200,6 +201,7 @@ if(QM_BUILD_TESTS)
     tests/testRainbow.cpp
     tests/testInverseNormal.cpp
     tests/testSobol.cpp
+    tests/testLevenbergMarquardt.cpp
   )
 
   target_link_libraries(quantModeling_tests
