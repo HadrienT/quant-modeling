@@ -29,7 +29,7 @@ namespace quantModeling
      */
     class BSBasketMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const BasketOption &opt) override;
@@ -68,7 +68,7 @@ namespace quantModeling
             throw UnsupportedInstrument("BSBasketMCEngine does not support bonds.");
         }
 
-    private:
+      private:
         static void validate(const BasketOption &opt, int n_assets, int n_paths);
     };
 

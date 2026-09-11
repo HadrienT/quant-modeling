@@ -6,33 +6,36 @@
 #include "quantModeling/pricers/context.hpp"
 #include <memory>
 #include <string>
-namespace quantModeling {
+namespace quantModeling
+{
 
-class EngineBase : public IInstrumentVisitor {
-public:
-  explicit EngineBase(PricingContext ctx);
-  virtual ~EngineBase();
+    class EngineBase : public IInstrumentVisitor
+    {
+      public:
+        explicit EngineBase(PricingContext ctx);
+        virtual ~EngineBase();
 
-  const PricingResult &results() const;
+        const PricingResult &results() const;
 
-protected:
-  PricingContext ctx_;
-  PricingResult res_;
+      protected:
+        PricingContext ctx_;
+        PricingResult res_;
 
-  template <class ModelIface>
-  const ModelIface &require_model(const char *engineName) const {
-    static_assert(std::is_base_of_v<IModel, ModelIface>,
-                  "ModelIface must derive from IModel");
+        template <class ModelIface>
+        const ModelIface &require_model(const char *engineName) const
+        {
+            static_assert(std::is_base_of_v<IModel, ModelIface>,
+                          "ModelIface must derive from IModel");
 
-    const auto *p = dynamic_cast<const ModelIface *>(ctx_.model.get());
-    if (!p)
-      throw InvalidInput(
-          std::string(engineName) +
-          " requires model interface: " + ctx_.model->model_name());
-    return *p;
-  }
-  [[noreturn]] void unsupported(const char *instName);
-};
+            const auto *p = dynamic_cast<const ModelIface *>(ctx_.model.get());
+            if (!p)
+                throw InvalidInput(
+                    std::string(engineName) +
+                    " requires model interface: " + ctx_.model->model_name());
+            return *p;
+        }
+        [[noreturn]] void unsupported(const char *instName);
+    };
 
 } // namespace quantModeling
 #endif

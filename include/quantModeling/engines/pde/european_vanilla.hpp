@@ -25,7 +25,7 @@ namespace quantModeling
      */
     class PDEEuropeanVanillaEngine final : public EngineBase
     {
-    public:
+      public:
         explicit PDEEuropeanVanillaEngine(PricingContext ctx);
 
         void visit(const VanillaOption &opt) override;
@@ -36,7 +36,7 @@ namespace quantModeling
         void visit(const ZeroCouponBond &) override;
         void visit(const FixedRateBond &) override;
 
-    private:
+      private:
         int M_; // space steps
         int N_; // time steps
 

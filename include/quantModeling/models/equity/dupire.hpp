@@ -39,8 +39,7 @@ namespace quantModeling
                     std::vector<Real> K_grid,
                     std::vector<Real> T_grid,
                     std::vector<Real> sigma_loc)
-            : s0_(s0), r_(r), q_(q), surface_(std::move(K_grid), std::move(T_grid), std::move(sigma_loc)),
-              disc_curve_(r)
+            : s0_(s0), r_(r), q_(q), surface_(std::move(K_grid), std::move(T_grid), std::move(sigma_loc)), disc_curve_(r)
         {
         }
 
@@ -59,7 +58,7 @@ namespace quantModeling
 
         std::string model_name() const noexcept override { return "DupireModel"; }
 
-    private:
+      private:
         Real s0_, r_, q_;
         GridLocalVol surface_;
         DiscountCurve disc_curve_;

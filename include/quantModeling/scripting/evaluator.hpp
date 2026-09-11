@@ -69,19 +69,23 @@ namespace quantModeling::scripting
         // ── arithmetic ──────────────────────────────────────────────────────
         void visit(const NodeAdd &n) override
         {
-            binary(n, [](const T &a, const T &b) { return a + b; });
+            binary(n, [](const T &a, const T &b)
+                   { return a + b; });
         }
         void visit(const NodeSub &n) override
         {
-            binary(n, [](const T &a, const T &b) { return a - b; });
+            binary(n, [](const T &a, const T &b)
+                   { return a - b; });
         }
         void visit(const NodeMult &n) override
         {
-            binary(n, [](const T &a, const T &b) { return a * b; });
+            binary(n, [](const T &a, const T &b)
+                   { return a * b; });
         }
         void visit(const NodeDiv &n) override
         {
-            binary(n, [](const T &a, const T &b) { return a / b; });
+            binary(n, [](const T &a, const T &b)
+                   { return a / b; });
         }
         void visit(const NodePow &n) override
         {
@@ -90,11 +94,13 @@ namespace quantModeling::scripting
         }
         void visit(const NodeUplus &n) override
         {
-            unary(n, [](const T &a) { return a; });
+            unary(n, [](const T &a)
+                  { return a; });
         }
         void visit(const NodeUminus &n) override
         {
-            unary(n, [](const T &a) { return -a; });
+            unary(n, [](const T &a)
+                  { return -a; });
         }
 
         // ── functions ───────────────────────────────────────────────────────
@@ -110,19 +116,23 @@ namespace quantModeling::scripting
         }
         void visit(const NodeLog &n) override
         {
-            unary(n, [](const T &a) { using std::log; return log(a); });
+            unary(n, [](const T &a)
+                  { using std::log; return log(a); });
         }
         void visit(const NodeExp &n) override
         {
-            unary(n, [](const T &a) { using std::exp; return exp(a); });
+            unary(n, [](const T &a)
+                  { using std::exp; return exp(a); });
         }
         void visit(const NodeSqrt &n) override
         {
-            unary(n, [](const T &a) { using std::sqrt; return sqrt(a); });
+            unary(n, [](const T &a)
+                  { using std::sqrt; return sqrt(a); });
         }
         void visit(const NodeAbs &n) override
         {
-            unary(n, [](const T &a) { using std::fabs; return fabs(a); });
+            unary(n, [](const T &a)
+                  { using std::fabs; return fabs(a); });
         }
         void visit(const NodeSmooth &n) override
         {
@@ -149,27 +159,33 @@ namespace quantModeling::scripting
         // ── comparisons and connectives → 1 / 0 ────────────────────────────
         void visit(const NodeEqual &n) override
         {
-            compare(n, [](const T &a, const T &b) { return a == b; });
+            compare(n, [](const T &a, const T &b)
+                    { return a == b; });
         }
         void visit(const NodeNotEqual &n) override
         {
-            compare(n, [](const T &a, const T &b) { return a != b; });
+            compare(n, [](const T &a, const T &b)
+                    { return a != b; });
         }
         void visit(const NodeSuperior &n) override
         {
-            compare(n, [](const T &a, const T &b) { return a > b; });
+            compare(n, [](const T &a, const T &b)
+                    { return a > b; });
         }
         void visit(const NodeSupEqual &n) override
         {
-            compare(n, [](const T &a, const T &b) { return a >= b; });
+            compare(n, [](const T &a, const T &b)
+                    { return a >= b; });
         }
         void visit(const NodeInferior &n) override
         {
-            compare(n, [](const T &a, const T &b) { return a < b; });
+            compare(n, [](const T &a, const T &b)
+                    { return a < b; });
         }
         void visit(const NodeInfEqual &n) override
         {
-            compare(n, [](const T &a, const T &b) { return a <= b; });
+            compare(n, [](const T &a, const T &b)
+                    { return a <= b; });
         }
         void visit(const NodeAnd &n) override
         {

@@ -34,7 +34,8 @@ namespace quantModeling
         ASSERT_FALSE(g.empty());
         // Events preserved.
         EXPECT_TRUE(std::any_of(g.begin(), g.end(),
-                                [](Time t) { return std::fabs(t - 0.5) < 1e-12; }));
+                                [](Time t)
+                                { return std::fabs(t - 0.5) < 1e-12; }));
         EXPECT_NEAR(g.back(), 1.0, 1e-12);
         for (std::size_t i = 1; i < g.size(); ++i)
             EXPECT_LE(g[i] - g[i - 1], 0.1 + 1e-9);

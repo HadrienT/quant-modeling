@@ -53,9 +53,7 @@ namespace quantModeling
             std::vector<Real> r_at_times;   // flat [n_evals × n_paths]
 
             SimResult(std::size_t np, std::size_t ne)
-                : n_paths(np), n_evals(ne),
-                  disc_factors(np * ne, 1.0),
-                  r_at_times(np * ne) {}
+                : n_paths(np), n_evals(ne), disc_factors(np * ne, 1.0), r_at_times(np * ne) {}
 
             Real &df(std::size_t eval, std::size_t path) noexcept
             {

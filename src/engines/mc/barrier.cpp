@@ -248,14 +248,14 @@ namespace quantModeling
         {
             switch (opt.barrier_type)
             {
-            case BarrierType::UpAndIn:
-                return "up-and-in";
-            case BarrierType::UpAndOut:
-                return "up-and-out";
-            case BarrierType::DownAndIn:
-                return "down-and-in";
-            case BarrierType::DownAndOut:
-                return "down-and-out";
+                case BarrierType::UpAndIn:
+                    return "up-and-in";
+                case BarrierType::UpAndOut:
+                    return "up-and-out";
+                case BarrierType::DownAndIn:
+                    return "down-and-in";
+                case BarrierType::DownAndOut:
+                    return "down-and-out";
             }
             return "?";
         };

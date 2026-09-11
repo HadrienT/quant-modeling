@@ -66,8 +66,7 @@ namespace quantModeling
         }
 
         explicit BlackScholesSimModel(const ILocalVolModel &m)
-            : s0_(m.spot0()), r_(m.rate_r()), q_(m.yield_q()),
-              sigma_(m.vol_sigma())
+            : s0_(m.spot0()), r_(m.rate_r()), q_(m.yield_q()), sigma_(m.vol_sigma())
         {
             set_param_pointers();
         }
@@ -116,7 +115,7 @@ namespace quantModeling
                     {
                         const Real log_df_t = log(curve_->discount(t));
                         s.drift = (log_df_prev - log_df_t) - q_ * dt -
-                                 0.5 * sigma_ * sigma_ * dt;
+                                  0.5 * sigma_ * sigma_ * dt;
                         log_df_prev = log_df_t;
                     }
                     else

@@ -88,10 +88,10 @@ namespace quantModeling::scripting
     TEST(DomainProcessor, ConstantConditionsFold)
     {
         EXPECT_TRUE(condition_of(analysed(
-                        "2025-01-01\n    if 1 > 0 then x = 1 endIf\n"))
+                                     "2025-01-01\n    if 1 > 0 then x = 1 endIf\n"))
                         .alwaysTrue);
         EXPECT_TRUE(condition_of(analysed(
-                        "2025-01-01\n    if 2 < 1 then x = 1 endIf\n"))
+                                     "2025-01-01\n    if 2 < 1 then x = 1 endIf\n"))
                         .alwaysFalse);
     }
 
@@ -99,7 +99,7 @@ namespace quantModeling::scripting
     {
         // spot() > 0 can never be false
         EXPECT_TRUE(condition_of(analysed(
-                        "2025-01-01\n    if spot() > 0 then x = 1 endIf\n"))
+                                     "2025-01-01\n    if spot() > 0 then x = 1 endIf\n"))
                         .alwaysTrue);
     }
 
@@ -133,7 +133,8 @@ namespace quantModeling::scripting
     {
         const auto events = analysed(
             "2025-01-01\n    s0 = spot()\n"
-            "2025-12-01\n    if spot() < 0.70 * s0 then x = 1 endIf\n", 0.25);
+            "2025-12-01\n    if spot() < 0.70 * s0 then x = 1 endIf\n",
+            0.25);
         const NodeComparison &c = condition_of(events);
         EXPECT_FALSE(c.discrete);
         EXPECT_DOUBLE_EQ(c.eps, 0.25);

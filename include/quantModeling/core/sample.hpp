@@ -19,9 +19,9 @@ namespace quantModeling
      */
     struct SampleDef
     {
-        bool numeraire = true;             ///< need the numeraire at this date
-        std::vector<Time> discount_mats;   ///< P(t, T) for these maturities T
-        std::vector<Time> forward_mats;    ///< F(t, T) for these maturities T
+        bool numeraire = true;           ///< need the numeraire at this date
+        std::vector<Time> discount_mats; ///< P(t, T) for these maturities T
+        std::vector<Time> forward_mats;  ///< F(t, T) for these maturities T
     };
 
     /**

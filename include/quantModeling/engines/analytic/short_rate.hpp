@@ -30,7 +30,7 @@ namespace quantModeling
      */
     class ShortRateAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         // ── Rate instruments ─────────────────────────────────────────────────

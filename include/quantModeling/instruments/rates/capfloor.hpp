@@ -34,8 +34,7 @@ namespace quantModeling
 
         CapFloor(std::vector<Time> schedule_, Real strike_,
                  bool is_cap_, Real notional_ = 1.0)
-            : schedule(std::move(schedule_)), strike(strike_),
-              is_cap(is_cap_), notional(notional_) {}
+            : schedule(std::move(schedule_)), strike(strike_), is_cap(is_cap_), notional(notional_) {}
 
         void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
     };

@@ -29,7 +29,7 @@ namespace quantModeling
      */
     class BSMountainMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const MountainOption &opt) override;

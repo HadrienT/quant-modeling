@@ -16,7 +16,7 @@ namespace quantModeling
 
     class FlatRateBondAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const ZeroCouponBond &bond) override;
@@ -43,7 +43,7 @@ namespace quantModeling
             throw UnsupportedInstrument("FlatRateBondAnalyticEngine does not support digital options.");
         }
 
-    private:
+      private:
         static void validate(const ZeroCouponBond &bond);
         static void validate(const FixedRateBond &bond);
     };

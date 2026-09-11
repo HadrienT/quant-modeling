@@ -36,18 +36,18 @@ namespace quantModeling::scripting
         {
             switch (kind)
             {
-            case TokenKind::And:
-            case TokenKind::Or:
-            case TokenKind::Not:
-            case TokenKind::Assign:
-            case TokenKind::NotEqual:
-            case TokenKind::Less:
-            case TokenKind::LessEqual:
-            case TokenKind::Greater:
-            case TokenKind::GreaterEqual:
-                return true;
-            default:
-                return false;
+                case TokenKind::And:
+                case TokenKind::Or:
+                case TokenKind::Not:
+                case TokenKind::Assign:
+                case TokenKind::NotEqual:
+                case TokenKind::Less:
+                case TokenKind::LessEqual:
+                case TokenKind::Greater:
+                case TokenKind::GreaterEqual:
+                    return true;
+                default:
+                    return false;
             }
         }
     } // namespace
@@ -59,7 +59,10 @@ namespace quantModeling::scripting
 
     // ── cursor ───────────────────────────────────────────────────────────────
 
-    const Token &Parser::current() const { return toks_[i_]; }
+    const Token &Parser::current() const
+    {
+        return toks_[i_];
+    }
 
     const Token &Parser::peek(std::size_t ahead) const
     {
@@ -67,9 +70,15 @@ namespace quantModeling::scripting
         return j < toks_.size() ? toks_[j] : toks_.back();
     }
 
-    bool Parser::check(TokenKind kind) const { return current().kind == kind; }
+    bool Parser::check(TokenKind kind) const
+    {
+        return current().kind == kind;
+    }
 
-    bool Parser::at_end() const { return current().kind == TokenKind::Eof; }
+    bool Parser::at_end() const
+    {
+        return current().kind == TokenKind::Eof;
+    }
 
     const Token &Parser::advance()
     {
@@ -252,7 +261,10 @@ namespace quantModeling::scripting
 
     // ── conditions ───────────────────────────────────────────────────────────
 
-    ExprTree Parser::parse_condition() { return parse_cond_or(); }
+    ExprTree Parser::parse_condition()
+    {
+        return parse_cond_or();
+    }
 
     ExprTree Parser::parse_cond_or()
     {
@@ -322,27 +334,27 @@ namespace quantModeling::scripting
         ExprTree node;
         switch (kind)
         {
-        case TokenKind::Assign:
-            node = std::make_unique<NodeEqual>();
-            break;
-        case TokenKind::NotEqual:
-            node = std::make_unique<NodeNotEqual>();
-            break;
-        case TokenKind::Less:
-            node = std::make_unique<NodeInferior>();
-            break;
-        case TokenKind::LessEqual:
-            node = std::make_unique<NodeInfEqual>();
-            break;
-        case TokenKind::Greater:
-            node = std::make_unique<NodeSuperior>();
-            break;
-        case TokenKind::GreaterEqual:
-            node = std::make_unique<NodeSupEqual>();
-            break;
-        default:
-            fail("expected a comparison operator (=, !=, <, <=, >, >=)",
-                 current());
+            case TokenKind::Assign:
+                node = std::make_unique<NodeEqual>();
+                break;
+            case TokenKind::NotEqual:
+                node = std::make_unique<NodeNotEqual>();
+                break;
+            case TokenKind::Less:
+                node = std::make_unique<NodeInferior>();
+                break;
+            case TokenKind::LessEqual:
+                node = std::make_unique<NodeInfEqual>();
+                break;
+            case TokenKind::Greater:
+                node = std::make_unique<NodeSuperior>();
+                break;
+            case TokenKind::GreaterEqual:
+                node = std::make_unique<NodeSupEqual>();
+                break;
+            default:
+                fail("expected a comparison operator (=, !=, <, <=, >, >=)",
+                     current());
         }
         advance();
         node->arguments.push_back(std::move(lhs));
@@ -418,44 +430,44 @@ namespace quantModeling::scripting
         ExprTree node;
         switch (function)
         {
-        case TokenKind::Min:
-            node = std::make_unique<NodeMin>();
-            if (n != 2)
-                fail("min() takes exactly two arguments", close);
-            break;
-        case TokenKind::Max:
-            node = std::make_unique<NodeMax>();
-            if (n != 2)
-                fail("max() takes exactly two arguments", close);
-            break;
-        case TokenKind::Smooth:
-            node = std::make_unique<NodeSmooth>();
-            if (n != 2)
-                fail("smooth() takes exactly two arguments (value, half-width)",
-                     close);
-            break;
-        case TokenKind::Log:
-            node = std::make_unique<NodeLog>();
-            if (n != 1)
-                fail("log() takes exactly one argument", close);
-            break;
-        case TokenKind::Exp:
-            node = std::make_unique<NodeExp>();
-            if (n != 1)
-                fail("exp() takes exactly one argument", close);
-            break;
-        case TokenKind::Sqrt:
-            node = std::make_unique<NodeSqrt>();
-            if (n != 1)
-                fail("sqrt() takes exactly one argument", close);
-            break;
-        case TokenKind::Abs:
-            node = std::make_unique<NodeAbs>();
-            if (n != 1)
-                fail("abs() takes exactly one argument", close);
-            break;
-        default:
-            fail("unknown function", close);
+            case TokenKind::Min:
+                node = std::make_unique<NodeMin>();
+                if (n != 2)
+                    fail("min() takes exactly two arguments", close);
+                break;
+            case TokenKind::Max:
+                node = std::make_unique<NodeMax>();
+                if (n != 2)
+                    fail("max() takes exactly two arguments", close);
+                break;
+            case TokenKind::Smooth:
+                node = std::make_unique<NodeSmooth>();
+                if (n != 2)
+                    fail("smooth() takes exactly two arguments (value, half-width)",
+                         close);
+                break;
+            case TokenKind::Log:
+                node = std::make_unique<NodeLog>();
+                if (n != 1)
+                    fail("log() takes exactly one argument", close);
+                break;
+            case TokenKind::Exp:
+                node = std::make_unique<NodeExp>();
+                if (n != 1)
+                    fail("exp() takes exactly one argument", close);
+                break;
+            case TokenKind::Sqrt:
+                node = std::make_unique<NodeSqrt>();
+                if (n != 1)
+                    fail("sqrt() takes exactly one argument", close);
+                break;
+            case TokenKind::Abs:
+                node = std::make_unique<NodeAbs>();
+                if (n != 1)
+                    fail("abs() takes exactly one argument", close);
+                break;
+            default:
+                fail("unknown function", close);
         }
         node->arguments = std::move(args);
         return node;
@@ -466,51 +478,51 @@ namespace quantModeling::scripting
         const Token &tok = current();
         switch (tok.kind)
         {
-        case TokenKind::Number:
-        {
-            advance();
-            auto node = std::make_unique<NodeConst>();
-            try
+            case TokenKind::Number:
             {
-                node->value = std::stod(tok.lexeme);
+                advance();
+                auto node = std::make_unique<NodeConst>();
+                try
+                {
+                    node->value = std::stod(tok.lexeme);
+                }
+                catch (const std::exception &)
+                {
+                    fail("number out of range: '" + tok.lexeme + "'", tok);
+                }
+                return node;
             }
-            catch (const std::exception &)
+            case TokenKind::Identifier:
             {
-                fail("number out of range: '" + tok.lexeme + "'", tok);
+                advance();
+                auto node = std::make_unique<NodeVar>();
+                node->name = tok.lexeme;
+                return node;
             }
-            return node;
-        }
-        case TokenKind::Identifier:
-        {
-            advance();
-            auto node = std::make_unique<NodeVar>();
-            node->name = tok.lexeme;
-            return node;
-        }
-        case TokenKind::Spot:
-        {
-            advance();
-            expect(TokenKind::LParen, "'(' after 'spot'");
-            expect(TokenKind::RParen, "')' — spot() takes no arguments in v1");
-            return std::make_unique<NodeSpot>();
-        }
-        case TokenKind::Min:
-        case TokenKind::Max:
-        case TokenKind::Log:
-        case TokenKind::Exp:
-        case TokenKind::Sqrt:
-        case TokenKind::Abs:
-        case TokenKind::Smooth:
-            return parse_call(tok.kind);
-        case TokenKind::LParen:
-        {
-            advance();
-            ExprTree inner = parse_expr();
-            expect(TokenKind::RParen, "')' to close the expression");
-            return inner;
-        }
-        default:
-            fail("expected a number, a variable, a function call, or '('", tok);
+            case TokenKind::Spot:
+            {
+                advance();
+                expect(TokenKind::LParen, "'(' after 'spot'");
+                expect(TokenKind::RParen, "')' — spot() takes no arguments in v1");
+                return std::make_unique<NodeSpot>();
+            }
+            case TokenKind::Min:
+            case TokenKind::Max:
+            case TokenKind::Log:
+            case TokenKind::Exp:
+            case TokenKind::Sqrt:
+            case TokenKind::Abs:
+            case TokenKind::Smooth:
+                return parse_call(tok.kind);
+            case TokenKind::LParen:
+            {
+                advance();
+                ExprTree inner = parse_expr();
+                expect(TokenKind::RParen, "')' to close the expression");
+                return inner;
+            }
+            default:
+                fail("expected a number, a variable, a function call, or '('", tok);
         }
     }
 

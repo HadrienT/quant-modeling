@@ -23,8 +23,7 @@ namespace quantModeling
 
         VarianceSwap(Time mat, Real K_var, Real notional_ = 100.0,
                      std::vector<Time> obs = {})
-            : maturity(mat), strike_var(K_var), notional(notional_),
-              observation_dates(std::move(obs)) {}
+            : maturity(mat), strike_var(K_var), notional(notional_), observation_dates(std::move(obs)) {}
 
         void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
     };
@@ -44,8 +43,7 @@ namespace quantModeling
 
         VolatilitySwap(Time mat, Real K_vol, Real notional_ = 100.0,
                        std::vector<Time> obs = {})
-            : maturity(mat), strike_vol(K_vol), notional(notional_),
-              observation_dates(std::move(obs)) {}
+            : maturity(mat), strike_vol(K_vol), notional(notional_), observation_dates(std::move(obs)) {}
 
         void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
     };

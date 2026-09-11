@@ -28,7 +28,7 @@ namespace quantModeling
 
     struct ScriptSettings
     {
-        bool fuzzy = false;       ///< 16c — FuzzyEvaluator; hard only for now
+        bool fuzzy = false; ///< 16c — FuzzyEvaluator; hard only for now
         double default_eps = 0.01;
     };
 

@@ -19,7 +19,7 @@ namespace quantModeling
      */
     class CommodityAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
         void visit(const CommodityForward &fwd) override;
         void visit(const CommodityOption &opt) override;

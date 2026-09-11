@@ -17,7 +17,8 @@ namespace quantModeling::scripting
     /// a variable or the market.
     inline std::optional<double> try_eval_const(const Node &node)
     {
-        auto arg = [&](std::size_t k) { return try_eval_const(*node.arguments[k]); };
+        auto arg = [&](std::size_t k)
+        { return try_eval_const(*node.arguments[k]); };
 
         if (const auto *c = dynamic_cast<const NodeConst *>(&node))
             return c->value;
@@ -109,12 +110,36 @@ namespace quantModeling::scripting
                     statement->accept(*this);
         }
 
-        void visit(NodeEqual &n) override { fold(n, [](double a, double b) { return a == b; }); }
-        void visit(NodeNotEqual &n) override { fold(n, [](double a, double b) { return a != b; }); }
-        void visit(NodeSuperior &n) override { fold(n, [](double a, double b) { return a > b; }); }
-        void visit(NodeSupEqual &n) override { fold(n, [](double a, double b) { return a >= b; }); }
-        void visit(NodeInferior &n) override { fold(n, [](double a, double b) { return a < b; }); }
-        void visit(NodeInfEqual &n) override { fold(n, [](double a, double b) { return a <= b; }); }
+        void visit(NodeEqual &n) override
+        {
+            fold(n, [](double a, double b)
+                 { return a == b; });
+        }
+        void visit(NodeNotEqual &n) override
+        {
+            fold(n, [](double a, double b)
+                 { return a != b; });
+        }
+        void visit(NodeSuperior &n) override
+        {
+            fold(n, [](double a, double b)
+                 { return a > b; });
+        }
+        void visit(NodeSupEqual &n) override
+        {
+            fold(n, [](double a, double b)
+                 { return a >= b; });
+        }
+        void visit(NodeInferior &n) override
+        {
+            fold(n, [](double a, double b)
+                 { return a < b; });
+        }
+        void visit(NodeInfEqual &n) override
+        {
+            fold(n, [](double a, double b)
+                 { return a <= b; });
+        }
 
       private:
         template <class Op>

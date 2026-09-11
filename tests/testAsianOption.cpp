@@ -18,7 +18,7 @@ namespace quantModeling
 
     class AsianOptionTest : public ::testing::Test
     {
-    protected:
+      protected:
         void SetUp() override
         {
             // Standard test parameters

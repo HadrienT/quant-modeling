@@ -23,7 +23,8 @@ namespace quantModeling
         TimeUnit unit = TimeUnit::Days;
 
         Period() = default;
-        Period(int n_, TimeUnit u) : n(n_), unit(u) {}
+        Period(int n_, TimeUnit u)
+            : n(n_), unit(u) {}
 
         /// Parse "3M", "1Y", "2W", "10D" (unit letter case-insensitive).
         static Period parse(const std::string &s);
@@ -40,7 +41,10 @@ namespace quantModeling
      */
     Date advance(const Date &d, const Period &p);
 
-    inline Date operator+(const Date &d, const Period &p) { return advance(d, p); }
+    inline Date operator+(const Date &d, const Period &p)
+    {
+        return advance(d, p);
+    }
     inline Date operator-(const Date &d, const Period &p)
     {
         return advance(d, Period{-p.n, p.unit});

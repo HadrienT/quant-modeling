@@ -28,8 +28,7 @@ namespace quantModeling
                       DigitalPayoffType pt = DigitalPayoffType::CashOrNothing,
                       Real cash = 1.0,
                       Real n = 1.0)
-            : payoff(std::move(p)), exercise(std::move(e)),
-              payoff_type(pt), cash_amount(cash), notional(n)
+            : payoff(std::move(p)), exercise(std::move(e)), payoff_type(pt), cash_amount(cash), notional(n)
         {
         }
 

@@ -2,12 +2,14 @@
 #define MODELS_BASE_HPP
 
 #include <string>
-namespace quantModeling {
+namespace quantModeling
+{
 
-struct IModel {
-  virtual ~IModel() = default;
-  virtual std::string model_name() const noexcept = 0;
-};
+    struct IModel
+    {
+        virtual ~IModel() = default;
+        virtual std::string model_name() const noexcept = 0;
+    };
 } // namespace quantModeling
 
 #endif

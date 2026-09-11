@@ -16,7 +16,7 @@ namespace quantModeling
      */
     class VolSwapMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
         void visit(const VarianceSwap &vs) override;
         void visit(const VolatilitySwap &vs) override;

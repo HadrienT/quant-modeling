@@ -111,7 +111,10 @@ namespace quantModeling
 
     // ── errors ───────────────────────────────────────────────────────────────
 
-    TEST(CurveBootstrap, EmptyQuotesThrow) { EXPECT_THROW(bootstrap_curve({}, {}), InvalidInput); }
+    TEST(CurveBootstrap, EmptyQuotesThrow)
+    {
+        EXPECT_THROW(bootstrap_curve({}, {}), InvalidInput);
+    }
 
     TEST(CurveBootstrap, DuplicateMaturityThrows)
     {

@@ -31,7 +31,7 @@ namespace quantModeling
      */
     class BSAutocallMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const AutocallNote &note) override;

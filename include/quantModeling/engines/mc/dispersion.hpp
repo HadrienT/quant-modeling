@@ -16,7 +16,7 @@ namespace quantModeling
      */
     class DispersionMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
         void visit(const DispersionSwap &ds) override;
 

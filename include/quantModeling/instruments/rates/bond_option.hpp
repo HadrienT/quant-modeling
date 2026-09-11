@@ -26,8 +26,7 @@ namespace quantModeling
 
         BondOption(Time option_mat, Time bond_mat, Real strike_,
                    bool is_call_, Real notional_ = 1.0)
-            : option_maturity(option_mat), bond_maturity(bond_mat),
-              strike(strike_), is_call(is_call_), notional(notional_) {}
+            : option_maturity(option_mat), bond_maturity(bond_mat), strike(strike_), is_call(is_call_), notional(notional_) {}
 
         void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
     };

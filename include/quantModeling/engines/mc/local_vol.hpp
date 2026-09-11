@@ -7,7 +7,7 @@
 namespace quantModeling
 {
 
-/**
+    /**
  * @brief Euler-Maruyama Monte-Carlo pricer under a Dupire local-vol surface.
  *
  * The local-vol surface is provided as a pre-evaluated K×T grid (from the
@@ -22,7 +22,7 @@ namespace quantModeling
  *
  * Antithetic variates halve variance at no extra simulation cost.
  */
-PricingResult price_local_vol_mc(const LocalVolInput &in);
+    PricingResult price_local_vol_mc(const LocalVolInput &in);
 
 } // namespace quantModeling
 

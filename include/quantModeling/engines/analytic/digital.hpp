@@ -26,7 +26,7 @@ namespace quantModeling
      */
     class BSDigitalAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const DigitalOption &opt) override;
@@ -56,7 +56,7 @@ namespace quantModeling
             throw UnsupportedInstrument("BSDigitalAnalyticEngine does not support bonds.");
         }
 
-    private:
+      private:
         static void validate(const DigitalOption &opt);
     };
 

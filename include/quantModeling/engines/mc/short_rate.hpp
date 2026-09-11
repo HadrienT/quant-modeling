@@ -33,7 +33,7 @@ namespace quantModeling
      */
     class ShortRateMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         // ── Rate instruments ─────────────────────────────────────────────────

@@ -28,7 +28,9 @@ namespace quantModeling::scripting
         ScriptError(const std::string &message, std::size_t at_line,
                     std::size_t at_col, std::string src_line)
             : PricingError(format(message, at_line, at_col, src_line)),
-              line(at_line), col(at_col), source_line(std::move(src_line))
+              line(at_line),
+              col(at_col),
+              source_line(std::move(src_line))
         {
         }
 

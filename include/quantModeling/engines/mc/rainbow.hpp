@@ -18,7 +18,7 @@ namespace quantModeling
      */
     class RainbowMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const WorstOfOption &opt) override;

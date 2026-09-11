@@ -28,7 +28,8 @@ namespace quantModeling
         Pcg32 rng;
         NormalBoxMuller bm{};
 
-        explicit BoxMullerSource(Pcg32 r) : rng(r) {}
+        explicit BoxMullerSource(Pcg32 r)
+            : rng(r) {}
 
         double next() { return bm(rng); }
     };
@@ -39,7 +40,8 @@ namespace quantModeling
     {
         Pcg32 rng;
 
-        explicit InverseNormalSource(Pcg32 r) : rng(r) {}
+        explicit InverseNormalSource(Pcg32 r)
+            : rng(r) {}
 
         double next() { return inverse_normal_cdf(uniform01(rng)); }
     };
@@ -60,7 +62,8 @@ namespace quantModeling
         int n_strata;
         int i = 0;
 
-        StratifiedGaussianSource(Pcg32 r, int n) : rng(r), n_strata(n) {}
+        StratifiedGaussianSource(Pcg32 r, int n)
+            : rng(r), n_strata(n) {}
 
         double next()
         {

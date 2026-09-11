@@ -71,9 +71,9 @@ namespace quantModeling::scripting
     struct Token
     {
         TokenKind kind = TokenKind::Eof;
-        std::string lexeme;    ///< exact source text ("" for layout tokens)
-        std::size_t line = 1;  ///< 1-based line of the first character
-        std::size_t col = 1;   ///< 1-based column of the first character
+        std::string lexeme;   ///< exact source text ("" for layout tokens)
+        std::size_t line = 1; ///< 1-based line of the first character
+        std::size_t col = 1;  ///< 1-based column of the first character
     };
 
 } // namespace quantModeling::scripting

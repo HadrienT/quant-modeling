@@ -149,12 +149,33 @@ namespace quantModeling
         res_ = out;
     }
 
-    void DispersionMCEngine::visit(const VanillaOption &) { unsupported("VanillaOption"); }
-    void DispersionMCEngine::visit(const AsianOption &) { unsupported("AsianOption"); }
-    void DispersionMCEngine::visit(const BarrierOption &) { unsupported("BarrierOption"); }
-    void DispersionMCEngine::visit(const DigitalOption &) { unsupported("DigitalOption"); }
-    void DispersionMCEngine::visit(const EquityFuture &) { unsupported("EquityFuture"); }
-    void DispersionMCEngine::visit(const ZeroCouponBond &) { unsupported("ZeroCouponBond"); }
-    void DispersionMCEngine::visit(const FixedRateBond &) { unsupported("FixedRateBond"); }
+    void DispersionMCEngine::visit(const VanillaOption &)
+    {
+        unsupported("VanillaOption");
+    }
+    void DispersionMCEngine::visit(const AsianOption &)
+    {
+        unsupported("AsianOption");
+    }
+    void DispersionMCEngine::visit(const BarrierOption &)
+    {
+        unsupported("BarrierOption");
+    }
+    void DispersionMCEngine::visit(const DigitalOption &)
+    {
+        unsupported("DigitalOption");
+    }
+    void DispersionMCEngine::visit(const EquityFuture &)
+    {
+        unsupported("EquityFuture");
+    }
+    void DispersionMCEngine::visit(const ZeroCouponBond &)
+    {
+        unsupported("ZeroCouponBond");
+    }
+    void DispersionMCEngine::visit(const FixedRateBond &)
+    {
+        unsupported("FixedRateBond");
+    }
 
 } // namespace quantModeling

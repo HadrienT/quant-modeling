@@ -159,12 +159,33 @@ namespace quantModeling
 
     // ─── rejections ──────────────────────────────────────────────────────────
 
-    void VolSwapMCEngine::visit(const VanillaOption &) { unsupported("VanillaOption"); }
-    void VolSwapMCEngine::visit(const AsianOption &) { unsupported("AsianOption"); }
-    void VolSwapMCEngine::visit(const BarrierOption &) { unsupported("BarrierOption"); }
-    void VolSwapMCEngine::visit(const DigitalOption &) { unsupported("DigitalOption"); }
-    void VolSwapMCEngine::visit(const EquityFuture &) { unsupported("EquityFuture"); }
-    void VolSwapMCEngine::visit(const ZeroCouponBond &) { unsupported("ZeroCouponBond"); }
-    void VolSwapMCEngine::visit(const FixedRateBond &) { unsupported("FixedRateBond"); }
+    void VolSwapMCEngine::visit(const VanillaOption &)
+    {
+        unsupported("VanillaOption");
+    }
+    void VolSwapMCEngine::visit(const AsianOption &)
+    {
+        unsupported("AsianOption");
+    }
+    void VolSwapMCEngine::visit(const BarrierOption &)
+    {
+        unsupported("BarrierOption");
+    }
+    void VolSwapMCEngine::visit(const DigitalOption &)
+    {
+        unsupported("DigitalOption");
+    }
+    void VolSwapMCEngine::visit(const EquityFuture &)
+    {
+        unsupported("EquityFuture");
+    }
+    void VolSwapMCEngine::visit(const ZeroCouponBond &)
+    {
+        unsupported("ZeroCouponBond");
+    }
+    void VolSwapMCEngine::visit(const FixedRateBond &)
+    {
+        unsupported("FixedRateBond");
+    }
 
 } // namespace quantModeling

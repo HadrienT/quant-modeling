@@ -29,7 +29,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            EuroCall(Real k, Real T) : K(k), tl_{T}, dl_(1) {}
+            EuroCall(Real k, Real T)
+                : K(k), tl_{T}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override

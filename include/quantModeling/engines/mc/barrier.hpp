@@ -33,7 +33,7 @@ namespace quantModeling
      */
     class BSEuroBarrierMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const BarrierOption &opt) override;
@@ -68,7 +68,7 @@ namespace quantModeling
             throw UnsupportedInstrument("BSEuroBarrierMCEngine: use BSDigitalAnalyticEngine for digital options.");
         }
 
-    private:
+      private:
         static void validate(const BarrierOption &opt);
     };
 

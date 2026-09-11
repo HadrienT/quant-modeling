@@ -80,7 +80,7 @@ namespace quantModeling
         /// Flat discount curve built from the risk-free rate.
         const DiscountCurve &discount_curve() const { return disc_curve_; }
 
-    private:
+      private:
         DiscountCurve disc_curve_;
     };
 

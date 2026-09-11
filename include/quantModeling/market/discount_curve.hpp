@@ -10,13 +10,13 @@ namespace quantModeling
 
     class DiscountCurve
     {
-    public:
+      public:
         explicit DiscountCurve(Real flat_rate);
         DiscountCurve(std::vector<Time> times, std::vector<Real> discount_factors);
 
         Real discount(Time t) const;
 
-    private:
+      private:
         std::vector<Time> times_;
         std::vector<Real> dfs_;
         Real flat_rate_ = 0.0;

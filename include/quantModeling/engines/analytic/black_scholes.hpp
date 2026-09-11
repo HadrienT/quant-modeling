@@ -16,7 +16,7 @@ namespace quantModeling
 {
     class BSEuroVanillaAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const VanillaOption &opt) override;
@@ -27,7 +27,7 @@ namespace quantModeling
         void visit(const ZeroCouponBond &) override;
         void visit(const FixedRateBond &) override;
 
-    private:
+      private:
         static void validate(const VanillaOption &opt);
     };
 } // namespace quantModeling

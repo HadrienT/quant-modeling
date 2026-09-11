@@ -148,12 +148,33 @@ namespace quantModeling
 
     // ─── rejections ─────────────────────────────────────────────────────
 
-    void RainbowMCEngine::visit(const VanillaOption &) { unsupported("VanillaOption"); }
-    void RainbowMCEngine::visit(const AsianOption &) { unsupported("AsianOption"); }
-    void RainbowMCEngine::visit(const BarrierOption &) { unsupported("BarrierOption"); }
-    void RainbowMCEngine::visit(const DigitalOption &) { unsupported("DigitalOption"); }
-    void RainbowMCEngine::visit(const EquityFuture &) { unsupported("EquityFuture"); }
-    void RainbowMCEngine::visit(const ZeroCouponBond &) { unsupported("ZeroCouponBond"); }
-    void RainbowMCEngine::visit(const FixedRateBond &) { unsupported("FixedRateBond"); }
+    void RainbowMCEngine::visit(const VanillaOption &)
+    {
+        unsupported("VanillaOption");
+    }
+    void RainbowMCEngine::visit(const AsianOption &)
+    {
+        unsupported("AsianOption");
+    }
+    void RainbowMCEngine::visit(const BarrierOption &)
+    {
+        unsupported("BarrierOption");
+    }
+    void RainbowMCEngine::visit(const DigitalOption &)
+    {
+        unsupported("DigitalOption");
+    }
+    void RainbowMCEngine::visit(const EquityFuture &)
+    {
+        unsupported("EquityFuture");
+    }
+    void RainbowMCEngine::visit(const ZeroCouponBond &)
+    {
+        unsupported("ZeroCouponBond");
+    }
+    void RainbowMCEngine::visit(const FixedRateBond &)
+    {
+        unsupported("FixedRateBond");
+    }
 
 } // namespace quantModeling

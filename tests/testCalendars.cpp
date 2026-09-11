@@ -96,18 +96,18 @@ namespace quantModeling
     {
         // (Sun 2 Apr, Fri 7 Apr] over a holiday-free calendar = Mon..Fri = 5.
         EXPECT_EQ(NullCalendar::instance().business_days_between(Date(2023, 4, 2),
-                                                                Date(2023, 4, 7)),
+                                                                 Date(2023, 4, 7)),
                   5);
         EXPECT_EQ(NullCalendar::instance().business_days_between(Date(2023, 4, 7),
-                                                                Date(2023, 4, 2)),
+                                                                 Date(2023, 4, 2)),
                   -5);
     }
 
     TEST(Calendar, JointCalendarIsUnion)
     {
         const JointCalendar joint({&TARGET::instance(), &UnitedStates::instance()});
-        EXPECT_TRUE(joint.is_holiday(Date(2023, 7, 4)));  // US only
-        EXPECT_TRUE(joint.is_holiday(Date(2023, 5, 1)));  // TARGET only
+        EXPECT_TRUE(joint.is_holiday(Date(2023, 7, 4))); // US only
+        EXPECT_TRUE(joint.is_holiday(Date(2023, 5, 1))); // TARGET only
         EXPECT_TRUE(joint.is_business_day(Date(2023, 3, 1)));
     }
 

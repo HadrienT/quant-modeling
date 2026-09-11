@@ -63,7 +63,7 @@ namespace quantModeling
         /// ln A(τ)  (uses b = θ/a)
         Real lnA(Real tau) const;
 
-    private:
+      private:
         Real a_, sigma_, r0_, theta_;
     };
 

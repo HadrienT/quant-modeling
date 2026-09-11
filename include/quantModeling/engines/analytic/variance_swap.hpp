@@ -15,7 +15,7 @@ namespace quantModeling
      */
     class VarianceSwapAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
         void visit(const VarianceSwap &vs) override;
 

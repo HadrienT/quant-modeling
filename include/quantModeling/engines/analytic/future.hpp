@@ -12,7 +12,7 @@ namespace quantModeling
 
     class BSEquityFutureAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const EquityFuture &fut) override;
@@ -23,7 +23,7 @@ namespace quantModeling
         void visit(const ZeroCouponBond &) override;
         void visit(const FixedRateBond &) override;
 
-    private:
+      private:
         static void validate(const EquityFuture &fut);
     };
 

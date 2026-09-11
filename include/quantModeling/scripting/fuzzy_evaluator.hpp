@@ -185,18 +185,18 @@ namespace quantModeling::scripting
         {
             switch (c)
             {
-            case Cmp::Eq:
-                return x == 0.0;
-            case Cmp::Ne:
-                return x != 0.0;
-            case Cmp::Gt:
-                return x > 0.0;
-            case Cmp::Ge:
-                return x >= 0.0;
-            case Cmp::Lt:
-                return x < 0.0;
-            case Cmp::Le:
-                return x <= 0.0;
+                case Cmp::Eq:
+                    return x == 0.0;
+                case Cmp::Ne:
+                    return x != 0.0;
+                case Cmp::Gt:
+                    return x > 0.0;
+                case Cmp::Ge:
+                    return x >= 0.0;
+                case Cmp::Lt:
+                    return x < 0.0;
+                case Cmp::Le:
+                    return x <= 0.0;
             }
             return false;
         }
@@ -207,16 +207,16 @@ namespace quantModeling::scripting
             const T up = clamp01((x + T(eps)) / T(2.0 * eps)); // degree of x > 0
             switch (c)
             {
-            case Cmp::Gt:
-            case Cmp::Ge:
-                return up;
-            case Cmp::Lt:
-            case Cmp::Le:
-                return T(1) - up;
-            case Cmp::Eq:
-                return tent(x, eps);
-            case Cmp::Ne:
-                return T(1) - tent(x, eps);
+                case Cmp::Gt:
+                case Cmp::Ge:
+                    return up;
+                case Cmp::Lt:
+                case Cmp::Le:
+                    return T(1) - up;
+                case Cmp::Eq:
+                    return tent(x, eps);
+                case Cmp::Ne:
+                    return T(1) - tent(x, eps);
             }
             return up;
         }

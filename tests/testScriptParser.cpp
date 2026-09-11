@@ -146,7 +146,8 @@ namespace quantModeling::scripting
         {
             const std::string once = ScriptWriter::write(parse_script(source));
             const std::string twice = ScriptWriter::write(parse_script(once));
-            EXPECT_EQ(once, twice) << "source:\n" << source;
+            EXPECT_EQ(once, twice) << "source:\n"
+                                   << source;
         }
     }
 

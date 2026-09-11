@@ -32,12 +32,33 @@ namespace quantModeling
         res_ = out;
     }
 
-    void VarianceSwapAnalyticEngine::visit(const VanillaOption &) { unsupported("VanillaOption"); }
-    void VarianceSwapAnalyticEngine::visit(const AsianOption &) { unsupported("AsianOption"); }
-    void VarianceSwapAnalyticEngine::visit(const BarrierOption &) { unsupported("BarrierOption"); }
-    void VarianceSwapAnalyticEngine::visit(const DigitalOption &) { unsupported("DigitalOption"); }
-    void VarianceSwapAnalyticEngine::visit(const EquityFuture &) { unsupported("EquityFuture"); }
-    void VarianceSwapAnalyticEngine::visit(const ZeroCouponBond &) { unsupported("ZeroCouponBond"); }
-    void VarianceSwapAnalyticEngine::visit(const FixedRateBond &) { unsupported("FixedRateBond"); }
+    void VarianceSwapAnalyticEngine::visit(const VanillaOption &)
+    {
+        unsupported("VanillaOption");
+    }
+    void VarianceSwapAnalyticEngine::visit(const AsianOption &)
+    {
+        unsupported("AsianOption");
+    }
+    void VarianceSwapAnalyticEngine::visit(const BarrierOption &)
+    {
+        unsupported("BarrierOption");
+    }
+    void VarianceSwapAnalyticEngine::visit(const DigitalOption &)
+    {
+        unsupported("DigitalOption");
+    }
+    void VarianceSwapAnalyticEngine::visit(const EquityFuture &)
+    {
+        unsupported("EquityFuture");
+    }
+    void VarianceSwapAnalyticEngine::visit(const ZeroCouponBond &)
+    {
+        unsupported("ZeroCouponBond");
+    }
+    void VarianceSwapAnalyticEngine::visit(const FixedRateBond &)
+    {
+        unsupported("FixedRateBond");
+    }
 
 } // namespace quantModeling

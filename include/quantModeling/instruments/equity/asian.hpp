@@ -41,7 +41,8 @@ namespace quantModeling
         OptionType t_;
         Real K_;
 
-        ArithmeticAsianPayoff(OptionType t, Real K) : t_(t), K_(K) {}
+        ArithmeticAsianPayoff(OptionType t, Real K)
+            : t_(t), K_(K) {}
 
         OptionType type() const override { return t_; }
         Real strike() const override { return K_; }
@@ -68,7 +69,8 @@ namespace quantModeling
         OptionType t_;
         Real K_;
 
-        GeometricAsianPayoff(OptionType t, Real K) : t_(t), K_(K) {}
+        GeometricAsianPayoff(OptionType t, Real K)
+            : t_(t), K_(K) {}
 
         OptionType type() const override { return t_; }
         Real strike() const override { return K_; }

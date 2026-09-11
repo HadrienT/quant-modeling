@@ -29,16 +29,14 @@ namespace quantModeling
      */
     class SobolSequence
     {
-    public:
+      public:
         /**
          * @param dimension  coordinates per point (1..kMaxDimension)
          * @param scramble_seed seed of the digital-shift masks. Two sequences
          *        with different seeds are independent RQMC replicates.
          */
         explicit SobolSequence(int dimension, uint64_t scramble_seed = 0)
-            : dim_(dimension), v_(static_cast<size_t>(dimension) * kBits),
-              x_(static_cast<size_t>(dimension), 0u),
-              shift_(static_cast<size_t>(dimension), 0u)
+            : dim_(dimension), v_(static_cast<size_t>(dimension) * kBits), x_(static_cast<size_t>(dimension), 0u), shift_(static_cast<size_t>(dimension), 0u)
         {
             if (dimension < 1 || dimension > sobol_detail::kMaxDimension)
                 throw InvalidInput("SobolSequence: dimension out of range [1, " +
@@ -88,7 +86,7 @@ namespace quantModeling
                 out[static_cast<size_t>(d)] = inverse_normal_cdf(out[static_cast<size_t>(d)]);
         }
 
-    private:
+      private:
         static constexpr int kBits = 32;
 
         /// Expand the direction integers V_1..V_32 of dimension index d (0-based).
@@ -134,7 +132,7 @@ namespace quantModeling
      */
     class SobolGaussianSource
     {
-    public:
+      public:
         SobolGaussianSource(int dimension, uint64_t scramble_seed)
             : seq_(dimension, scramble_seed),
               buf_(static_cast<size_t>(dimension)),
@@ -152,7 +150,7 @@ namespace quantModeling
             return buf_[static_cast<size_t>(pos_++)];
         }
 
-    private:
+      private:
         SobolSequence seq_;
         std::vector<double> buf_;
         int pos_;

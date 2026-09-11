@@ -54,8 +54,7 @@ namespace quantModeling
                       Real H,
                       Real reb = 0.0,
                       Real ntl = 1.0)
-            : payoff(std::move(p)), exercise(std::move(e)),
-              barrier_type(bt), barrier(H), rebate(reb), notional(ntl)
+            : payoff(std::move(p)), exercise(std::move(e)), barrier_type(bt), barrier(H), rebate(reb), notional(ntl)
         {
         }
 

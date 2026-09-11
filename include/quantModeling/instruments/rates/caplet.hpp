@@ -32,8 +32,7 @@ namespace quantModeling
 
         Caplet(Time t_start, Time t_end, Real K,
                bool cap = true, Real ntl = 1.0)
-            : start(t_start), end(t_end), strike(K),
-              is_cap(cap), notional(ntl)
+            : start(t_start), end(t_end), strike(K), is_cap(cap), notional(ntl)
         {
         }
 

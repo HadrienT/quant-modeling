@@ -33,8 +33,7 @@ namespace quantModeling
                        std::vector<Real> w,
                        Real notional_ = 100.0,
                        std::vector<Time> obs = {})
-            : maturity(mat), strike_spread(K_spread), notional(notional_),
-              weights(std::move(w)), observation_dates(std::move(obs)) {}
+            : maturity(mat), strike_spread(K_spread), notional(notional_), weights(std::move(w)), observation_dates(std::move(obs)) {}
 
         void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
     };

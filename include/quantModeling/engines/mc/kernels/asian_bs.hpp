@@ -88,17 +88,14 @@ namespace quantModeling::mc
         std::vector<Real> w;     ///< Brownian path W(t_j)
 
         explicit AsianWorkspace(const AsianSpec &s)
-            : bridge(make_times(s)), times(make_times(s)),
-              drift(static_cast<size_t>(s.n_fixings)),
-              z(static_cast<size_t>(s.n_fixings)),
-              w(static_cast<size_t>(s.n_fixings))
+            : bridge(make_times(s)), times(make_times(s)), drift(static_cast<size_t>(s.n_fixings)), z(static_cast<size_t>(s.n_fixings)), w(static_cast<size_t>(s.n_fixings))
         {
             const Real mu = s.r - s.q - 0.5 * s.sigma * s.sigma;
             for (int j = 0; j < s.n_fixings; ++j)
                 drift[static_cast<size_t>(j)] = mu * times[static_cast<size_t>(j)];
         }
 
-    private:
+      private:
         static std::vector<Real> make_times(const AsianSpec &s)
         {
             std::vector<Real> t(static_cast<size_t>(s.n_fixings));

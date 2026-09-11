@@ -25,7 +25,7 @@ namespace quantModeling
      */
     class BSEuroArithmeticAsianAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const AsianOption &) override;
@@ -51,7 +51,7 @@ namespace quantModeling
             throw UnsupportedInstrument("BSEuroArithmeticAsianAnalyticEngine does not support digital options.");
         }
 
-    private:
+      private:
         static void validate(const AsianOption &);
     };
 
@@ -64,7 +64,7 @@ namespace quantModeling
      */
     class BSEuroGeometricAsianAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const AsianOption &opt) override;
@@ -90,7 +90,7 @@ namespace quantModeling
             throw UnsupportedInstrument("BSEuroGeometricAsianAnalyticEngine does not support digital options.");
         }
 
-    private:
+      private:
         static void validate(const AsianOption &opt);
     };
 

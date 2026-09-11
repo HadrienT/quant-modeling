@@ -153,7 +153,7 @@ namespace quantModeling
             std::cout << COLOR_RED << " ✗ (Poor)" << COLOR_RESET;
         std::cout << "\n\n";
     }
-}
+} // namespace quantModeling
 
 int main()
 {

@@ -17,7 +17,7 @@ namespace quantModeling
 
     class BSEuroLookbackMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const LookbackOption &opt) override;
@@ -57,7 +57,7 @@ namespace quantModeling
             throw UnsupportedInstrument("BSEuroLookbackMCEngine does not support bonds.");
         }
 
-    private:
+      private:
         static void validate(const LookbackOption &opt, int n_paths);
     };
 

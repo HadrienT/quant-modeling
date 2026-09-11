@@ -19,7 +19,7 @@ namespace quantModeling
      */
     class FXAnalyticEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
         void visit(const FXForward &fwd) override;
         void visit(const FXOption &opt) override;

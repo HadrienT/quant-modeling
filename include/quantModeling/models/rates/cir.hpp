@@ -61,7 +61,7 @@ namespace quantModeling
         /// Check Feller condition 2ab ≥ σ²
         bool feller_satisfied() const;
 
-    private:
+      private:
         Real a_, b_, sigma_, r0_;
     };
 

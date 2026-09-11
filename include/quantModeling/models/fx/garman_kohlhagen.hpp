@@ -35,7 +35,7 @@ namespace quantModeling
         const DiscountCurve &discount_curve() const override { return disc_curve_; }
         std::string model_name() const noexcept override { return "GarmanKohlhagenModel"; }
 
-    private:
+      private:
         DiscountCurve disc_curve_;
     };
 

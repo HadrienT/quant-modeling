@@ -23,7 +23,8 @@ namespace quantModeling
         Real r_;
         DiscountCurve disc_curve_;
 
-        explicit FlatRateModel(Real r) : r_(r), disc_curve_(r) {}
+        explicit FlatRateModel(Real r)
+            : r_(r), disc_curve_(r) {}
 
         /// Construct with a custom (possibly non-flat) discount curve.
         FlatRateModel(Real r, DiscountCurve curve)

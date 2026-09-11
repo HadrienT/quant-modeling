@@ -46,12 +46,12 @@ namespace quantModeling::scripting
         bool empty() const { return parts_.empty(); }
         const std::vector<Interval> &parts() const { return parts_; }
 
-        bool is_discrete() const;        ///< non-empty, every part a singleton
+        bool is_discrete() const; ///< non-empty, every part a singleton
         bool contains(double v) const;
-        bool all_positive() const;       ///< non-empty, every element > 0
-        bool all_negative() const;       ///< non-empty, every element < 0
-        bool all_non_negative() const;   ///< non-empty, every element >= 0
-        bool all_non_positive() const;   ///< non-empty, every element <= 0
+        bool all_positive() const;     ///< non-empty, every element > 0
+        bool all_negative() const;     ///< non-empty, every element < 0
+        bool all_non_negative() const; ///< non-empty, every element >= 0
+        bool all_non_positive() const; ///< non-empty, every element <= 0
 
         /// Smallest |x| over the domain (0 if it contains or straddles 0).
         double distance_to_zero() const;

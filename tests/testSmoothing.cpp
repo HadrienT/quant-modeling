@@ -26,7 +26,7 @@ namespace quantModeling
 
     class SmoothingTest : public ::testing::Test
     {
-    protected:
+      protected:
         void SetUp() override
         {
             S0 = 100.0;

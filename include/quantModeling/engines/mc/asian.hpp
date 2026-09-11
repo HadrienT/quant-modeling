@@ -25,7 +25,7 @@ namespace quantModeling
      */
     class BSEuroAsianMCEngine final : public EngineBase
     {
-    public:
+      public:
         using EngineBase::EngineBase;
 
         void visit(const AsianOption &) override;
@@ -55,7 +55,7 @@ namespace quantModeling
             throw UnsupportedInstrument("BSEuroAsianMCEngine: use BSDigitalAnalyticEngine for digital options.");
         }
 
-    private:
+      private:
         static void validate(const AsianOption &opt);
 
         /**

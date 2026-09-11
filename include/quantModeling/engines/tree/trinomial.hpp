@@ -21,7 +21,7 @@ namespace quantModeling
      */
     class TrinomialVanillaEngine final : public EngineBase
     {
-    public:
+      public:
         explicit TrinomialVanillaEngine(PricingContext ctx);
 
         void visit(const VanillaOption &opt) override;
@@ -32,7 +32,7 @@ namespace quantModeling
         void visit(const ZeroCouponBond &) override;
         void visit(const FixedRateBond &) override;
 
-    private:
+      private:
         int steps_;
         static void validate(const VanillaOption &opt);
     };

@@ -4,12 +4,14 @@
 #include "quantModeling/engines/base.hpp"
 #include "quantModeling/instruments/base.hpp"
 
-namespace quantModeling {
+namespace quantModeling
+{
 
-inline PricingResult price(const Instrument &inst, EngineBase &engine) {
-  inst.accept(engine);
-  return engine.results();
-}
+    inline PricingResult price(const Instrument &inst, EngineBase &engine)
+    {
+        inst.accept(engine);
+        return engine.results();
+    }
 } // namespace quantModeling
 
 #endif

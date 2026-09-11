@@ -89,7 +89,8 @@ namespace quantModeling::scripting
 
         Domain domain_of(const Node &n) const
         {
-            auto d = [&](std::size_t k) { return domain_of(*n.arguments[k]); };
+            auto d = [&](std::size_t k)
+            { return domain_of(*n.arguments[k]); };
 
             if (const auto *c = dynamic_cast<const NodeConst *>(&n))
                 return Domain::singleton(c->value);
@@ -138,30 +139,30 @@ namespace quantModeling::scripting
             bool always_false = false;
             switch (op)
             {
-            case Op::Gt:
-                always_true = diff.all_positive();
-                always_false = diff.all_non_positive();
-                break;
-            case Op::Ge:
-                always_true = diff.all_non_negative();
-                always_false = diff.all_negative();
-                break;
-            case Op::Lt:
-                always_true = diff.all_negative();
-                always_false = diff.all_non_negative();
-                break;
-            case Op::Le:
-                always_true = diff.all_non_positive();
-                always_false = diff.all_positive();
-                break;
-            case Op::Eq:
-                always_true = is_exactly_zero(diff);
-                always_false = !diff.empty() && !diff.contains(0.0);
-                break;
-            case Op::Ne:
-                always_true = !diff.empty() && !diff.contains(0.0);
-                always_false = is_exactly_zero(diff);
-                break;
+                case Op::Gt:
+                    always_true = diff.all_positive();
+                    always_false = diff.all_non_positive();
+                    break;
+                case Op::Ge:
+                    always_true = diff.all_non_negative();
+                    always_false = diff.all_negative();
+                    break;
+                case Op::Lt:
+                    always_true = diff.all_negative();
+                    always_false = diff.all_non_negative();
+                    break;
+                case Op::Le:
+                    always_true = diff.all_non_positive();
+                    always_false = diff.all_positive();
+                    break;
+                case Op::Eq:
+                    always_true = is_exactly_zero(diff);
+                    always_false = !diff.empty() && !diff.contains(0.0);
+                    break;
+                case Op::Ne:
+                    always_true = !diff.empty() && !diff.contains(0.0);
+                    always_false = is_exactly_zero(diff);
+                    break;
             }
 
             if (always_true)

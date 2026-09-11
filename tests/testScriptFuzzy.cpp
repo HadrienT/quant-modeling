@@ -23,7 +23,10 @@ namespace quantModeling
             return (std::log(spot / K) + (r - q - 0.5 * v * v) * T) /
                    (v * std::sqrt(T));
         }
-        double digital_price() { return 100.0 * std::exp(-r) * norm_cdf(d2(S0)); }
+        double digital_price()
+        {
+            return 100.0 * std::exp(-r) * norm_cdf(d2(S0));
+        }
         double digital_delta()
         {
             const double phi =
@@ -93,9 +96,9 @@ namespace quantModeling
         const double f1 = delta(true, 11), f2 = delta(true, 22);
         const double h1 = delta(false, 11), h2 = delta(false, 22);
 
-        const double ref = digital_delta(); // ~1.93
-        EXPECT_NEAR(0.5 * (f1 + f2), ref, 0.4);      // fuzzy tracks the analytic
-        EXPECT_LT(std::fabs(f1 - f2), 0.1);          // and is stable across seeds
+        const double ref = digital_delta();                    // ~1.93
+        EXPECT_NEAR(0.5 * (f1 + f2), ref, 0.4);                // fuzzy tracks the analytic
+        EXPECT_LT(std::fabs(f1 - f2), 0.1);                    // and is stable across seeds
         EXPECT_GT(std::fabs(h1 - h2), 5 * std::fabs(f1 - f2)); // hard is not
     }
 

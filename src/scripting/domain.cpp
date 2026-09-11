@@ -24,7 +24,10 @@ namespace quantModeling::scripting
         return lo == hi && std::isfinite(lo);
     }
 
-    bool Domain::Interval::contains(double v) const { return lo <= v && v <= hi; }
+    bool Domain::Interval::contains(double v) const
+    {
+        return lo <= v && v <= hi;
+    }
 
     // ── construction ─────────────────────────────────────────────────────────
 
@@ -50,9 +53,15 @@ namespace quantModeling::scripting
         return closed(std::nextafter(lo, kInf), kInf);
     }
 
-    Domain Domain::at_least(double lo) { return closed(lo, kInf); }
+    Domain Domain::at_least(double lo)
+    {
+        return closed(lo, kInf);
+    }
 
-    Domain Domain::real_line() { return closed(-kInf, kInf); }
+    Domain Domain::real_line()
+    {
+        return closed(-kInf, kInf);
+    }
 
     // ── normalisation ────────────────────────────────────────────────────────
 

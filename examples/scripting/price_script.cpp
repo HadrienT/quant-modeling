@@ -172,7 +172,7 @@ namespace
         ss << in.rdbuf();
         return ss.str();
     }
-}
+} // namespace
 
 int main(int argc, char **argv)
 {

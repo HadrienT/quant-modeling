@@ -41,7 +41,10 @@ namespace quantModeling
             return s;
         }
 
-        ValuationContext ctx() { return ValuationContext{Date::from_iso("2024-06-03")}; }
+        ValuationContext ctx()
+        {
+            return ValuationContext{Date::from_iso("2024-06-03")};
+        }
     } // namespace
 
     // ── 1. a scripted European call vs the closed form ──────────────────────
@@ -104,16 +107,17 @@ namespace quantModeling
             const std::string A = std::to_string(ac);
             const std::string C = std::to_string(cp);
             return "    if spot() >= " + A + " then\n"
-                   "        pays 1000 * (1 + 0.05 * (miss + 1))\n"
-                   "        alive = 0\n"
-                   "    else\n"
-                   "        if spot() >= " + C + " then\n"
-                   "            pays 1000 * 0.05 * (miss + 1)\n"
-                   "            miss = 0\n"
-                   "        else\n"
-                   "            miss = miss + 1\n"
-                   "        endIf\n"
-                   "    endIf\n";
+                                             "        pays 1000 * (1 + 0.05 * (miss + 1))\n"
+                                             "        alive = 0\n"
+                                             "    else\n"
+                                             "        if spot() >= " +
+                   C + " then\n"
+                       "            pays 1000 * 0.05 * (miss + 1)\n"
+                       "            miss = 0\n"
+                       "        else\n"
+                       "            miss = miss + 1\n"
+                       "        endIf\n"
+                       "    endIf\n";
         }
 
         double legacy_autocall(const TimeLine &obs_times, double S0, double r,

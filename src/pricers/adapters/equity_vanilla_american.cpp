@@ -40,22 +40,22 @@ namespace quantModeling
 
         switch (engine)
         {
-        case EngineKind::BinomialTree:
-        {
-            BinomialVanillaEngine binomial_engine(ctx);
-            return price(opt, binomial_engine);
-        }
-        case EngineKind::TrinomialTree:
-        {
-            TrinomialVanillaEngine trinomial_engine(ctx);
-            return price(opt, trinomial_engine);
-        }
-        case EngineKind::PDEFiniteDifference:
-        {
-            throw UnsupportedInstrument("PDE finite difference method is only supported for European vanilla options");
-        }
-        default:
-            throw InvalidInput("Unsupported engine for American vanilla options");
+            case EngineKind::BinomialTree:
+            {
+                BinomialVanillaEngine binomial_engine(ctx);
+                return price(opt, binomial_engine);
+            }
+            case EngineKind::TrinomialTree:
+            {
+                TrinomialVanillaEngine trinomial_engine(ctx);
+                return price(opt, trinomial_engine);
+            }
+            case EngineKind::PDEFiniteDifference:
+            {
+                throw UnsupportedInstrument("PDE finite difference method is only supported for European vanilla options");
+            }
+            default:
+                throw InvalidInput("Unsupported engine for American vanilla options");
         }
     }
 } // namespace quantModeling

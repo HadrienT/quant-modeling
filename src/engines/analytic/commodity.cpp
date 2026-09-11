@@ -79,12 +79,33 @@ namespace quantModeling
 
     // ─── rejections ──────────────────────────────────────────────────────────
 
-    void CommodityAnalyticEngine::visit(const VanillaOption &) { unsupported("VanillaOption"); }
-    void CommodityAnalyticEngine::visit(const AsianOption &) { unsupported("AsianOption"); }
-    void CommodityAnalyticEngine::visit(const BarrierOption &) { unsupported("BarrierOption"); }
-    void CommodityAnalyticEngine::visit(const DigitalOption &) { unsupported("DigitalOption"); }
-    void CommodityAnalyticEngine::visit(const EquityFuture &) { unsupported("EquityFuture"); }
-    void CommodityAnalyticEngine::visit(const ZeroCouponBond &) { unsupported("ZeroCouponBond"); }
-    void CommodityAnalyticEngine::visit(const FixedRateBond &) { unsupported("FixedRateBond"); }
+    void CommodityAnalyticEngine::visit(const VanillaOption &)
+    {
+        unsupported("VanillaOption");
+    }
+    void CommodityAnalyticEngine::visit(const AsianOption &)
+    {
+        unsupported("AsianOption");
+    }
+    void CommodityAnalyticEngine::visit(const BarrierOption &)
+    {
+        unsupported("BarrierOption");
+    }
+    void CommodityAnalyticEngine::visit(const DigitalOption &)
+    {
+        unsupported("DigitalOption");
+    }
+    void CommodityAnalyticEngine::visit(const EquityFuture &)
+    {
+        unsupported("EquityFuture");
+    }
+    void CommodityAnalyticEngine::visit(const ZeroCouponBond &)
+    {
+        unsupported("ZeroCouponBond");
+    }
+    void CommodityAnalyticEngine::visit(const FixedRateBond &)
+    {
+        unsupported("FixedRateBond");
+    }
 
 } // namespace quantModeling

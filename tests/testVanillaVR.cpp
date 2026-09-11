@@ -17,7 +17,7 @@ namespace quantModeling
 
     class VanillaVRTest : public ::testing::Test
     {
-    protected:
+      protected:
         void SetUp() override
         {
             S0 = 100.0;

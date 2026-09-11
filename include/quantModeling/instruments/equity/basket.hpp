@@ -28,8 +28,7 @@ namespace quantModeling
                      std::shared_ptr<const IExercise> e,
                      std::vector<Real> w,
                      Real n = 1.0)
-            : payoff(std::move(p)), exercise(std::move(e)),
-              weights(std::move(w)), notional(n)
+            : payoff(std::move(p)), exercise(std::move(e)), weights(std::move(w)), notional(n)
         {
         }
 

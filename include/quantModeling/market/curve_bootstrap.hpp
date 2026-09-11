@@ -80,7 +80,7 @@ namespace quantModeling
      *         produce from what came before it).
      */
     DiscountCurve bootstrap_curve(const std::vector<DepositQuote> &deposits,
-                                 const std::vector<ParRateQuote> &par_quotes);
+                                  const std::vector<ParRateQuote> &par_quotes);
 
     /**
      * @brief Convert a T-bill secondary-market discount rate to the

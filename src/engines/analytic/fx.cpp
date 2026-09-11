@@ -89,12 +89,33 @@ namespace quantModeling
 
     // ─── rejections ──────────────────────────────────────────────────────────
 
-    void FXAnalyticEngine::visit(const VanillaOption &) { unsupported("VanillaOption"); }
-    void FXAnalyticEngine::visit(const AsianOption &) { unsupported("AsianOption"); }
-    void FXAnalyticEngine::visit(const BarrierOption &) { unsupported("BarrierOption"); }
-    void FXAnalyticEngine::visit(const DigitalOption &) { unsupported("DigitalOption"); }
-    void FXAnalyticEngine::visit(const EquityFuture &) { unsupported("EquityFuture"); }
-    void FXAnalyticEngine::visit(const ZeroCouponBond &) { unsupported("ZeroCouponBond"); }
-    void FXAnalyticEngine::visit(const FixedRateBond &) { unsupported("FixedRateBond"); }
+    void FXAnalyticEngine::visit(const VanillaOption &)
+    {
+        unsupported("VanillaOption");
+    }
+    void FXAnalyticEngine::visit(const AsianOption &)
+    {
+        unsupported("AsianOption");
+    }
+    void FXAnalyticEngine::visit(const BarrierOption &)
+    {
+        unsupported("BarrierOption");
+    }
+    void FXAnalyticEngine::visit(const DigitalOption &)
+    {
+        unsupported("DigitalOption");
+    }
+    void FXAnalyticEngine::visit(const EquityFuture &)
+    {
+        unsupported("EquityFuture");
+    }
+    void FXAnalyticEngine::visit(const ZeroCouponBond &)
+    {
+        unsupported("ZeroCouponBond");
+    }
+    void FXAnalyticEngine::visit(const FixedRateBond &)
+    {
+        unsupported("FixedRateBond");
+    }
 
 } // namespace quantModeling

@@ -16,7 +16,10 @@ namespace quantModeling
     namespace
     {
         // Standard normal CDF for round-trip checks
-        Real norm_cdf(Real x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); }
+        Real norm_cdf(Real x)
+        {
+            return 0.5 * std::erfc(-x / std::sqrt(2.0));
+        }
     } // namespace
 
     // ---------------------------------------------------------------------

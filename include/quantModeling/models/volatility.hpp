@@ -47,7 +47,8 @@ namespace quantModeling
      */
     struct FlatVol final : public IVolatility
     {
-        explicit FlatVol(Real sigma) noexcept : sigma_(sigma) {}
+        explicit FlatVol(Real sigma) noexcept
+            : sigma_(sigma) {}
 
         Real value(Real /*S*/, Real /*t*/) const noexcept override
         {
@@ -57,7 +58,7 @@ namespace quantModeling
         /// Raw scalar access for backward-compatible analytic formulas.
         Real sigma() const noexcept { return sigma_; }
 
-    private:
+      private:
         Real sigma_;
     };
 
@@ -185,7 +186,7 @@ namespace quantModeling
             return GridLocalVol(K_grid_, T_grid_, sigma_loc_, vol_shift_ + dv);
         }
 
-    private:
+      private:
         std::vector<Real> K_grid_;
         std::vector<Real> T_grid_;
         std::vector<Real> sigma_loc_;

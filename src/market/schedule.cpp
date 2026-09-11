@@ -62,20 +62,20 @@ namespace quantModeling
         std::vector<Date> raw;
         switch (rule)
         {
-        case DateGenerationRule::Forward:
-            raw = raw_forward(effective, termination, tenor);
-            break;
-        case DateGenerationRule::Backward:
-            raw = raw_backward(effective, termination, tenor);
-            break;
-        case DateGenerationRule::Zero:
-            raw = {effective, termination};
-            break;
-        case DateGenerationRule::ThirdWednesday:
-            raw = raw_backward(effective, termination, tenor);
-            for (Date &d : raw)
-                d = imm::third_wednesday(d.year(), d.month());
-            break;
+            case DateGenerationRule::Forward:
+                raw = raw_forward(effective, termination, tenor);
+                break;
+            case DateGenerationRule::Backward:
+                raw = raw_backward(effective, termination, tenor);
+                break;
+            case DateGenerationRule::Zero:
+                raw = {effective, termination};
+                break;
+            case DateGenerationRule::ThirdWednesday:
+                raw = raw_backward(effective, termination, tenor);
+                for (Date &d : raw)
+                    d = imm::third_wednesday(d.year(), d.month());
+                break;
         }
 
         sort_unique(raw);
@@ -94,7 +94,8 @@ namespace quantModeling
         sort_unique(dates_);
     }
 
-    Schedule::Schedule(std::vector<Date> dates) : dates_(std::move(dates))
+    Schedule::Schedule(std::vector<Date> dates)
+        : dates_(std::move(dates))
     {
         sort_unique(dates_);
         if (dates_.empty())
@@ -122,7 +123,7 @@ namespace quantModeling
         Date next(const Date &d, bool include_ref)
         {
             constexpr std::array<Month, 4> q{Month::March, Month::June,
-                                            Month::September, Month::December};
+                                             Month::September, Month::December};
             int year = d.year();
             for (int guard = 0; guard < 12; ++guard)
             {

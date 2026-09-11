@@ -118,11 +118,11 @@ namespace quantModeling
 
     class PricingRegistry
     {
-    public:
+      public:
         void register_pricer(const RegistryKey &key, PricingFn fn);
         PricingResult price(const PricingRequest &request) const;
 
-    private:
+      private:
         std::unordered_map<RegistryKey, PricingFn, RegistryKeyHash> registry_;
     };
 

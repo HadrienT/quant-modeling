@@ -58,7 +58,7 @@ namespace quantModeling::scripting
         std::size_t col_ = 1;
 
         std::vector<Token> out_;
-        bool in_block_ = false;      ///< an event body is open (Indent emitted)
+        bool in_block_ = false; ///< an event body is open (Indent emitted)
         std::size_t block_indent_ = 0;
         std::size_t header_indent_ = 0;
     };

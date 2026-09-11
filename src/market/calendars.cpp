@@ -30,8 +30,14 @@ namespace quantModeling
             return Date(y, static_cast<unsigned>(month), static_cast<unsigned>(day));
         }
 
-        Date good_friday(int y) { return easter_sunday(y) - 2; }
-        Date easter_monday(int y) { return easter_sunday(y) + 1; }
+        Date good_friday(int y)
+        {
+            return easter_sunday(y) - 2;
+        }
+        Date easter_monday(int y)
+        {
+            return easter_sunday(y) + 1;
+        }
 
         /// Observed date of a fixed US holiday: Saturday -> preceding Friday,
         /// Sunday -> following Monday.
@@ -40,14 +46,14 @@ namespace quantModeling
             Date h(d.year(), month, day);
             switch (h.weekday())
             {
-            case Weekday::Saturday:
-                h -= 1;
-                break;
-            case Weekday::Sunday:
-                h += 1;
-                break;
-            default:
-                break;
+                case Weekday::Saturday:
+                    h -= 1;
+                    break;
+                case Weekday::Sunday:
+                    h += 1;
+                    break;
+                default:
+                    break;
             }
             return d == h;
         }
@@ -298,7 +304,8 @@ namespace quantModeling
     bool JointCalendar::is_holiday_impl(const Date &d) const
     {
         return std::any_of(calendars_.begin(), calendars_.end(),
-                           [&](const Calendar *c) { return c->is_holiday(d); });
+                           [&](const Calendar *c)
+                           { return c->is_holiday(d); });
     }
 
 } // namespace quantModeling

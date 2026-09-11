@@ -11,14 +11,20 @@ namespace quantModeling::scripting
 
     namespace
     {
-        bool is_digit(char c) { return c >= '0' && c <= '9'; }
+        bool is_digit(char c)
+        {
+            return c >= '0' && c <= '9';
+        }
 
         bool is_ident_start(char c)
         {
             return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
         }
 
-        bool is_ident_char(char c) { return is_ident_start(c) || is_digit(c); }
+        bool is_ident_char(char c)
+        {
+            return is_ident_start(c) || is_digit(c);
+        }
 
         char lower(char c)
         {
@@ -56,9 +62,13 @@ namespace quantModeling::scripting
         }
     } // namespace
 
-    Lexer::Lexer(std::string source) : src_(std::move(source)) {}
+    Lexer::Lexer(std::string source)
+        : src_(std::move(source)) {}
 
-    bool Lexer::at_end() const { return pos_ >= src_.size(); }
+    bool Lexer::at_end() const
+    {
+        return pos_ >= src_.size();
+    }
 
     char Lexer::peek(std::size_t ahead) const
     {
@@ -188,75 +198,75 @@ namespace quantModeling::scripting
 
             switch (c)
             {
-            case '+':
-                advance();
-                add(TokenKind::Plus, "+", sl, sc);
-                break;
-            case '-':
-                advance();
-                add(TokenKind::Minus, "-", sl, sc);
-                break;
-            case '*':
-                advance();
-                add(TokenKind::Star, "*", sl, sc);
-                break;
-            case '/':
-                advance();
-                add(TokenKind::Slash, "/", sl, sc);
-                break;
-            case '^':
-                advance();
-                add(TokenKind::Caret, "^", sl, sc);
-                break;
-            case '(':
-                advance();
-                add(TokenKind::LParen, "(", sl, sc);
-                break;
-            case ')':
-                advance();
-                add(TokenKind::RParen, ")", sl, sc);
-                break;
-            case ',':
-                advance();
-                add(TokenKind::Comma, ",", sl, sc);
-                break;
-            case '=':
-                advance();
-                add(TokenKind::Assign, "=", sl, sc);
-                break;
-            case '!':
-                advance();
-                if (peek() != '=')
-                    fail("expected '=' after '!'", sl, sc);
-                advance();
-                add(TokenKind::NotEqual, "!=", sl, sc);
-                break;
-            case '<':
-                advance();
-                if (peek() == '=')
-                {
+                case '+':
                     advance();
-                    add(TokenKind::LessEqual, "<=", sl, sc);
-                }
-                else
-                {
-                    add(TokenKind::Less, "<", sl, sc);
-                }
-                break;
-            case '>':
-                advance();
-                if (peek() == '=')
-                {
+                    add(TokenKind::Plus, "+", sl, sc);
+                    break;
+                case '-':
                     advance();
-                    add(TokenKind::GreaterEqual, ">=", sl, sc);
-                }
-                else
-                {
-                    add(TokenKind::Greater, ">", sl, sc);
-                }
-                break;
-            default:
-                fail(std::string("unexpected character '") + c + "'", sl, sc);
+                    add(TokenKind::Minus, "-", sl, sc);
+                    break;
+                case '*':
+                    advance();
+                    add(TokenKind::Star, "*", sl, sc);
+                    break;
+                case '/':
+                    advance();
+                    add(TokenKind::Slash, "/", sl, sc);
+                    break;
+                case '^':
+                    advance();
+                    add(TokenKind::Caret, "^", sl, sc);
+                    break;
+                case '(':
+                    advance();
+                    add(TokenKind::LParen, "(", sl, sc);
+                    break;
+                case ')':
+                    advance();
+                    add(TokenKind::RParen, ")", sl, sc);
+                    break;
+                case ',':
+                    advance();
+                    add(TokenKind::Comma, ",", sl, sc);
+                    break;
+                case '=':
+                    advance();
+                    add(TokenKind::Assign, "=", sl, sc);
+                    break;
+                case '!':
+                    advance();
+                    if (peek() != '=')
+                        fail("expected '=' after '!'", sl, sc);
+                    advance();
+                    add(TokenKind::NotEqual, "!=", sl, sc);
+                    break;
+                case '<':
+                    advance();
+                    if (peek() == '=')
+                    {
+                        advance();
+                        add(TokenKind::LessEqual, "<=", sl, sc);
+                    }
+                    else
+                    {
+                        add(TokenKind::Less, "<", sl, sc);
+                    }
+                    break;
+                case '>':
+                    advance();
+                    if (peek() == '=')
+                    {
+                        advance();
+                        add(TokenKind::GreaterEqual, ">=", sl, sc);
+                    }
+                    else
+                    {
+                        add(TokenKind::Greater, ">", sl, sc);
+                    }
+                    break;
+                default:
+                    fail(std::string("unexpected character '") + c + "'", sl, sc);
             }
         }
     }

@@ -56,7 +56,8 @@ namespace quantModeling
         Date() = default;
         Date(int year, unsigned month, unsigned day);
         Date(int year, Month month, unsigned day);
-        explicit Date(std::chrono::sys_days d) : days_(d) {}
+        explicit Date(std::chrono::sys_days d)
+            : days_(d) {}
 
         /// Parse ISO-8601 extended form "YYYY-MM-DD".
         /// @throws InvalidInput on a malformed string or an impossible date

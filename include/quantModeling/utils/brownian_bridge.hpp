@@ -29,14 +29,17 @@ namespace quantModeling
      */
     class BrownianBridge
     {
-    public:
+      public:
         /// @param times strictly increasing observation times, all > 0.
         explicit BrownianBridge(std::span<const Time> times)
             : n_(static_cast<int>(times.size())),
               t_(times.begin(), times.end()),
-              bridge_index_(times.size()), left_index_(times.size()),
-              right_index_(times.size()), left_weight_(times.size()),
-              right_weight_(times.size()), std_dev_(times.size())
+              bridge_index_(times.size()),
+              left_index_(times.size()),
+              right_index_(times.size()),
+              left_weight_(times.size()),
+              right_weight_(times.size()),
+              std_dev_(times.size())
         {
             if (n_ == 0)
                 throw InvalidInput("BrownianBridge: empty time grid");
@@ -106,7 +109,7 @@ namespace quantModeling
             }
         }
 
-    private:
+      private:
         int n_;
         std::vector<Real> t_;
         std::vector<int> bridge_index_, left_index_, right_index_;
