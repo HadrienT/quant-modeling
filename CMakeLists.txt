@@ -61,6 +61,8 @@ target_sources(quantModeling
         src/market/raw_vol_surface.cpp
         src/market/svi.cpp
         src/market/svi_calibration.cpp
+        src/market/svi_surface.cpp
+        src/market/dupire_from_svi.cpp
         src/market/calibration/levenberg_marquardt.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
@@ -197,6 +199,8 @@ if(QM_BUILD_TESTS)
     tests/testRawVolSurface.cpp
     tests/testSVI.cpp
     tests/testSVICalibration.cpp
+    tests/testSVISurface.cpp
+    tests/testDupireFromSVI.cpp
     tests/testLocalVol.cpp
     tests/testUtils.cpp
     tests/testRegistry.cpp

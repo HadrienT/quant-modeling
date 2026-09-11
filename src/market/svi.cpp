@@ -40,17 +40,19 @@ namespace quantModeling
         return std::sqrt(std::max(w, Real(0.0)) / T);
     }
 
-    Real svi_density_g(Real k, const SVIParams &p) noexcept
+    Real svi_density_g_from_variance(Real k, Real w, Real wp, Real wpp) noexcept
     {
-        const Real w = svi_total_variance(k, p);
         if (w <= 0.0)
             return -1.0; // degenerate slice: treated as an arbitrage violation
 
-        const Real wp = svi_total_variance_dk(k, p);
-        const Real wpp = svi_total_variance_dk2(k, p);
-
         const Real term1 = 1.0 - (k * wp) / (2.0 * w);
         return term1 * term1 - (wp * wp / 4.0) * (1.0 / w + 0.25) + wpp / 2.0;
+    }
+
+    Real svi_density_g(Real k, const SVIParams &p) noexcept
+    {
+        return svi_density_g_from_variance(
+            k, svi_total_variance(k, p), svi_total_variance_dk(k, p), svi_total_variance_dk2(k, p));
     }
 
     bool svi_satisfies_necessary_conditions(const SVIParams &p) noexcept

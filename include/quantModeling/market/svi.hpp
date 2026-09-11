@@ -51,6 +51,16 @@ namespace quantModeling
     Real svi_density_g(Real k, const SVIParams &p) noexcept;
 
     /**
+     * The same g(k) formula, evaluated from an already-computed (w, w', w'')
+     * triple rather than a single slice's SVIParams. svi_density_g(k, p) is
+     * exactly svi_density_g_from_variance(k, w(k), w'(k), w''(k)) for that
+     * slice; this overload exists because market/svi_surface.hpp's
+     * interpolated total variance across two slices is not itself an SVI
+     * slice, yet its Dupire local variance needs this same g(k).
+     */
+    Real svi_density_g_from_variance(Real k, Real w, Real wp, Real wpp) noexcept;
+
+    /**
      * Cheap necessary conditions, checked before ever touching a grid:
      * b >= 0, |rho| < 1, sigma > 0, and a + b*sigma*sqrt(1-rho^2) >= 0 (the
      * slice's total variance minimum, attained at k where w'(k) = 0, must be
