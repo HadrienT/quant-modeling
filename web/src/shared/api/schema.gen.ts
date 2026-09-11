@@ -645,6 +645,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/scripted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price Script Endpoint
+         * @description blueprint/wp/16-scripting.md §8.3. Not under /price/option/* — kept as
+         *     its own top-level path, mirroring the language's own scope.
+         */
+        post: operations["price_script"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/structured/autocall": {
         parameters: {
             query?: never;
@@ -1921,6 +1942,69 @@ export interface components {
             curve: string;
             /** Zero */
             zero: components["schemas"]["CurvePointResponse"][];
+        };
+        /**
+         * ScriptRequest
+         * @description Price a payoff described in text (blueprint/wp/16-scripting.md) — a
+         *     single underlying reachable as `spot()`, priced by the generic Monte-Carlo
+         *     engine. `fuzzy` smooths comparisons for a usable pathwise delta on
+         *     digitals and barriers; discrete tests (flags) stay crisp either way.
+         */
+        ScriptRequest: {
+            /**
+             * Day Count
+             * @default ACT/365F
+             * @enum {string}
+             */
+            day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
+            /**
+             * Default Eps
+             * @default 0.01
+             */
+            default_eps: number;
+            /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /**
+             * Fuzzy
+             * @default false
+             */
+            fuzzy: boolean;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /** Rate */
+            rate: number;
+            /**
+             * Sampler
+             * @default pseudo
+             * @enum {string}
+             */
+            sampler: "pseudo" | "sobol";
+            /**
+             * Script
+             * @description The script source text.
+             */
+            script: string;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
+            /**
+             * Valuation Date
+             * Format: date
+             * @description Time 0. Defaults to today (UTC) when omitted.
+             */
+            valuation_date?: string;
+            /** Vol */
+            vol: number;
         };
         /**
          * StressBump
@@ -3459,6 +3543,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VanillaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_script: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptRequest"];
             };
         };
         responses: {

@@ -8,6 +8,7 @@
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/instruments/equity/simulatable_asian.hpp"
+#include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/calendars.hpp"
 #include "quantModeling/market/conventions.hpp"
 #include "quantModeling/market/valuation_context.hpp"
@@ -523,6 +524,45 @@ static py::dict price_dated_asian(double spot, double rate, double dividend,
     return pricing_result_to_dict(res);
 }
 
+// ── Scripted product: WP 16 — a payoff described in text, priced by the same
+//    generic Monte-Carlo engine as every other ISimulatableProduct. A parse
+//    error (ScriptError) propagates as a Python RuntimeError carrying the
+//    pointed line/column message; the API layer turns that into a 422.
+static py::dict price_script(const std::string &script, double spot, double rate,
+                             double dividend, double vol,
+                             const std::string &valuation_date,
+                             const std::string &day_count, bool fuzzy,
+                             double default_eps, int n_paths, int seed,
+                             const std::string &sampler)
+{
+    using namespace quantModeling;
+
+    const Date valuation = Date::from_iso(valuation_date);
+    const DayCounter &basis = day_counter_by_name(day_count);
+    const ValuationContext ctx{valuation, &basis, &NullCalendar::instance()};
+
+    ScriptedProduct<Real> product(script, ctx,
+                                  ScriptSettings{fuzzy, default_eps});
+    BlackScholesSimModel<Real> model(spot, rate, dividend, vol);
+
+    PricingSettings settings;
+    settings.mc_paths = n_paths > 0 ? n_paths : 200000;
+    settings.mc_seed = seed > 0 ? seed : 1;
+    settings.mc_antithetic = true;
+    settings.mc_sampler =
+        (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
+
+    const SimulationMCResult mc = simulate<Real>(product, model, settings);
+
+    PricingResult res;
+    res.npv = mc.npv();
+    res.mc_std_error = mc.std_error();
+    res.diagnostics = mc.diagnostics + " | scripted, " +
+                      std::to_string(product.timeline().size()) + " events" +
+                      (fuzzy ? ", fuzzy" : ", hard");
+    return pricing_result_to_dict(res);
+}
+
 PYBIND11_MODULE(quantmodeling, m)
 {
     m.doc() = "quantModeling C++ bindings (pybind11)";
@@ -706,6 +746,15 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("n_paths"), py::arg("seed"), py::arg("sampler"),
           "Price an average-price Asian from ISO-8601 fixing dates via the "
           "timeline simulation engine (calendar / day-count layer).");
+    m.def("price_script", &price_script, py::arg("script"), py::arg("spot"),
+          py::arg("rate"), py::arg("dividend"), py::arg("vol"),
+          py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
+          py::arg("fuzzy") = false, py::arg("default_eps") = 0.01,
+          py::arg("n_paths") = 200000, py::arg("seed") = 1,
+          py::arg("sampler") = "pseudo",
+          "Price a payoff script (blueprint/wp/16-scripting.md) via the "
+          "timeline simulation engine. Raises on a malformed script, with "
+          "the offending line and column in the message.");
     m.def("price_future_bs_analytic", &price_future_bs_analytic,
           "Price equity future under Black-Scholes (analytic).");
     m.def("price_zero_coupon_bond_analytic", &price_zero_coupon_bond_analytic,

@@ -120,6 +120,29 @@ class DatedAsianRequest(BaseModel):
     seed: int = 1
 
 
+class ScriptRequest(BaseModel):
+    """Price a payoff described in text (blueprint/wp/16-scripting.md) — a
+    single underlying reachable as `spot()`, priced by the generic Monte-Carlo
+    engine. `fuzzy` smooths comparisons for a usable pathwise delta on
+    digitals and barriers; discrete tests (flags) stay crisp either way."""
+
+    script: str = Field(..., min_length=1, description="The script source text.")
+    spot: float = Field(..., gt=0.0)
+    rate: float
+    dividend: float = 0.0
+    vol: float = Field(..., gt=0.0)
+    valuation_date: date = Field(
+        default_factory=_today_utc,
+        description="Time 0. Defaults to today (UTC) when omitted.",
+    )
+    day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"
+    fuzzy: bool = False
+    default_eps: float = Field(0.01, gt=0.0)
+    sampler: Literal["pseudo", "sobol"] = "pseudo"
+    n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
+    seed: int = 1
+
+
 class BarrierRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
     strike: float = Field(..., gt=0.0)

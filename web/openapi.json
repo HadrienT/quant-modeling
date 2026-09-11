@@ -2561,6 +2561,93 @@
         "title": "RatesCurveResponse",
         "type": "object"
       },
+      "ScriptRequest": {
+        "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.",
+        "properties": {
+          "day_count": {
+            "default": "ACT/365F",
+            "enum": [
+              "ACT/365F",
+              "ACT/360",
+              "30/360",
+              "ACT/ACT"
+            ],
+            "title": "Day Count",
+            "type": "string"
+          },
+          "default_eps": {
+            "default": 0.01,
+            "exclusiveMinimum": 0.0,
+            "title": "Default Eps",
+            "type": "number"
+          },
+          "dividend": {
+            "default": 0.0,
+            "title": "Dividend",
+            "type": "number"
+          },
+          "fuzzy": {
+            "default": false,
+            "title": "Fuzzy",
+            "type": "boolean"
+          },
+          "n_paths": {
+            "default": 200000,
+            "maximum": 5000000.0,
+            "minimum": 1000.0,
+            "title": "N Paths",
+            "type": "integer"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "sampler": {
+            "default": "pseudo",
+            "enum": [
+              "pseudo",
+              "sobol"
+            ],
+            "title": "Sampler",
+            "type": "string"
+          },
+          "script": {
+            "description": "The script source text.",
+            "minLength": 1,
+            "title": "Script",
+            "type": "string"
+          },
+          "seed": {
+            "default": 1,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "spot": {
+            "exclusiveMinimum": 0.0,
+            "title": "Spot",
+            "type": "number"
+          },
+          "valuation_date": {
+            "description": "Time 0. Defaults to today (UTC) when omitted.",
+            "format": "date",
+            "title": "Valuation Date",
+            "type": "string"
+          },
+          "vol": {
+            "exclusiveMinimum": 0.0,
+            "title": "Vol",
+            "type": "number"
+          }
+        },
+        "required": [
+          "script",
+          "spot",
+          "rate",
+          "vol"
+        ],
+        "title": "ScriptRequest",
+        "type": "object"
+      },
       "StressBump": {
         "description": "A single scenario bump.",
         "properties": {
@@ -5123,6 +5210,45 @@
           }
         },
         "summary": "Price Vanilla Endpoint"
+      }
+    },
+    "/price/scripted": {
+      "post": {
+        "description": "blueprint/wp/16-scripting.md \u00a78.3. Not under /price/option/* \u2014 kept as\nits own top-level path, mirroring the language's own scope.",
+        "operationId": "price_script",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Price Script Endpoint"
       }
     },
     "/price/structured/autocall": {

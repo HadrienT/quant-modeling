@@ -23,6 +23,7 @@ from ..pricing_service import (
     price_lookback,
     price_mountain,
     price_rainbow,
+    price_script,
     price_vanilla,
     price_variance_swap,
     price_volatility_swap,
@@ -47,6 +48,7 @@ from ..schemas import (
     MountainRequest,
     PricingResponse,
     RainbowRequest,
+    ScriptRequest,
     VanillaRequest,
     VarianceSwapRequest,
     VolatilitySwapRequest,
@@ -191,6 +193,32 @@ async def price_dated_asian_endpoint(req: DatedAsianRequest) -> PricingResponse:
     resp = await _run_with_timeout(price_dated_asian, req)
     logger.info(
         "price_dated_asian response",
+        extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error},
+    )
+    return resp
+
+
+@router.post("/price/scripted", response_model=PricingResponse)
+async def price_script_endpoint(req: ScriptRequest) -> PricingResponse:
+    """blueprint/wp/16-scripting.md §8.3. Not under /price/option/* — kept as
+    its own top-level path, mirroring the language's own scope."""
+    logger.info(
+        "price_script request",
+        extra={
+            "valuation_date": req.valuation_date.isoformat(),
+            "fuzzy": req.fuzzy,
+            "sampler": req.sampler,
+            "n_paths": req.n_paths,
+        },
+    )
+    try:
+        resp = await _run_with_timeout(price_script, req)
+    except (RuntimeError, ValueError) as exc:
+        # A malformed script (ScriptError) or a bad market input (InvalidInput)
+        # — both are user-input errors, not server failures.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    logger.info(
+        "price_script response",
         extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error},
     )
     return resp

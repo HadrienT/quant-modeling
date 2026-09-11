@@ -29,6 +29,7 @@ from .schemas import (
     PricingResponse,
     RainbowKind,
     RainbowRequest,
+    ScriptRequest,
     VanillaRequest,
     VarianceSwapRequest,
     VolatilitySwapRequest,
@@ -156,6 +157,24 @@ def price_dated_asian(req: DatedAsianRequest) -> PricingResponse:
         req.is_call,
         req.geometric,
         req.day_count,
+        req.n_paths,
+        req.seed,
+        req.sampler,
+    )
+    return _pricing_response_from_dict(result)
+
+
+def price_script(req: ScriptRequest) -> PricingResponse:
+    result = qm.price_script(
+        req.script,
+        req.spot,
+        req.rate,
+        req.dividend,
+        req.vol,
+        req.valuation_date.isoformat(),
+        req.day_count,
+        req.fuzzy,
+        req.default_eps,
         req.n_paths,
         req.seed,
         req.sampler,

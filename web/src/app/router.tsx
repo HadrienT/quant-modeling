@@ -83,6 +83,17 @@ const datedAsianRoute = createRoute({
 	component: DatedAsianPreview,
 });
 
+// ── Payoff scripting (preview of the WP 16 language) ──────────────────────
+// Not under /price/* — same dev-proxy reason as the Dated Asian route above.
+const ScriptingPreview = lazy(
+	() => import("@/features/pricing/ScriptingPreview"),
+);
+const scriptingRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/scripting",
+	component: ScriptingPreview,
+});
+
 // ── Products (reference) ─────────────────────────────────────────────────
 const ProductsPage = lazy(() => import("@/features/products/ProductsPage"));
 const productsRoute = createRoute({
@@ -124,6 +135,7 @@ const routeTree = rootRoute.addChildren([
 	marketRoute,
 	priceRoute,
 	datedAsianRoute,
+	scriptingRoute,
 	productsRoute,
 	portfolioRoute,
 	backtestRoute,
@@ -148,6 +160,7 @@ export const ROUTES = [
 	{ path: "/market", label: "Market" },
 	{ path: "/price", label: "Pricing" },
 	{ path: "/dated-asian", label: "Dated Asian" },
+	{ path: "/scripting", label: "Scripting" },
 	{ path: "/products", label: "Products" },
 	{ path: "/portfolio", label: "Portfolio" },
 	{ path: "/backtest", label: "Backtest" },
