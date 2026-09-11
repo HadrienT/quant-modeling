@@ -55,6 +55,7 @@ target_sources(quantModeling
         src/engines/tree/trinomial.cpp
         src/engines/pde/european_vanilla.cpp
         src/market/discount_curve.cpp
+        src/market/curve_bootstrap.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
         src/instruments/equity/barrier.cpp
@@ -182,6 +183,8 @@ if(QM_BUILD_TESTS)
     tests/testTrinomial.cpp
     tests/testPDE.cpp
     tests/testDiscountCurve.cpp
+    tests/testCurveBootstrap.cpp
+    tests/testCurveAwareBSSimModel.cpp
     tests/testLocalVol.cpp
     tests/testUtils.cpp
     tests/testRegistry.cpp
