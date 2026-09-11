@@ -12,6 +12,7 @@
 #include "quantModeling/market/calendars.hpp"
 #include "quantModeling/market/conventions.hpp"
 #include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/market/vol_surface_pipeline.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 
 #include <memory>
@@ -458,6 +459,62 @@ static py::dict price_local_vol_mc_impl(const quantModeling::LocalVolInput &in)
     return pricing_result_to_dict(res);
 }
 
+// ── Vol surface calibration: raw quotes -> SVI per maturity -> Dupire grid ──
+//
+// Replaces api/app/local_vol/{fetcher,cleaner,iv_surface,dupire,cpp_bridge}.py
+// and routers/market_iv_surface.py's independent yfinance/griddata path: one
+// C++ pipeline, called from Python with the raw quotes it already has (from
+// data-ingest's Postgres or a live yfinance fetch), returning a grid in
+// exactly the K_grid/T_grid/sigma_loc_flat shape LocalVolInput above expects.
+
+static py::dict calibrate_vol_surface_impl(
+    std::vector<quantModeling::RawOptionQuote> quotes,
+    quantModeling::Real spot, quantModeling::Real rate, quantModeling::Real dividend,
+    quantModeling::Real k_min, quantModeling::Real k_max,
+    std::size_t n_strikes, std::size_t n_maturities, std::size_t min_quotes_per_slice,
+    const quantModeling::CleaningParams &cleaning_params)
+{
+    const auto result = quantModeling::calibrate_vol_surface(
+        std::move(quotes), spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
+        min_quotes_per_slice, cleaning_params);
+
+    py::list slices;
+    for (const auto &s : result.slices)
+    {
+        py::dict sd;
+        sd["ttm"] = static_cast<double>(s.ttm);
+        sd["a"] = static_cast<double>(s.params.a);
+        sd["b"] = static_cast<double>(s.params.b);
+        sd["rho"] = static_cast<double>(s.params.rho);
+        sd["m"] = static_cast<double>(s.params.m);
+        sd["sigma"] = static_cast<double>(s.params.sigma);
+        sd["rmse"] = static_cast<double>(s.rmse);
+        sd["worst_residual"] = static_cast<double>(s.worst_residual);
+        sd["n_quotes"] = s.n_quotes;
+        sd["iterations"] = s.iterations;
+        sd["converged"] = s.converged;
+        sd["butterfly_arbitrage_free"] = s.butterfly_arbitrage_free;
+        slices.append(sd);
+    }
+
+    py::dict cleaning_stats;
+    cleaning_stats["raw_count"] = result.cleaning_stats.raw_count;
+    cleaning_stats["after_liquidity"] = result.cleaning_stats.after_liquidity;
+    cleaning_stats["after_moneyness"] = result.cleaning_stats.after_moneyness;
+    cleaning_stats["after_calendar_arbitrage"] = result.cleaning_stats.after_calendar_arbitrage;
+    cleaning_stats["after_butterfly_arbitrage"] = result.cleaning_stats.after_butterfly_arbitrage;
+    cleaning_stats["final_count"] = result.cleaning_stats.final_count;
+
+    py::dict out;
+    out["cleaning_stats"] = cleaning_stats;
+    out["slices"] = slices;
+    out["calendar_arbitrage_free"] = result.calendar_arbitrage_free;
+    out["K_grid"] = result.K_grid;
+    out["T_grid"] = result.T_grid;
+    out["sigma_loc_flat"] = result.sigma_loc;
+    return out;
+}
+
 // ── Dated Asian: the timeline / calendar architecture, end to end ──────────
 //
 // Fixings arrive as ISO-8601 date strings and are resolved to year-fractions
@@ -831,6 +888,39 @@ PYBIND11_MODULE(quantmodeling, m)
 
     m.def("price_local_vol_mc", &price_local_vol_mc_impl,
           "Price a European vanilla option under a Dupire local-vol surface (C++ Euler-Maruyama MC).");
+
+    // ── Vol surface calibration ──────────────────────────────────────────────────────
+    py::class_<quantModeling::RawOptionQuote>(m, "RawOptionQuote")
+        .def(py::init<>())
+        .def_readwrite("strike", &quantModeling::RawOptionQuote::strike)
+        .def_readwrite("ttm", &quantModeling::RawOptionQuote::ttm)
+        .def_readwrite("is_call", &quantModeling::RawOptionQuote::is_call)
+        .def_readwrite("bid", &quantModeling::RawOptionQuote::bid)
+        .def_readwrite("ask", &quantModeling::RawOptionQuote::ask)
+        .def_readwrite("last", &quantModeling::RawOptionQuote::last)
+        .def_readwrite("volume", &quantModeling::RawOptionQuote::volume)
+        .def_readwrite("open_interest", &quantModeling::RawOptionQuote::open_interest)
+        .def_readwrite("implied_vol", &quantModeling::RawOptionQuote::implied_vol)
+        .def_readwrite("has_iv", &quantModeling::RawOptionQuote::has_iv);
+
+    py::class_<quantModeling::CleaningParams>(m, "CleaningParams")
+        .def(py::init<>())
+        .def_readwrite("min_open_interest", &quantModeling::CleaningParams::min_open_interest)
+        .def_readwrite("min_bid", &quantModeling::CleaningParams::min_bid)
+        .def_readwrite("max_spread_ratio", &quantModeling::CleaningParams::max_spread_ratio)
+        .def_readwrite("min_moneyness", &quantModeling::CleaningParams::min_moneyness)
+        .def_readwrite("max_moneyness", &quantModeling::CleaningParams::max_moneyness)
+        .def_readwrite("oi_coverage_threshold", &quantModeling::CleaningParams::oi_coverage_threshold);
+
+    m.def("calibrate_vol_surface", &calibrate_vol_surface_impl,
+          py::arg("quotes"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
+          py::arg("k_min") = -0.6, py::arg("k_max") = 0.6,
+          py::arg("n_strikes") = 100, py::arg("n_maturities") = 50,
+          py::arg("min_quotes_per_slice") = 6,
+          py::arg("cleaning_params") = quantModeling::CleaningParams{},
+          "Clean raw option quotes, calibrate one SVI slice per maturity, and build the "
+          "Dupire local-vol grid (K_grid/T_grid/sigma_loc_flat) that price_local_vol_mc consumes. "
+          "Raises RuntimeError (InvalidInput) if fewer than 2 maturities have enough clean quotes.");
 
     // ── LocalVolSurface sub-struct ─────────────────────────────────────────────────────────────
     py::class_<quantModeling::LocalVolSurface>(m, "LocalVolSurface")
