@@ -1,0 +1,42 @@
+# Autocallable note, notional 1000, 5% coupon with memory.
+#   - reference level `s0` is fixed at the first observation
+#   - at each date: if spot >= s0, redeem early with all accrued coupons
+#     else if spot >= 70% of s0, bank a coupon (and clear the memory)
+#     else miss the coupon (memory counter grows)
+#   - at maturity, if still alive: 1000 back, or 1000*spot/s0 if knocked in
+#     below 60% of s0.
+#
+#   ./build/qm_price_script examples/scripting/autocall.qms --vol 0.22
+
+2026-12-10
+    s0 = spot()
+    miss = 0
+    alive = 1
+
+2027-06-10  2027-12-10
+    if alive = 1 then
+        if spot() >= s0 then
+            pays 1000 * (1 + 0.05 * (miss + 1))
+            alive = 0
+        else
+            if spot() >= 0.70 * s0 then
+                pays 1000 * 0.05 * (miss + 1)
+                miss = 0
+            else
+                miss = miss + 1
+            endIf
+        endIf
+    endIf
+
+2028-06-10
+    if alive = 1 then
+        if spot() >= s0 then
+            pays 1000 * (1 + 0.05 * (miss + 1))
+        else
+            if spot() < 0.60 * s0 then
+                pays 1000 * spot() / s0
+            else
+                pays 1000
+            endIf
+        endIf
+    endIf

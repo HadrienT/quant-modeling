@@ -227,6 +227,18 @@ namespace quantModeling::scripting
         EXPECT_EQ(dump_events(parse_script(lower)), dump_events(parse_script(upper)));
     }
 
+    TEST(ScriptParser, CommentsAreIgnored)
+    {
+        const std::string with = "# an autocall\n"
+                                 "2025-12-16   # maturity\n"
+                                 "    # pay the call intrinsic\n"
+                                 "    pays max(spot() - 100, 0)  # deflated\n";
+        const std::string without =
+            "2025-12-16\n    pays max(spot() - 100, 0)\n";
+        EXPECT_EQ(dump_events(parse_script(with)),
+                  dump_events(parse_script(without)));
+    }
+
     TEST(ScriptParser, OverIndentedContinuationIsAccepted)
     {
         EXPECT_NO_THROW(parse_script("2025-12-16\n    if spot() > 100 then\n"

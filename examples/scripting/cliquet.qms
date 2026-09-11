@@ -1,0 +1,16 @@
+# Cliquet (ratchet): sum of quarterly returns, each floored at 0 and
+# capped at 3%, on a 1000 notional. `ref` ratchets to the current spot
+# at every reset.
+#   ./build/qm_price_script examples/scripting/cliquet.qms --vol 0.25
+
+2026-12-10
+    ref = spot()
+    total = 0
+
+2027-03-10  2027-06-10  2027-09-10  2027-12-10
+    r = spot() / ref - 1
+    total = total + min(max(r, 0), 0.03)
+    ref = spot()
+
+2028-01-10
+    pays 1000 * total

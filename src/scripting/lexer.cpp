@@ -165,6 +165,12 @@ namespace quantModeling::scripting
                 advance();
                 continue;
             }
+            if (c == '#') // comment to end of line
+            {
+                while (!at_end() && peek() != '\n' && peek() != '\r')
+                    advance();
+                break;
+            }
 
             const std::size_t sl = line_;
             const std::size_t sc = col_;
@@ -263,9 +269,12 @@ namespace quantModeling::scripting
         {
             const std::size_t indent = measure_indent();
 
-            // Blank / whitespace-only line: no tokens, no layout change.
-            if (at_end() || peek() == '\n' || peek() == '\r')
+            // Blank, whitespace-only, or comment-only line: no tokens, no
+            // layout change.
+            if (at_end() || peek() == '\n' || peek() == '\r' || peek() == '#')
             {
+                while (!at_end() && peek() != '\n' && peek() != '\r')
+                    advance(); // skip a trailing comment
                 if (peek() == '\r')
                     advance();
                 if (peek() == '\n')

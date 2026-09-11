@@ -1,0 +1,7 @@
+# European call, strike 100, single payment at maturity.
+#   ./build/qm_price_script examples/scripting/european_call.qms --vol 0.20
+# Compare with a Black-Scholes calculator: with spot=100, r=3%, q=0, vol=20%,
+# T~1y the price is ~9.41.
+
+2027-09-10
+    pays max(spot() - 100, 0)

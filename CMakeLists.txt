@@ -138,6 +138,12 @@ if(QM_BUILD_CLI)
   target_compile_options(quantModeling_cli PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
   )
+
+  add_executable(qm_price_script examples/scripting/price_script.cpp)
+  target_link_libraries(qm_price_script PRIVATE quantModeling)
+  target_compile_options(qm_price_script PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
+  )
 endif()
 
 # ---- Tests (GoogleTest) ----
