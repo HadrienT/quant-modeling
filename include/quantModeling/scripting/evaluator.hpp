@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace quantModeling::scripting
@@ -61,9 +62,16 @@ namespace quantModeling::scripting
         // ── leaves ──────────────────────────────────────────────────────────
         void visit(const NodeConst &n) override { push(T(n.value)); }
         void visit(const NodeVar &n) override { push(variables_[n.index]); }
-        void visit(const NodeSpot &) override
+        void visit(const NodeSpot &n) override
         {
-            push((*scenario_)[event_index_].spots[0]);
+            const std::vector<T> &spots = (*scenario_)[event_index_].spots;
+            if (n.index >= spots.size())
+                throw InvalidInput(
+                    "spot(" + std::to_string(n.index) +
+                    "): the model only carries " + std::to_string(spots.size()) +
+                    " underlying(s) -- ScriptedProduct::n_underlyings() reports "
+                    "what the script actually needs");
+            push(spots[n.index]);
         }
 
         // ── arithmetic ──────────────────────────────────────────────────────

@@ -87,8 +87,8 @@ namespace quantModeling::scripting
                 "            pays 1000\n"
                 "        endIf\n"
                 "    endIf\n",
-                // 9. worst-of-two proxy on one name (structure only)
-                "2025-12-16\n    a = spot() / 100\n    b = spot() / 110\n"
+                // 9. genuine worst-of on two assets (spot(0), spot(1))
+                "2025-12-16\n    a = spot(0) / 100\n    b = spot(1) / 110\n"
                 "    pays 1000 * min(a, b)\n",
                 // 10. power option
                 "2025-12-16\n    pays max(spot() ^ 2 - 10000, 0) / 100\n",
@@ -317,11 +317,11 @@ namespace quantModeling::scripting
 
     TEST(ScriptParser, SpotAndCallsParseToTheExpectedNodes)
     {
-        EXPECT_EQ(dump_expr("spot()"), "Spot\n");
+        EXPECT_EQ(dump_expr("spot()"), "Spot 0\n");
         EXPECT_EQ(dump_expr("min(a, b)"),
                   "Min\n  Var a\n  Var b\n");
         EXPECT_EQ(dump_expr("max(spot() - k, 0)"),
-                  "Max\n  Sub\n    Spot\n    Var k\n  Const 0.0\n");
+                  "Max\n  Sub\n    Spot 0\n    Var k\n  Const 0.0\n");
     }
 
     TEST(ScriptParser, FunctionArityIsChecked)
@@ -329,6 +329,47 @@ namespace quantModeling::scripting
         EXPECT_THROW(parse_script("2020-01-01\n    x = log(a, b)\n"), ScriptError);
         EXPECT_THROW(parse_script("2020-01-01\n    x = min(a)\n"), ScriptError);
         EXPECT_THROW(parse_script("2020-01-01\n    x = smooth(a)\n"), ScriptError);
+    }
+
+    // ── spot(i): multi-asset (blueprint/wp/17-aad.md lot 17e) ───────────────
+
+    TEST(ScriptParser, SpotWithAnIndexParsesToTheAsset)
+    {
+        EXPECT_EQ(dump_expr("spot(0)"), "Spot 0\n");
+        EXPECT_EQ(dump_expr("spot(1)"), "Spot 1\n");
+        EXPECT_EQ(dump_expr("spot(12)"), "Spot 12\n");
+    }
+
+    TEST(ScriptParser, SpotZeroAndSpotWithNoArgumentAreTheSameNode)
+    {
+        EXPECT_EQ(dump_expr("spot()"), dump_expr("spot(0)"));
+    }
+
+    TEST(ScriptParser, SpotRejectsANegativeIndex)
+    {
+        EXPECT_THROW(parse_script("2020-01-01\n    x = spot(-1)\n"), ScriptError);
+    }
+
+    TEST(ScriptParser, SpotRejectsANonIntegerIndex)
+    {
+        EXPECT_THROW(parse_script("2020-01-01\n    x = spot(1.5)\n"), ScriptError);
+    }
+
+    TEST(ScriptParser, SpotRejectsANonNumericIndex)
+    {
+        EXPECT_THROW(parse_script("2020-01-01\n    x = spot(i)\n"), ScriptError);
+    }
+
+    TEST(ScriptParser, SpotWriterOmitsTheIndexOnlyForAssetZero)
+    {
+        // spot() and spot(0) parse to the same node (index 0); the writer's
+        // canonical form for that node is the shorter spot() -- but any
+        // other index must round-trip through its own explicit spot(i).
+        EXPECT_EQ(ScriptWriter::write(parse_script("2020-01-01\n    x = spot(0)\n")),
+                  ScriptWriter::write(parse_script("2020-01-01\n    x = spot()\n")));
+        EXPECT_NE(ScriptWriter::write(parse_script("2020-01-01\n    x = spot(1)\n"))
+                     .find("spot(1)"),
+                 std::string::npos);
     }
 
 } // namespace quantModeling::scripting

@@ -6,8 +6,10 @@
 #include "quantModeling/instruments/simulatable.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
+#include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
 #include "quantModeling/utils/stats.hpp"
 
+#include <Eigen/Core>
 #include <cmath>
 #include <span>
 #include <stdexcept>
@@ -139,6 +141,108 @@ namespace quantModeling
         ASSERT_EQ(res.risk_labels.size(), 4u);
         EXPECT_NEAR(res.risks[0], ref_delta, 4.0 * res.risk_std_errors[0]); // spot
         EXPECT_NEAR(res.risks[3], ref_vega, 4.0 * res.risk_std_errors[3]); // vol
+    }
+
+    // ── the same property, one step further: a scripted payoff that actually
+    // needs more than one asset (spot(0), spot(1)) against
+    // MultiAssetBSSimModel<Number> -- the piece that used to make "the
+    // scripting language only ever sees Black-Scholes" literally true ──────
+
+    TEST(AADSimulation, ScriptedWorstOfTwoAssetsNeedsTwoUnderlyings)
+    {
+        const ValuationContext ctx{Date::today()};
+        ScriptedProduct<Number> product(
+            "2029-01-01\n    a = spot(0) / 100\n    b = spot(1) / 110\n"
+            "    pays 1000 * min(a, b)\n",
+            ctx);
+        EXPECT_EQ(product.n_underlyings(), 2u);
+    }
+
+    TEST(AADSimulation, ScriptedWorstOfDeltaMatchesCommonRandomNumberBump)
+    {
+        const Real r = 0.03, sigma0 = 0.2, sigma1 = 0.25;
+        const std::vector<double> z = {0.4, -0.6};
+        const double h = 1e-4;
+
+        Eigen::MatrixXd corr(2, 2);
+        corr << 1.0, 0.3, 0.3, 1.0;
+
+        const ValuationContext ctx{Date::today()};
+        ScriptedProduct<Number> product(
+            "2029-01-01\n    a = spot(0) / 100\n    b = spot(1) / 110\n"
+            "    pays 1000 * min(a, b)\n",
+            ctx);
+
+        auto price_for_spot0 = [&](double s0_value)
+        {
+            Tape local_tape;
+            TapeSwitch local_guard(local_tape);
+            MultiAssetBSSimModel<Number> m{
+                {Number(s0_value), Number(100.0)},
+                Number(r),
+                {Number(0.0), Number(0.0)},
+                {Number(sigma0), Number(sigma1)},
+                corr};
+            m.init(product.timeline(), product.defline());
+            Scenario<Number> path;
+            allocate_scenario(path, product.defline(), m.n_underlyings());
+            m.generate_path(std::span<const double>(z), path);
+            std::vector<Number> payoffs(1);
+            product.payoffs(path, payoffs);
+            return payoffs[0].value();
+        };
+
+        const double bump_delta =
+            (price_for_spot0(100.0 + h) - price_for_spot0(100.0 - h)) / (2.0 * h);
+
+        Tape tape;
+        TapeSwitch guard(tape);
+        Number s0_0(100.0);
+        MultiAssetBSSimModel<Number> model{
+            {s0_0, Number(100.0)},
+            Number(r),
+            {Number(0.0), Number(0.0)},
+            {Number(sigma0), Number(sigma1)},
+            corr};
+        model.init(product.timeline(), product.defline());
+        Scenario<Number> path;
+        allocate_scenario(path, product.defline(), model.n_underlyings());
+        model.generate_path(std::span<const double>(z), path);
+        std::vector<Number> payoffs(1);
+        product.payoffs(path, payoffs);
+        payoffs[0].propagate_to_start();
+
+        EXPECT_NEAR(s0_0.adjoint(), bump_delta, 1e-6);
+    }
+
+    TEST(AADSimulation, ScriptedWorstOfSimulateAadGivesSensibleRisks)
+    {
+        Tape tape;
+        TapeSwitch guard(tape);
+
+        const ValuationContext ctx{Date::today()};
+        ScriptedProduct<Number> product(
+            "2029-01-01\n    a = spot(0) / 100\n    b = spot(1) / 100\n"
+            "    pays 1000 * min(a, b)\n",
+            ctx);
+
+        Eigen::MatrixXd corr(2, 2);
+        corr << 1.0, 0.3, 0.3, 1.0;
+        MultiAssetBSSimModel<Number> model{
+            {Number(100.0), Number(100.0)},
+            Number(0.03),
+            {Number(0.0), Number(0.0)},
+            {Number(0.2), Number(0.2)},
+            corr};
+
+        const AADSimulResults res = simulate_aad(product, model, 100000, 21);
+
+        // rate, spot[0], spot[1], div[0], div[1], vol[0], vol[1]
+        ASSERT_EQ(res.risk_labels.size(), 7u);
+        EXPECT_EQ(res.risk_labels[1], "spot[0]");
+        EXPECT_EQ(res.risk_labels[2], "spot[1]");
+        EXPECT_GT(res.risks[1], 0.0); // worst-of is increasing in each spot
+        EXPECT_GT(res.risks[2], 0.0);
     }
 
     // ── pathwise: the adjoint delta of ONE path equals a bump on that SAME

@@ -5,6 +5,7 @@
 
 #include "quantModeling/core/date.hpp"
 
+#include <cmath>
 #include <exception>
 #include <memory>
 #include <string>
@@ -503,8 +504,27 @@ namespace quantModeling::scripting
             {
                 advance();
                 expect(TokenKind::LParen, "'(' after 'spot'");
-                expect(TokenKind::RParen, "')' — spot() takes no arguments in v1");
-                return std::make_unique<NodeSpot>();
+                auto node = std::make_unique<NodeSpot>();
+                if (!check(TokenKind::RParen))
+                {
+                    const Token &idx = expect(
+                        TokenKind::Number,
+                        "an asset index (a non-negative integer) or ')'");
+                    double value = 0.0;
+                    try
+                    {
+                        value = std::stod(idx.lexeme);
+                    }
+                    catch (const std::exception &)
+                    {
+                        fail("invalid asset index: '" + idx.lexeme + "'", idx);
+                    }
+                    if (value < 0.0 || value != std::floor(value))
+                        fail("spot(i): i must be a non-negative integer", idx);
+                    node->index = static_cast<std::size_t>(value);
+                }
+                expect(TokenKind::RParen, "')' to close 'spot(...)'");
+                return node;
             }
             case TokenKind::Min:
             case TokenKind::Max:

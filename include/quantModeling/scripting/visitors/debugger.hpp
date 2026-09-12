@@ -35,7 +35,14 @@ namespace quantModeling::scripting
 
         void visit(const NodeConst &n) override { leaf("Const " + number(n.value)); }
         void visit(const NodeVar &n) override { leaf("Var " + n.name); }
-        void visit(const NodeSpot &) override { leaf("Spot"); }
+        // Unlike NodeVar::index (filled later, by VarIndexer), NodeSpot::index
+        // comes straight from the surface syntax -- spot() vs spot(1) is as
+        // much a difference in what was written as two different NodeConst
+        // values, so it belongs in the dump the same way n.value does above.
+        void visit(const NodeSpot &n) override
+        {
+            leaf("Spot " + std::to_string(n.index));
+        }
 
         void visit(const NodeAdd &n) override { node("Add", n); }
         void visit(const NodeSub &n) override { node("Sub", n); }
