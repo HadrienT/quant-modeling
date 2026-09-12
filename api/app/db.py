@@ -2,10 +2,14 @@
 
 Market data no longer comes from live yfinance / FRED calls: `data-ingest`
 (a separate self-hosted service) writes it to a local Postgres on a schedule.
-This module is read-only — it never creates tables or writes rows.
+This module is read-only, with one narrow, explicit exception (see
+`cache_option_chain_snapshot` at the bottom): it never creates tables, and
+callers should prefer reading over writing wherever the daily-scheduled
+tables already cover what they need.
 
 Tables it reads:
   prices.sp500_daily          (date, ticker, open, high, low, close, volume)
+  prices.dividend_yields      (date, ticker, trailing_yield)
   macro.fred_series_latest    (series_id, date, value)  — current vintage view
   options.chain_snapshot      (date, ticker, expiry, option_type, strike,
                                 bid, ask, last_price, volume, open_interest,
@@ -241,3 +245,121 @@ def options_chain_snapshot(
         )
         for r in rows
     ]
+
+
+# ── prices.sp500_daily / prices.dividend_yields, for the vol-surface pipeline ──
+
+# A close or a trailing yield older than this is treated as absent rather
+# than used: sp500-prices and dividend-yields both run on a Mon-Fri schedule,
+# so a healthy pipeline never produces a gap this wide, and using a stale
+# number silently would be worse than falling back to a live fetch.
+_MAX_PRICE_AGE_DAYS = 7
+_MAX_DIVIDEND_AGE_DAYS = 30
+
+
+def latest_price(ticker: str) -> Optional[Tuple[date, float]]:
+    """Most recent (date, close) from prices.sp500_daily, or None if there is
+    none or it is too stale. sp500-prices' tracked universe (519 tickers,
+    including the index ETFs options-chain-snapshot uses) already covers
+    everything the vol-surface pipeline's default ticker set needs."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, close FROM prices.sp500_daily "
+            "WHERE ticker = %s AND close IS NOT NULL ORDER BY date DESC LIMIT 1",
+            (ticker.upper(),),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    as_of, price = row[0], float(row[1])
+    if (date.today() - as_of).days > _MAX_PRICE_AGE_DAYS:
+        return None
+    return as_of, price
+
+
+def latest_dividend_yield(ticker: str) -> Optional[Tuple[date, float]]:
+    """Most recent (date, trailing_yield) from prices.dividend_yields, or
+    None if there is none or it is too stale."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, trailing_yield FROM prices.dividend_yields "
+            "WHERE ticker = %s AND trailing_yield IS NOT NULL ORDER BY date DESC LIMIT 1",
+            (ticker.upper(),),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    as_of, value = row[0], float(row[1])
+    if (date.today() - as_of).days > _MAX_DIVIDEND_AGE_DAYS:
+        return None
+    return as_of, value
+
+
+# ── The one write path: caching a live option-chain fetch ──────────────────
+
+
+def cache_option_chain_snapshot(
+    ticker: str, snapshot_date: date, rows: Sequence[dict]
+) -> int:
+    """Upsert quotes just fetched live from yfinance into
+    options.chain_snapshot -- this module's one deliberate exception to
+    read-only.
+
+    Why this table and not the others: an option chain is the one fetch in
+    this pipeline that is both expensive (one call per expiration, on top of
+    the list call) and rate-limited (an unofficial endpoint), so a second
+    request for the same ticker on the same day hitting yfinance again is a
+    real, avoidable cost. A spot price or a dividend yield is a single cheap
+    call, and its tracked universe (sp500-prices, dividend-yields) already
+    covers what the vol-surface pipeline needs daily, so there is nothing
+    worth caching there beyond what those two sources already provide on
+    schedule.
+
+    Same schema, same upsert semantics data-ingest's own scheduled run would
+    use (ON CONFLICT on the declared primary key): if options-chain-snapshot
+    is ever pointed at this ticker too, its next run simply overwrites these
+    rows, harmlessly. If the table does not exist yet (a fresh deployment
+    where data-ingest has never run), this raises StoreUnavailable like any
+    other unreachable-store case, and the caller treats caching as best-effort.
+    """
+    if not rows:
+        return 0
+
+    payload = [
+        {
+            "date": snapshot_date,
+            "ticker": ticker.upper(),
+            "expiry": r["expiry"],
+            "option_type": r["option_type"],
+            "strike": r["strike"],
+            "bid": r.get("bid"),
+            "ask": r.get("ask"),
+            "last_price": r.get("last_price"),
+            "volume": r.get("volume", 0),
+            "open_interest": r.get("open_interest", 0),
+            "implied_volatility": r.get("implied_volatility"),
+        }
+        for r in rows
+    ]
+
+    with _cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO options.chain_snapshot
+                (date, ticker, expiry, option_type, strike, bid, ask,
+                 last_price, volume, open_interest, implied_volatility)
+            VALUES
+                (%(date)s, %(ticker)s, %(expiry)s, %(option_type)s, %(strike)s,
+                 %(bid)s, %(ask)s, %(last_price)s, %(volume)s, %(open_interest)s,
+                 %(implied_volatility)s)
+            ON CONFLICT (date, ticker, expiry, option_type, strike) DO UPDATE SET
+                bid = EXCLUDED.bid,
+                ask = EXCLUDED.ask,
+                last_price = EXCLUDED.last_price,
+                volume = EXCLUDED.volume,
+                open_interest = EXCLUDED.open_interest,
+                implied_volatility = EXCLUDED.implied_volatility
+            """,
+            payload,
+        )
+    return len(payload)

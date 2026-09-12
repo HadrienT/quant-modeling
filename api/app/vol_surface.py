@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import quantmodeling as qm
 import yfinance as yf
@@ -72,6 +72,16 @@ def _quote(
 
 def fetch_live_chain(ticker: str) -> List["qm.RawOptionQuote"]:
     """Every expiration, both sides, straight from yfinance -- no cleaning."""
+    return [q for q, _expiry in _fetch_live_chain_with_expiry(ticker)]
+
+
+def _fetch_live_chain_with_expiry(
+    ticker: str,
+) -> List[Tuple["qm.RawOptionQuote", date]]:
+    """Same fetch as fetch_live_chain, but keeps each quote's expiry date
+    alongside it -- RawOptionQuote only carries ttm (a float), and caching a
+    live fetch into options.chain_snapshot needs the real date, not ttm
+    reconstructed by rounding."""
     tick = yf.Ticker(ticker)
     try:
         expirations = tick.options
@@ -83,7 +93,7 @@ def fetch_live_chain(ticker: str) -> List["qm.RawOptionQuote"]:
         return []
 
     today = date.today()
-    quotes: List[qm.RawOptionQuote] = []
+    pairs: List[Tuple[qm.RawOptionQuote, date]] = []
     for exp_str in expirations:
         try:
             expiry = datetime.strptime(exp_str, "%Y-%m-%d").date()
@@ -110,29 +120,28 @@ def fetch_live_chain(ticker: str) -> List["qm.RawOptionQuote"]:
                     if strike <= 0:
                         continue
                     iv = getattr(row, "impliedVolatility", None)
-                    quotes.append(
-                        _quote(
-                            strike=strike,
-                            ttm=ttm,
-                            is_call=is_call,
-                            bid=float(getattr(row, "bid", 0) or 0),
-                            ask=float(getattr(row, "ask", 0) or 0),
-                            last=float(getattr(row, "lastPrice", 0) or 0),
-                            volume=int(getattr(row, "volume", 0) or 0),
-                            open_interest=int(getattr(row, "openInterest", 0) or 0),
-                            implied_vol=float(iv) if iv is not None else None,
-                        )
+                    quote = _quote(
+                        strike=strike,
+                        ttm=ttm,
+                        is_call=is_call,
+                        bid=float(getattr(row, "bid", 0) or 0),
+                        ask=float(getattr(row, "ask", 0) or 0),
+                        last=float(getattr(row, "lastPrice", 0) or 0),
+                        volume=int(getattr(row, "volume", 0) or 0),
+                        open_interest=int(getattr(row, "openInterest", 0) or 0),
+                        implied_vol=float(iv) if iv is not None else None,
                     )
+                    pairs.append((quote, expiry))
                 except (ValueError, TypeError, AttributeError):
                     continue  # malformed row: skip, matching the old fetcher.py
 
     logger.info(
         "vol_surface: fetched %d live quotes for %s across %d expirations",
-        len(quotes),
+        len(pairs),
         ticker,
         len(expirations),
     )
-    return quotes
+    return pairs
 
 
 def fetch_stored_chain(ticker: str) -> List["qm.RawOptionQuote"]:
@@ -168,7 +177,14 @@ def fetch_stored_chain(ticker: str) -> List["qm.RawOptionQuote"]:
 
 
 def fetch_option_chain(ticker: str) -> List["qm.RawOptionQuote"]:
-    """Stored snapshot if data-ingest tracks this ticker, live yfinance otherwise."""
+    """Stored snapshot if data-ingest tracks this ticker, live yfinance
+    otherwise -- and a live fetch is cached back into options.chain_snapshot
+    (db.cache_option_chain_snapshot) so a second request for the same ticker
+    the same day hits Postgres instead of yfinance again. This is what
+    extends options-chain-snapshot's small tracked universe on demand: any
+    ticker actually requested gets cached for the rest of that day, same
+    table and schema a scheduled run would use.
+    """
     ticker = ticker.upper().strip()
     stored = fetch_stored_chain(ticker)
     if stored:
@@ -176,11 +192,66 @@ def fetch_option_chain(ticker: str) -> List["qm.RawOptionQuote"]:
             "vol_surface: using stored snapshot for %s (%d quotes)", ticker, len(stored)
         )
         return stored
+
     logger.info("vol_surface: no stored snapshot for %s, fetching live", ticker)
-    return fetch_live_chain(ticker)
+    pairs = _fetch_live_chain_with_expiry(ticker)
+    _cache_live_chain(ticker, pairs)
+    return [q for q, _expiry in pairs]
+
+
+def _cache_live_chain(
+    ticker: str, pairs: List[Tuple["qm.RawOptionQuote", date]]
+) -> None:
+    if not pairs:
+        return
+    rows = [
+        {
+            "expiry": expiry,
+            "option_type": "call" if q.is_call else "put",
+            "strike": q.strike,
+            "bid": q.bid or None,
+            "ask": q.ask or None,
+            "last_price": q.last or None,
+            "volume": q.volume,
+            "open_interest": q.open_interest,
+            "implied_volatility": q.implied_vol if q.has_iv else None,
+        }
+        for q, expiry in pairs
+    ]
+    try:
+        written = db.cache_option_chain_snapshot(ticker, date.today(), rows)
+        logger.info(
+            "vol_surface: cached %d live quotes for %s into options.chain_snapshot",
+            written,
+            ticker,
+        )
+    except db.StoreUnavailable as exc:
+        logger.warning(
+            "vol_surface: could not cache live chain for %s: %s", ticker, exc
+        )
 
 
 def get_spot(ticker: str) -> float:
+    """Latest close from prices.sp500_daily (covers this pipeline's default
+    ticker universe, including the index ETFs), live yfinance otherwise --
+    not cached back: a single cheap call, unlike a full option chain, and
+    sp500-prices already refreshes this same table daily for the tickers
+    that matter here."""
+    ticker = ticker.upper().strip()
+    try:
+        cached = db.latest_price(ticker)
+    except db.StoreUnavailable:
+        cached = None
+    if cached is not None:
+        as_of, price = cached
+        logger.info("vol_surface: spot for %s from DB (%s): %.2f", ticker, as_of, price)
+        return price
+
+    logger.info("vol_surface: no stored price for %s, fetching live", ticker)
+    return _get_spot_live(ticker)
+
+
+def _get_spot_live(ticker: str) -> float:
     tick = yf.Ticker(ticker)
     try:
         price = tick.fast_info["last_price"]
@@ -195,10 +266,39 @@ def get_spot(ticker: str) -> float:
 
 
 def get_dividend_yield(ticker: str) -> float:
-    """Best-effort: trailing dividend yield as a continuous-rate proxy."""
+    """Latest trailing yield from prices.dividend_yields, live yfinance
+    otherwise -- same non-caching rationale as get_spot."""
+    ticker = ticker.upper().strip()
     try:
-        dy = yf.Ticker(ticker).fast_info.get("dividend_yield") or 0.0
-        return float(dy)
+        cached = db.latest_dividend_yield(ticker)
+    except db.StoreUnavailable:
+        cached = None
+    if cached is not None:
+        as_of, value = cached
+        logger.info(
+            "vol_surface: dividend yield for %s from DB (%s): %.4f",
+            ticker,
+            as_of,
+            value,
+        )
+        return value
+
+    logger.info("vol_surface: no stored dividend yield for %s, fetching live", ticker)
+    return _get_dividend_yield_live(ticker)
+
+
+def _get_dividend_yield_live(ticker: str) -> float:
+    """Best-effort: trailing dividend yield as a continuous-rate proxy.
+
+    .info's trailingAnnualDividendYield, not fast_info's dividend_yield --
+    the current yfinance version pinned here doesn't carry that field on
+    fast_info at all, so reading it there silently returns 0.0 for every
+    ticker, dividend payers included. Caught the same way in data-ingest's
+    dividend-yields source: by actually running it against live data.
+    """
+    try:
+        dy = yf.Ticker(ticker).info.get("trailingAnnualDividendYield")
+        return float(dy) if dy else 0.0
     except Exception:
         return 0.0
 
