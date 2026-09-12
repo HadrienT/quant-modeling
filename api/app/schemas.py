@@ -141,6 +141,19 @@ class ScriptRequest(BaseModel):
     sampler: Literal["pseudo", "sobol"] = "pseudo"
     n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
     seed: int = 1
+    greeks_method: Literal["none", "aad"] = Field(
+        "none",
+        description=(
+            "'aad': every model parameter's sensitivity (spot, rate, div, vol) "
+            "from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at "
+            "roughly 3-5x the cost of the price alone rather than a bumped "
+            "reprice per parameter. 'bump' is not offered for scripted "
+            "payoffs -- only 'none' or 'aad'. Ignored together with "
+            "sampler='sobol': the adjoint engine does not have Sobol support "
+            "yet (lot 17d) and falls back to pseudo-random, noted in the "
+            "response's diagnostics."
+        ),
+    )
 
 
 class ScriptValidateRequest(BaseModel):
@@ -285,12 +298,25 @@ class BondAnalytics(BaseModel):
     dv01: Optional[float] = None
 
 
+class RiskEntry(BaseModel):
+    """One model parameter's AAD sensitivity (blueprint/wp/17-aad.md §13.1).
+    Present only when priced with greeks_method="aad" -- unlike Greeks'
+    five fixed slots, a future model with a local-vol grid or a multi-asset
+    correlation matrix reports here regardless of how many parameters it
+    has."""
+
+    label: str
+    value: float
+    std_error: float
+
+
 class PricingResponse(BaseModel):
     npv: float
     greeks: Greeks
     bond_analytics: Optional[BondAnalytics] = None
     diagnostics: str
     mc_std_error: float
+    risks: Optional[List[RiskEntry]] = None
 
 
 class MarketHistoryPoint(BaseModel):

@@ -227,4 +227,41 @@ namespace quantModeling
         EXPECT_EQ(tape.block_count(), baseline);
     }
 
+    // ── to_pricing_result(): every risk lands in RiskReport regardless of
+    // its name, and the ones matching BlackScholesSimModel's own labels
+    // additionally fill the classic Greeks slots (blueprint §13.1) ────────
+
+    TEST(AADSimulation, ToPricingResultFillsRiskReportAndMatchingGreeks)
+    {
+        AADSimulResults aad_res;
+        aad_res.price = 12.3;
+        aad_res.price_std_error = 0.05;
+        aad_res.risk_labels = {"spot", "rate", "div", "vol"};
+        aad_res.risks = {0.5, 90.0, -120.0, 55.0};
+        aad_res.risk_std_errors = {0.001, 0.2, 0.3, 0.25};
+        aad_res.diagnostics = "test";
+
+        const PricingResult res = to_pricing_result(aad_res);
+
+        EXPECT_DOUBLE_EQ(res.npv, 12.3);
+        EXPECT_DOUBLE_EQ(res.mc_std_error, 0.05);
+
+        ASSERT_TRUE(res.risks.has_value());
+        EXPECT_EQ(res.risks->labels, aad_res.risk_labels);
+        EXPECT_EQ(res.risks->values, aad_res.risks);
+        EXPECT_EQ(res.risks->std_errors, aad_res.risk_std_errors);
+
+        ASSERT_TRUE(res.greeks.delta.has_value());
+        EXPECT_DOUBLE_EQ(*res.greeks.delta, 0.5);
+        ASSERT_TRUE(res.greeks.rho.has_value());
+        EXPECT_DOUBLE_EQ(*res.greeks.rho, 90.0);
+        ASSERT_TRUE(res.greeks.vega.has_value());
+        EXPECT_DOUBLE_EQ(*res.greeks.vega, 55.0);
+
+        // "div" has no matching Greeks slot: correctly absent there, but
+        // still present in risks above -- the whole point of RiskReport.
+        EXPECT_FALSE(res.greeks.gamma.has_value());
+        EXPECT_FALSE(res.greeks.theta.has_value());
+    }
+
 } // namespace quantModeling
