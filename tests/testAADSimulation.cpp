@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 namespace quantModeling
@@ -151,6 +152,37 @@ namespace quantModeling
         BlackScholesSimModel<Number> model(Number(100.0), Number(0.03),
                                            Number(0.0), Number(0.2));
         EXPECT_THROW(simulate_aad(product, model, 0), InvalidInput);
+    }
+
+    // ── simulate_aad's own tape.rewind() is immediately followed by the RAII
+    // guard that clears it -- so a run that throws partway through (a model
+    // bug, an unexpectedly large product) does not leave whatever it had
+    // recorded up to that point parked on the calling thread's tape
+    // indefinitely. Testing the actual production guard type directly,
+    // rather than reproducing a fresh copy of it here, or contriving a
+    // product large enough to overrun the default 256 MB ceiling just to
+    // observe the same thing indirectly.
+    TEST(AADSimulation, TapeClearGuardRunsEvenWhenAnExceptionUnwindsThroughIt)
+    {
+        Tape tape;
+        TapeSwitch guard(tape);
+        Number leaf(1.0); // put something on the tape first
+        (void)leaf;
+
+        const std::size_t baseline = Tape().block_count();
+        bool threw = false;
+        try
+        {
+            const detail::TapeClearGuard clear_on_exit{tape};
+            throw std::runtime_error("simulated mid-run failure");
+        }
+        catch (const std::runtime_error &)
+        {
+            threw = true;
+        }
+
+        EXPECT_TRUE(threw);
+        EXPECT_EQ(tape.block_count(), baseline);
     }
 
 } // namespace quantModeling

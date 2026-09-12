@@ -1,6 +1,9 @@
 #ifndef QM_AAD_BLOCKLIST_HPP
 #define QM_AAD_BLOCKLIST_HPP
 
+#include "quantModeling/core/types.hpp"
+
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -13,6 +16,21 @@
 
 namespace quantModeling::aad
 {
+
+    /// A tape blocklist's default ceiling, per underlying storage type
+    /// (nodes, derivatives, argument pointers, multi-adjoints -- Tape has
+    /// one of each). Not in the book: Savine assumes a controlled
+    /// environment. Here the tape shares a real, finite machine with
+    /// whatever else is running on it, so a model bug (an unbounded loop, a
+    /// forgotten rewind_to_mark) fails loudly with a clear error well before
+    /// it can pressure the rest of the process -- rather than growing until
+    /// the OS kills something. Generous next to a real path (even a
+    /// 50-underlying, 100-step basket needs on the order of tens of MB, see
+    /// blueprint/wp/17-aad.md §2) but finite. Override with set_max_bytes()
+    /// -- in particular, a caller sizing a thread pool (lot 17d) needs
+    /// available_RAM / (n_threads * per_tape_ceiling) to stay a real bound
+    /// rather than a hope.
+    inline constexpr std::size_t DEFAULT_BLOCKLIST_MAX_BYTES = 256ull * 1024 * 1024;
 
     /**
      * @brief Block-based memory for the tape (Savine, chapter on AAD memory).
@@ -54,6 +72,14 @@ namespace quantModeling::aad
         block_iterator marked_block_{};
         std::size_t marked_index_ = 0;
 
+        std::size_t max_blocks_ = block_count_for_bytes(DEFAULT_BLOCKLIST_MAX_BYTES);
+
+        static std::size_t block_count_for_bytes(std::size_t bytes)
+        {
+            const std::size_t block_bytes = block_size * sizeof(storage);
+            return std::max<std::size_t>(1, bytes / block_bytes);
+        }
+
         T *slot(block_iterator b, std::size_t i)
         {
             return std::launder(reinterpret_cast<T *>(&(*b)[i]));
@@ -61,6 +87,13 @@ namespace quantModeling::aad
 
         void new_block()
         {
+            if (data_.size() >= max_blocks_)
+                throw PricingError(
+                    "aad::blocklist: memory ceiling exceeded (" +
+                    std::to_string(max_blocks_) + " blocks of " +
+                    std::to_string(block_size * sizeof(storage)) +
+                    " bytes each) -- a model's path is unexpectedly large, "
+                    "or raise the limit with Tape::set_max_bytes()");
             data_.emplace_back();
             cur_block_ = last_block_ = std::prev(data_.end());
             next_index_ = 0;
@@ -164,6 +197,12 @@ namespace quantModeling::aad
         /// the book's API, added so the "no allocation after the first path"
         /// property (blueprint §2) is something a test can actually observe.
         std::size_t block_count() const { return data_.size(); }
+
+        /// Raises or lowers the memory ceiling; new_block() throws past it.
+        /// Rounds down to whole blocks, at least one -- a ceiling smaller
+        /// than a single block would make the blocklist unusable outright.
+        void set_max_bytes(std::size_t bytes) { max_blocks_ = block_count_for_bytes(bytes); }
+        std::size_t max_bytes() const { return max_blocks_ * block_size * sizeof(storage); }
 
         // ------------------------------------------------------------ iteration
         //
