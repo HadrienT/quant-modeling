@@ -171,6 +171,7 @@ if(QM_BUILD_TESTS)
     tests/testAADNumber.cpp
     tests/testAADTape.cpp
     tests/testAADSimulation.cpp
+    tests/testMultiAssetBSSimModel.cpp
     tests/testDate.cpp
     tests/testConventions.cpp
     tests/testCalendars.cpp
