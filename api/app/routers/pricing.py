@@ -212,6 +212,7 @@ async def price_script_endpoint(req: ScriptRequest) -> PricingResponse:
             "fuzzy": req.fuzzy,
             "sampler": req.sampler,
             "n_paths": req.n_paths,
+            "greeks_method": req.greeks_method,
         },
     )
     try:

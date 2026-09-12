@@ -2,6 +2,7 @@
 #define QM_ENGINES_MC_SIMULATION_ENGINE_AAD_HPP
 
 #include "quantModeling/aad/number.hpp"
+#include "quantModeling/core/results.hpp"
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
@@ -169,6 +170,48 @@ namespace quantModeling
             "simulate_aad (adjoint, batches of " + std::to_string(BATCH) + ")";
 
         return res;
+    }
+
+    /**
+     * @brief Wraps an adjoint run into the PricingResult every pricer
+     *        already returns (blueprint §13.1).
+     *
+     * `risks` carries every parameter's sensitivity by name, whatever the
+     * model -- a local-vol grid's 1500 points (lot 17e) will not fit in
+     * Greeks' five named slots. For a model whose labels happen to match
+     * the classic ones ("spot", "rate", "div", "vol" -- BlackScholesSimModel
+     * today), the matching Greeks fields are filled too, so front-end code
+     * built against Greeks keeps working unchanged. Theta and gamma are
+     * left unset: time is not a model parameter (theta stays bump), and
+     * exact second order is out of scope for this lot (§12).
+     */
+    inline PricingResult to_pricing_result(const AADSimulResults &r)
+    {
+        PricingResult out;
+        out.npv = r.price;
+        out.mc_std_error = r.price_std_error;
+        out.diagnostics = r.diagnostics;
+        out.risks = RiskReport{r.risk_labels, r.risks, r.risk_std_errors};
+
+        for (std::size_t i = 0; i < r.risk_labels.size(); ++i)
+        {
+            if (r.risk_labels[i] == "spot")
+            {
+                out.greeks.delta = r.risks[i];
+                out.greeks.delta_std_error = r.risk_std_errors[i];
+            }
+            else if (r.risk_labels[i] == "vol")
+            {
+                out.greeks.vega = r.risks[i];
+                out.greeks.vega_std_error = r.risk_std_errors[i];
+            }
+            else if (r.risk_labels[i] == "rate")
+            {
+                out.greeks.rho = r.risks[i];
+                out.greeks.rho_std_error = r.risk_std_errors[i];
+            }
+        }
+        return out;
     }
 
 } // namespace quantModeling

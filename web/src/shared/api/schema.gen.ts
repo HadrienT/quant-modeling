@@ -86,8 +86,13 @@ export interface paths {
         };
         /**
          * Cleaned Iv Surface
-         * @description Return the cleaned & bicubic-smoothed implied-volatility surface
-         *     (stages 0-3 of the Dupire pipeline) as a grid suitable for 3-D plotting.
+         * @description The SVI-fitted implied-volatility surface, one calibrated slice per
+         *     maturity with enough clean quotes, linearly interpolated in total
+         *     variance between them -- replaces the old bicubic-spline-plus-Gaussian-
+         *     blur surface with one whose butterfly/calendar arbitrage status is
+         *     actually checked (see each slice's `converged` / arbitrage flags below,
+         *     surfaced once the front-end calibration-report screen exists per
+         *     blueprint/wp/15-future-quant-surfaces.md §1).
          */
         get: operations["cleaned_iv_surface"];
         put?: never;
@@ -108,14 +113,8 @@ export interface paths {
         /**
          * Price Local Vol
          * @description Price a European vanilla option using a Dupire local-volatility surface
-         *     calibrated live from the ticker's option chain.
-         *
-         *     Steps:
-         *     1. Fetch spot price and live option chain (yfinance).
-         *     2. Clean quotes: liquidity, moneyness, calendar & butterfly arbitrage filters.
-         *     3. Build smooth bicubic IV surface in log-moneyness space.
-         *     4. Apply Gatheral (2004) formula to obtain the local-vol surface.
-         *     5. Price via Euler-Maruyama MC with optional CRN greeks.
+         *     calibrated from the ticker's option chain: clean -> SVI per maturity ->
+         *     Dupire (Gatheral closed form) -> Euler-Maruyama Monte Carlo.
          */
         get: operations["price_local_vol"];
         put?: never;
@@ -135,7 +134,9 @@ export interface paths {
         };
         /**
          * Local Vol Surface
-         * @description Return the Dupire local-volatility surface (stages 0-4) as a grid.
+         * @description The Dupire local-volatility surface, computed analytically from the
+         *     calibrated SVI slices (market/dupire_from_svi.hpp) -- no finite
+         *     differences anywhere in the chain from raw quotes to this grid.
          */
         get: operations["local_vol_surface"];
         put?: never;
@@ -1892,6 +1893,8 @@ export interface components {
             mc_std_error: number;
             /** Npv */
             npv: number;
+            /** Risks */
+            risks?: components["schemas"]["RiskEntry"][] | null;
         };
         /**
          * ProductCategory
@@ -1964,6 +1967,22 @@ export interface components {
             /** Zero */
             zero: components["schemas"]["CurvePointResponse"][];
         };
+        /**
+         * RiskEntry
+         * @description One model parameter's AAD sensitivity (blueprint/wp/17-aad.md §13.1).
+         *     Present only when priced with greeks_method="aad" -- unlike Greeks'
+         *     five fixed slots, a future model with a local-vol grid or a multi-asset
+         *     correlation matrix reports here regardless of how many parameters it
+         *     has.
+         */
+        RiskEntry: {
+            /** Label */
+            label: string;
+            /** Std Error */
+            std_error: number;
+            /** Value */
+            value: number;
+        };
         /** ScriptEvent */
         ScriptEvent: {
             /**
@@ -2006,6 +2025,13 @@ export interface components {
              * @default false
              */
             fuzzy: boolean;
+            /**
+             * Greeks Method
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol': the adjoint engine does not have Sobol support yet (lot 17d) and falls back to pseudo-random, noted in the response's diagnostics.
+             * @default none
+             * @enum {string}
+             */
+            greeks_method: "none" | "aad";
             /**
              * N Paths
              * @default 200000

@@ -5,8 +5,10 @@
 #include "quantModeling/pricers/registry.hpp"
 #include "quantModeling/engines/mc/local_vol.hpp"
 
+#include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
+#include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/equity/simulatable_asian.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/calendars.hpp"
@@ -339,6 +341,26 @@ static py::dict pricing_result_to_dict(const quantModeling::PricingResult &res)
     bond_analytics["dv01"] = to_py(res.bond_analytics.dv01);
     out["bond_analytics"] = bond_analytics;
 
+    // Per-parameter AAD sensitivities (blueprint/wp/17-aad.md §13.1) --
+    // absent (None) for anything not priced with greeks_method="aad".
+    if (res.risks)
+    {
+        py::list risks;
+        for (std::size_t i = 0; i < res.risks->labels.size(); ++i)
+        {
+            py::dict entry;
+            entry["label"] = res.risks->labels[i];
+            entry["value"] = static_cast<double>(res.risks->values[i]);
+            entry["std_error"] = static_cast<double>(res.risks->std_errors[i]);
+            risks.append(entry);
+        }
+        out["risks"] = risks;
+    }
+    else
+    {
+        out["risks"] = py::none();
+    }
+
     return out;
 }
 
@@ -591,26 +613,57 @@ static py::dict price_dated_asian(double spot, double rate, double dividend,
 //    generic Monte-Carlo engine as every other ISimulatableProduct. A parse
 //    error (ScriptError) propagates as a Python RuntimeError carrying the
 //    pointed line/column message; the API layer turns that into a 422.
+//
+// greeks_method == "aad" reprices with T = aad::Number instead of Real
+// (blueprint/wp/17-aad.md §7): every model parameter's sensitivity comes
+// back in `risks`, at roughly 3-5x the cost of one price rather than 2N+1
+// bumped reprices. Sobol is not offered under AAD yet (skip_to for the
+// adjoint engine is lot 17d) -- requesting it there falls back to
+// pseudo-random and says so in `diagnostics` rather than silently ignoring it.
 static py::dict price_script(const std::string &script, double spot, double rate,
                              double dividend, double vol,
                              const std::string &valuation_date,
                              const std::string &day_count, bool fuzzy,
                              double default_eps, int n_paths, int seed,
-                             const std::string &sampler)
+                             const std::string &sampler,
+                             const std::string &greeks_method)
 {
     using namespace quantModeling;
 
     const Date valuation = Date::from_iso(valuation_date);
     const DayCounter &basis = day_counter_by_name(day_count);
     const ValuationContext ctx{valuation, &basis, &NullCalendar::instance()};
+    const int paths = n_paths > 0 ? n_paths : 200000;
+    const std::uint64_t seed_value = static_cast<std::uint64_t>(seed > 0 ? seed : 1);
+
+    if (greeks_method == "aad")
+    {
+        ScriptedProduct<aad::Number> product(script, ctx,
+                                             ScriptSettings{fuzzy, default_eps});
+        BlackScholesSimModel<aad::Number> model{
+            aad::Number(spot), aad::Number(rate), aad::Number(dividend),
+            aad::Number(vol)};
+
+        const AADSimulResults aad_res =
+            simulate_aad(product, model, static_cast<std::size_t>(paths), seed_value);
+
+        PricingResult res = to_pricing_result(aad_res);
+        res.diagnostics += " | scripted, " +
+                           std::to_string(product.timeline().size()) + " events" +
+                           (fuzzy ? ", fuzzy" : ", hard");
+        if (sampler == "sobol")
+            res.diagnostics += " | sobol requested but not available under AAD "
+                               "yet (lot 17d) -- used pseudo-random instead";
+        return pricing_result_to_dict(res);
+    }
 
     ScriptedProduct<Real> product(script, ctx,
                                   ScriptSettings{fuzzy, default_eps});
     BlackScholesSimModel<Real> model(spot, rate, dividend, vol);
 
     PricingSettings settings;
-    settings.mc_paths = n_paths > 0 ? n_paths : 200000;
-    settings.mc_seed = seed > 0 ? seed : 1;
+    settings.mc_paths = paths;
+    settings.mc_seed = static_cast<int>(seed_value);
     settings.mc_antithetic = true;
     settings.mc_sampler =
         (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
@@ -852,10 +905,14 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
           py::arg("fuzzy") = false, py::arg("default_eps") = 0.01,
           py::arg("n_paths") = 200000, py::arg("seed") = 1,
-          py::arg("sampler") = "pseudo",
+          py::arg("sampler") = "pseudo", py::arg("greeks_method") = "none",
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
-          "the offending line and column in the message.");
+          "the offending line and column in the message. greeks_method: "
+          "'none' (default) or 'aad' -- every model parameter's sensitivity "
+          "(blueprint/wp/17-aad.md), at roughly 3-5x one price's cost "
+          "regardless of how many. 'bump' is not offered for scripted "
+          "payoffs.");
     m.def("validate_script", &validate_script, py::arg("script"),
           py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
           "Parse a payoff script and resolve its timeline without pricing "

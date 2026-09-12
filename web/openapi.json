@@ -2398,6 +2398,20 @@
           "npv": {
             "title": "Npv",
             "type": "number"
+          },
+          "risks": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RiskEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risks"
           }
         },
         "required": [
@@ -2561,6 +2575,30 @@
         "title": "RatesCurveResponse",
         "type": "object"
       },
+      "RiskEntry": {
+        "description": "One model parameter's AAD sensitivity (blueprint/wp/17-aad.md \u00a713.1).\nPresent only when priced with greeks_method=\"aad\" -- unlike Greeks'\nfive fixed slots, a future model with a local-vol grid or a multi-asset\ncorrelation matrix reports here regardless of how many parameters it\nhas.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "std_error": {
+            "title": "Std Error",
+            "type": "number"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "value",
+          "std_error"
+        ],
+        "title": "RiskEntry",
+        "type": "object"
+      },
       "ScriptEvent": {
         "properties": {
           "date": {
@@ -2610,6 +2648,16 @@
             "default": false,
             "title": "Fuzzy",
             "type": "boolean"
+          },
+          "greeks_method": {
+            "default": "none",
+            "description": "'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol': the adjoint engine does not have Sobol support yet (lot 17d) and falls back to pseudo-random, noted in the response's diagnostics.",
+            "enum": [
+              "none",
+              "aad"
+            ],
+            "title": "Greeks Method",
+            "type": "string"
           },
           "n_paths": {
             "default": 200000,
@@ -3357,7 +3405,7 @@
     },
     "/api/local-vol/iv-surface": {
       "get": {
-        "description": "Return the cleaned & bicubic-smoothed implied-volatility surface\n(stages 0-3 of the Dupire pipeline) as a grid suitable for 3-D plotting.",
+        "description": "The SVI-fitted implied-volatility surface, one calibrated slice per\nmaturity with enough clean quotes, linearly interpolated in total\nvariance between them -- replaces the old bicubic-spline-plus-Gaussian-\nblur surface with one whose butterfly/calendar arbitrage status is\nactually checked (see each slice's `converged` / arbitrage flags below,\nsurfaced once the front-end calibration-report screen exists per\nblueprint/wp/15-future-quant-surfaces.md \u00a71).",
         "operationId": "cleaned_iv_surface",
         "parameters": [
           {
@@ -3470,7 +3518,7 @@
     },
     "/api/local-vol/price": {
       "get": {
-        "description": "Price a European vanilla option using a Dupire local-volatility surface\ncalibrated live from the ticker's option chain.\n\nSteps:\n1. Fetch spot price and live option chain (yfinance).\n2. Clean quotes: liquidity, moneyness, calendar & butterfly arbitrage filters.\n3. Build smooth bicubic IV surface in log-moneyness space.\n4. Apply Gatheral (2004) formula to obtain the local-vol surface.\n5. Price via Euler-Maruyama MC with optional CRN greeks.",
+        "description": "Price a European vanilla option using a Dupire local-volatility surface\ncalibrated from the ticker's option chain: clean -> SVI per maturity ->\nDupire (Gatheral closed form) -> Euler-Maruyama Monte Carlo.",
         "operationId": "price_local_vol",
         "parameters": [
           {
@@ -3671,7 +3719,7 @@
     },
     "/api/local-vol/surface": {
       "get": {
-        "description": "Return the Dupire local-volatility surface (stages 0-4) as a grid.",
+        "description": "The Dupire local-volatility surface, computed analytically from the\ncalibrated SVI slices (market/dupire_from_svi.hpp) -- no finite\ndifferences anywhere in the chain from raw quotes to this grid.",
         "operationId": "local_vol_surface",
         "parameters": [
           {

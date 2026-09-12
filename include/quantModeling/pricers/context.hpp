@@ -3,6 +3,7 @@
 
 #include <memory>
 
+#include "quantModeling/core/results.hpp"
 #include "quantModeling/models/base.hpp"
 #include "quantModeling/market/discount_curve.hpp"
 
@@ -51,6 +52,15 @@ namespace quantModeling
         bool mc_importance_sampling = false; ///< drift-shift IS (OTM vanillas)
         bool mc_cmc = false;                 ///< conditional MC: smooth indicators analytically
         bool mc_bridge_extrema = false;      ///< sample continuous extrema via bridge inverse transform
+        /// Real (not just declared) for a product on the timeline
+        /// architecture with T = aad::Number available -- see
+        /// engines/mc/simulation_engine_aad.hpp. A caller still picks which
+        /// top-level function to invoke (simulate vs simulate_aad) and which
+        /// T to instantiate the product/model with; this flag is what the
+        /// orchestration layer (a router, a future generic price()) reads
+        /// to make that choice, rather than a raw string compared ad hoc at
+        /// every call site.
+        GreeksMethod greeks = GreeksMethod::Bump;
     };
 
     struct MarketView
