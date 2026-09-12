@@ -2,7 +2,9 @@
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
+#include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
+#include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/utils/stats.hpp"
 
@@ -98,6 +100,45 @@ namespace quantModeling
         EXPECT_NEAR(res.risks[2], ref_div, 4.0 * res.risk_std_errors[2]);
         EXPECT_NEAR(res.risks[3], ref_vega, 4.0 * res.risk_std_errors[3]);
         EXPECT_GT(res.risk_std_errors[0], 0.0);
+    }
+
+    // ── the same property, but through ScriptedProduct<Number> instead of a
+    // hand-written C++ payoff: WP16's Evaluator<T> was already templated on
+    // T with no AAD-specific work (every math call inside it is already
+    // unqualified, `using std::exp; return exp(a);` -- ADL-safe by the same
+    // convention as bs_sim_model.hpp), so the blueprint's promised "the
+    // scripting lot benefits for free" is something to actually verify, not
+    // just trust because the types happen to line up and it compiles: a
+    // template instantiating cleanly is exactly the silent trap (§0) if
+    // nothing on the path from spot() to pays actually touches a Number.
+    TEST(AADSimulation, ScriptedEuropeanCallGreeksMatchAnalytic)
+    {
+        const Real S0 = 100, r = 0.03, q = 0.01, sigma = 0.2, K = 105;
+
+        Tape tape;
+        TapeSwitch guard(tape);
+
+        const ValuationContext ctx{Date::today()};
+        ScriptedProduct<Number> product(
+            "2029-01-01\n    pays max(spot() - 105, 0)\n", ctx);
+        BlackScholesSimModel<Number> model{Number(S0), Number(r), Number(q),
+                                           Number(sigma)};
+
+        const AADSimulResults res = simulate_aad(product, model, 200000, 7);
+        const double Tm = product.timeline().front(); // whatever "2029-01-01" resolves to from today
+
+        const double sd = sigma * std::sqrt(Tm);
+        const double d1 = (std::log(S0 / K) + (r - q + 0.5 * sigma * sigma) * Tm) / sd;
+        const double d2 = d1 - sd;
+        const double ref_price =
+            S0 * std::exp(-q * Tm) * norm_cdf(d1) - K * std::exp(-r * Tm) * norm_cdf(d2);
+        const double ref_delta = std::exp(-q * Tm) * norm_cdf(d1);
+        const double ref_vega = S0 * std::exp(-q * Tm) * norm_pdf(d1) * std::sqrt(Tm);
+
+        EXPECT_NEAR(res.price, ref_price, 4.0 * res.price_std_error);
+        ASSERT_EQ(res.risk_labels.size(), 4u);
+        EXPECT_NEAR(res.risks[0], ref_delta, 4.0 * res.risk_std_errors[0]); // spot
+        EXPECT_NEAR(res.risks[3], ref_vega, 4.0 * res.risk_std_errors[3]); // vol
     }
 
     // ── pathwise: the adjoint delta of ONE path equals a bump on that SAME
