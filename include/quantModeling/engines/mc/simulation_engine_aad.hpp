@@ -99,7 +99,7 @@ namespace quantModeling
             throw InvalidInput("simulate_aad: need at least one path");
 
         Tape &tape = *Number::tape;
-        tape.rewind(); // 1. empty tape, memory kept
+        tape.rewind();                                    // 1. empty tape, memory kept
         const detail::TapeClearGuard clear_on_exit{tape}; // runs on every exit, exception included
 
         model.put_parameters_on_tape();                    // 2. leaves: the parameters
