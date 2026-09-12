@@ -113,4 +113,50 @@ namespace quantModeling::aad
         EXPECT_EQ(a.adjoint(), 0.0); // a fresh node: adjoint starts at zero
     }
 
+    // ── the memory ceiling: not in the book (Savine assumes a controlled
+    // environment), added because a real tape shares a real, finite machine
+    // with everything else running on it. A runaway model must fail loudly
+    // well before it can pressure the rest of the process ───────────────────
+
+    TEST(AADTape, ExceedingTheMemoryCeilingThrowsRatherThanGrowingForever)
+    {
+        Tape tape;
+        TapeSwitch guard(tape);
+        tape.set_max_bytes(1); // rounds up to exactly one block per pool
+
+        // A lambda call, rather than the loop inlined directly: the raw
+        // comma in `Number a(1.0), b(2.0);` would otherwise split
+        // EXPECT_THROW's argument at the preprocessor level (it only
+        // balances parentheses, not braces).
+        auto overflow_the_tape = []()
+        {
+            for (int i = 0; i < 100000; ++i)
+            {
+                Number a(1.0);
+                Number b(2.0);
+                Number c = a + b; // a binary node: draws from every pool
+                (void)c;
+            }
+        };
+        EXPECT_THROW(overflow_the_tape(), PricingError);
+    }
+
+    TEST(AADTape, DefaultCeilingDoesNotTripOnAnOrdinaryComputation)
+    {
+        // The out-of-the-box ceiling (256 MB per pool) exists to catch a
+        // runaway, not to get in the way of a real path -- even the
+        // 50-underlying, 100-step basket the blueprint's own benchmark
+        // targets needs only tens of MB (§2). A few thousand operations must
+        // sail through untouched.
+        Tape tape;
+        TapeSwitch guard(tape);
+        Number acc(0.0);
+        for (int i = 0; i < 5000; ++i)
+        {
+            Number x(static_cast<double>(i));
+            acc = acc + x * 2.0;
+        }
+        SUCCEED();
+    }
+
 } // namespace quantModeling::aad

@@ -38,6 +38,22 @@ namespace quantModeling
         return payoffs.front();
     }
 
+    namespace detail
+    {
+        /// Guarantees tape.clear() runs on every way out of simulate_aad --
+        /// including an exception thrown mid-run (a model bug, an
+        /// unexpectedly large product). Without this, a run that throws
+        /// leaves whatever it had recorded up to that point parked on the
+        /// calling thread's tape indefinitely: not unbounded (still capped
+        /// by that one run's own ceiling), but wasted until some later,
+        /// successful run on the same thread happens to clear it.
+        struct TapeClearGuard
+        {
+            aad::Tape &tape;
+            ~TapeClearGuard() { tape.clear(); }
+        };
+    } // namespace detail
+
     /**
      * @brief Adjoint Monte-Carlo: the price and every model-parameter risk in
      *        one run, at O(1) extra cost in the number of parameters.
@@ -84,6 +100,7 @@ namespace quantModeling
 
         Tape &tape = *Number::tape;
         tape.rewind(); // 1. empty tape, memory kept
+        const detail::TapeClearGuard clear_on_exit{tape}; // runs on every exit, exception included
 
         model.put_parameters_on_tape();                    // 2. leaves: the parameters
         model.init(product.timeline(), product.defline()); // 3. precomputations, RECORDED
@@ -151,7 +168,6 @@ namespace quantModeling
         res.diagnostics =
             "simulate_aad (adjoint, batches of " + std::to_string(BATCH) + ")";
 
-        tape.clear();
         return res;
     }
 

@@ -101,6 +101,32 @@ namespace quantModeling::aad
             return adjoints_multi_.block_count() + derivatives_.block_count() +
                    arg_ptrs_.block_count() + nodes_.block_count();
         }
+
+        /// Caps each of the four blocklists at `bytes_per_pool` (not the
+        /// tape's total -- each pool has its own per-block size, so a single
+        /// shared byte budget per pool is the simplest thing that is still
+        /// easy to reason about: "this tape uses at most ~4x this many
+        /// bytes"). See blocklist::DEFAULT_BLOCKLIST_MAX_BYTES for the
+        /// out-of-the-box ceiling and why it exists. A caller sizing a
+        /// thread pool (lot 17d) -- one tape per thread -- should set this
+        /// low enough that n_threads * approx_max_bytes() stays under the
+        /// machine's real budget, since the default is sized for one path
+        /// in isolation, not for dozens of threads sharing the same RAM.
+        void set_max_bytes(std::size_t bytes_per_pool)
+        {
+            adjoints_multi_.set_max_bytes(bytes_per_pool);
+            derivatives_.set_max_bytes(bytes_per_pool);
+            arg_ptrs_.set_max_bytes(bytes_per_pool);
+            nodes_.set_max_bytes(bytes_per_pool);
+        }
+
+        /// Upper bound on this tape's own memory (sum of the four pools'
+        /// ceilings) -- what set_max_bytes() actually bought you.
+        std::size_t approx_max_bytes() const
+        {
+            return adjoints_multi_.max_bytes() + derivatives_.max_bytes() +
+                   arg_ptrs_.max_bytes() + nodes_.max_bytes();
+        }
     };
 
 } // namespace quantModeling::aad
