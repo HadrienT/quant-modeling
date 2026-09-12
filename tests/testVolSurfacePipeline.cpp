@@ -99,6 +99,50 @@ namespace quantModeling
         }
     }
 
+    TEST(VolSurfacePipeline, ClampsKRangeToWhatTheNarrowestSliceObserved)
+    {
+        // A short-dated slice quoted only close to the money (narrow strike
+        // range) alongside a long-dated slice with the usual wide range.
+        // Requesting a wide k range must not force the short slice's SVI
+        // wing to extrapolate past what it actually observed -- found to
+        // matter against a real AAPL chain, where a ~6-day slice implied a
+        // ~600% vol at the edge of a fixed +/-0.6 log-moneyness request.
+        const Real spot = 100.0;
+        std::vector<RawOptionQuote> raw;
+        for (Real strike = 92.5; strike <= 107.5; strike += 2.5)
+        {
+            const Real k = std::log(strike / spot);
+            const Real iv = svi_implied_vol(k, 0.02, smile(0.005));
+            const Real price = bs_call_price(spot, strike, 0.02, 0.0, iv);
+
+            RawOptionQuote q;
+            q.strike = strike;
+            q.ttm = 0.02;
+            q.is_call = true;
+            q.bid = price - 0.001;
+            q.ask = price + 0.001;
+            q.last = price;
+            q.volume = 500;
+            q.open_interest = 1000;
+            q.implied_vol = iv;
+            q.has_iv = true;
+            raw.push_back(q);
+        }
+        const std::vector<RawOptionQuote> raw_1y = synthetic_slice(spot, 1.00, smile(0.10));
+        raw.insert(raw.end(), raw_1y.begin(), raw_1y.end());
+
+        const auto result = calibrate_vol_surface(raw, spot, 0.0, 0.0, -0.6, 0.6, 30, 15);
+
+        const Real narrow_k_min = std::log(92.5 / 100.0);
+        const Real narrow_k_max = std::log(107.5 / 100.0);
+        EXPECT_GE(result.k_min, narrow_k_min - 1e-9);
+        EXPECT_LE(result.k_max, narrow_k_max + 1e-9);
+        EXPECT_LT(result.k_max - result.k_min, 0.6); // much tighter than the requested [-0.6, 0.6]
+
+        for (const Real sigma_loc : result.sigma_loc)
+            EXPECT_LT(sigma_loc, 3.0); // no wing blow-up from extrapolating past the short slice's data
+    }
+
     TEST(VolSurfacePipeline, RecoversAFlatVolatilityGridEndToEnd)
     {
         constexpr Real sigma = 0.22;

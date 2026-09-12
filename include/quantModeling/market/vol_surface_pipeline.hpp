@@ -45,6 +45,16 @@ namespace quantModeling
         std::vector<Real> K_grid;
         std::vector<Real> T_grid;
         std::vector<Real> sigma_loc;
+
+        /// The log-moneyness range actually used to build the grid above --
+        /// the caller's requested [k_min, k_max], clamped to the
+        /// intersection of what every calibrated slice actually had quotes
+        /// over (see calibrate_vol_surface's doc comment). Any other display
+        /// grid built from `slices` (e.g. an implied-vol surface evaluated
+        /// in Python) should reuse this range rather than its own guess, so
+        /// the two surfaces never disagree about how far to extrapolate.
+        Real k_min = 0.0;
+        Real k_max = 0.0;
     };
 
     /**
@@ -56,6 +66,15 @@ namespace quantModeling
      * Throws InvalidInput if fewer than 2 maturities end up with at least
      * min_quotes_per_slice cleaned quotes -- SVISurface needs at least 2
      * slices, and a single slice is not a surface.
+     *
+     * k_min/k_max are a request, not a guarantee: they are clamped to the
+     * intersection of every calibrated slice's own observed log-moneyness
+     * range before the grid is built (see VolSurfacePipelineResult::k_min).
+     * Without this, a fixed range wide enough to look reasonable on a
+     * one-year slice can force a one-week slice's SVI wing to extrapolate
+     * far past its data -- svi_implied_vol divides total variance by T, so
+     * the same extrapolated wing curvature that is a small effect at T=1
+     * becomes a large one at T=1/52.
      */
     VolSurfacePipelineResult calibrate_vol_surface(
         std::vector<RawOptionQuote> raw_quotes, Real spot, Real rate, Real dividend,

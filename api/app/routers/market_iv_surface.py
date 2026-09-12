@@ -29,12 +29,21 @@ logger = get_logger()
 
 _NO_OPTIONS_DETAIL = "No options chain available"
 _MIN_OPEN_INTEREST = 50
+# Same bounds and the same reason as CleaningParams.min/max_plausible_iv
+# (market/raw_vol_surface.hpp): found against a real AAPL chain, where a
+# near-expiry, high-open-interest contract reported a ~450% implied vol --
+# yfinance backs impliedVolatility out of a stale last-trade price, and high
+# OI does not protect against that. This surface has no other cleaning at
+# all, so it needs this check explicitly rather than inheriting it.
+_MIN_PLAUSIBLE_IV = 0.02
+_MAX_PLAUSIBLE_IV = 3.00
 
 _IV_SURFACE_CACHE = TTLCache[str, IVSurfaceResponse](max_size=128, ttl_seconds=60 * 10)
 
 
 def _raw_iv_points(ticker: str) -> List[tuple]:
-    """(strike, ttm, iv) for every liquid call with a usable implied vol.
+    """(strike, ttm, iv) for every liquid call with a usable, plausible
+    implied vol.
 
     Calls only, matching the old implementation -- put-call parity gives
     the same surface, and RawVolSurface's own butterfly check draws the same
@@ -44,7 +53,10 @@ def _raw_iv_points(ticker: str) -> List[tuple]:
     return [
         (q.strike, q.ttm, q.implied_vol)
         for q in quotes
-        if q.is_call and q.has_iv and q.open_interest >= _MIN_OPEN_INTEREST
+        if q.is_call
+        and q.has_iv
+        and q.open_interest >= _MIN_OPEN_INTEREST
+        and _MIN_PLAUSIBLE_IV <= q.implied_vol <= _MAX_PLAUSIBLE_IV
     ]
 
 

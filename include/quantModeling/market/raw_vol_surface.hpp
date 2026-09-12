@@ -54,6 +54,18 @@ namespace quantModeling
         /// as unpopulated and filter on volume instead (yfinance sometimes
         /// reports open interest as all zero for an entire chain).
         Real oi_coverage_threshold = 0.05;
+        /// A quoted implied vol outside [min_plausible_iv, max_plausible_iv]
+        /// is rejected outright, liquidity notwithstanding. Real quotes this
+        /// far out are rare enough that generous bounds (2%-300%) never
+        /// touch a legitimate equity smile; they exist because yfinance's
+        /// impliedVolatility is sometimes backed out from a stale last-trade
+        /// price rather than a live bid/ask, and a near-expiry contract that
+        /// hasn't traded in a while can report something like 450% or
+        /// 0.001% -- found by testing against a real AAPL chain, not
+        /// hypothesised: high open interest does not protect against this,
+        /// so it is checked separately from the liquidity filter.
+        Real min_plausible_iv = 0.02;
+        Real max_plausible_iv = 3.00;
     };
 
     /**

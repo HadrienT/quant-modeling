@@ -512,6 +512,12 @@ static py::dict calibrate_vol_surface_impl(
     out["K_grid"] = result.K_grid;
     out["T_grid"] = result.T_grid;
     out["sigma_loc_flat"] = result.sigma_loc;
+    // The log-moneyness range actually used for the grid above, after
+    // clamping to what every slice observed (see VolSurfacePipelineResult::
+    // k_min in vol_surface_pipeline.hpp) -- any other display grid built
+    // from `slices` should reuse this rather than guessing its own range.
+    out["k_min"] = static_cast<double>(result.k_min);
+    out["k_max"] = static_cast<double>(result.k_max);
     return out;
 }
 
@@ -910,7 +916,9 @@ PYBIND11_MODULE(quantmodeling, m)
         .def_readwrite("max_spread_ratio", &quantModeling::CleaningParams::max_spread_ratio)
         .def_readwrite("min_moneyness", &quantModeling::CleaningParams::min_moneyness)
         .def_readwrite("max_moneyness", &quantModeling::CleaningParams::max_moneyness)
-        .def_readwrite("oi_coverage_threshold", &quantModeling::CleaningParams::oi_coverage_threshold);
+        .def_readwrite("oi_coverage_threshold", &quantModeling::CleaningParams::oi_coverage_threshold)
+        .def_readwrite("min_plausible_iv", &quantModeling::CleaningParams::min_plausible_iv)
+        .def_readwrite("max_plausible_iv", &quantModeling::CleaningParams::max_plausible_iv);
 
     m.def("calibrate_vol_surface", &calibrate_vol_surface_impl,
           py::arg("quotes"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),

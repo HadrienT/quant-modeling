@@ -90,6 +90,17 @@ namespace quantModeling
         EXPECT_EQ(surface.stats().after_liquidity, 0u);
     }
 
+    TEST(RawVolSurface, LiquidityFilterRejectsAnImplausibleImpliedVolEvenWithHighOpenInterest)
+    {
+        // Found against a real AAPL chain, not hypothesised: yfinance can
+        // report an implausible IV (stale last-trade price) on a contract
+        // that otherwise looks perfectly liquid. High OI must not save it.
+        RawOptionQuote blown_up = liquid_call(100.0, 0.02, 5.0, 4.50);    // 450% IV
+        RawOptionQuote collapsed = liquid_call(105.0, 0.02, 5.0, 0.0001); // ~0% IV
+        RawVolSurface surface({blown_up, collapsed}, 100.0, 0.0, 0.0);
+        EXPECT_EQ(surface.stats().after_liquidity, 0u);
+    }
+
     TEST(RawVolSurface, LiquidityFilterFallsBackToVolumeWhenOpenInterestIsMostlyAbsent)
     {
         std::vector<RawOptionQuote> raw;

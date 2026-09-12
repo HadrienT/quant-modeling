@@ -2,6 +2,8 @@
 
 #include "quantModeling/market/svi_surface.hpp"
 
+#include <algorithm>
+#include <limits>
 #include <map>
 #include <utility>
 
@@ -38,6 +40,19 @@ namespace quantModeling
         calibrations.reserve(maturities.size());
         reports.reserve(maturities.size());
 
+        // Intersection, across every slice, of the log-moneyness range that
+        // slice actually has quotes over. A fixed k range that looks
+        // reasonable for a one-year slice can be a wild extrapolation for a
+        // one-week one: svi_implied_vol = sqrt(w(k)/T) divides by a tiny T,
+        // so whatever wing curvature exists at the edge of the requested
+        // range is massively amplified on the shortest maturity. Found
+        // against a real AAPL chain (a ~6-day slice implying ~600% vol at
+        // k=0.6), not hypothesised. Clamping to what every slice actually
+        // observed guarantees no slice is ever asked to extrapolate beyond
+        // its own data.
+        Real observed_k_min = -std::numeric_limits<Real>::infinity();
+        Real observed_k_max = std::numeric_limits<Real>::infinity();
+
         for (const Real ttm : maturities)
         {
             std::vector<SVISliceQuote> slice_quotes = svi_quotes_from_raw_surface(raw_surface, ttm);
@@ -55,6 +70,30 @@ namespace quantModeling
 
             calibrations.push_back(std::move(calibration));
             reports.push_back(report);
+
+            if (!slice_quotes.empty())
+            {
+                Real slice_k_min = slice_quotes.front().log_moneyness;
+                Real slice_k_max = slice_k_min;
+                for (const auto &sq : slice_quotes)
+                {
+                    slice_k_min = std::min(slice_k_min, sq.log_moneyness);
+                    slice_k_max = std::max(slice_k_max, sq.log_moneyness);
+                }
+                observed_k_min = std::max(observed_k_min, slice_k_min);
+                observed_k_max = std::min(observed_k_max, slice_k_max);
+            }
+        }
+
+        // Clamp the caller's requested range to the observed intersection,
+        // unless that intersection is degenerate (e.g. disjoint strike
+        // ranges across maturities) -- a real chain always has every slice
+        // quoted around the current spot, so this is a safety net, not the
+        // expected path.
+        if (observed_k_max > observed_k_min)
+        {
+            k_min = std::max(k_min, observed_k_min);
+            k_max = std::min(k_max, observed_k_max);
         }
 
         std::vector<bool> calendar_ok(calibrations.size() - 1);
@@ -73,6 +112,8 @@ namespace quantModeling
         result.K_grid = grid.K_grid();
         result.T_grid = grid.T_grid();
         result.sigma_loc = grid.sigma_loc();
+        result.k_min = k_min;
+        result.k_max = k_max;
         return result;
     }
 

@@ -33,6 +33,8 @@ namespace quantModeling
 
             if (!q.has_iv || q.implied_vol <= 0.0)
                 return false;
+            if (q.implied_vol < p.min_plausible_iv || q.implied_vol > p.max_plausible_iv)
+                return false; // e.g. a stale-last-trade IV on an illiquid near-expiry contract
 
             const Real mid = q.mid();
             if (mid <= 0.0)

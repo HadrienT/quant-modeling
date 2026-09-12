@@ -209,13 +209,17 @@ def cleaned_iv_surface(
     )
     stats = result["cleaning_stats"]
 
+    # Reuse the exact log-moneyness range calibrate_vol_surface actually used
+    # for the Dupire grid (already clamped to what every slice observed --
+    # see VolSurfacePipelineResult::k_min), so this surface and /surface
+    # never disagree about how far to extrapolate.
     strikes, maturities, values = vol_surface.svi_implied_vol_grid(
         result["slices"],
         spot,
         rate,
         dividend,
-        k_min=-0.6,
-        k_max=0.6,
+        k_min=result["k_min"],
+        k_max=result["k_max"],
     )
 
     return CleanedIVSurfaceResponse(
