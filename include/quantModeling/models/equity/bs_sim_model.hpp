@@ -78,10 +78,7 @@ namespace quantModeling
         /// silently computed against the wrong object. Recomputing the
         /// pointers in a hand-written copy constructor is the fix.
         BlackScholesSimModel(const BlackScholesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_),
-              curve_(other.curve_), timeline_(other.timeline_),
-              defline_(other.defline_), steps_(other.steps_),
-              sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), curve_(other.curve_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }

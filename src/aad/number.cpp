@@ -14,20 +14,26 @@ namespace quantModeling::aad
 
     thread_local Tape *Number::tape = &default_tape;
 
-    Number::Number(Node &arg, double val) : value_(val)
+    Number::Number(Node &arg, double val)
+        : value_(val)
     {
         create_node<1>();
         node_->arg_adjoints_[0] = &arg.adjoint();
     }
 
-    Number::Number(Node &lhs, Node &rhs, double val) : value_(val)
+    Number::Number(Node &lhs, Node &rhs, double val)
+        : value_(val)
     {
         create_node<2>();
         node_->arg_adjoints_[0] = &lhs.adjoint();
         node_->arg_adjoints_[1] = &rhs.adjoint();
     }
 
-    Number::Number(double val) : value_(val) { create_node<0>(); }
+    Number::Number(double val)
+        : value_(val)
+    {
+        create_node<0>();
+    }
 
     Number &Number::operator=(double val)
     {
@@ -36,16 +42,43 @@ namespace quantModeling::aad
         return *this;
     }
 
-    void Number::put_on_tape() { create_node<0>(); }
+    void Number::put_on_tape()
+    {
+        create_node<0>();
+    }
 
-    Number &Number::operator+=(const Number &rhs) { return *this = *this + rhs; }
-    Number &Number::operator+=(double rhs) { return *this = *this + rhs; }
-    Number &Number::operator-=(const Number &rhs) { return *this = *this - rhs; }
-    Number &Number::operator-=(double rhs) { return *this = *this - rhs; }
-    Number &Number::operator*=(const Number &rhs) { return *this = *this * rhs; }
-    Number &Number::operator*=(double rhs) { return *this = *this * rhs; }
-    Number &Number::operator/=(const Number &rhs) { return *this = *this / rhs; }
-    Number &Number::operator/=(double rhs) { return *this = *this / rhs; }
+    Number &Number::operator+=(const Number &rhs)
+    {
+        return *this = *this + rhs;
+    }
+    Number &Number::operator+=(double rhs)
+    {
+        return *this = *this + rhs;
+    }
+    Number &Number::operator-=(const Number &rhs)
+    {
+        return *this = *this - rhs;
+    }
+    Number &Number::operator-=(double rhs)
+    {
+        return *this = *this - rhs;
+    }
+    Number &Number::operator*=(const Number &rhs)
+    {
+        return *this = *this * rhs;
+    }
+    Number &Number::operator*=(double rhs)
+    {
+        return *this = *this * rhs;
+    }
+    Number &Number::operator/=(const Number &rhs)
+    {
+        return *this = *this / rhs;
+    }
+    Number &Number::operator/=(double rhs)
+    {
+        return *this = *this / rhs;
+    }
 
     void Number::propagate_adjoints(Tape::iterator from, Tape::iterator to)
     {
@@ -282,23 +315,77 @@ namespace quantModeling::aad
 
     // ------------------------------------------------------------ comparisons
 
-    bool operator==(const Number &lhs, const Number &rhs) { return lhs.value() == rhs.value(); }
-    bool operator==(const Number &lhs, double rhs) { return lhs.value() == rhs; }
-    bool operator==(double lhs, const Number &rhs) { return lhs == rhs.value(); }
-    bool operator!=(const Number &lhs, const Number &rhs) { return lhs.value() != rhs.value(); }
-    bool operator!=(const Number &lhs, double rhs) { return lhs.value() != rhs; }
-    bool operator!=(double lhs, const Number &rhs) { return lhs != rhs.value(); }
-    bool operator<(const Number &lhs, const Number &rhs) { return lhs.value() < rhs.value(); }
-    bool operator<(const Number &lhs, double rhs) { return lhs.value() < rhs; }
-    bool operator<(double lhs, const Number &rhs) { return lhs < rhs.value(); }
-    bool operator<=(const Number &lhs, const Number &rhs) { return lhs.value() <= rhs.value(); }
-    bool operator<=(const Number &lhs, double rhs) { return lhs.value() <= rhs; }
-    bool operator<=(double lhs, const Number &rhs) { return lhs <= rhs.value(); }
-    bool operator>(const Number &lhs, const Number &rhs) { return lhs.value() > rhs.value(); }
-    bool operator>(const Number &lhs, double rhs) { return lhs.value() > rhs; }
-    bool operator>(double lhs, const Number &rhs) { return lhs > rhs.value(); }
-    bool operator>=(const Number &lhs, const Number &rhs) { return lhs.value() >= rhs.value(); }
-    bool operator>=(const Number &lhs, double rhs) { return lhs.value() >= rhs; }
-    bool operator>=(double lhs, const Number &rhs) { return lhs >= rhs.value(); }
+    bool operator==(const Number &lhs, const Number &rhs)
+    {
+        return lhs.value() == rhs.value();
+    }
+    bool operator==(const Number &lhs, double rhs)
+    {
+        return lhs.value() == rhs;
+    }
+    bool operator==(double lhs, const Number &rhs)
+    {
+        return lhs == rhs.value();
+    }
+    bool operator!=(const Number &lhs, const Number &rhs)
+    {
+        return lhs.value() != rhs.value();
+    }
+    bool operator!=(const Number &lhs, double rhs)
+    {
+        return lhs.value() != rhs;
+    }
+    bool operator!=(double lhs, const Number &rhs)
+    {
+        return lhs != rhs.value();
+    }
+    bool operator<(const Number &lhs, const Number &rhs)
+    {
+        return lhs.value() < rhs.value();
+    }
+    bool operator<(const Number &lhs, double rhs)
+    {
+        return lhs.value() < rhs;
+    }
+    bool operator<(double lhs, const Number &rhs)
+    {
+        return lhs < rhs.value();
+    }
+    bool operator<=(const Number &lhs, const Number &rhs)
+    {
+        return lhs.value() <= rhs.value();
+    }
+    bool operator<=(const Number &lhs, double rhs)
+    {
+        return lhs.value() <= rhs;
+    }
+    bool operator<=(double lhs, const Number &rhs)
+    {
+        return lhs <= rhs.value();
+    }
+    bool operator>(const Number &lhs, const Number &rhs)
+    {
+        return lhs.value() > rhs.value();
+    }
+    bool operator>(const Number &lhs, double rhs)
+    {
+        return lhs.value() > rhs;
+    }
+    bool operator>(double lhs, const Number &rhs)
+    {
+        return lhs > rhs.value();
+    }
+    bool operator>=(const Number &lhs, const Number &rhs)
+    {
+        return lhs.value() >= rhs.value();
+    }
+    bool operator>=(const Number &lhs, double rhs)
+    {
+        return lhs.value() >= rhs;
+    }
+    bool operator>=(double lhs, const Number &rhs)
+    {
+        return lhs >= rhs.value();
+    }
 
 } // namespace quantModeling::aad

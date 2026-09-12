@@ -29,10 +29,10 @@ namespace quantModeling::aad
         friend class Tape;
         friend class Number;
 
-        const std::size_t n_; // number of arguments
-        double adjoint_ = 0.0; // single adjoint
-        double *derivatives_ = nullptr; // n local derivatives d f / d arg_i
-        double **arg_adjoints_ = nullptr; // n pointers to the arguments' adjoints
+        const std::size_t n_;              // number of arguments
+        double adjoint_ = 0.0;             // single adjoint
+        double *derivatives_ = nullptr;    // n local derivatives d f / d arg_i
+        double **arg_adjoints_ = nullptr;  // n pointers to the arguments' adjoints
         double *adjoints_multi_ = nullptr; // multi-adjoint row, see propagate_all()
 
       public:
@@ -41,7 +41,8 @@ namespace quantModeling::aad
         /// backward pass -- lot 17f). 1 until then.
         static std::size_t num_adj;
 
-        explicit Node(std::size_t n = 0) : n_(n) {}
+        explicit Node(std::size_t n = 0)
+            : n_(n) {}
 
         double &adjoint() { return adjoint_; }
         double adjoint() const { return adjoint_; }

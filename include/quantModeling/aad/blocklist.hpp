@@ -42,8 +42,8 @@ namespace quantModeling::aad
         using block_iterator = typename block_list::iterator;
 
         static_assert(std::is_trivially_destructible_v<T>,
-                     "blocklist reuses storage without destroying old "
-                     "objects: T must be trivially destructible");
+                      "blocklist reuses storage without destroying old "
+                      "objects: T must be trivially destructible");
 
         block_list data_;
         block_iterator cur_block_;

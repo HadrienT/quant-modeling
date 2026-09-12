@@ -85,8 +85,8 @@ namespace quantModeling
         Tape &tape = *Number::tape;
         tape.rewind(); // 1. empty tape, memory kept
 
-        model.put_parameters_on_tape();                     // 2. leaves: the parameters
-        model.init(product.timeline(), product.defline());  // 3. precomputations, RECORDED
+        model.put_parameters_on_tape();                    // 2. leaves: the parameters
+        model.init(product.timeline(), product.defline()); // 3. precomputations, RECORDED
 
         const std::size_t dim = model.sim_dim();
         const std::size_t n_params = model.num_params();
