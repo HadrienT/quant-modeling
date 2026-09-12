@@ -85,6 +85,8 @@ target_sources(quantModeling
         src/instruments/rates/fixed_rate_bond.cpp
         src/models/equity/sabr.cpp
         src/models/equity/sabr_pde.cpp
+        src/models/equity/heston.cpp
+        src/engines/analytic/heston_cos.cpp
         src/models/rates/flat_rate.cpp
         src/models/rates/vasicek.cpp
         src/models/rates/cir.cpp
@@ -209,6 +211,8 @@ if(QM_BUILD_TESTS)
     tests/testSABR.cpp
     tests/testSABRPDE.cpp
     tests/testSABRCalibration.cpp
+    tests/testHeston.cpp
+    tests/testHestonCOS.cpp
     tests/testLocalVol.cpp
     tests/testUtils.cpp
     tests/testRegistry.cpp
