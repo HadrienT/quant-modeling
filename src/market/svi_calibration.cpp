@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace quantModeling
 {
@@ -42,8 +43,21 @@ namespace quantModeling
         }
         const Real k_span = std::max(k_max - k_min, Real(0.1));
 
-        lower_ = {-10.0 * w_max, 0.0, -0.999, k_min - k_span, 1e-4};
-        upper_ = {10.0 * w_max, 20.0 * w_max / k_span, 0.999, k_max + k_span, 5.0 * k_span};
+        // sigma's lower bound and b's upper bound both matter more than they
+        // look: found against a real GOOGL chain, where 1e-4 and
+        // 20*w_max/k_span (unbounded above) let several slices collapse to
+        // sigma ~ 0.0001 with b in the 3-17 range and rho pinned at +-0.999
+        // -- a genuine local optimum on sparse or narrow-k-range slices, not
+        // a starting-point problem (multi-start converges to the same
+        // degenerate point from every tested start). A sigma this far below
+        // any real curvature scale, paired with a b this large, is not a
+        // smile any real market produces; bounding both away from that
+        // region is cheap insurance against it, not a guess.
+        constexpr Real sigma_floor = 0.02;
+        constexpr Real b_ceiling = 5.0;
+
+        lower_ = {-10.0 * w_max, 0.0, -0.999, k_min - k_span, sigma_floor};
+        upper_ = {10.0 * w_max, std::min(20.0 * w_max / k_span, b_ceiling), 0.999, k_max + k_span, 5.0 * k_span};
     }
 
     std::vector<Real> SVISliceObjective::residuals(const std::vector<Real> &params) const
@@ -97,7 +111,7 @@ namespace quantModeling
 
         const Real m0 = k_sum / static_cast<Real>(quotes_.size());
         const Real k_span = std::max(k_max - k_min, Real(0.1));
-        const Real sigma0 = std::max(0.1 * k_span, Real(1e-3));
+        const Real sigma0 = std::max(0.1 * k_span, Real(0.02)); // matches the constructor's sigma floor
         const Real b0 = std::max(0.1 * w_min / std::max(k_span, Real(1e-3)), Real(1e-3));
         constexpr Real rho0 = 0.0;
         // At rho = 0, the slice minimum is a + b*sigma -- pick a0 so that
@@ -105,6 +119,21 @@ namespace quantModeling
         const Real a0 = w_min - b0 * sigma0;
 
         return {a0, b0, rho0, m0, sigma0};
+    }
+
+    std::vector<std::vector<Real>> SVISliceObjective::initial_guess_candidates() const
+    {
+        const std::vector<Real> base = initial_guess();
+        if (base.size() != 5)
+            return {base};
+
+        const Real a0 = base[0], b0 = base[1], m0 = base[3], sigma0 = base[4];
+
+        std::vector<std::vector<Real>> candidates;
+        for (const Real rho0 : {0.0, -0.6, 0.6, -0.3, 0.3})
+            for (const Real scale : {1.0, 0.4, 2.5})
+                candidates.push_back({a0, b0, rho0, m0, std::max(sigma0 * scale, Real(1e-4))});
+        return candidates;
     }
 
     SVISliceCalibration calibrate_svi_slice(
@@ -129,12 +158,32 @@ namespace quantModeling
         }
 
         SVISliceObjective objective(quotes, ttm);
-        const std::vector<Real> initial = objective.initial_guess();
 
-        result.report = calibration::levenberg_marquardt(objective, initial, settings);
-        result.params = SVISliceObjective::unpack(result.report.params);
-        result.butterfly_arbitrage_free =
-            svi_is_butterfly_arbitrage_free(result.params, k_min, k_max);
+        bool have_candidate = false;
+        Real best_score = std::numeric_limits<Real>::infinity();
+
+        for (const auto &start : objective.initial_guess_candidates())
+        {
+            calibration::CalibrationReport candidate_report =
+                calibration::levenberg_marquardt(objective, start, settings);
+            const SVIParams candidate_params = SVISliceObjective::unpack(candidate_report.params);
+            const bool candidate_arb_free =
+                svi_is_butterfly_arbitrage_free(candidate_params, k_min, k_max);
+
+            // RMSE is the primary signal; a fit outside the arbitrage-free
+            // region is penalised so a slightly worse but arbitrage-free
+            // candidate wins over a marginally tighter one that isn't.
+            const Real score = candidate_report.rmse + (candidate_arb_free ? 0.0 : 1.0);
+
+            if (!have_candidate || score < best_score)
+            {
+                have_candidate = true;
+                best_score = score;
+                result.report = candidate_report;
+                result.params = candidate_params;
+                result.butterfly_arbitrage_free = candidate_arb_free;
+            }
+        }
         return result;
     }
 

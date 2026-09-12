@@ -50,6 +50,16 @@ namespace quantModeling
         /// total variance.
         std::vector<Real> initial_guess() const;
 
+        /// Several perturbations of initial_guess() (varying rho0 and the
+        /// sigma0 scale), for calibrate_svi_slice's multi-start search. SVI
+        /// is not convex: a single start can converge to a poor local
+        /// optimum (or stall at a bound) on a real, noisy chain, even when
+        /// it fits a clean synthetic one perfectly -- found by testing
+        /// against a real GOOGL chain, where most slices failed to
+        /// converge from the single data-driven start and several ended up
+        /// outside the butterfly-arbitrage-free region entirely.
+        std::vector<std::vector<Real>> initial_guess_candidates() const;
+
       private:
         std::vector<SVISliceQuote> quotes_;
         Real ttm_;
@@ -65,7 +75,17 @@ namespace quantModeling
         bool butterfly_arbitrage_free = false;
     };
 
-    /// Fit SVI to one maturity slice's cleaned quotes.
+    /**
+     * Fit SVI to one maturity slice's cleaned quotes.
+     *
+     * Runs Levenberg-Marquardt from every candidate in
+     * SVISliceObjective::initial_guess_candidates() and keeps the best --
+     * scored by RMSE, with a penalty against any candidate that lands
+     * outside the butterfly-arbitrage-free region, so a slightly worse but
+     * arbitrage-free fit is preferred over a marginally tighter one that
+     * isn't. A single start is not enough on a real chain (see
+     * initial_guess_candidates' doc comment).
+     */
     SVISliceCalibration calibrate_svi_slice(
         std::vector<SVISliceQuote> quotes, Real ttm,
         const calibration::LevenbergMarquardtSettings &settings = {});

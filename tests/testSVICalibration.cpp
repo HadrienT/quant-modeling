@@ -119,6 +119,33 @@ namespace quantModeling
         EXPECT_FALSE(result.butterfly_arbitrage_free);
     }
 
+    TEST(SVICalibration, EnforcesASigmaFloorAndABCeilingRegardlessOfDataScale)
+    {
+        // A narrow-k-range, high-implied-vol slice: exactly the shape that,
+        // against a real GOOGL chain, let the optimizer collapse sigma
+        // toward 0 (b's old ceiling scaled with w_max/k_span, so a narrow
+        // range with sizeable vol let it reach the teens) paired with rho
+        // pinned at +-0.999 -- a genuine local optimum, not a starting-point
+        // problem: multi-start converged to the same point from every
+        // tested start. Bounding sigma away from 0 and b away from
+        // implausibly large values is the fix; this checks the bounds
+        // themselves are actually set that way, independent of what any
+        // particular optimizer run converges to.
+        std::vector<SVISliceQuote> quotes;
+        for (const Real k : {-0.02, -0.01, 0.0, 0.01, 0.02})
+        {
+            SVISliceQuote q;
+            q.log_moneyness = k;
+            q.market_iv = 0.6; // large iv -> large w_max, which used to inflate b's ceiling
+            q.weight = 1.0;
+            quotes.push_back(q);
+        }
+
+        const SVISliceObjective objective(quotes, 1.0);
+        EXPECT_GE(objective.lower_bounds()[4], 0.02 - 1e-12); // sigma floor
+        EXPECT_LE(objective.upper_bounds()[1], 5.0 + 1e-12);  // b ceiling
+    }
+
     TEST(SVICalibration, RecoversTheSmileFunctionallyFromNoiselessSyntheticQuotes)
     {
         const Real spot = 100.0, ttm = 0.5;
