@@ -102,9 +102,13 @@ namespace quantModeling::scripting
         std::size_t index = unindexed;
     };
 
-    /// The spot of the single underlying at the current event date: `spot()`.
+    /// The spot of one underlying at the current event date: `spot()` (asset
+    /// 0, single-asset scripts) or `spot(i)` (asset i, i a non-negative
+    /// integer literal -- multi-asset). `index` defaults to 0 so `spot()`
+    /// keeps meaning exactly what it always did.
     struct NodeSpot final : NodeT<NodeSpot>
     {
+        std::size_t index = 0;
     };
 
     // ── arithmetic ────────────────────────────────────────────────────────────

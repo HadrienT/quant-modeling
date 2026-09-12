@@ -91,7 +91,10 @@ namespace quantModeling::scripting
 
             void visit(const NodeConst &n) override { out += number(n.value); }
             void visit(const NodeVar &n) override { out += n.name; }
-            void visit(const NodeSpot &) override { out += "spot()"; }
+            void visit(const NodeSpot &n) override
+            {
+                out += n.index == 0 ? "spot()" : "spot(" + std::to_string(n.index) + ")";
+            }
 
             void visit(const NodeAdd &n) override { infix(n, "+"); }
             void visit(const NodeSub &n) override { infix(n, "-"); }

@@ -75,6 +75,50 @@ namespace quantModeling::scripting
                 r.vars.push_back(static_cast<double>(v));
             return r;
         }
+
+        /// Like run_hard, but each event supplies spots for several
+        /// underlyings (asset-major: spots[event * n_assets + asset]) --
+        /// for spot(i), blueprint/wp/17-aad.md lot 17e.
+        EvalResult run_hard_multi(const std::string &source, std::size_t n_assets,
+                                  const std::vector<double> &spots)
+        {
+            std::vector<Event> events = parse_script(source);
+            std::stable_sort(events.begin(), events.end(),
+                             [](const Event &a, const Event &b)
+                             { return a.date < b.date; });
+
+            VarIndexer indexer;
+            indexer.index(events);
+            ConstCondProcessor().process(events);
+            IfProcessor().process(events);
+
+            EXPECT_EQ(events.size() * n_assets, spots.size());
+
+            Scenario<Real> scenario(events.size());
+            for (std::size_t i = 0; i < events.size(); ++i)
+            {
+                scenario[i].spots.assign(spots.begin() + static_cast<std::ptrdiff_t>(i * n_assets),
+                                         spots.begin() + static_cast<std::ptrdiff_t>((i + 1) * n_assets));
+                scenario[i].numeraire = 1.0;
+            }
+
+            Evaluator<Real> ev;
+            ev.set_variable_count(indexer.count());
+            ev.initialize();
+            for (std::size_t i = 0; i < events.size(); ++i)
+            {
+                ev.set_event(scenario, i);
+                for (const ExprTree &stmt : events[i].statements)
+                    ev.run(*stmt);
+            }
+
+            EvalResult r;
+            r.payoff = static_cast<double>(ev.payoff());
+            r.names = indexer.names();
+            for (const Real &v : ev.variables())
+                r.vars.push_back(static_cast<double>(v));
+            return r;
+        }
     } // namespace
 
     TEST(ScriptEval, ArithmeticAndFunctions)
@@ -179,6 +223,34 @@ namespace quantModeling::scripting
         const auto &iff =
             static_cast<const NodeIf &>(*events[0].statements[0]->arguments[0]);
         EXPECT_EQ(iff.affectedVars.size(), 3u); // a, b, c
+    }
+
+    // ── spot(i): multi-asset (blueprint/wp/17-aad.md lot 17e) ───────────────
+
+    TEST(ScriptEval, SpotWithAnIndexReadsTheCorrespondingAsset)
+    {
+        auto r = run_hard_multi("2025-01-01\n    a = spot(0)\n    b = spot(1)\n"
+                                "    pays min(a, b)\n",
+                                2, {100.0, 90.0});
+        EXPECT_DOUBLE_EQ(r.var("a"), 100.0);
+        EXPECT_DOUBLE_EQ(r.var("b"), 90.0);
+        EXPECT_DOUBLE_EQ(r.payoff, 90.0); // worst of the two
+    }
+
+    TEST(ScriptEval, SpotWithNoIndexStillReadsAssetZeroAmongSeveral)
+    {
+        auto r = run_hard_multi("2025-01-01\n    a = spot()\n    b = spot(1)\n"
+                                "    pays a + b\n",
+                                2, {100.0, 90.0});
+        EXPECT_DOUBLE_EQ(r.payoff, 190.0);
+    }
+
+    TEST(ScriptEval, SpotWithAnOutOfRangeIndexThrowsRatherThanReadingGarbage)
+    {
+        // The model behind this scenario only carries one asset (run_hard's
+        // convention); spot(1) asks for a second one that isn't there.
+        EXPECT_THROW(run_hard("2025-01-01\n    pays spot(1)\n", {100.0}),
+                    InvalidInput);
     }
 
 } // namespace quantModeling::scripting

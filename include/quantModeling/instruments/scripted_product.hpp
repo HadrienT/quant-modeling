@@ -9,6 +9,7 @@
 #include "quantModeling/scripting/evaluator.hpp"
 #include "quantModeling/scripting/event.hpp"
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
+#include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/parser.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
@@ -25,6 +26,26 @@
 
 namespace quantModeling
 {
+
+    namespace detail
+    {
+        /// Highest asset index any spot(i) in the subtree asks for (0 for a
+        /// script that only ever uses spot()). A plain recursive walk over
+        /// every node's arguments, not a full ConstVisitor pass: NodeSpot is
+        /// a leaf and every node type already stores its children in
+        /// `arguments`, so nothing type-specific is needed the way
+        /// try_eval_const's semantic evaluation does.
+        inline std::size_t max_spot_index(const scripting::Node &node)
+        {
+            std::size_t m = 0;
+            if (const auto *s = dynamic_cast<const scripting::NodeSpot *>(&node))
+                m = s->index;
+            for (const scripting::ExprTree &child : node.arguments)
+                if (child)
+                    m = std::max(m, max_spot_index(*child));
+            return m;
+        }
+    } // namespace detail
 
     struct ScriptSettings
     {
@@ -46,9 +67,12 @@ namespace quantModeling
      * ScriptSettings::fuzzy — a payoff smoothed for a correct pathwise delta on
      * digitals and barriers.
      *
-     * v1 limits (WP §11): a single underlying via `spot()`, and every event
-     * must fall strictly after the valuation date — historical fixings arrive
-     * with language v2 (lot 16e).
+     * `spot()` reads asset 0; `spot(i)` reads asset i, for a script that
+     * needs more than one underlying (blueprint/wp/17-aad.md lot 17e) --
+     * n_underlyings() reports the highest index used, plus one, so a caller
+     * knows how many assets the model it builds needs to carry. Remaining
+     * v1 limit (WP §11): every event must fall strictly after the valuation
+     * date -- historical fixings arrive with language v2 (lot 16e).
      */
     template <class T = Real>
     class ScriptedProduct final : public ISimulatableProduct<T>
@@ -74,6 +98,12 @@ namespace quantModeling
 
             resolve_timeline(std::move(events), ctx);
 
+            for (const scripting::Event &event : events_)
+                for (const scripting::ExprTree &statement : event.statements)
+                    if (statement)
+                        n_underlyings_ = std::max(
+                            n_underlyings_, detail::max_spot_index(*statement) + 1);
+
             defline_ = scripting::build_defline(events_);
 
             if (settings.fuzzy)
@@ -89,7 +119,13 @@ namespace quantModeling
         {
             return labels_;
         }
-        std::size_t n_underlyings() const override { return 1; }
+        /// Highest spot(i) index used in the script, plus one -- 1 for a
+        /// script that only ever calls spot(). A caller pricing this product
+        /// must supply a model with at least this many underlyings (see
+        /// models/equity/multi_asset_bs_sim_model.hpp); the evaluator itself
+        /// bounds-checks every spot(i) access rather than trust that they do
+        /// (scripting/evaluator.hpp, scripting/fuzzy_evaluator.hpp).
+        std::size_t n_underlyings() const override { return n_underlyings_; }
 
         const std::vector<std::string> &variable_names() const
         {
@@ -152,6 +188,7 @@ namespace quantModeling
         std::vector<scripting::Event> events_; ///< AST, const after construction
         TimeLine timeline_;
         std::vector<SampleDef> defline_;
+        std::size_t n_underlyings_ = 1;
         std::vector<std::string> variable_names_;
         std::vector<std::string> labels_{"price"};
         mutable std::unique_ptr<scripting::Evaluator<T>>
