@@ -172,4 +172,16 @@ namespace quantModeling::aad
 
 } // namespace quantModeling::aad
 
+namespace quantModeling
+{
+    /// Reads out a T's current value as a plain double regardless of which T
+    /// this is -- needed wherever templated code must feed a *state*
+    /// (typically the current spot) into something that only ever works in
+    /// double, such as a grid lookup (models/equity/local_vol_sim_model.hpp):
+    /// which cell gets queried is not itself differentiated, only the T-typed
+    /// values found there once the cell is chosen.
+    inline double to_double(double x) { return x; }
+    inline double to_double(const aad::Number &x) { return x.value(); }
+} // namespace quantModeling
+
 #endif // QM_AAD_NUMBER_HPP
