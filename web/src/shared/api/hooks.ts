@@ -11,6 +11,7 @@ import { STALE } from "./queryClient";
 import type {
 	BacktestRequest,
 	BacktestResponse,
+	BSPathRequest,
 	CleanedIVSurfaceResponse,
 	IVSurfaceResponse,
 	LocalVolSurfaceResponse,
@@ -18,6 +19,10 @@ import type {
 	Portfolio,
 	PortfolioSummary,
 	RatesCurveResponse,
+	SABRPathRequest,
+	SimulationCalibrateRequest,
+	SimulationCalibrateResponse,
+	SimulationPathsResponse,
 } from "./types";
 
 /**
@@ -285,6 +290,59 @@ export function useRunBacktest() {
 		onSuccess: (data, req) => {
 			// Cache the result so an identical re-run does not recompute.
 			qc.setQueryData(queryKeys.backtest.run(req), data);
+		},
+	});
+}
+
+/* ── Simulation ────────────────────────────────────────────────────────── */
+export function useSimulateBlackScholesPaths() {
+	return useMutation<SimulationPathsResponse, ApiError, BSPathRequest>({
+		mutationFn: async (req) => {
+			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
+			try {
+				return (await unwrap(
+					api.POST("/api/simulation/paths/black-scholes", {
+						body: req,
+						signal: s,
+					}),
+				)) as SimulationPathsResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+export function useSimulateSabrPaths() {
+	return useMutation<SimulationPathsResponse, ApiError, SABRPathRequest>({
+		mutationFn: async (req) => {
+			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
+			try {
+				return (await unwrap(
+					api.POST("/api/simulation/paths/sabr", { body: req, signal: s }),
+				)) as SimulationPathsResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+export function useCalibrateSimulation() {
+	return useMutation<
+		SimulationCalibrateResponse,
+		ApiError,
+		SimulationCalibrateRequest
+	>({
+		mutationFn: async (req) => {
+			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
+			try {
+				return (await unwrap(
+					api.POST("/api/simulation/calibrate", { body: req, signal: s }),
+				)) as SimulationCalibrateResponse;
+			} finally {
+				s.cleanup();
+			}
 		},
 	});
 }

@@ -29,3 +29,11 @@ export type BacktestRequest = Schemas["BacktestRequest"];
 export type BacktestResponse = Schemas["BacktestResponse"];
 
 export type AuthResponse = Schemas["AuthResponse"];
+
+export type SimulationModel = Schemas["SimulationModel"];
+export type BSPathRequest = Schemas["BSPathRequest"];
+export type SABRPathRequest = Schemas["SABRPathRequest"];
+export type SimulationPathsResponse = Schemas["SimulationPathsResponse"];
+export type SimulationCalibrateRequest = Schemas["SimulationCalibrateRequest"];
+export type SimulationCalibrateResponse =
+	Schemas["SimulationCalibrateResponse"];
