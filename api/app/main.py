@@ -14,6 +14,7 @@ from .request_context import is_cache_hit, reset_cache_hit
 from .routers.market import router as market_router
 from .routers.pricing import router as pricing_router
 from .routers.local_vol_pricing import router as local_vol_router
+from .routers.simulation import router as simulation_router
 from .routers.portfolio import router as portfolio_router
 from .routers.auth import router as auth_router
 from .routers.backtest import router as backtest_router
@@ -148,6 +149,7 @@ def _close_db_pool() -> None:
 app.include_router(market_router)
 app.include_router(pricing_router)
 app.include_router(local_vol_router)
+app.include_router(simulation_router)
 app.include_router(portfolio_router)
 app.include_router(auth_router)
 app.include_router(backtest_router)

@@ -583,3 +583,64 @@ class LocalVolSurfaceResponse(BaseModel):
     values: List[List[Optional[float]]]
     n_clean_quotes: int
     cleaning_summary: str
+
+
+class SimulationModel(str, Enum):
+    black_scholes = "black_scholes"
+    sabr = "sabr"
+
+
+class BSPathRequest(BaseModel):
+    spot: float = Field(gt=0)
+    rate: float = 0.05
+    dividend: float = 0.0
+    vol: float = Field(gt=0)
+    ttm: float = Field(gt=0)
+    n_steps: int = Field(100, ge=2, le=1000)
+    n_paths: int = Field(30, ge=1, le=500)
+    seed: int = 1
+
+
+class SABRPathRequest(BaseModel):
+    forward: float = Field(gt=0)
+    alpha: float = Field(gt=0)
+    beta: float = Field(0.5, ge=0, le=1)
+    rho: float = Field(ge=-1, le=1)
+    nu: float = Field(gt=0)
+    ttm: float = Field(gt=0)
+    n_steps: int = Field(100, ge=2, le=1000)
+    n_paths: int = Field(30, ge=1, le=500)
+    seed: int = 1
+
+
+class SimulationPathsResponse(BaseModel):
+    model: SimulationModel
+    time_grid: List[float]
+    paths: List[List[float]]
+
+
+class SimulationCalibrateRequest(BaseModel):
+    ticker: str
+    model: SimulationModel
+    ttm: float = Field(gt=0, description="Target maturity in years -- the nearest calibrated slice is used")
+    rate: float = 0.05
+    beta: float = Field(0.5, ge=0, le=1, description="SABR beta, fixed rather than calibrated (see SABRParams)")
+
+
+class SimulationCalibrateResponse(BaseModel):
+    ticker: str
+    model: SimulationModel
+    spot: float
+    dividend: float
+    forward: float
+    ttm: float
+    slice_ttm: float = Field(description="The calibrated SVI slice's own maturity, closest to the requested ttm")
+    vol: Optional[float] = None
+    alpha: Optional[float] = None
+    beta: Optional[float] = None
+    rho: Optional[float] = None
+    nu: Optional[float] = None
+    rmse: Optional[float] = None
+    converged: Optional[bool] = None
+    n_clean_quotes: int
+    cleaning_summary: str

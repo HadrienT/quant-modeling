@@ -318,6 +318,50 @@ def _svi_total_variance(
     return a + b * (rho * x + math.sqrt(x * x + sigma * sigma))
 
 
+def nearest_slice(slices: List[dict], ttm: float) -> dict:
+    """The calibrated SVI slice whose own maturity is closest to `ttm` --
+    same rationale as svi_implied_vol_grid's T-clamping: never invent a
+    maturity the chain didn't actually have quotes for."""
+    return min(slices, key=lambda s: abs(s["ttm"] - ttm))
+
+
+def atm_vol_from_svi_slice(slc: dict, ttm: Optional[float] = None) -> float:
+    """ATM implied vol from a calibrated SVI slice: total variance at
+    k=0 (a + b*sigma at rho=0, but a + b*(rho*(-m) + sqrt(m^2+sigma^2)) in
+    general -- see market/svi.hpp), divided by the slice's own ttm, unless a
+    different ttm is supplied to reuse the same total-variance level (SVI
+    parameters are only meaningful in-slice, not across maturities)."""
+    w_atm = _svi_total_variance(0.0, slc["a"], slc["b"], slc["rho"], slc["m"], slc["sigma"])
+    t = ttm if ttm is not None else slc["ttm"]
+    return math.sqrt(max(w_atm, 0.0) / t)
+
+
+def sabr_quotes_from_svi_slice(
+    slc: dict, forward: float, k_min: float = -0.3, k_max: float = 0.3, n_points: int = 11
+) -> List["qm.SABRSliceQuote"]:
+    """Synthetic SABR-calibration quotes sampled off an already-calibrated,
+    already arbitrage-checked SVI slice, rather than raw chain quotes
+    directly: svi_quotes_from_raw_surface (market/svi_calibration.hpp) --
+    the C++ equivalent that reads straight from RawVolSurface -- isn't bound
+    to Python, and re-implementing RawVolSurface's cleaning logic here would
+    duplicate it. Fitting SABR to the cleaned SVI curve instead means SABR
+    inherits SVI's own liquidity/arbitrage filtering for free. `forward` is
+    this slice's own forward (spot * exp((rate - dividend) * slc["ttm"])),
+    used to turn each sampled log-moneyness k back into an actual strike."""
+    quotes: List[qm.SABRSliceQuote] = []
+    for i in range(n_points):
+        k = k_min + i * (k_max - k_min) / max(n_points - 1, 1)
+        w = _svi_total_variance(k, slc["a"], slc["b"], slc["rho"], slc["m"], slc["sigma"])
+        if w <= 0:
+            continue
+        q = qm.SABRSliceQuote()
+        q.strike = forward * math.exp(k)
+        q.market_iv = math.sqrt(w / slc["ttm"])
+        q.weight = 1.0
+        quotes.append(q)
+    return quotes
+
+
 def svi_implied_vol_grid(
     slices: List[dict],
     spot: float,
