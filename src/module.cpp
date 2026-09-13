@@ -4,6 +4,8 @@
 #include "quantModeling/pricers/inputs.hpp"
 #include "quantModeling/pricers/registry.hpp"
 #include "quantModeling/engines/mc/local_vol.hpp"
+#include "quantModeling/engines/mc/path_simulation.hpp"
+#include "quantModeling/market/sabr_calibration.hpp"
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/date.hpp"
@@ -540,6 +542,64 @@ static py::dict calibrate_vol_surface_impl(
     // from `slices` should reuse this rather than guessing its own range.
     out["k_min"] = static_cast<double>(result.k_min);
     out["k_max"] = static_cast<double>(result.k_max);
+    return out;
+}
+
+// ── SABR calibration ─────────────────────────────────────────────────────────
+
+static py::dict calibrate_sabr_slice_impl(
+    std::vector<quantModeling::SABRSliceQuote> quotes,
+    quantModeling::Real forward, quantModeling::Real ttm, quantModeling::Real beta)
+{
+    const auto result = quantModeling::calibrate_sabr_slice(std::move(quotes), forward, ttm, beta);
+
+    py::dict out;
+    out["ttm"] = static_cast<double>(result.ttm);
+    out["alpha"] = static_cast<double>(result.params.alpha);
+    out["beta"] = static_cast<double>(result.params.beta);
+    out["rho"] = static_cast<double>(result.params.rho);
+    out["nu"] = static_cast<double>(result.params.nu);
+    out["rmse"] = static_cast<double>(result.report.rmse);
+    out["worst_residual"] = static_cast<double>(result.report.worst_residual);
+    out["iterations"] = result.report.iterations;
+    out["converged"] = result.report.converged;
+    return out;
+}
+
+// ── Path simulation (display/illustration, not a pricing engine) ───────────
+
+static py::dict simulate_black_scholes_paths_impl(
+    quantModeling::Real spot, quantModeling::Real rate, quantModeling::Real dividend,
+    quantModeling::Real vol, quantModeling::Real ttm,
+    std::size_t n_steps, long long n_paths, int seed)
+{
+    quantModeling::PathSimulationSettings settings;
+    settings.n_steps = n_steps;
+    settings.n_paths = n_paths;
+    settings.seed = static_cast<std::uint64_t>(seed > 0 ? seed : 1);
+
+    const auto result = quantModeling::simulate_black_scholes_paths(spot, rate, dividend, vol, ttm, settings);
+    py::dict out;
+    out["time_grid"] = result.time_grid;
+    out["paths"] = result.paths;
+    return out;
+}
+
+static py::dict simulate_sabr_paths_impl(
+    quantModeling::Real forward, quantModeling::Real alpha, quantModeling::Real beta,
+    quantModeling::Real rho, quantModeling::Real nu, quantModeling::Real ttm,
+    std::size_t n_steps, long long n_paths, int seed)
+{
+    const quantModeling::SABRParams params{alpha, beta, rho, nu};
+    quantModeling::PathSimulationSettings settings;
+    settings.n_steps = n_steps;
+    settings.n_paths = n_paths;
+    settings.seed = static_cast<std::uint64_t>(seed > 0 ? seed : 1);
+
+    const auto result = quantModeling::simulate_sabr_paths(forward, params, ttm, settings);
+    py::dict out;
+    out["time_grid"] = result.time_grid;
+    out["paths"] = result.paths;
     return out;
 }
 
@@ -1228,4 +1288,29 @@ PYBIND11_MODULE(quantmodeling, m)
 
     m.def("price_best_of_bs_mc", [](const quantModeling::RainbowBSInput &in)
           { return pricing_result_to_dict(quantModeling::price_best_of_impl(in)); }, "Price a best-of option under multi-asset BS (Monte Carlo).");
+
+    // ── SABR calibration ──────────────────────────────────────────────────────────────
+    py::class_<quantModeling::SABRSliceQuote>(m, "SABRSliceQuote")
+        .def(py::init<>())
+        .def_readwrite("strike", &quantModeling::SABRSliceQuote::strike)
+        .def_readwrite("market_iv", &quantModeling::SABRSliceQuote::market_iv)
+        .def_readwrite("weight", &quantModeling::SABRSliceQuote::weight);
+
+    m.def("calibrate_sabr_slice", &calibrate_sabr_slice_impl,
+          py::arg("quotes"), py::arg("forward"), py::arg("ttm"), py::arg("beta") = 0.5,
+          "Fit SABR (alpha, rho, nu; beta fixed) to one maturity slice's quotes via "
+          "Levenberg-Marquardt multi-start.");
+
+    // ── Path simulation (display/illustration, not a pricing engine) ────────────────
+    m.def("simulate_black_scholes_paths", &simulate_black_scholes_paths_impl,
+          py::arg("spot"), py::arg("rate"), py::arg("dividend"), py::arg("vol"), py::arg("ttm"),
+          py::arg("n_steps") = 100, py::arg("n_paths") = 30, py::arg("seed") = 1,
+          "Simulate exact GBM paths under Black-Scholes -- for a display chart, not pricing "
+          "(use price_vanilla_* for that).");
+
+    m.def("simulate_sabr_paths", &simulate_sabr_paths_impl,
+          py::arg("forward"), py::arg("alpha"), py::arg("beta"), py::arg("rho"), py::arg("nu"),
+          py::arg("ttm"), py::arg("n_steps") = 100, py::arg("n_paths") = 30, py::arg("seed") = 1,
+          "Simulate illustrative SABR paths via Euler discretisation -- for a display chart, "
+          "not pricing (see market/sabr_pde.hpp for arbitrage-free pricing).");
 }
