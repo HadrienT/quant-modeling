@@ -12,7 +12,6 @@ import {
 	SurfaceView,
 	checkArbitrage,
 	coverage,
-	differenceGrid,
 	rawIvSurfaceToGrid,
 	cleanedIvSurfaceToGrid,
 	localVolSurfaceToGrid,
@@ -26,11 +25,13 @@ type Stage = "raw" | "cleaned" | "localvol";
  * Data-quality drill-down, split out of the desk-style delta matrix that's
  * VolTab's primary view now (a trader reads delta buckets and RR/BF, not a
  * strike-indexed 3D surface -- see VolTab's docstring). This is the tool a
- * quant reaches for to see WHY the matrix looks the way it does: three
- * surfaces along the raw -> cleaned -> local-vol pipeline, a difference
- * surface, a smile cut, and an arbitrage-violation list -- "Raw" defaults
- * off (it's the genuinely sparse, unfitted listed grid, "holes are the
- * information", a diagnostic view, not a trading one).
+ * quant reaches for to see WHY the matrix looks the way it does: one
+ * surface at a time along the raw -> SVI -> Dupire pipeline (in that order
+ * -- Dupire's local-vol grid is computed FROM the SVI fit, closed-form, see
+ * market/dupire_from_svi.hpp, not the other way around), a smile cut, and
+ * an arbitrage-violation list -- "Raw" defaults off (it's the genuinely
+ * sparse, unfitted listed grid, "holes are the information", a diagnostic
+ * view, not a trading one).
  */
 export function SurfaceDiagnostics({ ticker }: { ticker: string }) {
 	const [stage, setStage] = useState<Stage>("cleaned");
@@ -53,12 +54,6 @@ export function SurfaceDiagnostics({ ticker }: { ticker: string }) {
 
 	const active =
 		stage === "raw" ? rawGrid : stage === "cleaned" ? cleanedGrid : localGrid;
-
-	const diff = useMemo(
-		() =>
-			localGrid && cleanedGrid ? differenceGrid(localGrid, cleanedGrid) : null,
-		[localGrid, cleanedGrid],
-	);
 
 	const violations = useMemo(
 		() => (cleanedGrid ? checkArbitrage(cleanedGrid) : []),
@@ -113,15 +108,6 @@ export function SurfaceDiagnostics({ ticker }: { ticker: string }) {
 				grid={active ?? undefined}
 				title={`${ticker} — ${stage === "raw" ? "Raw implied vol (holes are the information)" : stage === "cleaned" ? "SVI-fitted implied vol" : "Dupire local vol"}`}
 			/>
-
-			{diff && (
-				<SurfaceView
-					grid={diff}
-					mode="divergent"
-					title="Local vol − implied vol (divergent, grey at zero)"
-					height={320}
-				/>
-			)}
 
 			<SmileChart title="Smile (mid-maturity slice)" slices={smile} />
 
