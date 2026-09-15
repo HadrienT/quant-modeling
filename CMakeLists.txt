@@ -179,6 +179,8 @@ if(QM_BUILD_TESTS)
     tests/testMultiAssetBSSimModel.cpp
     tests/testLocalVolSimModel.cpp
     tests/testMertonJumpDiffusionSimModel.cpp
+    tests/testKouJumpDiffusionSimModel.cpp
+    tests/testBatesSimModel.cpp
     tests/testDate.cpp
     tests/testConventions.cpp
     tests/testCalendars.cpp
