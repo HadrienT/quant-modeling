@@ -485,6 +485,15 @@ def delta_bucket_row(slc: dict) -> dict:
     delta buckets all collapsed onto the same nonsensical value). Whatever
     solve_k_for_delta can't bracket inside this range comes back None and
     stays None all the way to the response -- a blank cell, not a guess.
+
+    A bracket existing is not by itself proof the resulting vol is sane:
+    delta can stay monotonic in k even where SVI's wings have gone
+    asymptotically linear, so the bisection can still converge to a k whose
+    implied vol is wildly larger than the slice's own ATM vol (found on a
+    live AAPL chain: a 1-day slice with almost no liquid strikes solved a
+    "10-delta" vol near 490%). _defensible_vol rejects any solved vol more
+    than 5x the ATM vol for that same slice, turning it into None rather
+    than a number nobody on a desk would trust.
     """
     width = min(max(4.0 * slc["sigma"], 0.5), 1.5)
     k_min, k_max = slc["m"] - width, slc["m"] + width
@@ -495,10 +504,17 @@ def delta_bucket_row(slc: dict) -> dict:
     k_10c = solve_k_for_delta(slc, 0.10, True, k_min, k_max)
 
     vol_atm = svi_iv_at_k(0.0, slc)
-    vol_25p = svi_iv_at_k(k_25p, slc) if k_25p is not None else None
-    vol_10p = svi_iv_at_k(k_10p, slc) if k_10p is not None else None
-    vol_25c = svi_iv_at_k(k_25c, slc) if k_25c is not None else None
-    vol_10c = svi_iv_at_k(k_10c, slc) if k_10c is not None else None
+
+    def _defensible_vol(k: Optional[float]) -> Optional[float]:
+        if k is None:
+            return None
+        vol = svi_iv_at_k(k, slc)
+        return vol if vol <= 5.0 * vol_atm else None
+
+    vol_25p = _defensible_vol(k_25p)
+    vol_10p = _defensible_vol(k_10p)
+    vol_25c = _defensible_vol(k_25c)
+    vol_10c = _defensible_vol(k_10c)
 
     rr25 = vol_25c - vol_25p if vol_25c is not None and vol_25p is not None else None
     bf25 = (
