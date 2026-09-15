@@ -36,6 +36,17 @@ _RANGE_DAYS: Dict[str, int] = {
 _HISTORY_CACHE = TTLCache[str, MarketHistoryResponse](max_size=512, ttl_seconds=60 * 30)
 _TICKERS_CACHE = TTLCache[str, TickersResponse](max_size=1, ttl_seconds=60 * 60)
 
+# Liquid index-tracking ETFs -- not S&P 500 constituents themselves (so
+# prices.sp500_daily, and hence db.sp500_tickers, doesn't carry them), but
+# exactly what a vol surface looks cleanest on: far deeper open interest and
+# tighter spreads than any single name, at every strike and maturity that
+# matters. The raw indices themselves (^GSPC/^SPX, ^NDX, ^RUT) aren't
+# offered here because yfinance does not expose an options chain for a raw
+# index ticker the way it does for a tradable one -- these ETFs are the
+# standard practical proxy. Matches data-ingest's own options_chain.py
+# DEFAULT_TICKERS index names.
+_INDEX_ETF_PROXIES = ["SPY", "QQQ", "IWM", "DIA"]
+
 
 @router.get("/market/tickers", response_model=TickersResponse)
 async def list_tickers() -> TickersResponse:
@@ -44,12 +55,17 @@ async def list_tickers() -> TickersResponse:
         set_cache_hit()
         return cached
     try:
-        tickers = await run_in_threadpool(db.sp500_tickers)
+        sp500 = await run_in_threadpool(db.sp500_tickers)
     except db.StoreUnavailable as exc:
-        logger.error("list_tickers: store unavailable", extra={"error": str(exc)})
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        # Degrade to the static ETF list rather than failing outright --
+        # those don't need the price-tape store at all, and are exactly
+        # what you'd reach for first if the store were down anyway.
+        logger.warning(
+            "list_tickers: store unavailable, falling back to index ETFs only",
+            extra={"error": str(exc)},
+        )
+        sp500 = []
+    tickers = sorted(set(sp500) | set(_INDEX_ETF_PROXIES))
     response = TickersResponse(tickers=tickers)
     _TICKERS_CACHE.set("all", response)
     return response
