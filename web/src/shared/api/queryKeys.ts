@@ -18,6 +18,8 @@ export const queryKeys = {
 			["market", "history", ticker, range] as const,
 		rawIvSurface: (ticker: string) =>
 			["market", "iv-surface-raw", ticker] as const,
+		deltaSurface: (ticker: string) =>
+			["market", "delta-surface", ticker] as const,
 		cleanedIvSurface: (ticker: string) =>
 			["market", "iv-surface-cleaned", ticker] as const,
 		localVolSurface: (ticker: string) =>

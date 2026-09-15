@@ -1,178 +1,82 @@
-import { useMemo, useState } from "react";
-import { AlertTriangle } from "lucide-react";
-import {
-	useCleanedIvSurface,
-	useLocalVolSurface,
-	useRawIvSurface,
-} from "@/shared/api";
-import { Badge, Metric, MetricRow } from "@/shared/ui";
+import { useDeltaSurface } from "@/shared/api";
 import { ErrorState } from "@/shared/ui/states";
 import {
-	SmileChart,
-	SurfaceView,
-	checkArbitrage,
-	coverage,
-	differenceGrid,
-	rawIvSurfaceToGrid,
-	cleanedIvSurfaceToGrid,
-	localVolSurfaceToGrid,
-	zAt,
-	holeFraction,
+	AtmTermStructureChart,
+	RiskReversalButterflyChart,
 } from "@/shared/viz";
-
-type Stage = "raw" | "cleaned" | "localvol";
+import { DeltaMatrix } from "./DeltaMatrix";
+import { SurfaceDiagnostics } from "./SurfaceDiagnostics";
 
 /**
- * The centrepiece (WP 08 §2): three surfaces along the pipeline, a difference
- * surface, cuts, and a data-quality panel that makes the hard problem visible.
+ * Volatility tab. Primary view is the desk-style delta-bucketed vol matrix
+ * (10/25-delta put, ATM, 25/10-delta call) plus the ATM term structure and
+ * risk-reversal/butterfly charts -- what an options desk actually reads:
+ * dense numbers in delta space, and skew/convexity as the two numbers a
+ * desk quotes them as (RR, BF), not a strike-indexed surface plot. A real
+ * desk screen (Bloomberg OVML and similar) is a delta/tenor matrix first,
+ * a 3D surface rarely if ever, and never the unfitted raw quote scatter.
+ *
+ * The full raw -> cleaned -> local-vol pipeline (including the 3D surface
+ * and the data-quality/arbitrage panel) is still here -- it just moved to
+ * SurfaceDiagnostics, a secondary section: valuable for a quant checking
+ * data quality, not what a trader opens first.
  */
 export function VolTab({ ticker }: { ticker: string }) {
-	const [stage, setStage] = useState<Stage>("raw");
-	const raw = useRawIvSurface(ticker || null);
-	const cleaned = useCleanedIvSurface(ticker || null);
-	const local = useLocalVolSurface(ticker || null);
-
-	const rawGrid = useMemo(
-		() => (raw.data ? rawIvSurfaceToGrid(raw.data) : null),
-		[raw.data],
-	);
-	const cleanedGrid = useMemo(
-		() => (cleaned.data ? cleanedIvSurfaceToGrid(cleaned.data) : null),
-		[cleaned.data],
-	);
-	const localGrid = useMemo(
-		() => (local.data ? localVolSurfaceToGrid(local.data) : null),
-		[local.data],
-	);
-
-	const active =
-		stage === "raw" ? rawGrid : stage === "cleaned" ? cleanedGrid : localGrid;
-
-	const diff = useMemo(
-		() =>
-			localGrid && cleanedGrid ? differenceGrid(localGrid, cleanedGrid) : null,
-		[localGrid, cleanedGrid],
-	);
-
-	const violations = useMemo(
-		() => (cleanedGrid ? checkArbitrage(cleanedGrid) : []),
-		[cleanedGrid],
-	);
-
-	const smile = useMemo(() => {
-		if (!active) return [];
-		const midT = Math.floor(active.y.length / 2);
-		return [
-			{
-				label: `T = ${active.y[midT]!.toFixed(2)}y`,
-				x: Array.from(active.x),
-				iv: Array.from(active.x, (_, xi) => {
-					const v = zAt(active, xi, midT);
-					return Number.isNaN(v) ? null : v;
-				}),
-			},
-		];
-	}, [active]);
+	const delta = useDeltaSurface(ticker || null);
 
 	if (!ticker)
 		return (
 			<p className="text-sm text-ink-muted">Pick a ticker on the Prices tab.</p>
 		);
-	if (raw.error)
-		return <ErrorState error={raw.error} onRetry={() => raw.refetch()} />;
+	if (delta.error)
+		return <ErrorState error={delta.error} onRetry={() => delta.refetch()} />;
+
+	const rows = delta.data?.rows;
+	// ATM is reachable for essentially every slice (k=0 needs no delta
+	// solve), so this filter rarely drops anything; RR/BF do it per-series
+	// instead (RiskReversalButterflyChart), since a maturity can have a
+	// reachable 25-delta bucket but not a 10-delta one.
+	const termStructure = rows
+		?.filter((r) => r.vol_atm != null)
+		.map((r) => ({ ttm: r.ttm, vol: r.vol_atm! }));
+	const skew = rows?.map((r) => ({
+		ttm: r.ttm,
+		rr25: r.rr25 ?? null,
+		bf25: r.bf25 ?? null,
+		rr10: r.rr10 ?? null,
+		bf10: r.bf10 ?? null,
+	}));
 
 	return (
-		<div className="flex flex-col gap-4">
-			<div className="flex items-center gap-2">
-				<span className="text-2xs text-ink-muted uppercase">
-					raw quotes → cleaning → smoothed IV → Dupire → local vol
-				</span>
-			</div>
+		<div className="flex flex-col gap-6">
+			<section className="flex flex-col gap-3">
+				<h2 className="text-sm font-medium text-ink">
+					{ticker} — delta-bucketed vol matrix
+				</h2>
+				<DeltaMatrix rows={rows} />
+			</section>
 
-			<div className="flex gap-1">
-				{(["raw", "cleaned", "localvol"] as Stage[]).map((s) => (
-					<button
-						key={s}
-						type="button"
-						onClick={() => setStage(s)}
-						className={
-							"rounded-sm border px-2 py-1 text-xs " +
-							(stage === s
-								? "border-accent text-ink"
-								: "border-hairline text-ink-secondary")
-						}
-					>
-						{s === "raw" ? "Raw" : s === "cleaned" ? "Cleaned" : "Local vol"}
-					</button>
-				))}
-			</div>
-
-			<SurfaceView
-				grid={active ?? undefined}
-				title={`${ticker} — ${stage === "raw" ? "raw implied vol (holes are the information)" : stage === "cleaned" ? "cleaned & smoothed IV" : "Dupire local vol"}`}
-			/>
-
-			{diff && (
-				<SurfaceView
-					grid={diff}
-					mode="divergent"
-					title="Local vol − implied vol (divergent, grey at zero)"
-					height={320}
+			<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+				<AtmTermStructureChart
+					points={termStructure}
+					isLoading={delta.isLoading}
+					error={delta.error}
 				/>
-			)}
-
-			<SmileChart title="Smile (mid-maturity slice)" slices={smile} />
-
-			{/* Data-quality panel — the part most projects avoid */}
-			<div className="rounded-md border border-hairline bg-surface p-4">
-				<h3 className="mb-2 text-sm font-medium text-ink">Data quality</h3>
-				{cleaned.data && (
-					<MetricRow className="border-0 bg-transparent p-0">
-						<Metric
-							label="Clean quotes"
-							value={String(cleaned.data.n_clean_quotes)}
-						/>
-						<Metric
-							label="Grid coverage"
-							value={
-								cleanedGrid
-									? `${(coverage(cleanedGrid) * 100).toFixed(0)}%`
-									: "—"
-							}
-						/>
-						<Metric
-							label="Raw surface holes"
-							value={
-								rawGrid ? `${(holeFraction(rawGrid) * 100).toFixed(0)}%` : "—"
-							}
-						/>
-						<Metric
-							label="Arbitrage flags"
-							value={String(violations.length)}
-							footnote="on total variance w = σ²T"
-						/>
-					</MetricRow>
-				)}
-				{cleaned.data && (
-					<p className="mt-2 text-xs text-ink-secondary">
-						{cleaned.data.cleaning_summary}
-					</p>
-				)}
-				{violations.length > 0 && (
-					<ul className="mt-2 flex flex-col gap-1">
-						{violations.slice(0, 6).map((v, i) => (
-							<li
-								key={i}
-								className="flex items-center gap-1.5 text-xs text-warning"
-							>
-								<AlertTriangle className="size-3.5" />
-								<Badge tone="warning">{v.kind}</Badge>
-								{v.detail}
-							</li>
-						))}
-					</ul>
-				)}
+				<RiskReversalButterflyChart
+					points={skew}
+					isLoading={delta.isLoading}
+					error={delta.error}
+				/>
 			</div>
+
+			<details className="group">
+				<summary className="cursor-pointer text-sm font-medium text-ink-secondary select-none hover:text-ink">
+					Surface diagnostics (raw → cleaned → local vol, data quality)
+				</summary>
+				<div className="mt-3">
+					<SurfaceDiagnostics ticker={ticker} />
+				</div>
+			</details>
 		</div>
 	);
 }

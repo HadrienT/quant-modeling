@@ -13,6 +13,7 @@ import type {
 	BacktestResponse,
 	BSPathRequest,
 	CleanedIVSurfaceResponse,
+	DeltaSurfaceResponse,
 	LocalVolSurfaceResponse,
 	MarketHistoryResponse,
 	Portfolio,
@@ -119,6 +120,27 @@ export function useRawIvSurface(ticker: string | null) {
 						signal: s,
 					}),
 				)) as CleanedIVSurfaceResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+export function useDeltaSurface(ticker: string | null) {
+	return useQuery({
+		queryKey: queryKeys.market.deltaSurface(ticker ?? ""),
+		enabled: Boolean(ticker),
+		staleTime: STALE.surface,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal, LONG_TIMEOUT_MS);
+			try {
+				return (await unwrap(
+					api.GET("/api/local-vol/delta-surface", {
+						params: { query: { ticker: ticker! } },
+						signal: s,
+					}),
+				)) as DeltaSurfaceResponse;
 			} finally {
 				s.cleanup();
 			}

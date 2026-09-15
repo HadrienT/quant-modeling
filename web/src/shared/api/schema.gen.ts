@@ -515,6 +515,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local-vol/delta-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Delta Surface
+         * @description Every calibrated SVI slice, reduced to its desk-standard delta
+         *     buckets (vol_surface.delta_bucket_row) -- reuses the same calibration
+         *     /local-vol/iv-surface and /local-vol/surface already run, just a
+         *     different, more desk-familiar reduction of it.
+         */
+        get: operations["delta_surface"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local-vol/iv-surface": {
         parameters: {
             query?: never;
@@ -1379,6 +1402,49 @@ export interface components {
              * @default 1
              */
             seed: number;
+        };
+        /**
+         * DeltaBucketRow
+         * @description One maturity's desk-style delta-bucketed smile: 10/25-delta put, ATM,
+         *     25/10-delta call, plus the risk reversals and butterflies a desk
+         *     actually quotes skew and convexity as.
+         */
+        DeltaBucketRow: {
+            /** Ttm */
+            ttm: number;
+            /** Tenor Label */
+            tenor_label: string;
+            /** Vol 10P */
+            vol_10p?: number | null;
+            /** Vol 25P */
+            vol_25p?: number | null;
+            /** Vol Atm */
+            vol_atm?: number | null;
+            /** Vol 25C */
+            vol_25c?: number | null;
+            /** Vol 10C */
+            vol_10c?: number | null;
+            /** Rr25 */
+            rr25?: number | null;
+            /** Bf25 */
+            bf25?: number | null;
+            /** Rr10 */
+            rr10?: number | null;
+            /** Bf10 */
+            bf10?: number | null;
+        };
+        /** DeltaSurfaceResponse */
+        DeltaSurfaceResponse: {
+            /** Ticker */
+            ticker: string;
+            /** Spot */
+            spot: number;
+            /** Rows */
+            rows: components["schemas"]["DeltaBucketRow"][];
+            /** N Clean Quotes */
+            n_clean_quotes: number;
+            /** Cleaning Summary */
+            cleaning_summary: string;
         };
         /**
          * DigitalPayoffKind
@@ -3476,6 +3542,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CleanedIVSurfaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delta_surface: {
+        parameters: {
+            query: {
+                /** @description Stock ticker */
+                ticker: string;
+                /** @description Risk-free rate */
+                rate?: number;
+                min_open_interest?: number;
+                min_bid?: number;
+                max_spread_ratio?: number;
+                min_moneyness?: number;
+                max_moneyness?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeltaSurfaceResponse"];
                 };
             };
             /** @description Validation Error */

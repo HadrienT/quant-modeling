@@ -8,6 +8,8 @@ export type Greeks = Schemas["Greeks"];
 export type BondAnalytics = Schemas["BondAnalytics"];
 
 export type CleanedIVSurfaceResponse = Schemas["CleanedIVSurfaceResponse"];
+export type DeltaBucketRow = Schemas["DeltaBucketRow"];
+export type DeltaSurfaceResponse = Schemas["DeltaSurfaceResponse"];
 export type LocalVolSurfaceResponse = Schemas["LocalVolSurfaceResponse"];
 export type RatesCurveResponse = Schemas["RatesCurveResponse"];
 export type MarketHistoryResponse = Schemas["MarketHistoryResponse"];

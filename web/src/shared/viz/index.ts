@@ -17,6 +17,14 @@ export { AllocationChart, type AllocationRow } from "./charts/AllocationChart";
 export { DistributionChart } from "./charts/DistributionChart";
 export { RatesCurveChart, type RateSeries } from "./charts/RatesCurveChart";
 export { SmileChart, type SmileSlice } from "./charts/SmileChart";
+export {
+	AtmTermStructureChart,
+	type TermStructurePoint,
+} from "./charts/AtmTermStructureChart";
+export {
+	RiskReversalButterflyChart,
+	type SkewPoint,
+} from "./charts/RiskReversalButterflyChart";
 export { SurfaceHeatmap, type Grid } from "./charts/SurfaceHeatmap";
 export { StressMatrix, type StressCell } from "./charts/StressMatrix";
 export {
