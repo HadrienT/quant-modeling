@@ -2,11 +2,12 @@
 Vol surface pipeline: option chain -> SVI per maturity -> Dupire local vol.
 
 Replaces api/app/local_vol/{fetcher,cleaner,iv_surface,dupire,cpp_bridge}.py
-and routers/market_iv_surface.py's independent yfinance/griddata path --
-those had drifted into two unrelated implementations of the same problem.
-There is one fetch, and one C++ pipeline (market/vol_surface_pipeline.hpp,
-bound as quantmodeling.calibrate_vol_surface) for everything past it:
-cleaning, SVI calibration per maturity, and the Dupire local-vol grid.
+and the old routers/market_iv_surface.py's independent yfinance/griddata
+path (since removed in favour of raw_iv_grid below) -- those had drifted
+into two unrelated implementations of the same problem. There is one fetch,
+and one C++ pipeline (market/vol_surface_pipeline.hpp, bound as
+quantmodeling.calibrate_vol_surface) for everything past it: cleaning, SVI
+calibration per maturity, and the Dupire local-vol grid.
 
 Fetching stays in Python and has two sources, in order of preference:
   1. data-ingest's Postgres (options.chain_snapshot) -- historical, free of
@@ -316,6 +317,43 @@ def _svi_total_variance(
 ) -> float:
     x = k - m
     return a + b * (rho * x + math.sqrt(x * x + sigma * sigma))
+
+
+def raw_iv_grid(
+    quotes: List["qm.RawOptionQuote"],
+) -> tuple[List[float], List[float], List[List[Optional[float]]]]:
+    """The actual listed (strike, maturity) grid, no interpolation, no
+    fitting: holes are strike/maturity pairs nothing traded at, not an
+    artifact of a regular mesh laid over scattered points. Call and put IV
+    at the same (strike, maturity) are averaged when both exist -- under
+    put-call parity they should agree; when they don't, that disagreement is
+    itself a liquidity signal, not something to hide by picking one side.
+
+    Deliberately does not run RawVolSurface's cleaning stages (unlike the
+    SVI-calibration path): this is the "brute" point on the raw -> cleaned ->
+    local-vol progression, so a viewer can see what cleaning actually
+    removes. The 3D surface view's percentile clipping (SurfaceGrid.ts)
+    keeps a handful of implausible quotes from dominating the display.
+    """
+    buckets: dict[tuple[float, float], List[float]] = {}
+    for q in quotes:
+        if not q.has_iv:
+            continue
+        key = (round(q.ttm, 6), round(q.strike, 2))
+        buckets.setdefault(key, []).append(q.implied_vol)
+
+    maturities = sorted({k[0] for k in buckets})
+    strikes = sorted({k[1] for k in buckets})
+
+    values: List[List[Optional[float]]] = []
+    for t in maturities:
+        row: List[Optional[float]] = []
+        for k in strikes:
+            ivs = buckets.get((t, k))
+            row.append(round(sum(ivs) / len(ivs), 6) if ivs else None)
+        values.append(row)
+
+    return strikes, maturities, values
 
 
 def nearest_slice(slices: List[dict], ttm: float) -> dict:

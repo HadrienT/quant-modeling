@@ -13,7 +13,6 @@ import type {
 	BacktestResponse,
 	BSPathRequest,
 	CleanedIVSurfaceResponse,
-	IVSurfaceResponse,
 	LocalVolSurfaceResponse,
 	MarketHistoryResponse,
 	Portfolio,
@@ -106,23 +105,20 @@ export function usePriceHistory(
 	});
 }
 
-export function useIvSurface(
-	ticker: string | null,
-	surface: "mid" | "bid" | "ask" = "mid",
-) {
+export function useRawIvSurface(ticker: string | null) {
 	return useQuery({
-		queryKey: queryKeys.market.ivSurface(ticker ?? "", surface),
+		queryKey: queryKeys.market.rawIvSurface(ticker ?? ""),
 		enabled: Boolean(ticker),
 		staleTime: STALE.surface,
 		queryFn: async ({ signal }) => {
 			const s = signalWithTimeout(signal, LONG_TIMEOUT_MS);
 			try {
 				return (await unwrap(
-					api.GET("/market/iv/surface", {
-						params: { query: { ticker: ticker!, surface } },
+					api.GET("/api/local-vol/raw-surface", {
+						params: { query: { ticker: ticker! } },
 						signal: s,
 					}),
-				)) as IVSurfaceResponse;
+				)) as CleanedIVSurfaceResponse;
 			} finally {
 				s.cleanup();
 			}

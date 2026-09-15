@@ -55,23 +55,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/market/iv/surface": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Iv Surface */
-        get: operations["iv_surface"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/market/rates/curve": {
         parameters: {
             query?: never;
@@ -502,6 +485,28 @@ export interface paths {
          *     Dupire (Gatheral closed form) -> Euler-Maruyama Monte Carlo.
          */
         get: operations["price_local_vol"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/local-vol/raw-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raw Iv Surface
+         * @description The listed option chain's implied vols, gridded on the strikes and
+         *     maturities actually traded -- no cleaning, no fitting, no
+         *     interpolation. See vol_surface.raw_iv_grid.
+         */
+        get: operations["raw_iv_surface"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1581,19 +1586,6 @@ export interface components {
             /** Version */
             version: string;
         };
-        /** IVSurfaceResponse */
-        IVSurfaceResponse: {
-            /** Ticker */
-            ticker: string;
-            /** Surface */
-            surface: string;
-            /** Strikes */
-            strikes: number[];
-            /** Maturities */
-            maturities: number[];
-            /** Values */
-            values: (number | null)[][];
-        };
         /**
          * LocalVolResponse
          * @description Pricing result from the Dupire local-vol MC engine.
@@ -2620,38 +2612,6 @@ export interface operations {
             };
         };
     };
-    iv_surface: {
-        parameters: {
-            query: {
-                ticker: string;
-                surface?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IVSurfaceResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     rates_curve: {
         parameters: {
             query?: {
@@ -3484,6 +3444,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocalVolResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    raw_iv_surface: {
+        parameters: {
+            query: {
+                /** @description Stock ticker */
+                ticker: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CleanedIVSurfaceResponse"];
                 };
             };
             /** @description Validation Error */

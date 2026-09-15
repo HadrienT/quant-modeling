@@ -36,8 +36,8 @@ export function priceHistory(ticker: string, days = 252) {
 	return { ticker, points };
 }
 
-/** IV surface with genuine holes (null = strike without a quote). */
-export function ivSurface(ticker: string, surface = "mid") {
+/** Strike/maturity grid with genuine holes (null = strike without a quote). */
+function ivSurfaceGrid(ticker: string) {
 	const strikes = [140, 150, 160, 170, 180, 190, 200, 210, 220, 240];
 	const maturities = [0.08, 0.17, 0.25, 0.5, 1, 2];
 	const values = maturities.map((t) =>
@@ -49,11 +49,23 @@ export function ivSurface(ticker: string, surface = "mid") {
 			return Math.round((0.22 + smile + 0.01 * Math.sqrt(t)) * 10000) / 10000;
 		}),
 	);
-	return { ticker, surface, strikes, maturities, values };
+	return { ticker, strikes, maturities, values };
+}
+
+/** The un-cleaned, un-fitted listed grid (GET /api/local-vol/raw-surface). */
+export function rawIvSurface(ticker: string) {
+	const base = ivSurfaceGrid(ticker);
+	const nWithIv = base.values.flat().filter((v) => v != null).length;
+	return {
+		...base,
+		spot: 185.3,
+		n_clean_quotes: nWithIv,
+		cleaning_summary: `63 raw quotes -> with a usable implied vol: ${nWithIv}. No cleaning applied.`,
+	};
 }
 
 export function cleanedIvSurface(ticker: string) {
-	const base = ivSurface(ticker);
+	const base = ivSurfaceGrid(ticker);
 	return {
 		...base,
 		spot: 185.3,

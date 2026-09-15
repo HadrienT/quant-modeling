@@ -25,13 +25,10 @@ export const handlers = [
 		return HttpResponse.json(fx.priceHistory(ticker));
 	}),
 
-	http.get("*/market/iv/surface", ({ request }) => {
+	http.get("*/api/local-vol/raw-surface", ({ request }) => {
 		const url = new URL(request.url);
 		return HttpResponse.json(
-			fx.ivSurface(
-				url.searchParams.get("ticker") ?? "AAPL",
-				url.searchParams.get("surface") ?? "mid",
-			),
+			fx.rawIvSurface(url.searchParams.get("ticker") ?? "AAPL"),
 		);
 	}),
 

@@ -1,6 +1,5 @@
 import type {
 	CleanedIVSurfaceResponse,
-	IVSurfaceResponse,
 	LocalVolSurfaceResponse,
 } from "@/shared/api/types";
 import { type SurfaceGrid, makeGrid } from "./SurfaceGrid";
@@ -24,11 +23,11 @@ const VOL_AXES = {
 	},
 } as const;
 
-export function ivSurfaceToGrid(r: IVSurfaceResponse): SurfaceGrid {
+export function rawIvSurfaceToGrid(r: CleanedIVSurfaceResponse): SurfaceGrid {
 	return makeGrid(r.strikes, r.maturities, r.values, {
 		x: { ...VOL_AXES.x },
 		y: { ...VOL_AXES.y },
-		z: { ...VOL_AXES.z, label: `Implied vol (${r.surface})` },
+		z: { ...VOL_AXES.z, label: "Implied vol (raw)" },
 	});
 }
 

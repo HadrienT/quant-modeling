@@ -8,7 +8,7 @@ export {
 } from "./SurfaceGrid";
 export { buildSurfaceGeometry, nearestNode } from "./geometry";
 export {
-	ivSurfaceToGrid,
+	rawIvSurfaceToGrid,
 	cleanedIvSurfaceToGrid,
 	localVolSurfaceToGrid,
 	differenceGrid,

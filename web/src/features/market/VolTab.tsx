@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import {
 	useCleanedIvSurface,
-	useIvSurface,
 	useLocalVolSurface,
+	useRawIvSurface,
 } from "@/shared/api";
 import { Badge, Metric, MetricRow } from "@/shared/ui";
 import { ErrorState } from "@/shared/ui/states";
@@ -13,7 +13,7 @@ import {
 	checkArbitrage,
 	coverage,
 	differenceGrid,
-	ivSurfaceToGrid,
+	rawIvSurfaceToGrid,
 	cleanedIvSurfaceToGrid,
 	localVolSurfaceToGrid,
 	zAt,
@@ -28,12 +28,12 @@ type Stage = "raw" | "cleaned" | "localvol";
  */
 export function VolTab({ ticker }: { ticker: string }) {
 	const [stage, setStage] = useState<Stage>("raw");
-	const raw = useIvSurface(ticker || null, "mid");
+	const raw = useRawIvSurface(ticker || null);
 	const cleaned = useCleanedIvSurface(ticker || null);
 	const local = useLocalVolSurface(ticker || null);
 
 	const rawGrid = useMemo(
-		() => (raw.data ? ivSurfaceToGrid(raw.data) : null),
+		() => (raw.data ? rawIvSurfaceToGrid(raw.data) : null),
 		[raw.data],
 	);
 	const cleanedGrid = useMemo(

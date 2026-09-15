@@ -31,7 +31,7 @@ export {
 	zAt,
 	zExtent,
 	holeFraction,
-	ivSurfaceToGrid,
+	rawIvSurfaceToGrid,
 	cleanedIvSurfaceToGrid,
 	localVolSurfaceToGrid,
 	differenceGrid,

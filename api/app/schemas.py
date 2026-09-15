@@ -329,14 +329,6 @@ class MarketHistoryResponse(BaseModel):
     points: List[MarketHistoryPoint]
 
 
-class IVSurfaceResponse(BaseModel):
-    ticker: str
-    surface: str
-    strikes: List[float]
-    maturities: List[float]
-    values: List[List[Optional[float]]]
-
-
 class CurvePointResponse(BaseModel):
     x: float
     y: float

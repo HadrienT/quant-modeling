@@ -175,6 +175,51 @@ def price_local_vol(
 
 
 # -------------------------------------------------------------------------
+# GET /local-vol/raw-surface  — the actual listed grid, no fitting, no
+# interpolation (replaces the old /market/iv/surface griddata path, which
+# manufactured a fully-populated surface via linear interpolation +
+# nearest-neighbour fill -- defeating the point of a "raw" view before
+# cleaning even runs).
+# -------------------------------------------------------------------------
+
+
+@router.get("/raw-surface", response_model=CleanedIVSurfaceResponse)
+def raw_iv_surface(
+    ticker: str = Query(..., description="Stock ticker"),
+) -> CleanedIVSurfaceResponse:
+    """The listed option chain's implied vols, gridded on the strikes and
+    maturities actually traded -- no cleaning, no fitting, no
+    interpolation. See vol_surface.raw_iv_grid."""
+    ticker = ticker.upper().strip()
+    spot = vol_surface.get_spot(ticker)
+
+    try:
+        raw_quotes = vol_surface.fetch_option_chain(ticker)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if not raw_quotes:
+        raise HTTPException(
+            status_code=404, detail=f"No option chain available for '{ticker}'."
+        )
+
+    strikes, maturities, values = vol_surface.raw_iv_grid(raw_quotes)
+    n_with_iv = sum(1 for q in raw_quotes if q.has_iv)
+
+    return CleanedIVSurfaceResponse(
+        ticker=ticker,
+        spot=spot,
+        strikes=[round(k, 2) for k in strikes],
+        maturities=[round(t, 4) for t in maturities],
+        values=values,
+        n_clean_quotes=n_with_iv,
+        cleaning_summary=(
+            f"raw quotes: {len(raw_quotes)} -> with a usable implied vol: {n_with_iv}. "
+            "No cleaning applied -- see 'Cleaned' for the arbitrage-checked surface."
+        ),
+    )
+
+
+# -------------------------------------------------------------------------
 # GET /local-vol/iv-surface  — SVI-fitted, arbitrage-checked IV surface
 # -------------------------------------------------------------------------
 

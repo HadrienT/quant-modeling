@@ -7,7 +7,6 @@ export type PricingResponse = Schemas["PricingResponse"];
 export type Greeks = Schemas["Greeks"];
 export type BondAnalytics = Schemas["BondAnalytics"];
 
-export type IVSurfaceResponse = Schemas["IVSurfaceResponse"];
 export type CleanedIVSurfaceResponse = Schemas["CleanedIVSurfaceResponse"];
 export type LocalVolSurfaceResponse = Schemas["LocalVolSurfaceResponse"];
 export type RatesCurveResponse = Schemas["RatesCurveResponse"];
