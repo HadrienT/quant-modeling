@@ -95,7 +95,7 @@ export function RiskReversalButterflyChart({
 				<Cartesian
 					height={240}
 					xDomain={niceDomain(points.map((p) => p.ttm), { includeZero: true })}
-					yDomain={niceDomain(allY, { includeZero: true })}
+					yDomain={niceDomain(allY, { includeZero: true, clipOutliers: true })}
 					xLabel="Maturity (years)"
 					yFormat={(v) => `${(v * 100).toFixed(1)}%`}
 					xFormat={(v) => v.toFixed(1)}

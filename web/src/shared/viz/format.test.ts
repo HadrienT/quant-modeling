@@ -20,4 +20,28 @@ describe("niceDomain", () => {
 		expect(min).toBeLessThan(7);
 		expect(max).toBeGreaterThan(7);
 	});
+
+	// A risk-reversal/butterfly term structure: ~20 maturities clustered
+	// within a few percent, plus one degenerate near-zero-DTE slice whose
+	// delta solve barely converged to a much larger value (the AAPL bug
+	// that motivated clipOutliers).
+	const cluster = Array.from({ length: 19 }, (_, i) => -0.05 + i * 0.005);
+	const withOutlier = [...cluster, 4.9];
+
+	it("without clipOutliers, one huge value stretches the whole domain", () => {
+		const [, max] = niceDomain(withOutlier);
+		expect(max).toBeGreaterThan(4);
+	});
+
+	it("clipOutliers keeps the domain tight around the bulk of the series", () => {
+		const [min, max] = niceDomain(withOutlier, { clipOutliers: true });
+		expect(max).toBeLessThan(1);
+		expect(min).toBeGreaterThan(-1);
+	});
+
+	it("clipOutliers falls back to the plain extent below 5 points", () => {
+		const values = [-0.01, 0.0, 4.9];
+		const [, max] = niceDomain(values, { clipOutliers: true });
+		expect(max).toBeGreaterThan(4);
+	});
 });
