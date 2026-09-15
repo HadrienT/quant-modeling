@@ -3,7 +3,7 @@ import { Box, Camera, Grid3x3, Table2 } from "lucide-react";
 import { Button, cn } from "@/shared/ui";
 import { ChartSkeleton } from "@/shared/ui/states";
 import { SurfaceHeatmap } from "../charts/SurfaceHeatmap";
-import { type SurfaceGrid, holeFraction, zAt } from "./SurfaceGrid";
+import { type SurfaceGrid, holeFraction, robustZExtent, zAt } from "./SurfaceGrid";
 import type { PresetView } from "./SurfaceScene";
 
 const SurfaceScene = lazy(() =>
@@ -42,6 +42,18 @@ export function SurfaceView({
 
 	if (!grid) return <ChartSkeleton className="!aspect-auto" />;
 
+	// How many non-hole cells fall outside the percentile-clipped display
+	// range (see robustZExtent) -- surfaced here rather than silently
+	// clipped, same rationale as the hole-fraction note: a viewer should be
+	// able to tell that a handful of near-zero-DTE wing values are being
+	// capped for legibility, not hidden.
+	const [clipLo, clipHi] = robustZExtent(grid);
+	let clippedCells = 0;
+	for (let i = 0; i < grid.z.length; i++) {
+		const v = grid.z[i]!;
+		if (!Number.isNaN(v) && (v < clipLo || v > clipHi)) clippedCells++;
+	}
+
 	const heatmapGrid = {
 		x: Array.from(grid.x),
 		y: Array.from(grid.y),
@@ -73,6 +85,8 @@ export function SurfaceView({
 					{title}
 					<span className="ml-2 text-2xs text-ink-muted">
 						{(holeFraction(grid) * 100).toFixed(0)}% holes shown as absence
+						{clippedCells > 0 &&
+							` · ${clippedCells} outlier${clippedCells === 1 ? "" : "s"} clipped to the display range`}
 					</span>
 				</figcaption>
 				<div className="flex items-center gap-1">

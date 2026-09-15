@@ -1,4 +1,4 @@
-import { type SurfaceGrid, zAt, zExtent } from "./SurfaceGrid";
+import { type SurfaceGrid, robustZExtent, zAt } from "./SurfaceGrid";
 
 /**
  * Build BufferGeometry attributes from a grid — blueprint WP 05 §2.
@@ -22,6 +22,9 @@ export type SurfaceGeometry = {
 	zMin: number;
 	zMax: number;
 	heightScale: number;
+	/** non-hole cells whose true value fell outside [zMin, zMax] and were
+	 * clamped to the nearest edge for display -- see robustZExtent. */
+	clippedCount: number;
 };
 
 export function buildSurfaceGeometry(
@@ -30,12 +33,18 @@ export function buildSurfaceGeometry(
 ): SurfaceGeometry {
 	const nx = grid.x.length;
 	const ny = grid.y.length;
-	const [zMin, zMax] = zExtent(grid);
+	// Height and colour are normalised against the percentile-clipped range,
+	// not the true min/max -- see robustZExtent's doc comment. Hover/table
+	// still read exact values via zAt directly, not this normalisation.
+	const [zMin, zMax] = robustZExtent(grid);
 	const span = zMax - zMin || 1;
+	const normOf = (v: number) =>
+		Number.isNaN(v) ? 0 : Math.min(1, Math.max(0, (v - zMin) / span));
 
 	const positions = new Float32Array(nx * ny * 3);
 	const uv = new Float32Array(nx * ny * 2);
 	const values = new Float32Array(nx * ny);
+	let clippedCount = 0;
 
 	const px = (xi: number) => (nx === 1 ? 0 : (xi / (nx - 1)) * 2 - 1);
 	const pz = (yi: number) => (ny === 1 ? 0 : (yi / (ny - 1)) * 2 - 1);
@@ -44,7 +53,8 @@ export function buildSurfaceGeometry(
 		for (let xi = 0; xi < nx; xi++) {
 			const i = yi * nx + xi;
 			const v = zAt(grid, xi, yi);
-			const norm = Number.isNaN(v) ? 0 : (v - zMin) / span;
+			const norm = normOf(v);
+			if (!Number.isNaN(v) && (v < zMin || v > zMax)) clippedCount++;
 			positions[i * 3] = px(xi);
 			positions[i * 3 + 1] = Number.isNaN(v) ? 0 : norm * heightScale;
 			positions[i * 3 + 2] = pz(yi);
@@ -67,7 +77,7 @@ export function buildSurfaceGeometry(
 			}
 			const h = (xx: number, yy: number) => {
 				const vv = zAt(grid, xx, yy);
-				return Number.isNaN(vv) ? NaN : ((vv - zMin) / span) * heightScale;
+				return Number.isNaN(vv) ? NaN : normOf(vv) * heightScale;
 			};
 			const hL = h(Math.max(0, xi - 1), yi);
 			const hR = h(Math.min(nx - 1, xi + 1), yi);
@@ -116,6 +126,7 @@ export function buildSurfaceGeometry(
 		zMin,
 		zMax,
 		heightScale,
+		clippedCount,
 	};
 }
 
