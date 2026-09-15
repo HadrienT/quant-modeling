@@ -104,14 +104,14 @@ export function SurfaceDiagnostics({ ticker }: { ticker: string }) {
 								: "border-hairline text-ink-secondary")
 						}
 					>
-						{s === "raw" ? "Raw" : s === "cleaned" ? "Cleaned" : "Local vol"}
+						{s === "raw" ? "Raw" : s === "cleaned" ? "SVI" : "Dupire"}
 					</button>
 				))}
 			</div>
 
 			<SurfaceView
 				grid={active ?? undefined}
-				title={`${ticker} — ${stage === "raw" ? "raw implied vol (holes are the information)" : stage === "cleaned" ? "cleaned & smoothed IV" : "Dupire local vol"}`}
+				title={`${ticker} — ${stage === "raw" ? "Raw implied vol (holes are the information)" : stage === "cleaned" ? "SVI-fitted implied vol" : "Dupire local vol"}`}
 			/>
 
 			{diff && (
