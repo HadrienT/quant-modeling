@@ -30,8 +30,8 @@ le projet est entièrement hors cloud.
 | | |
 |---|---|
 | `cmake --preset default && cmake --build build` | build C++ (Ninja, Release, tests ON) |
-| `ctest --test-dir build --output-on-failure` | tests C++ — ou `scripts/make.sh` qui enchaîne les trois |
-| `cmake --preset asan` | build sanitizers (address + UB) |
+| `ctest --test-dir build --output-on-failure -j16` | tests C++ — ou `scripts/make.sh` qui enchaîne les trois. Chaque `TEST()` tourne dans son propre process (`gtest_discover_tests`), donc `-j` parallélise sans partage d'état ; 16 mesuré à ~1,7 Go au-dessus de ce qui tourne déjà sur la machine (`NPROC=n scripts/make.sh` pour changer) |
+| `cmake --preset asan` puis `ctest --test-dir build-asan -j8` | sanitizers (address + UB) — ou `scripts/make_asan.sh`. ASan triple grosso modo la mémoire par process ; 8 mesuré à ~8,4 Go au-dessus de la ligne de base, une part plus significative de la marge qu'avec le preset par défaut (`NPROC=n scripts/make_asan.sh` pour changer) |
 | `cmake --preset release` | `-march=native` + benchmarks google-benchmark |
 | `scripts/build_wheel.sh` | wheel pybind11 dans `dist/` |
 | `scripts/run_api.sh` | venv + wheel + `uvicorn --reload` |
