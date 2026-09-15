@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { useTickers, usePriceHistory } from "@/shared/api";
-import { Combobox } from "@/shared/ui";
+import { usePriceHistory } from "@/shared/api";
 import {
 	DeltaBadge,
 	Freshness,
@@ -13,14 +12,7 @@ import { realizedVol } from "./realizedVol";
 
 const RANGES = ["1M", "3M", "YTD", "1Y", "5Y", "max"];
 
-export function PricesTab({
-	ticker,
-	onTicker,
-}: {
-	ticker: string;
-	onTicker: (t: string) => void;
-}) {
-	const tickers = useTickers();
+export function PricesTab({ ticker }: { ticker: string }) {
 	const [range, setRange] = useState("1Y");
 	const history = usePriceHistory(ticker || null, range);
 
@@ -45,14 +37,6 @@ export function PricesTab({
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="flex flex-wrap items-center gap-3">
-				<div className="w-56">
-					<Combobox
-						options={(tickers.data?.tickers ?? []).map((t) => ({ value: t }))}
-						value={ticker || null}
-						onChange={onTicker}
-						placeholder="Select a ticker"
-					/>
-				</div>
 				<div className="flex gap-1">
 					{RANGES.map((r) => (
 						<button
