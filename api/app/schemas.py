@@ -566,6 +566,31 @@ class CleanedIVSurfaceResponse(BaseModel):
     cleaning_summary: str
 
 
+class DeltaBucketRow(BaseModel):
+    """One maturity's desk-style delta-bucketed smile: 10/25-delta put, ATM,
+    25/10-delta call, plus the risk reversals and butterflies a desk
+    actually quotes skew and convexity as."""
+    ttm: float
+    tenor_label: str
+    vol_10p: Optional[float] = None
+    vol_25p: Optional[float] = None
+    vol_atm: Optional[float] = None
+    vol_25c: Optional[float] = None
+    vol_10c: Optional[float] = None
+    rr25: Optional[float] = None
+    bf25: Optional[float] = None
+    rr10: Optional[float] = None
+    bf10: Optional[float] = None
+
+
+class DeltaSurfaceResponse(BaseModel):
+    ticker: str
+    spot: float
+    rows: List[DeltaBucketRow]
+    n_clean_quotes: int
+    cleaning_summary: str
+
+
 class LocalVolSurfaceResponse(BaseModel):
     """Dupire local-volatility surface grid."""
     ticker: str

@@ -10,6 +10,8 @@ Pipeline:
 GET  /local-vol/price
 GET  /local-vol/iv-surface
 GET  /local-vol/surface
+GET  /local-vol/raw-surface
+GET  /local-vol/delta-surface
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ from .. import vol_surface
 from ..logging_utils import get_logger
 from ..schemas import (
     CleanedIVSurfaceResponse,
+    DeltaBucketRow,
+    DeltaSurfaceResponse,
     LocalVolResponse,
     LocalVolSurfaceResponse,
 )
@@ -216,6 +220,57 @@ def raw_iv_surface(
             f"raw quotes: {len(raw_quotes)} -> with a usable implied vol: {n_with_iv}. "
             "No cleaning applied -- see 'Cleaned' for the arbitrage-checked surface."
         ),
+    )
+
+
+# -------------------------------------------------------------------------
+# GET /local-vol/delta-surface  — the desk view: a delta-bucketed vol matrix
+# (10/25-delta put, ATM, 25/10-delta call) per maturity, plus risk reversals
+# and butterflies. This is what an options desk actually looks at day to
+# day -- a dense numeric grid quoted in delta, not a strike-indexed surface
+# plot (see the "Volatility" tab's own docstring on the front end for the
+# fuller rationale). Skew is RR25 = vol(25c) - vol(25p); convexity is
+# BF25 = 0.5*(vol(25c)+vol(25p)) - vol(ATM) -- literally how FX vol desks
+# quote the smile, rather than strike-by-strike implied vols.
+# -------------------------------------------------------------------------
+
+
+@router.get("/delta-surface", response_model=DeltaSurfaceResponse)
+def delta_surface(
+    ticker: str = Query(..., description="Stock ticker"),
+    rate: float = Query(0.05, description="Risk-free rate"),
+    min_open_interest: int = Query(10, ge=1),
+    min_bid: float = Query(0.05, ge=0.0),
+    max_spread_ratio: float = Query(0.50, gt=0.0, le=1.0),
+    min_moneyness: float = Query(0.70, gt=0.0),
+    max_moneyness: float = Query(1.40, gt=0.0),
+) -> DeltaSurfaceResponse:
+    """Every calibrated SVI slice, reduced to its desk-standard delta
+    buckets (vol_surface.delta_bucket_row) -- reuses the same calibration
+    /local-vol/iv-surface and /local-vol/surface already run, just a
+    different, more desk-familiar reduction of it."""
+    ticker, spot, dividend, result = _calibrate(
+        ticker,
+        rate,
+        min_open_interest,
+        min_bid,
+        max_spread_ratio,
+        min_moneyness,
+        max_moneyness,
+    )
+    stats = result["cleaning_stats"]
+
+    rows = [
+        DeltaBucketRow(**vol_surface.delta_bucket_row(slc))
+        for slc in sorted(result["slices"], key=lambda s: s["ttm"])
+    ]
+
+    return DeltaSurfaceResponse(
+        ticker=ticker,
+        spot=spot,
+        rows=rows,
+        n_clean_quotes=stats["final_count"],
+        cleaning_summary=_cleaning_summary(stats),
     )
 
 

@@ -374,6 +374,160 @@ def atm_vol_from_svi_slice(slc: dict, ttm: Optional[float] = None) -> float:
     return math.sqrt(max(w_atm, 0.0) / t)
 
 
+def svi_iv_at_k(k: float, slc: dict) -> float:
+    """SVI-implied vol at an arbitrary log-moneyness k -- atm_vol_from_svi_slice
+    generalised to any k, used by the delta-bucket machinery below."""
+    w = _svi_total_variance(k, slc["a"], slc["b"], slc["rho"], slc["m"], slc["sigma"])
+    return math.sqrt(max(w, 0.0) / slc["ttm"])
+
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _bs_forward_delta(k: float, ttm: float, vol: float, is_call: bool) -> float:
+    """Black-76 forward delta (no discounting -- consistent with this
+    project's forward-based convention, e.g. models/equity/sabr.hpp's
+    black76_* functions): d1 = (ln(F/K) + 0.5*vol^2*T) / (vol*sqrt(T)), and
+    ln(F/K) = -k since k := ln(K/F). Call delta = N(d1), put delta =
+    N(d1) - 1 (both in [-1, 1], the standard desk quoting convention for
+    delta buckets -- see routers/local_vol_pricing.py's delta_surface)."""
+    if vol <= 0.0 or ttm <= 0.0:
+        return 0.0
+    d1 = (-k + 0.5 * vol * vol * ttm) / (vol * math.sqrt(ttm))
+    nd1 = _norm_cdf(d1)
+    return nd1 if is_call else nd1 - 1.0
+
+
+def solve_k_for_delta(
+    slc: dict, target_delta: float, is_call: bool, k_min: float, k_max: float
+) -> Optional[float]:
+    """The log-moneyness k whose Black-76 forward delta (computed
+    self-consistently against the SVI-implied vol AT that k, not a single
+    fixed vol) equals target_delta, by bisection on [k_min, k_max].
+
+    Delta is monotonically decreasing in k for both calls and puts (higher
+    strike -> lower delta) SO LONG AS SVI's total variance stays close to
+    its calibrated region: far enough into either wing, w(k) is
+    asymptotically linear in k (sqrt((k-m)^2+sigma^2) -> |k-m|), so vol
+    grows like sqrt(|k|) without bound -- and depending on the slice's own
+    b/rho, that can make d1, and so delta, stop being monotonic altogether.
+    Returns None rather than a wrong number when the target isn't bracketed
+    (f_lo and f_hi need opposite signs) -- found by testing a real AAPL
+    chain, where clamping to the nearest boundary produced "10-delta" vols
+    above 300% for several maturities where the search range had drifted
+    into that non-monotonic region. A missing delta bucket is honest; a
+    clamped one that looks like a real number is not (see this project's
+    standing rule that a displayed number must be defensible, not just
+    computed).
+    """
+
+    def f(k: float) -> float:
+        vol = svi_iv_at_k(k, slc)
+        return _bs_forward_delta(k, slc["ttm"], vol, is_call) - target_delta
+
+    lo, hi = k_min, k_max
+    f_lo, f_hi = f(lo), f(hi)
+    if f_lo < 0.0 or f_hi > 0.0:
+        return None
+
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        f_mid = f(mid)
+        if abs(f_mid) < 1e-9:
+            return mid
+        if f_mid > 0.0:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def tenor_label(ttm: float) -> str:
+    """Human tenor label from a year-fraction -- display only, a rounding
+    heuristic rather than exact ISDA tenor conventions."""
+    days = ttm * 365.0
+    if days < 10:
+        return f"{max(round(days), 1)}D"
+    weeks = days / 7.0
+    if weeks < 8:
+        return f"{round(weeks)}W"
+    months = days / 30.44
+    if months < 23:
+        return f"{round(months)}M"
+    return f"{days / 365.0:.1f}Y"
+
+
+def delta_bucket_row(slc: dict) -> dict:
+    """One row of a desk-style delta-bucketed vol matrix: 10-delta put,
+    25-delta put, ATM, 25-delta call, 10-delta call, plus the risk
+    reversals and butterflies a desk actually quotes skew and convexity as
+    (see routers/local_vol_pricing.py's delta_surface docstring) -- derived
+    entirely from this one calibrated SVI slice, no new market data.
+
+    Deliberately does NOT use the display grid's globally-clamped k_min/k_max
+    (VolSurfacePipelineResult::k_min, intersected across every maturity so
+    the rectangular K/T display grid stays inside what the shortest-dated,
+    narrowest slice observed -- see calibrate_vol_surface). That clamp is
+    exactly right for a shared grid, but wrong here: applied uniformly, a
+    1-day slice's necessarily tiny k-range silently capped every longer
+    maturity's search too, so 10-delta and 25-delta solved to the same
+    clamped boundary and came out identical (found by inspecting a live
+    AAPL matrix). Each slice searches its own range instead, scaled to its
+    own SVI sigma (the parameter that sets its curvature scale).
+
+    That width is bounded on both ends -- max() so a very tightly-fit short
+    slice still gets a workable search range, min() so a loosely-fit one
+    doesn't get pushed into SVI's asymptotically-linear wings, where total
+    variance stops tracking the calibrated smile and delta can stop being
+    monotonic in k at all (also found empirically: an 8-sigma width put
+    several maturities' "10-delta" vol above 300%, and one maturity's four
+    delta buckets all collapsed onto the same nonsensical value). Whatever
+    solve_k_for_delta can't bracket inside this range comes back None and
+    stays None all the way to the response -- a blank cell, not a guess.
+    """
+    width = min(max(4.0 * slc["sigma"], 0.5), 1.5)
+    k_min, k_max = slc["m"] - width, slc["m"] + width
+
+    k_25p = solve_k_for_delta(slc, -0.25, False, k_min, k_max)
+    k_10p = solve_k_for_delta(slc, -0.10, False, k_min, k_max)
+    k_25c = solve_k_for_delta(slc, 0.25, True, k_min, k_max)
+    k_10c = solve_k_for_delta(slc, 0.10, True, k_min, k_max)
+
+    vol_atm = svi_iv_at_k(0.0, slc)
+    vol_25p = svi_iv_at_k(k_25p, slc) if k_25p is not None else None
+    vol_10p = svi_iv_at_k(k_10p, slc) if k_10p is not None else None
+    vol_25c = svi_iv_at_k(k_25c, slc) if k_25c is not None else None
+    vol_10c = svi_iv_at_k(k_10c, slc) if k_10c is not None else None
+
+    rr25 = vol_25c - vol_25p if vol_25c is not None and vol_25p is not None else None
+    bf25 = (
+        0.5 * (vol_25c + vol_25p) - vol_atm
+        if vol_25c is not None and vol_25p is not None
+        else None
+    )
+    rr10 = vol_10c - vol_10p if vol_10c is not None and vol_10p is not None else None
+    bf10 = (
+        0.5 * (vol_10c + vol_10p) - vol_atm
+        if vol_10c is not None and vol_10p is not None
+        else None
+    )
+
+    return {
+        "ttm": slc["ttm"],
+        "tenor_label": tenor_label(slc["ttm"]),
+        "vol_10p": vol_10p,
+        "vol_25p": vol_25p,
+        "vol_atm": vol_atm,
+        "vol_25c": vol_25c,
+        "vol_10c": vol_10c,
+        "rr25": rr25,
+        "bf25": bf25,
+        "rr10": rr10,
+        "bf10": bf10,
+    }
+
+
 def sabr_quotes_from_svi_slice(
     slc: dict, forward: float, k_min: float = -0.3, k_max: float = 0.3, n_points: int = 11
 ) -> List["qm.SABRSliceQuote"]:
