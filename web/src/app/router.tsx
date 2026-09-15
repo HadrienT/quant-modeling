@@ -170,7 +170,6 @@ export const ROUTES = [
 	{ path: "/visualize", label: "Strategies" },
 	{ path: "/market", label: "Market" },
 	{ path: "/price", label: "Pricing" },
-	{ path: "/dated-asian", label: "Dated Asian" },
 	{ path: "/simulation", label: "Simulation" },
 	{ path: "/scripting", label: "Scripting" },
 	{ path: "/products", label: "Products" },
