@@ -40,6 +40,7 @@ le projet est entièrement hors cloud.
 | `cd web && npx tsc --noEmit` | typecheck du front |
 | `cd web && npm run lint` | eslint |
 | `cd web && npm run build` | build de production Vite |
+| `python scripts/gen_openapi.py web/openapi.json && cd web && npm run api:types:local` | régénère `web/openapi.json` et `schema.gen.ts` après un changement de route/schéma API (ADR-005). `gen_openapi.py` stub le module pybind11 — pas besoin d'une API qui tourne. Les deux fichiers sont commités ; le job CI `api-contract` échoue si le diff n'est pas vide |
 
 Les ports hôte du `docker compose` sont paramétrables — `QM_API_PORT` (défaut
 8010) et `QM_WEB_PORT` (défaut 5180) — parce que plusieurs projets tournent sur
