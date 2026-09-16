@@ -77,6 +77,43 @@ namespace quantModeling
             }
         }
 
+        /**
+         * @brief Jump directly to point `n` (0-based) in O(dim x 32), without
+         *        generating the points in between (blueprint/wp/17-aad.md
+         *        §8.2): the n-th coordinate along Gray-code digital nets is
+         *        the XOR of the direction numbers at the set bits of
+         *        gray(n) = n ^ (n >> 1), computed directly rather than by
+         *        walking there one XOR at a time.
+         *
+         * After skip_to(n), the *next* next_uniform()/next_gaussian() call
+         * returns point n -- i.e. skip_to(n) reproduces the state a fresh
+         * sequence is in after exactly n calls (point n is the (n+1)-th
+         * point produced, points being 0-based). Matches next_uniform()'s
+         * own convention of applying that call's XOR update *before*
+         * reading out x_, which is why this uses gray(n-1), not gray(n): the
+         * pending update on the next call is what turns gray(n-1)'s
+         * accumulated state into gray(n)'s.
+         */
+        void skip_to(std::uint32_t n)
+        {
+            for (int d = 0; d < dim_; ++d)
+            {
+                uint32_t x = 0;
+                if (n > 0)
+                {
+                    uint32_t g = (n - 1) ^ ((n - 1) >> 1); // gray(n-1)
+                    while (g != 0)
+                    {
+                        const int bit = std::countr_zero(g);
+                        x ^= v_[static_cast<size_t>(d) * kBits + static_cast<size_t>(bit)];
+                        g &= g - 1; // clear the lowest set bit
+                    }
+                }
+                x_[static_cast<size_t>(d)] = x;
+            }
+            index_ = n;
+        }
+
         /// Next point mapped through the inverse normal CDF (i.i.d. N(0,1)
         /// marginals per coordinate).
         void next_gaussian(std::span<double> out)
