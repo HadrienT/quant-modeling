@@ -259,6 +259,7 @@ if(QM_BUILD_BENCHMARKS)
 
   add_executable(quantModeling_bench
     benchmarks/bench_vanilla_mc.cpp
+    benchmarks/bench_aad_basket.cpp
   )
   target_link_libraries(quantModeling_bench
     PRIVATE
