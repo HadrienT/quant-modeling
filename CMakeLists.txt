@@ -130,6 +130,7 @@ target_sources(quantModeling
         src/engines/analytic/digital.cpp
         src/instruments/equity/digital.cpp
         src/pricers/adapters/equity_digital.cpp
+        src/utils/thread_pool.cpp
 )
 
 target_include_directories(quantModeling
@@ -139,6 +140,9 @@ target_include_directories(quantModeling
 
 find_package(Eigen3 CONFIG REQUIRED)
 target_link_libraries(quantModeling PUBLIC Eigen3::Eigen)
+
+find_package(Threads REQUIRED)
+target_link_libraries(quantModeling PUBLIC Threads::Threads)
 
 target_compile_options(quantModeling PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
@@ -182,6 +186,7 @@ if(QM_BUILD_TESTS)
     tests/testKouJumpDiffusionSimModel.cpp
     tests/testBatesSimModel.cpp
     tests/testSABRSimModel.cpp
+    tests/testThreadPool.cpp
     tests/testDate.cpp
     tests/testConventions.cpp
     tests/testCalendars.cpp
