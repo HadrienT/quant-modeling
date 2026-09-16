@@ -165,6 +165,46 @@ TEST(AutocallMC, MemoryCoupon)
     EXPECT_NEAR(res.npv, 1200.0, 5.0);
 }
 
+TEST(AutocallMC, CouponPaidBeforeAutocallIsNotOverwritten)
+{
+    // Regression test for issue #15: a coupon credited at an earlier
+    // observation date must survive a later autocall redemption, not be
+    // discarded by it. Drift is strong and vol tiny (0.01) so the barrier
+    // crossings below are, for all practical purposes, deterministic: with
+    // 50000 paths the chance that any single path lands on the "wrong"
+    // side of a barrier is negligible (~10 std devs away at T=1, ~4.5 at
+    // T=2), so this isolates the accumulation bug itself rather than MC
+    // noise.
+    //
+    //   drift = r - 0.5*sigma^2 = 0.19995 /yr
+    //   S(1) = S0*exp(0.19995)   ≈ 122.1  -> crosses cpn_barrier (110),
+    //                                        stays below ac_barrier (140)
+    //   S(2) = S0*exp(0.19995*2) ≈ 149.2  -> crosses ac_barrier (140):
+    //                                        called at T=2
+    //
+    // A buggy engine that assigns rather than accumulates at the autocall
+    // branch would silently drop the T=1 coupon and report ~703.9 instead.
+    auto model = std::make_shared<BlackScholesModel>(100.0, 0.20, 0.00, 0.01);
+    PricingSettings s;
+    s.mc_paths = 50000;
+    s.mc_seed = 42;
+    PricingContext ctx{MarketView{}, s, model};
+    BSAutocallMCEngine engine(ctx);
+
+    AutocallNote note({1.0, 2.0}, /*ac_barrier=*/1.4,
+                      /*cpn_barrier=*/1.1, /*put_barrier=*/0.01,
+                      /*coupon_rate=*/0.05, /*notional=*/1000.0,
+                      /*memory=*/true, /*ki_cont=*/false);
+    auto res = price(note, engine);
+
+    // PV = notional*coupon_rate*df(1)              (coupon paid at T=1)
+    //    + notional*(1+coupon_rate)*df(2)          (redemption at T=2)
+    const Real df1 = std::exp(-0.20 * 1.0);
+    const Real df2 = std::exp(-0.20 * 2.0);
+    const Real expected = 1000.0 * 0.05 * df1 + 1000.0 * 1.05 * df2;
+    EXPECT_NEAR(res.npv, expected, 2.0);
+}
+
 TEST(AutocallMC, ContinuousKI)
 {
     // Continuous KI monitoring with a very high put barrier (> S0) should
