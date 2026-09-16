@@ -188,6 +188,7 @@ if(QM_BUILD_TESTS)
     tests/testSABRSimModel.cpp
     tests/testThreadPool.cpp
     tests/testRNGSkipTo.cpp
+    tests/testParallelAAD.cpp
     tests/testDate.cpp
     tests/testConventions.cpp
     tests/testCalendars.cpp
