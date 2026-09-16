@@ -23,7 +23,8 @@ namespace quantModeling::scripting
         if (const auto *c = dynamic_cast<const NodeConst *>(&node))
             return c->value;
         if (dynamic_cast<const NodeVar *>(&node) ||
-            dynamic_cast<const NodeSpot *>(&node))
+            dynamic_cast<const NodeSpot *>(&node) ||
+            dynamic_cast<const NodeDf *>(&node))
             return std::nullopt;
 
         if (dynamic_cast<const NodeAdd *>(&node))
