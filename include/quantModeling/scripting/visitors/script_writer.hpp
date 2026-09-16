@@ -95,6 +95,7 @@ namespace quantModeling::scripting
             {
                 out += n.index == 0 ? "spot()" : "spot(" + std::to_string(n.index) + ")";
             }
+            void visit(const NodeDf &n) override { out += "df(" + n.date.to_iso() + ")"; }
 
             void visit(const NodeAdd &n) override { infix(n, "+"); }
             void visit(const NodeSub &n) override { infix(n, "-"); }

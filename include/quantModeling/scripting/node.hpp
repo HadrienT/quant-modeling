@@ -1,6 +1,9 @@
 #ifndef QM_SCRIPTING_NODE_HPP
 #define QM_SCRIPTING_NODE_HPP
 
+#include "quantModeling/core/date.hpp"
+#include "quantModeling/core/types.hpp"
+
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -109,6 +112,24 @@ namespace quantModeling::scripting
     struct NodeSpot final : NodeT<NodeSpot>
     {
         std::size_t index = 0;
+    };
+
+    /// A future discount factor: `df(2026-06-15)` -- the factor from the
+    /// current event date to the given calendar date. `date` comes straight
+    /// from the parser (a calendar date, not a year fraction -- ADR-S5, same
+    /// convention as an event's own date); `maturity` and `slot` are filled
+    /// later, once a ValuationContext is available, by the discount-lookup
+    /// resolution pass that runs between timeline resolution and
+    /// DeflineBuilder (WP 16e) -- `slot` indexes this event's own
+    /// SampleDef::discount_mats / Sample::discounts, mirroring how
+    /// VarIndexer fills NodeVar::index.
+    struct NodeDf final : NodeT<NodeDf>
+    {
+        static constexpr std::size_t unindexed = NodeVar::unindexed;
+
+        Date date;
+        Time maturity = 0.0;
+        std::size_t slot = unindexed;
     };
 
     // ── arithmetic ────────────────────────────────────────────────────────────

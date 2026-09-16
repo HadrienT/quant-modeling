@@ -35,6 +35,7 @@ namespace quantModeling::scripting
         virtual void visit(Ref<NodeConst> n) { visit_children(n); }
         virtual void visit(Ref<NodeVar> n) { visit_children(n); }
         virtual void visit(Ref<NodeSpot> n) { visit_children(n); }
+        virtual void visit(Ref<NodeDf> n) { visit_children(n); }
 
         virtual void visit(Ref<NodeAdd> n) { visit_children(n); }
         virtual void visit(Ref<NodeSub> n) { visit_children(n); }

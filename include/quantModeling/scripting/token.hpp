@@ -21,6 +21,7 @@ namespace quantModeling::scripting
         Number,     ///< integer or decimal, e.g. 1000, 0.70, 1.02
         Identifier, ///< a script variable, e.g. spot0, ki, period
         DateEvent,  ///< an ISO-8601 calendar date, e.g. 2025-06-16
+        Tenor,      ///< a schedule() tenor, e.g. 3M, 1Y, 2W, 10D
 
         // ── keywords (case-insensitive) ───────────────────────────────────
         If,
@@ -41,6 +42,8 @@ namespace quantModeling::scripting
         Abs,
         Smooth,
         Spot,
+        Df,       ///< df(DATE) -- future discount factor lookup (WP 16e)
+        Schedule, ///< schedule(start, end, tenor, calendar, convention) -- WP 16e
 
         // ── operators and punctuation ─────────────────────────────────────
         Plus,

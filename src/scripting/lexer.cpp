@@ -34,7 +34,7 @@ namespace quantModeling::scripting
         /// Keyword / builtin lookup on an already-lowercased spelling.
         TokenKind keyword_kind(const std::string &lowered, bool &is_keyword)
         {
-            static const std::array<std::pair<const char *, TokenKind>, 16> table{
+            static const std::array<std::pair<const char *, TokenKind>, 18> table{
                 {{"if", TokenKind::If},
                  {"then", TokenKind::Then},
                  {"else", TokenKind::Else},
@@ -50,7 +50,9 @@ namespace quantModeling::scripting
                  {"sqrt", TokenKind::Sqrt},
                  {"abs", TokenKind::Abs},
                  {"smooth", TokenKind::Smooth},
-                 {"spot", TokenKind::Spot}}};
+                 {"spot", TokenKind::Spot},
+                 {"df", TokenKind::Df},
+                 {"schedule", TokenKind::Schedule}}};
             for (const auto &[text, kind] : table)
                 if (lowered == text)
                 {
@@ -133,6 +135,23 @@ namespace quantModeling::scripting
             if (is_digit(peek()) || is_ident_start(peek()) || peek() == '-')
                 fail("malformed date literal '" + s + "'", sl, sc);
             add(TokenKind::DateEvent, std::move(s), sl, sc);
+            return;
+        }
+
+        // A tenor for schedule(): digits followed immediately by exactly one
+        // of D/W/M/Y (case-insensitive) and then a token boundary -- "3M",
+        // not the start of a longer identifier like "3Months". Checked
+        // before the decimal-point case below, which would otherwise reject
+        // this shape as a malformed number, same precedent as the DATE
+        // pattern above being carved out ahead of plain digit lexing.
+        const bool looks_like_tenor =
+            !s.empty() && is_ident_start(peek()) && !is_ident_char(peek(1)) &&
+            (lower(peek()) == 'd' || lower(peek()) == 'w' ||
+             lower(peek()) == 'm' || lower(peek()) == 'y');
+        if (looks_like_tenor)
+        {
+            s += advance(); // the unit letter
+            add(TokenKind::Tenor, std::move(s), sl, sc);
             return;
         }
 

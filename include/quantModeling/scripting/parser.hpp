@@ -1,6 +1,9 @@
 #ifndef QM_SCRIPTING_PARSER_HPP
 #define QM_SCRIPTING_PARSER_HPP
 
+#include "quantModeling/core/date.hpp"
+#include "quantModeling/market/calendars.hpp"
+#include "quantModeling/market/conventions.hpp"
 #include "quantModeling/scripting/event.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/token.hpp"
@@ -46,6 +49,10 @@ namespace quantModeling::scripting
         void skip_newlines();
         [[noreturn]] void fail(const std::string &message,
                                const Token &at) const;
+        Date to_date(const Token &tok) const;
+        std::vector<Date> parse_schedule();
+        const Calendar &resolve_calendar(const Token &tok) const;
+        BusinessDayConvention resolve_convention(const Token &tok) const;
 
         void parse_event(std::vector<Event> &events);
         ExprTree parse_statement();

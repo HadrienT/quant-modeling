@@ -13,6 +13,8 @@ namespace quantModeling::scripting
                 return "identifier";
             case TokenKind::DateEvent:
                 return "date";
+            case TokenKind::Tenor:
+                return "tenor";
             case TokenKind::If:
                 return "'if'";
             case TokenKind::Then:
@@ -45,6 +47,10 @@ namespace quantModeling::scripting
                 return "'smooth'";
             case TokenKind::Spot:
                 return "'spot'";
+            case TokenKind::Df:
+                return "'df'";
+            case TokenKind::Schedule:
+                return "'schedule'";
             case TokenKind::Plus:
                 return "'+'";
             case TokenKind::Minus:

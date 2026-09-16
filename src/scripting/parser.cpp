@@ -4,7 +4,10 @@
 #include "quantModeling/scripting/script_error.hpp"
 
 #include "quantModeling/core/date.hpp"
+#include "quantModeling/core/period.hpp"
+#include "quantModeling/market/schedule.hpp"
 
+#include <cctype>
 #include <cmath>
 #include <exception>
 #include <memory>
@@ -134,25 +137,105 @@ namespace quantModeling::scripting
         return events;
     }
 
+    Date Parser::to_date(const Token &tok) const
+    {
+        try
+        {
+            return Date::from_iso(tok.lexeme);
+        }
+        catch (const std::exception &)
+        {
+            fail("not a valid calendar date: '" + tok.lexeme + "'", tok);
+        }
+    }
+
+    namespace
+    {
+        std::string to_upper(const std::string &s)
+        {
+            std::string up;
+            up.reserve(s.size());
+            for (char c : s)
+                up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            return up;
+        }
+    } // namespace
+
+    const Calendar &Parser::resolve_calendar(const Token &tok) const
+    {
+        const std::string up = to_upper(tok.lexeme);
+        if (up == "TARGET")
+            return TARGET::instance();
+        if (up == "US" || up == "UNITEDSTATES")
+            return UnitedStates::instance();
+        if (up == "UK" || up == "UNITEDKINGDOM")
+            return UnitedKingdom::instance();
+        if (up == "NONE" || up == "NULL")
+            return NullCalendar::instance();
+        fail("unknown calendar: '" + tok.lexeme +
+                 "' (expected TARGET, US, UK, or NONE)",
+             tok);
+    }
+
+    BusinessDayConvention Parser::resolve_convention(const Token &tok) const
+    {
+        const std::string up = to_upper(tok.lexeme);
+        if (up == "F" || up == "FOLLOWING")
+            return BusinessDayConvention::Following;
+        if (up == "MF" || up == "MODIFIEDFOLLOWING")
+            return BusinessDayConvention::ModifiedFollowing;
+        if (up == "P" || up == "PRECEDING")
+            return BusinessDayConvention::Preceding;
+        if (up == "MP" || up == "MODIFIEDPRECEDING")
+            return BusinessDayConvention::ModifiedPreceding;
+        if (up == "U" || up == "UNADJUSTED")
+            return BusinessDayConvention::Unadjusted;
+        fail("unknown business day convention: '" + tok.lexeme +
+                 "' (expected F, MF, P, MP, or U)",
+             tok);
+    }
+
+    std::vector<Date> Parser::parse_schedule()
+    {
+        expect(TokenKind::LParen, "'(' after 'schedule'");
+        const Date start =
+            to_date(expect(TokenKind::DateEvent, "a start date (YYYY-MM-DD)"));
+        expect(TokenKind::Comma, "',' after the start date");
+        const Date end =
+            to_date(expect(TokenKind::DateEvent, "an end date (YYYY-MM-DD)"));
+        expect(TokenKind::Comma, "',' after the end date");
+        const Token &tenor_tok = expect(TokenKind::Tenor, "a tenor (e.g. 3M, 1Y)");
+        const Period tenor = Period::parse(tenor_tok.lexeme);
+        expect(TokenKind::Comma, "',' after the tenor");
+        const Calendar &calendar = resolve_calendar(
+            expect(TokenKind::Identifier, "a calendar name (e.g. TARGET)"));
+        expect(TokenKind::Comma, "',' after the calendar");
+        const BusinessDayConvention convention = resolve_convention(expect(
+            TokenKind::Identifier, "a business day convention (e.g. MF)"));
+        expect(TokenKind::RParen, "')' to close 'schedule(...)'");
+
+        const Schedule schedule(start, end, tenor, calendar, convention);
+        return std::vector<Date>(schedule.begin(), schedule.end());
+    }
+
     void Parser::parse_event(std::vector<Event> &events)
     {
-        auto to_date = [this](const Token &tok)
-        {
-            try
-            {
-                return Date::from_iso(tok.lexeme);
-            }
-            catch (const std::exception &)
-            {
-                fail("not a valid calendar date: '" + tok.lexeme + "'", tok);
-            }
-        };
-
         std::vector<Date> dates;
-        dates.push_back(to_date(expect(TokenKind::DateEvent,
-                                       "an event date (YYYY-MM-DD)")));
-        while (check(TokenKind::DateEvent))
-            dates.push_back(to_date(advance()));
+        if (check(TokenKind::Schedule))
+        {
+            const Token &keyword = advance();
+            dates = parse_schedule();
+            if (dates.empty())
+                fail("schedule(...) produced no dates", keyword);
+        }
+        else
+        {
+            dates.push_back(to_date(expect(
+                TokenKind::DateEvent,
+                "an event date (YYYY-MM-DD) or 'schedule(...)'")));
+            while (check(TokenKind::DateEvent))
+                dates.push_back(to_date(advance()));
+        }
 
         expect(TokenKind::Newline, "a line break after the event date");
         expect(TokenKind::Indent, "an indented statement block");
@@ -524,6 +607,17 @@ namespace quantModeling::scripting
                     node->index = static_cast<std::size_t>(value);
                 }
                 expect(TokenKind::RParen, "')' to close 'spot(...)'");
+                return node;
+            }
+            case TokenKind::Df:
+            {
+                advance();
+                expect(TokenKind::LParen, "'(' after 'df'");
+                const Token &date_tok =
+                    expect(TokenKind::DateEvent, "a calendar date (YYYY-MM-DD)");
+                auto node = std::make_unique<NodeDf>();
+                node->date = to_date(date_tok);
+                expect(TokenKind::RParen, "')' to close 'df(...)'");
                 return node;
             }
             case TokenKind::Min:

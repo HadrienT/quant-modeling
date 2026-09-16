@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include "quantModeling/core/period.hpp"
+#include "quantModeling/market/calendars.hpp"
+#include "quantModeling/market/conventions.hpp"
+#include "quantModeling/market/schedule.hpp"
 #include "quantModeling/scripting/parser.hpp"
 #include "quantModeling/scripting/script_error.hpp"
 #include "quantModeling/scripting/visitors/debugger.hpp"
@@ -120,6 +124,8 @@ namespace quantModeling::scripting
                 "    pays 1000 + c\n",
                 // 21. chained subtraction (left associative)
                 "2025-12-16\n    pays 1000 - spot() - 100\n",
+                // 22. a deferred-settlement payoff using df()
+                "2025-12-16\n    pays max(spot() - 100, 0) * df(2026-12-16)\n",
             };
         }
     } // namespace
@@ -213,6 +219,68 @@ namespace quantModeling::scripting
         EXPECT_EQ(events[2].date.to_iso(), "2026-03-16");
         EXPECT_EQ(Debugger::dump(*events[0].statements.at(0)),
                   Debugger::dump(*events[2].statements.at(0)));
+    }
+
+    // ── schedule(start, end, tenor, calendar, convention) (WP 16e) ──────────
+
+    TEST(ScriptParser, ScheduleGeneratesOneEventPerDate)
+    {
+        const std::vector<Event> events = parse_script(
+            "schedule(2025-01-15, 2025-07-15, 3M, TARGET, MF)\n"
+            "    if spot() < 90 then ki = 1 endIf\n");
+
+        const Schedule expected(
+            Date::from_iso("2025-01-15"), Date::from_iso("2025-07-15"),
+            Period::parse("3M"), TARGET::instance(),
+            BusinessDayConvention::ModifiedFollowing);
+
+        ASSERT_EQ(events.size(), expected.size());
+        for (std::size_t i = 0; i < events.size(); ++i)
+            EXPECT_EQ(events[i].date, expected[i]);
+
+        // every event holds an independent copy of the same statement block
+        EXPECT_EQ(Debugger::dump(*events.front().statements.at(0)),
+                  Debugger::dump(*events.back().statements.at(0)));
+    }
+
+    TEST(ScriptParser, ScheduleAcceptsFullConventionAndCalendarNames)
+    {
+        const std::vector<Event> a = parse_script(
+            "schedule(2025-01-15, 2025-07-15, 3M, TARGET, MF)\n    x = 1\n");
+        const std::vector<Event> b = parse_script(
+            "schedule(2025-01-15, 2025-07-15, 3M, target, "
+            "modifiedfollowing)\n    x = 1\n");
+        ASSERT_EQ(a.size(), b.size());
+        for (std::size_t i = 0; i < a.size(); ++i)
+            EXPECT_EQ(a[i].date, b[i].date);
+    }
+
+    TEST(ScriptParser, ScheduleRejectsAnUnknownCalendar)
+    {
+        EXPECT_THROW(parse_script("schedule(2025-01-15, 2025-07-15, 3M, MARS, "
+                                  "MF)\n    x = 1\n"),
+                    ScriptError);
+    }
+
+    TEST(ScriptParser, ScheduleRejectsAnUnknownConvention)
+    {
+        EXPECT_THROW(parse_script("schedule(2025-01-15, 2025-07-15, 3M, "
+                                  "TARGET, XYZ)\n    x = 1\n"),
+                    ScriptError);
+    }
+
+    TEST(ScriptParser, ScheduleRequiresATenorNotABareNumber)
+    {
+        EXPECT_THROW(parse_script("schedule(2025-01-15, 2025-07-15, 3, TARGET, "
+                                  "MF)\n    x = 1\n"),
+                    ScriptError);
+    }
+
+    TEST(ScriptParser, ScheduleRequiresCalendarDatesNotArbitraryExpressions)
+    {
+        EXPECT_THROW(parse_script("schedule(a, 2025-07-15, 3M, TARGET, "
+                                  "MF)\n    x = 1\n"),
+                    ScriptError);
     }
 
     // ── layout ──────────────────────────────────────────────────────────────
@@ -369,6 +437,29 @@ namespace quantModeling::scripting
                   ScriptWriter::write(parse_script("2020-01-01\n    x = spot()\n")));
         EXPECT_NE(ScriptWriter::write(parse_script("2020-01-01\n    x = spot(1)\n"))
                      .find("spot(1)"),
+                 std::string::npos);
+    }
+
+    // ── df(DATE): future discount factor lookup (WP 16e) ────────────────────
+
+    TEST(ScriptParser, DfParsesToTheExpectedNode)
+    {
+        EXPECT_EQ(dump_expr("df(2026-06-15)"), "Df 2026-06-15\n");
+        EXPECT_EQ(dump_expr("1000 * df(2030-01-01)"),
+                  "Mult\n  Const 1000.0\n  Df 2030-01-01\n");
+    }
+
+    TEST(ScriptParser, DfRequiresACalendarDate)
+    {
+        EXPECT_THROW(parse_script("2020-01-01\n    x = df(1.5)\n"), ScriptError);
+        EXPECT_THROW(parse_script("2020-01-01\n    x = df(k)\n"), ScriptError);
+        EXPECT_THROW(parse_script("2020-01-01\n    x = df()\n"), ScriptError);
+    }
+
+    TEST(ScriptParser, DfRoundTripsThroughTheWriter)
+    {
+        const std::string src = "2025-12-16\n    x = 1000 * df(2026-12-16)\n";
+        EXPECT_NE(ScriptWriter::write(parse_script(src)).find("df(2026-12-16)"),
                  std::string::npos);
     }
 
