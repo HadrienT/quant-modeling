@@ -4,75 +4,7 @@
  */
 
 export interface paths {
-    "/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Health */
-        get: operations["health"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/market/tickers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Tickers */
-        get: operations["list_tickers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/market/prices/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Market History */
-        get: operations["market_history"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/market/rates/curve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Rates Curve */
-        get: operations["rates_curve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/option/vanilla": {
+    "/api/auth/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -81,15 +13,32 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Price Vanilla Endpoint */
-        post: operations["price_vanilla"];
+        /** Api Login */
+        post: operations["api_login"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/price/option/american-vanilla": {
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Me */
+        get: operations["api_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/register": {
         parameters: {
             query?: never;
             header?: never;
@@ -98,49 +47,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Price American Vanilla Endpoint */
-        post: operations["price_american_vanilla"];
+        /** Api Register */
+        post: operations["api_register"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/price/option/asian": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Asian Endpoint */
-        post: operations["price_asian"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/option/dated-asian": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Dated Asian Endpoint */
-        post: operations["price_dated_asian"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/scripted": {
+    "/api/backtest/run": {
         parameters: {
             query?: never;
             header?: never;
@@ -150,365 +65,12 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Price Script Endpoint
-         * @description blueprint/wp/16-scripting.md §8.3. Not under /price/option/* — kept as
-         *     its own top-level path, mirroring the language's own scope.
+         * Run Backtest
+         * @description Optimise a portfolio of assets over a historical window, then track its
+         *     performance forward. Returns allocation, portfolio value time series,
+         *     performance metrics, and CAPM alpha/beta vs S&P 500.
          */
-        post: operations["price_script"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/scripted/validate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Validate Script Endpoint
-         * @description Parse-only companion to /price/scripted: no market inputs, no
-         *     simulation — an editor's "Validate" action against this is instant.
-         */
-        post: operations["validate_script"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/option/barrier": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Barrier Endpoint */
-        post: operations["price_barrier"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/option/digital": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Digital Endpoint */
-        post: operations["price_digital"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/option/lookback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Lookback Endpoint */
-        post: operations["price_lookback"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/option/basket": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Basket Endpoint */
-        post: operations["price_basket"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/future": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Future Endpoint */
-        post: operations["price_future"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/bond/zero-coupon": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Zero Coupon Bond Endpoint */
-        post: operations["price_zero_coupon_bond"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/bond/fixed-rate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Fixed Rate Bond Endpoint */
-        post: operations["price_fixed_rate_bond"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/structured/autocall": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Autocall Endpoint */
-        post: operations["price_autocall"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/structured/mountain": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Mountain Endpoint */
-        post: operations["price_mountain"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/volatility/variance-swap": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Variance Swap Endpoint */
-        post: operations["price_variance_swap"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/volatility/volatility-swap": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Volatility Swap Endpoint */
-        post: operations["price_volatility_swap"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/volatility/dispersion-swap": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Dispersion Swap Endpoint */
-        post: operations["price_dispersion_swap"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/fx/forward": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Fx Forward Endpoint */
-        post: operations["price_fx_forward"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/fx/option": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Fx Option Endpoint */
-        post: operations["price_fx_option"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/commodity/forward": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Commodity Forward Endpoint */
-        post: operations["price_commodity_forward"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/commodity/option": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Commodity Option Endpoint */
-        post: operations["price_commodity_option"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/price/option/rainbow": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Price Rainbow Endpoint */
-        post: operations["price_rainbow"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/local-vol/price": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Price Local Vol
-         * @description Price a European vanilla option using a Dupire local-volatility surface
-         *     calibrated from the ticker's option chain: clean -> SVI per maturity ->
-         *     Dupire (Gatheral closed form) -> Euler-Maruyama Monte Carlo.
-         */
-        get: operations["price_local_vol"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/local-vol/raw-surface": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Raw Iv Surface
-         * @description The listed option chain's implied vols, gridded on the strikes and
-         *     maturities actually traded -- no cleaning, no fitting, no
-         *     interpolation. See vol_surface.raw_iv_grid.
-         */
-        get: operations["raw_iv_surface"];
-        put?: never;
-        post?: never;
+        post: operations["run_backtest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -564,6 +126,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local-vol/price": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Price Local Vol
+         * @description Price a European vanilla option using a Dupire local-volatility surface
+         *     calibrated from the ticker's option chain: clean -> SVI per maturity ->
+         *     Dupire (Gatheral closed form) -> Euler-Maruyama Monte Carlo.
+         */
+        get: operations["price_local_vol"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/local-vol/raw-surface": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raw Iv Surface
+         * @description The listed option chain's implied vols, gridded on the strikes and
+         *     maturities actually traded -- no cleaning, no fitting, no
+         *     interpolation. See vol_surface.raw_iv_grid.
+         */
+        get: operations["raw_iv_surface"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local-vol/surface": {
         parameters: {
             query?: never;
@@ -580,63 +186,6 @@ export interface paths {
         get: operations["local_vol_surface"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/simulation/paths/black-scholes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Simulate Black Scholes */
-        post: operations["simulate_black_scholes"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/simulation/paths/sabr": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Simulate Sabr */
-        post: operations["simulate_sabr"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/simulation/calibrate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Calibrate
-         * @description Fetch the ticker's chain (DB-first, live yfinance fallback), run the
-         *     existing SVI vol-surface pipeline, pick the calibrated slice closest to
-         *     the requested maturity, and either read its ATM vol off (Black-Scholes)
-         *     or fit SABR to it (see vol_surface.sabr_quotes_from_svi_slice).
-         */
-        post: operations["calibrate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -785,58 +334,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Api Register */
-        post: operations["api_register"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Api Login */
-        post: operations["api_login"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/auth/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Api Me */
-        get: operations["api_me"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/backtest/run": {
+    "/api/simulation/calibrate": {
         parameters: {
             query?: never;
             header?: never;
@@ -846,12 +344,514 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Run Backtest
-         * @description Optimise a portfolio of assets over a historical window, then track its
-         *     performance forward. Returns allocation, portfolio value time series,
-         *     performance metrics, and CAPM alpha/beta vs S&P 500.
+         * Calibrate
+         * @description Fetch the ticker's chain (DB-first, live yfinance fallback), run the
+         *     existing SVI vol-surface pipeline, pick the calibrated slice closest to
+         *     the requested maturity, and either read its ATM vol off (Black-Scholes)
+         *     or fit SABR to it (see vol_surface.sabr_quotes_from_svi_slice).
          */
-        post: operations["run_backtest"];
+        post: operations["calibrate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/paths/black-scholes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate Black Scholes */
+        post: operations["simulate_black_scholes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/paths/sabr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate Sabr */
+        post: operations["simulate_sabr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Health */
+        get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/prices/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market History */
+        get: operations["market_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/rates/curve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rates Curve */
+        get: operations["rates_curve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/tickers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tickers */
+        get: operations["list_tickers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/bond/fixed-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Fixed Rate Bond Endpoint */
+        post: operations["price_fixed_rate_bond"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/bond/zero-coupon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Zero Coupon Bond Endpoint */
+        post: operations["price_zero_coupon_bond"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/commodity/forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Commodity Forward Endpoint */
+        post: operations["price_commodity_forward"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/commodity/option": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Commodity Option Endpoint */
+        post: operations["price_commodity_option"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/future": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Future Endpoint */
+        post: operations["price_future"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/fx/forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Fx Forward Endpoint */
+        post: operations["price_fx_forward"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/fx/option": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Fx Option Endpoint */
+        post: operations["price_fx_option"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/american-vanilla": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price American Vanilla Endpoint */
+        post: operations["price_american_vanilla"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/asian": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Asian Endpoint */
+        post: operations["price_asian"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/barrier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Barrier Endpoint */
+        post: operations["price_barrier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/basket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Basket Endpoint */
+        post: operations["price_basket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/dated-asian": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Dated Asian Endpoint */
+        post: operations["price_dated_asian"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/digital": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Digital Endpoint */
+        post: operations["price_digital"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/lookback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Lookback Endpoint */
+        post: operations["price_lookback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/rainbow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Rainbow Endpoint */
+        post: operations["price_rainbow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/vanilla": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Vanilla Endpoint */
+        post: operations["price_vanilla"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/scripted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price Script Endpoint
+         * @description blueprint/wp/16-scripting.md §8.3. Not under /price/option/* — kept as
+         *     its own top-level path, mirroring the language's own scope.
+         */
+        post: operations["price_script"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/scripted/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Script Endpoint
+         * @description Parse-only companion to /price/scripted: no market inputs, no
+         *     simulation — an editor's "Validate" action against this is instant.
+         */
+        post: operations["validate_script"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/structured/autocall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Autocall Endpoint */
+        post: operations["price_autocall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/structured/mountain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Mountain Endpoint */
+        post: operations["price_mountain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/volatility/dispersion-swap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Dispersion Swap Endpoint */
+        post: operations["price_dispersion_swap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/volatility/variance-swap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Variance Swap Endpoint */
+        post: operations["price_variance_swap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/volatility/volatility-swap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Volatility Swap Endpoint */
+        post: operations["price_volatility_swap"];
         delete?: never;
         options?: never;
         head?: never;
@@ -864,16 +864,16 @@ export interface components {
     schemas: {
         /** AllocationRow */
         AllocationRow: {
-            /** Ticker */
-            ticker: string;
-            /** Weight */
-            weight: number;
-            /** Start Price */
-            start_price: number;
             /** End Price */
             end_price: number;
             /** Return Pct */
             return_pct: number;
+            /** Start Price */
+            start_price: number;
+            /** Ticker */
+            ticker: string;
+            /** Weight */
+            weight: number;
         };
         /**
          * AmericanEngineType
@@ -882,27 +882,14 @@ export interface components {
         AmericanEngineType: "binomial" | "trinomial";
         /** AmericanVanillaRequest */
         AmericanVanillaRequest: {
-            /** Spot */
-            spot: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
             /** Dividend */
             dividend: number;
-            /** Vol */
-            vol: number;
-            /** Is Call */
-            is_call: boolean;
             /** @default binomial */
             engine: components["schemas"]["AmericanEngineType"];
-            /**
-             * Tree Steps
-             * @default 100
-             */
-            tree_steps: number;
+            /** Is Call */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
             /**
              * Pde Space Steps
              * @default 100
@@ -913,6 +900,19 @@ export interface components {
              * @default 100
              */
             pde_time_steps: number;
+            /** Rate */
+            rate: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /**
+             * Tree Steps
+             * @default 100
+             */
+            tree_steps: number;
+            /** Vol */
+            vol: number;
         };
         /**
          * AsianAverageType
@@ -921,46 +921,46 @@ export interface components {
         AsianAverageType: "arithmetic" | "geometric";
         /** AsianRequest */
         AsianRequest: {
-            /** Spot */
-            spot: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
-            /** Dividend */
-            dividend: number;
-            /** Vol */
-            vol: number;
-            /** Is Call */
-            is_call: boolean;
             /** @default arithmetic */
             average_type: components["schemas"]["AsianAverageType"];
+            /** Dividend */
+            dividend: number;
             /** @default analytic */
             engine: components["schemas"]["EngineType"];
-            /**
-             * N Paths
-             * @default 200000
-             */
-            n_paths: number;
-            /**
-             * Seed
-             * @default 1
-             */
-            seed: number;
+            /** Is Call */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
             /**
              * Mc Epsilon
              * @default 0
              */
             mc_epsilon: number;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /** Rate */
+            rate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /** Vol */
+            vol: number;
         };
         /** AuthRequest */
         AuthRequest: {
-            /** Username */
-            username: string;
             /** Password */
             password: string;
+            /** Username */
+            username: string;
         };
         /** AuthResponse */
         AuthResponse: {
@@ -971,19 +971,6 @@ export interface components {
         };
         /** AutocallRequest */
         AutocallRequest: {
-            /** Spot */
-            spot: number;
-            /** Rate */
-            rate: number;
-            /**
-             * Dividend
-             * @default 0
-             */
-            dividend: number;
-            /** Vol */
-            vol: number;
-            /** Observation Dates */
-            observation_dates: number[];
             /**
              * Autocall Barrier
              * @default 1
@@ -995,112 +982,111 @@ export interface components {
              */
             coupon_barrier: number;
             /**
-             * Put Barrier
-             * @default 0.6
-             */
-            put_barrier: number;
-            /**
              * Coupon Rate
              * @default 0.05
              */
             coupon_rate: number;
             /**
-             * Notional
-             * @default 1000
+             * Dividend
+             * @default 0
              */
-            notional: number;
-            /**
-             * Memory Coupon
-             * @default true
-             */
-            memory_coupon: boolean;
+            dividend: number;
             /**
              * Ki Continuous
              * @default false
              */
             ki_continuous: boolean;
             /**
+             * Memory Coupon
+             * @default true
+             */
+            memory_coupon: boolean;
+            /**
              * N Paths
              * @default 200000
              */
             n_paths: number;
             /**
+             * Notional
+             * @default 1000
+             */
+            notional: number;
+            /** Observation Dates */
+            observation_dates: number[];
+            /**
+             * Put Barrier
+             * @default 0.6
+             */
+            put_barrier: number;
+            /** Rate */
+            rate: number;
+            /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Spot */
+            spot: number;
+            /** Vol */
+            vol: number;
         };
         /** BSPathRequest */
         BSPathRequest: {
-            /** Spot */
-            spot: number;
-            /**
-             * Rate
-             * @default 0.05
-             */
-            rate: number;
             /**
              * Dividend
              * @default 0
              */
             dividend: number;
-            /** Vol */
-            vol: number;
-            /** Ttm */
-            ttm: number;
-            /**
-             * N Steps
-             * @default 100
-             */
-            n_steps: number;
             /**
              * N Paths
              * @default 30
              */
             n_paths: number;
             /**
+             * N Steps
+             * @default 100
+             */
+            n_steps: number;
+            /**
+             * Rate
+             * @default 0.05
+             */
+            rate: number;
+            /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Spot */
+            spot: number;
+            /** Ttm */
+            ttm: number;
+            /** Vol */
+            vol: number;
         };
         /** BacktestMetrics */
         BacktestMetrics: {
+            /** Alpha */
+            alpha?: number | null;
+            /** Annualized Return Pct */
+            annualized_return_pct: number;
             /** Ath */
             ath: number;
             /** Atl */
             atl: number;
-            /** Total Return Pct */
-            total_return_pct: number;
-            /** Annualized Return Pct */
-            annualized_return_pct: number;
-            /** Max Drawdown */
-            max_drawdown: number;
-            /** Sharpe Ratio */
-            sharpe_ratio: number;
-            /** Optimal Sharpe */
-            optimal_sharpe: number;
-            /** Alpha */
-            alpha?: number | null;
             /** Beta */
             beta?: number | null;
+            /** Max Drawdown */
+            max_drawdown: number;
+            /** Optimal Sharpe */
+            optimal_sharpe: number;
+            /** Sharpe Ratio */
+            sharpe_ratio: number;
+            /** Total Return Pct */
+            total_return_pct: number;
         };
         /** BacktestRequest */
         BacktestRequest: {
-            /** Tickers */
-            tickers: string[];
-            /**
-             * Opt Start
-             * Format: date
-             * @description Start of look-back / optimisation window
-             */
-            opt_start: string;
-            /**
-             * Opt End
-             * Format: date
-             * @description End of optimisation window and start of investment
-             */
-            opt_end: string;
             /**
              * Initial Capital
              * @default 10000
@@ -1119,25 +1105,39 @@ export interface components {
              */
             min_share: number;
             /**
+             * Opt End
+             * Format: date
+             * @description End of optimisation window and start of investment
+             */
+            opt_end: string;
+            /**
+             * Opt Start
+             * Format: date
+             * @description Start of look-back / optimisation window
+             */
+            opt_start: string;
+            /**
              * Rebalance Freq
              * @description Rebalance every N business days. 0 = static allocation
              * @default 0
              */
             rebalance_freq: number;
+            /** Tickers */
+            tickers: string[];
         };
         /** BacktestResponse */
         BacktestResponse: {
-            /** Opt Start */
-            opt_start: string;
-            /** Opt End */
-            opt_end: string;
             /** Allocation */
             allocation: components["schemas"]["AllocationRow"][];
+            metrics: components["schemas"]["BacktestMetrics"];
+            /** Opt End */
+            opt_end: string;
+            /** Opt Start */
+            opt_start: string;
             /** Portfolio Values */
             portfolio_values: components["schemas"]["PortfolioPoint"][];
             /** Sp500 Values */
             sp500_values?: components["schemas"]["PortfolioPoint"][] | null;
-            metrics: components["schemas"]["BacktestMetrics"];
             /** Warnings */
             warnings: string[];
         };
@@ -1148,92 +1148,92 @@ export interface components {
         BarrierKind: "up-and-in" | "up-and-out" | "down-and-in" | "down-and-out";
         /** BarrierRequest */
         BarrierRequest: {
-            /** Spot */
-            spot: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
-            /** Dividend */
-            dividend: number;
-            /** Vol */
-            vol: number;
-            /** Is Call */
-            is_call: boolean;
+            barrier_kind: components["schemas"]["BarrierKind"];
             /** Barrier Level */
             barrier_level: number;
-            barrier_kind: components["schemas"]["BarrierKind"];
             /**
-             * Rebate
-             * @default 0
+             * Brownian Bridge
+             * @default true
              */
-            rebate: number;
-            /**
-             * N Paths
-             * @default 50000
-             */
-            n_paths: number;
-            /**
-             * Seed
-             * @default 1
-             */
-            seed: number;
+            brownian_bridge: boolean;
+            /** Dividend */
+            dividend: number;
+            /** Is Call */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
             /**
              * Mc Epsilon
              * @default 0
              */
             mc_epsilon: number;
             /**
+             * N Paths
+             * @default 50000
+             */
+            n_paths: number;
+            /**
              * N Steps
              * @default 0
              */
             n_steps: number;
+            /** Rate */
+            rate: number;
             /**
-             * Brownian Bridge
-             * @default true
+             * Rebate
+             * @default 0
              */
-            brownian_bridge: boolean;
+            rebate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /** Vol */
+            vol: number;
         };
         /** BasketRequest */
         BasketRequest: {
-            /** Spots */
-            spots: number[];
-            /** Vols */
-            vols: number[];
             /** Dividends */
             dividends?: number[];
-            /** Weights */
-            weights?: number[];
-            /**
-             * Pairwise Correlation
-             * @default 0
-             */
-            pairwise_correlation: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
             /** Is Call */
             is_call: boolean;
+            /** Maturity */
+            maturity: number;
+            /**
+             * Mc Antithetic
+             * @default true
+             */
+            mc_antithetic: boolean;
             /**
              * N Paths
              * @default 200000
              */
             n_paths: number;
             /**
+             * Pairwise Correlation
+             * @default 0
+             */
+            pairwise_correlation: number;
+            /** Rate */
+            rate: number;
+            /**
              * Seed
              * @default 1
              */
             seed: number;
-            /**
-             * Mc Antithetic
-             * @default true
-             */
-            mc_antithetic: boolean;
+            /** Spots */
+            spots: number[];
+            /** Strike */
+            strike: number;
+            /** Vols */
+            vols: number[];
+            /** Weights */
+            weights?: number[];
         };
         /** BatchPriceResponse */
         BatchPriceResponse: {
@@ -1242,98 +1242,98 @@ export interface components {
         };
         /** BondAnalytics */
         BondAnalytics: {
-            /** Macaulay Duration */
-            macaulay_duration?: number | null;
-            /** Modified Duration */
-            modified_duration?: number | null;
             /** Convexity */
             convexity?: number | null;
             /** Dv01 */
             dv01?: number | null;
+            /** Macaulay Duration */
+            macaulay_duration?: number | null;
+            /** Modified Duration */
+            modified_duration?: number | null;
         };
         /**
          * CleanedIVSurfaceResponse
          * @description Cleaned & smoothed IV surface grid (bicubic spline evaluated on a regular mesh).
          */
         CleanedIVSurfaceResponse: {
-            /** Ticker */
-            ticker: string;
+            /** Cleaning Summary */
+            cleaning_summary: string;
+            /** Maturities */
+            maturities: number[];
+            /** N Clean Quotes */
+            n_clean_quotes: number;
             /** Spot */
             spot: number;
             /** Strikes */
             strikes: number[];
-            /** Maturities */
-            maturities: number[];
+            /** Ticker */
+            ticker: string;
             /** Values */
             values: (number | null)[][];
-            /** N Clean Quotes */
-            n_clean_quotes: number;
-            /** Cleaning Summary */
-            cleaning_summary: string;
         };
         /** CommodityForwardRequest */
         CommodityForwardRequest: {
-            /** Spot */
-            spot: number;
-            /** Rate */
-            rate: number;
-            /**
-             * Storage Cost
-             * @default 0
-             */
-            storage_cost: number;
             /**
              * Convenience Yield
              * @default 0
              */
             convenience_yield: number;
+            /** Maturity */
+            maturity: number;
+            /**
+             * Notional
+             * @default 1
+             */
+            notional: number;
+            /** Rate */
+            rate: number;
+            /** Spot */
+            spot: number;
+            /**
+             * Storage Cost
+             * @default 0
+             */
+            storage_cost: number;
+            /** Strike */
+            strike: number;
             /**
              * Vol
              * @default 0.2
              */
             vol: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /**
-             * Notional
-             * @default 1
-             */
-            notional: number;
         };
         /** CommodityOptionRequest */
         CommodityOptionRequest: {
-            /** Spot */
-            spot: number;
-            /** Rate */
-            rate: number;
-            /**
-             * Storage Cost
-             * @default 0
-             */
-            storage_cost: number;
             /**
              * Convenience Yield
              * @default 0
              */
             convenience_yield: number;
-            /** Vol */
-            vol: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
             /**
              * Is Call
              * @default true
              */
             is_call: boolean;
+            /** Maturity */
+            maturity: number;
             /**
              * Notional
              * @default 1
              */
             notional: number;
+            /** Rate */
+            rate: number;
+            /** Spot */
+            spot: number;
+            /**
+             * Storage Cost
+             * @default 0
+             */
+            storage_cost: number;
+            /** Strike */
+            strike: number;
+            /** Vol */
+            vol: number;
         };
         /** CurvePointResponse */
         CurvePointResponse: {
@@ -1349,37 +1349,6 @@ export interface components {
          *     which takes a single float maturity).
          */
         DatedAsianRequest: {
-            /** Spot */
-            spot: number;
-            /** Rate */
-            rate: number;
-            /**
-             * Dividend
-             * @default 0
-             */
-            dividend: number;
-            /** Vol */
-            vol: number;
-            /**
-             * Valuation Date
-             * Format: date
-             * @description Time 0. Defaults to today (UTC) when omitted.
-             */
-            valuation_date?: string;
-            /** Fixing Dates */
-            fixing_dates: string[];
-            /** Strike */
-            strike: number;
-            /**
-             * Is Call
-             * @default true
-             */
-            is_call: boolean;
-            /**
-             * Geometric
-             * @default false
-             */
-            geometric: boolean;
             /**
              * Day Count
              * @default ACT/365F
@@ -1387,21 +1356,52 @@ export interface components {
              */
             day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
             /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /** Fixing Dates */
+            fixing_dates: string[];
+            /**
+             * Geometric
+             * @default false
+             */
+            geometric: boolean;
+            /**
+             * Is Call
+             * @default true
+             */
+            is_call: boolean;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /** Rate */
+            rate: number;
+            /**
              * Sampler
              * @default pseudo
              * @enum {string}
              */
             sampler: "pseudo" | "sobol";
             /**
-             * N Paths
-             * @default 200000
-             */
-            n_paths: number;
-            /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /**
+             * Valuation Date
+             * Format: date
+             * @description Time 0. Defaults to today (UTC) when omitted.
+             */
+            valuation_date?: string;
+            /** Vol */
+            vol: number;
         };
         /**
          * DeltaBucketRow
@@ -1410,41 +1410,41 @@ export interface components {
          *     actually quotes skew and convexity as.
          */
         DeltaBucketRow: {
-            /** Ttm */
-            ttm: number;
-            /** Tenor Label */
-            tenor_label: string;
-            /** Vol 10P */
-            vol_10p?: number | null;
-            /** Vol 25P */
-            vol_25p?: number | null;
-            /** Vol Atm */
-            vol_atm?: number | null;
-            /** Vol 25C */
-            vol_25c?: number | null;
-            /** Vol 10C */
-            vol_10c?: number | null;
-            /** Rr25 */
-            rr25?: number | null;
+            /** Bf10 */
+            bf10?: number | null;
             /** Bf25 */
             bf25?: number | null;
             /** Rr10 */
             rr10?: number | null;
-            /** Bf10 */
-            bf10?: number | null;
+            /** Rr25 */
+            rr25?: number | null;
+            /** Tenor Label */
+            tenor_label: string;
+            /** Ttm */
+            ttm: number;
+            /** Vol 10C */
+            vol_10c?: number | null;
+            /** Vol 10P */
+            vol_10p?: number | null;
+            /** Vol 25C */
+            vol_25c?: number | null;
+            /** Vol 25P */
+            vol_25p?: number | null;
+            /** Vol Atm */
+            vol_atm?: number | null;
         };
         /** DeltaSurfaceResponse */
         DeltaSurfaceResponse: {
-            /** Ticker */
-            ticker: string;
-            /** Spot */
-            spot: number;
-            /** Rows */
-            rows: components["schemas"]["DeltaBucketRow"][];
-            /** N Clean Quotes */
-            n_clean_quotes: number;
             /** Cleaning Summary */
             cleaning_summary: string;
+            /** N Clean Quotes */
+            n_clean_quotes: number;
+            /** Rows */
+            rows: components["schemas"]["DeltaBucketRow"][];
+            /** Spot */
+            spot: number;
+            /** Ticker */
+            ticker: string;
         };
         /**
          * DigitalPayoffKind
@@ -1453,55 +1453,39 @@ export interface components {
         DigitalPayoffKind: "cash-or-nothing" | "asset-or-nothing";
         /** DigitalRequest */
         DigitalRequest: {
-            /** Spot */
-            spot: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
-            /** Dividend */
-            dividend: number;
-            /** Vol */
-            vol: number;
-            /** Is Call */
-            is_call: boolean;
-            /** @default cash-or-nothing */
-            payoff_type: components["schemas"]["DigitalPayoffKind"];
             /**
              * Cash Amount
              * @default 1
              */
             cash_amount: number;
+            /** Dividend */
+            dividend: number;
+            /** Is Call */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
+            /** @default cash-or-nothing */
+            payoff_type: components["schemas"]["DigitalPayoffKind"];
+            /** Rate */
+            rate: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /** Vol */
+            vol: number;
         };
         /** DispersionSwapRequest */
         DispersionSwapRequest: {
-            /** Spots */
-            spots: number[];
-            /** Vols */
-            vols: number[];
             /** Dividends */
             dividends?: number[];
-            /** Weights */
-            weights?: number[];
-            /**
-             * Pairwise Correlation
-             * @default 0
-             */
-            pairwise_correlation: number;
             /** Maturity */
             maturity: number;
             /**
-             * Strike Spread
-             * @default 0
+             * N Paths
+             * @default 200000
              */
-            strike_spread: number;
-            /**
-             * Rate
-             * @default 0.05
-             */
-            rate: number;
+            n_paths: number;
             /**
              * Notional
              * @default 100
@@ -1510,15 +1494,31 @@ export interface components {
             /** Observation Dates */
             observation_dates?: number[];
             /**
-             * N Paths
-             * @default 200000
+             * Pairwise Correlation
+             * @default 0
              */
-            n_paths: number;
+            pairwise_correlation: number;
+            /**
+             * Rate
+             * @default 0.05
+             */
+            rate: number;
             /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Spots */
+            spots: number[];
+            /**
+             * Strike Spread
+             * @default 0
+             */
+            strike_spread: number;
+            /** Vols */
+            vols: number[];
+            /** Weights */
+            weights?: number[];
         };
         /**
          * EngineType
@@ -1527,118 +1527,118 @@ export interface components {
         EngineType: "analytic" | "mc" | "binomial" | "trinomial" | "pde";
         /** FXForwardRequest */
         FXForwardRequest: {
+            /** Maturity */
+            maturity: number;
+            /**
+             * Notional
+             * @default 1
+             */
+            notional: number;
+            /** Rate Domestic */
+            rate_domestic: number;
+            /** Rate Foreign */
+            rate_foreign: number;
             /**
              * Spot
              * @description Spot FX rate (domestic per foreign)
              */
             spot: number;
-            /** Rate Domestic */
-            rate_domestic: number;
-            /** Rate Foreign */
-            rate_foreign: number;
+            /** Strike */
+            strike: number;
             /**
              * Vol
              * @default 0.1
              */
             vol: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /**
-             * Notional
-             * @default 1
-             */
-            notional: number;
         };
         /** FXOptionRequest */
         FXOptionRequest: {
-            /** Spot */
-            spot: number;
-            /** Rate Domestic */
-            rate_domestic: number;
-            /** Rate Foreign */
-            rate_foreign: number;
-            /** Vol */
-            vol: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
             /**
              * Is Call
              * @default true
              */
             is_call: boolean;
+            /** Maturity */
+            maturity: number;
             /**
              * Notional
              * @default 1
              */
             notional: number;
+            /** Rate Domestic */
+            rate_domestic: number;
+            /** Rate Foreign */
+            rate_foreign: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /** Vol */
+            vol: number;
         };
         /** FixedRateBondRequest */
         FixedRateBondRequest: {
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
-            /** Coupon Rate */
-            coupon_rate: number;
             /**
              * Coupon Frequency
              * @default 1
              */
             coupon_frequency: number;
+            /** Coupon Rate */
+            coupon_rate: number;
+            /** Discount Factors */
+            discount_factors?: number[];
+            /** Discount Times */
+            discount_times?: number[];
+            /** Maturity */
+            maturity: number;
             /**
              * Notional
              * @default 1
              */
             notional: number;
-            /** Discount Times */
-            discount_times?: number[];
-            /** Discount Factors */
-            discount_factors?: number[];
+            /** Rate */
+            rate: number;
         };
         /** FutureRequest */
         FutureRequest: {
+            /** Dividend */
+            dividend: number;
+            /** Maturity */
+            maturity: number;
+            /**
+             * Notional
+             * @default 1
+             */
+            notional: number;
+            /** Rate */
+            rate: number;
             /** Spot */
             spot: number;
             /** Strike */
             strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
-            /** Dividend */
-            dividend: number;
-            /**
-             * Notional
-             * @default 1
-             */
-            notional: number;
         };
         /** Greeks */
         Greeks: {
             /** Delta */
             delta?: number | null;
-            /** Gamma */
-            gamma?: number | null;
-            /** Vega */
-            vega?: number | null;
-            /** Theta */
-            theta?: number | null;
-            /** Rho */
-            rho?: number | null;
             /** Delta Std Error */
             delta_std_error?: number | null;
+            /** Gamma */
+            gamma?: number | null;
             /** Gamma Std Error */
             gamma_std_error?: number | null;
-            /** Vega Std Error */
-            vega_std_error?: number | null;
-            /** Theta Std Error */
-            theta_std_error?: number | null;
+            /** Rho */
+            rho?: number | null;
             /** Rho Std Error */
             rho_std_error?: number | null;
+            /** Theta */
+            theta?: number | null;
+            /** Theta Std Error */
+            theta_std_error?: number | null;
+            /** Vega */
+            vega?: number | null;
+            /** Vega Std Error */
+            vega_std_error?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1657,50 +1657,50 @@ export interface components {
          * @description Pricing result from the Dupire local-vol MC engine.
          */
         LocalVolResponse: {
-            /** Ticker */
-            ticker: string;
-            /** Spot */
-            spot: number;
-            /** Npv */
-            npv: number;
-            /** Mc Std Error */
-            mc_std_error: number;
-            /** Delta */
-            delta?: number | null;
-            /** Gamma */
-            gamma?: number | null;
-            /** Theta */
-            theta?: number | null;
-            /** Rho */
-            rho?: number | null;
-            /** Vega Parallel */
-            vega_parallel?: number | null;
-            /** N Clean Quotes */
-            n_clean_quotes: number;
             /** Cleaning Summary */
             cleaning_summary: string;
+            /** Delta */
+            delta?: number | null;
             /** Diagnostics */
             diagnostics: string;
+            /** Gamma */
+            gamma?: number | null;
+            /** Mc Std Error */
+            mc_std_error: number;
+            /** N Clean Quotes */
+            n_clean_quotes: number;
+            /** Npv */
+            npv: number;
+            /** Rho */
+            rho?: number | null;
+            /** Spot */
+            spot: number;
+            /** Theta */
+            theta?: number | null;
+            /** Ticker */
+            ticker: string;
+            /** Vega Parallel */
+            vega_parallel?: number | null;
         };
         /**
          * LocalVolSurfaceResponse
          * @description Dupire local-volatility surface grid.
          */
         LocalVolSurfaceResponse: {
-            /** Ticker */
-            ticker: string;
+            /** Cleaning Summary */
+            cleaning_summary: string;
+            /** Maturities */
+            maturities: number[];
+            /** N Clean Quotes */
+            n_clean_quotes: number;
             /** Spot */
             spot: number;
             /** Strikes */
             strikes: number[];
-            /** Maturities */
-            maturities: number[];
+            /** Ticker */
+            ticker: string;
             /** Values */
             values: (number | null)[][];
-            /** N Clean Quotes */
-            n_clean_quotes: number;
-            /** Cleaning Summary */
-            cleaning_summary: string;
         };
         /**
          * LookbackExtremum
@@ -1709,39 +1709,14 @@ export interface components {
         LookbackExtremum: "minimum" | "maximum";
         /** LookbackRequest */
         LookbackRequest: {
-            /** Spot */
-            spot: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
             /** Dividend */
             dividend: number;
-            /** Vol */
-            vol: number;
-            /** Is Call */
-            is_call: boolean;
-            /** @default fixed-strike */
-            style: components["schemas"]["LookbackStyle"];
             /** @default maximum */
             extremum: components["schemas"]["LookbackExtremum"];
-            /**
-             * N Steps
-             * @default 0
-             */
-            n_steps: number;
-            /**
-             * N Paths
-             * @default 200000
-             */
-            n_paths: number;
-            /**
-             * Seed
-             * @default 1
-             */
-            seed: number;
+            /** Is Call */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
             /**
              * Mc Antithetic
              * @default true
@@ -1752,6 +1727,31 @@ export interface components {
              * @default 0
              */
             mc_epsilon: number;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /**
+             * N Steps
+             * @default 0
+             */
+            n_steps: number;
+            /** Rate */
+            rate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /** @default fixed-strike */
+            style: components["schemas"]["LookbackStyle"];
+            /** Vol */
+            vol: number;
         };
         /**
          * LookbackStyle
@@ -1760,69 +1760,71 @@ export interface components {
         LookbackStyle: "fixed-strike" | "floating-strike";
         /** MarketHistoryPoint */
         MarketHistoryPoint: {
+            /** Close */
+            close: number;
             /**
              * Date
              * Format: date
              */
             date: string;
-            /** Close */
-            close: number;
         };
         /** MarketHistoryResponse */
         MarketHistoryResponse: {
-            /** Ticker */
-            ticker: string;
             /** Points */
             points: components["schemas"]["MarketHistoryPoint"][];
+            /** Ticker */
+            ticker: string;
         };
         /** MountainRequest */
         MountainRequest: {
-            /** Spots */
-            spots: number[];
-            /** Vols */
-            vols: number[];
-            /** Dividends */
-            dividends?: number[];
             /** Correlations */
             correlations?: number[][];
-            /** Observation Dates */
-            observation_dates: number[];
-            /**
-             * Strike
-             * @default 0
-             */
-            strike: number;
+            /** Dividends */
+            dividends?: number[];
             /**
              * Is Call
              * @default true
              */
             is_call: boolean;
             /**
-             * Rate
-             * @default 0.05
-             */
-            rate: number;
-            /**
-             * Notional
-             * @default 100
-             */
-            notional: number;
-            /**
              * N Paths
              * @default 200000
              */
             n_paths: number;
             /**
+             * Notional
+             * @default 100
+             */
+            notional: number;
+            /** Observation Dates */
+            observation_dates: number[];
+            /**
+             * Rate
+             * @default 0.05
+             */
+            rate: number;
+            /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Spots */
+            spots: number[];
+            /**
+             * Strike
+             * @default 0
+             */
+            strike: number;
+            /** Vols */
+            vols: number[];
         };
         /**
          * Portfolio
          * @description Full portfolio model stored as JSON in GCS.
          */
         "Portfolio-Input": {
+            /** Created At */
+            created_at?: string;
             /** Id */
             id: string;
             /**
@@ -1835,18 +1837,18 @@ export interface components {
              * @default
              */
             owner: string;
-            /** Created At */
-            created_at?: string;
-            /** Updated At */
-            updated_at?: string;
             /** Positions */
             positions?: components["schemas"]["Position-Input"][];
+            /** Updated At */
+            updated_at?: string;
         };
         /**
          * Portfolio
          * @description Full portfolio model stored as JSON in GCS.
          */
         "Portfolio-Output": {
+            /** Created At */
+            created_at?: string;
             /** Id */
             id: string;
             /**
@@ -1859,12 +1861,10 @@ export interface components {
              * @default
              */
             owner: string;
-            /** Created At */
-            created_at?: string;
-            /** Updated At */
-            updated_at?: string;
             /** Positions */
             positions?: components["schemas"]["Position-Output"][];
+            /** Updated At */
+            updated_at?: string;
         };
         /** PortfolioPoint */
         PortfolioPoint: {
@@ -1878,56 +1878,48 @@ export interface components {
          * @description Aggregated risk metrics for a portfolio.
          */
         PortfolioRiskSummary: {
-            /** Total Npv */
-            total_npv: number;
-            /** Total Pnl */
-            total_pnl: number;
-            /** Total Delta */
-            total_delta: number;
-            /** Total Gamma */
-            total_gamma: number;
-            /** Total Vega */
-            total_vega: number;
-            /** Total Theta */
-            total_theta: number;
-            /** Total Rho */
-            total_rho: number;
             /** Positions Priced */
             positions_priced: number;
             /** Positions Total */
             positions_total: number;
+            /** Total Delta */
+            total_delta: number;
+            /** Total Gamma */
+            total_gamma: number;
+            /** Total Npv */
+            total_npv: number;
+            /** Total Pnl */
+            total_pnl: number;
+            /** Total Rho */
+            total_rho: number;
+            /** Total Theta */
+            total_theta: number;
+            /** Total Vega */
+            total_vega: number;
         };
         /**
          * PortfolioSummary
          * @description Lightweight portfolio info for list endpoint.
          */
         PortfolioSummary: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
             /** Created At */
             created_at: string;
-            /** Updated At */
-            updated_at: string;
+            /** Id */
+            id: string;
             /** N Positions */
             n_positions: number;
+            /** Name */
+            name: string;
             /** Total Value */
             total_value: number;
+            /** Updated At */
+            updated_at: string;
         };
         /**
          * Position
          * @description A single position in a portfolio.
          */
         "Position-Input": {
-            /** Id */
-            id: string;
-            /**
-             * Label
-             * @default Untitled
-             */
-            label: string;
-            product_type: components["schemas"]["ProductType"];
             category: components["schemas"]["ProductCategory"];
             /**
              * Direction
@@ -1935,19 +1927,27 @@ export interface components {
              */
             direction: string;
             /**
-             * Quantity
-             * @default 1
-             */
-            quantity: number;
-            /**
              * Entry Price
              * @default 0
              */
             entry_price: number;
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default Untitled
+             */
+            label: string;
             /** Parameters */
             parameters?: {
                 [key: string]: unknown;
             };
+            product_type: components["schemas"]["ProductType"];
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
             result?: components["schemas"]["PositionResult"] | null;
         };
         /**
@@ -1955,14 +1955,6 @@ export interface components {
          * @description A single position in a portfolio.
          */
         "Position-Output": {
-            /** Id */
-            id: string;
-            /**
-             * Label
-             * @default Untitled
-             */
-            label: string;
-            product_type: components["schemas"]["ProductType"];
             category: components["schemas"]["ProductCategory"];
             /**
              * Direction
@@ -1970,19 +1962,27 @@ export interface components {
              */
             direction: string;
             /**
-             * Quantity
-             * @default 1
-             */
-            quantity: number;
-            /**
              * Entry Price
              * @default 0
              */
             entry_price: number;
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default Untitled
+             */
+            label: string;
             /** Parameters */
             parameters?: {
                 [key: string]: unknown;
             };
+            product_type: components["schemas"]["ProductType"];
+            /**
+             * Quantity
+             * @default 1
+             */
+            quantity: number;
             result?: components["schemas"]["PositionResult"] | null;
         };
         /** PositionGreeks */
@@ -1991,12 +1991,12 @@ export interface components {
             delta?: number | null;
             /** Gamma */
             gamma?: number | null;
-            /** Vega */
-            vega?: number | null;
-            /** Theta */
-            theta?: number | null;
             /** Rho */
             rho?: number | null;
+            /** Theta */
+            theta?: number | null;
+            /** Vega */
+            vega?: number | null;
         };
         /**
          * PositionResult
@@ -2004,44 +2004,44 @@ export interface components {
          */
         PositionResult: {
             /**
-             * Npv
-             * @default 0
-             */
-            npv: number;
-            /**
-             * Unit Price
-             * @default 0
-             */
-            unit_price: number;
-            greeks?: components["schemas"]["PositionGreeks"];
-            /** Priced At */
-            priced_at?: string | null;
-            /**
-             * Engine
-             * @default
-             */
-            engine: string;
-            /**
              * Diagnostics
              * @default
              */
             diagnostics: string;
             /**
+             * Engine
+             * @default
+             */
+            engine: string;
+            greeks?: components["schemas"]["PositionGreeks"];
+            /**
              * Mc Std Error
              * @default 0
              */
             mc_std_error: number;
+            /**
+             * Npv
+             * @default 0
+             */
+            npv: number;
+            /** Priced At */
+            priced_at?: string | null;
+            /**
+             * Unit Price
+             * @default 0
+             */
+            unit_price: number;
         };
         /** PricingResponse */
         PricingResponse: {
-            /** Npv */
-            npv: number;
-            greeks: components["schemas"]["Greeks"];
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
             /** Diagnostics */
             diagnostics: string;
+            greeks: components["schemas"]["Greeks"];
             /** Mc Std Error */
             mc_std_error: number;
+            /** Npv */
+            npv: number;
             /** Risks */
             risks?: components["schemas"]["RiskEntry"][] | null;
         };
@@ -2062,52 +2062,52 @@ export interface components {
         RainbowKind: "worst-of" | "best-of";
         /** RainbowRequest */
         RainbowRequest: {
-            /** Spots */
-            spots: number[];
-            /** Vols */
-            vols: number[];
             /** Dividends */
             dividends?: number[];
-            /**
-             * Pairwise Correlation
-             * @default 0
-             */
-            pairwise_correlation: number;
-            /** Maturity */
-            maturity: number;
-            /**
-             * Strike
-             * @description Performance strike (1.0 = ATM)
-             * @default 1
-             */
-            strike: number;
             /**
              * Is Call
              * @default true
              */
             is_call: boolean;
-            /**
-             * Rate
-             * @default 0.05
-             */
-            rate: number;
-            /**
-             * Notional
-             * @default 100
-             */
-            notional: number;
-            /** @default worst-of */
-            rainbow_kind: components["schemas"]["RainbowKind"];
+            /** Maturity */
+            maturity: number;
             /**
              * N Paths
              * @default 200000
              */
             n_paths: number;
             /**
+             * Notional
+             * @default 100
+             */
+            notional: number;
+            /**
+             * Pairwise Correlation
+             * @default 0
+             */
+            pairwise_correlation: number;
+            /** @default worst-of */
+            rainbow_kind: components["schemas"]["RainbowKind"];
+            /**
+             * Rate
+             * @default 0.05
+             */
+            rate: number;
+            /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Spots */
+            spots: number[];
+            /**
+             * Strike
+             * @description Performance strike (1.0 = ATM)
+             * @default 1
+             */
+            strike: number;
+            /** Vols */
+            vols: number[];
         };
         /** RatesCurveResponse */
         RatesCurveResponse: {
@@ -2127,15 +2127,13 @@ export interface components {
         RiskEntry: {
             /** Label */
             label: string;
-            /** Value */
-            value: number;
             /** Std Error */
             std_error: number;
+            /** Value */
+            value: number;
         };
         /** SABRPathRequest */
         SABRPathRequest: {
-            /** Forward */
-            forward: number;
             /** Alpha */
             alpha: number;
             /**
@@ -2143,27 +2141,29 @@ export interface components {
              * @default 0.5
              */
             beta: number;
-            /** Rho */
-            rho: number;
-            /** Nu */
-            nu: number;
-            /** Ttm */
-            ttm: number;
-            /**
-             * N Steps
-             * @default 100
-             */
-            n_steps: number;
+            /** Forward */
+            forward: number;
             /**
              * N Paths
              * @default 30
              */
             n_paths: number;
             /**
+             * N Steps
+             * @default 100
+             */
+            n_steps: number;
+            /** Nu */
+            nu: number;
+            /** Rho */
+            rho: number;
+            /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Ttm */
+            ttm: number;
         };
         /** ScriptEvent */
         ScriptEvent: {
@@ -2187,59 +2187,26 @@ export interface components {
          */
         ScriptRequest: {
             /**
-             * Script
-             * @description The script source text.
-             */
-            script: string;
-            /** Spot */
-            spot: number;
-            /** Rate */
-            rate: number;
-            /**
-             * Dividend
-             * @default 0
-             */
-            dividend: number;
-            /** Vol */
-            vol: number;
-            /**
-             * Valuation Date
-             * Format: date
-             * @description Time 0. Defaults to today (UTC) when omitted.
-             */
-            valuation_date?: string;
-            /**
              * Day Count
              * @default ACT/365F
              * @enum {string}
              */
             day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
             /**
-             * Fuzzy
-             * @default false
-             */
-            fuzzy: boolean;
-            /**
              * Default Eps
              * @default 0.01
              */
             default_eps: number;
             /**
-             * Sampler
-             * @default pseudo
-             * @enum {string}
+             * Dividend
+             * @default 0
              */
-            sampler: "pseudo" | "sobol";
+            dividend: number;
             /**
-             * N Paths
-             * @default 200000
+             * Fuzzy
+             * @default false
              */
-            n_paths: number;
-            /**
-             * Seed
-             * @default 1
-             */
-            seed: number;
+            fuzzy: boolean;
             /**
              * Greeks Method
              * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol': the adjoint engine does not have Sobol support yet (lot 17d) and falls back to pseudo-random, noted in the response's diagnostics.
@@ -2247,6 +2214,39 @@ export interface components {
              * @enum {string}
              */
             greeks_method: "none" | "aad";
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /** Rate */
+            rate: number;
+            /**
+             * Sampler
+             * @default pseudo
+             * @enum {string}
+             */
+            sampler: "pseudo" | "sobol";
+            /**
+             * Script
+             * @description The script source text.
+             */
+            script: string;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
+            /**
+             * Valuation Date
+             * Format: date
+             * @description Time 0. Defaults to today (UTC) when omitted.
+             */
+            valuation_date?: string;
+            /** Vol */
+            vol: number;
         };
         /**
          * ScriptValidateRequest
@@ -2257,6 +2257,12 @@ export interface components {
          */
         ScriptValidateRequest: {
             /**
+             * Day Count
+             * @default ACT/365F
+             * @enum {string}
+             */
+            day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
+            /**
              * Script
              * @description The script source text.
              */
@@ -2267,12 +2273,6 @@ export interface components {
              * @description Time 0. Defaults to today (UTC) when omitted.
              */
             valuation_date?: string;
-            /**
-             * Day Count
-             * @default ACT/365F
-             * @enum {string}
-             */
-            day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
         };
         /** ScriptValidateResponse */
         ScriptValidateResponse: {
@@ -2283,62 +2283,62 @@ export interface components {
         };
         /** SimulationCalibrateRequest */
         SimulationCalibrateRequest: {
-            /** Ticker */
-            ticker: string;
-            model: components["schemas"]["SimulationModel"];
-            /**
-             * Ttm
-             * @description Target maturity in years -- the nearest calibrated slice is used
-             */
-            ttm: number;
-            /**
-             * Rate
-             * @default 0.05
-             */
-            rate: number;
             /**
              * Beta
              * @description SABR beta, fixed rather than calibrated (see SABRParams)
              * @default 0.5
              */
             beta: number;
+            model: components["schemas"]["SimulationModel"];
+            /**
+             * Rate
+             * @default 0.05
+             */
+            rate: number;
+            /** Ticker */
+            ticker: string;
+            /**
+             * Ttm
+             * @description Target maturity in years -- the nearest calibrated slice is used
+             */
+            ttm: number;
         };
         /** SimulationCalibrateResponse */
         SimulationCalibrateResponse: {
-            /** Ticker */
-            ticker: string;
-            model: components["schemas"]["SimulationModel"];
-            /** Spot */
-            spot: number;
+            /** Alpha */
+            alpha?: number | null;
+            /** Beta */
+            beta?: number | null;
+            /** Cleaning Summary */
+            cleaning_summary: string;
+            /** Converged */
+            converged?: boolean | null;
             /** Dividend */
             dividend: number;
             /** Forward */
             forward: number;
-            /** Ttm */
-            ttm: number;
+            model: components["schemas"]["SimulationModel"];
+            /** N Clean Quotes */
+            n_clean_quotes: number;
+            /** Nu */
+            nu?: number | null;
+            /** Rho */
+            rho?: number | null;
+            /** Rmse */
+            rmse?: number | null;
             /**
              * Slice Ttm
              * @description The calibrated SVI slice's own maturity, closest to the requested ttm
              */
             slice_ttm: number;
+            /** Spot */
+            spot: number;
+            /** Ticker */
+            ticker: string;
+            /** Ttm */
+            ttm: number;
             /** Vol */
             vol?: number | null;
-            /** Alpha */
-            alpha?: number | null;
-            /** Beta */
-            beta?: number | null;
-            /** Rho */
-            rho?: number | null;
-            /** Nu */
-            nu?: number | null;
-            /** Rmse */
-            rmse?: number | null;
-            /** Converged */
-            converged?: boolean | null;
-            /** N Clean Quotes */
-            n_clean_quotes: number;
-            /** Cleaning Summary */
-            cleaning_summary: string;
         };
         /**
          * SimulationModel
@@ -2348,10 +2348,10 @@ export interface components {
         /** SimulationPathsResponse */
         SimulationPathsResponse: {
             model: components["schemas"]["SimulationModel"];
-            /** Time Grid */
-            time_grid: number[];
             /** Paths */
             paths: number[][];
+            /** Time Grid */
+            time_grid: number[];
         };
         /**
          * StressBump
@@ -2364,6 +2364,11 @@ export interface components {
              */
             name: string;
             /**
+             * Rate Shift
+             * @default 0
+             */
+            rate_shift: number;
+            /**
              * Spot Shift
              * @default 0
              */
@@ -2373,11 +2378,6 @@ export interface components {
              * @default 0
              */
             vol_shift: number;
-            /**
-             * Rate Shift
-             * @default 0
-             */
-            rate_shift: number;
         };
         /**
          * StressResult
@@ -2405,8 +2405,6 @@ export interface components {
         };
         /** VaRRequest */
         VaRRequest: {
-            /** Portfolio Id */
-            portfolio_id: string;
             /**
              * Confidence
              * @default 0.95
@@ -2422,76 +2420,60 @@ export interface components {
              * @default parametric
              */
             method: string;
+            /** Portfolio Id */
+            portfolio_id: string;
         };
         /** VaRResult */
         VaRResult: {
             /** Confidence */
             confidence: number;
-            /** Horizon Days */
-            horizon_days: number;
-            /** Var */
-            var: number;
             /** Expected Shortfall */
             expected_shortfall: number;
+            /** Horizon Days */
+            horizon_days: number;
             /** Method */
             method: string;
+            /** Var */
+            var: number;
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /** VanillaRequest */
         VanillaRequest: {
-            /** Spot */
-            spot: number;
-            /** Strike */
-            strike: number;
-            /** Maturity */
-            maturity: number;
-            /** Rate */
-            rate: number;
             /** Dividend */
             dividend: number;
-            /** Vol */
-            vol: number;
-            /** Is Call */
-            is_call: boolean;
+            /** @default analytic */
+            engine: components["schemas"]["EngineType"];
             /**
              * Is American
              * @default false
              */
             is_american: boolean;
-            /** @default analytic */
-            engine: components["schemas"]["EngineType"];
-            /**
-             * N Paths
-             * @default 200000
-             */
-            n_paths: number;
-            /**
-             * Seed
-             * @default 1
-             */
-            seed: number;
+            /** Is Call */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
             /**
              * Mc Epsilon
              * @default 0
              */
             mc_epsilon: number;
             /**
-             * Tree Steps
-             * @default 100
+             * N Paths
+             * @default 200000
              */
-            tree_steps: number;
+            n_paths: number;
             /**
              * Pde Space Steps
              * @default 100
@@ -2502,67 +2484,79 @@ export interface components {
              * @default 100
              */
             pde_time_steps: number;
+            /** Rate */
+            rate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
+            /** Strike */
+            strike: number;
+            /**
+             * Tree Steps
+             * @default 100
+             */
+            tree_steps: number;
+            /** Vol */
+            vol: number;
         };
         /** VarianceSwapRequest */
         VarianceSwapRequest: {
-            /** Spot */
-            spot: number;
-            /** Rate */
-            rate: number;
             /**
              * Dividend
              * @default 0
              */
             dividend: number;
-            /** Vol */
-            vol: number;
+            /** @default analytic */
+            engine: components["schemas"]["EngineType"];
             /** Maturity */
             maturity: number;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /**
+             * Notional
+             * @default 100
+             */
+            notional: number;
+            /** Observation Dates */
+            observation_dates?: number[];
+            /** Rate */
+            rate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot: number;
             /**
              * Strike Var
              * @description Annualised variance strike
              */
             strike_var: number;
-            /**
-             * Notional
-             * @default 100
-             */
-            notional: number;
-            /** Observation Dates */
-            observation_dates?: number[];
-            /** @default analytic */
-            engine: components["schemas"]["EngineType"];
-            /**
-             * N Paths
-             * @default 200000
-             */
-            n_paths: number;
-            /**
-             * Seed
-             * @default 1
-             */
-            seed: number;
+            /** Vol */
+            vol: number;
         };
         /** VolatilitySwapRequest */
         VolatilitySwapRequest: {
-            /** Spot */
-            spot: number;
-            /** Rate */
-            rate: number;
             /**
              * Dividend
              * @default 0
              */
             dividend: number;
-            /** Vol */
-            vol: number;
             /** Maturity */
             maturity: number;
             /**
-             * Strike Vol
-             * @description Annualised vol strike
+             * N Paths
+             * @default 200000
              */
-            strike_vol: number;
+            n_paths: number;
             /**
              * Notional
              * @default 100
@@ -2570,32 +2564,38 @@ export interface components {
             notional: number;
             /** Observation Dates */
             observation_dates?: number[];
-            /**
-             * N Paths
-             * @default 200000
-             */
-            n_paths: number;
+            /** Rate */
+            rate: number;
             /**
              * Seed
              * @default 1
              */
             seed: number;
+            /** Spot */
+            spot: number;
+            /**
+             * Strike Vol
+             * @description Annualised vol strike
+             */
+            strike_vol: number;
+            /** Vol */
+            vol: number;
         };
         /** ZeroCouponBondRequest */
         ZeroCouponBondRequest: {
+            /** Discount Factors */
+            discount_factors?: number[];
+            /** Discount Times */
+            discount_times?: number[];
             /** Maturity */
             maturity: number;
-            /** Rate */
-            rate: number;
             /**
              * Notional
              * @default 1
              */
             notional: number;
-            /** Discount Times */
-            discount_times?: number[];
-            /** Discount Factors */
-            discount_factors?: number[];
+            /** Rate */
+            rate: number;
         };
     };
     responses: never;
@@ -2606,10 +2606,45 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    health: {
+    api_login: {
         parameters: {
             query?: never;
             header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_me: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2621,19 +2656,65 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthResponse"];
+                    "application/json": components["schemas"]["UserInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
-    list_tickers: {
+    api_register: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_backtest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BacktestRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2641,16 +2722,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TickersResponse"];
+                    "application/json": components["schemas"]["BacktestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
     };
-    market_history: {
+    delta_surface: {
         parameters: {
             query: {
+                /** @description Stock ticker */
                 ticker: string;
-                range?: string;
+                /** @description Risk-free rate */
+                rate?: number;
+                min_open_interest?: number;
+                min_bid?: number;
+                max_spread_ratio?: number;
+                min_moneyness?: number;
+                max_moneyness?: number;
             };
             header?: never;
             path?: never;
@@ -2664,7 +2761,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MarketHistoryResponse"];
+                    "application/json": components["schemas"]["DeltaSurfaceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2678,12 +2775,18 @@ export interface operations {
             };
         };
     };
-    rates_curve: {
+    cleaned_iv_surface: {
         parameters: {
-            query?: {
-                curve?: string;
-                curve_type?: string;
-                fixed_period_years?: number;
+            query: {
+                /** @description Stock ticker */
+                ticker: string;
+                /** @description Risk-free rate */
+                rate?: number;
+                min_open_interest?: number;
+                min_bid?: number;
+                max_spread_ratio?: number;
+                min_moneyness?: number;
+                max_moneyness?: number;
             };
             header?: never;
             path?: never;
@@ -2697,766 +2800,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatesCurveResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_vanilla: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VanillaRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_american_vanilla: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AmericanVanillaRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_asian: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AsianRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_dated_asian: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DatedAsianRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_script: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScriptRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    validate_script: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScriptValidateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScriptValidateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_barrier: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BarrierRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_digital: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DigitalRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_lookback: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LookbackRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_basket: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BasketRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_future: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FutureRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_zero_coupon_bond: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ZeroCouponBondRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_fixed_rate_bond: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FixedRateBondRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_autocall: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AutocallRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_mountain: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MountainRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_variance_swap: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VarianceSwapRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_volatility_swap: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VolatilitySwapRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_dispersion_swap: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DispersionSwapRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_fx_forward: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FXForwardRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_fx_option: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FXOptionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_commodity_forward: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CommodityForwardRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_commodity_option: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CommodityOptionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    price_rainbow: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RainbowRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PricingResponse"];
+                    "application/json": components["schemas"]["CleanedIVSurfaceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3555,84 +2899,6 @@ export interface operations {
             };
         };
     };
-    delta_surface: {
-        parameters: {
-            query: {
-                /** @description Stock ticker */
-                ticker: string;
-                /** @description Risk-free rate */
-                rate?: number;
-                min_open_interest?: number;
-                min_bid?: number;
-                max_spread_ratio?: number;
-                min_moneyness?: number;
-                max_moneyness?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeltaSurfaceResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cleaned_iv_surface: {
-        parameters: {
-            query: {
-                /** @description Stock ticker */
-                ticker: string;
-                /** @description Risk-free rate */
-                rate?: number;
-                min_open_interest?: number;
-                min_bid?: number;
-                max_spread_ratio?: number;
-                min_moneyness?: number;
-                max_moneyness?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CleanedIVSurfaceResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     local_vol_surface: {
         parameters: {
             query: {
@@ -3659,105 +2925,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocalVolSurfaceResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    simulate_black_scholes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BSPathRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SimulationPathsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    simulate_sabr: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SABRPathRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SimulationPathsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    calibrate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SimulationCalibrateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SimulationCalibrateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4152,7 +3319,7 @@ export interface operations {
             };
         };
     };
-    api_register: {
+    calibrate: {
         parameters: {
             query?: never;
             header?: never;
@@ -4161,40 +3328,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AuthRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuthResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    api_login: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AuthRequest"];
+                "application/json": components["schemas"]["SimulationCalibrateRequest"];
             };
         };
         responses: {
@@ -4204,7 +3338,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuthResponse"];
+                    "application/json": components["schemas"]["SimulationCalibrateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4218,12 +3352,76 @@ export interface operations {
             };
         };
     };
-    api_me: {
+    simulate_black_scholes: {
         parameters: {
             query?: never;
-            header?: {
-                authorization?: string | null;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BSPathRequest"];
             };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationPathsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_sabr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SABRPathRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationPathsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health: {
+        parameters: {
+            query?: never;
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -4235,7 +3433,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserInfo"];
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    market_history: {
+        parameters: {
+            query: {
+                ticker: string;
+                range?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketHistoryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4249,7 +3470,60 @@ export interface operations {
             };
         };
     };
-    run_backtest: {
+    rates_curve: {
+        parameters: {
+            query?: {
+                curve?: string;
+                curve_type?: string;
+                fixed_period_years?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatesCurveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tickers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TickersResponse"];
+                };
+            };
+        };
+    };
+    price_fixed_rate_bond: {
         parameters: {
             query?: never;
             header?: never;
@@ -4258,7 +3532,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BacktestRequest"];
+                "application/json": components["schemas"]["FixedRateBondRequest"];
             };
         };
         responses: {
@@ -4268,7 +3542,733 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BacktestResponse"];
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_zero_coupon_bond: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ZeroCouponBondRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_commodity_forward: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommodityForwardRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_commodity_option: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommodityOptionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_future: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FutureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_fx_forward: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FXForwardRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_fx_option: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FXOptionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_american_vanilla: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AmericanVanillaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_asian: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AsianRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_barrier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BarrierRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_basket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BasketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_dated_asian: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatedAsianRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_digital: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DigitalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_lookback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_rainbow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RainbowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_vanilla: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VanillaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_script: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_script: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptValidateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_autocall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutocallRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_mountain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MountainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_dispersion_swap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispersionSwapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_variance_swap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VarianceSwapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_volatility_swap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VolatilitySwapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
                 };
             };
             /** @description Validation Error */
