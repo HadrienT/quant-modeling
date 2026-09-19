@@ -5376,7 +5376,7 @@
     },
     "/api/simulation/calibrate": {
       "post": {
-        "description": "Fetch the ticker's chain (DB-first, live yfinance fallback), run the\nexisting SVI vol-surface pipeline, pick the calibrated slice closest to\nthe requested maturity, and either read its ATM vol off (Black-Scholes)\nor fit SABR to it (see vol_surface.sabr_quotes_from_svi_slice).",
+        "description": "Read the ticker's stored chain (database only), run the\nexisting SVI vol-surface pipeline, pick the calibrated slice closest to\nthe requested maturity, and either read its ATM vol off (Black-Scholes)\nor fit SABR to it (see vol_surface.sabr_quotes_from_svi_slice).",
         "operationId": "calibrate",
         "requestBody": {
           "content": {
