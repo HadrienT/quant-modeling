@@ -39,6 +39,36 @@ struct Pcg32
         return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
     }
 
+    /**
+     * @brief Jump `n` draws ahead (or behind, via wraparound) in O(log n),
+     *        without generating them (blueprint/wp/17-aad.md §8.2).
+     *
+     * The state transition state' = state*mult + inc is an affine map;
+     * applying it n times is itself affine, state' = acc_mult*state +
+     * acc_plus, and acc_mult/acc_plus telescope under repeated squaring
+     * exactly the way a fast power does -- this is the standard PCG-library
+     * "advance" trick (O'Neill, 2014), not something specific to this repo.
+     * All arithmetic is mod 2^64 via natural uint64_t overflow.
+     */
+    void skip(uint64_t n)
+    {
+        uint64_t cur_mult = 6364136223846793005ULL;
+        uint64_t cur_plus = inc;
+        uint64_t acc_mult = 1u, acc_plus = 0u;
+        while (n > 0)
+        {
+            if (n & 1u)
+            {
+                acc_mult *= cur_mult;
+                acc_plus = acc_plus * cur_mult + cur_plus;
+            }
+            cur_plus = (cur_mult + 1u) * cur_plus;
+            cur_mult *= cur_mult;
+            n >>= 1u;
+        }
+        state = acc_mult * state + acc_plus;
+    }
+
     static constexpr uint32_t min() { return 0u; }
     static constexpr uint32_t max() { return 0xFFFFFFFFu; }
 };

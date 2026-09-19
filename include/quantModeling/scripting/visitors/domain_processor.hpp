@@ -98,6 +98,8 @@ namespace quantModeling::scripting
                 return var_domain_[v->index];
             if (dynamic_cast<const NodeSpot *>(&n))
                 return Domain::greater_than(0.0);
+            if (dynamic_cast<const NodeDf *>(&n))
+                return Domain::greater_than(0.0);
 
             if (dynamic_cast<const NodeAdd *>(&n))
                 return d(0) + d(1);

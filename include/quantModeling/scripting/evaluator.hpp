@@ -40,10 +40,30 @@ namespace quantModeling::scripting
       public:
         void set_variable_count(std::size_t n) { variables_.assign(n, T(0)); }
 
+        /// Every future path starts from this state instead of all-zero --
+        /// the result of replaying the script's historical (pre-valuation)
+        /// events once at construction (WP 16e). Unset by default, meaning
+        /// "start from zero" exactly as before.
+        void set_baseline(std::vector<T> baseline)
+        {
+            baseline_ = std::move(baseline);
+            has_baseline_ = true;
+        }
+
+        /// Historical replay runs once, not per path, and a sunk cash flow
+        /// from before the valuation date must not enter today's price --
+        /// only the variable state it leaves behind should. Suppresses
+        /// NodePays's accumulation into payoff_ without disturbing the stack
+        /// discipline (the amount is still popped, just discarded).
+        void set_suppress_payoff(bool suppress) { suppress_payoff_ = suppress; }
+
         /// Reset for a new path. Call once, then run every event in order.
         virtual void initialize()
         {
-            std::fill(variables_.begin(), variables_.end(), T(0));
+            if (has_baseline_)
+                variables_ = baseline_;
+            else
+                std::fill(variables_.begin(), variables_.end(), T(0));
             payoff_ = T(0);
             stack_.clear();
         }
@@ -72,6 +92,17 @@ namespace quantModeling::scripting
                     " underlying(s) -- ScriptedProduct::n_underlyings() reports "
                     "what the script actually needs");
             push(spots[n.index]);
+        }
+        void visit(const NodeDf &n) override
+        {
+            const std::vector<T> &discounts = (*scenario_)[event_index_].discounts;
+            if (n.slot >= discounts.size())
+                throw InvalidInput(
+                    "df(" + n.date.to_iso() +
+                    "): not resolved against this event's own discount "
+                    "lookups -- DiscountLookupResolver must run before this "
+                    "product is priced");
+            push(discounts[n.slot]);
         }
 
         // ── arithmetic ──────────────────────────────────────────────────────
@@ -227,7 +258,9 @@ namespace quantModeling::scripting
         void visit(const NodePays &n) override
         {
             n.arguments[0]->accept(*this);
-            payoff_ += pop() / (*scenario_)[event_index_].numeraire;
+            const T value = pop();
+            if (!suppress_payoff_)
+                payoff_ += value / (*scenario_)[event_index_].numeraire;
         }
         void visit(const NodeIf &n) override
         {
@@ -295,6 +328,9 @@ namespace quantModeling::scripting
         const Scenario<T> *scenario_ = nullptr;
         std::size_t event_index_ = 0;
         T payoff_{};
+        std::vector<T> baseline_;
+        bool has_baseline_ = false;
+        bool suppress_payoff_ = false;
     };
 
 } // namespace quantModeling::scripting

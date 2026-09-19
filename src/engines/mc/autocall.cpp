@@ -102,7 +102,7 @@ namespace quantModeling
                     int cpn_periods = note.memory_coupon ? (missed_coupons + 1) : 1;
                     Real cashflow = note.notional *
                                     (1.0 + note.coupon_rate * static_cast<Real>(cpn_periods));
-                    path_pv = cashflow * steps[i].df;
+                    path_pv += cashflow * steps[i].df;
                     called = true;
                     break;
                 }

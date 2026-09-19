@@ -13,12 +13,14 @@
 #include "quantModeling/scripting/parser.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
+#include "quantModeling/scripting/visitors/discount_lookup_resolver.hpp"
 #include "quantModeling/scripting/visitors/domain_processor.hpp"
 #include "quantModeling/scripting/visitors/if_processor.hpp"
 #include "quantModeling/scripting/visitors/var_indexer.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -70,16 +72,29 @@ namespace quantModeling
      * `spot()` reads asset 0; `spot(i)` reads asset i, for a script that
      * needs more than one underlying (blueprint/wp/17-aad.md lot 17e) --
      * n_underlyings() reports the highest index used, plus one, so a caller
-     * knows how many assets the model it builds needs to carry. Remaining
-     * v1 limit (WP §11): every event must fall strictly after the valuation
-     * date -- historical fixings arrive with language v2 (lot 16e).
+     * knows how many assets the model it builds needs to carry.
+     *
+     * An event on or before the valuation date is a **historical fixing**
+     * (lot 16e): it is not simulated (there is no future path to a past
+     * date), so it is replayed exactly once at construction, against
+     * caller-supplied fixing values, through a plain hard Evaluator<T> --
+     * a fixing already happened, so there is nothing left to smooth even
+     * when `settings.fuzzy` is set for the live pricing. Only the resulting
+     * *variable state* carries forward, as the starting point every future
+     * path's Evaluator::initialize() resets to instead of all-zero; any
+     * `pays` inside a historical event is a sunk cash flow and is dropped,
+     * not counted in today's price (Evaluator::set_suppress_payoff()).
+     * `df()` is not supported in a historical event: it has no model yet to
+     * ask for a discount factor at construction time.
      */
     template <class T = Real>
     class ScriptedProduct final : public ISimulatableProduct<T>
     {
       public:
         ScriptedProduct(const std::string &script, const ValuationContext &ctx,
-                        const ScriptSettings &settings = {})
+                        const ScriptSettings &settings = {},
+                        const std::map<Date, std::vector<double>>
+                            &historical_fixings = {})
         {
             std::vector<scripting::Event> events = scripting::parse_script(script);
             std::stable_sort(events.begin(), events.end(),
@@ -104,13 +119,28 @@ namespace quantModeling
                         n_underlyings_ = std::max(
                             n_underlyings_, detail::max_spot_index(*statement) + 1);
 
-            defline_ = scripting::build_defline(events_);
+            const std::vector<std::vector<Time>> discount_mats =
+                scripting::DiscountLookupResolver(ctx).resolve(events_);
+            defline_ = scripting::build_defline(events_, discount_mats);
+
+            const std::vector<std::vector<Time>> historical_mats =
+                scripting::DiscountLookupResolver(ctx).resolve(historical_events_);
+            for (std::size_t i = 0; i < historical_mats.size(); ++i)
+                if (!historical_mats[i].empty())
+                    throw InvalidInput(
+                        "ScriptedProduct: df() is not supported in a "
+                        "historical (pre-valuation) event (" +
+                        historical_events_[i].date.to_iso() + ")");
 
             if (settings.fuzzy)
                 evaluator_ = std::make_unique<scripting::FuzzyEvaluator<T>>();
             else
                 evaluator_ = std::make_unique<scripting::Evaluator<T>>();
             evaluator_->set_variable_count(indexer.count());
+
+            if (!historical_events_.empty())
+                evaluator_->set_baseline(
+                    replay_historical(indexer.count(), historical_fixings));
         }
 
         const TimeLine &timeline() const override { return timeline_; }
@@ -158,8 +188,10 @@ namespace quantModeling
 
       private:
         /// Sort-merge the events onto a canonical Time axis. Events sorted by
-        /// date already; those within TIMELINE_EPS of each other collapse to one
-        /// (statements concatenated in date order — WP §7).
+        /// date already; those within TIMELINE_EPS of each other collapse to
+        /// one (statements concatenated in date order — WP §7). An event on
+        /// or before the valuation date goes to historical_events_ instead
+        /// (WP 16e): it has no future path to attach to.
         void resolve_timeline(std::vector<scripting::Event> events,
                               const ValuationContext &ctx)
         {
@@ -167,10 +199,10 @@ namespace quantModeling
             {
                 const Time t = ctx.t(event.date);
                 if (t <= TIMELINE_EPS)
-                    throw InvalidInput(
-                        "ScriptedProduct: event " + event.date.to_iso() +
-                        " must fall strictly after the valuation date "
-                        "(historical fixings are not supported yet)");
+                {
+                    historical_events_.push_back(std::move(event));
+                    continue;
+                }
 
                 if (!timeline_.empty() && t - timeline_.back() < TIMELINE_EPS)
                 {
@@ -185,7 +217,39 @@ namespace quantModeling
             }
         }
 
+        /// Replay every historical event once, in date order, against its
+        /// caller-supplied fixing, and return the resulting variable state
+        /// -- the baseline every future path starts from instead of zero.
+        std::vector<T>
+        replay_historical(std::size_t n_variables,
+                          const std::map<Date, std::vector<double>> &fixings)
+        {
+            scripting::Evaluator<T> replay; // always hard (see class doc)
+            replay.set_variable_count(n_variables);
+            replay.set_suppress_payoff(true);
+            replay.initialize();
+
+            Scenario<T> fixing_sample(1);
+            for (const scripting::Event &event : historical_events_)
+            {
+                const auto it = fixings.find(event.date);
+                if (it == fixings.end())
+                    throw InvalidInput(
+                        "ScriptedProduct: missing a historical fixing for " +
+                        event.date.to_iso());
+
+                fixing_sample[0].spots.assign(it->second.begin(),
+                                              it->second.end());
+                fixing_sample[0].numeraire = T(1); // unused: payoff suppressed
+                replay.set_event(fixing_sample, 0);
+                for (const scripting::ExprTree &statement : event.statements)
+                    replay.run(*statement);
+            }
+            return replay.variables();
+        }
+
         std::vector<scripting::Event> events_; ///< AST, const after construction
+        std::vector<scripting::Event> historical_events_; ///< replayed once, at construction
         TimeLine timeline_;
         std::vector<SampleDef> defline_;
         std::size_t n_underlyings_ = 1;
