@@ -38,6 +38,12 @@ services:
       - QM_LLM_BASE_URL=${QM_LLM_BASE_URL:-http://172.17.0.1:8001/v1}
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
+      # Sign in with Google (optional — the button only appears when both are set).
+      # QM_PUBLIC_URL must be the origin users type, and match the redirect URI
+      # registered in the Google console (deploy/RUNBOOK.md, "Connexion Google").
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - QM_PUBLIC_URL=${QM_PUBLIC_URL:-https://tramonihadrien.com}
       # data-ingest Postgres (market data), over the shared network
       - PGHOST=${PGHOST:-data-ingest-postgres}
       - PGPORT=${PGPORT:-5432}
