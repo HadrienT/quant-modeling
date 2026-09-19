@@ -2681,6 +2681,19 @@
         "title": "ProductType",
         "type": "string"
       },
+      "Providers": {
+        "properties": {
+          "google": {
+            "title": "Google",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "google"
+        ],
+        "title": "Providers",
+        "type": "object"
+      },
       "RainbowKind": {
         "enum": [
           "worst-of",
@@ -3470,6 +3483,17 @@
       },
       "UserInfo": {
         "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
           "username": {
             "title": "Username",
             "type": "string"
@@ -4005,6 +4029,28 @@
           }
         },
         "summary": "Api Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/providers": {
+      "get": {
+        "description": "Which sign-in methods are configured, so the UI only offers real ones.",
+        "operationId": "api_providers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Providers"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Providers",
         "tags": [
           "auth"
         ]

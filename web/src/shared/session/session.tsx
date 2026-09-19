@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api, setAuthToken } from "@/shared/api";
+import { parseAuthFragment } from "./fragment";
 
 /**
  * Session = server state (WP 04 §2). useMe() is a TanStack Query; the context
@@ -36,6 +37,29 @@ function persistToken(t: string | null) {
 	}
 }
 
+/**
+ * Google sign-in comes back as a URL fragment (see fragment.ts). Consumed at
+ * module load — before any component renders — so the token is already in
+ * storage when the first `useMe()` query runs, and once only, whatever
+ * StrictMode does to effects.
+ */
+const initialAuthError: string | null = (() => {
+	if (typeof window === "undefined") return null;
+	const frag = parseAuthFragment(window.location.hash);
+	if (!frag) return null;
+	history.replaceState(
+		null,
+		"",
+		window.location.pathname + window.location.search,
+	);
+	if (frag.token) {
+		persistToken(frag.token);
+		setAuthToken(frag.token);
+		return null;
+	}
+	return frag.error ?? "Google sign-in failed.";
+})();
+
 type Ctx = {
 	login: (u: string, p: string) => Promise<void>;
 	register: (u: string, p: string) => Promise<void>;
@@ -45,6 +69,8 @@ type Ctx = {
 	dialogOpen: boolean;
 	setDialogOpen: (v: boolean) => void;
 	expired: boolean;
+	/** why the last Google sign-in failed, if it did (shown in the dialog) */
+	authError: string | null;
 };
 
 const SessionContext = createContext<Ctx | null>(null);
@@ -53,6 +79,20 @@ export function useSessionActions(): Ctx {
 	const ctx = useContext(SessionContext);
 	if (!ctx) throw new Error("useSessionActions outside <SessionProvider>");
 	return ctx;
+}
+
+/** Which sign-in methods the server has configured. */
+export function useAuthProviders() {
+	return useQuery({
+		queryKey: ["auth-providers"],
+		queryFn: async () => {
+			const { data, error } = await api.GET("/api/auth/providers", {});
+			if (error) throw ApiError.from(error);
+			return data;
+		},
+		staleTime: Infinity,
+		retry: false,
+	});
 }
 
 /** Current user (or null). Server state — do not mirror into a store. */
@@ -72,7 +112,7 @@ export function useMe() {
 
 export function SessionProvider({ children }: { children: ReactNode }) {
 	const qc = useQueryClient();
-	const [dialogOpen, setDialogOpen] = useState(false);
+	const [dialogOpen, setDialogOpen] = useState(initialAuthError !== null);
 	const [expired, setExpired] = useState(false);
 
 	useEffect(() => {
@@ -156,6 +196,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 				dialogOpen,
 				setDialogOpen,
 				expired,
+				authError: initialAuthError,
 			}}
 		>
 			{children}

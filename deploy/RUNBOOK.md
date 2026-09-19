@@ -326,6 +326,45 @@ Dans le dashboard de la zone :
 
 ---
 
+## §8 — Connexion Google (optionnel)
+
+Le bouton « Continue with Google » n'apparaît que si `GOOGLE_CLIENT_ID` et
+`GOOGLE_CLIENT_SECRET` sont renseignés dans `.env`. Sans eux, l'API se comporte
+comme avant (comptes par mot de passe uniquement). Créer un client OAuth est
+gratuit et sans rapport avec l'hébergement : seul l'identifiant Google compte.
+
+### 8.1 — Créer le client (console Google, une fois)
+
+1. <https://console.cloud.google.com> → créer un projet (ex. `quant-modeling`).
+2. **APIs & Services → OAuth consent screen** : type *External*, nom de
+   l'application, ton adresse en contact. Scopes : ceux par défaut (`openid`,
+   `email`) suffisent. Tant que l'application est en mode *Testing*, seuls les
+   « test users » ajoutés là peuvent se connecter ; passer en *In production*
+   pour ouvrir à tout compte Google (pas de vérification requise pour ces
+   scopes de base).
+3. **Credentials → Create credentials → OAuth client ID** : type *Web
+   application*. **Authorized redirect URIs** (à l'identique, au caractère près) :
+   - prod : `https://tramonihadrien.com/api/auth/google/callback`
+   - dev : `http://localhost:5180/api/auth/google/callback`
+4. Copier l'identifiant et le secret dans `.env` (`GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET`). `QM_PUBLIC_URL` vaut par défaut l'URL de prod dans
+   `docker-compose.prod.yml` : ne la changer que si le domaine change.
+5. `./scripts/deploy.sh` (les variables ne sont lues qu'au démarrage du conteneur).
+
+### 8.2 — Ce qu'il faut savoir
+
+- Un compte Google est enregistré sous `google:<sub>` (identifiant stable
+  côté Google), avec l'email affiché dans la barre de navigation. Il n'est
+  **pas** fusionné avec un compte par mot de passe : c'est deux comptes
+  distincts, donc deux jeux de portefeuilles.
+- Erreur `redirect_uri_mismatch` chez Google : l'URI enregistrée ne correspond
+  pas exactement à `QM_PUBLIC_URL` + `/api/auth/google/callback`.
+- Le jeton de session revient au navigateur dans le fragment d'URL
+  (`/#qm_auth=…`), qui n'est jamais envoyé au serveur, puis est stocké comme
+  pour la connexion par mot de passe (`localStorage`, voir WP 04).
+
+---
+
 ## Opérations courantes
 
 Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.yml`.

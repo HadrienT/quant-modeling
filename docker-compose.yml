@@ -15,6 +15,12 @@ services:
       - QM_DATA_DIR=/app/data
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
+      # Sign in with Google (optional — the button only appears when both are set).
+      # QM_PUBLIC_URL must be the origin users type, and match the redirect URI
+      # registered in the Google console (deploy/RUNBOOK.md, "Connexion Google").
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - QM_PUBLIC_URL=${QM_PUBLIC_URL:-http://localhost:5180}
       # Market data (prices, macro) comes from the data-ingest Postgres, reached
       # over the shared `dataplatform` network by container name.
       - PGHOST=${PGHOST:-data-ingest-postgres}
