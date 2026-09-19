@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/assistant/scripting/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scripting Chat Endpoint */
+        post: operations["scripting_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -1251,6 +1268,16 @@ export interface components {
             /** Modified Duration */
             modified_duration?: number | null;
         };
+        /** ChatMessage */
+        ChatMessage: {
+            /** Content */
+            content: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+        };
         /**
          * CleanedIVSurfaceResponse
          * @description Cleaned & smoothed IV surface grid (bicubic spline evaluated on a regular mesh).
@@ -2281,6 +2308,34 @@ export interface components {
             /** Variables */
             variables: string[];
         };
+        /**
+         * ScriptingChatRequest
+         * @description One turn of the scripting assistant. The conversation lives in the
+         *     browser: the client sends the whole history each time, plus what the editor
+         *     currently holds, so the assistant reasons about the user's actual script.
+         */
+        ScriptingChatRequest: {
+            /** Current Script */
+            current_script?: string | null;
+            /**
+             * Day Count
+             * @default ACT/365F
+             * @enum {string}
+             */
+            day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
+            /**
+             * Last Error
+             * @description The parser/pricing error currently shown next to the editor.
+             */
+            last_error?: string | null;
+            /** Messages */
+            messages: components["schemas"]["ChatMessage"][];
+            /**
+             * Valuation Date
+             * Format: date
+             */
+            valuation_date?: string;
+        };
         /** SimulationCalibrateRequest */
         SimulationCalibrateRequest: {
             /**
@@ -2606,6 +2661,55 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    scripting_chat: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptingChatRequest"];
+            };
+        };
+        responses: {
+            /** @description text/event-stream of ScriptingChatEvent payloads. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Not signed in. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Both assistant slots are busy. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     api_login: {
         parameters: {
             query?: never;

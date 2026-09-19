@@ -801,6 +801,30 @@
         "title": "BondAnalytics",
         "type": "object"
       },
+      "ChatMessage": {
+        "properties": {
+          "content": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ChatMessage",
+        "type": "object"
+      },
       "CleanedIVSurfaceResponse": {
         "description": "Cleaned & smoothed IV surface grid (bicubic spline evaluated on a regular mesh).",
         "properties": {
@@ -2995,6 +3019,66 @@
         "title": "ScriptValidateResponse",
         "type": "object"
       },
+      "ScriptingChatRequest": {
+        "description": "One turn of the scripting assistant. The conversation lives in the\nbrowser: the client sends the whole history each time, plus what the editor\ncurrently holds, so the assistant reasons about the user's actual script.",
+        "properties": {
+          "current_script": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Script"
+          },
+          "day_count": {
+            "default": "ACT/365F",
+            "enum": [
+              "ACT/365F",
+              "ACT/360",
+              "30/360",
+              "ACT/ACT"
+            ],
+            "title": "Day Count",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The parser/pricing error currently shown next to the editor.",
+            "title": "Last Error"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Messages",
+            "type": "array"
+          },
+          "valuation_date": {
+            "format": "date",
+            "title": "Valuation Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "ScriptingChatRequest",
+        "type": "object"
+      },
       "SimulationCalibrateRequest": {
         "properties": {
           "beta": {
@@ -3658,6 +3742,71 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/assistant/scripting/chat": {
+      "post": {
+        "operationId": "scripting_chat",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptingChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "text/event-stream of ScriptingChatEvent payloads."
+          },
+          "401": {
+            "description": "Not signed in."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Both assistant slots are busy."
+          }
+        },
+        "summary": "Scripting Chat Endpoint",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "api_login",

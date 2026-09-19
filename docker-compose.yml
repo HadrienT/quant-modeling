@@ -24,6 +24,10 @@ services:
       - PGPASSWORD=${PGPASSWORD:?set PGPASSWORD in .env (same as data-ingest/.env)}
       - LOG_DIR=/app/logs
       - COMMIT_SHA=${COMMIT_SHA:-dev}
+      # Scripting assistant: the llama-server of ~/AgenticEnv. It listens on the
+      # host's 127.0.0.1, unreachable from a container; the llama-bridge socket
+      # (AgenticEnv `just render-llama-bridge`) exposes it on the Docker gateway.
+      - QM_LLM_BASE_URL=${QM_LLM_BASE_URL:-http://172.17.0.1:8001/v1}
     volumes:
       - ./api:/app/api
       - ./logs/quantmodeling:/app/logs
