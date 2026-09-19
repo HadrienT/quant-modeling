@@ -14,6 +14,7 @@ import os
 os.environ.setdefault("JWT_SECRET", "test-only-secret-not-for-deployment")
 
 import pytest
+import quantmodeling as qm
 from fastapi import HTTPException
 
 from api.app.assistant import agent
@@ -84,6 +85,39 @@ def test_every_prompt_example_passes_the_real_parser(title):
     assert result.ok, result.error
 
 
+def test_asian_schedule_example_observes_every_month_up_to_the_payment():
+    """The prompt teaches this pattern because schedule() adjusts dates and a
+    literal date does not: the last fixing must be in the maturity event, and
+    every schedule date must fall before it."""
+    title = next(t for t in EXAMPLES if t.startswith("Arithmetic Asian call, monthly"))
+    events = qm.validate_script(EXAMPLES[title], VALUATION, "ACT/365F")["events"]
+    dates = [e["date"] for e in events]
+    assert dates == sorted(dates) and len(dates) == len(set(dates))
+    assert dates[0] == "2026-10-19" and dates[-1] == "2027-09-20"
+    assert len(dates) == 12  # initial + 10 monthly fixings + maturity
+
+
+ASIAN_TRAP = (
+    "2026-10-19\n    acc = spot()\n    n = 1\n\n"
+    "schedule(2026-11-19, 2027-09-19, 1M, TARGET, MF)\n"
+    "    acc = acc + spot()\n    n = n + 1\n\n"
+    "2027-09-19\n    acc = acc + spot()\n    n = n + 1\n"
+    "    pays max(acc / n - 100, 0)\n"
+)  # 2027-09-19 is a Sunday: the schedule's last date becomes Monday the 20th
+
+
+def test_checker_catches_a_schedule_whose_adjusted_end_overtakes_its_own_event():
+    r = check_script(ASIAN_TRAP, VALUATION, "ACT/365F")
+    assert not r.ok and "2027-09-20" in r.error and "AFTER" in r.error
+
+
+def test_checker_leaves_a_schedule_that_ends_before_the_maturity_event():
+    ok = ASIAN_TRAP.replace("2027-09-19, 1M", "2027-08-19, 1M").replace(
+        "\n2027-09-19\n", "\n2027-09-20\n"
+    )
+    assert check_script(ok, VALUATION, "ACT/365F").ok
+
+
 def test_prompt_carries_editor_context():
     prompt = build_system_prompt(
         valuation_date=VALUATION,
@@ -123,7 +157,7 @@ def test_checker_returns_the_parsers_pointed_error():
 
 def test_checker_rejects_a_past_event():
     r = check_script("2020-01-01\n    pays 1", VALUATION, "ACT/365F")
-    assert not r.ok and "strictly after" in r.error
+    assert not r.ok and "strictly after the valuation date" in r.error
 
 
 @pytest.mark.parametrize("payoff", ["1 / 0", "log(0 - 1)"])

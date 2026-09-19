@@ -32,6 +32,10 @@ services:
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-https://tramonihadrien.com,https://www.tramonihadrien.com}
       - QM_STORAGE=local
       - QM_DATA_DIR=/app/data
+      # Scripting assistant: the llama-server of ~/AgenticEnv, reached through
+      # the llama-bridge socket on the Docker gateway (127.0.0.1 is the
+      # container itself). Login is required to use it.
+      - QM_LLM_BASE_URL=${QM_LLM_BASE_URL:-http://172.17.0.1:8001/v1}
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
       # data-ingest Postgres (market data), over the shared network
