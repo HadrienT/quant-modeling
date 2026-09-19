@@ -1,6 +1,12 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTickers } from "@/shared/api";
-import { Combobox, Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
+import {
+	Combobox,
+	Tabs,
+	TabsContent,
+	TabsList,
+	TabsTrigger,
+} from "@/shared/ui";
 import { PricesTab } from "./PricesTab";
 import { RatesTab } from "./RatesTab";
 import { VolTab } from "./VolTab";

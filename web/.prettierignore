@@ -8,3 +8,4 @@ src/routeTree.gen.ts
 package-lock.json
 openapi.json
 public/config.json
+public/mockServiceWorker.js

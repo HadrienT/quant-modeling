@@ -37,7 +37,15 @@ describe("robustZExtent", () => {
 		// value, which would otherwise divide-by-zero downstream.
 		const x = [0, 1];
 		const y = [0, 1];
-		const grid = makeGrid(x, y, [[0.2, 0.2], [0.2, 0.2]], AXES);
+		const grid = makeGrid(
+			x,
+			y,
+			[
+				[0.2, 0.2],
+				[0.2, 0.2],
+			],
+			AXES,
+		);
 		expect(robustZExtent(grid)).toEqual(zExtent(grid));
 	});
 

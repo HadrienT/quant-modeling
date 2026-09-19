@@ -76,7 +76,9 @@ export function SurfaceDiagnostics({ ticker }: { ticker: string }) {
 	}, [active]);
 
 	if (cleaned.error)
-		return <ErrorState error={cleaned.error} onRetry={() => cleaned.refetch()} />;
+		return (
+			<ErrorState error={cleaned.error} onRetry={() => cleaned.refetch()} />
+		);
 
 	return (
 		<div className="flex flex-col gap-4">
