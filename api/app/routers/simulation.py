@@ -78,7 +78,7 @@ def simulate_sabr(req: SABRPathRequest) -> SimulationPathsResponse:
 
 @router.post("/calibrate", response_model=SimulationCalibrateResponse)
 def calibrate(req: SimulationCalibrateRequest) -> SimulationCalibrateResponse:
-    """Fetch the ticker's chain (DB-first, live yfinance fallback), run the
+    """Read the ticker's stored chain (database only), run the
     existing SVI vol-surface pipeline, pick the calibrated slice closest to
     the requested maturity, and either read its ATM vol off (Black-Scholes)
     or fit SABR to it (see vol_surface.sabr_quotes_from_svi_slice)."""

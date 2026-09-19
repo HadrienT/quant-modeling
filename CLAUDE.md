@@ -24,11 +24,10 @@ de donnée de marché.
 Les données de marché viennent de **la base Postgres alimentée par
 `~/data-ingest`** (cours, chaînes d'options, rendements de dividende, courbes
 FRED). **Pas d'appel à Yahoo Finance depuis quant-modeling** : une donnée absente
-ou trop ancienne est une erreur explicite, pas un repli en direct (les nouveaux
-chemins de pricing passent par `api/app/market_snapshot.py`, qui n'importe pas
-`yfinance`). Des replis en direct subsistent dans les anciens endpoints
-(`vol_surface.py`, `routers/local_vol_pricing.py`, `routers/simulation.py`) : à
-retirer, pas à étendre. Plus de BigQuery — le projet est entièrement hors cloud.
+ou trop ancienne est une erreur explicite (404 si elle manque, 503 si la base est
+injoignable), pas un repli en direct. `api/app` n'importe pas `yfinance` et
+`db.py` est en lecture seule ; `api/tests/test_db_only.py` verrouille les deux.
+Plus de BigQuery — le projet est entièrement hors cloud.
 
 ## Commandes
 

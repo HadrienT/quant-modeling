@@ -2,7 +2,7 @@
 Router — Local-volatility pricing endpoints.
 
 Pipeline:
-  1. Fetch raw option chain   (vol_surface.py: stored snapshot, else live yfinance)
+  1. Read raw option chain    (vol_surface.py: the stored snapshot; no live source)
   2. Clean + calibrate SVI    (C++: quantmodeling.calibrate_vol_surface)
   3. Dupire local-vol grid    (C++: same call)
   4. Monte-Carlo price        (C++: quantmodeling.price_local_vol_mc)
@@ -19,7 +19,7 @@ from __future__ import annotations
 import quantmodeling as qm
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import vol_surface
+from .. import db, vol_surface
 from ..logging_utils import get_logger
 from ..schemas import (
     CleanedIVSurfaceResponse,
@@ -32,6 +32,14 @@ from ..schemas import (
 logger = get_logger()
 
 router = APIRouter(prefix="/api/local-vol", tags=["local-vol"])
+
+
+def _market_data_error(exc: Exception) -> HTTPException:
+    """Market data comes from the database only: absent data is a 404 naming
+    what is missing, an unreachable database a 503 -- never a live fallback."""
+    if isinstance(exc, db.StoreUnavailable):
+        return HTTPException(status_code=503, detail=f"Market database unavailable: {exc}")
+    return HTTPException(status_code=404, detail=str(exc))
 
 
 def _cleaning_summary(stats: dict) -> str:
@@ -59,18 +67,12 @@ def _calibrate(
 ) -> tuple:
     """Fetch + calibrate. Returns (ticker, spot, dividend, result_dict)."""
     ticker = ticker.upper().strip()
-    spot = vol_surface.get_spot(ticker)
-    dividend = vol_surface.get_dividend_yield(ticker)
-
     try:
+        spot = vol_surface.get_spot(ticker)
+        dividend = vol_surface.get_dividend_yield(ticker)
         raw_quotes = vol_surface.fetch_option_chain(ticker)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    if not raw_quotes:
-        raise HTTPException(
-            status_code=404, detail=f"No option chain available for '{ticker}'."
-        )
+    except (vol_surface.NoOptionChainAvailable, db.StoreUnavailable) as exc:
+        raise _market_data_error(exc) from exc
 
     logger.info(
         "local-vol: ticker=%s spot=%.2f dividend=%.4f rate=%.4f n_raw=%d",
@@ -195,16 +197,11 @@ def raw_iv_surface(
     maturities actually traded -- no cleaning, no fitting, no
     interpolation. See vol_surface.raw_iv_grid."""
     ticker = ticker.upper().strip()
-    spot = vol_surface.get_spot(ticker)
-
     try:
+        spot = vol_surface.get_spot(ticker)
         raw_quotes = vol_surface.fetch_option_chain(ticker)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    if not raw_quotes:
-        raise HTTPException(
-            status_code=404, detail=f"No option chain available for '{ticker}'."
-        )
+    except (vol_surface.NoOptionChainAvailable, db.StoreUnavailable) as exc:
+        raise _market_data_error(exc) from exc
 
     strikes, maturities, values = vol_surface.raw_iv_grid(raw_quotes)
     n_with_iv = sum(1 for q in raw_quotes if q.has_iv)
