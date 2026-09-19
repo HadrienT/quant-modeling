@@ -3,7 +3,12 @@ import { Box, Camera, Grid3x3, Table2 } from "lucide-react";
 import { Button, cn } from "@/shared/ui";
 import { ChartSkeleton } from "@/shared/ui/states";
 import { SurfaceHeatmap } from "../charts/SurfaceHeatmap";
-import { type SurfaceGrid, holeFraction, robustZExtent, zAt } from "./SurfaceGrid";
+import {
+	type SurfaceGrid,
+	holeFraction,
+	robustZExtent,
+	zAt,
+} from "./SurfaceGrid";
 import type { PresetView } from "./SurfaceScene";
 
 const SurfaceScene = lazy(() =>

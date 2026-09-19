@@ -34,7 +34,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            EuroCallT(Real k, Real maturity) : K(k), tl_{maturity}, dl_(1) {}
+            EuroCallT(Real k, Real maturity)
+                : K(k), tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -58,7 +59,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            explicit DeflatedSpotT(Real maturity) : tl_{maturity}, dl_(1) {}
+            explicit DeflatedSpotT(Real maturity)
+                : tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -79,28 +81,28 @@ namespace quantModeling
     {
         EXPECT_THROW((BatesSimModel<Real>{100.0, 0.03, 0.0, -0.01, 1.5, 0.04,
                                           0.3, -0.6, 0.5, -0.1, 0.15}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(BatesSimModel, RejectsNonPositiveKappa)
     {
         EXPECT_THROW((BatesSimModel<Real>{100.0, 0.03, 0.0, 0.04, 0.0, 0.04,
                                           0.3, -0.6, 0.5, -0.1, 0.15}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(BatesSimModel, RejectsRhoOutOfRange)
     {
         EXPECT_THROW((BatesSimModel<Real>{100.0, 0.03, 0.0, 0.04, 1.5, 0.04,
                                           0.3, -1.5, 0.5, -0.1, 0.15}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(BatesSimModel, RejectsNegativeIntensity)
     {
         EXPECT_THROW((BatesSimModel<Real>{100.0, 0.03, 0.0, 0.04, 1.5, 0.04,
                                           0.3, -0.6, -0.5, -0.1, 0.15}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     // ── with lambda = 0, Bates collapses to Heston exactly: cross-check the
@@ -201,10 +203,10 @@ namespace quantModeling
         {
             Tape local_tape;
             TapeSwitch guard(local_tape);
-            BatesSimModel<Number> m{Number(S0),    Number(r),     Number(q),
-                                    Number(v0),    Number(kappa), Number(theta),
-                                    Number(xi),    Number(rho),   Number(lambda),
-                                    Number(jm),    Number(jump_vol)};
+            BatesSimModel<Number> m{Number(S0), Number(r), Number(q),
+                                    Number(v0), Number(kappa), Number(theta),
+                                    Number(xi), Number(rho), Number(lambda),
+                                    Number(jm), Number(jump_vol)};
             m.init(product.timeline(), product.defline());
             Scenario<Number> path;
             allocate_scenario(path, product.defline(), m.n_underlyings());
@@ -222,10 +224,10 @@ namespace quantModeling
         Tape tape;
         TapeSwitch guard(tape);
         Number jm(base_jump_mean);
-        BatesSimModel<Number> model{Number(S0),    Number(r),     Number(q),
-                                    Number(v0),    Number(kappa), Number(theta),
-                                    Number(xi),    Number(rho),   Number(lambda),
-                                    jm,            Number(jump_vol)};
+        BatesSimModel<Number> model{Number(S0), Number(r), Number(q),
+                                    Number(v0), Number(kappa), Number(theta),
+                                    Number(xi), Number(rho), Number(lambda),
+                                    jm, Number(jump_vol)};
         model.init(product.timeline(), product.defline());
         Scenario<Number> path;
         allocate_scenario(path, product.defline(), model.n_underlyings());
@@ -247,9 +249,9 @@ namespace quantModeling
 
         EuroCallT<Number> product(100.0, 1.0);
         BatesSimModel<Number> model{
-            Number(100.0), Number(0.03), Number(0.0),  Number(0.04),
-            Number(1.5),   Number(0.04), Number(0.3),  Number(-0.6),
-            Number(0.5),   Number(-0.1), Number(0.15)};
+            Number(100.0), Number(0.03), Number(0.0), Number(0.04),
+            Number(1.5), Number(0.04), Number(0.3), Number(-0.6),
+            Number(0.5), Number(-0.1), Number(0.15)};
 
         const AADSimulResults res = simulate_aad(product, model, 50000, 4);
 

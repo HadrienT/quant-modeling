@@ -259,28 +259,28 @@ namespace quantModeling::scripting
     {
         EXPECT_THROW(parse_script("schedule(2025-01-15, 2025-07-15, 3M, MARS, "
                                   "MF)\n    x = 1\n"),
-                    ScriptError);
+                     ScriptError);
     }
 
     TEST(ScriptParser, ScheduleRejectsAnUnknownConvention)
     {
         EXPECT_THROW(parse_script("schedule(2025-01-15, 2025-07-15, 3M, "
                                   "TARGET, XYZ)\n    x = 1\n"),
-                    ScriptError);
+                     ScriptError);
     }
 
     TEST(ScriptParser, ScheduleRequiresATenorNotABareNumber)
     {
         EXPECT_THROW(parse_script("schedule(2025-01-15, 2025-07-15, 3, TARGET, "
                                   "MF)\n    x = 1\n"),
-                    ScriptError);
+                     ScriptError);
     }
 
     TEST(ScriptParser, ScheduleRequiresCalendarDatesNotArbitraryExpressions)
     {
         EXPECT_THROW(parse_script("schedule(a, 2025-07-15, 3M, TARGET, "
                                   "MF)\n    x = 1\n"),
-                    ScriptError);
+                     ScriptError);
     }
 
     // ── layout ──────────────────────────────────────────────────────────────
@@ -436,8 +436,8 @@ namespace quantModeling::scripting
         EXPECT_EQ(ScriptWriter::write(parse_script("2020-01-01\n    x = spot(0)\n")),
                   ScriptWriter::write(parse_script("2020-01-01\n    x = spot()\n")));
         EXPECT_NE(ScriptWriter::write(parse_script("2020-01-01\n    x = spot(1)\n"))
-                     .find("spot(1)"),
-                 std::string::npos);
+                      .find("spot(1)"),
+                  std::string::npos);
     }
 
     // ── df(DATE): future discount factor lookup (WP 16e) ────────────────────
@@ -460,7 +460,7 @@ namespace quantModeling::scripting
     {
         const std::string src = "2025-12-16\n    x = 1000 * df(2026-12-16)\n";
         EXPECT_NE(ScriptWriter::write(parse_script(src)).find("df(2026-12-16)"),
-                 std::string::npos);
+                  std::string::npos);
     }
 
 } // namespace quantModeling::scripting

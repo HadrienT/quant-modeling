@@ -84,7 +84,12 @@ export function robustZExtent(
 	if (sorted.length === 0) return [0, 1];
 	sorted.sort((a, b) => a - b);
 	const at = (q: number) =>
-		sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))]!;
+		sorted[
+			Math.min(
+				sorted.length - 1,
+				Math.max(0, Math.round(q * (sorted.length - 1))),
+			)
+		]!;
 	const lo = at(lowerQ);
 	const hi = at(upperQ);
 	return hi > lo ? [lo, hi] : zExtent(grid);

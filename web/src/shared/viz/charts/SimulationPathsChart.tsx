@@ -93,11 +93,7 @@ export function SimulationPathsChart({
 			<div ref={ref} className="w-full">
 				<svg width={w} height={height} role="img">
 					<Group left={m.left} top={m.top}>
-						<Line
-							from={{ x: 0, y: 0 }}
-							to={{ x: 0, y: ih }}
-							stroke={t.axis}
-						/>
+						<Line from={{ x: 0, y: 0 }} to={{ x: 0, y: ih }} stroke={t.axis} />
 						{revealed?.map((path, i) => (
 							<LinePath
 								key={i}

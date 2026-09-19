@@ -2,8 +2,8 @@
 
 Librairie de pricing de dérivés en **C++20**, exposée jusqu'à un produit
 utilisable : `include/quantModeling` + `src` → bindings **pybind11** →
-API **FastAPI** → front **React/Vite**. ~28 000 LOC C++, 25 fichiers de tests
-GoogleTest, CI GitHub Actions.
+API **FastAPI** → front **React/Vite**. ~43 000 LOC C++ (`include/` + `src/`),
+~70 fichiers de tests GoogleTest, CI GitHub Actions.
 
 Le découpage C++ est celui d'une lib de desk et il faut le préserver :
 **payoff** (`instruments/`), **modèle** (`models/`), **méthode numérique**
@@ -17,7 +17,7 @@ de donnée de marché.
 |---|---|---|
 | Cœur C++ | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc), `pricers`, `utils` (Sobol, pont brownien, control variates, greeks) |
 | Bindings | `bindings/python/` | pybind11 → wheel `quantmodeling` |
-| API | `api/app/` | FastAPI : `routers/` (pricing, market, portfolio, backtest, auth, local-vol), `local_vol/` (nettoyage des quotes, surface IV, Dupire), auth JWT, cache |
+| API | `api/app/` | FastAPI : `routers/` (pricing, market, portfolio, backtest, auth, local-vol, assistant), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), auth JWT, cache |
 | Front | `web/src/` | React 18 + Vite + TypeScript |
 | CLI | `main.cpp` | binaire de démo |
 
@@ -33,6 +33,17 @@ tant que `data-ingest` n'est pas fiable : ne pas les étendre, ne pas les
 retirer sans décision du mainteneur. Le dossier `notebooks/` est un bac à sable
 personnel, hors périmètre. Plus de BigQuery — le projet est entièrement hors cloud.
 
+**Assistant de scripting** (`api/app/assistant/`, route `POST /api/assistant/scripting/chat`,
+chat de la page `/scripting`) : il parle au `llama-server` de `~/AgenticEnv`, dont
+l'URL est `QM_LLM_BASE_URL` (défaut `http://127.0.0.1:8000/v1` hors Docker ;
+`http://172.17.0.1:8001/v1` dans les fichiers compose, via le socket
+`llama-bridge` d'AgenticEnv). Connexion (JWT) obligatoire : la prod est publique
+et la route consomme le GPU. Tout script écrit par le modèle est vérifié par le
+vrai parseur avant d'être proposé. Le prompt décrit le langage : **quand le
+langage change (nouvelle fonction, nouvelle syntaxe), mettre à jour
+`assistant/prompt.py`** — `pytest` valide ses exemples contre le
+parseur et échoue s'ils ne passent plus.
+
 ## Commandes
 
 | | |
@@ -43,6 +54,7 @@ personnel, hors périmètre. Plus de BigQuery — le projet est entièrement hor
 | `cmake --preset release` | `-march=native` + benchmarks google-benchmark |
 | `scripts/build_wheel.sh` | wheel pybind11 dans `dist/` |
 | `scripts/run_api.sh` | venv + wheel + `uvicorn --reload` |
+| `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché), depuis la racine (`pytest.ini`). Pas encore lancés par la CI |
 | `docker compose up --build` | stack complète (API + front avec HMR) |
 | `cd web && npm run dev` | front seul |
 | `cd web && npx tsc --noEmit` | typecheck du front |
@@ -73,7 +85,7 @@ authentifié (compte `HadrienT`).
 
 | Fichier | Rôle |
 |---|---|
-| `blueprint/` | Spécification du chantier en cours (réécriture du front). Lots de travail, dépendances, critères d'acceptation. |
+| `blueprint/` | Spécification des lots de travail : la réécriture du front (WP 00–14, fusionnée dans `main`), puis les chantiers du cœur C++ (WP 16 scripting, WP 17 AAD). Dépendances, critères d'acceptation. |
 | `etc/roadmap.md` | Stratégie six mois côté quant : vol stochastique calibrée, AAD, Monte-Carlo GPU, capstone xVA. Document de stratégie, pas de spec. |
 | `etc/todo.md` | Checklist « desk grade » — ce qui manque pour ressembler à une lib de production. |
 | `etc/structure.md` | Arborescence cible du module de pricing. |
@@ -90,27 +102,42 @@ adjoints, GPU) bat la largeur.
   français.
 - **Commits : passer par une branche, jamais directement sur `main`.** Terminer
   les messages par `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
-- **C++** : `clang-format --style=file` est vérifié en CI et en pre-commit — un
-  fichier mal formaté casse le build. **Python** : `black`.
-- Le hook pre-push lance `cmake + ctest` : un push avec des tests C++ rouges
-  n'aboutit pas.
+- **C++** : `clang-format --style=file`, **version 18** (celle de la CI, job
+  `format-check` ; le pre-commit est épinglé sur la même). Un fichier mal
+  formaté fait échouer la CI. `clang-format` n'est pas installé sur la machine :
+  `uvx --from clang-format==18.1.3 clang-format -i $(git ls-files '*.cpp' '*.hpp')`.
+  **Python** : `black`.
+- `.pre-commit-config.yaml` (clang-format, black, et `cmake + ctest` en
+  pre-push) **n'est pas installé par défaut** : `.git/hooks` est vide tant qu'on
+  n'a pas lancé `pre-commit install -t pre-commit -t pre-push`. Sans lui, rien
+  n'arrête un push avec des tests rouges hormis la CI : lancer `scripts/make.sh`
+  avant de pousser du C++.
 - Tout nouvel engine ou instrument arrive avec son test dans `tests/`, et de
   préférence un test de *propriété* (parité call-put, `in + out = vanille`,
   bornes de monotonie, ordre de convergence mesuré en log-log) plutôt qu'une
   simple égalité numérique.
-- Le front est en cours de réécriture (voir `blueprint/`). Ne pas investir dans
-  l'ancien code de `web/src/` : les fichiers destinés à disparaître sont
-  listés dans `blueprint/wp/00-foundations.md`.
+- Le front réécrit est dans `main` ; l'ancien code a disparu (`web/src/` =
+  `app/`, `features/`, `shared/`). Règles vérifiées par ESLint et
+  `web/tests/discipline.test.ts` : une feature n'importe pas une autre feature,
+  `shared/` n'importe ni `features/` ni `app/`, un fichier de `features/` ne
+  dépasse pas 230 lignes (extraire un composant plutôt que relever le plafond).
 
 ## Déploiement
 
 Le projet est **auto-hébergé**, pas sur Google Cloud — le coût GCP était le
 motif de la bascule. La cible : `docker-compose.prod.yml` sur le serveur perso,
-exposé en HTTPS par un **tunnel Cloudflare** (aucun port ouvert). Tout se pilote
-depuis le worktree dédié `~/quant-modeling-prod` (branche `web/14-deploy`) —
-procédure complète dans `deploy/RUNBOOK.md`, conception dans
-`blueprint/wp/14-deploy-selfhost.md`. L'ancien `web/Dockerfile.prod` reste le
-socle (multi-étage wheel C++ → build Vite → nginx + uvicorn).
+exposé en HTTPS par un **tunnel Cloudflare** (aucun port ouvert).
+
+Deux dossiers, un seul dépôt git (`git worktree`) : `~/quant-modeling` est le
+**développement** (branches, commits, PRs — c'est là que travaillent les sessions
+Claude) ; `~/quant-modeling-prod` est **le site en ligne, toujours sur `main`**,
+et ne sert qu'à `./scripts/deploy.sh` (qui fait le `git pull` de `main`, reconstruit
+l'image et redémarre). Circuit normal : branche → PR → merge dans `main` → deploy
+depuis le dossier prod. Il n'y a plus de branche de déploiement (`web/14-deploy` et
+`web/rewrite` ont été supprimées). Ne jamais éditer ni committer depuis
+`~/quant-modeling-prod`. Procédure complète dans `deploy/RUNBOOK.md`, conception
+dans `blueprint/wp/14-deploy-selfhost.md`. `web/Dockerfile.prod` est le socle
+(multi-étage wheel C++ → build Vite → nginx + uvicorn).
 
 Attention au piège classique de Vite : les variables `VITE_*` sont **inlinées
 au build**, pas lues au runtime. Changer `VITE_API_BASE` impose de rebuilder

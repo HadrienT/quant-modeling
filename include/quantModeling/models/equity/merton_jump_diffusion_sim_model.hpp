@@ -51,8 +51,7 @@ namespace quantModeling
       public:
         MertonJumpDiffusionSimModel(T s0, T r, T q, T sigma, T lambda,
                                     T jump_mean, T jump_vol)
-            : s0_(s0), r_(r), q_(q), sigma_(sigma), lambda_(lambda),
-              jump_mean_(jump_mean), jump_vol_(jump_vol)
+            : s0_(s0), r_(r), q_(q), sigma_(sigma), lambda_(lambda), jump_mean_(jump_mean), jump_vol_(jump_vol)
         {
             if (to_double(lambda_) < 0.0)
                 throw InvalidInput("MertonJumpDiffusionSimModel: lambda must be >= 0");
@@ -65,11 +64,7 @@ namespace quantModeling
         /// caches pointers into *this* object's own members, so a naive
         /// copy would leave them pointing at the original.
         MertonJumpDiffusionSimModel(const MertonJumpDiffusionSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_),
-              lambda_(other.lambda_), jump_mean_(other.jump_mean_),
-              jump_vol_(other.jump_vol_), timeline_(other.timeline_),
-              defline_(other.defline_), steps_(other.steps_),
-              sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }

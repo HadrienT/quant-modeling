@@ -46,8 +46,7 @@ namespace quantModeling
       public:
         MultiAssetBSSimModel(std::vector<T> s0, T r, std::vector<T> q,
                              std::vector<T> sigma, const Eigen::MatrixXd &corr)
-            : s0_(std::move(s0)), r_(r), q_(std::move(q)),
-              sigma_(std::move(sigma))
+            : s0_(std::move(s0)), r_(r), q_(std::move(q)), sigma_(std::move(sigma))
         {
             if (s0_.size() != q_.size() || s0_.size() != sigma_.size())
                 throw InvalidInput(
@@ -69,10 +68,7 @@ namespace quantModeling
         /// caches pointers into *this* object's own members, so a naive
         /// copy would leave them pointing at the original.
         MultiAssetBSSimModel(const MultiAssetBSSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_),
-              chol_(other.chol_), timeline_(other.timeline_),
-              defline_(other.defline_), steps_(other.steps_),
-              sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), chol_(other.chol_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -149,8 +145,8 @@ namespace quantModeling
                         double acc = 0.0;
                         for (std::size_t c = 0; c < n; ++c)
                             acc += chol_(static_cast<Eigen::Index>(r),
-                                        static_cast<Eigen::Index>(c)) *
-                                  u[c];
+                                         static_cast<Eigen::Index>(c)) *
+                                   u[c];
                         z[r] = acc;
                     }
                     for (std::size_t k = 0; k < n; ++k)

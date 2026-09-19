@@ -38,7 +38,10 @@ namespace quantModeling
             return g;
         }
 
-        ValuationContext ctx() { return ValuationContext{Date::from_iso("2024-06-03")}; }
+        ValuationContext ctx()
+        {
+            return ValuationContext{Date::from_iso("2024-06-03")};
+        }
 
         PricingSettings settings()
         {

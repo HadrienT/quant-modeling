@@ -7,7 +7,10 @@ namespace quantModeling
 
     thread_local std::size_t ThreadPool::tls_num_ = 0;
 
-    ThreadPool::~ThreadPool() { stop(); }
+    ThreadPool::~ThreadPool()
+    {
+        stop();
+    }
 
     std::size_t ThreadPool::default_thread_count()
     {

@@ -6,7 +6,20 @@ import type { UseSimulation } from "./useSimulation";
 /** The "calibrate on ticker" form and its resulting diagnostics — split out
  * of SimulationPage.tsx to stay under the per-feature-file line budget. */
 export function CalibratePanel(sim: UseSimulation) {
-	const { model, ticker, setTicker, ttm, setTtm, rate, setRate, beta, setBeta, calibrate, calibrated, runCalibration } = sim;
+	const {
+		model,
+		ticker,
+		setTicker,
+		ttm,
+		setTtm,
+		rate,
+		setRate,
+		beta,
+		setBeta,
+		calibrate,
+		calibrated,
+		runCalibration,
+	} = sim;
 
 	return (
 		<div className="flex flex-col gap-3 rounded-md border border-hairline bg-canvas p-3">
@@ -36,7 +49,10 @@ export function CalibratePanel(sim: UseSimulation) {
 						onChange={(e) => setBeta(e.target.value)}
 					/>
 				)}
-				<Button onClick={runCalibration} disabled={calibrate.isPending || !ticker}>
+				<Button
+					onClick={runCalibration}
+					disabled={calibrate.isPending || !ticker}
+				>
 					{calibrate.isPending ? "Calibrating…" : "Calibrate"}
 				</Button>
 			</div>
@@ -73,7 +89,9 @@ export function CalibratePanel(sim: UseSimulation) {
 										? calibrated.rmse.toExponential(2)
 										: "—"
 								}
-								footnote={calibrated.converged ? "converged" : "did not converge"}
+								footnote={
+									calibrated.converged ? "converged" : "did not converge"
+								}
 							/>
 						</>
 					)}

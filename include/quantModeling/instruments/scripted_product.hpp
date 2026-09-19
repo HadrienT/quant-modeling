@@ -258,7 +258,7 @@ namespace quantModeling
             return replay.variables();
         }
 
-        std::vector<scripting::Event> events_; ///< AST, const after construction
+        std::vector<scripting::Event> events_;            ///< AST, const after construction
         std::vector<scripting::Event> historical_events_; ///< replayed once, at construction
         TimeLine timeline_;
         std::vector<SampleDef> defline_;

@@ -7,7 +7,11 @@ on:
 jobs:
 
   format-check:
-    runs-on: ubuntu-latest
+    # Pinned on purpose: clang-format's output changes between major versions,
+    # so "whatever ubuntu-latest ships" made this job fail whenever the local
+    # pre-commit hook (.pre-commit-config.yaml) used a different one. Keep the
+    # two on the same version.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -16,13 +20,13 @@ jobs:
       - name: Install clang-format
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format
+          sudo apt-get install -y clang-format-18
 
       - name: clang-format check
         run: |
           FILES=$(git ls-files '*.cpp' '*.cc' '*.cxx' '*.h' '*.hpp' '*.hh')
           if [ -n "$FILES" ]; then
-            clang-format --dry-run --Werror $FILES
+            clang-format-18 --dry-run --Werror $FILES
           fi
           
   build-test:

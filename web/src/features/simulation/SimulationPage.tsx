@@ -20,7 +20,22 @@ import { useSimulation } from "./useSimulation";
  */
 export default function SimulationPage() {
 	const sim = useSimulation();
-	const { model, setModel, mode, setMode, setCalibrated, simulate, runSimulation, playAnimation, revealCount, data, chartPaths, nPaths, ttm, nSteps } = sim;
+	const {
+		model,
+		setModel,
+		mode,
+		setMode,
+		setCalibrated,
+		simulate,
+		runSimulation,
+		playAnimation,
+		revealCount,
+		data,
+		chartPaths,
+		nPaths,
+		ttm,
+		nSteps,
+	} = sim;
 
 	return (
 		<div className="mx-auto flex max-w-4xl flex-col gap-6">
@@ -35,9 +50,7 @@ export default function SimulationPage() {
 			<div className="flex flex-col gap-4 rounded-md border border-hairline bg-surface p-4">
 				<div className="flex flex-wrap items-center gap-4">
 					<label className="flex flex-col gap-1 text-sm">
-						<span className="text-2xs text-ink-muted uppercase">
-							Dynamics
-						</span>
+						<span className="text-2xs text-ink-muted uppercase">Dynamics</span>
 						<select
 							className="rounded border border-hairline bg-surface px-2 py-1"
 							value={model}

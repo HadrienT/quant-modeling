@@ -49,7 +49,10 @@ export function AtmTermStructureChart({
 			{points && (
 				<Cartesian
 					height={220}
-					xDomain={niceDomain(points.map((p) => p.ttm), { includeZero: true })}
+					xDomain={niceDomain(
+						points.map((p) => p.ttm),
+						{ includeZero: true },
+					)}
 					yDomain={niceDomain(points.map((p) => p.vol))}
 					xLabel="Maturity (years)"
 					yFormat={(v) => `${(v * 100).toFixed(0)}%`}

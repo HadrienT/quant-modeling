@@ -39,7 +39,12 @@ export function niceDomain(
 	if (clipOutliers && values.length >= 5) {
 		const sorted = [...values].sort((a, b) => a - b);
 		const at = (q: number) =>
-			sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))]!;
+			sorted[
+				Math.min(
+					sorted.length - 1,
+					Math.max(0, Math.round(q * (sorted.length - 1))),
+				)
+			]!;
 		min = at(0.05);
 		max = at(0.95);
 		if (min === max) {

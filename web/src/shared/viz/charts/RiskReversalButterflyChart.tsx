@@ -62,7 +62,9 @@ export function RiskReversalButterflyChart({
 	const isEmpty = !points || points.length === 0;
 
 	const allY =
-		points?.flatMap((p) => [p.rr25, p.bf25, p.rr10, p.bf10]).filter((v): v is number => v != null) ?? [];
+		points
+			?.flatMap((p) => [p.rr25, p.bf25, p.rr10, p.bf10])
+			.filter((v): v is number => v != null) ?? [];
 
 	return (
 		<ChartFrame
@@ -94,7 +96,10 @@ export function RiskReversalButterflyChart({
 			{points && (
 				<Cartesian
 					height={240}
-					xDomain={niceDomain(points.map((p) => p.ttm), { includeZero: true })}
+					xDomain={niceDomain(
+						points.map((p) => p.ttm),
+						{ includeZero: true },
+					)}
 					yDomain={niceDomain(allY, { includeZero: true, clipOutliers: true })}
 					xLabel="Maturity (years)"
 					yFormat={(v) => `${(v * 100).toFixed(1)}%`}
