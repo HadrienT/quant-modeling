@@ -2906,7 +2906,7 @@
         "type": "object"
       },
       "ScriptRequest": {
-        "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.\n\nA script only describes a payoff; the dynamics its price depends on come\nfrom `model`. \"black_scholes\" takes `spot`, `vol` (one flat volatility).\n\"local_vol\" takes a `ticker`: its option chain is fetched and calibrated\ninto a Dupire surface (spot and dividend yield come from the market, not\nthe request), so skew is priced. Either way, `warnings` in the response\nreports what the script's price depends on that the chosen model cannot\ncapture.",
+        "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.\n\nA script only describes a payoff; the dynamics its price depends on come\nfrom `model`. \"black_scholes\" takes `spot`, `vol` (one flat volatility).\n\"local_vol\" takes a `ticker` and prices against the stored market data in\nthe database data-ingest fills (option-chain snapshot, close, dividend\nyield) -- never a live source -- so skew is priced. A stored snapshot is a\nmarket date: the script is priced on the latest snapshot on or before\n`valuation_date` (at most a few days earlier), and the response says so.\nMissing or stale stored data is an error naming what to refresh. Either\nway, `warnings` in the response reports what the script's price depends\non that the chosen model cannot capture.",
         "properties": {
           "day_count": {
             "default": "ACT/365F",
@@ -2947,7 +2947,7 @@
           },
           "model": {
             "default": "black_scholes",
-            "description": "'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's option chain (needs ticker; spot/dividend/vol come from the market).",
+            "description": "'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot (needs ticker; spot and dividend come from the database).",
             "enum": [
               "black_scholes",
               "local_vol"
@@ -3017,7 +3017,7 @@
                 "type": "null"
               }
             ],
-            "description": "Underlying whose option chain is calibrated (model='local_vol').",
+            "description": "Underlying whose stored option chain is calibrated (model='local_vol'); must be in data-ingest's tracked universe.",
             "title": "Ticker"
           },
           "valuation_date": {

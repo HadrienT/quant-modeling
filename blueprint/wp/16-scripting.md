@@ -463,10 +463,20 @@ que trois choses — les dates d'événements, le nombre de sous-jacents
 | `model` | Dynamique | Entrées |
 |---|---|---|
 | `black_scholes` | une vol plate | `spot`, `vol` |
-| `local_vol` | surface de Dupire (Euler, `steps_per_year`) | `ticker` : la chaîne d'options est récupérée et calibrée (`calibrate_vol_surface`), spot et dividende viennent du marché |
+| `local_vol` | surface de Dupire (Euler, `steps_per_year`) | `ticker` : la chaîne d'options **stockée** est calibrée (`calibrate_vol_surface`) ; spot et dividende viennent aussi de la base |
 
-L'API refuse `local_vol` si `valuation_date` n'est pas aujourd'hui : la surface
-est un instantané dont l'axe des maturités part d'aujourd'hui.
+**Les données viennent de la base, jamais de Yahoo.** [`market_snapshot.py`](../../api/app/market_snapshot.py)
+lit ce que `~/data-ingest` a stocké (snapshot d'options, clôtures, rendements de
+dividende) et n'importe pas `yfinance` du tout — propriété structurelle, testée.
+Une donnée absente ou trop ancienne est une erreur qui dit quoi rafraîchir
+(`ingest run …`), pas un repli en direct. Un snapshot est une **date de marché** :
+l'axe des maturités de la surface part du jour de capture, donc le script est
+valorisé au dernier snapshot antérieur ou égal à `valuation_date` (au plus 4 jours
+avant : week-end + férié), et la réponse le signale (`market_date_shifted`). Un
+cours en retard sur la chaîne est accepté jusqu'à 7 jours mais signalé
+(`stale_spot`) : spot et surface décriraient alors deux jours différents. Une
+ligne de dividende absente veut dire « jamais ingéré » (un non-payeur est stocké
+à 0,0), pas « zéro ».
 
 **Le garde-fou.** Comme rien n'apparie automatiquement produit et modèle, une
 passe d'analyse lit sur l'arbre ce dont le prix dépend

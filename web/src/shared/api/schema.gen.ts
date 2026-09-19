@@ -2220,11 +2220,14 @@ export interface components {
          *
          *     A script only describes a payoff; the dynamics its price depends on come
          *     from `model`. "black_scholes" takes `spot`, `vol` (one flat volatility).
-         *     "local_vol" takes a `ticker`: its option chain is fetched and calibrated
-         *     into a Dupire surface (spot and dividend yield come from the market, not
-         *     the request), so skew is priced. Either way, `warnings` in the response
-         *     reports what the script's price depends on that the chosen model cannot
-         *     capture.
+         *     "local_vol" takes a `ticker` and prices against the stored market data in
+         *     the database data-ingest fills (option-chain snapshot, close, dividend
+         *     yield) -- never a live source -- so skew is priced. A stored snapshot is a
+         *     market date: the script is priced on the latest snapshot on or before
+         *     `valuation_date` (at most a few days earlier), and the response says so.
+         *     Missing or stale stored data is an error naming what to refresh. Either
+         *     way, `warnings` in the response reports what the script's price depends
+         *     on that the chosen model cannot capture.
          */
         ScriptRequest: {
             /**
@@ -2257,7 +2260,7 @@ export interface components {
             greeks_method: "none" | "aad";
             /**
              * Model
-             * @description 'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's option chain (needs ticker; spot/dividend/vol come from the market).
+             * @description 'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot (needs ticker; spot and dividend come from the database).
              * @default black_scholes
              * @enum {string}
              */
@@ -2298,7 +2301,7 @@ export interface components {
             steps_per_year: number;
             /**
              * Ticker
-             * @description Underlying whose option chain is calibrated (model='local_vol').
+             * @description Underlying whose stored option chain is calibrated (model='local_vol'); must be in data-ingest's tracked universe.
              */
             ticker?: string | null;
             /**
