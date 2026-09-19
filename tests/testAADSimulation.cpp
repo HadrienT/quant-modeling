@@ -140,7 +140,7 @@ namespace quantModeling
         EXPECT_NEAR(res.price, ref_price, 4.0 * res.price_std_error);
         ASSERT_EQ(res.risk_labels.size(), 4u);
         EXPECT_NEAR(res.risks[0], ref_delta, 4.0 * res.risk_std_errors[0]); // spot
-        EXPECT_NEAR(res.risks[3], ref_vega, 4.0 * res.risk_std_errors[3]); // vol
+        EXPECT_NEAR(res.risks[3], ref_vega, 4.0 * res.risk_std_errors[3]);  // vol
     }
 
     // ── the same property, one step further: a scripted payoff that actually

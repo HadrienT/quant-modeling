@@ -50,9 +50,7 @@ namespace quantModeling
         LocalVolSimModel(T s0, T r, T q, std::vector<Real> K_grid,
                          std::vector<Real> T_grid, std::vector<T> sigma_loc,
                          Time max_dt = 1.0 / 12.0)
-            : s0_(s0), r_(r), q_(q), K_grid_(std::move(K_grid)),
-              T_grid_(std::move(T_grid)), sigma_loc_(std::move(sigma_loc)),
-              max_dt_(max_dt)
+            : s0_(s0), r_(r), q_(q), K_grid_(std::move(K_grid)), T_grid_(std::move(T_grid)), sigma_loc_(std::move(sigma_loc)), max_dt_(max_dt)
         {
             if (K_grid_.size() < 2 || T_grid_.size() < 2)
                 throw InvalidInput(
@@ -69,13 +67,7 @@ namespace quantModeling
         /// caches pointers into *this* object's own members, so a naive
         /// copy would leave them pointing at the original.
         LocalVolSimModel(const LocalVolSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_),
-              K_grid_(other.K_grid_), T_grid_(other.T_grid_),
-              sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_),
-              timeline_(other.timeline_), sim_timeline_(other.sim_timeline_),
-              defline_(other.defline_),
-              event_index_of_step_(other.event_index_of_step_),
-              sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }

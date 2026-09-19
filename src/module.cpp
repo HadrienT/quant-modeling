@@ -782,8 +782,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
     ScriptedProduct<Real> product(script, ctx,
                                   ScriptSettings{fuzzy, default_eps});
     auto sim_model = scripting::make_script_model<Real>(model, spot, rate, dividend, vol,
-                                             K_grid, T_grid, sigma_loc_flat,
-                                             max_dt);
+                                                        K_grid, T_grid, sigma_loc_flat,
+                                                        max_dt);
     check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
 
     PricingSettings settings;

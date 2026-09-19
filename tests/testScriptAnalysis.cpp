@@ -12,8 +12,8 @@ namespace quantModeling
 {
     namespace
     {
-        using scripting::advise;
         using scripting::Advice;
+        using scripting::advise;
         using scripting::ModelKind;
         using scripting::ScriptAnalysis;
 

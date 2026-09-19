@@ -33,7 +33,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            EuroCallT(Real k, Real maturity) : K(k), tl_{maturity}, dl_(1) {}
+            EuroCallT(Real k, Real maturity)
+                : K(k), tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -55,7 +56,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            explicit DeflatedSpotT(Real maturity) : tl_{maturity}, dl_(1) {}
+            explicit DeflatedSpotT(Real maturity)
+                : tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -75,31 +77,31 @@ namespace quantModeling
     TEST(SABRSimModel, RejectsNonPositiveForward)
     {
         EXPECT_THROW((SABRSimModel<Real>{0.0, 0.03, 0.25, 0.6, -0.3, 0.5}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(SABRSimModel, RejectsNonPositiveAlpha)
     {
         EXPECT_THROW((SABRSimModel<Real>{100.0, 0.03, 0.0, 0.6, -0.3, 0.5}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(SABRSimModel, RejectsBetaOutOfRange)
     {
         EXPECT_THROW((SABRSimModel<Real>{100.0, 0.03, 0.25, 1.5, -0.3, 0.5}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(SABRSimModel, RejectsRhoOutOfRange)
     {
         EXPECT_THROW((SABRSimModel<Real>{100.0, 0.03, 0.25, 0.6, -1.5, 0.5}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(SABRSimModel, RejectsNegativeNu)
     {
         EXPECT_THROW((SABRSimModel<Real>{100.0, 0.03, 0.25, 0.6, -0.3, -0.5}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     // ── cross-check against Hagan's own closed-form implied vol + Black-76,
@@ -206,8 +208,8 @@ namespace quantModeling
         Tape tape;
         TapeSwitch guard(tape);
         Number nu(base_nu);
-        SABRSimModel<Number> model{Number(F0),    Number(r), Number(alpha0),
-                                   beta,          Number(rho), nu};
+        SABRSimModel<Number> model{Number(F0), Number(r), Number(alpha0),
+                                   beta, Number(rho), nu};
         model.init(product.timeline(), product.defline());
         Scenario<Number> path;
         allocate_scenario(path, product.defline(), model.n_underlyings());

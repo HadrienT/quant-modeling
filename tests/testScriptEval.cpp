@@ -250,7 +250,7 @@ namespace quantModeling::scripting
         // The model behind this scenario only carries one asset (run_hard's
         // convention); spot(1) asks for a second one that isn't there.
         EXPECT_THROW(run_hard("2025-01-01\n    pays spot(1)\n", {100.0}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
 } // namespace quantModeling::scripting

@@ -70,20 +70,20 @@ namespace quantModeling
     {
         EXPECT_THROW((MultiAssetBSSimModel<Real>{
                          {100.0, 100.0}, 0.03, {0.0}, {0.2, 0.2}, corr2(0.0)}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(MultiAssetBSSimModel, RejectsEmptyAssetList)
     {
         EXPECT_THROW((MultiAssetBSSimModel<Real>{{}, 0.03, {}, {}, Eigen::MatrixXd(0, 0)}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(MultiAssetBSSimModel, RejectsCorrelationSizeMismatch)
     {
         EXPECT_THROW((MultiAssetBSSimModel<Real>{
                          {100.0, 100.0}, 0.03, {0.0, 0.0}, {0.2, 0.2}, corr2(0.0).topLeftCorner(1, 1)}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     // ── correlation actually does something: two identical assets with
@@ -91,8 +91,7 @@ namespace quantModeling
 
     TEST(MultiAssetBSSimModel, PerfectCorrelationMovesTwoIdenticalAssetsInLockstep)
     {
-        MultiAssetBSSimModel<Real> model{{100.0, 100.0}, 0.03, {0.0, 0.0},
-                                         {0.2, 0.25}, corr2(1.0)};
+        MultiAssetBSSimModel<Real> model{{100.0, 100.0}, 0.03, {0.0, 0.0}, {0.2, 0.25}, corr2(1.0)};
         TimeLine tl{0.5, 1.0};
         std::vector<SampleDef> dl(2);
         model.init(tl, dl);
@@ -116,8 +115,7 @@ namespace quantModeling
 
     TEST(MultiAssetBSSimModel, PerfectCorrelationAndEqualVolsGivesIdenticalPaths)
     {
-        MultiAssetBSSimModel<Real> model{{100.0, 100.0}, 0.03, {0.0, 0.0},
-                                         {0.2, 0.2}, corr2(1.0)};
+        MultiAssetBSSimModel<Real> model{{100.0, 100.0}, 0.03, {0.0, 0.0}, {0.2, 0.2}, corr2(1.0)};
         TimeLine tl{0.5, 1.0};
         std::vector<SampleDef> dl(2);
         model.init(tl, dl);
@@ -136,8 +134,7 @@ namespace quantModeling
 
     TEST(MultiAssetBSSimModel, CloneKeepsItsOwnParameterPointers)
     {
-        MultiAssetBSSimModel<Real> model{{100.0, 90.0}, 0.03, {0.0, 0.01},
-                                         {0.2, 0.25}, corr2(0.3)};
+        MultiAssetBSSimModel<Real> model{{100.0, 90.0}, 0.03, {0.0, 0.01}, {0.2, 0.25}, corr2(0.3)};
         const auto clone = model.clone();
 
         ASSERT_EQ(model.parameters().size(), clone->parameters().size());
@@ -230,8 +227,7 @@ namespace quantModeling
         // deltas: positive, roughly equal by symmetry (identical assets)
         EXPECT_GT(res.risks[1], 0.0);
         EXPECT_GT(res.risks[2], 0.0);
-        EXPECT_NEAR(res.risks[1], res.risks[2], 8.0 * (res.risk_std_errors[1] +
-                                                       res.risk_std_errors[2]));
+        EXPECT_NEAR(res.risks[1], res.risks[2], 8.0 * (res.risk_std_errors[1] + res.risk_std_errors[2]));
         // vega: positive for both assets
         EXPECT_GT(res.risks[5], 0.0);
         EXPECT_GT(res.risks[6], 0.0);

@@ -33,7 +33,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            EuroCallT(Real k, Real maturity) : K(k), tl_{maturity}, dl_(1) {}
+            EuroCallT(Real k, Real maturity)
+                : K(k), tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -68,16 +69,14 @@ namespace quantModeling
 
     TEST(LocalVolSimModel, RejectsTooSmallAGrid)
     {
-        EXPECT_THROW((LocalVolSimModel<Real>{100.0, 0.03, 0.0, {80.0}, {0.5, 1.0},
-                                            {0.2, 0.2}}),
-                    InvalidInput);
+        EXPECT_THROW((LocalVolSimModel<Real>{100.0, 0.03, 0.0, {80.0}, {0.5, 1.0}, {0.2, 0.2}}),
+                     InvalidInput);
     }
 
     TEST(LocalVolSimModel, RejectsSigmaSizeMismatch)
     {
-        EXPECT_THROW((LocalVolSimModel<Real>{100.0, 0.03, 0.0, {80.0, 120.0},
-                                            {0.5, 1.0}, {0.2, 0.2, 0.2}}),
-                    InvalidInput);
+        EXPECT_THROW((LocalVolSimModel<Real>{100.0, 0.03, 0.0, {80.0, 120.0}, {0.5, 1.0}, {0.2, 0.2, 0.2}}),
+                     InvalidInput);
     }
 
     // ── a flat grid must reprice Black-Scholes exactly: log-Euler with a
@@ -152,7 +151,7 @@ namespace quantModeling
         };
 
         const double bump = (price_for_center_vol(base_vol + h) -
-                            price_for_center_vol(base_vol - h)) /
+                             price_for_center_vol(base_vol - h)) /
                             (2.0 * h);
 
         Tape tape;
