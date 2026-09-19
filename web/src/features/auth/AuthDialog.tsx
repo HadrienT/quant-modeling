@@ -12,7 +12,8 @@ import {
 	Input,
 	Label,
 } from "@/shared/ui";
-import { useSessionActions } from "@/shared/session";
+import { getConfig } from "@/shared/config";
+import { useAuthProviders, useSessionActions } from "@/shared/session";
 
 const schema = z.object({
 	username: z.string().min(2, "At least 2 characters"),
@@ -22,8 +23,9 @@ type Values = z.infer<typeof schema>;
 
 /** Accessible auth dialog (WP 04 §1): Dialog primitive, RHF + zod, errors via role=alert. */
 export function AuthDialog() {
-	const { login, register, dialogOpen, setDialogOpen, expired } =
+	const { login, register, dialogOpen, setDialogOpen, expired, authError } =
 		useSessionActions();
+	const providers = useAuthProviders();
 	const [mode, setMode] = useState<"login" | "register">("login");
 	const [serverError, setServerError] = useState<string | null>(null);
 
@@ -58,6 +60,31 @@ export function AuthDialog() {
 							: "An account only stores server-side portfolios. Everything else works without one."}
 					</DialogDescription>
 				</DialogHeader>
+
+				{authError && (
+					<p role="alert" className="text-xs text-critical">
+						Google sign-in failed: {authError}
+					</p>
+				)}
+
+				{providers.data?.google && (
+					<>
+						{/* Full-page navigation: the OAuth dance happens on the API + Google. */}
+						<Button asChild variant="secondary">
+							<a href={`${getConfig().apiBase}/api/auth/google/login`}>
+								Continue with Google
+							</a>
+						</Button>
+						<div
+							className="flex items-center gap-2 text-2xs text-ink-secondary"
+							aria-hidden="true"
+						>
+							<span className="h-px flex-1 bg-hairline" />
+							or
+							<span className="h-px flex-1 bg-hairline" />
+						</div>
+					</>
+				)}
 
 				<form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-3">
 					<div className="flex flex-col gap-1">
