@@ -23,12 +23,15 @@ de donnée de marché.
 
 Les données de marché viennent de **la base Postgres alimentée par
 `~/data-ingest`** (cours, chaînes d'options, rendements de dividende, courbes
-FRED). **Pas d'appel à Yahoo Finance depuis quant-modeling** : une donnée absente
-ou trop ancienne est une erreur explicite, pas un repli en direct (les nouveaux
-chemins de pricing passent par `api/app/market_snapshot.py`, qui n'importe pas
-`yfinance`). Des replis en direct subsistent dans les anciens endpoints
-(`vol_surface.py`, `routers/local_vol_pricing.py`, `routers/simulation.py`) : à
-retirer, pas à étendre. Plus de BigQuery — le projet est entièrement hors cloud.
+FRED). **Tout nouveau chemin de données passe par la base, sans repli vers Yahoo
+Finance** : une donnée absente ou trop ancienne y est une erreur explicite (les
+chemins de pricing des scripts passent par `api/app/market_snapshot.py`, qui
+n'importe pas `yfinance`). Les replis en direct **déjà en place** dans les
+anciens endpoints (`vol_surface.py`, `routers/local_vol_pricing.py`,
+`routers/simulation.py`) sont **conservés à dessein**, pour ne pas casser l'API
+tant que `data-ingest` n'est pas fiable : ne pas les étendre, ne pas les
+retirer sans décision du mainteneur. Le dossier `notebooks/` est un bac à sable
+personnel, hors périmètre. Plus de BigQuery — le projet est entièrement hors cloud.
 
 ## Commandes
 
