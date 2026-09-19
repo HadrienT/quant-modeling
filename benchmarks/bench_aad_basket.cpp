@@ -36,7 +36,8 @@ namespace
         std::vector<qm::SampleDef> dl_{1};
         std::vector<std::string> labels_{"price"};
 
-        BasketCallT(qm::Real k, std::size_t n_assets) : K(k), n(n_assets) {}
+        BasketCallT(qm::Real k, std::size_t n_assets)
+            : K(k), n(n_assets) {}
         const qm::TimeLine &timeline() const override { return tl_; }
         const std::vector<qm::SampleDef> &defline() const override { return dl_; }
         const std::vector<std::string> &payoff_labels() const override

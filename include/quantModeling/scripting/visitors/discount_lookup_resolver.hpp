@@ -34,7 +34,8 @@ namespace quantModeling::scripting
     class DiscountLookupResolver final : public Visitor
     {
       public:
-        explicit DiscountLookupResolver(const ValuationContext &ctx) : ctx_(ctx) {}
+        explicit DiscountLookupResolver(const ValuationContext &ctx)
+            : ctx_(ctx) {}
 
         /// One inner vector per event, same order as `events` -- the
         /// maturities that event's df() calls need, in slot order.

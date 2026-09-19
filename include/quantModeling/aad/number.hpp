@@ -180,8 +180,14 @@ namespace quantModeling
     /// double, such as a grid lookup (models/equity/local_vol_sim_model.hpp):
     /// which cell gets queried is not itself differentiated, only the T-typed
     /// values found there once the cell is chosen.
-    inline double to_double(double x) { return x; }
-    inline double to_double(const aad::Number &x) { return x.value(); }
+    inline double to_double(double x)
+    {
+        return x;
+    }
+    inline double to_double(const aad::Number &x)
+    {
+        return x.value();
+    }
 } // namespace quantModeling
 
 #endif // QM_AAD_NUMBER_HPP

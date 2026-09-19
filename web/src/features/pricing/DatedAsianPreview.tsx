@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { usePricing } from "@/shared/api";
 import type { PricingResponse } from "@/shared/api";
 import { Button, Field } from "@/shared/ui";
-import { Uncertainty } from "@/shared/ui/density";
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
+import { PriceResult } from "./dated-asian/PriceResult";
+import { monthlySchedule } from "./dated-asian/monthlySchedule";
 
 /**
  * Preview surface for the dated Monte-Carlo path (timeline + calendar / day-count
@@ -17,18 +18,6 @@ import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
  */
 
 const DAY_COUNTS = ["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] as const;
-
-function monthlySchedule(from: string, months: number): string {
-	const base = new Date(from);
-	if (Number.isNaN(base.getTime())) return "";
-	const out: string[] = [];
-	for (let i = 1; i <= months; i += 1) {
-		const d = new Date(base);
-		d.setMonth(d.getMonth() + i);
-		out.push(d.toISOString().slice(0, 10));
-	}
-	return out.join("\n");
-}
 
 export default function DatedAsianPreview() {
 	const [valuationDate, setValuationDate] = useState("2025-01-02");
@@ -71,7 +60,9 @@ export default function DatedAsianPreview() {
 	return (
 		<div className="mx-auto flex max-w-3xl flex-col gap-6">
 			<header className="flex flex-col gap-1">
-				<h1 className="text-lg font-semibold text-ink">Dated Asian — preview</h1>
+				<h1 className="text-lg font-semibold text-ink">
+					Dated Asian — preview
+				</h1>
 				<p className="text-sm text-ink-secondary">
 					Average-price Asian priced from calendar fixing dates through the
 					timeline simulation engine. Standalone preview of the date / day-count
@@ -169,9 +160,7 @@ export default function DatedAsianPreview() {
 					<select
 						className="rounded border border-hairline bg-surface px-2 py-1"
 						value={sampler}
-						onChange={(e) =>
-							setSampler(e.target.value as "pseudo" | "sobol")
-						}
+						onChange={(e) => setSampler(e.target.value as "pseudo" | "sobol")}
 					>
 						<option value="pseudo">Pseudo-random</option>
 						<option value="sobol">Sobol RQMC</option>
@@ -206,9 +195,7 @@ export default function DatedAsianPreview() {
 					<button
 						type="button"
 						className="self-start text-2xs text-ink-muted underline"
-						onClick={() =>
-							setFixingsText(monthlySchedule(valuationDate, 12))
-						}
+						onClick={() => setFixingsText(monthlySchedule(valuationDate, 12))}
 					>
 						Fill: 12 monthly from valuation date
 					</button>
@@ -220,26 +207,8 @@ export default function DatedAsianPreview() {
 			</form>
 
 			{q.isLoading && <MetricRowSkeleton />}
-			{q.error && (
-				<ErrorState error={q.error} onRetry={() => q.refetch()} />
-			)}
-			{r && (
-				<div className="rounded-md border border-hairline bg-surface p-4">
-					<span className="text-2xs text-ink-muted uppercase">Present value</span>
-					<div className="text-xl">
-						<Uncertainty
-							value={r.npv}
-							stdError={r.mc_std_error}
-							magnitude="price"
-						/>
-					</div>
-					{r.diagnostics && (
-						<p className="mt-2 font-mono text-2xs text-ink-muted">
-							{r.diagnostics}
-						</p>
-					)}
-				</div>
-			)}
+			{q.error && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
+			{r && <PriceResult result={r} />}
 		</div>
 	);
 }

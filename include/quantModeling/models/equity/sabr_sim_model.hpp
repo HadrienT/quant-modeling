@@ -65,9 +65,8 @@ namespace quantModeling
     {
       public:
         SABRSimModel(T f0, T r, T alpha0, Real beta, T rho, T nu,
-                    Time max_dt = 1.0 / 50.0)
-            : f0_(f0), r_(r), alpha0_(alpha0), rho_(rho), nu_(nu), beta_(beta),
-              max_dt_(max_dt)
+                     Time max_dt = 1.0 / 50.0)
+            : f0_(f0), r_(r), alpha0_(alpha0), rho_(rho), nu_(nu), beta_(beta), max_dt_(max_dt)
         {
             if (to_double(f0_) <= 0.0)
                 throw InvalidInput("SABRSimModel: f0 must be > 0");
@@ -84,12 +83,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         SABRSimModel(const SABRSimModel &other)
-            : f0_(other.f0_), r_(other.r_), alpha0_(other.alpha0_),
-              rho_(other.rho_), nu_(other.nu_), beta_(other.beta_),
-              max_dt_(other.max_dt_), timeline_(other.timeline_),
-              sim_timeline_(other.sim_timeline_), defline_(other.defline_),
-              event_index_of_step_(other.event_index_of_step_),
-              sim_dim_(other.sim_dim_)
+            : f0_(other.f0_), r_(other.r_), alpha0_(other.alpha0_), rho_(other.rho_), nu_(other.nu_), beta_(other.beta_), max_dt_(other.max_dt_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -170,7 +164,7 @@ namespace quantModeling
         const std::vector<std::string> &parameter_labels() const override
         {
             static const std::vector<std::string> labels{"forward", "rate",
-                                                          "alpha", "rho", "nu"};
+                                                         "alpha", "rho", "nu"};
             return labels;
         }
 

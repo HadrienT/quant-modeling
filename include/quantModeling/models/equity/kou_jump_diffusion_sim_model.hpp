@@ -59,8 +59,7 @@ namespace quantModeling
       public:
         KouJumpDiffusionSimModel(T s0, T r, T q, T sigma, T lambda, T p,
                                  T eta1, T eta2, int max_jumps_per_step = 10)
-            : s0_(s0), r_(r), q_(q), sigma_(sigma), lambda_(lambda), p_(p),
-              eta1_(eta1), eta2_(eta2), max_jumps_per_step_(max_jumps_per_step)
+            : s0_(s0), r_(r), q_(q), sigma_(sigma), lambda_(lambda), p_(p), eta1_(eta1), eta2_(eta2), max_jumps_per_step_(max_jumps_per_step)
         {
             if (to_double(lambda_) < 0.0)
                 throw InvalidInput("KouJumpDiffusionSimModel: lambda must be >= 0");
@@ -80,11 +79,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         KouJumpDiffusionSimModel(const KouJumpDiffusionSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_),
-              lambda_(other.lambda_), p_(other.p_), eta1_(other.eta1_),
-              eta2_(other.eta2_), max_jumps_per_step_(other.max_jumps_per_step_),
-              timeline_(other.timeline_), defline_(other.defline_),
-              steps_(other.steps_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), sigma_(other.sigma_), lambda_(other.lambda_), p_(other.p_), eta1_(other.eta1_), eta2_(other.eta2_), max_jumps_per_step_(other.max_jumps_per_step_), timeline_(other.timeline_), defline_(other.defline_), steps_(other.steps_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -103,7 +98,7 @@ namespace quantModeling
             // (Kou 2002, eq. 4) -- deterministic, T-typed, used by every
             // path regardless of how many jumps that path itself draws.
             const T k = p_ * eta1_ / (eta1_ - 1.0) +
-                       (1.0 - p_) * eta2_ / (eta2_ + 1.0) - 1.0;
+                        (1.0 - p_) * eta2_ / (eta2_ + 1.0) - 1.0;
             const T mu = r_ - q_ - 0.5 * sigma_ * sigma_ - lambda_ * k;
 
             steps_.clear();

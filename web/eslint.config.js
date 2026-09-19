@@ -161,6 +161,13 @@ export default tseslint.config(
 		rules: { "react-refresh/only-export-components": "off" },
 	},
 
+	/* Classic browser scripts served as-is from public/ (theme-init.js runs
+	 * before first paint, outside the bundler): browser globals, no modules. */
+	{
+		files: ["public/**/*.js"],
+		languageOptions: { sourceType: "script", globals: { ...globals.browser } },
+	},
+
 	/* Config files & tooling (Node scripts) */
 	{
 		files: [

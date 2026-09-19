@@ -33,7 +33,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            EuroCallT(Real k, Real maturity) : K(k), tl_{maturity}, dl_(1) {}
+            EuroCallT(Real k, Real maturity)
+                : K(k), tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -89,14 +90,14 @@ namespace quantModeling
     {
         EXPECT_THROW((MertonJumpDiffusionSimModel<Real>{100.0, 0.03, 0.0, 0.2,
                                                         -0.1, -0.1, 0.15}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(MertonJumpDiffusionSimModel, RejectsNegativeJumpVol)
     {
         EXPECT_THROW((MertonJumpDiffusionSimModel<Real>{100.0, 0.03, 0.0, 0.2,
                                                         0.5, -0.1, -0.05}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(MertonJumpDiffusionSimModel, ZeroIntensityRecoversBlackScholesExactly)
@@ -209,7 +210,7 @@ namespace quantModeling
         EuroCallT<Number> product(100.0, 1.0);
         MertonJumpDiffusionSimModel<Number> model{
             Number(100.0), Number(0.03), Number(0.0), Number(0.15),
-            Number(0.5),   Number(-0.1), Number(0.2)};
+            Number(0.5), Number(-0.1), Number(0.2)};
 
         const AADSimulResults res = simulate_aad(product, model, 50000, 4);
 

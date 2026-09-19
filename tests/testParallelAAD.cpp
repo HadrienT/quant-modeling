@@ -34,7 +34,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            EuroCallT(Real k, Real maturity) : K(k), tl_{maturity}, dl_(1) {}
+            EuroCallT(Real k, Real maturity)
+                : K(k), tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -69,7 +70,7 @@ namespace quantModeling
         /// pool, fresh model/RNG/tape each time (mirrors how a caller would
         /// actually use it -- state must never leak between runs).
         AADSimulResults run(std::size_t n_workers, std::size_t n_paths,
-                           uint64_t seed)
+                            uint64_t seed)
         {
             Tape tape;
             TapeSwitch guard(tape);

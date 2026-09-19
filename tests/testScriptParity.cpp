@@ -343,7 +343,7 @@ namespace quantModeling
         // the *other* asset's return is measured at T2, not T1 -- it stayed
         // in the basket. avg of the two locked-in returns, call struck at 0.
         const double S0_0 = 100, S0_1 = 100, r = 0.03, q = 0.0, v0 = 0.20,
-                    v1 = 0.30, rho = 0.3;
+                     v1 = 0.30, rho = 0.3;
         const std::string src =
             "2024-12-03\n"
             "    r0 = spot(0) / 100 - 1\n"

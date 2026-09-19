@@ -33,7 +33,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            EuroCallT(Real k, Real maturity) : K(k), tl_{maturity}, dl_(1) {}
+            EuroCallT(Real k, Real maturity)
+                : K(k), tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -60,7 +61,8 @@ namespace quantModeling
             std::vector<SampleDef> dl_;
             std::vector<std::string> labels_{"price"};
 
-            explicit DeflatedSpotT(Real maturity) : tl_{maturity}, dl_(1) {}
+            explicit DeflatedSpotT(Real maturity)
+                : tl_{maturity}, dl_(1) {}
             const TimeLine &timeline() const override { return tl_; }
             const std::vector<SampleDef> &defline() const override { return dl_; }
             const std::vector<std::string> &payoff_labels() const override
@@ -90,28 +92,28 @@ namespace quantModeling
     {
         EXPECT_THROW((KouJumpDiffusionSimModel<Real>{100.0, 0.03, 0.0, 0.2, -0.1,
                                                      0.4, 3.0, 4.0}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(KouJumpDiffusionSimModel, RejectsProbabilityOutOfRange)
     {
         EXPECT_THROW((KouJumpDiffusionSimModel<Real>{100.0, 0.03, 0.0, 0.2, 0.5,
                                                      1.5, 3.0, 4.0}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(KouJumpDiffusionSimModel, RejectsEtaUpAtOrBelowOne)
     {
         EXPECT_THROW((KouJumpDiffusionSimModel<Real>{100.0, 0.03, 0.0, 0.2, 0.5,
                                                      0.4, 1.0, 4.0}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(KouJumpDiffusionSimModel, RejectsNonPositiveEtaDown)
     {
         EXPECT_THROW((KouJumpDiffusionSimModel<Real>{100.0, 0.03, 0.0, 0.2, 0.5,
                                                      0.4, 3.0, 0.0}),
-                    InvalidInput);
+                     InvalidInput);
     }
 
     TEST(KouJumpDiffusionSimModel, ZeroIntensityRecoversBlackScholesExactly)
@@ -194,9 +196,9 @@ namespace quantModeling
         {
             Tape local_tape;
             TapeSwitch guard(local_tape);
-            KouJumpDiffusionSimModel<Number> m{Number(S0),   Number(r),   Number(q),
+            KouJumpDiffusionSimModel<Number> m{Number(S0), Number(r), Number(q),
                                                Number(sigma), Number(lambda),
-                                               Number(p),     Number(eta1), Number(e2)};
+                                               Number(p), Number(eta1), Number(e2)};
             m.init(product.timeline(), product.defline());
             Scenario<Number> path;
             allocate_scenario(path, product.defline(), m.n_underlyings());
@@ -211,9 +213,9 @@ namespace quantModeling
         Tape tape;
         TapeSwitch guard(tape);
         Number e2(base_eta2);
-        KouJumpDiffusionSimModel<Number> model{Number(S0),   Number(r),   Number(q),
+        KouJumpDiffusionSimModel<Number> model{Number(S0), Number(r), Number(q),
                                                Number(sigma), Number(lambda),
-                                               Number(p),     Number(eta1), e2};
+                                               Number(p), Number(eta1), e2};
         model.init(product.timeline(), product.defline());
         Scenario<Number> path;
         allocate_scenario(path, product.defline(), model.n_underlyings());
@@ -235,7 +237,7 @@ namespace quantModeling
         EuroCallT<Number> product(100.0, 1.0);
         KouJumpDiffusionSimModel<Number> model{
             Number(100.0), Number(0.03), Number(0.0), Number(0.15),
-            Number(0.5),   Number(0.4),  Number(3.0),  Number(4.0)};
+            Number(0.5), Number(0.4), Number(3.0), Number(4.0)};
 
         const AADSimulResults res = simulate_aad(product, model, 50000, 4);
 

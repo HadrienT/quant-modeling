@@ -130,7 +130,7 @@ namespace quantModeling
                 st.gauss.resize(std::max<std::size_t>(m.sim_dim(), 1));
                 st.num_params = m.num_params();
                 st.rng->init(m.sim_dim()); // must precede skip_to: Pcg32RNG
-                                          // scales its jump by sim_dim()
+                                           // scales its jump by sim_dim()
                 st.initialized = true;
             }
 

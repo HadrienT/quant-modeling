@@ -115,7 +115,8 @@ namespace quantModeling
     class SobolRNG final : public RNG
     {
       public:
-        explicit SobolRNG(uint64_t scramble_seed) : scramble_seed_(scramble_seed) {}
+        explicit SobolRNG(uint64_t scramble_seed)
+            : scramble_seed_(scramble_seed) {}
 
         void init(std::size_t sim_dim) override
         {

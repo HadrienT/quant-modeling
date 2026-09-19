@@ -74,10 +74,8 @@ namespace quantModeling
     {
       public:
         BatesSimModel(T s0, T r, T q, T v0, T kappa, T theta, T xi, T rho,
-                     T lambda, T jump_mean, T jump_vol, Time max_dt = 1.0 / 50.0)
-            : s0_(s0), r_(r), q_(q), v0_(v0), kappa_(kappa), theta_(theta),
-              xi_(xi), rho_(rho), lambda_(lambda), jump_mean_(jump_mean),
-              jump_vol_(jump_vol), max_dt_(max_dt)
+                      T lambda, T jump_mean, T jump_vol, Time max_dt = 1.0 / 50.0)
+            : s0_(s0), r_(r), q_(q), v0_(v0), kappa_(kappa), theta_(theta), xi_(xi), rho_(rho), lambda_(lambda), jump_mean_(jump_mean), jump_vol_(jump_vol), max_dt_(max_dt)
         {
             if (to_double(v0_) < 0.0)
                 throw InvalidInput("BatesSimModel: v0 must be >= 0");
@@ -98,14 +96,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         BatesSimModel(const BatesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_),
-              kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_),
-              rho_(other.rho_), lambda_(other.lambda_),
-              jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_),
-              max_dt_(other.max_dt_), timeline_(other.timeline_),
-              sim_timeline_(other.sim_timeline_), defline_(other.defline_),
-              event_index_of_step_(other.event_index_of_step_),
-              sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -167,7 +158,7 @@ namespace quantModeling
 
                 const int n_jumps = sample_poisson(u_poisson, to_double(lambda_) * dt);
                 T log_return = (r_ - q_ - lambda_ * k - 0.5 * v_plus) * dt +
-                              sqrt_v_plus * (sqdt * z_spot);
+                               sqrt_v_plus * (sqdt * z_spot);
                 if (n_jumps > 0)
                 {
                     const double n = static_cast<double>(n_jumps);
@@ -210,8 +201,8 @@ namespace quantModeling
         const std::vector<std::string> &parameter_labels() const override
         {
             static const std::vector<std::string> labels{
-                "spot",   "rate",           "div",       "v0",
-                "kappa",  "theta",          "xi",        "rho",
+                "spot", "rate", "div", "v0",
+                "kappa", "theta", "xi", "rho",
                 "jump_intensity", "jump_mean", "jump_vol"};
             return labels;
         }
@@ -238,9 +229,9 @@ namespace quantModeling
 
         void set_param_pointers()
         {
-            params_ = {&s0_,    &r_,     &q_,        &v0_,      &kappa_,
-                      &theta_, &xi_,    &rho_,      &lambda_,  &jump_mean_,
-                      &jump_vol_};
+            params_ = {&s0_, &r_, &q_, &v0_, &kappa_,
+                       &theta_, &xi_, &rho_, &lambda_, &jump_mean_,
+                       &jump_vol_};
         }
 
         T s0_{}, r_{}, q_{}, v0_{}, kappa_{}, theta_{}, xi_{}, rho_{}, lambda_{},
