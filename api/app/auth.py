@@ -18,7 +18,6 @@ from pydantic import BaseModel
 
 from .storage import get_storage
 
-
 # ── Config (fail fast) ───────────────────────────────────────────────────────
 
 JWT_SECRET = os.getenv("JWT_SECRET", "")
@@ -49,10 +48,12 @@ def _verify_password(password: str, hashed: str) -> bool:
 
 # ── Models ───────────────────────────────────────────────────────────────────
 
+
 class UserRecord(BaseModel):
     username: str
-    hashed_password: str
+    hashed_password: str  # "" for accounts created through Google
     created_at: str = ""
+    email: str = ""  # only set for Google accounts
 
 
 class AuthRequest(BaseModel):
@@ -67,9 +68,11 @@ class AuthResponse(BaseModel):
 
 class UserInfo(BaseModel):
     username: str
+    email: Optional[str] = None
 
 
 # ── User store ───────────────────────────────────────────────────────────────
+
 
 def _load_users() -> dict[str, UserRecord]:
     raw = get_storage().read_json(_USERS_KEY) or {}
@@ -82,9 +85,12 @@ def _save_users(users: dict[str, UserRecord]) -> None:
 
 # ── Token helpers ────────────────────────────────────────────────────────────
 
+
 def _create_token(username: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
-    return jwt.encode({"sub": username, "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(
+        {"sub": username, "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM
+    )
 
 
 def _decode_token(token: str) -> Optional[str]:
@@ -100,16 +106,23 @@ def _rate_limit(username: str) -> None:
     while q and now - q[0] > _LOGIN_WINDOW_S:
         q.popleft()
     if len(q) >= _LOGIN_MAX:
-        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+        raise HTTPException(
+            status_code=429, detail="Too many attempts. Try again later."
+        )
     q.append(now)
 
 
 # ── Public helpers / dependencies ────────────────────────────────────────────
 
+
 def register_user(username: str, password: str) -> AuthResponse:
     username = username.strip().lower()
     if len(username) < 2:
         raise HTTPException(status_code=400, detail="Username too short")
+    if ":" in username:
+        # ':' namespaces provider accounts ("google:<sub>"): a password user must
+        # never be able to claim one.
+        raise HTTPException(status_code=400, detail="Username cannot contain ':'")
     if len(password) < MIN_PASSWORD_LEN:
         raise HTTPException(
             status_code=400,
@@ -133,9 +146,38 @@ def login_user(username: str, password: str) -> AuthResponse:
     username = username.strip().lower()
     _rate_limit(username)
     user = _load_users().get(username)
-    if user is None or not _verify_password(password, user.hashed_password):
+    if (
+        user is None
+        or not user.hashed_password  # Google account: no password to check
+        or not _verify_password(password, user.hashed_password)
+    ):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return AuthResponse(token=_create_token(username), username=username)
+
+
+def login_google(sub: str, email: str) -> AuthResponse:
+    """Find or create the account for a verified Google identity, issue a JWT."""
+    username = f"google:{sub}"
+    users = _load_users()
+    user = users.get(username)
+    if user is None:
+        user = UserRecord(
+            username=username,
+            hashed_password="",
+            created_at=datetime.now(timezone.utc).isoformat(),
+            email=email,
+        )
+        users[username] = user
+        _save_users(users)
+    elif user.email != email:
+        user.email = email  # keep the display email current
+        _save_users(users)
+    return AuthResponse(token=_create_token(username), username=username)
+
+
+def user_info(username: str) -> UserInfo:
+    user = _load_users().get(username)
+    return UserInfo(username=username, email=(user.email or None) if user else None)
 
 
 def optional_user(authorization: Optional[str] = Header(default=None)) -> Optional[str]:

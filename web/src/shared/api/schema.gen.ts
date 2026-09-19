@@ -55,6 +55,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Providers
+         * @description Which sign-in methods are configured, so the UI only offers real ones.
+         */
+        get: operations["api_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/register": {
         parameters: {
             query?: never;
@@ -2100,6 +2120,11 @@ export interface components {
          * @enum {string}
          */
         ProductType: "european-call" | "european-put" | "american-call" | "american-put" | "asian" | "barrier" | "digital" | "lookback" | "basket" | "zero-coupon-bond" | "fixed-rate-bond" | "future" | "autocall" | "mountain" | "variance-swap" | "volatility-swap" | "dispersion-swap" | "fx-forward" | "fx-option" | "commodity-forward" | "commodity-option" | "rainbow";
+        /** Providers */
+        Providers: {
+            /** Google */
+            google: boolean;
+        };
         /**
          * RainbowKind
          * @enum {string}
@@ -2524,6 +2549,8 @@ export interface components {
         };
         /** UserInfo */
         UserInfo: {
+            /** Email */
+            email?: string | null;
             /** Username */
             username: string;
         };
@@ -2839,6 +2866,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Providers"];
                 };
             };
         };
