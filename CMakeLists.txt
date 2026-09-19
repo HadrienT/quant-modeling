@@ -189,6 +189,8 @@ if(QM_BUILD_TESTS)
     tests/testThreadPool.cpp
     tests/testRNGSkipTo.cpp
     tests/testParallelAAD.cpp
+    tests/testScriptAnalysis.cpp
+    tests/testScriptModels.cpp
     tests/testDate.cpp
     tests/testConventions.cpp
     tests/testCalendars.cpp

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Dict, List
 
 import quantmodeling as qm
@@ -50,6 +51,8 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
         # (blueprint/wp/17-aad.md §13.1); every other pricer's dict carries
         # risks=None, same as before this field existed.
         risks=result.get("risks"),
+        # Only price_script populates this (scripting/model_advice.hpp).
+        warnings=result.get("warnings", []),
     )
 
 
@@ -178,12 +181,36 @@ def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
 
 
 def price_script(req: ScriptRequest) -> PricingResponse:
+    if req.model == "local_vol":
+        # The calibrated surface is a snapshot as of now: its maturity axis
+        # is measured from today, so a script valued on another date would
+        # silently read the wrong part of it.
+        today = datetime.now(timezone.utc).date()
+        if req.valuation_date != today:
+            raise ValueError(
+                "model='local_vol' prices against today's market surface: "
+                f"valuation_date must be today ({today.isoformat()}), "
+                f"got {req.valuation_date.isoformat()}"
+            )
+        from . import vol_surface  # lazy: pulls in yfinance/db, only this branch needs them
+
+        market = vol_surface.local_vol_grid_for(req.ticker, req.rate)
+        spot, dividend, vol = market["spot"], market["dividend"], 0.0
+        k_grid, t_grid, sigma = (
+            market["K_grid"],
+            market["T_grid"],
+            market["sigma_loc_flat"],
+        )
+    else:
+        spot, dividend, vol = req.spot, req.dividend, req.vol
+        k_grid, t_grid, sigma = [], [], []
+
     result = qm.price_script(
         req.script,
-        req.spot,
+        spot,
         req.rate,
-        req.dividend,
-        req.vol,
+        dividend,
+        vol,
         req.valuation_date.isoformat(),
         req.day_count,
         req.fuzzy,
@@ -192,6 +219,11 @@ def price_script(req: ScriptRequest) -> PricingResponse:
         req.seed,
         req.sampler,
         req.greeks_method,
+        req.model,
+        k_grid,
+        t_grid,
+        sigma,
+        req.steps_per_year,
     )
     return _pricing_response_from_dict(result)
 

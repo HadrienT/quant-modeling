@@ -5,6 +5,8 @@ export type DayCount = (typeof DAY_COUNTS)[number];
 
 /** The flat Black-Scholes market inputs + MC settings shared by ScriptingPreview. */
 export function ScriptingMarketFields(props: {
+	/** Local vol: spot, dividend and vol come from the calibrated surface. */
+	marketDriven?: boolean;
 	valuationDate: string;
 	onValuationDate: (v: string) => void;
 	spot: string;
@@ -32,30 +34,36 @@ export function ScriptingMarketFields(props: {
 				value={props.valuationDate}
 				onChange={(e) => props.onValuationDate(e.target.value)}
 			/>
-			<Field
-				label="Spot"
-				inputMode="decimal"
-				value={props.spot}
-				onChange={(e) => props.onSpot(e.target.value)}
-			/>
+			{!props.marketDriven && (
+				<Field
+					label="Spot"
+					inputMode="decimal"
+					value={props.spot}
+					onChange={(e) => props.onSpot(e.target.value)}
+				/>
+			)}
 			<Field
 				label="Rate %"
 				inputMode="decimal"
 				value={props.ratePct}
 				onChange={(e) => props.onRatePct(e.target.value)}
 			/>
-			<Field
-				label="Dividend %"
-				inputMode="decimal"
-				value={props.divPct}
-				onChange={(e) => props.onDivPct(e.target.value)}
-			/>
-			<Field
-				label="Vol %"
-				inputMode="decimal"
-				value={props.volPct}
-				onChange={(e) => props.onVolPct(e.target.value)}
-			/>
+			{!props.marketDriven && (
+				<Field
+					label="Dividend %"
+					inputMode="decimal"
+					value={props.divPct}
+					onChange={(e) => props.onDivPct(e.target.value)}
+				/>
+			)}
+			{!props.marketDriven && (
+				<Field
+					label="Vol %"
+					inputMode="decimal"
+					value={props.volPct}
+					onChange={(e) => props.onVolPct(e.target.value)}
+				/>
+			)}
 			<label className="flex flex-col gap-1 text-sm">
 				<span className="text-2xs text-ink-muted uppercase">Day count</span>
 				<select
