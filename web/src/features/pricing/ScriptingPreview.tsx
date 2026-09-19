@@ -11,6 +11,8 @@ import { AssistantSidebar } from "./scripting/assistant/AssistantSidebar";
 import { useValidateScript } from "./scripting/useValidateScript";
 import { parseScriptDiagnostic } from "./scripting/parseScriptDiagnostic";
 import { ValidationSummary } from "./scripting/ValidationSummary";
+import { ModelChoice, type ScriptModel } from "./scripting/ModelChoice";
+import { ModelWarnings } from "./scripting/ModelWarnings";
 
 /**
  * Preview surface for the payoff scripting language (blueprint/wp/16-scripting.md).
@@ -39,6 +41,8 @@ export default function ScriptingPreview() {
 	const [sampler, setSampler] = useState<"pseudo" | "sobol">("pseudo");
 	const [nPaths, setNPaths] = useState("200000");
 	const [seed, setSeed] = useState("1");
+	const [model, setModel] = useState<ScriptModel>("black_scholes");
+	const [ticker, setTicker] = useState("SPY");
 	const [request, setRequest] = useState<Record<string, unknown> | null>(null);
 
 	const price = usePricing({
@@ -74,10 +78,15 @@ export default function ScriptingPreview() {
 						e.preventDefault();
 						setRequest({
 							script,
-							spot: Number(spot),
+							model,
+							...(model === "local_vol"
+								? { ticker }
+								: {
+										spot: Number(spot),
+										dividend: Number(divPct) / 100,
+										vol: Number(volPct) / 100,
+									}),
 							rate: Number(ratePct) / 100,
-							dividend: Number(divPct) / 100,
-							vol: Number(volPct) / 100,
 							valuation_date: valuationDate,
 							day_count: dayCount,
 							fuzzy,
@@ -112,7 +121,15 @@ export default function ScriptingPreview() {
 						diagnostic={diagnostic}
 					/>
 
+					<ModelChoice
+						model={model}
+						onModel={setModel}
+						ticker={ticker}
+						onTicker={setTicker}
+					/>
+
 					<ScriptingMarketFields
+						marketDriven={model === "local_vol"}
 						valuationDate={valuationDate}
 						onValuationDate={setValuationDate}
 						spot={spot}
@@ -196,6 +213,7 @@ export default function ScriptingPreview() {
 					</pre>
 				</div>
 			)}
+			{r && <ModelWarnings warnings={r.warnings ?? []} />}
 			{r && (
 				<div className="rounded-md border border-hairline bg-surface p-4">
 					<span className="text-2xs text-ink-muted uppercase">

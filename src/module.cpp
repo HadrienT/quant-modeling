@@ -18,6 +18,9 @@
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/market/vol_surface_pipeline.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
+#include "quantModeling/models/equity/local_vol_sim_model.hpp"
+#include "quantModeling/scripting/model_advice.hpp"
+#include "quantModeling/scripting/script_model_factory.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -674,19 +677,51 @@ static py::dict price_dated_asian(double spot, double rate, double dividend,
 //    error (ScriptError) propagates as a Python RuntimeError carrying the
 //    pointed line/column message; the API layer turns that into a 422.
 //
+// The script never says which dynamics its price depends on -- the model is
+// a separate choice, made here:
+//   model = "black_scholes": one flat vol (`vol`).
+//   model = "local_vol":     a Dupire surface (K_grid / T_grid /
+//                            sigma_loc_flat, the shape calibrate_vol_surface
+//                            returns), simulated by Euler steps of
+//                            1/steps_per_year.
+// Whatever the choice, `warnings` reports what the script's price depends on
+// that the chosen model cannot capture (scripting/model_advice.hpp) --
+// structural facts read off the script, never a guess at the size of the
+// error.
+//
 // greeks_method == "aad" reprices with T = aad::Number instead of Real
 // (blueprint/wp/17-aad.md §7): every model parameter's sensitivity comes
 // back in `risks`, at roughly 3-5x the cost of one price rather than 2N+1
-// bumped reprices. Sobol is not offered under AAD yet (skip_to for the
-// adjoint engine is lot 17d) -- requesting it there falls back to
-// pseudo-random and says so in `diagnostics` rather than silently ignoring it.
+// bumped reprices -- for local_vol that is one local vega per surface point.
+// Sobol is not offered under AAD yet (skip_to for the adjoint engine is lot
+// 17d) -- requesting it there falls back to pseudo-random and says so in
+// `diagnostics` rather than silently ignoring it.
+static py::list advice_to_py(const std::vector<quantModeling::scripting::Advice> &adv)
+{
+    py::list out;
+    for (const auto &a : adv)
+    {
+        py::dict d;
+        d["code"] = a.code;
+        d["severity"] = a.severity;
+        d["message"] = a.message;
+        out.append(d);
+    }
+    return out;
+}
+
 static py::dict price_script(const std::string &script, double spot, double rate,
                              double dividend, double vol,
                              const std::string &valuation_date,
                              const std::string &day_count, bool fuzzy,
                              double default_eps, int n_paths, int seed,
                              const std::string &sampler,
-                             const std::string &greeks_method)
+                             const std::string &greeks_method,
+                             const std::string &model,
+                             const std::vector<double> &K_grid,
+                             const std::vector<double> &T_grid,
+                             const std::vector<double> &sigma_loc_flat,
+                             int steps_per_year)
 {
     using namespace quantModeling;
 
@@ -695,31 +730,61 @@ static py::dict price_script(const std::string &script, double spot, double rate
     const ValuationContext ctx{valuation, &basis, &NullCalendar::instance()};
     const int paths = n_paths > 0 ? n_paths : 200000;
     const std::uint64_t seed_value = static_cast<std::uint64_t>(seed > 0 ? seed : 1);
+    if (steps_per_year < 1)
+        throw std::invalid_argument("price_script: steps_per_year must be >= 1");
+    const double max_dt = 1.0 / static_cast<double>(steps_per_year);
+
+    const bool local_vol = (model == "local_vol");
+    const scripting::ModelKind kind =
+        local_vol ? scripting::ModelKind::LocalVolSurface
+                  : scripting::ModelKind::BlackScholesFlatVol;
+    const double surface_T = (local_vol && !T_grid.empty()) ? T_grid.back() : 0.0;
+    const std::string model_note =
+        local_vol ? " | model local_vol (" + std::to_string(K_grid.size()) + "x" +
+                        std::to_string(T_grid.size()) + " surface, " +
+                        std::to_string(steps_per_year) + " steps/yr)"
+                  : " | model black_scholes (flat vol)";
+
+    auto check_underlyings = [&](std::size_t needed, std::size_t available)
+    {
+        if (needed > available)
+            throw std::invalid_argument(
+                "price_script: the script reads spot(" + std::to_string(needed - 1) +
+                ") but model '" + model + "' carries " +
+                std::to_string(available) + " underlying(s)");
+    };
 
     if (greeks_method == "aad")
     {
         ScriptedProduct<aad::Number> product(script, ctx,
                                              ScriptSettings{fuzzy, default_eps});
-        BlackScholesSimModel<aad::Number> model{
-            aad::Number(spot), aad::Number(rate), aad::Number(dividend),
-            aad::Number(vol)};
+        auto sim_model = scripting::make_script_model<aad::Number>(
+            model, spot, rate, dividend, vol, K_grid, T_grid, sigma_loc_flat,
+            max_dt);
+        check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
 
         const AADSimulResults aad_res =
-            simulate_aad(product, model, static_cast<std::size_t>(paths), seed_value);
+            simulate_aad(product, *sim_model, static_cast<std::size_t>(paths), seed_value);
 
         PricingResult res = to_pricing_result(aad_res);
         res.diagnostics += " | scripted, " +
                            std::to_string(product.timeline().size()) + " events" +
-                           (fuzzy ? ", fuzzy" : ", hard");
+                           (fuzzy ? ", fuzzy" : ", hard") + model_note;
         if (sampler == "sobol")
             res.diagnostics += " | sobol requested but not available under AAD "
                                "yet (lot 17d) -- used pseudo-random instead";
-        return pricing_result_to_dict(res);
+        py::dict out = pricing_result_to_dict(res);
+        out["warnings"] = advice_to_py(scripting::advise(
+            product.analysis(), kind, product.timeline().back(), surface_T));
+        return out;
     }
 
     ScriptedProduct<Real> product(script, ctx,
                                   ScriptSettings{fuzzy, default_eps});
-    BlackScholesSimModel<Real> model(spot, rate, dividend, vol);
+    auto sim_model = scripting::make_script_model<Real>(model, spot, rate, dividend, vol,
+                                             K_grid, T_grid, sigma_loc_flat,
+                                             max_dt);
+    check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
 
     PricingSettings settings;
     settings.mc_paths = paths;
@@ -728,15 +793,18 @@ static py::dict price_script(const std::string &script, double spot, double rate
     settings.mc_sampler =
         (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
 
-    const SimulationMCResult mc = simulate<Real>(product, model, settings);
+    const SimulationMCResult mc = simulate<Real>(product, *sim_model, settings);
 
     PricingResult res;
     res.npv = mc.npv();
     res.mc_std_error = mc.std_error();
     res.diagnostics = mc.diagnostics + " | scripted, " +
                       std::to_string(product.timeline().size()) + " events" +
-                      (fuzzy ? ", fuzzy" : ", hard");
-    return pricing_result_to_dict(res);
+                      (fuzzy ? ", fuzzy" : ", hard") + model_note;
+    py::dict out = pricing_result_to_dict(res);
+    out["warnings"] = advice_to_py(scripting::advise(
+        product.analysis(), kind, product.timeline().back(), surface_T));
+    return out;
 }
 
 // ── Validate a script without pricing it: parse + the pre-processing passes
@@ -771,9 +839,17 @@ static py::dict validate_script(const std::string &script,
     for (const std::string &name : product.variable_names())
         variables.append(name);
 
+    const scripting::ScriptAnalysis &a = product.analysis();
+    py::dict analysis;
+    analysis["n_underlyings"] = a.n_underlyings;
+    analysis["nonlinear_in_spot"] = a.nonlinear_in_spot;
+    analysis["spot_threshold_test"] = a.spot_threshold_test;
+    analysis["path_dependent"] = a.path_dependent;
+
     py::dict out;
     out["events"] = events;
     out["variables"] = variables;
+    out["analysis"] = analysis;
     return out;
 }
 
@@ -966,6 +1042,11 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("fuzzy") = false, py::arg("default_eps") = 0.01,
           py::arg("n_paths") = 200000, py::arg("seed") = 1,
           py::arg("sampler") = "pseudo", py::arg("greeks_method") = "none",
+          py::arg("model") = "black_scholes",
+          py::arg("K_grid") = std::vector<double>{},
+          py::arg("T_grid") = std::vector<double>{},
+          py::arg("sigma_loc_flat") = std::vector<double>{},
+          py::arg("steps_per_year") = 52,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "

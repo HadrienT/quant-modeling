@@ -1802,6 +1802,22 @@ export interface components {
             /** Ticker */
             ticker: string;
         };
+        /**
+         * ModelWarning
+         * @description Something the script's price depends on that the chosen model cannot
+         *     capture (scripting/model_advice.hpp).
+         */
+        ModelWarning: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "warning" | "info";
+        };
         /** MountainRequest */
         MountainRequest: {
             /** Correlations */
@@ -2071,6 +2087,8 @@ export interface components {
             npv: number;
             /** Risks */
             risks?: components["schemas"]["RiskEntry"][] | null;
+            /** Warnings */
+            warnings?: components["schemas"]["ModelWarning"][];
         };
         /**
          * ProductCategory
@@ -2192,6 +2210,21 @@ export interface components {
             /** Ttm */
             ttm: number;
         };
+        /**
+         * ScriptAnalysis
+         * @description Structural facts read off the script that decide which model dynamics
+         *     its price depends on -- never a numerical estimate.
+         */
+        ScriptAnalysis: {
+            /** N Underlyings */
+            n_underlyings: number;
+            /** Nonlinear In Spot */
+            nonlinear_in_spot: boolean;
+            /** Path Dependent */
+            path_dependent: boolean;
+            /** Spot Threshold Test */
+            spot_threshold_test: boolean;
+        };
         /** ScriptEvent */
         ScriptEvent: {
             /**
@@ -2211,6 +2244,14 @@ export interface components {
          *     single underlying reachable as `spot()`, priced by the generic Monte-Carlo
          *     engine. `fuzzy` smooths comparisons for a usable pathwise delta on
          *     digitals and barriers; discrete tests (flags) stay crisp either way.
+         *
+         *     A script only describes a payoff; the dynamics its price depends on come
+         *     from `model`. "black_scholes" takes `spot`, `vol` (one flat volatility).
+         *     "local_vol" takes a `ticker`: its option chain is fetched and calibrated
+         *     into a Dupire surface (spot and dividend yield come from the market, not
+         *     the request), so skew is priced. Either way, `warnings` in the response
+         *     reports what the script's price depends on that the chosen model cannot
+         *     capture.
          */
         ScriptRequest: {
             /**
@@ -2242,6 +2283,13 @@ export interface components {
              */
             greeks_method: "none" | "aad";
             /**
+             * Model
+             * @description 'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's option chain (needs ticker; spot/dividend/vol come from the market).
+             * @default black_scholes
+             * @enum {string}
+             */
+            model: "black_scholes" | "local_vol";
+            /**
              * N Paths
              * @default 200000
              */
@@ -2264,16 +2312,33 @@ export interface components {
              * @default 1
              */
             seed: number;
-            /** Spot */
-            spot: number;
+            /**
+             * Spot
+             * @description Required for model='black_scholes'.
+             */
+            spot?: number | null;
+            /**
+             * Steps Per Year
+             * @description Euler steps per year for model='local_vol' (ignored by black_scholes, which is simulated exactly).
+             * @default 52
+             */
+            steps_per_year: number;
+            /**
+             * Ticker
+             * @description Underlying whose option chain is calibrated (model='local_vol').
+             */
+            ticker?: string | null;
             /**
              * Valuation Date
              * Format: date
              * @description Time 0. Defaults to today (UTC) when omitted.
              */
             valuation_date?: string;
-            /** Vol */
-            vol: number;
+            /**
+             * Vol
+             * @description Required for model='black_scholes'.
+             */
+            vol?: number | null;
         };
         /**
          * ScriptValidateRequest
@@ -2303,6 +2368,7 @@ export interface components {
         };
         /** ScriptValidateResponse */
         ScriptValidateResponse: {
+            analysis: components["schemas"]["ScriptAnalysis"];
             /** Events */
             events: components["schemas"]["ScriptEvent"][];
             /** Variables */

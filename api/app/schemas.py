@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def _today_utc() -> date:
@@ -124,13 +124,40 @@ class ScriptRequest(BaseModel):
     """Price a payoff described in text (blueprint/wp/16-scripting.md) — a
     single underlying reachable as `spot()`, priced by the generic Monte-Carlo
     engine. `fuzzy` smooths comparisons for a usable pathwise delta on
-    digitals and barriers; discrete tests (flags) stay crisp either way."""
+    digitals and barriers; discrete tests (flags) stay crisp either way.
+
+    A script only describes a payoff; the dynamics its price depends on come
+    from `model`. "black_scholes" takes `spot`, `vol` (one flat volatility).
+    "local_vol" takes a `ticker`: its option chain is fetched and calibrated
+    into a Dupire surface (spot and dividend yield come from the market, not
+    the request), so skew is priced. Either way, `warnings` in the response
+    reports what the script's price depends on that the chosen model cannot
+    capture."""
 
     script: str = Field(..., min_length=1, description="The script source text.")
-    spot: float = Field(..., gt=0.0)
+    model: Literal["black_scholes", "local_vol"] = Field(
+        "black_scholes",
+        description=(
+            "'black_scholes': flat vol (needs spot and vol). 'local_vol': "
+            "Dupire surface calibrated from the ticker's option chain "
+            "(needs ticker; spot/dividend/vol come from the market)."
+        ),
+    )
+    ticker: Optional[str] = Field(
+        None,
+        min_length=1,
+        description="Underlying whose option chain is calibrated (model='local_vol').",
+    )
+    steps_per_year: int = Field(
+        52,
+        ge=12,
+        le=504,
+        description="Euler steps per year for model='local_vol' (ignored by black_scholes, which is simulated exactly).",
+    )
+    spot: Optional[float] = Field(None, gt=0.0, description="Required for model='black_scholes'.")
     rate: float
     dividend: float = 0.0
-    vol: float = Field(..., gt=0.0)
+    vol: Optional[float] = Field(None, gt=0.0, description="Required for model='black_scholes'.")
     valuation_date: date = Field(
         default_factory=_today_utc,
         description="Time 0. Defaults to today (UTC) when omitted.",
@@ -155,6 +182,15 @@ class ScriptRequest(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _model_inputs_present(self) -> "ScriptRequest":
+        if self.model == "black_scholes":
+            if self.spot is None or self.vol is None:
+                raise ValueError("model='black_scholes' requires both spot and vol")
+        elif self.ticker is None:
+            raise ValueError("model='local_vol' requires a ticker")
+        return self
+
 
 class ScriptValidateRequest(BaseModel):
     """Parse a script and resolve its timeline, without pricing it — no
@@ -175,9 +211,20 @@ class ScriptEvent(BaseModel):
     t: float = Field(..., description="Year-fraction from the valuation date.")
 
 
+class ScriptAnalysis(BaseModel):
+    """Structural facts read off the script that decide which model dynamics
+    its price depends on -- never a numerical estimate."""
+
+    n_underlyings: int
+    nonlinear_in_spot: bool
+    spot_threshold_test: bool
+    path_dependent: bool
+
+
 class ScriptValidateResponse(BaseModel):
     events: List[ScriptEvent]
     variables: List[str]
+    analysis: ScriptAnalysis
 
 
 class BarrierRequest(BaseModel):
@@ -310,6 +357,15 @@ class RiskEntry(BaseModel):
     std_error: float
 
 
+class ModelWarning(BaseModel):
+    """Something the script's price depends on that the chosen model cannot
+    capture (scripting/model_advice.hpp)."""
+
+    code: str
+    severity: Literal["warning", "info"]
+    message: str
+
+
 class PricingResponse(BaseModel):
     npv: float
     greeks: Greeks
@@ -317,6 +373,7 @@ class PricingResponse(BaseModel):
     diagnostics: str
     mc_std_error: float
     risks: Optional[List[RiskEntry]] = None
+    warnings: List[ModelWarning] = Field(default_factory=list)
 
 
 class MarketHistoryPoint(BaseModel):
