@@ -2,6 +2,7 @@ import os
 import time
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,6 +19,7 @@ from .routers.simulation import router as simulation_router
 from .routers.portfolio import router as portfolio_router
 from .routers.auth import router as auth_router
 from .routers.backtest import router as backtest_router
+from .routers.assistant import router as assistant_router
 
 configure_logging()
 logger = get_logger()
@@ -102,7 +104,10 @@ async def _validation_exception_handler(
         content=ApiError(
             code="unprocessable",
             message="One or more parameters are invalid.",
-            detail=exc.errors(),
+            # A custom validator that raises ValueError leaves the exception
+            # itself in `ctx.error`, which json cannot serialise: stringify it
+            # rather than turn a 422 into a 500.
+            detail=jsonable_encoder(exc.errors(), custom_encoder={Exception: str}),
         ).model_dump(),
     )
 
@@ -153,3 +158,4 @@ app.include_router(simulation_router)
 app.include_router(portfolio_router)
 app.include_router(auth_router)
 app.include_router(backtest_router)
+app.include_router(assistant_router)

@@ -4,4 +4,5 @@ export { queryKeys } from "./queryKeys";
 export { makeQueryClient, STALE } from "./queryClient";
 export * from "./hooks";
 export * from "./pricing";
+export * from "./assistant";
 export type * from "./types";

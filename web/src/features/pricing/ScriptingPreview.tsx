@@ -7,7 +7,8 @@ import { MetricRowSkeleton } from "@/shared/ui/states";
 import { SCRIPTING_EXAMPLES } from "./scripting/examples";
 import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
 import { ScriptEditor } from "./scripting/ScriptEditor";
-import { LanguageReference } from "./scripting/LanguageReference";
+import { ScriptRejected } from "./scripting/ScriptRejected";
+import { AssistantSidebar } from "./scripting/assistant/AssistantSidebar";
 import { useValidateScript } from "./scripting/useValidateScript";
 import { parseScriptDiagnostic } from "./scripting/parseScriptDiagnostic";
 import { ValidationSummary } from "./scripting/ValidationSummary";
@@ -71,7 +72,7 @@ export default function ScriptingPreview() {
 				</p>
 			</header>
 
-			<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
+			<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
 				<form
 					className="flex flex-col gap-4 rounded-md border border-hairline bg-surface p-4"
 					onSubmit={(e) => {
@@ -190,23 +191,17 @@ export default function ScriptingPreview() {
 					{validate.data && <ValidationSummary result={validate.data} />}
 				</form>
 
-				<LanguageReference />
+				<AssistantSidebar
+					script={script}
+					error={error?.message ?? null}
+					valuationDate={valuationDate}
+					dayCount={dayCount}
+					onScript={setScript}
+				/>
 			</div>
 
 			{price.isLoading && <MetricRowSkeleton />}
-			{error && (
-				<div
-					role="alert"
-					className="rounded-md border border-critical/40 bg-critical/5 p-4"
-				>
-					<p className="mb-2 text-sm font-medium text-critical">
-						Script rejected
-					</p>
-					<pre className="overflow-x-auto font-mono text-2xs whitespace-pre-wrap text-critical">
-						{error.message}
-					</pre>
-				</div>
-			)}
+			{error && <ScriptRejected message={error.message} />}
 			{r && <ModelWarnings warnings={r.warnings ?? []} />}
 			{r && (
 				<div className="rounded-md border border-hairline bg-surface p-4">
