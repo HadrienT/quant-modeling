@@ -21,9 +21,14 @@ de donnée de marché.
 | Front | `web/src/` | React 18 + Vite + TypeScript |
 | CLI | `main.cpp` | binaire de démo |
 
-Les données de marché viennent de **yfinance** (price tape, chaînes d'options,
-historique de backtest), les courbes de taux de **FRED**. Plus de BigQuery —
-le projet est entièrement hors cloud.
+Les données de marché viennent de **la base Postgres alimentée par
+`~/data-ingest`** (cours, chaînes d'options, rendements de dividende, courbes
+FRED). **Pas d'appel à Yahoo Finance depuis quant-modeling** : une donnée absente
+ou trop ancienne est une erreur explicite, pas un repli en direct (les nouveaux
+chemins de pricing passent par `api/app/market_snapshot.py`, qui n'importe pas
+`yfinance`). Des replis en direct subsistent dans les anciens endpoints
+(`vol_surface.py`, `routers/local_vol_pricing.py`, `routers/simulation.py`) : à
+retirer, pas à étendre. Plus de BigQuery — le projet est entièrement hors cloud.
 
 ## Commandes
 

@@ -181,26 +181,21 @@ def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
 
 
 def price_script(req: ScriptRequest) -> PricingResponse:
+    market_warnings: List[Dict] = []
+    valuation_date = req.valuation_date
     if req.model == "local_vol":
-        # The calibrated surface is a snapshot as of now: its maturity axis
-        # is measured from today, so a script valued on another date would
-        # silently read the wrong part of it.
-        today = datetime.now(timezone.utc).date()
-        if req.valuation_date != today:
-            raise ValueError(
-                "model='local_vol' prices against today's market surface: "
-                f"valuation_date must be today ({today.isoformat()}), "
-                f"got {req.valuation_date.isoformat()}"
-            )
-        from . import vol_surface  # lazy: pulls in yfinance/db, only this branch needs them
+        # Market data comes from the database data-ingest fills, never from a
+        # live source. A stored snapshot is a market date, and that date is
+        # the valuation date the script is priced on.
+        from . import market_snapshot
 
-        market = vol_surface.local_vol_grid_for(req.ticker, req.rate)
-        spot, dividend, vol = market["spot"], market["dividend"], 0.0
-        k_grid, t_grid, sigma = (
-            market["K_grid"],
-            market["T_grid"],
-            market["sigma_loc_flat"],
+        market = market_snapshot.local_vol_market(
+            req.ticker, req.rate, req.valuation_date
         )
+        valuation_date = market.valuation_date
+        spot, dividend, vol = market.spot, market.dividend, 0.0
+        k_grid, t_grid, sigma = market.K_grid, market.T_grid, market.sigma_loc_flat
+        market_warnings = market.warnings
     else:
         spot, dividend, vol = req.spot, req.dividend, req.vol
         k_grid, t_grid, sigma = [], [], []
@@ -211,7 +206,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
         req.rate,
         dividend,
         vol,
-        req.valuation_date.isoformat(),
+        valuation_date.isoformat(),
         req.day_count,
         req.fuzzy,
         req.default_eps,
@@ -225,6 +220,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
         sigma,
         req.steps_per_year,
     )
+    result["warnings"] = market_warnings + list(result.get("warnings", []))
     return _pricing_response_from_dict(result)
 
 

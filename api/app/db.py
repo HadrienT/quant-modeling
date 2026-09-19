@@ -295,6 +295,54 @@ def latest_dividend_yield(ticker: str) -> Optional[Tuple[date, float]]:
     return as_of, value
 
 
+# ── As-of lookups, for pricing against a stored market date ────────────────
+#
+# Unlike latest_price / latest_dividend_yield above, these apply no
+# staleness rule of their own: the caller is valuing on a specific stored
+# date and decides how old is too old, and says so (see market_snapshot.py).
+
+
+def options_snapshot_date_on_or_before(ticker: str, as_of: date) -> Optional[date]:
+    """The latest date <= as_of on which data-ingest captured this ticker's chain."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT MAX(date) FROM options.chain_snapshot WHERE ticker = %s AND date <= %s",
+            (ticker.upper(), as_of),
+        )
+        row = cur.fetchone()
+        return row[0] if row and row[0] is not None else None
+
+
+def price_on_or_before(ticker: str, as_of: date) -> Optional[Tuple[date, float]]:
+    """Latest (date, close) from prices.sp500_daily with date <= as_of."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, close FROM prices.sp500_daily "
+            "WHERE ticker = %s AND date <= %s AND close IS NOT NULL "
+            "ORDER BY date DESC LIMIT 1",
+            (ticker.upper(), as_of),
+        )
+        row = cur.fetchone()
+    return (row[0], float(row[1])) if row else None
+
+
+def dividend_yield_on_or_before(
+    ticker: str, as_of: date
+) -> Optional[Tuple[date, float]]:
+    """Latest (date, trailing_yield) from prices.dividend_yields with date <= as_of.
+    A non-payer is stored as 0.0, so an absent row means "never ingested",
+    not "pays nothing"."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, trailing_yield FROM prices.dividend_yields "
+            "WHERE ticker = %s AND date <= %s AND trailing_yield IS NOT NULL "
+            "ORDER BY date DESC LIMIT 1",
+            (ticker.upper(), as_of),
+        )
+        row = cur.fetchone()
+    return (row[0], float(row[1])) if row else None
+
+
 # ── The one write path: caching a live option-chain fetch ──────────────────
 
 

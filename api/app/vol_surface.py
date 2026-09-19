@@ -620,35 +620,3 @@ def svi_implied_vol_grid(
 
     return K_grid, list(T_grid), values
 
-
-def local_vol_grid_for(ticker: str, rate: float) -> dict:
-    """Market data -> Dupire local-vol grid, for pricing under model="local_vol".
-
-    fetch_option_chain -> C++ clean + SVI per maturity + Dupire
-    (quantmodeling.calibrate_vol_surface), the same pipeline and default
-    cleaning/grid settings as routers/local_vol_pricing.py's endpoints, so a
-    scripted product and a vanilla local-vol price see the same surface.
-    Returns {"spot", "dividend", "K_grid", "T_grid", "sigma_loc_flat"}.
-
-    Raises RuntimeError with a user-facing message when no chain is
-    available or calibration fails (the scripted-pricing route turns
-    RuntimeError/ValueError into a 422).
-    """
-    ticker = ticker.upper().strip()
-    spot = get_spot(ticker)
-    dividend = get_dividend_yield(ticker)
-    quotes = fetch_option_chain(ticker)
-    if not quotes:
-        raise RuntimeError(f"No option chain available for '{ticker}'.")
-
-    result = qm.calibrate_vol_surface(
-        quotes, spot, rate, dividend, -0.6, 0.6, 100, 50,
-        cleaning_params=qm.CleaningParams(),
-    )
-    return {
-        "spot": spot,
-        "dividend": dividend,
-        "K_grid": result["K_grid"],
-        "T_grid": result["T_grid"],
-        "sigma_loc_flat": result["sigma_loc_flat"],
-    }
