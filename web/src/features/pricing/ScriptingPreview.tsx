@@ -7,6 +7,7 @@ import { MetricRowSkeleton } from "@/shared/ui/states";
 import { SCRIPTING_EXAMPLES } from "./scripting/examples";
 import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
 import { ScriptEditor } from "./scripting/ScriptEditor";
+import { ScriptRejected } from "./scripting/ScriptRejected";
 import { AssistantSidebar } from "./scripting/assistant/AssistantSidebar";
 import { useValidateScript } from "./scripting/useValidateScript";
 import { parseScriptDiagnostic } from "./scripting/parseScriptDiagnostic";
@@ -200,19 +201,7 @@ export default function ScriptingPreview() {
 			</div>
 
 			{price.isLoading && <MetricRowSkeleton />}
-			{error && (
-				<div
-					role="alert"
-					className="rounded-md border border-critical/40 bg-critical/5 p-4"
-				>
-					<p className="mb-2 text-sm font-medium text-critical">
-						Script rejected
-					</p>
-					<pre className="overflow-x-auto font-mono text-2xs whitespace-pre-wrap text-critical">
-						{error.message}
-					</pre>
-				</div>
-			)}
+			{error && <ScriptRejected message={error.message} />}
 			{r && <ModelWarnings warnings={r.warnings ?? []} />}
 			{r && (
 				<div className="rounded-md border border-hairline bg-surface p-4">

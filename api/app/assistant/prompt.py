@@ -114,7 +114,9 @@ statements that run when a simulated path reaches that date. A date line is
 either one or several ISO dates (YYYY-MM-DD) on the same line, or a single
 schedule(...) that generates the dates (see below). There is exactly one
 underlying, read with spot(). The script is priced by a Monte-Carlo engine
-under Black-Scholes with a flat rate.
+under a model the user picks on the page (Black-Scholes by default); the
+script text does not depend on that choice, and the page warns when the chosen
+model cannot capture what a script depends on.
 
 Statements (nothing else exists):
   name = expr                       assign a variable
