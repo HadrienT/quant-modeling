@@ -2037,6 +2037,34 @@
         "title": "MarketHistoryResponse",
         "type": "object"
       },
+      "ModelWarning": {
+        "description": "Something the script's price depends on that the chosen model cannot\ncapture (scripting/model_advice.hpp).",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "ModelWarning",
+        "type": "object"
+      },
       "MountainRequest": {
         "properties": {
           "correlations": {
@@ -2569,6 +2597,13 @@
               }
             ],
             "title": "Risks"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ModelWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -2821,6 +2856,35 @@
         "title": "SABRPathRequest",
         "type": "object"
       },
+      "ScriptAnalysis": {
+        "description": "Structural facts read off the script that decide which model dynamics\nits price depends on -- never a numerical estimate.",
+        "properties": {
+          "n_underlyings": {
+            "title": "N Underlyings",
+            "type": "integer"
+          },
+          "nonlinear_in_spot": {
+            "title": "Nonlinear In Spot",
+            "type": "boolean"
+          },
+          "path_dependent": {
+            "title": "Path Dependent",
+            "type": "boolean"
+          },
+          "spot_threshold_test": {
+            "title": "Spot Threshold Test",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "n_underlyings",
+          "nonlinear_in_spot",
+          "spot_threshold_test",
+          "path_dependent"
+        ],
+        "title": "ScriptAnalysis",
+        "type": "object"
+      },
       "ScriptEvent": {
         "properties": {
           "date": {
@@ -2842,7 +2906,7 @@
         "type": "object"
       },
       "ScriptRequest": {
-        "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.",
+        "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.\n\nA script only describes a payoff; the dynamics its price depends on come\nfrom `model`. \"black_scholes\" takes `spot`, `vol` (one flat volatility).\n\"local_vol\" takes a `ticker`: its option chain is fetched and calibrated\ninto a Dupire surface (spot and dividend yield come from the market, not\nthe request), so skew is priced. Either way, `warnings` in the response\nreports what the script's price depends on that the chosen model cannot\ncapture.",
         "properties": {
           "day_count": {
             "default": "ACT/365F",
@@ -2881,6 +2945,16 @@
             "title": "Greeks Method",
             "type": "string"
           },
+          "model": {
+            "default": "black_scholes",
+            "description": "'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's option chain (needs ticker; spot/dividend/vol come from the market).",
+            "enum": [
+              "black_scholes",
+              "local_vol"
+            ],
+            "title": "Model",
+            "type": "string"
+          },
           "n_paths": {
             "default": 200000,
             "maximum": 5000000.0,
@@ -2913,9 +2987,38 @@
             "type": "integer"
           },
           "spot": {
-            "exclusiveMinimum": 0.0,
-            "title": "Spot",
-            "type": "number"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for model='black_scholes'.",
+            "title": "Spot"
+          },
+          "steps_per_year": {
+            "default": 52,
+            "description": "Euler steps per year for model='local_vol' (ignored by black_scholes, which is simulated exactly).",
+            "maximum": 504.0,
+            "minimum": 12.0,
+            "title": "Steps Per Year",
+            "type": "integer"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Underlying whose option chain is calibrated (model='local_vol').",
+            "title": "Ticker"
           },
           "valuation_date": {
             "description": "Time 0. Defaults to today (UTC) when omitted.",
@@ -2924,16 +3027,22 @@
             "type": "string"
           },
           "vol": {
-            "exclusiveMinimum": 0.0,
-            "title": "Vol",
-            "type": "number"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for model='black_scholes'.",
+            "title": "Vol"
           }
         },
         "required": [
           "script",
-          "spot",
-          "rate",
-          "vol"
+          "rate"
         ],
         "title": "ScriptRequest",
         "type": "object"
@@ -2973,6 +3082,9 @@
       },
       "ScriptValidateResponse": {
         "properties": {
+          "analysis": {
+            "$ref": "#/components/schemas/ScriptAnalysis"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/ScriptEvent"
@@ -2990,7 +3102,8 @@
         },
         "required": [
           "events",
-          "variables"
+          "variables",
+          "analysis"
         ],
         "title": "ScriptValidateResponse",
         "type": "object"

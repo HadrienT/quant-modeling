@@ -16,6 +16,7 @@
 #include "quantModeling/scripting/visitors/discount_lookup_resolver.hpp"
 #include "quantModeling/scripting/visitors/domain_processor.hpp"
 #include "quantModeling/scripting/visitors/if_processor.hpp"
+#include "quantModeling/scripting/visitors/script_analyzer.hpp"
 #include "quantModeling/scripting/visitors/var_indexer.hpp"
 
 #include <algorithm>
@@ -111,6 +112,8 @@ namespace quantModeling
             scripting::DomainProcessor(indexer.count(), settings.default_eps)
                 .process(events);
 
+            analysis_ = scripting::analyze_script(events);
+
             resolve_timeline(std::move(events), ctx);
 
             for (const scripting::Event &event : events_)
@@ -118,6 +121,8 @@ namespace quantModeling
                     if (statement)
                         n_underlyings_ = std::max(
                             n_underlyings_, detail::max_spot_index(*statement) + 1);
+
+            analysis_.n_underlyings = n_underlyings_;
 
             const std::vector<std::vector<Time>> discount_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(events_);
@@ -156,6 +161,11 @@ namespace quantModeling
         /// bounds-checks every spot(i) access rather than trust that they do
         /// (scripting/evaluator.hpp, scripting/fuzzy_evaluator.hpp).
         std::size_t n_underlyings() const override { return n_underlyings_; }
+
+        /// Which model dynamics this script's price depends on (see
+        /// scripting/visitors/script_analyzer.hpp) -- input to
+        /// scripting/model_advice.hpp's warnings.
+        const scripting::ScriptAnalysis &analysis() const { return analysis_; }
 
         const std::vector<std::string> &variable_names() const
         {
@@ -253,6 +263,7 @@ namespace quantModeling
         TimeLine timeline_;
         std::vector<SampleDef> defline_;
         std::size_t n_underlyings_ = 1;
+        scripting::ScriptAnalysis analysis_;
         std::vector<std::string> variable_names_;
         std::vector<std::string> labels_{"price"};
         mutable std::unique_ptr<scripting::Evaluator<T>>

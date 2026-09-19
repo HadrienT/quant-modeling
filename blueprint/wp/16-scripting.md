@@ -451,6 +451,56 @@ l'éditeur à partir de la ligne/colonne renvoyées.
 **Attention à la route** : ne pas la placer sous `/price/*`, le proxy Vite y
 renvoie tout vers l'API (leçon du lot précédent).
 
+### 8.5 Le choix du modèle — et ce qui prévient qu'il est inadapté
+
+Un script décrit un payoff, **jamais** la dynamique dont son prix dépend : le
+modèle est un choix distinct, fait à l'appel. Le produit ne transmet au modèle
+que trois choses — les dates d'événements, le nombre de sous-jacents
+(`spot(i)`) et les `df()` demandés — rien sur la vol, les sauts ou le smile.
+
+`price_script(…, model=…)` sélectionne le modèle ([`script_model_factory.hpp`](../../include/quantModeling/scripting/script_model_factory.hpp)) :
+
+| `model` | Dynamique | Entrées |
+|---|---|---|
+| `black_scholes` | une vol plate | `spot`, `vol` |
+| `local_vol` | surface de Dupire (Euler, `steps_per_year`) | `ticker` : la chaîne d'options est récupérée et calibrée (`calibrate_vol_surface`), spot et dividende viennent du marché |
+
+L'API refuse `local_vol` si `valuation_date` n'est pas aujourd'hui : la surface
+est un instantané dont l'axe des maturités part d'aujourd'hui.
+
+**Le garde-fou.** Comme rien n'apparie automatiquement produit et modèle, une
+passe d'analyse lit sur l'arbre ce dont le prix dépend
+([`script_analyzer.hpp`](../../include/quantModeling/scripting/visitors/script_analyzer.hpp)) — des faits
+**structurels**, jamais une estimation numérique :
+
+- `nonlinear_in_spot` : `max`/`min`/`abs`/comparaison appliqués à une valeur
+  dérivée du spot → le prix dépend de la loi de spot, donc du smile ;
+- `spot_threshold_test` : comparaison d'une valeur dérivée du spot (hors drapeau
+  discret) à un niveau — forme d'une barrière, d'une digitale, d'un déclencheur
+  d'autocall, les plus sensibles au skew ;
+- `path_dependent` : une variable dérivée du spot est affectée à un événement et
+  lue à un événement ultérieur (somme courante, niveau de référence, drapeau de
+  knock-in) → dépendance à la loi jointe, donc au smile forward.
+
+La « teinte » « dérivé du spot » se propage aux variables, **y compris par le
+flot de contrôle** : `if spot() < 70 then ki = 1` teinte `ki` alors que la
+valeur affectée est une constante — c'est précisément ainsi qu'un drapeau
+enregistre le chemin.
+
+[`advise()`](../../include/quantModeling/scripting/model_advice.hpp) croise ces
+drapeaux avec le modèle choisi et renvoie des `warnings` (`code`, `severity`,
+`message`) : `flat_vol_smile` (vol plate face à un payoff non linéaire),
+`forward_smile` (info : le forward smile de la vol locale est plus plat que
+l'observé), `surface_extrapolated` (événements au-delà de la dernière maturité
+calibrée). `validate_script` expose l'analyse avant tout pricing.
+
+**Hors périmètre, à dessein.** Le choix reste humain, y compris chez un desk :
+l'outil le rend explicite, il ne le devine pas. Heston/Bates ne sont pas
+branchés sur les scripts (leur calibration n'est pas câblée) — c'est ce que
+`forward_smile` désigne. `spot(i)` (multi-sous-jacents) n'a pas de modèle côté
+API : `price_script` le refuse explicitement au lieu de laisser l'évaluateur
+échouer.
+
 ---
 
 ## 9. Tests
