@@ -232,6 +232,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # A Docker/GHCR repository name must be lowercase; github.repository
+      # isn't ("HadrienT/quant-modeling") — docker-compose.prod.yml already
+      # pulls the lowercase form, so this is what makes deploy.sh's image
+      # actually match what this job publishes.
+      - name: Lowercase image name
+        id: image
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -239,5 +246,5 @@ jobs:
           push: true
           build-args: VITE_COMMIT_SHA=${{ github.sha }}
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ steps.image.outputs.name }}:${{ github.sha }}
+            ghcr.io/${{ steps.image.outputs.name }}:latest
