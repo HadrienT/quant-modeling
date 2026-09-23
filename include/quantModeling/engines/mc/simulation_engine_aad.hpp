@@ -53,6 +53,31 @@ namespace quantModeling
             aad::Tape &tape;
             ~TapeClearGuard() { tape.clear(); }
         };
+
+        /// Turns on Tape::multi / sets Node::num_adj for the duration of
+        /// simulate_aad_multi, restoring both on every way out. Both are
+        /// plain statics, not thread_local (unlike Number::tape itself) --
+        /// lot 17f is single-threaded by design, and combining it with
+        /// simulate_parallel_aad (lot 17d) is out of scope: every thread
+        /// would record in the same mode at once. The guard's job here is
+        /// narrower, but still necessary -- a run that throws, or simply
+        /// returns, must not leave the flag on for whatever mono-adjoint
+        /// simulate_aad call happens next on this thread.
+        struct MultiModeGuard
+        {
+            std::size_t prev_num_adj = aad::Node::num_adj;
+            bool prev_multi = aad::Tape::is_multi();
+            explicit MultiModeGuard(std::size_t m)
+            {
+                aad::Node::num_adj = m;
+                aad::Tape::set_multi(true);
+            }
+            ~MultiModeGuard()
+            {
+                aad::Node::num_adj = prev_num_adj;
+                aad::Tape::set_multi(prev_multi);
+            }
+        };
     } // namespace detail
 
     /**
@@ -168,6 +193,138 @@ namespace quantModeling
         res.n_paths = static_cast<long long>(n_paths);
         res.diagnostics =
             "simulate_aad (adjoint, batches of " + std::to_string(BATCH) + ")";
+
+        return res;
+    }
+
+    /// blueprint §9: every payoff's sensitivities to every model parameter,
+    /// from one recorded path per Monte-Carlo path instead of one per
+    /// payoff. `risks`/`risk_std_errors` are row-major, payoff-major:
+    /// entry (payoff i, parameter j) is at `i * risk_labels.size() + j`.
+    struct AADMultiSimulResults
+    {
+        std::vector<std::string> payoff_labels;
+        std::vector<Real> prices;           ///< one per payoff
+        std::vector<Real> price_std_errors; ///< one per payoff
+        std::vector<std::string> risk_labels;
+        std::vector<Real> risks;           ///< payoff_labels.size() * risk_labels.size()
+        std::vector<Real> risk_std_errors; ///< same shape
+        long long n_paths = 0;
+        std::string diagnostics;
+    };
+
+    /**
+     * @brief Adjoint Monte-Carlo for *every* payoff at once: a
+     *        payoff_labels().size() x num_params() sensitivity matrix, for
+     *        roughly the cost of one simulate_aad run regardless of how
+     *        many payoffs there are (blueprint §9).
+     *
+     * Same structure as simulate_aad (§7: rewind, parameters as leaves,
+     * init() recorded once, mark, then per-path rewind_to_mark / generate /
+     * propagate-to-mark, batched risk propagation for a standard error on
+     * every entry -- §7.4). The one difference is what gets seeded and how
+     * it propagates: instead of aggregating every payoff into one scalar
+     * and giving it adjoint 1, *each* payoff i is seeded on its own
+     * component (`payoffs[i].adjoint(i) = 1`), and one backward pass with
+     * Node::propagate_all() carries every payoff's adjoint through the path
+     * simultaneously -- the vector-mode reverse pass §9 describes.
+     */
+    inline AADMultiSimulResults simulate_aad_multi(
+        const ISimulatableProduct<aad::Number> &product,
+        ISimulationModel<aad::Number> &model, std::size_t n_paths,
+        std::uint64_t seed = 1)
+    {
+        using aad::Number;
+        using aad::Tape;
+
+        if (n_paths == 0)
+            throw InvalidInput("simulate_aad_multi: need at least one path");
+
+        const std::size_t m = product.payoff_labels().size();
+        if (m == 0)
+            throw InvalidInput("simulate_aad_multi: product has no payoffs");
+
+        Tape &tape = *Number::tape;
+        const detail::MultiModeGuard multi_guard(m); // Node::num_adj = m, Tape::multi = true
+        tape.rewind();
+        const detail::TapeClearGuard clear_on_exit{tape};
+
+        model.put_parameters_on_tape();
+        model.init(product.timeline(), product.defline());
+
+        const std::size_t dim = model.sim_dim();
+        const std::size_t n_params = model.num_params();
+
+        Scenario<Number> path;
+        allocate_scenario(path, product.defline(), model.n_underlyings());
+        std::vector<Number> payoffs(m);
+        std::vector<double> gauss(std::max<std::size_t>(dim, 1));
+
+        Pcg32 rng = RngFactory(seed).make(0);
+        NormalBoxMuller bm;
+
+        tape.mark();
+
+        constexpr std::size_t BATCH = 64;
+        std::vector<WelfordAccumulator> price_acc(m);
+        std::vector<WelfordAccumulator> risk_acc(m * n_params);
+
+        std::size_t done = 0;
+        while (done < n_paths)
+        {
+            const std::size_t batch_size = std::min(BATCH, n_paths - done);
+            std::vector<WelfordAccumulator> batch_price(m);
+
+            for (std::size_t p = 0; p < batch_size; ++p)
+            {
+                tape.rewind_to_mark();
+                for (std::size_t d = 0; d < dim; ++d)
+                    gauss[d] = bm(rng);
+                model.generate_path(std::span<const double>(gauss.data(), dim), path);
+                product.payoffs(path, payoffs);
+                for (std::size_t i = 0; i < m; ++i)
+                {
+                    batch_price[i].add(payoffs[i].value());
+                    payoffs[i].adjoint(i) = 1.0; // seed this payoff's own component only
+                }
+                Number::propagate_to_mark_multi(); // one pass, every payoff at once
+            }
+
+            if (n_params > 0)
+            {
+                Number::propagate_mark_to_start_multi();
+                for (std::size_t j = 0; j < n_params; ++j)
+                    for (std::size_t i = 0; i < m; ++i)
+                        risk_acc[i * n_params + j].add(
+                            model.parameters()[j]->adjoint(i) / static_cast<Real>(batch_size));
+                tape.reset_adjoints_before_mark(); // clears every payoff's row, not just one
+            }
+
+            for (std::size_t i = 0; i < m; ++i)
+                price_acc[i].add(batch_price[i].mean);
+            done += batch_size;
+        }
+
+        AADMultiSimulResults res;
+        res.payoff_labels = product.payoff_labels();
+        res.prices.resize(m);
+        res.price_std_errors.resize(m);
+        for (std::size_t i = 0; i < m; ++i)
+        {
+            res.prices[i] = price_acc[i].mean;
+            res.price_std_errors[i] = price_acc[i].std_error();
+        }
+        res.risk_labels = model.parameter_labels();
+        res.risks.resize(m * n_params);
+        res.risk_std_errors.resize(m * n_params);
+        for (std::size_t idx = 0; idx < m * n_params; ++idx)
+        {
+            res.risks[idx] = risk_acc[idx].mean;
+            res.risk_std_errors[idx] = risk_acc[idx].std_error();
+        }
+        res.n_paths = static_cast<long long>(n_paths);
+        res.diagnostics = "simulate_aad_multi (multi-adjoint, " + std::to_string(m) +
+                          " payoffs, batches of " + std::to_string(BATCH) + ")";
 
         return res;
     }

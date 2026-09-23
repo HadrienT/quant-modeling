@@ -49,6 +49,19 @@ namespace quantModeling::aad
 
         std::size_t n_args() const { return n_; }
 
+        /// Zeroes this node's adjoint(s) -- the scalar one always, and the
+        /// multi-adjoint row too when this node carries one (nullptr
+        /// otherwise: a node recorded while Tape::multi was off never
+        /// allocates adjoints_multi_). Used by Tape::reset_adjoints[_before_mark]()
+        /// so both the mono- and multi-adjoint paths share one reset.
+        void reset()
+        {
+            adjoint_ = 0.0;
+            if (adjoints_multi_)
+                for (std::size_t j = 0; j < num_adj; ++j)
+                    adjoints_multi_[j] = 0.0;
+        }
+
         void propagate_one()
         {
             if (!n_ || adjoint_ == 0.0)

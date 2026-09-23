@@ -8,14 +8,14 @@ namespace quantModeling::aad
     void Tape::reset_adjoints()
     {
         for (iterator it = begin(); it != end(); ++it)
-            it->adjoint() = 0.0;
+            it->reset();
     }
 
     void Tape::reset_adjoints_before_mark()
     {
         const iterator stop = mark_it();
         for (iterator it = begin(); it != stop; ++it)
-            it->adjoint() = 0.0;
+            it->reset();
     }
 
     void Tape::clear()
