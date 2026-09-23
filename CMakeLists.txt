@@ -192,6 +192,7 @@ if(QM_BUILD_TESTS)
     tests/testVasicekSimModel.cpp
     tests/testSLVSimModel.cpp
     tests/testRoughBergomiSimModel.cpp
+    tests/testSchwartzSmithSimModel.cpp
     tests/testThreadPool.cpp
     tests/testRNGSkipTo.cpp
     tests/testParallelAAD.cpp
