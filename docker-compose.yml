@@ -30,6 +30,12 @@ services:
       - PGPASSWORD=${PGPASSWORD:?set PGPASSWORD in .env (same as data-ingest/.env)}
       - LOG_DIR=/app/logs
       - COMMIT_SHA=${COMMIT_SHA:-dev}
+      # Audit trail (blueprint WP 18a). "spool" (default) needs nothing else —
+      # it writes JSONL under LOG_DIR/spool. "kafka" is a façade until WP 18b
+      # wires the real quant-platform producer. IP_HMAC_SECRET is optional:
+      # unset, it reuses JWT_SECRET to hash IPs (contract §1, ADR-009).
+      - QM_AUDIT_SINK=${QM_AUDIT_SINK:-spool}
+      - QM_AUDIT_IP_HMAC_SECRET=${QM_AUDIT_IP_HMAC_SECRET:-}
       # Scripting assistant: the llama-server of ~/AgenticEnv. It listens on the
       # host's 127.0.0.1, unreachable from a container; the llama-bridge socket
       # (AgenticEnv `just render-llama-bridge`) exposes it on the Docker gateway.

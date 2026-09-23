@@ -72,6 +72,61 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  # blueprint/wp/18-observability.md, lot 18a — was not run in CI until this
+  # lot; its own acceptance criteria assume it blocks a PR.
+  pytest:
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ curl zip unzip tar pkg-config \
+            autoconf autoconf-archive automake libtool
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg
+            ~/.cache/vcpkg
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
+      - name: Ensure vcpkg is present
+        run: |
+          if [ ! -d "vcpkg/.git" ]; then
+            git clone https://github.com/microsoft/vcpkg.git vcpkg
+          fi
+
+      - name: Bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the quantmodeling wheel
+        run: scripts/build_wheel.sh
+
+      - name: Install API deps + wheel
+        run: |
+          pip install -r api/requirements-dev.txt
+          pip install dist/*.whl
+
+      - name: pytest
+        env:
+          JWT_SECRET: ci-test-secret-not-for-deployment
+          QM_STORAGE: local
+        run: pytest
+
   web:
     runs-on: ubuntu-latest
     defaults:

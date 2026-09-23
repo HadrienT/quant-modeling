@@ -282,5 +282,22 @@ endif()
 
 # ---- Python binding (pybind11) ----
 if(QM_BUILD_PYTHON)
+  # Build stamp read by quantmodeling.build_sha() (blueprint WP 18a §5.1): an
+  # audit event records exactly which native build produced a valuation, which
+  # is what lot 18e's replay endpoint compares against.
+  find_package(Git QUIET)
+  if(Git_FOUND)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      OUTPUT_VARIABLE QM_BUILD_SHA
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+    )
+  endif()
+  if(NOT QM_BUILD_SHA)
+    set(QM_BUILD_SHA "unknown")
+  endif()
+
   add_subdirectory(bindings/python)
 endif()
