@@ -181,6 +181,7 @@ if(QM_BUILD_TESTS)
     tests/testAADTape.cpp
     tests/testAADSimulation.cpp
     tests/testAADMulti.cpp
+    tests/testAADExpression.cpp
     tests/testMultiAssetBSSimModel.cpp
     tests/testLocalVolSimModel.cpp
     tests/testMertonJumpDiffusionSimModel.cpp

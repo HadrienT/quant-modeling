@@ -1,6 +1,7 @@
 #ifndef QM_AAD_NUMBER_HPP
 #define QM_AAD_NUMBER_HPP
 
+#include "quantModeling/aad/expression.hpp"
 #include "quantModeling/aad/node.hpp"
 #include "quantModeling/aad/tape.hpp"
 
@@ -13,37 +14,32 @@ namespace quantModeling::aad
      * @brief The differentiable number: a value plus a pointer to the tape
      *        node that recorded how it was computed.
      *
-     * 16 bytes, two fields. The conversion to double is explicit on purpose:
-     * an implicit one would silently drop a value's dependency on the tape
-     * with no warning -- the exact trap described in the blueprint's §0 (a
-     * model instantiated with T = Number that compiles and returns zero
-     * sensitivities), only quieter.
+     * 16 bytes, two fields (`Expression<Number>` is an empty CRTP base,
+     * contributing nothing under the empty-base optimization). The
+     * conversion to double is explicit on purpose: an implicit one would
+     * silently drop a value's dependency on the tape with no warning -- the
+     * exact trap described in the blueprint's §0 (a model instantiated with
+     * T = Number that compiles and returns zero sensitivities), only
+     * quieter.
      *
-     * Comparisons (<, >, ==...) compare *values* and record nothing: control
-     * flow is not differentiated (blueprint §5.3). A digitale's or a
-     * barrier's pathwise delta through a hard comparison is therefore zero
-     * almost everywhere; smoothing (fuzzy logic, lot 16) is the answer, not a
-     * bug here.
+     * Every arithmetic operator (`+`, `*`, `exp`, ...) is a *generic*
+     * expression-template free function in expression.hpp, not a member or
+     * friend of this class: `Number` participates simply by being a
+     * one-leaf `Expression<Number>` (`num_numbers == 1`). What lives here
+     * is only what a leaf needs: how to materialize an expression into an
+     * actual tape node (the constructor/assignment operators below), and
+     * how to read out a value or an adjoint once one exists.
+     *
+     * Comparisons (<, >, ==...) compare *values* (expression.hpp) and
+     * record nothing: control flow is not differentiated (blueprint §5.3).
+     * A digitale's or a barrier's pathwise delta through a hard comparison
+     * is therefore zero almost everywhere; smoothing (fuzzy logic, lot 16)
+     * is the answer, not a bug here.
      */
-    class Number
+    class Number : public Expression<Number>
     {
         double value_;
         Node *node_;
-
-        template <std::size_t N>
-        void create_node()
-        {
-            node_ = tape->record_node<N>();
-        }
-
-        double &derivative() { return node_->derivatives_[0]; }
-        double &left_der() { return node_->derivatives_[0]; }
-        double &right_der() { return node_->derivatives_[1]; }
-
-        /// Unary node: one argument, its adjoint wired at construction.
-        Number(Node &arg, double val);
-        /// Binary node: two arguments.
-        Number(Node &lhs, Node &rhs, double val);
 
       public:
         /// The tape of the current thread. thread_local rather than passed
@@ -53,9 +49,52 @@ namespace quantModeling::aad
         /// core.
         static thread_local Tape *tape;
 
+        /// A one-leaf expression (blueprint §10): `num_numbers == 1`, and
+        /// push_adjoint writes this leaf's own contribution into whatever
+        /// node is being built by an enclosing BinaryExpression/
+        /// UnaryExpression -- or, when *this* is the outermost thing being
+        /// materialized (a leaf assigned straight to a Number), directly
+        /// into that brand-new node.
+        static constexpr std::size_t num_numbers = 1;
+
         Number() = default; // uninitialized: no value, no node
         explicit Number(double val);
         Number &operator=(double val);
+
+        /// Materializes any expression into a real tape node: N =
+        /// E::num_numbers arguments, one per distinct Number leaf the
+        /// expression touches, each with its own precomputed (chain-rule)
+        /// local derivative -- blueprint §10's "y = x1*x2 + exp(x3)
+        /// records one node, not three".
+        template <class E>
+        Number(const Expression<E> &e) // NOLINT(*-explicit-constructor) -- must convert implicitly, see expression.hpp
+            : value_(e.value())
+        {
+            node_ = tape->record_node<E::num_numbers>();
+            static_cast<const E &>(e).template push_adjoint<E::num_numbers, 0>(*node_, 1.0);
+        }
+
+        template <class E>
+        Number &operator=(const Expression<E> &e)
+        {
+            value_ = e.value();
+            node_ = tape->record_node<E::num_numbers>();
+            static_cast<const E &>(e).template push_adjoint<E::num_numbers, 0>(*node_, 1.0);
+            return *this;
+        }
+
+        /// This leaf's own contribution to whichever node is being built
+        /// around it: slot n's local derivative is whatever adjoint flowed
+        /// in from the caller (a leaf contributes itself, unchanged), and
+        /// arg_adjoints_[n] points at where that slot's adjoint should
+        /// accumulate -- this Number's own node's scalar adjoint normally,
+        /// or its multi-adjoint row once Tape::multi is on (lot 17f).
+        template <std::size_t N, std::size_t n>
+        void push_adjoint(Node &node, double adj) const
+        {
+            node.derivatives_[n] = adj;
+            node.arg_adjoints_[n] = Tape::is_multi() ? node_->adjoints_multi_ : &node_->adjoint();
+        }
 
         /// (Re-)registers this Number as a leaf, keeping its current value.
         /// Used to put a model's parameters on the tape at the start of a
@@ -70,14 +109,18 @@ namespace quantModeling::aad
 
         explicit operator double() const { return value_; }
 
-        Number &operator+=(const Number &rhs);
         Number &operator+=(double rhs);
-        Number &operator-=(const Number &rhs);
         Number &operator-=(double rhs);
-        Number &operator*=(const Number &rhs);
         Number &operator*=(double rhs);
-        Number &operator/=(const Number &rhs);
         Number &operator/=(double rhs);
+        template <class E>
+        Number &operator+=(const Expression<E> &rhs) { return *this = *this + rhs; }
+        template <class E>
+        Number &operator-=(const Expression<E> &rhs) { return *this = *this - rhs; }
+        template <class E>
+        Number &operator*=(const Expression<E> &rhs) { return *this = *this * rhs; }
+        template <class E>
+        Number &operator/=(const Expression<E> &rhs) { return *this = *this / rhs; }
 
         static void propagate_adjoints(Tape::iterator from, Tape::iterator to);
         void propagate_to_start();
@@ -95,92 +138,7 @@ namespace quantModeling::aad
         static void propagate_to_start_multi();
         static void propagate_to_mark_multi();
         static void propagate_mark_to_start_multi();
-
-        friend Number operator+(const Number &, const Number &);
-        friend Number operator+(const Number &, double);
-        friend Number operator+(double, const Number &);
-        friend Number operator-(const Number &, const Number &);
-        friend Number operator-(const Number &, double);
-        friend Number operator-(double, const Number &);
-        friend Number operator-(const Number &);
-        friend Number operator*(const Number &, const Number &);
-        friend Number operator*(const Number &, double);
-        friend Number operator*(double, const Number &);
-        friend Number operator/(const Number &, const Number &);
-        friend Number operator/(const Number &, double);
-        friend Number operator/(double, const Number &);
-        friend Number pow(const Number &, const Number &);
-        friend Number pow(const Number &, double);
-        friend Number pow(double, const Number &);
-        friend Number max(const Number &, const Number &);
-        friend Number max(const Number &, double);
-        friend Number max(double, const Number &);
-        friend Number min(const Number &, const Number &);
-        friend Number min(const Number &, double);
-        friend Number min(double, const Number &);
-        friend Number exp(const Number &);
-        friend Number log(const Number &);
-        friend Number sqrt(const Number &);
-        friend Number fabs(const Number &);
-        friend Number normal_dens(const Number &);
-        friend Number normal_cdf(const Number &);
     };
-
-    Number operator+(const Number &lhs, const Number &rhs);
-    Number operator+(const Number &lhs, double rhs);
-    Number operator+(double lhs, const Number &rhs);
-    Number operator-(const Number &lhs, const Number &rhs);
-    Number operator-(const Number &lhs, double rhs);
-    Number operator-(double lhs, const Number &rhs);
-    Number operator-(const Number &x);
-    Number operator*(const Number &lhs, const Number &rhs);
-    Number operator*(const Number &lhs, double rhs);
-    Number operator*(double lhs, const Number &rhs);
-    Number operator/(const Number &lhs, const Number &rhs);
-    Number operator/(const Number &lhs, double rhs);
-    Number operator/(double lhs, const Number &rhs);
-
-    /// pow, max, min are genuinely binary in the book's derivative table
-    /// (§5.2): even the mixed overloads still record a single *unary* node
-    /// (the other side is a compile-time constant), never a binary node with
-    /// a wasted leaf for the double.
-    Number pow(const Number &x, const Number &y);
-    Number pow(const Number &x, double y);
-    Number pow(double x, const Number &y);
-    Number max(const Number &x, const Number &y);
-    Number max(const Number &x, double y);
-    Number max(double x, const Number &y);
-    Number min(const Number &x, const Number &y);
-    Number min(const Number &x, double y);
-    Number min(double x, const Number &y);
-
-    Number exp(const Number &x);
-    Number log(const Number &x);
-    Number sqrt(const Number &x);
-    Number fabs(const Number &x);
-    /// phi(x): the standard normal density.
-    Number normal_dens(const Number &x);
-    /// Phi(x): the standard normal cdf.
-    Number normal_cdf(const Number &x);
-
-    bool operator==(const Number &lhs, const Number &rhs);
-    bool operator==(const Number &lhs, double rhs);
-    bool operator==(double lhs, const Number &rhs);
-    bool operator!=(const Number &lhs, const Number &rhs);
-    bool operator!=(const Number &lhs, double rhs);
-    bool operator!=(double lhs, const Number &rhs);
-    bool operator<(const Number &lhs, const Number &rhs);
-    bool operator<(const Number &lhs, double rhs);
-    bool operator<(double lhs, const Number &rhs);
-    bool operator<=(const Number &lhs, const Number &rhs);
-    bool operator<=(const Number &lhs, double rhs);
-    bool operator<=(double lhs, const Number &rhs);
-    bool operator>(const Number &lhs, const Number &rhs);
-    bool operator>(const Number &lhs, double rhs);
-    bool operator>(double lhs, const Number &rhs);
-    bool operator>=(const Number &lhs, const Number &rhs);
-    bool operator>=(const Number &lhs, double rhs);
-    bool operator>=(double lhs, const Number &rhs);
 
 } // namespace quantModeling::aad
 
