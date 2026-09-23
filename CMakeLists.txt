@@ -188,6 +188,7 @@ if(QM_BUILD_TESTS)
     tests/testKouJumpDiffusionSimModel.cpp
     tests/testBatesSimModel.cpp
     tests/testSABRSimModel.cpp
+    tests/testVasicekSimModel.cpp
     tests/testThreadPool.cpp
     tests/testRNGSkipTo.cpp
     tests/testParallelAAD.cpp
