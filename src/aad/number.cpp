@@ -18,15 +18,19 @@ namespace quantModeling::aad
         : value_(val)
     {
         create_node<1>();
-        node_->arg_adjoints_[0] = &arg.adjoint();
+        // Tape::multi (lot 17f): point at the argument's multi-adjoint row
+        // instead of its scalar adjoint_, so propagate_all() -- which reads
+        // arg_adjoints_[i] as the start of a num_adj-wide row -- lands in
+        // the right place. Mono mode (the common case) is unchanged.
+        node_->arg_adjoints_[0] = Tape::is_multi() ? arg.adjoints_multi_ : &arg.adjoint();
     }
 
     Number::Number(Node &lhs, Node &rhs, double val)
         : value_(val)
     {
         create_node<2>();
-        node_->arg_adjoints_[0] = &lhs.adjoint();
-        node_->arg_adjoints_[1] = &rhs.adjoint();
+        node_->arg_adjoints_[0] = Tape::is_multi() ? lhs.adjoints_multi_ : &lhs.adjoint();
+        node_->arg_adjoints_[1] = Tape::is_multi() ? rhs.adjoints_multi_ : &rhs.adjoint();
     }
 
     Number::Number(double val)
@@ -106,6 +110,34 @@ namespace quantModeling::aad
     void Number::propagate_mark_to_start()
     {
         propagate_adjoints(std::prev(tape->mark_it()), tape->begin());
+    }
+
+    // -------------------------------------------------- multi-adjoint (17f)
+
+    void Number::propagate_adjoints_multi(Tape::iterator from, Tape::iterator to)
+    {
+        Tape::iterator it = from;
+        while (it != to)
+        {
+            it->propagate_all();
+            --it;
+        }
+        it->propagate_all();
+    }
+
+    void Number::propagate_to_start_multi()
+    {
+        propagate_adjoints_multi(std::prev(tape->end()), tape->begin());
+    }
+
+    void Number::propagate_to_mark_multi()
+    {
+        propagate_adjoints_multi(std::prev(tape->end()), tape->mark_it());
+    }
+
+    void Number::propagate_mark_to_start_multi()
+    {
+        propagate_adjoints_multi(std::prev(tape->mark_it()), tape->begin());
     }
 
     // ------------------------------------------------------------- + - * /

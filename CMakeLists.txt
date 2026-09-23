@@ -180,6 +180,7 @@ if(QM_BUILD_TESTS)
     tests/testAADNumber.cpp
     tests/testAADTape.cpp
     tests/testAADSimulation.cpp
+    tests/testAADMulti.cpp
     tests/testMultiAssetBSSimModel.cpp
     tests/testLocalVolSimModel.cpp
     tests/testMertonJumpDiffusionSimModel.cpp

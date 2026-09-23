@@ -84,6 +84,18 @@ namespace quantModeling::aad
         void propagate_to_mark();
         static void propagate_mark_to_start();
 
+        /// Multi-adjoint counterparts (lot 17f): same three entry points,
+        /// but walking the tape with Node::propagate_all() -- the whole
+        /// num_adj-wide row per node in one pass -- instead of
+        /// Node::propagate_one(). There is no single Number to start "from"
+        /// when several independent results were seeded at once
+        /// (payoffs[i].adjoint(i) = 1 for each i), so these start from the
+        /// tape's most recently recorded node rather than from `this`.
+        static void propagate_adjoints_multi(Tape::iterator from, Tape::iterator to);
+        static void propagate_to_start_multi();
+        static void propagate_to_mark_multi();
+        static void propagate_mark_to_start_multi();
+
         friend Number operator+(const Number &, const Number &);
         friend Number operator+(const Number &, double);
         friend Number operator+(double, const Number &);
