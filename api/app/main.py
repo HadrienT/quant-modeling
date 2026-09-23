@@ -1,5 +1,4 @@
 import os
-import time
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -8,10 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from starlette.middleware.base import BaseHTTPMiddleware
 
-from .logging_utils import configure_logging, get_logger
-from .request_context import is_cache_hit, reset_cache_hit
+from .audit.middleware import AuditMiddleware
+from .logging_utils import configure_logging
 from .routers.market import router as market_router
 from .routers.pricing import router as pricing_router
 from .routers.local_vol_pricing import router as local_vol_router
@@ -22,32 +20,6 @@ from .routers.backtest import router as backtest_router
 from .routers.assistant import router as assistant_router
 
 configure_logging()
-logger = get_logger()
-
-
-class CacheLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware to log cache hits in access logs."""
-
-    async def dispatch(self, request: Request, call_next):
-        # Reset cache hit status for this request
-        reset_cache_hit()
-
-        start_time = time.time()
-        response = await call_next(request)
-        process_time = time.time() - start_time
-
-        # Check if this request hit cache
-        cache_indicator = " (cache)" if is_cache_hit() else ""
-
-        # Log the request with cache indicator
-        logger.info(
-            f"{request.client.host if request.client else 'unknown'}:{request.client.port if request.client else 0} - "
-            f'"{request.method} {request.url.path}{"?" + str(request.url.query) if request.url.query else ""} '
-            f'HTTP/{request.scope.get("http_version", "1.1")}" {response.status_code}{cache_indicator} '
-            f"({process_time:.3f}s)"
-        )
-
-        return response
 
 
 def _operation_id(route: APIRoute) -> str:
@@ -128,7 +100,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.add_middleware(CacheLoggingMiddleware)
+app.add_middleware(AuditMiddleware)
 
 
 class HealthResponse(BaseModel):

@@ -18,6 +18,8 @@ from scipy.optimize import minimize
 from starlette.concurrency import run_in_threadpool
 
 from .. import db
+from ..audit.fallback import record_fallback
+from ..audit.payloads import FallbackKind
 from ..cache import TTLCache
 from ..logging_utils import get_logger
 
@@ -113,7 +115,11 @@ def _fetch_risk_free_rate() -> float:
             _RF_RATE_CACHE.set("rf", rate)
             return rate
 
-    logger.warning("backtest: no risk-free rate in the macro store, using rf=0.04")
+    record_fallback(
+        FallbackKind.DEFAULT_RATE,
+        detail="no risk-free rate in the macro store",
+        rate=0.04,
+    )
     return 0.04
 
 

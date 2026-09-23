@@ -19,6 +19,8 @@ target_include_directories(quantmodeling PRIVATE
 
 target_link_libraries(quantmodeling PRIVATE quantModeling)
 
+target_compile_definitions(quantmodeling PRIVATE QM_BUILD_SHA="${QM_BUILD_SHA}")
+
 # Optional
 target_compile_features(quantmodeling PRIVATE cxx_std_20)
 

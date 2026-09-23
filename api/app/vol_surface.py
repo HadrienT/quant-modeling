@@ -28,6 +28,8 @@ import quantmodeling as qm
 import yfinance as yf
 
 from . import db
+from .audit.fallback import record_fallback
+from .audit.payloads import FallbackKind
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +196,7 @@ def fetch_option_chain(ticker: str) -> List["qm.RawOptionQuote"]:
         )
         return stored
 
-    logger.info("vol_surface: no stored snapshot for %s, fetching live", ticker)
+    record_fallback(FallbackKind.LIVE_YFINANCE_CHAIN, ticker=ticker)
     pairs = _fetch_live_chain_with_expiry(ticker)
     _cache_live_chain(ticker, pairs)
     return [q for q, _expiry in pairs]
@@ -248,7 +250,7 @@ def get_spot(ticker: str) -> float:
         logger.info("vol_surface: spot for %s from DB (%s): %.2f", ticker, as_of, price)
         return price
 
-    logger.info("vol_surface: no stored price for %s, fetching live", ticker)
+    record_fallback(FallbackKind.LIVE_YFINANCE_SPOT, ticker=ticker)
     return _get_spot_live(ticker)
 
 
@@ -284,7 +286,7 @@ def get_dividend_yield(ticker: str) -> float:
         )
         return value
 
-    logger.info("vol_surface: no stored dividend yield for %s, fetching live", ticker)
+    record_fallback(FallbackKind.LIVE_YFINANCE_DIVIDEND, ticker=ticker)
     return _get_dividend_yield_live(ticker)
 
 
@@ -369,7 +371,9 @@ def atm_vol_from_svi_slice(slc: dict, ttm: Optional[float] = None) -> float:
     general -- see market/svi.hpp), divided by the slice's own ttm, unless a
     different ttm is supplied to reuse the same total-variance level (SVI
     parameters are only meaningful in-slice, not across maturities)."""
-    w_atm = _svi_total_variance(0.0, slc["a"], slc["b"], slc["rho"], slc["m"], slc["sigma"])
+    w_atm = _svi_total_variance(
+        0.0, slc["a"], slc["b"], slc["rho"], slc["m"], slc["sigma"]
+    )
     t = ttm if ttm is not None else slc["ttm"]
     return math.sqrt(max(w_atm, 0.0) / t)
 
@@ -545,7 +549,11 @@ def delta_bucket_row(slc: dict) -> dict:
 
 
 def sabr_quotes_from_svi_slice(
-    slc: dict, forward: float, k_min: float = -0.3, k_max: float = 0.3, n_points: int = 11
+    slc: dict,
+    forward: float,
+    k_min: float = -0.3,
+    k_max: float = 0.3,
+    n_points: int = 11,
 ) -> List["qm.SABRSliceQuote"]:
     """Synthetic SABR-calibration quotes sampled off an already-calibrated,
     already arbitrage-checked SVI slice, rather than raw chain quotes
@@ -559,7 +567,9 @@ def sabr_quotes_from_svi_slice(
     quotes: List[qm.SABRSliceQuote] = []
     for i in range(n_points):
         k = k_min + i * (k_max - k_min) / max(n_points - 1, 1)
-        w = _svi_total_variance(k, slc["a"], slc["b"], slc["rho"], slc["m"], slc["sigma"])
+        w = _svi_total_variance(
+            k, slc["a"], slc["b"], slc["rho"], slc["m"], slc["sigma"]
+        )
         if w <= 0:
             continue
         q = qm.SABRSliceQuote()
@@ -619,4 +629,3 @@ def svi_implied_vol_grid(
         values.append(row)
 
     return K_grid, list(T_grid), values
-

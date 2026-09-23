@@ -16,6 +16,9 @@ from fastapi import Depends, Header, HTTPException
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
+from .audit.emit import emit
+from .audit.payloads import AuthEventPayload, AuthOutcome
+from .request_context import current_ip_hash
 from .storage import get_storage
 
 # ── Config (fail fast) ───────────────────────────────────────────────────────
@@ -106,6 +109,13 @@ def _rate_limit(username: str) -> None:
     while q and now - q[0] > _LOGIN_WINDOW_S:
         q.popleft()
     if len(q) >= _LOGIN_MAX:
+        emit(
+            "auth.rate_limited",
+            AuthEventPayload(
+                outcome=AuthOutcome.RATE_LIMITED, ip_hash=current_ip_hash()
+            ),
+            username=username,
+        )
         raise HTTPException(
             status_code=429, detail="Too many attempts. Try again later."
         )
@@ -139,6 +149,11 @@ def register_user(username: str, password: str) -> AuthResponse:
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     _save_users(users)
+    emit(
+        "auth.register",
+        AuthEventPayload(outcome=AuthOutcome.REGISTER, ip_hash=current_ip_hash()),
+        username=username,
+    )
     return AuthResponse(token=_create_token(username), username=username)
 
 
@@ -151,7 +166,19 @@ def login_user(username: str, password: str) -> AuthResponse:
         or not user.hashed_password  # Google account: no password to check
         or not _verify_password(password, user.hashed_password)
     ):
+        emit(
+            "auth.login_failed",
+            AuthEventPayload(
+                outcome=AuthOutcome.LOGIN_FAILED, ip_hash=current_ip_hash()
+            ),
+            username=username,
+        )
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    emit(
+        "auth.login_ok",
+        AuthEventPayload(outcome=AuthOutcome.LOGIN_OK, ip_hash=current_ip_hash()),
+        username=username,
+    )
     return AuthResponse(token=_create_token(username), username=username)
 
 
@@ -169,9 +196,20 @@ def login_google(sub: str, email: str) -> AuthResponse:
         )
         users[username] = user
         _save_users(users)
-    elif user.email != email:
-        user.email = email  # keep the display email current
-        _save_users(users)
+        emit(
+            "auth.register",
+            AuthEventPayload(outcome=AuthOutcome.REGISTER, ip_hash=current_ip_hash()),
+            username=username,
+        )
+    else:
+        if user.email != email:
+            user.email = email  # keep the display email current
+            _save_users(users)
+        emit(
+            "auth.login_ok",
+            AuthEventPayload(outcome=AuthOutcome.LOGIN_OK, ip_hash=current_ip_hash()),
+            username=username,
+        )
     return AuthResponse(token=_create_token(username), username=username)
 
 
@@ -180,13 +218,19 @@ def user_info(username: str) -> UserInfo:
     return UserInfo(username=username, email=(user.email or None) if user else None)
 
 
-def optional_user(authorization: Optional[str] = Header(default=None)) -> Optional[str]:
+def decode_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    """Shared by the `optional_user` dependency and `AuditMiddleware`, which
+    decodes once per request to populate `username` in the audit context."""
     if not authorization:
         return None
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
         return None
     return _decode_token(parts[1])
+
+
+def optional_user(authorization: Optional[str] = Header(default=None)) -> Optional[str]:
+    return decode_bearer_token(authorization)
 
 
 def require_user(user: Optional[str] = Depends(optional_user)) -> str:

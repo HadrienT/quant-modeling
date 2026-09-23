@@ -853,9 +853,20 @@ static py::dict validate_script(const std::string &script,
     return out;
 }
 
+#ifndef QM_BUILD_SHA
+#define QM_BUILD_SHA "unknown"
+#endif
+
 PYBIND11_MODULE(quantmodeling, m)
 {
     m.doc() = "quantModeling C++ bindings (pybind11)";
+
+    m.def(
+        "build_sha", []()
+        { return std::string(QM_BUILD_SHA); },
+        "Git short SHA the native module was built from (blueprint WP 18a "
+        "section 5.1) -- read by the API's audit trail so a valuation can be "
+        "traced to the exact lib_build that produced it.");
 
     py::enum_<quantModeling::AsianAverageType>(m, "AsianAverageType")
         .value("Arithmetic", quantModeling::AsianAverageType::Arithmetic)
