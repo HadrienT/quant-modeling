@@ -75,6 +75,17 @@ export function ProductReference({
 						<Bullets items={doc.assumptions} />
 					</Section>
 
+					<Section title="Minimum model">
+						<div className="rounded-md border border-hairline bg-surface p-3 text-sm text-ink-secondary">
+							<span className="font-medium text-ink">
+								{doc.modelDependency.minimum}
+							</span>
+							<p className="mt-1 leading-relaxed">
+								<InlineMath text={doc.modelDependency.rationale} />
+							</p>
+						</div>
+					</Section>
+
 					<Section title="How it's priced in this repo">
 						<ul className="flex flex-col gap-3">
 							{doc.pricingMethods.map((m, i) => (

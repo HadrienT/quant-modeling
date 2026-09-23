@@ -33,7 +33,7 @@ export function ResultsPanel({
 		() => descriptor.toRequest(values, engine as never),
 		[descriptor, values, engine],
 	);
-	const q = usePricing({ endpoint: descriptor.endpoint, body });
+	const q = usePricing({ endpoint: descriptor.endpoint ?? null, body });
 
 	const isMc = engine === "mc";
 

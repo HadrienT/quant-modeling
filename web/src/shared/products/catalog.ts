@@ -37,6 +37,9 @@ const PDE = {
 const UNVETTED =
 	"Engine not yet vetted — the roadmap prioritises depth over new payoffs.";
 
+const NOT_IMPLEMENTED =
+	"Documented from Bouzoubaa & Osseiran (2010) — no pricing engine in this repo yet; the roadmap prioritises depth over new payoffs.";
+
 const bump = <T extends object>(v: Record<string, unknown>, extra: T) => ({
 	...bsCoreDefaults,
 	...mcCoreDefaults,
@@ -506,7 +509,46 @@ export const CATALOG: ProductDescriptor[] = [
 		"/price/commodity/option",
 		"commodity-option",
 	),
+
+	// Documented from Bouzoubaa & Osseiran (2010) at the maintainer's
+	// request; no pricing engine exists for any of these in this repo.
+	// docOnly() (not disabled()) because there is no real endpoint to type
+	// -- see types.ts's ProductDescriptor.endpoint doc comment.
+	docOnly("forward-start", "exotic", "Forward start option", "forward-start"),
+	docOnly("compound", "exotic", "Compound option", "compound"),
+	docOnly("chooser", "exotic", "Chooser option", "chooser"),
+	docOnly("cliquet", "structured", "Cliquet (ratchet) option", "cliquet"),
+	docOnly("napoleon", "structured", "Napoleon option", "napoleon"),
+	docOnly("quanto", "fx", "Quanto option", "quanto"),
+	docOnly(
+		"double-barrier",
+		"exotic",
+		"Double barrier option",
+		"double-barrier",
+	),
+	docOnly("corridor", "structured", "Corridor / range accrual", "corridor"),
 ];
+
+function docOnly(
+	key: string,
+	category: ProductDescriptor["category"],
+	label: string,
+	docKey: string,
+): ProductDescriptor {
+	return {
+		key,
+		category,
+		label,
+		enabled: false,
+		disabledReason: NOT_IMPLEMENTED,
+		schema: z.object({}),
+		defaults: {},
+		engines: [],
+		docKey,
+		greeks: [],
+		toRequest: (v) => v,
+	};
+}
 
 function disabled(
 	key: string,
