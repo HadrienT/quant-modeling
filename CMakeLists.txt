@@ -65,6 +65,7 @@ target_sources(quantModeling
         src/market/dupire_from_svi.cpp
         src/market/vol_surface_pipeline.cpp
         src/market/sabr_calibration.cpp
+        src/market/slv_calibration.cpp
         src/market/calibration/levenberg_marquardt.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
@@ -189,6 +190,7 @@ if(QM_BUILD_TESTS)
     tests/testBatesSimModel.cpp
     tests/testSABRSimModel.cpp
     tests/testVasicekSimModel.cpp
+    tests/testSLVSimModel.cpp
     tests/testThreadPool.cpp
     tests/testRNGSkipTo.cpp
     tests/testParallelAAD.cpp
