@@ -191,6 +191,7 @@ if(QM_BUILD_TESTS)
     tests/testSABRSimModel.cpp
     tests/testVasicekSimModel.cpp
     tests/testSLVSimModel.cpp
+    tests/testRoughBergomiSimModel.cpp
     tests/testThreadPool.cpp
     tests/testRNGSkipTo.cpp
     tests/testParallelAAD.cpp
