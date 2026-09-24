@@ -427,6 +427,16 @@ def test_a_pricing_emits_its_valuation_record(client, inmemory_sink):
     assert event.request_id == r.headers["X-Request-ID"]
 
 
+def test_the_response_carries_the_compute_time_the_record_holds(
+    client, inmemory_sink
+):
+    r = client.post("/price/option/vanilla", json=VANILLA_MC)
+    [event] = _valuations(inmemory_sink)
+    compute_ms = r.json()["compute_ms"]
+    assert compute_ms > 0
+    assert compute_ms == pytest.approx(event.payload["timing"]["duration_ms"])
+
+
 def test_the_record_names_the_engine_that_actually_ran(client, inmemory_sink):
     """An American vanilla asked for with engine="mc" is priced on a binomial
     tree by pricing_service: the record says binomial, and keeps no seed."""

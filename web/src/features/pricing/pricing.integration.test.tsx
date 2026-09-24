@@ -46,6 +46,11 @@ describe("pricing workbench", () => {
 		expect(await screen.findByText(/±/)).toBeInTheDocument();
 	});
 
+	it("says how long the pricing took on the server", async () => {
+		renderWorkbench();
+		expect(await screen.findByText(/computed in 3\.42 ms/)).toBeInTheDocument();
+	});
+
 	it("renders the greeks table from the response", async () => {
 		renderWorkbench();
 		expect(await screen.findByText("delta")).toBeInTheDocument();

@@ -1,7 +1,8 @@
 import type { PricingResult } from "@/shared/api";
 import { ComputeTime, Uncertainty } from "@/shared/ui/density";
 
-export function PriceResult({ result: r }: { result: PricingResult }) {
+/** A scripted product's price, its Monte-Carlo error and how long it took. */
+export function ScriptResult({ result: r }: { result: PricingResult }) {
 	return (
 		<div className="rounded-md border border-hairline bg-surface p-4">
 			<div className="flex items-baseline justify-between gap-4">

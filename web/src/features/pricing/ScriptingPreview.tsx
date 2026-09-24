@@ -1,8 +1,6 @@
 import { useMemo, useState } from "react";
 import { usePricing } from "@/shared/api";
-import type { PricingResponse } from "@/shared/api";
 import { Button, Field } from "@/shared/ui";
-import { Uncertainty } from "@/shared/ui/density";
 import { MetricRowSkeleton } from "@/shared/ui/states";
 import { SCRIPTING_EXAMPLES } from "./scripting/examples";
 import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
@@ -14,6 +12,7 @@ import { parseScriptDiagnostic } from "./scripting/parseScriptDiagnostic";
 import { ValidationSummary } from "./scripting/ValidationSummary";
 import { ModelChoice, type ScriptModel } from "./scripting/ModelChoice";
 import { ModelWarnings } from "./scripting/ModelWarnings";
+import { ScriptResult } from "./scripting/ScriptResult";
 
 /**
  * Preview surface for the payoff scripting language (blueprint/wp/16-scripting.md).
@@ -53,7 +52,7 @@ export default function ScriptingPreview() {
 	});
 	const validate = useValidateScript();
 
-	const r = price.data as PricingResponse | undefined;
+	const r = price.data;
 	const error = price.error ?? validate.error;
 	const diagnostic = useMemo(
 		() => (error ? parseScriptDiagnostic(error.message) : null),
@@ -203,25 +202,7 @@ export default function ScriptingPreview() {
 			{price.isLoading && <MetricRowSkeleton />}
 			{error && <ScriptRejected message={error.message} />}
 			{r && <ModelWarnings warnings={r.warnings ?? []} />}
-			{r && (
-				<div className="rounded-md border border-hairline bg-surface p-4">
-					<span className="text-2xs text-ink-muted uppercase">
-						Present value
-					</span>
-					<div className="text-xl">
-						<Uncertainty
-							value={r.npv}
-							stdError={r.mc_std_error}
-							magnitude="price"
-						/>
-					</div>
-					{r.diagnostics && (
-						<p className="mt-2 font-mono text-2xs text-ink-muted">
-							{r.diagnostics}
-						</p>
-					)}
-				</div>
-			)}
+			{r && <ScriptResult result={r} />}
 		</div>
 	);
 }
