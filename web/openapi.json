@@ -1738,6 +1738,11 @@
       },
       "FxCorrelationResponse": {
         "properties": {
+          "asset_last": {
+            "description": "Asset close on the last common date.",
+            "title": "Asset Last",
+            "type": "number"
+          },
           "asset_vol": {
             "title": "Asset Vol",
             "type": "number"
@@ -1778,6 +1783,11 @@
             ],
             "title": "Frequency",
             "type": "string"
+          },
+          "fx_last": {
+            "description": "FX rate on the last common date.",
+            "title": "Fx Last",
+            "type": "number"
           },
           "fx_vol": {
             "title": "Fx Vol",
@@ -1831,7 +1841,9 @@
           "asset_vol",
           "fx_vol",
           "start",
-          "end"
+          "end",
+          "asset_last",
+          "fx_last"
         ],
         "title": "FxCorrelationResponse",
         "type": "object"
@@ -3311,6 +3323,106 @@
           "google"
         ],
         "title": "Providers",
+        "type": "object"
+      },
+      "QuantoRequest": {
+        "description": "A European option on a foreign-currency asset, paid in the domestic\ncurrency at a conversion rate fixed in advance (Reiner 1992). Rates and\nvols are decimals; `correlation` is corr(asset, FX) with the FX rate\nquoted domestic per foreign (a EUR asset paid in USD: EUR/USD) \u2014 the\n/market/fx/correlation endpoint estimates it.",
+        "properties": {
+          "correlation": {
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Correlation",
+            "type": "number"
+          },
+          "dividend": {
+            "default": 0.0,
+            "title": "Dividend",
+            "type": "number"
+          },
+          "engine": {
+            "default": "analytic",
+            "enum": [
+              "analytic",
+              "mc"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
+          "fx_rate": {
+            "default": 1.0,
+            "description": "Fixed conversion rate, domestic per foreign.",
+            "exclusiveMinimum": 0.0,
+            "title": "Fx Rate",
+            "type": "number"
+          },
+          "fx_vol": {
+            "description": "FX volatility \u03c3_X.",
+            "exclusiveMinimum": 0.0,
+            "title": "Fx Vol",
+            "type": "number"
+          },
+          "is_call": {
+            "default": true,
+            "title": "Is Call",
+            "type": "boolean"
+          },
+          "maturity": {
+            "exclusiveMinimum": 0.0,
+            "title": "Maturity",
+            "type": "number"
+          },
+          "n_paths": {
+            "default": 200000,
+            "maximum": 5000000.0,
+            "minimum": 1000.0,
+            "title": "N Paths",
+            "type": "integer"
+          },
+          "rate_domestic": {
+            "description": "Payment currency's rate.",
+            "title": "Rate Domestic",
+            "type": "number"
+          },
+          "rate_foreign": {
+            "description": "Asset currency's rate.",
+            "title": "Rate Foreign",
+            "type": "number"
+          },
+          "seed": {
+            "default": 1,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "spot": {
+            "description": "Asset, in its own (foreign) currency.",
+            "exclusiveMinimum": 0.0,
+            "title": "Spot",
+            "type": "number"
+          },
+          "strike": {
+            "description": "In the foreign currency.",
+            "exclusiveMinimum": 0.0,
+            "title": "Strike",
+            "type": "number"
+          },
+          "vol": {
+            "description": "Asset volatility \u03c3_S.",
+            "exclusiveMinimum": 0.0,
+            "title": "Vol",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spot",
+          "strike",
+          "maturity",
+          "rate_domestic",
+          "rate_foreign",
+          "vol",
+          "fx_vol",
+          "correlation"
+        ],
+        "title": "QuantoRequest",
         "type": "object"
       },
       "QuotedRatePoint": {
@@ -7527,6 +7639,45 @@
           }
         },
         "summary": "Price Lookback Endpoint"
+      }
+    },
+    "/price/option/quanto": {
+      "post": {
+        "description": "A foreign asset paid in the domestic currency at a fixed rate: Black-Scholes\nwith the quanto drift adjustment. `rho` in the greeks is the domestic-rate rho;\nthe model's inputs (rates, vols, correlation) are the caller's.",
+        "operationId": "price_quanto",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuantoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PricingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Price Quanto Endpoint"
       }
     },
     "/price/option/rainbow": {

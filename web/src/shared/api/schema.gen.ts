@@ -841,6 +841,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/quanto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price Quanto Endpoint
+         * @description A foreign asset paid in the domestic currency at a fixed rate: Black-Scholes
+         *     with the quanto drift adjustment. `rho` in the greeks is the domestic-rate rho;
+         *     the model's inputs (rates, vols, correlation) are the caller's.
+         */
+        post: operations["price_quanto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/rainbow": {
         parameters: {
             query?: never;
@@ -1806,6 +1828,11 @@ export interface components {
         };
         /** FxCorrelationResponse */
         FxCorrelationResponse: {
+            /**
+             * Asset Last
+             * @description Asset close on the last common date.
+             */
+            asset_last: number;
             /** Asset Vol */
             asset_vol: number;
             /**
@@ -1832,6 +1859,11 @@ export interface components {
              * @enum {string}
              */
             frequency: "weekly" | "daily";
+            /**
+             * Fx Last
+             * @description FX rate on the last common date.
+             */
+            fx_last: number;
             /** Fx Vol */
             fx_vol: number;
             /**
@@ -2477,6 +2509,82 @@ export interface components {
         Providers: {
             /** Google */
             google: boolean;
+        };
+        /**
+         * QuantoRequest
+         * @description A European option on a foreign-currency asset, paid in the domestic
+         *     currency at a conversion rate fixed in advance (Reiner 1992). Rates and
+         *     vols are decimals; `correlation` is corr(asset, FX) with the FX rate
+         *     quoted domestic per foreign (a EUR asset paid in USD: EUR/USD) — the
+         *     /market/fx/correlation endpoint estimates it.
+         */
+        QuantoRequest: {
+            /** Correlation */
+            correlation: number;
+            /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /**
+             * Engine
+             * @default analytic
+             * @enum {string}
+             */
+            engine: "analytic" | "mc";
+            /**
+             * Fx Rate
+             * @description Fixed conversion rate, domestic per foreign.
+             * @default 1
+             */
+            fx_rate: number;
+            /**
+             * Fx Vol
+             * @description FX volatility σ_X.
+             */
+            fx_vol: number;
+            /**
+             * Is Call
+             * @default true
+             */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /**
+             * Rate Domestic
+             * @description Payment currency's rate.
+             */
+            rate_domestic: number;
+            /**
+             * Rate Foreign
+             * @description Asset currency's rate.
+             */
+            rate_foreign: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /**
+             * Spot
+             * @description Asset, in its own (foreign) currency.
+             */
+            spot: number;
+            /**
+             * Strike
+             * @description In the foreign currency.
+             */
+            strike: number;
+            /**
+             * Vol
+             * @description Asset volatility σ_S.
+             */
+            vol: number;
         };
         /** QuotedRatePoint */
         QuotedRatePoint: {
@@ -4855,6 +4963,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LookbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_quanto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuantoRequest"];
             };
         };
         responses: {
