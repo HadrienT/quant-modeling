@@ -292,19 +292,30 @@ if(QM_BUILD_PYTHON)
   # Build stamp read by quantmodeling.build_sha() (blueprint WP 18a §5.1): an
   # audit event records exactly which native build produced a valuation, which
   # is what lot 18e's replay endpoint compares against.
-  find_package(Git QUIET)
-  if(Git_FOUND)
-    execute_process(
-      COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      OUTPUT_VARIABLE QM_BUILD_SHA
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      ERROR_QUIET
-    )
-  endif()
-  if(NOT QM_BUILD_SHA)
-    set(QM_BUILD_SHA "unknown")
-  endif()
+  #
+  # It is a digest of the native sources' CONTENT (include/, src/, the CMake
+  # files), not the git commit: the Docker build context has no .git (so a
+  # commit SHA came out "unknown" in production), and a commit SHA would have
+  # to enter the C++ build stage, rebuilding the library on every deploy even
+  # when only the front changed. The same sources give the same stamp, a dirty
+  # tree a different one. Computed at configure time: an incremental local
+  # build refreshes it on the next reconfigure.
+  file(GLOB_RECURSE _qm_stamp_files CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/bindings/*.txt
+  )
+  list(APPEND _qm_stamp_files ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)
+  list(SORT _qm_stamp_files)
+  set(_qm_stamp_manifest "")
+  foreach(_qm_file IN LISTS _qm_stamp_files)
+    file(SHA256 ${_qm_file} _qm_file_hash)
+    file(RELATIVE_PATH _qm_rel ${CMAKE_CURRENT_SOURCE_DIR} ${_qm_file})
+    string(APPEND _qm_stamp_manifest "${_qm_rel} ${_qm_file_hash}\n")
+  endforeach()
+  string(SHA256 QM_BUILD_SHA "${_qm_stamp_manifest}")
+  string(SUBSTRING ${QM_BUILD_SHA} 0 12 QM_BUILD_SHA)
+  message(STATUS "quantmodeling build stamp: ${QM_BUILD_SHA}")
 
   add_subdirectory(bindings/python)
 endif()
