@@ -14,6 +14,8 @@
 #include "quantModeling/instruments/equity/simulatable_asian.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/calendars.hpp"
+#include "quantModeling/market/curve_bootstrap.hpp"
+#include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/market/conventions.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/market/vol_surface_pipeline.hpp"
@@ -22,6 +24,7 @@
 #include "quantModeling/scripting/model_advice.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -484,6 +487,57 @@ static py::dict price_local_vol_mc_impl(const quantModeling::LocalVolInput &in)
 {
     auto res = quantModeling::price_local_vol_mc(in);
     return pricing_result_to_dict(res);
+}
+
+// ── Discount-curve bootstrap (market/curve_bootstrap.hpp) ─────────────────────
+//
+// For the rates page: a government par-yield curve (Treasury CMT, JGB) becomes a
+// discount curve with the desk algorithm already in the library, rather than a
+// second implementation in Python. Rates are decimals (0.0397), times in years.
+// Returns the pillar times and their discount factors; discount_factors() then
+// queries that curve with DiscountCurve's own interpolation (log-linear in the
+// discount factor), so derived zero and forward rates use the exact rule the
+// bootstrap solved under.
+
+static py::dict bootstrap_discount_curve_impl(
+    const std::vector<std::pair<quantModeling::Time, quantModeling::Real>> &deposits,
+    const std::vector<std::pair<quantModeling::Time, quantModeling::Real>> &semiannual_par)
+{
+    std::vector<quantModeling::DepositQuote> dep;
+    std::vector<quantModeling::ParRateQuote> par;
+    std::vector<quantModeling::Time> pillars;
+    for (const auto &[t, r] : deposits)
+    {
+        dep.push_back({t, r});
+        pillars.push_back(t);
+    }
+    for (const auto &[t, y] : semiannual_par)
+    {
+        par.push_back(quantModeling::make_semiannual_bond_quote(t, y));
+        pillars.push_back(t);
+    }
+    const quantModeling::DiscountCurve curve = quantModeling::bootstrap_curve(dep, par);
+    std::sort(pillars.begin(), pillars.end());
+    std::vector<quantModeling::Real> dfs;
+    dfs.reserve(pillars.size());
+    for (const quantModeling::Time t : pillars)
+        dfs.push_back(curve.discount(t));
+    py::dict out;
+    out["times"] = pillars;
+    out["discount_factors"] = dfs;
+    return out;
+}
+
+static std::vector<quantModeling::Real> discount_factors_impl(
+    std::vector<quantModeling::Time> times, std::vector<quantModeling::Real> dfs,
+    const std::vector<quantModeling::Time> &query_times)
+{
+    const quantModeling::DiscountCurve curve(std::move(times), std::move(dfs));
+    std::vector<quantModeling::Real> out;
+    out.reserve(query_times.size());
+    for (const quantModeling::Time t : query_times)
+        out.push_back(curve.discount(t));
+    return out;
 }
 
 // ── Vol surface calibration: raw quotes -> SVI per maturity -> Dupire grid ──
@@ -1129,6 +1183,18 @@ PYBIND11_MODULE(quantmodeling, m)
         .def_readwrite("min_plausible_iv", &quantModeling::CleaningParams::min_plausible_iv)
         .def_readwrite("max_plausible_iv", &quantModeling::CleaningParams::max_plausible_iv);
 
+    m.def("bootstrap_discount_curve", &bootstrap_discount_curve_impl,
+          py::arg("deposits"), py::arg("semiannual_par"),
+          "Bootstrap a discount curve from money-market deposits [(maturity, simple rate)] "
+          "and semi-annual par yields [(maturity, par yield)] (rates as decimals, times in "
+          "years; par maturities whole half-years). Returns {'times', 'discount_factors'} at "
+          "every pillar. Raises RuntimeError (InvalidInput) on duplicate maturities or an "
+          "unbracketable quote.");
+    m.def("discount_factors", &discount_factors_impl, py::arg("times"),
+          py::arg("discount_factors"), py::arg("query_times"),
+          "Discount factors at query_times on the curve (times, discount_factors), with "
+          "DiscountCurve's log-linear interpolation (flat before the first pillar and "
+          "after the last).");
     m.def("calibrate_vol_surface", &calibrate_vol_surface_impl,
           py::arg("quotes"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
           py::arg("k_min") = -0.6, py::arg("k_max") = 0.6,

@@ -46,12 +46,19 @@ export const handlers = [
 		);
 	}),
 
-	http.get("*/market/rates/curve", ({ request }) => {
+	http.get("*/market/rates/overview", ({ request }) => {
 		const url = new URL(request.url);
 		return HttpResponse.json(
-			fx.ratesCurve(
-				url.searchParams.get("curve") ?? "Treasury",
-				url.searchParams.get("curve_type") ?? "zero",
+			fx.ratesOverview(url.searchParams.get("currency") ?? "USD"),
+		);
+	}),
+
+	http.get("*/market/rates/history", ({ request }) => {
+		const url = new URL(request.url);
+		return HttpResponse.json(
+			fx.ratesHistory(
+				url.searchParams.get("currency") ?? "USD",
+				url.searchParams.get("series_id") ?? "ON",
 			),
 		);
 	}),

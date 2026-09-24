@@ -87,17 +87,92 @@ export function localVolSurface(ticker: string) {
 	};
 }
 
-export function ratesCurve(curve: string, kind: string) {
-	const tenors = [0.08, 0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30];
-	const zero = tenors.map((x) => ({
-		x,
-		y:
-			Math.round(
-				(0.042 + 0.006 * Math.log(1 + x) - (kind === "forward" ? 0.002 : 0)) *
-					10000,
-			) / 10000,
+const METHODOLOGY = [
+	{ title: "Data", paragraphs: ["Read from the project's own database."] },
+	{
+		title: "Derived zero and forward curves",
+		paragraphs: ["Log-linear discount factors; continuous compounding."],
+	},
+];
+
+export function ratesOverview(currency: string) {
+	const tenors = [0.25, 0.5, 1, 2, 5, 10, 30];
+	const z = (x: number) =>
+		Math.round((0.03 + 0.006 * Math.log(1 + x)) * 1e6) / 1e6;
+	const quoted = tenors.map((tenor) => ({
+		tenor,
+		label: tenor < 1 ? `${tenor * 12}M` : `${tenor}Y`,
+		series_id: `S${tenor}`,
+		rate: z(tenor),
 	}));
-	return { curve, zero };
+	const base = {
+		currency,
+		unit: "decimal",
+		benchmarks: [
+			{
+				series_id: "ON",
+				label: "Overnight benchmark",
+				kind: "overnight",
+				backward_looking: false,
+				rate: 0.0385,
+				as_of: "2026-09-21",
+			},
+			{
+				series_id: "AVG3M",
+				label: "3M compounded average",
+				kind: "compounded",
+				backward_looking: true,
+				rate: 0.0366,
+				as_of: "2026-09-22",
+			},
+		],
+		headline_series: "ON",
+		methodology: [
+			...METHODOLOGY,
+			{ title: `${currency} specifics`, paragraphs: ["Specific notes."] },
+		],
+		warnings: [] as string[],
+	};
+	if (currency === "CHF")
+		return {
+			...base,
+			government: null,
+			government_unavailable: "No free CHF government curve.",
+		};
+	const derived = currency !== "GBP";
+	return {
+		...base,
+		government: {
+			name: `${currency} government curve`,
+			source: "Publisher",
+			source_url: "https://example.org",
+			quote: "par_semiannual",
+			as_of: "2026-09-18",
+			quoted,
+			zero: derived
+				? tenors.map((tenor) => ({ tenor, rate: z(tenor) - 0.0005 }))
+				: null,
+			forward: derived
+				? tenors
+						.slice(0, -1)
+						.map((tenor) => ({ tenor, rate: z(tenor) + 0.002 }))
+				: null,
+			forward_period_years: 0.5,
+			no_derivation: derived ? null : "Only three par yields.",
+		},
+		government_unavailable: null,
+	};
+}
+
+export function ratesHistory(currency: string, seriesId: string) {
+	return {
+		currency,
+		series_id: seriesId,
+		points: [
+			{ date: "2026-09-18", rate: 0.0386 },
+			{ date: "2026-09-21", rate: 0.0385 },
+		],
+	};
 }
 
 export function pricingResponse(overrides?: Record<string, unknown>) {
