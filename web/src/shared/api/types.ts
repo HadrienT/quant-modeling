@@ -49,3 +49,16 @@ export type FxCurrency = Schemas["FxOverviewResponse"]["base"];
 export type FxOverviewResponse = Schemas["FxOverviewResponse"];
 export type FxHistoryResponse = Schemas["FxHistoryResponse"];
 export type FxCorrelationResponse = Schemas["FxCorrelationResponse"];
+
+// Portfolio ledger and its valuation (MTM, daily P&L).
+export type Instrument = Schemas["Instrument"];
+export type EquitySpec = Schemas["EquitySpec"];
+export type DerivativeSpec = Schemas["DerivativeSpec"];
+export type Trade = Schemas["Trade"];
+export type PortfolioCurrency = Portfolio["base_currency"];
+export type PortfolioSnapshot = Schemas["SnapshotResponse"];
+export type PositionMark = Schemas["PositionMark"];
+export type MarkInput = Schemas["InputView"];
+export type PortfolioHistory = Schemas["HistoryResponse"];
+export type PnlWindow = NonNullable<Schemas["HistoryRequest"]["window"]>;
+export type TickerClose = Schemas["CloseResponse"];

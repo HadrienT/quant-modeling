@@ -1,5 +1,12 @@
-import { api, signalWithTimeout } from "@/shared/api";
-import type { Portfolio, PortfolioSummary, Position } from "@/shared/api";
+import { api, migratePortfolio, signalWithTimeout } from "@/shared/api";
+import type { Portfolio, PortfolioSummary } from "@/shared/api";
+import { netQuantities } from "./ledger";
+
+/** What a trade changes: the ledger (and the currency it is reported in). */
+export type Ledger = Pick<
+	Portfolio,
+	"instruments" | "transactions" | "base_currency"
+>;
 
 /**
  * PortfolioRepository port — blueprint WP 04 §4. Portfolio components talk to
@@ -13,7 +20,8 @@ export interface PortfolioRepository {
 	create(name: string): Promise<Portfolio>;
 	rename(id: string, name: string): Promise<void>;
 	remove(id: string): Promise<void>;
-	putPositions(id: string, positions: Position[]): Promise<Portfolio>;
+	/** Replace the ledger; the positions are derived from it. */
+	putLedger(id: string, ledger: Ledger): Promise<Portfolio>;
 	/** import a full portfolio object (JSON round-trip) */
 	importPortfolio(pf: Portfolio): Promise<Portfolio>;
 }
@@ -40,15 +48,28 @@ function saveAll(all: Portfolio[]) {
 	}
 }
 function summarise(pf: Portfolio): PortfolioSummary {
-	const positions = pf.positions ?? [];
+	const open = [...netQuantities(pf.transactions ?? []).values()].filter(
+		(q) => q !== 0,
+	).length;
 	return {
 		id: pf.id,
 		name: pf.name,
 		created_at: pf.created_at ?? "",
 		updated_at: pf.updated_at ?? "",
-		n_positions: positions.length,
-		total_value: positions.reduce((s, p) => s + (p.result?.npv ?? 0), 0),
+		n_positions: open + (pf.positions?.length ?? 0),
+		// the value needs market data: the valuation endpoints give it
+		total_value: 0,
 	};
+}
+
+/** A portfolio from before the ledger, rewritten as one (server-side rules). */
+async function upgraded(pf: Portfolio): Promise<Portfolio> {
+	if ((pf.version ?? 1) >= 2) return pf;
+	try {
+		return await migratePortfolio(pf);
+	} catch {
+		return pf; // offline: shown as is, migrated on the next visit
+	}
 }
 
 export const localRepository: PortfolioRepository = {
@@ -57,7 +78,15 @@ export const localRepository: PortfolioRepository = {
 		return loadAll().map(summarise);
 	},
 	async get(id) {
-		return loadAll().find((p) => p.id === id) ?? null;
+		const all = loadAll();
+		const i = all.findIndex((p) => p.id === id);
+		if (i < 0) return null;
+		const pf = await upgraded(all[i]!);
+		if (pf !== all[i]) {
+			all[i] = pf;
+			saveAll(all);
+		}
+		return pf;
 	},
 	async create(name) {
 		const pf: Portfolio = {
@@ -66,6 +95,10 @@ export const localRepository: PortfolioRepository = {
 			owner: "",
 			created_at: now(),
 			updated_at: now(),
+			version: 2,
+			base_currency: "EUR",
+			instruments: [],
+			transactions: [],
 			positions: [],
 		};
 		saveAll([...loadAll(), pf]);
@@ -81,21 +114,25 @@ export const localRepository: PortfolioRepository = {
 	async remove(id) {
 		saveAll(loadAll().filter((p) => p.id !== id));
 	},
-	async putPositions(id, positions) {
+	async putLedger(id, ledger) {
 		const all = loadAll();
-		const pf = all.find((p) => p.id === id);
-		if (!pf) throw new Error("Portfolio not found");
-		pf.positions = positions;
-		pf.updated_at = now();
+		const i = all.findIndex((p) => p.id === id);
+		if (i < 0) throw new Error("Portfolio not found");
+		const pf: Portfolio = {
+			...all[i]!,
+			...ledger,
+			version: 2,
+			updated_at: now(),
+		};
+		all[i] = pf;
 		saveAll(all);
-		return { ...pf };
+		return pf;
 	},
 	async importPortfolio(pf) {
 		const copy: Portfolio = {
-			...pf,
+			...(await upgraded(pf)),
 			id: uid(),
 			updated_at: now(),
-			positions: pf.positions ?? [],
 		};
 		saveAll([...loadAll(), copy]);
 		return copy;
@@ -167,18 +204,23 @@ export const serverRepository: PortfolioRepository = {
 			}),
 		);
 	},
-	async putPositions(id, positions) {
+	async putLedger(id, ledger) {
 		const pf = await this.get(id);
 		if (!pf) throw new Error("Portfolio not found");
 		return (await unwrap(
 			api.PUT("/api/portfolios/{portfolio_id}", {
 				params: { path: { portfolio_id: id } },
-				body: { ...pf, positions } as never,
+				body: { ...pf, ...ledger, version: 2 } as never,
 			}),
 		)) as Portfolio;
 	},
 	async importPortfolio(pf) {
 		const created = await this.create(pf.name);
-		return this.putPositions(created.id, pf.positions ?? []);
+		const ledger = await upgraded(pf);
+		return this.putLedger(created.id, {
+			instruments: ledger.instruments ?? [],
+			transactions: ledger.transactions ?? [],
+			base_currency: ledger.base_currency ?? "EUR",
+		});
 	},
 };

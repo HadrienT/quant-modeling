@@ -1,15 +1,15 @@
 """Portfolio schemas for the quant desk portfolio manager."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Product category / type enums
 # ---------------------------------------------------------------------------
+
 
 class ProductCategory(str, Enum):
     vanilla = "vanilla"
@@ -59,6 +59,7 @@ class ProductType(str, Enum):
 # Position & Portfolio models
 # ---------------------------------------------------------------------------
 
+
 class PositionGreeks(BaseModel):
     delta: Optional[float] = None
     gamma: Optional[float] = None
@@ -69,6 +70,7 @@ class PositionGreeks(BaseModel):
 
 class PositionResult(BaseModel):
     """Cached pricing result for a position."""
+
     npv: float = 0.0
     unit_price: float = 0.0
     greeks: PositionGreeks = Field(default_factory=PositionGreeks)
@@ -79,11 +81,14 @@ class PositionResult(BaseModel):
 
 
 class Position(BaseModel):
-    """A single position in a portfolio."""
+    """A position of the portfolios before the ledger (version 1) — read only to
+    be migrated (portfolio_ledger.migrate). product_type was spelled two ways
+    (this enum, or the front's catalog keys), hence a plain string."""
+
     id: str
     label: str = "Untitled"
-    product_type: ProductType
-    category: ProductCategory
+    product_type: str
+    category: str = ""
     direction: str = "long"  # "long" or "short"
     quantity: float = 1.0
     entry_price: float = 0.0
@@ -91,18 +96,82 @@ class Position(BaseModel):
     result: Optional[PositionResult] = None
 
 
+Currency = Literal["USD", "EUR", "GBP", "JPY", "CHF"]
+
+
+class EquitySpec(BaseModel):
+    """A listed share or index, marked at its stored close (any market of the
+    Market page). Its currency is the listing's (prices.equity_universe)."""
+
+    kind: Literal["equity"] = "equity"
+    ticker: str
+
+
+class DerivativeSpec(BaseModel):
+    """A derivative priced by the pricing registry (valuation.PRODUCTS).
+
+    `params` is the pricing request at trade time (decimals, as the API takes
+    them). At each valuation date its market fields are replaced by that
+    day's market (portfolio_valuation.py): spot from `underlying`'s close, the
+    time left to `expiry`, the rate from the currency's curve, the vol from
+    the underlying's history — whatever the stored market allows."""
+
+    kind: Literal["derivative"] = "derivative"
+    product: str
+    params: Dict[str, Any]
+    underlying: Optional[str] = None
+    expiry: date
+    currency: Currency = "USD"
+
+
+class Instrument(BaseModel):
+    id: str
+    label: str = ""
+    spec: Union[EquitySpec, DerivativeSpec] = Field(discriminator="kind")
+
+
+class Trade(BaseModel):
+    """A buy (quantity > 0) or a sell (quantity < 0) at a unit price in the
+    instrument's currency. Fees are a cost (>= 0)."""
+
+    id: str
+    instrument_id: str
+    trade_date: date
+    quantity: float
+    price: float
+    fees: float = Field(0.0, ge=0.0)
+    note: str = ""
+    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+    @field_validator("quantity")
+    @classmethod
+    def _non_zero(cls, v: float) -> float:
+        if v == 0 or v != v:
+            raise ValueError("quantity must be non-zero (> 0 buys, < 0 sells)")
+        return v
+
+
 class Portfolio(BaseModel):
-    """Full portfolio model stored as JSON in GCS."""
+    """A portfolio, stored as JSON (storage.py). Version 2 is a ledger:
+    `instruments` and `transactions`; positions are derived from them
+    (portfolio_ledger.py). Version 1 held `positions` directly and is migrated
+    on read."""
+
     id: str
     name: str = "Untitled Portfolio"
     owner: str = ""  # username; empty = anonymous / local
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    version: int = 1
+    base_currency: Currency = "EUR"
+    instruments: List[Instrument] = Field(default_factory=list)
+    transactions: List[Trade] = Field(default_factory=list)
     positions: List[Position] = Field(default_factory=list)
 
 
 class PortfolioSummary(BaseModel):
     """Lightweight portfolio info for list endpoint."""
+
     id: str
     name: str
     created_at: str
@@ -115,16 +184,19 @@ class PortfolioSummary(BaseModel):
 # Risk / VaR models
 # ---------------------------------------------------------------------------
 
+
 class StressBump(BaseModel):
     """A single scenario bump."""
+
     name: str = "Custom"
-    spot_shift: float = 0.0       # relative, e.g. -0.10 = -10%
-    vol_shift: float = 0.0        # absolute, e.g. 0.05 = +5 vol pts
-    rate_shift: float = 0.0       # absolute, e.g. 0.01 = +100 bps
+    spot_shift: float = 0.0  # relative, e.g. -0.10 = -10%
+    vol_shift: float = 0.0  # absolute, e.g. 0.05 = +5 vol pts
+    rate_shift: float = 0.0  # absolute, e.g. 0.01 = +100 bps
 
 
 class StressResult(BaseModel):
     """Result for one stress scenario."""
+
     name: str
     portfolio_pnl: float
     position_pnls: Dict[str, float]  # position_id -> pnl
@@ -147,6 +219,7 @@ class VaRResult(BaseModel):
 
 class PortfolioRiskSummary(BaseModel):
     """Aggregated risk metrics for a portfolio."""
+
     total_npv: float
     total_pnl: float
     total_delta: float

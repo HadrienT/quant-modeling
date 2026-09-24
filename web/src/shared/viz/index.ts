@@ -33,6 +33,7 @@ export {
 	type Candle,
 	type LinePoint,
 } from "./charts/lightweight";
+export { PnlHistoryChart, type PnlPoint } from "./charts/PnlHistoryChart";
 export {
 	SurfaceView,
 	makeGrid,

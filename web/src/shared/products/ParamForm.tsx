@@ -14,12 +14,17 @@ export function ParamForm({
 	descriptor,
 	values,
 	onChange,
+	hide = [],
 }: {
 	descriptor: ProductDescriptor;
 	values: Record<string, unknown>;
 	onChange: (v: Record<string, unknown>) => void;
+	/** fields set elsewhere: not shown, still validated with their values */
+	hide?: readonly string[];
 }) {
-	const fields = fieldsFromSchema(descriptor.schema);
+	const fields = fieldsFromSchema(descriptor.schema).filter(
+		(f) => !hide.includes(f.name),
+	);
 	const {
 		register,
 		watch,

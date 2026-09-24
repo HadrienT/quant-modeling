@@ -7,6 +7,7 @@ from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
 
+from .. import portfolio_ledger as ledger
 from ..auth import require_user
 from ..logging_utils import get_logger
 from ..portfolio_schemas import (
@@ -239,7 +240,7 @@ async def api_list_portfolios(user: str = Depends(require_user)):
 
 @router.post("", response_model=Portfolio, status_code=201)
 async def api_create_portfolio(name: str = "Untitled Portfolio", user: str = Depends(require_user)):
-    pf = Portfolio(id=str(uuid.uuid4()), name=name, owner=user)
+    pf = Portfolio(id=str(uuid.uuid4()), name=name, owner=user, version=2)
     await run_in_threadpool(save_portfolio, pf)
     return pf
 
@@ -257,6 +258,11 @@ async def api_update_portfolio(portfolio_id: str, body: Portfolio, user: str = D
     existing = await run_in_threadpool(get_portfolio, portfolio_id, user)
     if existing is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
+    try:
+        body = ledger.migrate(body)
+        ledger.validate(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     body.id = portfolio_id
     body.owner = user
     body.updated_at = datetime.utcnow().isoformat()

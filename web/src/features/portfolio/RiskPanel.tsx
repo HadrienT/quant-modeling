@@ -1,120 +1,79 @@
 import type { RiskAggregate } from "@/shared/portfolio";
-import {
-	DeltaBadge,
-	Freshness,
-	Metric,
-	MetricRow,
-	NumberCell,
-} from "@/shared/ui";
+import { NumberCell } from "@/shared/ui";
 import { AllocationChart } from "@/shared/viz";
 
+const GREEKS = ["delta", "gamma", "vega", "theta", "rho"] as const;
+const SYMBOL = { delta: "Δ", gamma: "Γ", vega: "Vega", theta: "Θ", rho: "ρ" };
+
 /**
- * Aggregated risk (WP 09 §4). Greeks are grouped PER UNDERLYING — summing delta
- * across AAPL and oil is a number with no meaning (pitfalls). positions_priced /
- * total is shown so a partial aggregate says so.
+ * Risk per underlying (WP 09 §4). Greeks are grouped PER UNDERLYING —
+ * summing delta across AAPL and oil is a number with no meaning (pitfalls).
+ * Delta is in shares of the underlying: a stock contributes its quantity.
  */
-export function RiskPanel({ risk }: { risk: RiskAggregate }) {
-	if (risk.pricedCount === 0) {
-		return (
-			<p className="text-sm text-ink-muted">
-				No positions priced yet — run "Price all positions".
-			</p>
-		);
-	}
+export function RiskPanel({
+	risk,
+	base,
+}: {
+	risk: RiskAggregate;
+	base: string;
+}) {
+	if (risk.valuedCount === 0) return null;
+	const gross = risk.byUnderlying.reduce(
+		(s, g) => s + Math.abs(g.marketValue),
+		0,
+	);
 
 	return (
 		<div className="flex flex-col gap-4">
-			<MetricRow>
-				<Metric
-					label="Total NPV"
-					value={<NumberCell value={risk.totalNpv} magnitude="price" />}
-				/>
-				<Metric
-					label="Total P&L"
-					value={<DeltaBadge value={risk.totalPnl} magnitude="price" />}
-				/>
-				<Metric
-					label="Positions priced"
-					value={`${risk.pricedCount} / ${risk.totalCount}`}
-					footnote={
-						risk.pricedCount < risk.totalCount
-							? "aggregate covers a subset"
-							: undefined
-					}
-				/>
-				<Metric label="Underlyings" value={String(risk.byUnderlying.length)} />
-				<Metric
-					label="Oldest price"
-					value={
-						risk.oldestPricedAt ? (
-							<Freshness at={risk.oldestPricedAt} label="" />
-						) : (
-							"—"
-						)
-					}
-				/>
-			</MetricRow>
-
+			{risk.valuedCount < risk.openCount && (
+				<p className="text-xs text-warning">
+					{risk.valuedCount} of {risk.openCount} open positions have a mark: the
+					aggregate covers a subset.
+				</p>
+			)}
 			<div className="overflow-x-auto rounded-md border border-hairline bg-surface">
 				<table className="w-full text-xs">
 					<thead>
 						<tr className="text-2xs text-ink-muted uppercase">
-							{[
-								"Underlying",
-								"NPV",
-								"P&L",
-								"Δ",
-								"Γ",
-								"Vega",
-								"Θ",
-								"ρ",
-								"MC ±",
-							].map((h) => (
-								<th key={h} className="p-2 text-right first:text-left">
-									{h}
+							<th className="p-2 text-left">Underlying</th>
+							<th className="p-2 text-right">Market value ({base})</th>
+							<th className="p-2 text-right">Unrealised ({base})</th>
+							{GREEKS.map((g) => (
+								<th key={g} className="p-2 text-right">
+									{SYMBOL[g]}
 								</th>
 							))}
 						</tr>
 					</thead>
-					<tbody className="font-mono tabular-nums">
+					<tbody>
 						{risk.byUnderlying.map((g) => (
 							<tr key={g.underlying} className="border-t border-hairline">
 								<td className="p-2 text-left text-ink">{g.underlying}</td>
 								<td className="p-2 text-right">
-									<NumberCell value={g.npv} magnitude="price" />
+									<NumberCell value={g.marketValue} className="text-xs" />
 								</td>
 								<td className="p-2 text-right">
-									<NumberCell value={g.pnl} magnitude="price" signed />
+									<NumberCell value={g.unrealised} signed className="text-xs" />
 								</td>
-								<td className="p-2 text-right">
-									<NumberCell value={g.delta} magnitude="greek" />
-								</td>
-								<td className="p-2 text-right">
-									<NumberCell value={g.gamma} magnitude="greek" />
-								</td>
-								<td className="p-2 text-right">
-									<NumberCell value={g.vega} magnitude="greek" />
-								</td>
-								<td className="p-2 text-right">
-									<NumberCell value={g.theta} magnitude="greek" />
-								</td>
-								<td className="p-2 text-right">
-									<NumberCell value={g.rho} magnitude="greek" />
-								</td>
-								<td className="p-2 text-right text-ink-muted">
-									{g.mcStdError > 0 ? g.mcStdError.toPrecision(2) : "—"}
-								</td>
+								{GREEKS.map((k) => (
+									<td key={k} className="p-2 text-right">
+										<NumberCell
+											value={g[k]}
+											magnitude="greek"
+											className="text-xs"
+										/>
+									</td>
+								))}
 							</tr>
 						))}
 					</tbody>
 				</table>
 			</div>
-
 			<AllocationChart
-				title="NPV concentration by underlying"
+				title="Gross exposure by underlying"
 				rows={risk.byUnderlying.map((g) => ({
 					label: g.underlying,
-					weight: Math.abs(g.npv) / (Math.abs(risk.totalNpv) || 1),
+					weight: Math.abs(g.marketValue) / (gross || 1),
 				}))}
 			/>
 		</div>

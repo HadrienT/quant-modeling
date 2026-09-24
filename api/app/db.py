@@ -307,6 +307,45 @@ def rates_history(table: str, series_id: str, since: date) -> List[Tuple[date, f
         return [(d, float(v)) for d, v in cur.fetchall()]
 
 
+def rates_curve_history(
+    table: str, series_ids: Sequence[str], since: date
+) -> List[Tuple[date, dict]]:
+    """Every date since `since` on which ALL the curve's series have a value,
+    with those values — one complete market date per curve, as
+    rates_curve_snapshot, but for the whole window (daily revaluation)."""
+    relation = RATE_TABLES[table]
+    ids = list(series_ids)
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT date, series_id, value FROM {relation} "
+            "WHERE series_id = ANY(%s) AND value IS NOT NULL AND date >= %s "
+            "ORDER BY date",
+            (ids, since),
+        )
+        rows = cur.fetchall()
+    by_date: dict = {}
+    for d, sid, v in rows:
+        by_date.setdefault(d, {})[sid] = float(v)
+    n = len(set(ids))
+    return [(d, vals) for d, vals in sorted(by_date.items()) if len(vals) == n]
+
+
+def dividend_yield_history(ticker: str, since: date) -> List[Tuple[date, float]]:
+    """(date, trailing yield) rows since `since` — plus the last one before it,
+    so an on-or-before lookup at the window's start has a value."""
+    with _cursor() as cur:
+        cur.execute(
+            "(SELECT date, trailing_yield FROM prices.dividend_yields "
+            " WHERE ticker = %s AND date < %s AND trailing_yield IS NOT NULL "
+            " ORDER BY date DESC LIMIT 1) UNION ALL "
+            "(SELECT date, trailing_yield FROM prices.dividend_yields "
+            " WHERE ticker = %s AND date >= %s AND trailing_yield IS NOT NULL) "
+            "ORDER BY 1",
+            (ticker.upper(), since, ticker.upper(), since),
+        )
+        return [(d, float(v)) for d, v in cur.fetchall()]
+
+
 # ── fx.ecb_reference_rates (units of currency per EUR) ───────────────────────
 
 

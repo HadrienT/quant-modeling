@@ -1,50 +1,49 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Download, Plus, Upload } from "lucide-react";
-import type { Portfolio, Position } from "@/shared/api";
-import { usePricePortfolio } from "@/shared/api";
-import { aggregateRisk } from "@/shared/portfolio";
-import { Badge, Button, Input, toast } from "@/shared/ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
+import type { Portfolio } from "@/shared/api";
+import { usePortfolioSnapshot } from "@/shared/api";
+import { type Ledger, bookTrade, deleteTrade } from "@/shared/portfolio";
+import { Badge, Button, toast } from "@/shared/ui";
 import { EmptyState, ErrorState, TableSkeleton } from "@/shared/ui/states";
 import { useMe } from "@/shared/session";
-import { AddPosition } from "./AddPosition";
-import { PositionsTable } from "./PositionsTable";
-import { RiskPanel } from "./RiskPanel";
 import { MigrationBanner } from "./MigrationBanner";
+import { PnlSummary } from "./PnlSummary";
+import { PortfolioMethodology } from "./PortfolioMethodology";
+import { PortfolioTabs } from "./PortfolioTabs";
+import { PortfolioToolbar } from "./PortfolioToolbar";
+import { TradeForm, type TradePreset } from "./TradeForm";
 import { useRepository } from "./useRepository";
 
-/** Portfolio & risk (WP 09). No product-catalog file of its own — reuses shared/products. */
+/**
+ * Portfolio (WP 09): a journal of trades, the positions it leaves, marked
+ * to market every day. Stocks and derivatives alike; selling more than is
+ * held opens a short. Valued server-side from the ledger, wherever the
+ * portfolio is kept (this device or the account).
+ */
 export default function PortfolioPage() {
 	const repo = useRepository();
 	const me = useMe();
+	const qc = useQueryClient();
 	const search = useSearch({ from: "/portfolio" });
 	const navigate = useNavigate({ from: "/portfolio" });
-	const [adding, setAdding] = useState(false);
+	const [trading, setTrading] = useState<TradePreset | "new" | null>(null);
 
 	const list = useQuery({
 		queryKey: ["portfolio", "list", repo.kind],
 		queryFn: () => repo.list(),
 	});
-
 	const selectedId = search.id ?? list.data?.[0]?.id ?? null;
-
+	const detailKey = ["portfolio", "detail", repo.kind, selectedId];
 	const detail = useQuery({
-		queryKey: ["portfolio", "detail", repo.kind, selectedId],
+		queryKey: detailKey,
 		enabled: Boolean(selectedId),
 		queryFn: () => repo.get(selectedId!),
 	});
-
-	const price = usePricePortfolio();
-
 	const pf = detail.data;
-	const positions = useMemo(() => pf?.positions ?? [], [pf]);
-	const risk = useMemo(() => aggregateRisk(positions), [positions]);
-
-	const refresh = useCallback(() => {
-		void list.refetch();
-		void detail.refetch();
-	}, [list, detail]);
+	const snapshot = usePortfolioSnapshot(pf);
+	const snap = snapshot.data;
 
 	useEffect(() => {
 		if (!search.id && list.data?.[0]) {
@@ -52,41 +51,21 @@ export default function PortfolioPage() {
 		}
 	}, [search.id, list.data, navigate]);
 
-	async function savePositions(next: Position[]) {
+	async function save(ledger: Ledger) {
 		if (!pf) return;
-		await repo.putPositions(pf.id, next);
-		refresh();
+		try {
+			const saved = await repo.putLedger(pf.id, ledger);
+			qc.setQueryData(detailKey, saved);
+			void list.refetch();
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Could not save the trade");
+		}
 	}
 
-	function exportJson() {
-		if (!pf) return;
-		const blob = new Blob([JSON.stringify(pf, null, 2)], {
-			type: "application/json",
-		});
-		const a = document.createElement("a");
-		a.href = URL.createObjectURL(blob);
-		a.download = `${pf.name}.json`;
-		a.click();
-	}
-
-	function exportCsv() {
-		if (!pf) return;
-		const rows = [
-			["instrument", "direction", "quantity", "entry", "npv", "engine"],
-			...positions.map((p) => [
-				p.label,
-				p.direction,
-				p.quantity,
-				p.entry_price,
-				p.result?.npv ?? "",
-				p.result?.engine ?? "",
-			]),
-		];
-		const csv = rows.map((r) => r.join(",")).join("\n");
-		const a = document.createElement("a");
-		a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-		a.download = `${pf.name}.csv`;
-		a.click();
+	async function create() {
+		const created = await repo.create("New portfolio");
+		navigate({ search: () => ({ id: created.id }) });
+		void list.refetch();
 	}
 
 	async function importJson(file: File) {
@@ -94,12 +73,14 @@ export default function PortfolioPage() {
 			const parsed = JSON.parse(await file.text()) as Portfolio;
 			const created = await repo.importPortfolio(parsed);
 			navigate({ search: () => ({ id: created.id }) });
-			refresh();
+			void list.refetch();
 			toast.success(`Imported "${created.name}"`);
 		} catch {
 			toast.error("Not a valid portfolio JSON file");
 		}
 	}
+
+	const hasTrades = (pf?.transactions?.length ?? 0) > 0;
 
 	return (
 		<div className="mx-auto flex max-w-[1400px] flex-col gap-4">
@@ -110,49 +91,21 @@ export default function PortfolioPage() {
 						{repo.kind === "server" ? "server" : "this device only"}
 					</Badge>
 				</div>
-				<div className="flex items-center gap-1.5">
-					<select
-						className="h-8 rounded-sm border border-hairline bg-surface px-2 text-xs text-ink"
-						value={selectedId ?? ""}
-						onChange={(e) =>
-							navigate({ search: () => ({ id: e.target.value }) })
-						}
-					>
-						{(list.data ?? []).map((p) => (
-							<option key={p.id} value={p.id}>
-								{p.name} ({p.n_positions})
-							</option>
-						))}
-					</select>
-					<Button
-						size="sm"
-						variant="ghost"
-						onClick={async () => {
-							const created = await repo.create("New portfolio");
-							navigate({ search: () => ({ id: created.id }) });
-							refresh();
-						}}
-					>
-						<Plus className="size-3.5" /> New
-					</Button>
-					<Button size="sm" variant="ghost" onClick={exportJson} disabled={!pf}>
-						<Download className="size-3.5" /> JSON
-					</Button>
-					<Button size="sm" variant="ghost" onClick={exportCsv} disabled={!pf}>
-						<Download className="size-3.5" /> CSV
-					</Button>
-					<label className="inline-flex cursor-pointer items-center gap-1 rounded-sm px-2 py-1 text-xs text-ink-secondary hover:text-ink">
-						<Upload className="size-3.5" /> Import
-						<Input
-							type="file"
-							accept="application/json"
-							className="hidden"
-							onChange={(e) =>
-								e.target.files?.[0] && importJson(e.target.files[0])
-							}
-						/>
-					</label>
-				</div>
+				<PortfolioToolbar
+					list={list.data ?? []}
+					pf={pf}
+					onSelect={(id) => navigate({ search: () => ({ id }) })}
+					onCreate={() => void create()}
+					onBaseCurrency={(c) =>
+						pf &&
+						void save({
+							instruments: pf.instruments ?? [],
+							transactions: pf.transactions ?? [],
+							base_currency: c,
+						})
+					}
+					onImport={(f) => void importJson(f)}
+				/>
 			</header>
 
 			{repo.kind === "local" && !me.data && <MigrationBanner />}
@@ -165,60 +118,64 @@ export default function PortfolioPage() {
 				<EmptyState
 					kind="nothing-yet"
 					title="No portfolio yet"
-					description="Create one to start tracking positions and risk."
+					description="Create one, then book trades: its positions and P&L follow."
 					action={
-						<Button
-							size="sm"
-							onClick={async () => {
-								const created = await repo.create("New portfolio");
-								navigate({ search: () => ({ id: created.id }) });
-								refresh();
-							}}
-						>
+						<Button size="sm" onClick={() => void create()}>
 							Create portfolio
 						</Button>
 					}
 				/>
 			) : (
 				<>
-					<div className="flex items-center gap-2">
+					{snapshot.error ? (
+						<ErrorState
+							error={snapshot.error}
+							onRetry={() => snapshot.refetch()}
+						/>
+					) : snap ? (
+						<PnlSummary snap={snap} />
+					) : (
+						hasTrades && <TableSkeleton />
+					)}
+
+					<div>
 						<Button
 							size="sm"
-							onClick={() =>
-								price.mutate(pf.id, {
-									onSuccess: () => refresh(),
-								})
-							}
-							disabled={price.isPending || repo.kind === "local"}
+							onClick={() => setTrading(trading ? null : "new")}
 						>
-							{price.isPending ? "Pricing…" : "Price all positions"}
-						</Button>
-						{repo.kind === "local" && (
-							<span className="text-2xs text-ink-muted">
-								Batch pricing needs a server portfolio.
-							</span>
-						)}
-						<Button
-							size="sm"
-							variant="secondary"
-							onClick={() => setAdding((v) => !v)}
-						>
-							<Plus className="size-3.5" /> Add position
+							<Plus className="size-3.5" /> New trade
 						</Button>
 					</div>
-
-					{adding && (
-						<AddPosition
-							onAdd={(pos) => {
-								void savePositions([...positions, pos]);
-								setAdding(false);
+					{trading && (
+						<TradeForm
+							key={
+								trading === "new"
+									? "new"
+									: `${trading.instrument.id}-${trading.side}`
+							}
+							preset={trading === "new" ? undefined : trading}
+							onCancel={() => setTrading(null)}
+							onBook={(instrument, draft) => {
+								void save(bookTrade(pf, instrument, draft));
+								setTrading(null);
 							}}
 						/>
 					)}
 
-					<RiskPanel risk={risk} />
+					{!hasTrades ? (
+						<p className="text-sm text-ink-muted">
+							No trades yet. Book a purchase (or a sale, to open a short).
+						</p>
+					) : (
+						<PortfolioTabs
+							pf={pf}
+							snap={snap}
+							onTrade={setTrading}
+							onDelete={(id) => void save(deleteTrade(pf, id))}
+						/>
+					)}
 
-					<PositionsTable positions={positions} onChange={savePositions} />
+					{snap && <PortfolioMethodology sections={snap.methodology} />}
 				</>
 			)}
 		</div>

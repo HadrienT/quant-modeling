@@ -1,92 +1,167 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Position } from "@/shared/api";
+import type { Instrument, Portfolio, PositionMark } from "@/shared/api";
+import {
+	bookTrade,
+	deleteTrade,
+	equityInstrument,
+	netQuantities,
+} from "./ledger";
 import { aggregateRisk } from "./risk";
 import { localRepository, readLocalPortfolios } from "./repository";
 
-function pos(over: Partial<Position>): Position {
+function mark(over: Partial<PositionMark>): PositionMark {
 	return {
-		id: over.id ?? Math.random().toString(36).slice(2),
-		label: "AAPL call",
-		product_type: "vanilla" as never,
-		category: "vanilla" as never,
-		direction: "long",
+		instrument_id: "EQ:AAPL",
+		label: "AAPL",
+		kind: "equity",
+		currency: "USD",
 		quantity: 10,
-		entry_price: 5,
-		parameters: {},
-		result: null,
+		average_cost: 100,
+		mark: 110,
+		market_value: 1100,
+		market_value_base: 1000,
+		unrealised: 100,
+		unrealised_base: 90,
+		realised_base: 0,
+		fees_base: 0,
+		day_pnl_base: 5,
+		fx_rate: 0.9,
+		inputs: [],
+		greeks: { delta: 1 },
+		note: null,
 		...over,
-	} as Position;
+	};
 }
 
+const call: Instrument = {
+	id: "c1",
+	label: "AAPL call",
+	spec: {
+		kind: "derivative",
+		product: "vanilla",
+		params: {},
+		underlying: "AAPL",
+		expiry: "2027-01-15",
+		currency: "USD",
+	},
+};
+
 describe("aggregateRisk", () => {
-	it("groups greeks per underlying — never sums across names", () => {
-		const r = aggregateRisk([
-			pos({
-				label: "AAPL call",
-				result: {
-					npv: 100,
-					unit_price: 10,
+	it("groups a stock and its options by underlying — never across names", () => {
+		const r = aggregateRisk(
+			[
+				mark({}),
+				mark({
+					instrument_id: "c1",
+					kind: "derivative",
+					quantity: -2,
 					greeks: { delta: 0.5 },
-					engine: "analytic",
-					diagnostics: "",
-					mc_std_error: 0,
-					priced_at: "2026-02-01T10:00:00Z",
-				},
-			}),
-			pos({
-				label: "XOM put",
-				result: {
-					npv: 40,
-					unit_price: 4,
-					greeks: { delta: -0.3 },
-					engine: "analytic",
-					diagnostics: "",
-					mc_std_error: 0,
-					priced_at: "2026-01-15T10:00:00Z",
-				},
-			}),
-		]);
-		expect(r.byUnderlying).toHaveLength(2);
-		expect(r.totalNpv).toBe(140);
-		expect(r.oldestPricedAt).toBe("2026-01-15T10:00:00Z");
+				}),
+				mark({ instrument_id: "EQ:XOM", label: "XOM", market_value_base: 400 }),
+			],
+			[equityInstrument("AAPL"), call, equityInstrument("XOM")],
+		);
+		expect(r.byUnderlying.map((g) => g.underlying)).toEqual(["AAPL", "XOM"]);
+		// 10 shares, short 2 calls of delta 0.5: 9 shares' worth
+		expect(r.byUnderlying[0]!.delta).toBeCloseTo(9);
 	});
 
-	it("reports how many positions the aggregate actually covers", () => {
-		const r = aggregateRisk([
-			pos({ result: null }),
-			pos({
-				result: {
-					npv: 10,
-					unit_price: 1,
-					greeks: {},
-					engine: "mc",
-					diagnostics: "",
-					mc_std_error: 0.5,
-				},
+	it("says how many open positions the aggregate covers", () => {
+		const r = aggregateRisk(
+			[
+				mark({}),
+				mark({ instrument_id: "c1", market_value_base: null }),
+				mark({ quantity: 0, instrument_id: "x" }),
+			],
+			[equityInstrument("AAPL"), call],
+		);
+		expect(r.valuedCount).toBe(1);
+		expect(r.openCount).toBe(2);
+	});
+});
+
+describe("ledger", () => {
+	const empty = {
+		id: "p",
+		name: "p",
+		owner: "",
+		version: 2,
+		base_currency: "EUR",
+	} as Portfolio;
+	const aapl = equityInstrument("aapl");
+
+	it("a sale is a negative quantity; one instrument per ticker", () => {
+		let pf = {
+			...empty,
+			...bookTrade(empty, aapl, {
+				instrument_id: aapl.id,
+				trade_date: "2026-01-02",
+				quantity: 10,
+				price: 100,
+				fees: 0,
+				note: "",
 			}),
-		]);
-		expect(r.pricedCount).toBe(1);
-		expect(r.totalCount).toBe(2);
+		};
+		pf = {
+			...pf,
+			...bookTrade(pf, equityInstrument("AAPL"), {
+				instrument_id: aapl.id,
+				trade_date: "2026-02-02",
+				quantity: -15,
+				price: 110,
+				fees: 1,
+				note: "",
+			}),
+		};
+		expect(pf.instruments).toHaveLength(1);
+		expect(netQuantities(pf.transactions!).get("EQ:AAPL")).toBe(-5); // now short
+	});
+
+	it("deleting the last trade of an instrument drops the instrument", () => {
+		const pf = {
+			...empty,
+			...bookTrade(empty, aapl, {
+				instrument_id: aapl.id,
+				trade_date: "2026-01-02",
+				quantity: 1,
+				price: 1,
+				fees: 0,
+				note: "",
+			}),
+		};
+		const after = deleteTrade(pf, pf.transactions![0]!.id);
+		expect(after.transactions).toHaveLength(0);
+		expect(after.instruments).toHaveLength(0);
 	});
 });
 
 describe("localRepository", () => {
 	beforeEach(() => localStorage.clear());
 
-	it("round-trips a portfolio through create → putPositions → get", async () => {
+	it("round-trips a ledger through create → putLedger → get", async () => {
 		const pf = await localRepository.create("book");
-		await localRepository.putPositions(pf.id, [pos({ label: "x" })]);
+		const aapl = equityInstrument("AAPL");
+		await localRepository.putLedger(
+			pf.id,
+			bookTrade(pf, aapl, {
+				instrument_id: aapl.id,
+				trade_date: "2026-01-02",
+				quantity: 3,
+				price: 5,
+				fees: 0,
+				note: "",
+			}),
+		);
 		const back = await localRepository.get(pf.id);
-		expect(back?.positions).toHaveLength(1);
+		expect(back?.transactions).toHaveLength(1);
+		expect(back?.version).toBe(2);
+		expect((await localRepository.list())[0]!.n_positions).toBe(1);
 		expect(readLocalPortfolios()).toHaveLength(1);
 	});
 
 	it("importPortfolio gives the copy a new id", async () => {
 		const pf = await localRepository.create("orig");
-		const copy = await localRepository.importPortfolio({
-			...pf,
-			positions: [],
-		});
+		const copy = await localRepository.importPortfolio(pf);
 		expect(copy.id).not.toBe(pf.id);
 	});
 });

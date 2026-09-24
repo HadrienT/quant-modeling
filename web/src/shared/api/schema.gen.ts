@@ -251,6 +251,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio-valuation/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ticker Close
+         * @description The close on or before a date — the default price of a trade form.
+         */
+        get: operations["ticker_close"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio-valuation/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Portfolio History */
+        post: operations["portfolio_history"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio-valuation/migrate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Portfolio Migrate */
+        post: operations["portfolio_migrate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio-valuation/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Portfolio Snapshot */
+        post: operations["portfolio_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolios": {
         parameters: {
             query?: never;
@@ -1467,6 +1538,20 @@ export interface components {
             /** Values */
             values: (number | null)[][];
         };
+        /** CloseResponse */
+        CloseResponse: {
+            /** Close */
+            close: number;
+            /** Currency */
+            currency: string;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Ticker */
+            ticker: string;
+        };
         /** CodeBuild */
         CodeBuild: {
             /** Api Sha */
@@ -1643,6 +1728,42 @@ export interface components {
             ticker: string;
         };
         /**
+         * DerivativeSpec
+         * @description A derivative priced by the pricing registry (valuation.PRODUCTS).
+         *
+         *     `params` is the pricing request at trade time (decimals, as the API takes
+         *     them). At each valuation date its market fields are replaced by that
+         *     day's market (portfolio_valuation.py): spot from `underlying`'s close, the
+         *     time left to `expiry`, the rate from the currency's curve, the vol from
+         *     the underlying's history — whatever the stored market allows.
+         */
+        DerivativeSpec: {
+            /**
+             * Currency
+             * @default USD
+             * @enum {string}
+             */
+            currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /**
+             * Expiry
+             * Format: date
+             */
+            expiry: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "derivative";
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Product */
+            product: string;
+            /** Underlying */
+            underlying?: string | null;
+        };
+        /**
          * DigitalPayoffKind
          * @enum {string}
          */
@@ -1734,6 +1855,20 @@ export interface components {
          * @enum {string}
          */
         EngineType: "analytic" | "mc" | "binomial" | "trinomial" | "pde";
+        /**
+         * EquitySpec
+         * @description A listed share or index, marked at its stored close (any market of the
+         *     Market page). Its currency is the listing's (prices.equity_universe).
+         */
+        EquitySpec: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "equity";
+            /** Ticker */
+            ticker: string;
+        };
         /** FXForwardRequest */
         FXForwardRequest: {
             /** Maturity */
@@ -2046,6 +2181,67 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** HistoryPointView */
+        HistoryPointView: {
+            /** Cumulative Pnl */
+            cumulative_pnl: number | null;
+            /** Daily Pnl */
+            daily_pnl: number | null;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Market Value */
+            market_value: number | null;
+        };
+        /** HistoryRequest */
+        HistoryRequest: {
+            /** End */
+            end?: string | null;
+            portfolio: components["schemas"]["Portfolio-Input"];
+            /**
+             * Window
+             * @default 3M
+             * @enum {string}
+             */
+            window: "1M" | "3M" | "6M" | "1Y" | "ALL";
+        };
+        /** HistoryResponse */
+        HistoryResponse: {
+            /** Base Currency */
+            base_currency: string;
+            /** Points */
+            points: components["schemas"]["HistoryPointView"][];
+            /** Warnings */
+            warnings: string[];
+        };
+        /** InputView */
+        InputView: {
+            /** As Of */
+            as_of: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "observed" | "stale" | "proxied" | "default";
+            /** Value */
+            value: number | null;
+        };
+        /** Instrument */
+        Instrument: {
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Spec */
+            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"];
+        };
         /**
          * LocalVolResponse
          * @description Pricing result from the Dupire local-vol MC engine.
@@ -2207,6 +2403,10 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** MigrateRequest */
+        MigrateRequest: {
+            portfolio: components["schemas"]["Portfolio-Input"];
+        };
         /**
          * ModelWarning
          * @description Something the script's price depends on that the chosen model cannot
@@ -2268,13 +2468,24 @@ export interface components {
         };
         /**
          * Portfolio
-         * @description Full portfolio model stored as JSON in GCS.
+         * @description A portfolio, stored as JSON (storage.py). Version 2 is a ledger:
+         *     `instruments` and `transactions`; positions are derived from them
+         *     (portfolio_ledger.py). Version 1 held `positions` directly and is migrated
+         *     on read.
          */
         "Portfolio-Input": {
+            /**
+             * Base Currency
+             * @default EUR
+             * @enum {string}
+             */
+            base_currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
             /** Created At */
             created_at?: string;
             /** Id */
             id: string;
+            /** Instruments */
+            instruments?: components["schemas"]["Instrument"][];
             /**
              * Name
              * @default Untitled Portfolio
@@ -2287,18 +2498,36 @@ export interface components {
             owner: string;
             /** Positions */
             positions?: components["schemas"]["Position-Input"][];
+            /** Transactions */
+            transactions?: components["schemas"]["Trade"][];
             /** Updated At */
             updated_at?: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
         };
         /**
          * Portfolio
-         * @description Full portfolio model stored as JSON in GCS.
+         * @description A portfolio, stored as JSON (storage.py). Version 2 is a ledger:
+         *     `instruments` and `transactions`; positions are derived from them
+         *     (portfolio_ledger.py). Version 1 held `positions` directly and is migrated
+         *     on read.
          */
         "Portfolio-Output": {
+            /**
+             * Base Currency
+             * @default EUR
+             * @enum {string}
+             */
+            base_currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
             /** Created At */
             created_at?: string;
             /** Id */
             id: string;
+            /** Instruments */
+            instruments?: components["schemas"]["Instrument"][];
             /**
              * Name
              * @default Untitled Portfolio
@@ -2311,8 +2540,15 @@ export interface components {
             owner: string;
             /** Positions */
             positions?: components["schemas"]["Position-Output"][];
+            /** Transactions */
+            transactions?: components["schemas"]["Trade"][];
             /** Updated At */
             updated_at?: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
         };
         /** PortfolioPoint */
         PortfolioPoint: {
@@ -2365,10 +2601,16 @@ export interface components {
         };
         /**
          * Position
-         * @description A single position in a portfolio.
+         * @description A position of the portfolios before the ledger (version 1) — read only to
+         *     be migrated (portfolio_ledger.migrate). product_type was spelled two ways
+         *     (this enum, or the front's catalog keys), hence a plain string.
          */
         "Position-Input": {
-            category: components["schemas"]["ProductCategory"];
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /**
              * Direction
              * @default long
@@ -2390,7 +2632,8 @@ export interface components {
             parameters?: {
                 [key: string]: unknown;
             };
-            product_type: components["schemas"]["ProductType"];
+            /** Product Type */
+            product_type: string;
             /**
              * Quantity
              * @default 1
@@ -2400,10 +2643,16 @@ export interface components {
         };
         /**
          * Position
-         * @description A single position in a portfolio.
+         * @description A position of the portfolios before the ledger (version 1) — read only to
+         *     be migrated (portfolio_ledger.migrate). product_type was spelled two ways
+         *     (this enum, or the front's catalog keys), hence a plain string.
          */
         "Position-Output": {
-            category: components["schemas"]["ProductCategory"];
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /**
              * Direction
              * @default long
@@ -2425,7 +2674,8 @@ export interface components {
             parameters?: {
                 [key: string]: unknown;
             };
-            product_type: components["schemas"]["ProductType"];
+            /** Product Type */
+            product_type: string;
             /**
              * Quantity
              * @default 1
@@ -2445,6 +2695,53 @@ export interface components {
             theta?: number | null;
             /** Vega */
             vega?: number | null;
+        };
+        /** PositionMark */
+        PositionMark: {
+            /** Average Cost */
+            average_cost: number;
+            /** Currency */
+            currency: string;
+            /** Day Pnl Base */
+            day_pnl_base: number | null;
+            /** Fees Base */
+            fees_base: number;
+            /**
+             * Fx Rate
+             * @description Base units per instrument-currency unit.
+             */
+            fx_rate: number | null;
+            /** Greeks */
+            greeks: {
+                [key: string]: number | null;
+            };
+            /** Inputs */
+            inputs: components["schemas"]["InputView"][];
+            /** Instrument Id */
+            instrument_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "equity" | "derivative";
+            /** Label */
+            label: string;
+            /** Mark */
+            mark: number | null;
+            /** Market Value */
+            market_value: number | null;
+            /** Market Value Base */
+            market_value_base: number | null;
+            /** Note */
+            note: string | null;
+            /** Quantity */
+            quantity: number;
+            /** Realised Base */
+            realised_base: number;
+            /** Unrealised */
+            unrealised: number | null;
+            /** Unrealised Base */
+            unrealised_base: number | null;
         };
         /**
          * PositionResult
@@ -2500,16 +2797,6 @@ export interface components {
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];
         };
-        /**
-         * ProductCategory
-         * @enum {string}
-         */
-        ProductCategory: "vanilla" | "exotic" | "fixed-income" | "structured" | "volatility" | "fx" | "commodity" | "rainbow";
-        /**
-         * ProductType
-         * @enum {string}
-         */
-        ProductType: "european-call" | "european-put" | "american-call" | "american-put" | "asian" | "barrier" | "digital" | "lookback" | "basket" | "zero-coupon-bond" | "fixed-rate-bond" | "future" | "autocall" | "mountain" | "variance-swap" | "volatility-swap" | "dispersion-swap" | "fx-forward" | "fx-option" | "commodity-forward" | "commodity-option" | "rainbow";
         /** Providers */
         Providers: {
             /** Google */
@@ -3052,6 +3339,40 @@ export interface components {
             /** Time Grid */
             time_grid: number[];
         };
+        /** SnapshotRequest */
+        SnapshotRequest: {
+            /** As Of */
+            as_of?: string | null;
+            portfolio: components["schemas"]["Portfolio-Input"];
+        };
+        /** SnapshotResponse */
+        SnapshotResponse: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Base Currency */
+            base_currency: string;
+            /** Day Pnl */
+            day_pnl: number | null;
+            /** Fees */
+            fees: number;
+            /** Market Value */
+            market_value: number;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /** Positions */
+            positions: components["schemas"]["PositionMark"][];
+            /** Realised */
+            realised: number;
+            /** Total Pnl */
+            total_pnl: number;
+            /** Unrealised */
+            unrealised: number;
+            /** Warnings */
+            warnings: string[];
+        };
         /**
          * StressBump
          * @description A single scenario bump.
@@ -3115,6 +3436,38 @@ export interface components {
             members: components["schemas"]["TickerInfo"][];
             /** Tickers */
             tickers: string[];
+        };
+        /**
+         * Trade
+         * @description A buy (quantity > 0) or a sell (quantity < 0) at a unit price in the
+         *     instrument's currency. Fees are a cost (>= 0).
+         */
+        Trade: {
+            /** Created At */
+            created_at?: string;
+            /**
+             * Fees
+             * @default 0
+             */
+            fees: number;
+            /** Id */
+            id: string;
+            /** Instrument Id */
+            instrument_id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Price */
+            price: number;
+            /** Quantity */
+            quantity: number;
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
         };
         /** UserInfo */
         UserInfo: {
@@ -3774,6 +4127,137 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocalVolSurfaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ticker_close: {
+        parameters: {
+            query: {
+                ticker: string;
+                date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HistoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_migrate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MigrateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portfolio-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotResponse"];
                 };
             };
             /** @description Validation Error */

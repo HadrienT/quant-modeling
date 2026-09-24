@@ -381,38 +381,6 @@ export function usePortfolio(id: string | null) {
 	});
 }
 
-/** Batch-price a portfolio; invalidates its positions, risk and VaR — not the market. */
-export function usePricePortfolio() {
-	const qc = useQueryClient();
-	return useMutation({
-		mutationFn: async (portfolioId: string) => {
-			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
-			try {
-				return await unwrap(
-					api.POST("/api/portfolios/{portfolio_id}/price", {
-						params: { path: { portfolio_id: portfolioId } },
-						signal: s,
-					}),
-				);
-			} finally {
-				s.cleanup();
-			}
-		},
-		onSuccess: (_data, portfolioId) => {
-			void qc.invalidateQueries({
-				queryKey: queryKeys.portfolio.detail(portfolioId),
-			});
-			void qc.invalidateQueries({
-				queryKey: queryKeys.portfolio.risk(portfolioId),
-			});
-			void qc.invalidateQueries({
-				queryKey: ["portfolio", "var", portfolioId],
-			});
-			void qc.invalidateQueries({ queryKey: queryKeys.portfolio.list() });
-		},
-	});
-}
-
 /* ── Backtest ──────────────────────────────────────────────────────────── */
 export function useRunBacktest() {
 	const qc = useQueryClient();
