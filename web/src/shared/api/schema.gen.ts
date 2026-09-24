@@ -467,6 +467,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/fx/correlation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fx Correlation */
+        get: operations["fx_correlation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/fx/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fx History */
+        get: operations["fx_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/fx/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fx Overview */
+        get: operations["fx_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/market/markets": {
         parameters: {
             query?: never;
@@ -1752,6 +1803,146 @@ export interface components {
             spot: number;
             /** Strike */
             strike: number;
+        };
+        /** FxCorrelationResponse */
+        FxCorrelationResponse: {
+            /** Asset Vol */
+            asset_vol: number;
+            /**
+             * Base
+             * @enum {string}
+             */
+            base: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Ci High */
+            ci_high: number;
+            /**
+             * Ci Low
+             * @description 95 % confidence interval (Fisher transform).
+             */
+            ci_low: number;
+            /** Correlation */
+            correlation: number;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "weekly" | "daily";
+            /** Fx Vol */
+            fx_vol: number;
+            /**
+             * N
+             * @description Number of common returns.
+             */
+            n: number;
+            /**
+             * Quote
+             * @enum {string}
+             */
+            quote: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Ticker */
+            ticker: string;
+            /**
+             * Window
+             * @enum {string}
+             */
+            window: "1Y" | "3Y" | "5Y";
+        };
+        /** FxForwardPoint */
+        FxForwardPoint: {
+            /**
+             * Forward
+             * @description QUOTE units per BASE.
+             */
+            forward: number;
+            /** Label */
+            label: string;
+            /**
+             * Points
+             * @description Forward − spot, QUOTE units.
+             */
+            points: number;
+            /** Tenor */
+            tenor: number;
+        };
+        /** FxHistoryPoint */
+        FxHistoryPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Rate */
+            rate: number;
+        };
+        /** FxHistoryResponse */
+        FxHistoryResponse: {
+            /**
+             * Base
+             * @enum {string}
+             */
+            base: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Points */
+            points: components["schemas"]["FxHistoryPoint"][];
+            /**
+             * Quote
+             * @enum {string}
+             */
+            quote: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+        };
+        /** FxOverviewResponse */
+        FxOverviewResponse: {
+            /**
+             * Base
+             * @enum {string}
+             */
+            base: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /**
+             * Curve Dates
+             * @default {}
+             */
+            curve_dates: {
+                [key: string]: string;
+            };
+            /** Forwards */
+            forwards?: components["schemas"]["FxForwardPoint"][] | null;
+            /** Forwards Unavailable */
+            forwards_unavailable?: string | null;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /**
+             * Quote
+             * @enum {string}
+             */
+            quote: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /**
+             * Realised Vol
+             * @description Annualised volatility of daily log returns, by window (1Y, 3Y, 5Y).
+             */
+            realised_vol: {
+                [key: string]: number | null;
+            };
+            /**
+             * Spot
+             * @description QUOTE units per BASE (ECB reference rates).
+             */
+            spot: number;
+            /**
+             * Spot Date
+             * Format: date
+             */
+            spot_date: string;
+            /** Warnings */
+            warnings: string[];
         };
         /** GovernmentCurveResponse */
         GovernmentCurveResponse: {
@@ -3971,6 +4162,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    fx_correlation: {
+        parameters: {
+            query: {
+                ticker: string;
+                base?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                quote?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                window?: "1Y" | "3Y" | "5Y";
+                frequency?: "weekly" | "daily";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FxCorrelationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fx_history: {
+        parameters: {
+            query?: {
+                base?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                quote?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                years?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FxHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fx_overview: {
+        parameters: {
+            query?: {
+                base?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                quote?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FxOverviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

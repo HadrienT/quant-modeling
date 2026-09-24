@@ -50,13 +50,15 @@ const marketRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/market",
 	validateSearch: z.object({
-		tab: z.enum(["prices", "vol", "rates"]).default("prices"),
+		tab: z.enum(["prices", "vol", "rates", "fx"]).default("prices"),
 		ticker: z.string().optional(),
 		surface: z.enum(["raw", "cleaned", "localvol"]).optional(),
 		ccy: z.enum(["USD", "EUR", "GBP", "CHF", "JPY"]).optional(),
 		market: z
 			.enum(["SP500", "CAC40", "DAX", "FTSE100", "NIKKEI225"])
 			.optional(),
+		base: z.enum(["USD", "EUR", "GBP", "JPY", "CHF"]).optional(),
+		quote: z.enum(["USD", "EUR", "GBP", "JPY", "CHF"]).optional(),
 	}).parse,
 	component: MarketPage,
 });

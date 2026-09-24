@@ -1736,6 +1736,305 @@
         "title": "FutureRequest",
         "type": "object"
       },
+      "FxCorrelationResponse": {
+        "properties": {
+          "asset_vol": {
+            "title": "Asset Vol",
+            "type": "number"
+          },
+          "base": {
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Base",
+            "type": "string"
+          },
+          "ci_high": {
+            "title": "Ci High",
+            "type": "number"
+          },
+          "ci_low": {
+            "description": "95 % confidence interval (Fisher transform).",
+            "title": "Ci Low",
+            "type": "number"
+          },
+          "correlation": {
+            "title": "Correlation",
+            "type": "number"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "frequency": {
+            "enum": [
+              "weekly",
+              "daily"
+            ],
+            "title": "Frequency",
+            "type": "string"
+          },
+          "fx_vol": {
+            "title": "Fx Vol",
+            "type": "number"
+          },
+          "n": {
+            "description": "Number of common returns.",
+            "title": "N",
+            "type": "integer"
+          },
+          "quote": {
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Quote",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          },
+          "window": {
+            "enum": [
+              "1Y",
+              "3Y",
+              "5Y"
+            ],
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "base",
+          "quote",
+          "window",
+          "frequency",
+          "correlation",
+          "n",
+          "ci_low",
+          "ci_high",
+          "asset_vol",
+          "fx_vol",
+          "start",
+          "end"
+        ],
+        "title": "FxCorrelationResponse",
+        "type": "object"
+      },
+      "FxForwardPoint": {
+        "properties": {
+          "forward": {
+            "description": "QUOTE units per BASE.",
+            "title": "Forward",
+            "type": "number"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "points": {
+            "description": "Forward \u2212 spot, QUOTE units.",
+            "title": "Points",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "tenor",
+          "forward",
+          "points"
+        ],
+        "title": "FxForwardPoint",
+        "type": "object"
+      },
+      "FxHistoryPoint": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "rate"
+        ],
+        "title": "FxHistoryPoint",
+        "type": "object"
+      },
+      "FxHistoryResponse": {
+        "properties": {
+          "base": {
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Base",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/FxHistoryPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "quote": {
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base",
+          "quote",
+          "points"
+        ],
+        "title": "FxHistoryResponse",
+        "type": "object"
+      },
+      "FxOverviewResponse": {
+        "properties": {
+          "base": {
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Base",
+            "type": "string"
+          },
+          "curve_dates": {
+            "additionalProperties": {
+              "format": "date",
+              "type": "string"
+            },
+            "default": {},
+            "title": "Curve Dates",
+            "type": "object"
+          },
+          "forwards": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FxForwardPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwards"
+          },
+          "forwards_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forwards Unavailable"
+          },
+          "methodology": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologySection"
+            },
+            "title": "Methodology",
+            "type": "array"
+          },
+          "quote": {
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Quote",
+            "type": "string"
+          },
+          "realised_vol": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "Annualised volatility of daily log returns, by window (1Y, 3Y, 5Y).",
+            "title": "Realised Vol",
+            "type": "object"
+          },
+          "spot": {
+            "description": "QUOTE units per BASE (ECB reference rates).",
+            "title": "Spot",
+            "type": "number"
+          },
+          "spot_date": {
+            "format": "date",
+            "title": "Spot Date",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "base",
+          "quote",
+          "spot",
+          "spot_date",
+          "realised_vol",
+          "methodology",
+          "warnings"
+        ],
+        "title": "FxOverviewResponse",
+        "type": "object"
+      },
       "GovernmentCurveResponse": {
         "properties": {
           "as_of": {
@@ -6199,6 +6498,250 @@
           }
         },
         "summary": "Health"
+      }
+    },
+    "/market/fx/correlation": {
+      "get": {
+        "operationId": "fx_correlation",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ticker",
+            "required": true,
+            "schema": {
+              "maxLength": 16,
+              "minLength": 1,
+              "title": "Ticker",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "base",
+            "required": false,
+            "schema": {
+              "default": "EUR",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "JPY",
+                "CHF"
+              ],
+              "title": "Base",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quote",
+            "required": false,
+            "schema": {
+              "default": "USD",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "JPY",
+                "CHF"
+              ],
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "default": "3Y",
+              "enum": [
+                "1Y",
+                "3Y",
+                "5Y"
+              ],
+              "title": "Window",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frequency",
+            "required": false,
+            "schema": {
+              "default": "weekly",
+              "enum": [
+                "weekly",
+                "daily"
+              ],
+              "title": "Frequency",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxCorrelationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fx Correlation"
+      }
+    },
+    "/market/fx/history": {
+      "get": {
+        "operationId": "fx_history",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "base",
+            "required": false,
+            "schema": {
+              "default": "EUR",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "JPY",
+                "CHF"
+              ],
+              "title": "Base",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quote",
+            "required": false,
+            "schema": {
+              "default": "USD",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "JPY",
+                "CHF"
+              ],
+              "title": "Quote",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "years",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Years",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fx History"
+      }
+    },
+    "/market/fx/overview": {
+      "get": {
+        "operationId": "fx_overview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "base",
+            "required": false,
+            "schema": {
+              "default": "EUR",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "JPY",
+                "CHF"
+              ],
+              "title": "Base",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quote",
+            "required": false,
+            "schema": {
+              "default": "USD",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "JPY",
+                "CHF"
+              ],
+              "title": "Quote",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fx Overview"
       }
     },
     "/market/markets": {

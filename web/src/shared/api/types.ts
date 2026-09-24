@@ -45,3 +45,7 @@ export type SimulationPathsResponse = Schemas["SimulationPathsResponse"];
 export type SimulationCalibrateRequest = Schemas["SimulationCalibrateRequest"];
 export type SimulationCalibrateResponse =
 	Schemas["SimulationCalibrateResponse"];
+export type FxCurrency = Schemas["FxOverviewResponse"]["base"];
+export type FxOverviewResponse = Schemas["FxOverviewResponse"];
+export type FxHistoryResponse = Schemas["FxHistoryResponse"];
+export type FxCorrelationResponse = Schemas["FxCorrelationResponse"];

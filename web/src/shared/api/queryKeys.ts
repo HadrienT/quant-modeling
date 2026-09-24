@@ -16,6 +16,12 @@ export const queryKeys = {
 		tickers: (market?: string) =>
 			["market", "tickers", market ?? "all"] as const,
 		markets: () => ["market", "markets"] as const,
+		fxOverview: (base: string, quote: string) =>
+			["market", "fx", "overview", base, quote] as const,
+		fxHistory: (base: string, quote: string, years: number) =>
+			["market", "fx", "history", base, quote, years] as const,
+		fxCorrelation: (key: string) =>
+			["market", "fx", "correlation", key] as const,
 		history: (ticker: string, range: string) =>
 			["market", "history", ticker, range] as const,
 		rawIvSurface: (ticker: string) =>
