@@ -4472,6 +4472,17 @@
       },
       "UserInfo": {
         "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
           "email": {
             "anyOf": [
               {
@@ -4482,6 +4493,15 @@
               }
             ],
             "title": "Email"
+          },
+          "provider": {
+            "default": "password",
+            "enum": [
+              "password",
+              "google"
+            ],
+            "title": "Provider",
+            "type": "string"
           },
           "username": {
             "title": "Username",
