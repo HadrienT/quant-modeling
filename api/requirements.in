@@ -12,6 +12,15 @@ requests
 # yfinance stays for option chains only (data-ingest doesn't ingest them yet).
 yfinance
 python-jose[cryptography]
+# Audit trail → quant-platform (blueprint WP 18b): the Kafka producer
+# (librdkafka, Apache 2.0), and the audit database read by the replay endpoint.
+confluent-kafka
+# Telemetry → quant-platform's OTel Collector (WP 18d): OTLP/HTTP export of
+# metrics and traces, FastAPI and psycopg auto-instrumentation.
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-psycopg
 bcrypt
 # Optional cloud storage backend (QM_STORAGE=gcs). Uncomment to enable.
 # google-cloud-storage

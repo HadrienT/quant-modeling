@@ -365,6 +365,66 @@ gratuit et sans rapport avec l'hébergement : seul l'identifiant Google compte.
 
 ---
 
+## §9 — Observabilité et piste d'audit (`~/quant-platform`)
+
+Depuis le lot WP 18b, l'API envoie ses **événements d'audit** (valorisations,
+connexions, replis, accès HTTP, assistant) au Kafka de `quant-platform`, et ses
+**métriques et traces** à son OTel Collector, tous deux par le réseau Docker
+`dataplatform`. C'est le comportement par défaut de `docker-compose.prod.yml` :
+**rien à configurer pour que ça marche**. Conception :
+[`blueprint/wp/18-observability.md`](../blueprint/wp/18-observability.md).
+
+**Si la plateforme est arrêtée, le site marche quand même.** Les événements
+attendent dans le spool (`/app/logs/spool/*.jsonl`, volume `qm_logs`) et
+repartent tout seuls vers Kafka quand il répond (vérifié toutes les 30 s).
+
+### 9.1 — Le replay des valorisations (optionnel)
+
+`POST /api/admin/replay/{event_id}` rejoue une valorisation enregistrée et dit
+si elle se reproduit (`reproduced`), si une donnée de marché a été révisée
+(`drifted_inputs`), si le code a changé (`drifted_code`), ou si le prix diffère
+sans cause (`not_reproduced`, un bug). Il lit la base d'audit avec le rôle
+**en lecture seule** `audit_reader`. Deux lignes à ajouter dans
+`~/quant-modeling-prod/.env` (depuis ce dossier) :
+
+```bash
+# 1. le mot de passe du rôle audit_reader, copié sans être affiché
+#    (jamais celui de writer / owner / admin) :
+echo "QM_AUDIT_DB_PASSWORD=$(grep '^AUDIT_DB_READER_PASSWORD=' ~/quant-platform-prod/.env | cut -d= -f2- | awk '{print $1}')" >> .env
+
+# 2. les comptes administrateurs, séparés par des virgules :
+echo "QM_ADMIN_USERS=<nom1>,<nom2>" >> .env
+```
+
+Un compte Google s'appelle `google:<identifiant>`, pas l'email ; un compte par
+mot de passe et un compte Google sont deux utilisateurs distincts. Pour lister
+les noms (noms et emails seulement) :
+
+```bash
+docker exec quant-modeling python3 -c "import json; [print(n, '|', u.get('email') or '-') for n, u in json.load(open('/app/data/auth/users.json')).items()]"
+```
+
+`/api/auth/me` ouvert dans le navigateur ne marche pas pour ça : le jeton de
+session est dans `localStorage` et n'est envoyé que par l'application.
+
+puis `./scripts/deploy.sh`. Sans ces deux variables, l'endpoint répond 503
+(pas de base) ou 403 (pas administrateur) ; le reste n'est pas affecté.
+
+### 9.2 — Vérifier que ça arrive
+
+| Question | Commande |
+|---|---|
+| L'API parle-t-elle à Kafka ? | `dc logs app \| grep "audit:"` — rien = tout va bien ; une ligne « Kafka is not taking events » = panne en cours |
+| Des événements en attente ? | `dc exec app sh -c 'cat /app/logs/spool/*.jsonl* 2>/dev/null \| wc -l'` (0 en régime normal) |
+| Ils arrivent en base ? | Grafana (`http://127.0.0.1:3100`, tunnel SSH), ou `docker exec qm-audit psql -U qm_admin -d qm_audit -c "SELECT type, count(*) FROM audit.events GROUP BY 1"` |
+| Les topics Kafka | AKHQ, `http://127.0.0.1:8181` |
+
+**Revenir en arrière** sans redéployer d'ancien code : `QM_AUDIT_SINK=spool` et
+`OTEL_EXPORTER_OTLP_ENDPOINT=` (vide) dans `.env`, puis `./scripts/deploy.sh`.
+L'API revient au comportement du lot 18a (spool local seul).
+
+---
+
 ## Opérations courantes
 
 Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.yml`.
@@ -395,5 +455,6 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 | `cloudflared` refuse de démarrer | `CLOUDFLARE_TUNNEL_TOKEN` absent/mauvais dans `.env`. Recopie le jeton depuis la page du tunnel (§3.1). |
 | `https://…` → erreur 1016 / DNS | l'hôte public n'est pas ajouté dans le tunnel (§3.3), ou le DNS de l'ancien site n'a pas été écrasé. |
 | Market en erreur, le reste OK | `data-ingest-postgres` down ou pas sur le réseau `dataplatform`. |
+| Logs `audit: Kafka is not taking events` | `quant-platform` arrêtée ou `kafka` absent du réseau `dataplatform`. Rien n'est perdu (spool) ; relancer la plateforme depuis `~/quant-platform-prod`. |
 | `deploy.sh` : `.env is missing` | `cp .env.placeholder .env` puis remplir. |
 | Le port 8091 est pris | changer `QM_WEB_PORT` dans `.env` (n'importe quel port libre en 127.0.0.1). |

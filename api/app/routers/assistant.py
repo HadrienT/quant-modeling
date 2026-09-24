@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from typing import Callable, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,10 +25,9 @@ from starlette.background import BackgroundTask
 from ..assistant.agent import run_assistant
 from ..assistant.llm import LlamaServerClient
 from ..assistant.schemas import ScriptingChatRequest
+from ..audit import emit
+from ..audit.payloads import AssistantChatPayload, AssistantOutcome
 from ..auth import require_user
-from ..logging_utils import get_logger
-
-logger = get_logger()
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -57,7 +57,12 @@ def _once(release: Callable[[], None]) -> Callable[[], None]:
     return run
 
 
-def _stream(req: ScriptingChatRequest, release: Callable[[], None]) -> Iterator[str]:
+def _stream(
+    req: ScriptingChatRequest, release: Callable[[], None], username: str
+) -> Iterator[str]:
+    start = time.perf_counter()
+    proposed = valid = 0
+    failed = False
     try:
         events = run_assistant(
             model=LlamaServerClient.from_env(),
@@ -68,9 +73,31 @@ def _stream(req: ScriptingChatRequest, release: Callable[[], None]) -> Iterator[
             last_error=req.last_error,
         )
         for event in events:
+            # A `retry` is a draft the parser rejected; a `script` is the one
+            # shown to the user, valid or not.
+            if event["type"] in ("script", "retry"):
+                proposed += 1
+                valid += event["type"] == "script" and bool(event.get("valid"))
+            failed = failed or event["type"] == "error"
             yield _sse(event)
     finally:
         release()
+        # Metadata only, never the conversation (blueprint WP 18 §7).
+        emit(
+            "assistant.chat",
+            AssistantChatPayload(
+                outcome=(
+                    AssistantOutcome.FAILED if failed else AssistantOutcome.COMPLETED
+                ),
+                turns=len(req.messages),
+                has_script=bool(req.current_script),
+                has_error=bool(req.last_error),
+                duration_ms=(time.perf_counter() - start) * 1000,
+                scripts_proposed=proposed,
+                scripts_valid=valid,
+            ),
+            username=username,
+        )
 
 
 @router.post(
@@ -86,24 +113,16 @@ def _stream(req: ScriptingChatRequest, release: Callable[[], None]) -> Iterator[
     },
 )
 def scripting_chat_endpoint(
-    req: ScriptingChatRequest, _user: str = Depends(require_user)
+    req: ScriptingChatRequest, user: str = Depends(require_user)
 ) -> StreamingResponse:
     if not _slots.acquire(blocking=False):
         raise HTTPException(
             status_code=429,
             detail="The assistant is busy with other requests. Retry in a moment.",
         )
-    logger.info(
-        "assistant chat",
-        extra={
-            "turns": len(req.messages),
-            "has_script": bool(req.current_script),
-            "has_error": bool(req.last_error),
-        },
-    )
     release = _once(_slots.release)
     return StreamingResponse(
-        _stream(req, release),
+        _stream(req, release, user),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         background=BackgroundTask(release),

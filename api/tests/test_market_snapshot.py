@@ -155,3 +155,39 @@ def test_the_service_prices_on_the_snapshot_date_and_merges_the_warnings(fake, m
 
     assert seen["args"][5] == "2026-09-12"  # valuation date handed to the engine
     assert [w.code for w in resp.warnings] == ["market_date_shifted", "stale_spot", "forward_smile"]
+
+
+def _collected(run):
+    """Runs `run` under the valuation record's market-inputs collector."""
+    from app import valuation
+
+    inputs = []
+    token = valuation._market_inputs.set(inputs)
+    try:
+        run()
+    finally:
+        valuation._market_inputs.reset(token)
+    return {i.name: i for i in inputs}
+
+
+def test_the_valuation_record_gets_every_input_read_with_its_date(fake):
+    inputs = _collected(lambda: ms.local_vol_market("spy", 0.03, SNAP))
+    assert set(inputs) == {"spot:SPY", "dividend:SPY", "option_chain:SPY"}
+    assert inputs["spot:SPY"].source == "db:prices.sp500_daily"
+    assert inputs["option_chain:SPY"].as_of == SNAP.isoformat()
+    assert all(i.status.value == "observed" for i in inputs.values())
+
+
+def test_a_close_behind_the_chain_is_recorded_as_stale(fake):
+    fake["price"] = (date(2026, 9, 7), 500.0)
+    inputs = _collected(lambda: ms.local_vol_market("SPY", 0.03, SNAP))
+    assert inputs["spot:SPY"].status.value == "stale"
+    assert inputs["spot:SPY"].as_of == "2026-09-07"
+
+
+def test_a_revised_quote_changes_the_chain_hash(fake):
+    before = _collected(lambda: ms.local_vol_market("SPY", 0.03, SNAP))
+    fake["rows"][0].bid = 1.05
+    after = _collected(lambda: ms.local_vol_market("SPY", 0.03, SNAP))
+    assert before["option_chain:SPY"].value_hash != after["option_chain:SPY"].value_hash
+    assert before["spot:SPY"].value_hash == after["spot:SPY"].value_hash

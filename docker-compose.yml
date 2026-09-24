@@ -30,12 +30,19 @@ services:
       - PGPASSWORD=${PGPASSWORD:?set PGPASSWORD in .env (same as data-ingest/.env)}
       - LOG_DIR=/app/logs
       - COMMIT_SHA=${COMMIT_SHA:-dev}
-      # Audit trail (blueprint WP 18a). "spool" (default) needs nothing else —
-      # it writes JSONL under LOG_DIR/spool. "kafka" is a façade until WP 18b
-      # wires the real quant-platform producer. IP_HMAC_SECRET is optional:
-      # unset, it reuses JWT_SECRET to hash IPs (contract §1, ADR-009).
+      # Audit trail (blueprint WP 18). "spool" by default in development: the
+      # `dataplatform` network leads to the PRODUCTION quant-platform, whose
+      # audit database is append-only — a dev event sent there stays forever.
+      # "kafka" + QM_KAFKA_BOOTSTRAP only against a disposable broker.
+      # IP_HMAC_SECRET is optional: unset, it reuses JWT_SECRET to hash IPs.
       - QM_AUDIT_SINK=${QM_AUDIT_SINK:-spool}
+      - QM_KAFKA_BOOTSTRAP=${QM_KAFKA_BOOTSTRAP:-kafka:9092}
       - QM_AUDIT_IP_HMAC_SECRET=${QM_AUDIT_IP_HMAC_SECRET:-}
+      - QM_AUDIT_DB_PASSWORD=${QM_AUDIT_DB_PASSWORD:-}
+      - QM_ADMIN_USERS=${QM_ADMIN_USERS:-}
+      # Telemetry export (WP 18d): off unless set, for the same reason.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=quant-modeling-api-dev
       # Scripting assistant: the llama-server of ~/AgenticEnv. It listens on the
       # host's 127.0.0.1, unreachable from a container; the llama-bridge socket
       # (AgenticEnv `just render-llama-bridge`) exposes it on the Docker gateway.

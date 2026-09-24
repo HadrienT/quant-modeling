@@ -7,6 +7,8 @@ call (e.g. a fallback decided inside vol_surface.py) can reach it without a
 
 from contextvars import ContextVar
 
+from opentelemetry import trace
+
 cache_hit_context: ContextVar[bool] = ContextVar("cache_hit", default=False)
 request_id_context: ContextVar[str | None] = ContextVar("request_id", default=None)
 ip_hash_context: ContextVar[str | None] = ContextVar("ip_hash", default=None)
@@ -55,5 +57,7 @@ def current_username() -> str | None:
 
 
 def current_trace_id() -> str | None:
-    # OpenTelemetry instrumentation lands in lot 18d; no span context to read yet.
-    return None
+    """The active OpenTelemetry trace (WP 18d), so an audit event opens its
+    trace in Grafana. None when telemetry is off or outside a request."""
+    ctx = trace.get_current_span().get_span_context()
+    return format(ctx.trace_id, "032x") if ctx.is_valid else None

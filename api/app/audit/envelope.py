@@ -39,7 +39,7 @@ def _occurred_at_now() -> str:
     return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
 
-def _lib_build_sha() -> str:
+def lib_build_sha() -> str:
     """The native wheel's build stamp (WP 18a task 6), or "unknown" before it
     is wired / when the module stub stands in for tests and CI."""
     try:
@@ -86,7 +86,7 @@ class Event(BaseModel):
             username=username,
             producer=Producer(
                 git_sha=os.getenv("COMMIT_SHA", "dev"),
-                lib_build=_lib_build_sha(),
+                lib_build=lib_build_sha(),
             ),
             payload=payload.model_dump(mode="json"),
         )

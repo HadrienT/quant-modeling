@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/api/admin/replay/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replay Valuation Endpoint
+         * @description Re-prices the valuation recorded under `event_id` and compares:
+         *     `reproduced`, `drifted_inputs` (which datum), `drifted_code` (from which
+         *     build to which) or `not_reproduced`.
+         */
+        post: operations["replay_valuation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assistant/scripting/chat": {
         parameters: {
             query?: never;
@@ -780,7 +802,9 @@ export interface paths {
         /**
          * Price Script Endpoint
          * @description blueprint/wp/16-scripting.md §8.3. Not under /price/option/* — kept as
-         *     its own top-level path, mirroring the language's own scope.
+         *     its own top-level path, mirroring the language's own scope. A malformed
+         *     script (ScriptError) or a bad market input (InvalidInput, missing market
+         *     data) is a user-input error, not a server failure.
          */
         post: operations["price_script"];
         delete?: never;
@@ -1318,6 +1342,13 @@ export interface components {
             /** Values */
             values: (number | null)[][];
         };
+        /** CodeBuild */
+        CodeBuild: {
+            /** Api Sha */
+            api_sha: string;
+            /** Lib Build */
+            lib_build: string;
+        };
         /** CommodityForwardRequest */
         CommodityForwardRequest: {
             /**
@@ -1566,6 +1597,19 @@ export interface components {
             vols: number[];
             /** Weights */
             weights?: number[];
+        };
+        /** DriftedInput */
+        DriftedInput: {
+            /** Current As Of */
+            current_as_of: string | null;
+            /** Current Hash */
+            current_hash: string | null;
+            /** Name */
+            name: string;
+            /** Recorded As Of */
+            recorded_as_of: string | null;
+            /** Recorded Hash */
+            recorded_hash: string | null;
         };
         /**
          * EngineType
@@ -2187,6 +2231,29 @@ export interface components {
             zero: components["schemas"]["CurvePointResponse"][];
         };
         /**
+         * ReplayOutcome
+         * @enum {string}
+         */
+        ReplayOutcome: "reproduced" | "drifted_inputs" | "drifted_code" | "not_reproduced";
+        /** ReplayResponse */
+        ReplayResponse: {
+            current_code: components["schemas"]["CodeBuild"];
+            /** Drifted Inputs */
+            drifted_inputs: components["schemas"]["DriftedInput"][];
+            /** Event Id */
+            event_id: string;
+            /** Npv Difference */
+            npv_difference: number;
+            outcome: components["schemas"]["ReplayOutcome"];
+            /** Product */
+            product: string;
+            recorded_code: components["schemas"]["CodeBuild"];
+            /** Recorded Npv */
+            recorded_npv: number;
+            /** Replayed Npv */
+            replayed_npv: number;
+        };
+        /**
          * RiskEntry
          * @description One model parameter's AAD sensitivity (blueprint/wp/17-aad.md §13.1).
          *     Present only when priced with greeks_method="aad" -- unlike Greeks'
@@ -2757,6 +2824,58 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    replay_valuation: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReplayResponse"];
+                };
+            };
+            /** @description Not an administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such event in the audit database. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The event is not a replayable valuation. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The audit database is not configured or unreachable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     scripting_chat: {
         parameters: {
             query?: never;
