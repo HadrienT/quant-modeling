@@ -51,6 +51,15 @@ function DocBody({ doc }: { doc: ProductDoc }) {
 				<Bullets items={doc.assumptions} />
 			</Section>
 
+			<Section title="Minimum model">
+				<p className="text-xs text-ink-secondary">
+					<span className="font-medium text-ink">
+						{doc.modelDependency.minimum}
+					</span>{" "}
+					<Inline text={doc.modelDependency.rationale} />
+				</p>
+			</Section>
+
 			<Section title="How it's priced here">
 				<ul className="flex flex-col gap-1.5">
 					{doc.pricingMethods.map((m, i) => (

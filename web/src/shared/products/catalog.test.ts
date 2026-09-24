@@ -21,7 +21,7 @@ describe("product catalog", () => {
 		for (const p of CATALOG.filter((p) => p.enabled)) {
 			expect(p.schema).toBeInstanceOf(z.ZodType);
 			expect(p.engines.length).toBeGreaterThan(0);
-			expect(p.endpoint.startsWith("/price/")).toBe(true);
+			expect(p.endpoint?.startsWith("/price/")).toBe(true);
 		}
 	});
 

@@ -36,8 +36,14 @@ export type ProductDescriptor = {
 	/** default values, in UI units (vol/rate as %). */
 	defaults: Record<string, unknown>;
 	engines: EngineCapability[];
-	/** pricing route, typed from the OpenAPI paths. */
-	endpoint: PricingPath;
+	/**
+	 * Pricing route, typed from the OpenAPI paths — undefined for a
+	 * doc-only catalog entry with no backend at all yet (a product that
+	 * exists on the Products reference page but was never wired past the
+	 * roadmap's "stop adding payoffs" line). `enabled` is always false
+	 * when this is undefined, so ResultsPanel never has to call it.
+	 */
+	endpoint?: PricingPath;
 	/** → productDocs (WP 99). */
 	docKey?: string;
 	greeks: GreekName[];
