@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Instrument, Portfolio, PositionMark } from "@/shared/api";
 import {
 	bookTrade,
+	deletePosition,
 	deleteTrade,
 	equityInstrument,
 	netQuantities,
@@ -132,6 +133,34 @@ describe("ledger", () => {
 		const after = deleteTrade(pf, pf.transactions![0]!.id);
 		expect(after.transactions).toHaveLength(0);
 		expect(after.instruments).toHaveLength(0);
+	});
+});
+
+describe("deletePosition", () => {
+	it("removes every trade of the instrument and the instrument, nothing else", () => {
+		const aapl = equityInstrument("AAPL");
+		const xom = equityInstrument("XOM");
+		const base = {
+			id: "p",
+			name: "p",
+			owner: "",
+			version: 2,
+			base_currency: "EUR",
+		} as Portfolio;
+		const t = (id: string, q: number) => ({
+			instrument_id: id,
+			trade_date: "2026-01-02",
+			quantity: q,
+			price: 1,
+			fees: 0,
+			note: "",
+		});
+		let pf = { ...base, ...bookTrade(base, aapl, t(aapl.id, 5)) };
+		pf = { ...pf, ...bookTrade(pf, xom, t(xom.id, 3)) };
+		pf = { ...pf, ...bookTrade(pf, aapl, t(aapl.id, -2)) };
+		const after = deletePosition(pf, aapl.id);
+		expect(after.transactions!.map((x) => x.instrument_id)).toEqual([xom.id]);
+		expect(after.instruments!.map((i) => i.id)).toEqual([xom.id]);
 	});
 });
 

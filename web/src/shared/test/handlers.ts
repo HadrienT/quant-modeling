@@ -114,6 +114,15 @@ export const handlers = [
 				);
 	}),
 
+	http.delete("*/api/portfolios/:id", ({ params }) =>
+		portfolios.delete(String(params.id))
+			? new HttpResponse(null, { status: 204 })
+			: HttpResponse.json(
+					{ code: "not_found", message: "Portfolio not found" },
+					{ status: 404 },
+				),
+	),
+
 	http.put("*/api/portfolios/:id", async ({ params, request }) => {
 		const body = (await request.json()) as ReturnType<typeof fx.portfolio>;
 		const saved = { ...body, id: String(params.id) };

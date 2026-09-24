@@ -63,7 +63,7 @@ describe("portfolio page", () => {
 		const row = await screen.findByRole("row", {
 			name: /\^FCHI European option/,
 		});
-		const option = within(row).getByRole("button", { name: /\^FCHI/ });
+		const option = within(row).getByRole("button", { name: /^\^FCHI/ });
 		expect(within(row).getByText("proxied")).toBeInTheDocument();
 		await userEvent.click(option);
 		expect(
