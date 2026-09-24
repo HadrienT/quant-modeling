@@ -227,6 +227,12 @@ PRODUCTS: dict[str, Product] = {
         _const("black76"),
         _const("analytic"),
     ),
+    "quanto": Product(
+        s.QuantoRequest,
+        ps.price_quanto,
+        _const("quanto_black_scholes"),
+        lambda r: r.engine,
+    ),
     "rainbow": Product(
         s.RainbowRequest, ps.price_rainbow, _const("black_scholes"), _const("mc")
     ),

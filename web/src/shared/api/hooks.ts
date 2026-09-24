@@ -18,6 +18,10 @@ import type {
 	LocalVolSurfaceResponse,
 	MarketHistoryResponse,
 	MarketId,
+	FxCorrelationResponse,
+	FxCurrency,
+	FxHistoryResponse,
+	FxOverviewResponse,
 	Portfolio,
 	PortfolioSummary,
 	RateCurrency,
@@ -260,6 +264,77 @@ export function useRatesHistory(
 						signal: s,
 					}),
 				)) as RatesHistoryResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+export function useFxOverview(base: FxCurrency, quote: FxCurrency) {
+	return useQuery({
+		queryKey: queryKeys.market.fxOverview(base, quote),
+		staleTime: STALE.rates,
+		enabled: base !== quote,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return (await unwrap(
+					api.GET("/market/fx/overview", {
+						params: { query: { base, quote } },
+						signal: s,
+					}),
+				)) as FxOverviewResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+export function useFxHistory(base: FxCurrency, quote: FxCurrency, years = 5) {
+	return useQuery({
+		queryKey: queryKeys.market.fxHistory(base, quote, years),
+		staleTime: STALE.rates,
+		enabled: base !== quote,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return (await unwrap(
+					api.GET("/market/fx/history", {
+						params: { query: { base, quote, years } },
+						signal: s,
+					}),
+				)) as FxHistoryResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+export type FxCorrelationQuery = {
+	ticker: string;
+	base: FxCurrency;
+	quote: FxCurrency;
+	window: "1Y" | "3Y" | "5Y";
+	frequency: "weekly" | "daily";
+};
+
+export function useFxCorrelation(q: FxCorrelationQuery | null) {
+	return useQuery({
+		queryKey: queryKeys.market.fxCorrelation(JSON.stringify(q)),
+		staleTime: STALE.rates,
+		enabled: !!q && !!q.ticker && q.base !== q.quote,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return (await unwrap(
+					api.GET("/market/fx/correlation", {
+						params: { query: q! },
+						signal: s,
+					}),
+				)) as FxCorrelationResponse;
 			} finally {
 				s.cleanup();
 			}

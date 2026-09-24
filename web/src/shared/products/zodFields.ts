@@ -47,17 +47,36 @@ const LABELS: Record<string, string> = {
 	coupon_frequency: "Coupon frequency / yr",
 	rainbow_kind: "Rainbow kind",
 	engine: "Engine",
+	rate_domestic: "Domestic rate (payment ccy)",
+	rate_foreign: "Foreign rate (asset ccy)",
+	fx_vol: "FX volatility",
+	correlation: "Correlation ρ(asset, FX)",
+	fx_rate: "Fixed FX rate (dom. per for.)",
 };
 
 const UNITS: Record<string, string> = {
 	rate: "%",
+	rate_domestic: "%",
+	rate_foreign: "%",
+	fx_vol: "%",
 	dividend: "%",
 	vol: "%",
 	coupon_rate: "%",
 	maturity: "y",
 };
 
-const MARKET = new Set(["spot", "rate", "dividend", "vol", "spots", "vols"]);
+const MARKET = new Set([
+	"spot",
+	"rate",
+	"dividend",
+	"vol",
+	"spots",
+	"vols",
+	"rate_domestic",
+	"rate_foreign",
+	"fx_vol",
+	"correlation",
+]);
 const ENGINE = new Set([
 	"engine",
 	"n_paths",

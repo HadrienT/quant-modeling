@@ -357,3 +357,59 @@ export function backtestResponse() {
 		],
 	};
 }
+
+export function fxOverview(base: string, quote: string) {
+	const withForwards = base !== "GBP" && quote !== "GBP";
+	return {
+		base,
+		quote,
+		spot: 1.1367,
+		spot_date: "2026-09-24",
+		forwards: withForwards
+			? [
+					{ label: "3M", tenor: 0.25, forward: 1.14096, points: 0.00426 },
+					{ label: "1Y", tenor: 1, forward: 1.15229, points: 0.01559 },
+				]
+			: null,
+		forwards_unavailable: withForwards
+			? null
+			: "Only three par yields for GBP.",
+		curve_dates: withForwards ? { EUR: "2026-09-23", USD: "2026-09-22" } : {},
+		realised_vol: { "1Y": 0.054, "3Y": 0.067, "5Y": 0.0764 },
+		methodology: [
+			{ title: "Forwards", paragraphs: ["Covered interest parity."] },
+		],
+		warnings: [],
+	};
+}
+
+export function fxHistory(base: string, quote: string) {
+	return {
+		base,
+		quote,
+		points: [
+			{ date: "2026-09-23", rate: 1.1351 },
+			{ date: "2026-09-24", rate: 1.1367 },
+		],
+	};
+}
+
+export function fxCorrelation(ticker: string) {
+	return {
+		ticker,
+		base: "EUR",
+		quote: "USD",
+		window: "3Y",
+		frequency: "weekly",
+		correlation: 0.308,
+		n: 156,
+		ci_low: 0.16,
+		ci_high: 0.44,
+		asset_vol: 0.162,
+		fx_vol: 0.074,
+		start: "2023-09-29",
+		end: "2026-09-18",
+		asset_last: 8087.87,
+		fx_last: 1.1367,
+	};
+}

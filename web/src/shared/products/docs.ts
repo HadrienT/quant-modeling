@@ -1170,11 +1170,16 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			{
 				engine: "Closed form (quanto-adjusted Black-Scholes)",
 				detail:
-					"Ordinary Black-Scholes on the foreign underlying with its drift replaced by $r_d-q-\\rho\\sigma_S\\sigma_{\\text{fx}}$ (domestic rate, dividend yield, and the quanto correlation adjustment), discounted at the domestic rate.",
+					"Ordinary Black-Scholes on the foreign underlying with its drift replaced by $r_f-q-\\rho\\sigma_S\\sigma_{\\text{fx}}$ (foreign rate, dividend yield, and the quanto correlation adjustment), discounted at the domestic rate $r_d$ and scaled by the fixed rate. $\\rho$ is the correlation between the underlying and the FX rate quoted domestic per foreign.",
+			},
+			{
+				engine: "Monte Carlo",
+				detail:
+					"The same model simulated: the vanilla Black-Scholes Monte-Carlo engine run on the quanto-adjusted drift, as a check of the closed form within its standard error.",
 			},
 		],
 		notes: [
-			"No pricing engine in this repo yet — documentation only.",
+			"Priced by QuantoBlackScholesModel: a model presenting the vanilla engines with rate $r_d$ and dividend $q_{\\text{eff}}=r_d-r_f+q+\\rho\\sigma_S\\sigma_{\\text{fx}}$; rho and vega are corrected for $q_{\\text{eff}}$ depending on $r_d$ and $\\sigma_S$ (rho is the domestic-rate rho). Correlation and FX volatility can be estimated on the Market page, FX tab.",
 			"A genuinely closed-form product: the correlation adjustment is a single extra drift term, no numerical method beyond ordinary Black-Scholes required.",
 		],
 		references: [

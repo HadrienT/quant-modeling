@@ -21,6 +21,26 @@ export const handlers = [
 		),
 	),
 
+	http.get("*/market/fx/overview", ({ request }) => {
+		const u = new URL(request.url).searchParams;
+		return HttpResponse.json(
+			fx.fxOverview(u.get("base") ?? "EUR", u.get("quote") ?? "USD"),
+		);
+	}),
+
+	http.get("*/market/fx/history", ({ request }) => {
+		const u = new URL(request.url).searchParams;
+		return HttpResponse.json(
+			fx.fxHistory(u.get("base") ?? "EUR", u.get("quote") ?? "USD"),
+		);
+	}),
+
+	http.get("*/market/fx/correlation", ({ request }) =>
+		HttpResponse.json(
+			fx.fxCorrelation(new URL(request.url).searchParams.get("ticker") ?? ""),
+		),
+	),
+
 	http.get("*/market/markets", () =>
 		HttpResponse.json({ markets: fx.MARKETS }),
 	),

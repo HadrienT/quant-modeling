@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { type MarketId, useMarkets, useTickers } from "@/shared/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
+import { FxTab } from "./FxTab";
 import { MarketTickerPicker } from "./MarketTickerPicker";
 import { PricesTab } from "./PricesTab";
 import { RatesTab } from "./RatesTab";
@@ -35,7 +36,7 @@ export default function MarketPage() {
 		<div className="mx-auto flex max-w-6xl flex-col gap-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<h1 className="text-lg font-semibold text-ink">Market data</h1>
-				{tab !== "rates" && (
+				{tab !== "rates" && tab !== "fx" && (
 					<MarketTickerPicker
 						markets={markets.data?.markets ?? []}
 						market={market}
@@ -51,6 +52,7 @@ export default function MarketPage() {
 					<TabsTrigger value="prices">Prices</TabsTrigger>
 					<TabsTrigger value="vol">Volatility</TabsTrigger>
 					<TabsTrigger value="rates">Rates</TabsTrigger>
+					<TabsTrigger value="fx">FX</TabsTrigger>
 				</TabsList>
 				<TabsContent value="prices">
 					<PricesTab
@@ -68,6 +70,13 @@ export default function MarketPage() {
 					<RatesTab
 						currency={search.ccy ?? "USD"}
 						onCurrency={(ccy) => set({ ccy })}
+					/>
+				</TabsContent>
+				<TabsContent value="fx">
+					<FxTab
+						base={search.base ?? "EUR"}
+						quote={search.quote ?? "USD"}
+						onPair={(base, quote) => set({ base, quote })}
 					/>
 				</TabsContent>
 			</Tabs>

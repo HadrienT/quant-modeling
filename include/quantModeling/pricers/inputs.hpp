@@ -502,6 +502,34 @@ namespace quantModeling
     /**
      * @brief Input for pricing a European FX option (Garman-Kohlhagen).
      */
+    /**
+     * @brief A European option on a foreign asset paid in the domestic
+     *        currency at a fixed conversion rate (quanto). See
+     *        models/equity/quanto_black_scholes.hpp.
+     *
+     * `correlation` is corr(asset, FX) with the FX rate quoted DOMESTIC per
+     * FOREIGN (a EUR asset paid in USD: corr(asset, EUR/USD)). The payoff is
+     * `fx_rate` × max(S_T − K, 0) (call) in the domestic currency.
+     */
+    struct QuantoBSInput
+    {
+        Real spot;   ///< asset, in its (foreign) currency
+        Real strike; ///< in the foreign currency
+        Time maturity;
+        Real rate_domestic; ///< r_d, the payment currency's rate
+        Real rate_foreign;  ///< r_f, the asset currency's rate
+        Real dividend;      ///< asset dividend yield q
+        Real vol;           ///< σ_S
+        Real fx_vol;        ///< σ_X
+        Real correlation;   ///< ρ(S, X), X = domestic per foreign
+        Real fx_rate = 1.0; ///< X̄, the fixed conversion rate (domestic per foreign)
+        bool is_call = true;
+
+        int n_paths = 200000;
+        int seed = 1;
+        Real mc_epsilon = 0.0;
+    };
+
     struct FXOptionInput
     {
         Real spot;

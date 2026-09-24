@@ -467,6 +467,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/fx/correlation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fx Correlation */
+        get: operations["fx_correlation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/fx/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fx History */
+        get: operations["fx_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/fx/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fx Overview */
+        get: operations["fx_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/market/markets": {
         parameters: {
             query?: never;
@@ -784,6 +835,28 @@ export interface paths {
         put?: never;
         /** Price Lookback Endpoint */
         post: operations["price_lookback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/quanto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price Quanto Endpoint
+         * @description A foreign asset paid in the domestic currency at a fixed rate: Black-Scholes
+         *     with the quanto drift adjustment. `rho` in the greeks is the domestic-rate rho;
+         *     the model's inputs (rates, vols, correlation) are the caller's.
+         */
+        post: operations["price_quanto"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1753,6 +1826,156 @@ export interface components {
             /** Strike */
             strike: number;
         };
+        /** FxCorrelationResponse */
+        FxCorrelationResponse: {
+            /**
+             * Asset Last
+             * @description Asset close on the last common date.
+             */
+            asset_last: number;
+            /** Asset Vol */
+            asset_vol: number;
+            /**
+             * Base
+             * @enum {string}
+             */
+            base: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Ci High */
+            ci_high: number;
+            /**
+             * Ci Low
+             * @description 95 % confidence interval (Fisher transform).
+             */
+            ci_low: number;
+            /** Correlation */
+            correlation: number;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "weekly" | "daily";
+            /**
+             * Fx Last
+             * @description FX rate on the last common date.
+             */
+            fx_last: number;
+            /** Fx Vol */
+            fx_vol: number;
+            /**
+             * N
+             * @description Number of common returns.
+             */
+            n: number;
+            /**
+             * Quote
+             * @enum {string}
+             */
+            quote: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Ticker */
+            ticker: string;
+            /**
+             * Window
+             * @enum {string}
+             */
+            window: "1Y" | "3Y" | "5Y";
+        };
+        /** FxForwardPoint */
+        FxForwardPoint: {
+            /**
+             * Forward
+             * @description QUOTE units per BASE.
+             */
+            forward: number;
+            /** Label */
+            label: string;
+            /**
+             * Points
+             * @description Forward − spot, QUOTE units.
+             */
+            points: number;
+            /** Tenor */
+            tenor: number;
+        };
+        /** FxHistoryPoint */
+        FxHistoryPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Rate */
+            rate: number;
+        };
+        /** FxHistoryResponse */
+        FxHistoryResponse: {
+            /**
+             * Base
+             * @enum {string}
+             */
+            base: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Points */
+            points: components["schemas"]["FxHistoryPoint"][];
+            /**
+             * Quote
+             * @enum {string}
+             */
+            quote: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+        };
+        /** FxOverviewResponse */
+        FxOverviewResponse: {
+            /**
+             * Base
+             * @enum {string}
+             */
+            base: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /**
+             * Curve Dates
+             * @default {}
+             */
+            curve_dates: {
+                [key: string]: string;
+            };
+            /** Forwards */
+            forwards?: components["schemas"]["FxForwardPoint"][] | null;
+            /** Forwards Unavailable */
+            forwards_unavailable?: string | null;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /**
+             * Quote
+             * @enum {string}
+             */
+            quote: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /**
+             * Realised Vol
+             * @description Annualised volatility of daily log returns, by window (1Y, 3Y, 5Y).
+             */
+            realised_vol: {
+                [key: string]: number | null;
+            };
+            /**
+             * Spot
+             * @description QUOTE units per BASE (ECB reference rates).
+             */
+            spot: number;
+            /**
+             * Spot Date
+             * Format: date
+             */
+            spot_date: string;
+            /** Warnings */
+            warnings: string[];
+        };
         /** GovernmentCurveResponse */
         GovernmentCurveResponse: {
             /**
@@ -2286,6 +2509,82 @@ export interface components {
         Providers: {
             /** Google */
             google: boolean;
+        };
+        /**
+         * QuantoRequest
+         * @description A European option on a foreign-currency asset, paid in the domestic
+         *     currency at a conversion rate fixed in advance (Reiner 1992). Rates and
+         *     vols are decimals; `correlation` is corr(asset, FX) with the FX rate
+         *     quoted domestic per foreign (a EUR asset paid in USD: EUR/USD) — the
+         *     /market/fx/correlation endpoint estimates it.
+         */
+        QuantoRequest: {
+            /** Correlation */
+            correlation: number;
+            /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /**
+             * Engine
+             * @default analytic
+             * @enum {string}
+             */
+            engine: "analytic" | "mc";
+            /**
+             * Fx Rate
+             * @description Fixed conversion rate, domestic per foreign.
+             * @default 1
+             */
+            fx_rate: number;
+            /**
+             * Fx Vol
+             * @description FX volatility σ_X.
+             */
+            fx_vol: number;
+            /**
+             * Is Call
+             * @default true
+             */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
+            /**
+             * N Paths
+             * @default 200000
+             */
+            n_paths: number;
+            /**
+             * Rate Domestic
+             * @description Payment currency's rate.
+             */
+            rate_domestic: number;
+            /**
+             * Rate Foreign
+             * @description Asset currency's rate.
+             */
+            rate_foreign: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /**
+             * Spot
+             * @description Asset, in its own (foreign) currency.
+             */
+            spot: number;
+            /**
+             * Strike
+             * @description In the foreign currency.
+             */
+            strike: number;
+            /**
+             * Vol
+             * @description Asset volatility σ_S.
+             */
+            vol: number;
         };
         /** QuotedRatePoint */
         QuotedRatePoint: {
@@ -3975,6 +4274,106 @@ export interface operations {
             };
         };
     };
+    fx_correlation: {
+        parameters: {
+            query: {
+                ticker: string;
+                base?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                quote?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                window?: "1Y" | "3Y" | "5Y";
+                frequency?: "weekly" | "daily";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FxCorrelationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fx_history: {
+        parameters: {
+            query?: {
+                base?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                quote?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                years?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FxHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fx_overview: {
+        parameters: {
+            query?: {
+                base?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+                quote?: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FxOverviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_markets: {
         parameters: {
             query?: never;
@@ -4564,6 +4963,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LookbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_quanto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuantoRequest"];
             };
         };
         responses: {

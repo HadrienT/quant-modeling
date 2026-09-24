@@ -3,6 +3,7 @@
 #include "quantModeling/pricers/adapters/bonds.hpp"
 #include "quantModeling/pricers/adapters/equity_asian.hpp"
 #include "quantModeling/pricers/adapters/equity_asian_lv.hpp"
+#include "quantModeling/pricers/adapters/equity_quanto.hpp"
 #include "quantModeling/pricers/adapters/equity_barrier.hpp"
 #include "quantModeling/pricers/adapters/equity_barrier_lv.hpp"
 #include "quantModeling/pricers/adapters/equity_basket.hpp"
@@ -60,6 +61,24 @@ namespace quantModeling
                 {
                     const auto &in = std::get<VanillaBSInput>(request.input);
                     return price_equity_vanilla_bs(in, EngineKind::Analytic);
+                });
+
+            // ── Equity: Vanilla under the quanto model (paid in another currency) ─
+
+            r.register_pricer(
+                {InstrumentKind::EquityVanillaOption, ModelKind::QuantoBlackScholes, EngineKind::Analytic},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<QuantoBSInput>(request.input);
+                    return price_quanto_vanilla_bs(in, EngineKind::Analytic);
+                });
+
+            r.register_pricer(
+                {InstrumentKind::EquityVanillaOption, ModelKind::QuantoBlackScholes, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<QuantoBSInput>(request.input);
+                    return price_quanto_vanilla_bs(in, EngineKind::MonteCarlo);
                 });
 
             r.register_pricer(

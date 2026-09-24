@@ -307,6 +307,39 @@ def rates_history(table: str, series_id: str, since: date) -> List[Tuple[date, f
         return [(d, float(v)) for d, v in cur.fetchall()]
 
 
+# ── fx.ecb_reference_rates (units of currency per EUR) ───────────────────────
+
+
+def ecb_fx_history(
+    currencies: Sequence[str], since: Optional[date] = None
+) -> "pd.DataFrame":
+    """date-indexed, one column per currency, units per EUR — only the dates
+    on which every requested currency was fixed (the ECB fixes them together,
+    so this drops only a currency's first/last days)."""
+    wanted = [c for c in currencies if c != "EUR"]
+    sql = (
+        "SELECT date, currency, value FROM fx.ecb_reference_rates "
+        "WHERE currency = ANY(%s)"
+    )
+    params: list = [wanted]
+    if since is not None:
+        sql += " AND date >= %s"
+        params.append(since)
+    with _cursor() as cur:
+        cur.execute(sql + " ORDER BY date", params)
+        rows = cur.fetchall()
+    frame = (
+        pd.DataFrame(rows, columns=["date", "currency", "value"])
+        .pivot(index="date", columns="currency", values="value")
+        .dropna()
+        if rows
+        else pd.DataFrame(columns=wanted)
+    )
+    if "EUR" in currencies:
+        frame["EUR"] = 1.0
+    return frame.sort_index()
+
+
 # ── options.chain_snapshot ───────────────────────────────────────────────────
 
 

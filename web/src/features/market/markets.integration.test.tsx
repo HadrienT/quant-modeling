@@ -80,4 +80,24 @@ describe("market page — markets", () => {
 			await screen.findByText(/publishes option chains for US listings only/),
 		).toBeInTheDocument();
 	});
+
+	it("FX tab: parity forwards, the correlation with its interval, the methodology", async () => {
+		renderMarket("?tab=fx&base=EUR&quote=USD");
+		expect(await screen.findByText("1.15229")).toBeInTheDocument();
+		expect(await screen.findByText("95% CI [0.16, 0.44]")).toBeInTheDocument();
+		// the default asset (the CAC 40, in EUR) matches the EUR/USD base:
+		// the historical inputs open a pre-filled quanto
+		const link = await screen.findByRole("link", { name: /Price a quanto/ });
+		expect(link.getAttribute("href")).toContain("product=quanto");
+		expect(
+			screen.getByRole("heading", { name: "Methodology" }),
+		).toBeInTheDocument();
+	});
+
+	it("FX tab: a pair without a curve says why there is no forward", async () => {
+		renderMarket("?tab=fx&base=EUR&quote=GBP");
+		expect(
+			await screen.findByText("Only three par yields for GBP."),
+		).toBeInTheDocument();
+	});
 });

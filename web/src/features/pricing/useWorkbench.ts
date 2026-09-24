@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { decodeParams, encodeParams } from "@/shared/products/workbenchLink";
 import { CATALOG, CATALOG_BY_KEY, type EngineKey } from "@/shared/products";
 
 /**
@@ -14,21 +15,8 @@ export type WorkbenchState = {
 	compare: Record<string, unknown> | null;
 };
 
-function encode(obj: unknown): string {
-	return btoa(unescape(encodeURIComponent(JSON.stringify(obj))))
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "");
-}
-function decode<T>(s: string | undefined, fallback: T): T {
-	if (!s) return fallback;
-	try {
-		const b = s.replace(/-/g, "+").replace(/_/g, "/");
-		return JSON.parse(decodeURIComponent(escape(atob(b)))) as T;
-	} catch {
-		return fallback;
-	}
-}
+const encode = encodeParams;
+const decode = decodeParams;
 
 export function useWorkbench() {
 	const search = useSearch({ from: "/price" });

@@ -368,6 +368,35 @@ def government_curve(curve: GovernmentCurve, forward_period: float) -> CurveResu
 
 
 @dataclass
+class DiscountCurveSnapshot:
+    currency: str
+    as_of: date
+    times: List[float]
+    dfs: List[float]
+
+
+def currency_discount_curve(currency: str) -> DiscountCurveSnapshot:
+    """The discount curve of a currency's government curve — what FX forwards
+    (fx.py) discount with. Raises RatesUnavailable, with the reason the rates
+    page shows, when the currency has none that can be derived (GBP: three
+    par yields; CHF: no free curve)."""
+    spec = CATALOG[currency]
+    curve = spec.government
+    if curve is None:
+        raise RatesUnavailable(spec.no_government or f"No {currency} curve.")
+    if curve.no_derivation:
+        raise RatesUnavailable(curve.no_derivation)
+    snapshot = db.rates_curve_snapshot(
+        curve.table, [p.series_id for p in curve.money_market + curve.pillars]
+    )
+    if snapshot is None:
+        raise RatesUnavailable(f"{curve.name}: not in the store yet")
+    as_of, values_pct = snapshot
+    times, dfs = discount_curve(curve, {k: v / 100.0 for k, v in values_pct.items()})
+    return DiscountCurveSnapshot(currency, as_of, times, dfs)
+
+
+@dataclass
 class BenchmarkValue:
     series_id: str
     label: str

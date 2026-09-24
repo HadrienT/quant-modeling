@@ -29,19 +29,19 @@ class AsianAverageType(str, Enum):
 
 
 class BarrierKind(str, Enum):
-    up_and_in   = "up-and-in"
-    up_and_out  = "up-and-out"
+    up_and_in = "up-and-in"
+    up_and_out = "up-and-out"
     down_and_in = "down-and-in"
     down_and_out = "down-and-out"
 
 
 class DigitalPayoffKind(str, Enum):
-    cash_or_nothing  = "cash-or-nothing"
+    cash_or_nothing = "cash-or-nothing"
     asset_or_nothing = "asset-or-nothing"
 
 
 class LookbackStyle(str, Enum):
-    fixed_strike    = "fixed-strike"
+    fixed_strike = "fixed-strike"
     floating_strike = "floating-strike"
 
 
@@ -157,10 +157,14 @@ class ScriptRequest(BaseModel):
         le=504,
         description="Euler steps per year for model='local_vol' (ignored by black_scholes, which is simulated exactly).",
     )
-    spot: Optional[float] = Field(None, gt=0.0, description="Required for model='black_scholes'.")
+    spot: Optional[float] = Field(
+        None, gt=0.0, description="Required for model='black_scholes'."
+    )
     rate: float
     dividend: float = 0.0
-    vol: Optional[float] = Field(None, gt=0.0, description="Required for model='black_scholes'.")
+    vol: Optional[float] = Field(
+        None, gt=0.0, description="Required for model='black_scholes'."
+    )
     valuation_date: date = Field(
         default_factory=_today_utc,
         description="Time 0. Defaults to today (UTC) when omitted.",
@@ -274,7 +278,7 @@ class LookbackRequest(BaseModel):
     style: LookbackStyle = LookbackStyle.fixed_strike
     # extremum is only relevant for fixed-strike; ignored for floating-strike.
     extremum: LookbackExtremum = LookbackExtremum.maximum
-    n_steps: int = 0          # 0 = auto (252 × T steps)
+    n_steps: int = 0  # 0 = auto (252 × T steps)
     n_paths: int = 200000
     seed: int = 1
     mc_antithetic: bool = True
@@ -284,9 +288,9 @@ class LookbackRequest(BaseModel):
 class BasketRequest(BaseModel):
     # Per-asset parameters (all lists must have the same length n ≥ 2)
     spots: List[float] = Field(..., min_length=2)
-    vols: List[float]  = Field(..., min_length=2)
+    vols: List[float] = Field(..., min_length=2)
     dividends: List[float] = Field(default_factory=list)
-    weights: List[float]   = Field(default_factory=list)
+    weights: List[float] = Field(default_factory=list)
     # Uniform pairwise correlation ρ ∈ (-1, 1).
     # The full n×n correlation matrix is C[i][j] = ρ for i≠j, 1 for i=j.
     pairwise_correlation: float = Field(0.0, ge=-0.999, le=0.999)
@@ -386,7 +390,9 @@ class MarketHistoryPoint(BaseModel):
 
 class MarketHistoryResponse(BaseModel):
     ticker: str
-    currency: str = Field("USD", description="ISO currency of the closes (never converted).")
+    currency: str = Field(
+        "USD", description="ISO currency of the closes (never converted)."
+    )
     points: List[MarketHistoryPoint]
 
 
@@ -445,6 +451,60 @@ class RatesOverviewResponse(BaseModel):
     warnings: List[str]
 
 
+FxCurrency = Literal["USD", "EUR", "GBP", "JPY", "CHF"]
+
+
+class FxForwardPoint(BaseModel):
+    label: str
+    tenor: float
+    forward: float = Field(description="QUOTE units per BASE.")
+    points: float = Field(description="Forward − spot, QUOTE units.")
+
+
+class FxOverviewResponse(BaseModel):
+    base: FxCurrency
+    quote: FxCurrency
+    spot: float = Field(description="QUOTE units per BASE (ECB reference rates).")
+    spot_date: date
+    forwards: Optional[List[FxForwardPoint]] = None
+    forwards_unavailable: Optional[str] = None
+    curve_dates: dict[str, date] = {}
+    realised_vol: dict[str, Optional[float]] = Field(
+        description="Annualised volatility of daily log returns, by window (1Y, 3Y, 5Y)."
+    )
+    methodology: List["MethodologySection"]
+    warnings: List[str]
+
+
+class FxHistoryPoint(BaseModel):
+    date: date
+    rate: float
+
+
+class FxHistoryResponse(BaseModel):
+    base: FxCurrency
+    quote: FxCurrency
+    points: List[FxHistoryPoint]
+
+
+class FxCorrelationResponse(BaseModel):
+    ticker: str
+    base: FxCurrency
+    quote: FxCurrency
+    window: Literal["1Y", "3Y", "5Y"]
+    frequency: Literal["weekly", "daily"]
+    correlation: float
+    n: int = Field(description="Number of common returns.")
+    ci_low: float = Field(description="95 % confidence interval (Fisher transform).")
+    ci_high: float
+    asset_vol: float
+    fx_vol: float
+    start: date
+    end: date
+    asset_last: float = Field(description="Asset close on the last common date.")
+    fx_last: float = Field(description="FX rate on the last common date.")
+
+
 class RateHistoryPoint(BaseModel):
     date: date
     rate: float
@@ -460,8 +520,10 @@ class RatesHistoryResponse(BaseModel):
 # Local-volatility pricing
 # ---------------------------------------------------------------------------
 
+
 class LocalVolRequest(BaseModel):
     """Query parameters for the Dupire local-vol pricing endpoint."""
+
     ticker: str = Field(..., description="Stock ticker, e.g. 'AAPL'")
     strike: float = Field(..., gt=0)
     maturity: float = Field(..., gt=0, description="Time to maturity in years")
@@ -482,6 +544,7 @@ class LocalVolRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Autocall
 # ---------------------------------------------------------------------------
+
 
 class AutocallRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
@@ -504,6 +567,7 @@ class AutocallRequest(BaseModel):
 # Mountain / Himalaya
 # ---------------------------------------------------------------------------
 
+
 class MountainRequest(BaseModel):
     spots: List[float] = Field(..., min_length=2)
     vols: List[float] = Field(..., min_length=2)
@@ -521,6 +585,7 @@ class MountainRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Variance Swap
 # ---------------------------------------------------------------------------
+
 
 class VarianceSwapRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
@@ -540,6 +605,7 @@ class VarianceSwapRequest(BaseModel):
 # Volatility Swap
 # ---------------------------------------------------------------------------
 
+
 class VolatilitySwapRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
     rate: float
@@ -556,6 +622,7 @@ class VolatilitySwapRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Dispersion Swap
 # ---------------------------------------------------------------------------
+
 
 class DispersionSwapRequest(BaseModel):
     spots: List[float] = Field(..., min_length=2)
@@ -576,6 +643,7 @@ class DispersionSwapRequest(BaseModel):
 # FX Forward
 # ---------------------------------------------------------------------------
 
+
 class FXForwardRequest(BaseModel):
     spot: float = Field(..., gt=0.0, description="Spot FX rate (domestic per foreign)")
     rate_domestic: float
@@ -590,6 +658,7 @@ class FXForwardRequest(BaseModel):
 # FX Option
 # ---------------------------------------------------------------------------
 
+
 class FXOptionRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
     rate_domestic: float
@@ -601,9 +670,37 @@ class FXOptionRequest(BaseModel):
     notional: float = 1.0
 
 
+class QuantoRequest(BaseModel):
+    """A European option on a foreign-currency asset, paid in the domestic
+    currency at a conversion rate fixed in advance (Reiner 1992). Rates and
+    vols are decimals; `correlation` is corr(asset, FX) with the FX rate
+    quoted domestic per foreign (a EUR asset paid in USD: EUR/USD) — the
+    /market/fx/correlation endpoint estimates it."""
+
+    spot: float = Field(
+        ..., gt=0.0, description="Asset, in its own (foreign) currency."
+    )
+    strike: float = Field(..., gt=0.0, description="In the foreign currency.")
+    maturity: float = Field(..., gt=0.0)
+    rate_domestic: float = Field(description="Payment currency's rate.")
+    rate_foreign: float = Field(description="Asset currency's rate.")
+    dividend: float = 0.0
+    vol: float = Field(..., gt=0.0, description="Asset volatility σ_S.")
+    fx_vol: float = Field(..., gt=0.0, description="FX volatility σ_X.")
+    correlation: float = Field(..., ge=-1.0, le=1.0)
+    fx_rate: float = Field(
+        1.0, gt=0.0, description="Fixed conversion rate, domestic per foreign."
+    )
+    is_call: bool = True
+    engine: Literal["analytic", "mc"] = "analytic"
+    n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
+    seed: int = 1
+
+
 # ---------------------------------------------------------------------------
 # Commodity Forward
 # ---------------------------------------------------------------------------
+
 
 class CommodityForwardRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
@@ -620,6 +717,7 @@ class CommodityForwardRequest(BaseModel):
 # Commodity Option
 # ---------------------------------------------------------------------------
 
+
 class CommodityOptionRequest(BaseModel):
     spot: float = Field(..., gt=0.0)
     rate: float
@@ -635,6 +733,7 @@ class CommodityOptionRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Rainbow (worst-of / best-of)
 # ---------------------------------------------------------------------------
+
 
 class RainbowKind(str, Enum):
     worst_of = "worst-of"
@@ -658,6 +757,7 @@ class RainbowRequest(BaseModel):
 
 class LocalVolResponse(BaseModel):
     """Pricing result from the Dupire local-vol MC engine."""
+
     ticker: str
     spot: float
     npv: float
@@ -674,6 +774,7 @@ class LocalVolResponse(BaseModel):
 
 class CleanedIVSurfaceResponse(BaseModel):
     """Cleaned & smoothed IV surface grid (bicubic spline evaluated on a regular mesh)."""
+
     ticker: str
     spot: float
     strikes: List[float]
@@ -687,6 +788,7 @@ class DeltaBucketRow(BaseModel):
     """One maturity's desk-style delta-bucketed smile: 10/25-delta put, ATM,
     25/10-delta call, plus the risk reversals and butterflies a desk
     actually quotes skew and convexity as."""
+
     ttm: float
     tenor_label: str
     vol_10p: Optional[float] = None
@@ -710,6 +812,7 @@ class DeltaSurfaceResponse(BaseModel):
 
 class LocalVolSurfaceResponse(BaseModel):
     """Dupire local-volatility surface grid."""
+
     ticker: str
     spot: float
     strikes: List[float]
@@ -756,9 +859,17 @@ class SimulationPathsResponse(BaseModel):
 class SimulationCalibrateRequest(BaseModel):
     ticker: str
     model: SimulationModel
-    ttm: float = Field(gt=0, description="Target maturity in years -- the nearest calibrated slice is used")
+    ttm: float = Field(
+        gt=0,
+        description="Target maturity in years -- the nearest calibrated slice is used",
+    )
     rate: float = 0.05
-    beta: float = Field(0.5, ge=0, le=1, description="SABR beta, fixed rather than calibrated (see SABRParams)")
+    beta: float = Field(
+        0.5,
+        ge=0,
+        le=1,
+        description="SABR beta, fixed rather than calibrated (see SABRParams)",
+    )
 
 
 class SimulationCalibrateResponse(BaseModel):
@@ -768,7 +879,9 @@ class SimulationCalibrateResponse(BaseModel):
     dividend: float
     forward: float
     ttm: float
-    slice_ttm: float = Field(description="The calibrated SVI slice's own maturity, closest to the requested ttm")
+    slice_ttm: float = Field(
+        description="The calibrated SVI slice's own maturity, closest to the requested ttm"
+    )
     vol: Optional[float] = None
     alpha: Optional[float] = None
     beta: Optional[float] = None
