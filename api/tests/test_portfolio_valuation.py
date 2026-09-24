@@ -82,6 +82,8 @@ def market(monkeypatch):
     monkeypatch.setattr(db, "ecb_fx_history", ecb)
     monkeypatch.setattr(db, "rates_curve_history", lambda table, ids, since: [])
     monkeypatch.setattr(db, "dividend_yield_history", lambda t, since: [])
+    # No option chain stored: no smile, the realised-vol proxy everywhere.
+    monkeypatch.setattr(db, "options_snapshot_date_on_or_before", lambda t, d: None)
     store = DictStorage()
     monkeypatch.setattr(pv, "get_storage", lambda: store)
     monkeypatch.setattr(pv, "_STORE", pv.MarkStore())

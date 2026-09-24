@@ -63,3 +63,4 @@ export type PortfolioHistory = Schemas["HistoryResponse"];
 export type PnlWindow = NonNullable<Schemas["HistoryRequest"]["window"]>;
 export type TickerClose = Schemas["CloseResponse"];
 export type DemoPortfolio = Schemas["DemoPortfolio"];
+export type PositionModel = Schemas["ModelView"];

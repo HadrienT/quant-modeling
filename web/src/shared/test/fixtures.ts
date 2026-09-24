@@ -373,6 +373,21 @@ export function portfolioSnapshot() {
 					input("vol (63-day realised)", "proxied", 0.1185),
 				],
 				greeks: { delta: 0.45 },
+				model: {
+					model: "Black-Scholes, flat volatility",
+					engine: "Black-Scholes closed form",
+					why: "No option chain is stored for this underlying on this date.",
+					params: [
+						{ name: "strike", value: 8200, status: "contract", source: "" },
+						{
+							name: "volatility",
+							value: 0.1185,
+							status: "proxied",
+							source: "^FCHI realised vol, 63 business days",
+						},
+					],
+					std_error: null,
+				},
 				note: null,
 			},
 		],

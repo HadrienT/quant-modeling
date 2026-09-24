@@ -40,6 +40,9 @@ import bisect
 import hashlib
 import json
 import math
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
@@ -50,6 +53,8 @@ import quantmodeling as qm
 
 from . import db, fx, rates, valuation
 from .portfolio_ledger import Holding, QTY_EPS, sorted_trades
+from . import portfolio_models
+from .portfolio_marks import Input, Mark, ModelInfo, ModelParam
 from .portfolio_schemas import DerivativeSpec, EquitySpec, Instrument, Portfolio
 from .storage import get_storage
 
@@ -62,6 +67,9 @@ VOL_WINDOW = 63
 VOL_MIN_RETURNS = 20
 #: Business days (Mon–Fri) in a year: the clock the realised vol runs on.
 WEEKDAYS_PER_YEAR = YEAR_DAYS * 5 / 7
+#: Asset/FX correlation window (calendar days) and fewest common returns.
+CORR_DAYS = 365
+CORR_MIN_RETURNS = 60
 #: Market data read before a window, for the vol proxy and on-or-before lookups.
 LOOKBACK_DAYS = 140
 
@@ -95,6 +103,9 @@ class MarketData:
         self._curves: Dict[str, _OnOrBefore] = {}
         self._divs: Dict[str, _OnOrBefore] = {}
         self._ccy: Dict[str, str] = {}
+        #: This run's marks, today's included (never stored): a mark asked
+        #: twice — prefetched, then read — is computed once.
+        self.marks: Dict[Tuple[str, date], Mark] = {}
 
     def closes(self, ticker: str) -> _OnOrBefore:
         if ticker not in self._closes:
@@ -140,45 +151,80 @@ class MarketData:
         return self._divs[ticker]
 
     def realised_vol(self, ticker: str, d: date) -> Optional[Tuple[date, float]]:
-        """Annualised realised vol over the VOL_WINDOW business days up to d:
-        sqrt(sum r_i^2 / T), r_i the log returns between consecutive stored
-        closes and T the business-day time they span, in years. The maximum-
-        likelihood variance of a Brownian motion seen at irregular times (zero
-        drift): missing closes lengthen a return's interval instead of being
-        read as one-day moves, and the result does not depend on how much
-        history was loaded before the window."""
-        s = self.closes(ticker)
-        start = np.busday_offset(d, -VOL_WINDOW, roll="backward").astype(date)
-        lo = bisect.bisect_left(s.dates, start)
-        hi = bisect.bisect_right(s.dates, d)
-        dates, values = s.dates[lo:hi], s.values[lo:hi]
-        if len(dates) - 1 < VOL_MIN_RETURNS:
+        return realised_vol_of(self.closes(ticker), d)
+
+    def zero_rate(self, ccy: str, d: date, t: float) -> Optional[Tuple[date, float]]:
+        return _zero_rate(self, ccy, d, t)
+
+    def closes_from(self, ticker: str, since: date) -> _OnOrBefore:
+        """The closes from `since` on — a contract's fixings may predate the
+        window this run loaded."""
+        if since < self.since:
+            key = f"{ticker}@{since.isoformat()}"
+            if key not in self._closes:
+                self._closes[key] = _OnOrBefore(db.price_history(ticker, since))
+            return self._closes[key]
+        return self.closes(ticker)
+
+    def fx_realised_vol(
+        self, ccy: str, base: str, d: date
+    ) -> Optional[Tuple[date, float]]:
+        if ccy == base:
             return None
-        r = np.diff(np.log(np.asarray(values, dtype=float)))
-        elapsed = np.busday_count(dates[0], dates[-1]) / WEEKDAYS_PER_YEAR
-        if elapsed <= 0:
+        try:
+            return realised_vol_of(self.fx(ccy, base), d)
+        except fx.FxUnavailable:
             return None
-        return dates[-1], float(math.sqrt(float(np.sum(r**2)) / elapsed))
+
+    def asset_fx_correlation(
+        self, ticker: str, ccy: str, base: str, d: date
+    ) -> Optional[Tuple[date, float]]:
+        """Correlation of daily log returns of the asset (in its currency)
+        and of the FX rate (base per ccy), over the year to d, on common
+        dates. None below CORR_MIN_RETURNS common returns."""
+        if ccy == base:
+            return None
+        try:
+            fxs = self.fx(ccy, base)
+        except fx.FxUnavailable:
+            return None
+        a = self.closes_from(ticker, d - timedelta(days=CORR_DAYS))
+        lo = d - timedelta(days=CORR_DAYS)
+        fx_by = dict(zip(fxs.dates, fxs.values))
+        common = [
+            (t, v, fx_by[t])
+            for t, v in zip(a.dates, a.values)
+            if lo <= t <= d and t in fx_by
+        ]
+        if len(common) - 1 < CORR_MIN_RETURNS:
+            return None
+        arr = np.log(np.asarray([[v, x] for _, v, x in common], dtype=float))
+        r = np.diff(arr, axis=0)
+        return common[-1][0], float(np.corrcoef(r[:, 0], r[:, 1])[0, 1])
+
+
+def realised_vol_of(s: _OnOrBefore, d: date) -> Optional[Tuple[date, float]]:
+    """Annualised realised vol over the VOL_WINDOW business days up to d:
+    sqrt(sum r_i^2 / T), r_i the log returns between consecutive stored
+    observations and T the business-day time they span, in years. The
+    maximum-likelihood variance of a Brownian motion seen at irregular times
+    (zero drift): missing closes lengthen a return's interval instead of
+    being read as one-day moves, and the result does not depend on how much
+    history was loaded before the window."""
+    start = np.busday_offset(d, -VOL_WINDOW, roll="backward").astype(date)
+    lo = bisect.bisect_left(s.dates, start)
+    hi = bisect.bisect_right(s.dates, d)
+    dates, values = s.dates[lo:hi], s.values[lo:hi]
+    if len(dates) - 1 < VOL_MIN_RETURNS:
+        return None
+    r = np.diff(np.log(np.asarray(values, dtype=float)))
+    elapsed = np.busday_count(dates[0], dates[-1]) / WEEKDAYS_PER_YEAR
+    if elapsed <= 0:
+        return None
+    return dates[-1], float(math.sqrt(float(np.sum(r**2)) / elapsed))
 
 
 # ── Marks ────────────────────────────────────────────────────────────────────
-
-
-@dataclass
-class Input:
-    name: str
-    status: str  # observed | stale | proxied | default
-    value: Optional[float]
-    as_of: Optional[date] = None
-
-
-@dataclass
-class Mark:
-    value: Optional[float]  # per unit, instrument currency; None when unavailable
-    currency: str
-    inputs: List[Input] = field(default_factory=list)
-    greeks: Dict[str, Optional[float]] = field(default_factory=dict)
-    note: Optional[str] = None  # why there is no value, or what to do
 
 
 def _stale(d: date, observed: date) -> str:
@@ -213,7 +259,9 @@ def _zero_rate(
     return obs, -math.log(df) / tq
 
 
-def _mark_derivative(spec: DerivativeSpec, d: date, md: MarketData) -> Mark:
+def _mark_derivative(
+    spec: DerivativeSpec, d: date, md: MarketData, today: Optional[date] = None
+) -> Mark:
     ccy = spec.currency
     if d >= spec.expiry:
         return Mark(
@@ -268,6 +316,15 @@ def _mark_derivative(spec: DerivativeSpec, d: date, md: MarketData) -> Mark:
             inputs.append(Input(f"dividend {u}", status, got[1], got[0]))
         else:
             inputs.append(Input("dividend", "default", params["dividend"]))
+    try:
+        desk = portfolio_models.price(
+            spec, d, md, params, inputs, today or date.today()
+        )
+    except Exception as exc:  # noqa: BLE001 — one position must not sink the book
+        return Mark(None, ccy, inputs, note=f"pricing failed: {exc}")
+    if desk is not None:
+        return desk
+    # A product outside the desk policy: its catalog pricer, flat vol.
     if u and "vol" in params:
         got = md.realised_vol(u, d)
         if got is not None:
@@ -296,6 +353,13 @@ def _mark_derivative(spec: DerivativeSpec, d: date, md: MarketData) -> Mark:
             "theta": g.theta,
             "rho": g.rho,
         },
+        model=ModelInfo(
+            "Black-Scholes, flat volatility",
+            "catalog pricer",
+            "A product outside the desk-model policy: its own pricer at the "
+            "realised-volatility proxy.",
+            [ModelParam(i.name, i.value, status=i.status) for i in inputs],
+        ),
     )
 
 
@@ -305,13 +369,26 @@ class MarkStore:
     Today's is not stored — the day's close may still come in."""
 
     PREFIX = "portfolio-marks"
+    #: Bumped whenever the way a mark is computed changes, so that marks
+    #: stored by an older method are never served as today's (v2: the desk-
+    #: model policy of portfolio_models.py).
+    METHOD = 2
 
     def __init__(self) -> None:
         self._mem: Dict[str, Dict[str, dict]] = {}
+        # Marks are computed on parallel threads (prefetch_marks): one lock
+        # keeps an instrument's file from being written by two at once.
+        self._lock = threading.Lock()
 
     @staticmethod
     def key(instrument: Instrument) -> str:
-        payload = json.dumps(instrument.spec.model_dump(mode="json"), sort_keys=True)
+        payload = json.dumps(
+            {
+                "method": MarkStore.METHOD,
+                "spec": instrument.spec.model_dump(mode="json"),
+            },
+            sort_keys=True,
+        )
         return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
     def _load(self, k: str) -> Dict[str, dict]:
@@ -323,7 +400,8 @@ class MarkStore:
         return self._mem[k]
 
     def get(self, instrument: Instrument, d: date) -> Optional[Mark]:
-        raw = self._load(self.key(instrument)).get(d.isoformat())
+        with self._lock:
+            raw = self._load(self.key(instrument)).get(d.isoformat())
         if raw is None:
             return None
         return Mark(
@@ -340,12 +418,17 @@ class MarkStore:
             ],
             raw.get("greeks", {}),
             raw.get("note"),
+            _model_from(raw.get("model")),
         )
 
     def put(self, instrument: Instrument, d: date, mark: Mark, today: date) -> None:
         if d >= today:
             return
         k = self.key(instrument)
+        with self._lock:
+            self._put(k, d, mark)
+
+    def _put(self, k: str, d: date, mark: Mark) -> None:
         store = self._load(k)
         store[d.isoformat()] = {
             "value": mark.value,
@@ -356,11 +439,24 @@ class MarkStore:
             ],
             "greeks": mark.greeks,
             "note": mark.note,
+            "model": _model_to(mark.model),
         }
         try:
             get_storage().write_json(f"{self.PREFIX}/{k}", store)
         except Exception:  # noqa: BLE001 — losing the cache only costs time
             pass
+
+
+def _model_to(m: Optional[ModelInfo]) -> Optional[dict]:
+    if m is None:
+        return None
+    return {**m.__dict__, "params": [p.__dict__ for p in m.params]}
+
+
+def _model_from(raw: Optional[dict]) -> Optional[ModelInfo]:
+    if not raw:
+        return None
+    return ModelInfo(**{**raw, "params": [ModelParam(**p) for p in raw["params"]]})
 
 
 _STORE = MarkStore()
@@ -371,14 +467,49 @@ def mark(
 ) -> Mark:
     today = today or date.today()
     if isinstance(instrument.spec, DerivativeSpec):
-        cached = _STORE.get(instrument, d)
-        if cached is not None:
-            return cached
-        m = _mark_derivative(instrument.spec, d, md)
-        if m.value is not None:
-            _STORE.put(instrument, d, m, today)
+        memo = (MarkStore.key(instrument), d)
+        if memo in md.marks:
+            return md.marks[memo]
+        m = _STORE.get(instrument, d)
+        if m is None:
+            m = _mark_derivative(instrument.spec, d, md, today)
+            if m.value is not None:
+                _STORE.put(instrument, d, m, today)
+        md.marks[memo] = m
         return m
     return _mark_equity(instrument.spec, d, md)
+
+
+#: Threads pricing derivative marks in parallel. One scripted pricing adds
+#: no measurable memory (no RSS growth over repeated 20 000-path runs: the
+#: engine keeps one path at a time), so the bound is CPU shared with the
+#: other services on the machine, not RAM. QM_PORTFOLIO_WORKERS overrides.
+WORKERS = max(1, int(os.getenv("QM_PORTFOLIO_WORKERS", "8")))
+
+
+def prefetch_marks(pf: Portfolio, days: List[date], md: MarketData) -> None:
+    """Price every derivative held on each of `days` on parallel threads
+    (the pricers release the GIL), so the sequential P&L walk that follows
+    only reads md.marks."""
+    by_id = {i.id: i for i in pf.instruments}
+    jobs = [
+        (by_id[iid], d)
+        for d in days
+        for iid, h in _holdings_at(pf, d).items()
+        if abs(h.quantity) > QTY_EPS and isinstance(by_id[iid].spec, DerivativeSpec)
+    ]
+    # Market series are read lazily and cached on md: load them once, here,
+    # rather than race to load them from every thread.
+    for inst, _ in jobs:
+        spec = inst.spec
+        if spec.underlying:
+            md.closes(spec.underlying)
+            md.currency(spec.underlying)
+            md.dividends(spec.underlying)
+        md.curve(spec.currency)
+    if len(jobs) > 1:
+        with ThreadPoolExecutor(min(WORKERS, len(jobs))) as ex:
+            list(ex.map(lambda j: mark(j[0], j[1], md), jobs))
 
 
 # ── Snapshot ─────────────────────────────────────────────────────────────────
@@ -404,6 +535,7 @@ class PositionView:
     inputs: List[Input]
     greeks: Dict[str, Optional[float]]
     note: Optional[str]
+    model: Optional[ModelInfo] = None
 
 
 @dataclass
@@ -442,6 +574,36 @@ def _replay_base(pf: Portfolio, as_of: date, md: MarketData):
     return local, base
 
 
+def with_contract_starts(pf: Portfolio) -> Portfolio:
+    """A path-dependent product observes from its contract's start: the
+    `start_date` of its terms, or else the first trade on it (when it was
+    struck). Written into the spec, so the stored marks are keyed by it."""
+    first: Dict[str, date] = {}
+    for t in pf.transactions:
+        first[t.instrument_id] = min(
+            first.get(t.instrument_id, t.trade_date), t.trade_date
+        )
+    out = []
+    changed = False
+    for i in pf.instruments:
+        spec = i.spec
+        if (
+            isinstance(spec, DerivativeSpec)
+            and spec.product in portfolio_models.SCRIPTED
+            and "start_date" not in spec.params
+            and i.id in first
+        ):
+            spec = spec.model_copy(
+                update={
+                    "params": {**spec.params, "start_date": first[i.id].isoformat()}
+                }
+            )
+            i = i.model_copy(update={"spec": spec})
+            changed = True
+        out.append(i)
+    return pf.model_copy(update={"instruments": out}) if changed else pf
+
+
 def _ccy(instrument: Instrument, md: MarketData) -> str:
     spec = instrument.spec
     return (
@@ -457,9 +619,11 @@ def previous_business_day(d: date) -> date:
 
 
 def snapshot(pf: Portfolio, as_of: date, md: Optional[MarketData] = None) -> Snapshot:
+    pf = with_contract_starts(pf)
     # From the first trade: its cost basis is converted at its trade-date FX.
     first = min((t.trade_date for t in pf.transactions), default=as_of)
     md = md or MarketData(min(first, previous_business_day(as_of)))
+    prefetch_marks(pf, [previous_business_day(as_of), as_of], md)
     by_id = {i.id: i for i in pf.instruments}
     holding, base_holding = _replay_base(pf, as_of, md)
     prev = previous_business_day(as_of)
@@ -507,6 +671,7 @@ def snapshot(pf: Portfolio, as_of: date, md: Optional[MarketData] = None) -> Sna
                 m.inputs,
                 m.greeks,
                 m.note,
+                m.model,
             )
         )
     if pf.positions:
@@ -605,6 +770,7 @@ def history(
     the snapshot's total P&L."""
     if not pf.transactions:
         return [], []
+    pf = with_contract_starts(pf)
     first = min(t.trade_date for t in pf.transactions)
     start = max(start, first)
     days = business_days(start, end)
@@ -614,6 +780,7 @@ def history(
     by_id = {i.id: i for i in pf.instruments}
     warnings: List[str] = []
     prev = previous_business_day(days[0])
+    prefetch_marks(pf, [prev] + days, md)
     prev_value = _portfolio_value(pf, prev, md, by_id)
     points: List[HistoryPoint] = []
     cumulative = snapshot(pf, prev).total_pnl if prev >= first else 0.0
@@ -676,12 +843,31 @@ METHODOLOGY = [
             "Derivatives are fully revalued each day with that day's market: the "
             "underlying's close for the spot, the time left to expiry, the zero rate at "
             "that horizon from the currency's government curve (Rates tab), the stored "
-            "dividend yield. Implied volatilities are not stored for these names, so the "
-            "volatility is the underlying's realised volatility over the last 63 business "
-            "days — a proxy, shown as such. It is measured over elapsed time: squared "
-            "log returns divided by the time they span, so a missing close makes one "
-            "longer return rather than a false one-day jump. What the market cannot supply keeps its trade-time value "
-            "(status 'default').",
+            "dividend yield — and a model chosen per product, as an equity desk would. "
+            "The i next to each position shows the model and every parameter it ran with.",
+            "Where an option chain is stored for the underlying on that date (a US "
+            "universe, recent dates), one SVI slice per maturity is fitted to it: the "
+            "smile. Vanillas are marked at the smile's implied vol for their strike and "
+            "maturity (Black-Scholes is then only the quoting convention; American "
+            "options on a binomial tree). Digitals are the strike derivative of the "
+            "vanilla on the smile: the flat-vol price corrected by vega × skew. Asians, "
+            "barriers and lookbacks run on Dupire local volatility built from the same "
+            "surface, which reprices every vanilla of the day.",
+            "Without a stored chain there is no smile to fit: the volatility is the "
+            "underlying's realised volatility over the last 63 business days — a proxy, "
+            "shown as such. It is measured over elapsed time (squared log returns "
+            "divided by the time they span), so a missing close makes one longer return "
+            "rather than a false one-day jump. A quanto's FX volatility and asset/FX "
+            "correlation are always historical: no FX options are stored.",
+            "Asians, barriers and lookbacks are written as payoff scripts (Savine's "
+            "scripting engine) observed at every business-day close from their start: "
+            "the fixings already past are replayed from the stored closes, so a product "
+            "that has started to live is priced from where it is — its partial average, "
+            "the extremum reached, a barrier already crossed. They are priced by "
+            "Monte-Carlo with the same draws every day, so the daily P&L is not noise; "
+            "the standard error is shown with the model.",
+            "What the market cannot supply keeps its trade-time value (status "
+            "'default').",
             "An expired derivative is not valued past its expiry: book its settlement as "
             "a closing trade.",
         ],

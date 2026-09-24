@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -784,11 +785,19 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &K_grid,
                              const std::vector<double> &T_grid,
                              const std::vector<double> &sigma_loc_flat,
-                             int steps_per_year)
+                             int steps_per_year,
+                             const std::map<std::string, std::vector<double>>
+                                 &historical_fixings)
 {
     using namespace quantModeling;
 
     const Date valuation = Date::from_iso(valuation_date);
+    // Past events (on or before the valuation date) are replayed once against
+    // these observed spots (ScriptedProduct, lot 16e): a seasoned product's
+    // running average, extremum or barrier state enters today's price.
+    std::map<Date, std::vector<double>> fixings;
+    for (const auto &[iso, spots] : historical_fixings)
+        fixings.emplace(Date::from_iso(iso), spots);
     const DayCounter &basis = day_counter_by_name(day_count);
     const ValuationContext ctx{valuation, &basis, &NullCalendar::instance()};
     const int paths = n_paths > 0 ? n_paths : 200000;
@@ -819,8 +828,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
 
     if (greeks_method == "aad")
     {
-        ScriptedProduct<aad::Number> product(script, ctx,
-                                             ScriptSettings{fuzzy, default_eps});
+        ScriptedProduct<aad::Number> product(
+            script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
         auto sim_model = scripting::make_script_model<aad::Number>(
             model, spot, rate, dividend, vol, K_grid, T_grid, sigma_loc_flat,
             max_dt);
@@ -842,31 +851,41 @@ static py::dict price_script(const std::string &script, double spot, double rate
         return out;
     }
 
-    ScriptedProduct<Real> product(script, ctx,
-                                  ScriptSettings{fuzzy, default_eps});
-    auto sim_model = scripting::make_script_model<Real>(model, spot, rate, dividend, vol,
-                                                        K_grid, T_grid, sigma_loc_flat,
-                                                        max_dt);
-    check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+    // The simulation is pure C++ on arguments pybind11 has already converted:
+    // release the GIL for it, so that several scripts (a portfolio's
+    // positions, a history's days) can be priced on parallel Python threads.
+    // Only building the Python result needs it back.
+    std::optional<SimulationMCResult> mc;
+    std::vector<scripting::Advice> advice;
+    std::size_t n_events = 0;
+    {
+        py::gil_scoped_release release;
+        ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps},
+                                      fixings);
+        auto sim_model = scripting::make_script_model<Real>(
+            model, spot, rate, dividend, vol, K_grid, T_grid, sigma_loc_flat, max_dt);
+        check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
 
-    PricingSettings settings;
-    settings.mc_paths = paths;
-    settings.mc_seed = static_cast<int>(seed_value);
-    settings.mc_antithetic = true;
-    settings.mc_sampler =
-        (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
+        PricingSettings settings;
+        settings.mc_paths = paths;
+        settings.mc_seed = static_cast<int>(seed_value);
+        settings.mc_antithetic = true;
+        settings.mc_sampler =
+            (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
 
-    const SimulationMCResult mc = simulate<Real>(product, *sim_model, settings);
+        mc = simulate<Real>(product, *sim_model, settings);
+        n_events = product.timeline().size();
+        advice = scripting::advise(product.analysis(), kind, product.timeline().back(),
+                                   surface_T);
+    }
 
     PricingResult res;
-    res.npv = mc.npv();
-    res.mc_std_error = mc.std_error();
-    res.diagnostics = mc.diagnostics + " | scripted, " +
-                      std::to_string(product.timeline().size()) + " events" +
-                      (fuzzy ? ", fuzzy" : ", hard") + model_note;
+    res.npv = mc->npv();
+    res.mc_std_error = mc->std_error();
+    res.diagnostics = mc->diagnostics + " | scripted, " + std::to_string(n_events) +
+                      " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note;
     py::dict out = pricing_result_to_dict(res);
-    out["warnings"] = advice_to_py(scripting::advise(
-        product.analysis(), kind, product.timeline().back(), surface_T));
+    out["warnings"] = advice_to_py(advice);
     return out;
 }
 
@@ -1121,6 +1140,8 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("T_grid") = std::vector<double>{},
           py::arg("sigma_loc_flat") = std::vector<double>{},
           py::arg("steps_per_year") = 52,
+          py::arg("historical_fixings") =
+              std::map<std::string, std::vector<double>>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "

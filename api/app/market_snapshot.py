@@ -58,6 +58,12 @@ class LocalVolMarket:
     T_grid: List[float]
     sigma_loc_flat: List[float]
     warnings: List[Dict[str, str]] = field(default_factory=list)
+    #: The calibrated SVI slices the Dupire grid was built from (ttm, a, b,
+    #: rho, m, sigma, rmse, converged...): an implied-vol surface in its own
+    #: right, k = ln(K / F_T) at the snapshot's spot, rate and dividend.
+    svi_slices: List[Dict[str, float]] = field(default_factory=list)
+    #: Flat rate the calibration's forwards used.
+    rate: float = 0.0
 
 
 def _ttm(expiry: date, as_of: date) -> float:
@@ -106,9 +112,7 @@ def _store(fn, *args):
         ) from exc
 
 
-def local_vol_market(
-    ticker: str, rate: float, valuation_date: date
-) -> LocalVolMarket:
+def local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVolMarket:
     """Stored chain + close + dividend yield -> calibrated Dupire grid."""
     with tracer.start_as_current_span(
         "market_snapshot.load", attributes={"qm.valuation_date": str(valuation_date)}
@@ -116,9 +120,7 @@ def local_vol_market(
         return _local_vol_market(ticker, rate, valuation_date)
 
 
-def _local_vol_market(
-    ticker: str, rate: float, valuation_date: date
-) -> LocalVolMarket:
+def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVolMarket:
     ticker = ticker.upper().strip()
 
     snap = _store(db.options_snapshot_date_on_or_before, ticker, valuation_date)
@@ -181,7 +183,11 @@ def _local_vol_market(
         else MarketInputStatus.OBSERVED
     )
     record_market_input(
-        f"spot:{ticker}", "db:prices.sp500_daily", spot_date.isoformat(), spot_status, spot
+        f"spot:{ticker}",
+        "db:prices.sp500_daily",
+        spot_date.isoformat(),
+        spot_status,
+        spot,
     )
     record_market_input(
         f"dividend:{ticker}",
@@ -199,7 +205,14 @@ def _local_vol_market(
     )
 
     result = qm.calibrate_vol_surface(
-        quotes, spot, rate, dividend, -0.6, 0.6, 100, 50,
+        quotes,
+        spot,
+        rate,
+        dividend,
+        -0.6,
+        0.6,
+        100,
+        50,
         cleaning_params=qm.CleaningParams(),
     )
 
@@ -239,4 +252,6 @@ def _local_vol_market(
         T_grid=result["T_grid"],
         sigma_loc_flat=result["sigma_loc_flat"],
         warnings=warnings,
+        svi_slices=[dict(sl) for sl in result.get("slices", [])],
+        rate=rate,
     )

@@ -28,6 +28,7 @@ export type DerivativeDraft = {
 };
 
 const YEAR = 365.25 * 86_400_000;
+const PATH_DEPENDENT = new Set(["asian", "barrier", "lookback"]);
 /** Set from the trade (spot, maturity) or by the valuation (engine). */
 const DERIVED = ["spot", "maturity", "engine", "n_paths", "seed", "tree_steps"];
 
@@ -70,6 +71,8 @@ export function DerivativeFields({
 		>;
 		params.maturity = years;
 		if (close.data) params.spot = close.data.close;
+		// A path-dependent product observes from its start: the trade date.
+		if (PATH_DEPENDENT.has(key)) params.start_date = tradeDate;
 		const strike = params.strike != null ? ` K=${params.strike}` : "";
 		onChange({
 			label: `${underlying} ${descriptor.label}${strike} ${expiry}`,
