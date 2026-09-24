@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import {
 	type Magnitude,
 	ageSeconds,
+	formatDuration,
 	formatNumber,
 	formatRelative,
 	formatSigned,
@@ -250,6 +251,36 @@ export function EngineTag({
 			)}
 		>
 			{ENGINE_LABELS[engine] ?? engine}
+		</span>
+	);
+}
+
+/* ── ComputeTime ───────────────────────────────────────────────────────── */
+/**
+ * How long a result took: the server's compute time (the engine call alone)
+ * and, when known, the round trip seen by the browser.
+ */
+export function ComputeTime({
+	computeMs,
+	roundTripMs,
+	className,
+}: {
+	computeMs: number | null | undefined;
+	roundTripMs?: number | null;
+	className?: string;
+}) {
+	if (computeMs == null && roundTripMs == null) return null;
+	return (
+		<span
+			className={cn(
+				"font-mono text-2xs text-ink-muted tabular-nums",
+				className,
+			)}
+			title="Compute: wall time of the pricing on the server (engine call only). Round trip: from the request leaving the browser to the response parsed, network and queueing included."
+		>
+			{computeMs != null && <>computed in {formatDuration(computeMs)}</>}
+			{computeMs != null && roundTripMs != null && " · "}
+			{roundTripMs != null && <>{formatDuration(roundTripMs)} round trip</>}
 		</span>
 	);
 }

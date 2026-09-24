@@ -381,6 +381,11 @@ class PricingResponse(BaseModel):
     mc_std_error: float
     risks: Optional[List[RiskEntry]] = None
     warnings: List[ModelWarning] = Field(default_factory=list)
+    compute_ms: Optional[float] = Field(
+        None,
+        description="Server-side wall time of the pricing itself (the engine "
+        "call), in milliseconds; excludes network and request parsing.",
+    )
 
 
 class MarketHistoryPoint(BaseModel):

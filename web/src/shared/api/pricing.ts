@@ -11,6 +11,13 @@ export type PricingPath = {
 }[keyof paths];
 
 /**
+ * A pricing response plus the round trip the browser measured (request sent
+ * → response parsed). The server's own compute time is `compute_ms`; the
+ * difference is network, queueing and (de)serialisation.
+ */
+export type PricingResult = PricingResponse & { round_trip_ms: number };
+
+/**
  * Price a single instrument. The concrete request/response types are enforced
  * per-endpoint by openapi-fetch; the workbench (WP 07) narrows them via the
  * product descriptor.
@@ -21,20 +28,24 @@ export function usePricing<P extends PricingPath>(args: {
 	enabled?: boolean;
 }) {
 	const { endpoint, body, enabled = true } = args;
-	return useQuery<PricingResponse, ApiError>({
+	return useQuery<PricingResult, ApiError>({
 		queryKey: queryKeys.pricing.option(endpoint ?? "", body),
 		enabled: enabled && Boolean(endpoint),
 		staleTime: 0, // a price is recomputed whenever its inputs (the key) change
 		retry: false,
 		queryFn: async ({ signal }) => {
 			const s = signalWithTimeout(signal, LONG_TIMEOUT_MS);
+			const sent = performance.now();
 			try {
 				const { data, error } = await api.POST(endpoint as PricingPath, {
 					body: body as never,
 					signal: s,
 				});
 				if (error !== undefined) throw ApiError.from(error);
-				return data as PricingResponse;
+				return {
+					...(data as PricingResponse),
+					round_trip_ms: performance.now() - sent,
+				};
 			} finally {
 				s.cleanup();
 			}

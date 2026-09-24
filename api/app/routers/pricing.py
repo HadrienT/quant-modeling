@@ -97,7 +97,7 @@ async def _price(
         "pricing.valuation",
         valuation.payload(product_id, req, priced, ip_hash=current_ip_hash()),
     )
-    return priced.response
+    return priced.response.model_copy(update={"compute_ms": priced.duration_s * 1000})
 
 
 @router.post("/price/option/vanilla", response_model=PricingResponse)

@@ -69,3 +69,11 @@ export function formatSigned(
 	if (value < 0) return `−${body}`;
 	return body;
 }
+
+/** A duration in milliseconds: 0.42 ms, 12.3 ms, 1.84 s. */
+export function formatDuration(ms: number | null | undefined): string {
+	if (ms == null || Number.isNaN(ms)) return "—";
+	if (ms < 1) return `${ms.toFixed(2)} ms`;
+	if (ms < 1000) return `${ms.toPrecision(3)} ms`;
+	return `${(ms / 1000).toFixed(2)} s`;
+}

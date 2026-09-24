@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { usePricing } from "@/shared/api";
-import type { PricingResponse } from "@/shared/api";
 import { Button, Field } from "@/shared/ui";
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
 import { PriceResult } from "./dated-asian/PriceResult";
@@ -55,7 +54,7 @@ export default function DatedAsianPreview() {
 		enabled: Boolean(request),
 	});
 
-	const r = q.data as PricingResponse | undefined;
+	const r = q.data;
 
 	return (
 		<div className="mx-auto flex max-w-3xl flex-col gap-6">

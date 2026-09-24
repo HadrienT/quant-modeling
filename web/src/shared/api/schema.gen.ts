@@ -2780,6 +2780,11 @@ export interface components {
         /** PricingResponse */
         PricingResponse: {
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
+            /**
+             * Compute Ms
+             * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
+             */
+            compute_ms?: number | null;
             /** Diagnostics */
             diagnostics: string;
             greeks: components["schemas"]["Greeks"];
