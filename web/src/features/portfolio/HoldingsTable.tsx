@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Trash2 } from "lucide-react";
 import type { PositionMark } from "@/shared/api";
 import { Badge, Button, DeltaBadge, NumberCell } from "@/shared/ui";
 import { MarkInputs } from "./MarkInputs";
@@ -28,10 +28,13 @@ export function HoldingsTable({
 	positions,
 	base,
 	onTrade,
+	onDelete,
 }: {
 	positions: PositionMark[];
 	base: string;
 	onTrade: (p: PositionMark, side: "buy" | "sell") => void;
+	/** a position booked by mistake: all its trades go */
+	onDelete: (p: PositionMark) => void;
 }) {
 	const [open, setOpen] = useState<string | null>(null);
 	const [showClosed, setShowClosed] = useState(false);
@@ -133,6 +136,15 @@ export function HoldingsTable({
 										>
 											Sell
 										</Button>
+										<button
+											type="button"
+											aria-label={`Delete position ${p.label}`}
+											title="Delete (booked by mistake)"
+											className="ml-1 rounded p-1 align-middle text-ink-muted hover:text-critical"
+											onClick={() => onDelete(p)}
+										>
+											<Trash2 className="size-3.5" />
+										</button>
 									</td>
 								</tr>
 								{open === p.instrument_id && (

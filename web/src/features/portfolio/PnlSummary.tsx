@@ -10,7 +10,7 @@ export function PnlSummary({ snap }: { snap: PortfolioSnapshot }) {
 	const ccy = snap.base_currency;
 	return (
 		<div className="flex flex-col gap-2">
-			<MetricRow className="xl:grid-cols-6">
+			<MetricRow className="xl:grid-cols-3 2xl:grid-cols-6">
 				<Metric
 					label="Market value"
 					unit={ccy}

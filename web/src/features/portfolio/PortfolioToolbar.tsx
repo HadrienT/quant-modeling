@@ -1,9 +1,5 @@
-import { Download, Plus, Upload } from "lucide-react";
-import type {
-	Portfolio,
-	PortfolioCurrency,
-	PortfolioSummary,
-} from "@/shared/api";
+import { Download, Upload } from "lucide-react";
+import type { Portfolio, PortfolioCurrency } from "@/shared/api";
 import { CURRENCIES } from "@/shared/portfolio";
 import { Button, Input } from "@/shared/ui";
 
@@ -31,19 +27,13 @@ function journalCsv(pf: Portfolio): string {
 	return rows.map((r) => r.join(",")).join("\n");
 }
 
-/** Portfolio selector, base currency, new / export / import. */
+/** Base currency, export (JSON, journal CSV) and import. */
 export function PortfolioToolbar({
-	list,
 	pf,
-	onSelect,
-	onCreate,
 	onBaseCurrency,
 	onImport,
 }: {
-	list: PortfolioSummary[];
 	pf: Portfolio | null | undefined;
-	onSelect: (id: string) => void;
-	onCreate: () => void;
 	onBaseCurrency: (c: PortfolioCurrency) => void;
 	onImport: (file: File) => void;
 }) {
@@ -51,18 +41,6 @@ export function PortfolioToolbar({
 		"h-8 rounded-sm border border-hairline bg-surface px-2 text-xs text-ink";
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
-			<select
-				aria-label="Portfolio"
-				className={box}
-				value={pf?.id ?? ""}
-				onChange={(e) => onSelect(e.target.value)}
-			>
-				{list.map((p) => (
-					<option key={p.id} value={p.id}>
-						{p.name} ({p.n_positions})
-					</option>
-				))}
-			</select>
 			{pf && (
 				<select
 					aria-label="Base currency"
@@ -76,9 +54,6 @@ export function PortfolioToolbar({
 					))}
 				</select>
 			)}
-			<Button size="sm" variant="ghost" onClick={onCreate}>
-				<Plus className="size-3.5" /> New
-			</Button>
 			<Button
 				size="sm"
 				variant="ghost"

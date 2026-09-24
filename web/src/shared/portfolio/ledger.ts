@@ -94,6 +94,24 @@ export function deleteTrade(
 	};
 }
 
+/**
+ * The ledger without a position at all: every trade on the instrument goes,
+ * and the instrument with them — for a position booked by mistake. Closing
+ * a real position is a sale, not this.
+ */
+export function deletePosition(
+	pf: Portfolio,
+	instrumentId: string,
+): Pick<Portfolio, "instruments" | "transactions" | "base_currency"> {
+	return {
+		base_currency: pf.base_currency,
+		instruments: (pf.instruments ?? []).filter((i) => i.id !== instrumentId),
+		transactions: (pf.transactions ?? []).filter(
+			(t) => t.instrument_id !== instrumentId,
+		),
+	};
+}
+
 /** The ticker a position moves with: its own, or its derivative's underlying. */
 export function underlyingOf(instrument: Instrument | undefined): string {
 	if (!instrument) return "—";

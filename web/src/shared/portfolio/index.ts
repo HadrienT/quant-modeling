@@ -15,6 +15,7 @@ export {
 	derivativeInstrument,
 	bookTrade,
 	deleteTrade,
+	deletePosition,
 	underlyingOf,
 	type TradeDraft,
 } from "./ledger";

@@ -1,7 +1,8 @@
-import { useMemo } from "react";
-import type { Portfolio, PortfolioSnapshot } from "@/shared/api";
+import { useMemo, useState } from "react";
+import type { Portfolio, PortfolioSnapshot, PositionMark } from "@/shared/api";
 import { aggregateRisk } from "@/shared/portfolio";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
+import { DeletePositionDialog } from "./DeletePositionDialog";
 import { HoldingsTable } from "./HoldingsTable";
 import { PnlHistory } from "./PnlHistory";
 import { RiskPanel } from "./RiskPanel";
@@ -14,12 +15,15 @@ export function PortfolioTabs({
 	snap,
 	onTrade,
 	onDelete,
+	onDeletePosition,
 }: {
 	pf: Portfolio;
 	snap: PortfolioSnapshot | undefined;
 	onTrade: (preset: TradePreset) => void;
 	onDelete: (tradeId: string) => void;
+	onDeletePosition: (instrumentId: string) => void;
 }) {
+	const [deleting, setDeleting] = useState<PositionMark | null>(null);
 	const positions = useMemo(() => snap?.positions ?? [], [snap]);
 	const instruments = useMemo(() => pf.instruments ?? [], [pf]);
 	const risk = useMemo(
@@ -32,8 +36,20 @@ export function PortfolioTabs({
 		[positions],
 	);
 
+	const tradesOf = (id: string | undefined) =>
+		(pf.transactions ?? []).filter((t) => t.instrument_id === id).length;
+
 	return (
 		<Tabs defaultValue="positions">
+			<DeletePositionDialog
+				position={deleting}
+				trades={tradesOf(deleting?.instrument_id)}
+				onCancel={() => setDeleting(null)}
+				onConfirm={() => {
+					if (deleting) onDeletePosition(deleting.instrument_id);
+					setDeleting(null);
+				}}
+			/>
 			<TabsList>
 				<TabsTrigger value="positions">Positions</TabsTrigger>
 				<TabsTrigger value="transactions">
@@ -46,6 +62,7 @@ export function PortfolioTabs({
 				<HoldingsTable
 					positions={positions}
 					base={pf.base_currency}
+					onDelete={setDeleting}
 					onTrade={(p, side) => {
 						const instrument = instruments.find(
 							(i) => i.id === p.instrument_id,
