@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
 	type FxCurrency,
 	type MarketId,
@@ -6,6 +7,7 @@ import {
 	useMarkets,
 	useTickers,
 } from "@/shared/api";
+import { encodeParams } from "@/shared/products";
 import { Metric, MetricRow } from "@/shared/ui";
 import { MarketTickerPicker } from "./MarketTickerPicker";
 
@@ -69,6 +71,19 @@ export function FxCorrelationPanel({
 	);
 	const c = corr.data;
 	const f2 = (v: number) => v.toFixed(2);
+	const assetCcy = members.find((m) => m.ticker === chosen)?.currency;
+	// A quanto on this asset paid in QUOTE needs the pair ASSET-CCY/QUOTE.
+	const quantoReady = !!c && assetCcy === base;
+	const quantoParams = c
+		? encodeParams({
+				spot: +c.asset_last.toFixed(4),
+				strike: +c.asset_last.toFixed(4),
+				vol: +(c.asset_vol * 100).toFixed(2),
+				fx_vol: +(c.fx_vol * 100).toFixed(2),
+				correlation: +c.correlation.toFixed(3),
+				fx_rate: +c.fx_last.toFixed(6),
+			})
+		: "";
 
 	return (
 		<section className="flex flex-col gap-3">
@@ -128,10 +143,28 @@ export function FxCorrelationPanel({
 							footnote="historical, annualised"
 						/>
 					</MetricRow>
-					<p className="text-xs text-ink-muted">
-						For a quanto, use the pair quoted as payment currency per unit of
-						the asset&apos;s currency (a EUR asset paid in USD: EUR/USD).
-					</p>
+					{quantoReady ? (
+						<p className="text-xs text-ink-muted">
+							<Link
+								to="/price"
+								search={{ product: "quanto", p: quantoParams }}
+								className="text-accent underline"
+							>
+								Price a quanto on {c.ticker} paid in {quote}
+							</Link>{" "}
+							with these historical estimates (at-the-money, fixed rate = last
+							fixing; set the two rates and the maturity there).
+						</p>
+					) : (
+						<p className="text-xs text-ink-muted">
+							For a quanto, use the pair quoted as payment currency per unit of
+							the asset&apos;s currency
+							{assetCcy
+								? ` (${c.ticker} is in ${assetCcy}: ${assetCcy}/…)`
+								: ""}
+							.
+						</p>
+					)}
 				</>
 			) : null}
 		</section>

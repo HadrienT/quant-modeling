@@ -409,5 +409,7 @@ export function fxCorrelation(ticker: string) {
 		fx_vol: 0.074,
 		start: "2023-09-29",
 		end: "2026-09-18",
+		asset_last: 8087.87,
+		fx_last: 1.1367,
 	};
 }

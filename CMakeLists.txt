@@ -110,6 +110,7 @@ target_sources(quantModeling
         src/engines/analytic/commodity.cpp
         src/pricers/registry.cpp
         src/pricers/adapters/equity_vanilla.cpp
+        src/pricers/adapters/equity_quanto.cpp
         src/pricers/adapters/equity_vanilla_american.cpp
         src/pricers/adapters/equity_asian.cpp
         src/pricers/adapters/equity_asian_lv.cpp
@@ -210,6 +211,7 @@ if(QM_BUILD_TESTS)
     tests/testScriptParity.cpp
     tests/testSimulationEngine.cpp
     tests/testBSAna.cpp
+    tests/testQuanto.cpp
     tests/testBSMC.cpp
     tests/testAsianOption.cpp
     tests/testAsianVR.cpp

@@ -49,7 +49,8 @@ namespace quantModeling
         CIR,
         HullWhite,
         GarmanKohlhagen,
-        CommodityBlack
+        CommodityBlack,
+        QuantoBlackScholes
     };
 
     enum class EngineKind
@@ -63,6 +64,7 @@ namespace quantModeling
 
     using PricingInput = std::variant<
         VanillaBSInput,
+        QuantoBSInput,
         AmericanVanillaBSInput,
         AsianBSInput,
         BarrierBSInput,

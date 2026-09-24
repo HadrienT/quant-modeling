@@ -85,6 +85,10 @@ describe("market page — markets", () => {
 		renderMarket("?tab=fx&base=EUR&quote=USD");
 		expect(await screen.findByText("1.15229")).toBeInTheDocument();
 		expect(await screen.findByText("95% CI [0.16, 0.44]")).toBeInTheDocument();
+		// the default asset (the CAC 40, in EUR) matches the EUR/USD base:
+		// the historical inputs open a pre-filled quanto
+		const link = await screen.findByRole("link", { name: /Price a quanto/ });
+		expect(link.getAttribute("href")).toContain("product=quanto");
 		expect(
 			screen.getByRole("heading", { name: "Methodology" }),
 		).toBeInTheDocument();

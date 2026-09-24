@@ -501,6 +501,8 @@ class FxCorrelationResponse(BaseModel):
     fx_vol: float
     start: date
     end: date
+    asset_last: float = Field(description="Asset close on the last common date.")
+    fx_last: float = Field(description="FX rate on the last common date.")
 
 
 class RateHistoryPoint(BaseModel):
@@ -666,6 +668,33 @@ class FXOptionRequest(BaseModel):
     maturity: float = Field(..., gt=0.0)
     is_call: bool = True
     notional: float = 1.0
+
+
+class QuantoRequest(BaseModel):
+    """A European option on a foreign-currency asset, paid in the domestic
+    currency at a conversion rate fixed in advance (Reiner 1992). Rates and
+    vols are decimals; `correlation` is corr(asset, FX) with the FX rate
+    quoted domestic per foreign (a EUR asset paid in USD: EUR/USD) — the
+    /market/fx/correlation endpoint estimates it."""
+
+    spot: float = Field(
+        ..., gt=0.0, description="Asset, in its own (foreign) currency."
+    )
+    strike: float = Field(..., gt=0.0, description="In the foreign currency.")
+    maturity: float = Field(..., gt=0.0)
+    rate_domestic: float = Field(description="Payment currency's rate.")
+    rate_foreign: float = Field(description="Asset currency's rate.")
+    dividend: float = 0.0
+    vol: float = Field(..., gt=0.0, description="Asset volatility σ_S.")
+    fx_vol: float = Field(..., gt=0.0, description="FX volatility σ_X.")
+    correlation: float = Field(..., ge=-1.0, le=1.0)
+    fx_rate: float = Field(
+        1.0, gt=0.0, description="Fixed conversion rate, domestic per foreign."
+    )
+    is_call: bool = True
+    engine: Literal["analytic", "mc"] = "analytic"
+    n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
+    seed: int = 1
 
 
 # ---------------------------------------------------------------------------

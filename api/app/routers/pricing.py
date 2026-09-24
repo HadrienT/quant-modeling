@@ -27,6 +27,7 @@ from ..schemas import (
     LookbackRequest,
     MountainRequest,
     PricingResponse,
+    QuantoRequest,
     RainbowRequest,
     ScriptRequest,
     ScriptValidateRequest,
@@ -207,6 +208,14 @@ async def price_dispersion_swap_endpoint(req: DispersionSwapRequest) -> PricingR
 @router.post("/price/fx/forward", response_model=PricingResponse)
 async def price_fx_forward_endpoint(req: FXForwardRequest) -> PricingResponse:
     return await _price("fx_forward", req)
+
+
+@router.post("/price/option/quanto", response_model=PricingResponse)
+async def price_quanto_endpoint(req: QuantoRequest) -> PricingResponse:
+    """A foreign asset paid in the domestic currency at a fixed rate: Black-Scholes
+    with the quanto drift adjustment. `rho` in the greeks is the domestic-rate rho;
+    the model's inputs (rates, vols, correlation) are the caller's."""
+    return await _price("quanto", req, user_errors=(RuntimeError, ValueError))
 
 
 @router.post("/price/fx/option", response_model=PricingResponse)

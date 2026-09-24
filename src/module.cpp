@@ -47,6 +47,15 @@ namespace quantModeling
         return default_registry().price(request);
     }
 
+    static PricingResult price_quanto_impl(const QuantoBSInput &in, bool use_mc)
+    {
+        PricingRequest request{InstrumentKind::EquityVanillaOption,
+                               ModelKind::QuantoBlackScholes,
+                               use_mc ? EngineKind::MonteCarlo : EngineKind::Analytic,
+                               PricingInput{in}};
+        return default_registry().price(request);
+    }
+
     static PricingResult price_asian_impl(const AsianBSInput &in, bool use_mc)
     {
         const EngineKind engine = use_mc ? EngineKind::MonteCarlo : EngineKind::Analytic;
@@ -1381,6 +1390,30 @@ PYBIND11_MODULE(quantmodeling, m)
           { return pricing_result_to_dict(quantModeling::price_fx_forward_impl(in)); }, "Price an FX forward (analytic).");
 
     // ── FX Option ──────────────────────────────────────────────────────────────────
+    py::class_<quantModeling::QuantoBSInput>(m, "QuantoBSInput")
+        .def(py::init<>())
+        .def_readwrite("spot", &quantModeling::QuantoBSInput::spot)
+        .def_readwrite("strike", &quantModeling::QuantoBSInput::strike)
+        .def_readwrite("maturity", &quantModeling::QuantoBSInput::maturity)
+        .def_readwrite("rate_domestic", &quantModeling::QuantoBSInput::rate_domestic)
+        .def_readwrite("rate_foreign", &quantModeling::QuantoBSInput::rate_foreign)
+        .def_readwrite("dividend", &quantModeling::QuantoBSInput::dividend)
+        .def_readwrite("vol", &quantModeling::QuantoBSInput::vol)
+        .def_readwrite("fx_vol", &quantModeling::QuantoBSInput::fx_vol)
+        .def_readwrite("correlation", &quantModeling::QuantoBSInput::correlation)
+        .def_readwrite("fx_rate", &quantModeling::QuantoBSInput::fx_rate)
+        .def_readwrite("is_call", &quantModeling::QuantoBSInput::is_call)
+        .def_readwrite("n_paths", &quantModeling::QuantoBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::QuantoBSInput::seed)
+        .def_readwrite("mc_epsilon", &quantModeling::QuantoBSInput::mc_epsilon);
+
+    m.def("price_quanto_bs_analytic", [](const quantModeling::QuantoBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_quanto_impl(in, false)); }, "European quanto option, Black-Scholes with the quanto drift adjustment "
+                                                                                           "(Reiner 1992), closed form. rho is the domestic-rate rho.");
+    m.def("price_quanto_bs_mc", [](const quantModeling::QuantoBSInput &in)
+          { return pricing_result_to_dict(quantModeling::price_quanto_impl(in, true)); }, "European quanto option, Black-Scholes with the quanto drift adjustment, "
+                                                                                          "Monte Carlo.");
+
     py::class_<quantModeling::FXOptionInput>(m, "FXOptionInput")
         .def(py::init<>())
         .def_readwrite("spot", &quantModeling::FXOptionInput::spot)

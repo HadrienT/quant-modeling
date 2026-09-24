@@ -127,6 +127,8 @@ class Correlation:
     fx_vol: float
     start: date
     end: date
+    asset_last: float  # last common observation: the quanto's spot…
+    fx_last: float  # …and a natural fixed conversion rate
 
 
 def correlation(
@@ -136,6 +138,7 @@ def correlation(
     confidence interval from the Fisher transform: tanh(atanh(ρ) ± 1.96/√(n−3))."""
     a = log_returns(asset, frequency)
     b = log_returns(fx_rate, frequency)
+    last = pd.concat([asset, fx_rate], axis=1, join="inner").dropna()
     joined = pd.concat([a, b], axis=1, join="inner").dropna()
     n = len(joined)
     if n < 20:
@@ -153,6 +156,8 @@ def correlation(
         float(joined.iloc[:, 1].std(ddof=1) * annual),
         joined.index[0].date(),
         joined.index[-1].date(),
+        float(last.iloc[-1, 0]),
+        float(last.iloc[-1, 1]),
     )
 
 

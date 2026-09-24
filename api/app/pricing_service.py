@@ -28,6 +28,7 @@ from .schemas import (
     LookbackStyle,
     MountainRequest,
     PricingResponse,
+    QuantoRequest,
     RainbowKind,
     RainbowRequest,
     ScriptRequest,
@@ -524,6 +525,20 @@ def price_fx_forward(req: FXForwardRequest) -> PricingResponse:
 # ---------------------------------------------------------------------------
 # FX Option
 # ---------------------------------------------------------------------------
+
+def price_quanto(req: QuantoRequest) -> PricingResponse:
+    input_data = qm.QuantoBSInput()
+    for field in (
+        "spot", "strike", "maturity", "rate_domestic", "rate_foreign", "dividend",
+        "vol", "fx_vol", "correlation", "fx_rate", "is_call", "n_paths", "seed",
+    ):  # fmt: skip
+        setattr(input_data, field, getattr(req, field))
+    if req.engine == "mc":
+        result = qm.price_quanto_bs_mc(input_data)
+    else:
+        result = qm.price_quanto_bs_analytic(input_data)
+    return _pricing_response_from_dict(result)
+
 
 def price_fx_option(req: FXOptionRequest) -> PricingResponse:
     input_data = qm.FXOptionInput()
