@@ -19,6 +19,9 @@ services:
     image: ghcr.io/hadrient/quant-modeling:${COMMIT_SHA:-latest}
     container_name: quant-modeling
     restart: unless-stopped
+    labels:
+      # Same name as OTEL_SERVICE_NAME below: the compose service is `app`.
+      service.name: quant-modeling-api
     networks:
       - default
       - dataplatform
@@ -93,8 +96,9 @@ services:
         max-size: "10m"
         max-file: "5"
         # quant-platform's Collector names each container's log stream after
-        # this label (its ADR-012 §2); without it the lines reach Loki unnamed.
-        labels: com.docker.compose.service
+        # these labels (its ADR-016 §2): `service.name` first, so the logs are
+        # filed under the traces' name and Grafana's trace → logs link works.
+        labels: "service.name,com.docker.compose.service"
 
   # Outbound-only connection to Cloudflare's edge. No inbound port is opened on
   # the host or the router. The tunnel is dashboard-managed: create it in

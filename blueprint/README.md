@@ -91,7 +91,7 @@ est à remplacer, pas à déplacer : c'est le préalable du
 | [15](wp/15-future-quant-surfaces.md) | Surfaces quant à venir | Emplacements réservés : calibration, AAD vs bump, bench GPU, profils xVA, validation |
 | [16](wp/16-scripting.md) | Scripting de payoffs *(cœur C++)* | Langage de payoff façon Andreasen & Savine : lexer, AST, visiteurs, logique floue, un seul moteur MC pour tout produit |
 | [17](wp/17-aad.md) | AAD *(cœur C++)* | Différentiation adjointe façon Savine : tape en blocs, `Number`, check-pointing, AAD parallèle, multi-adjoints, expression templates, risques à travers la calibration |
-| [18](wp/18-observability.md) | Observabilité & piste d'audit *(transverse, Kafka)* | Événements métier dans Kafka, base d'audit append-only, replis tracés (`record_fallback`), télémétrie OpenTelemetry + Grafana, reproductibilité et replay des valorisations. Infra dans un dépôt séparé `quant-platform` |
+| [18](wp/18-observability.md) | Observabilité & piste d'audit *(transverse, Kafka)* | Événements métier dans Kafka, base d'audit append-only, replis tracés (`record_fallback`), télémétrie OpenTelemetry + Grafana, reproductibilité et replay des valorisations. Infra dans un dépôt séparé [`quant-platform`](https://github.com/HadrienT/quant-platform) |
 | [99](wp/99-recovered-work.md) | Travail perdu à refaire | Fiches produit disparues avec la VM |
 
 ## 5. Graphe de dépendances
