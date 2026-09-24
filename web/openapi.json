@@ -3224,6 +3224,18 @@
               }
             ]
           },
+          "compute_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.",
+            "title": "Compute Ms"
+          },
           "diagnostics": {
             "title": "Diagnostics",
             "type": "string"

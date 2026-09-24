@@ -236,6 +236,7 @@ export function pricingResponse(overrides?: Record<string, unknown>) {
 		bond_analytics: null,
 		diagnostics: "engine=mc paths=128000 antithetic=on bridge=on",
 		mc_std_error: 0.0231,
+		compute_ms: 3.42,
 		...overrides,
 	};
 }

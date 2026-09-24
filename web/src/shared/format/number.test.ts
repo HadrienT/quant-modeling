@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatNumber, formatSigned } from "./number";
+import { formatDuration, formatNumber, formatSigned } from "./number";
 
 describe("formatNumber", () => {
 	it("renders a dash for missing values", () => {
@@ -31,5 +31,14 @@ describe("formatSigned", () => {
 	});
 	it("leaves zero unsigned", () => {
 		expect(formatSigned(0)).toBe("0.00");
+	});
+});
+
+describe("formatDuration", () => {
+	it("keeps three significant figures and switches to seconds past 1 s", () => {
+		expect(formatDuration(0.4213)).toBe("0.42 ms");
+		expect(formatDuration(12.345)).toBe("12.3 ms");
+		expect(formatDuration(1843)).toBe("1.84 s");
+		expect(formatDuration(null)).toBe("—");
 	});
 });

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import type { ProductDescriptor } from "@/shared/products";
-import type { PricingResponse } from "@/shared/api";
 import { usePricing } from "@/shared/api";
 import {
+	ComputeTime,
 	EngineTag,
 	Freshness,
 	NumberCell,
@@ -71,7 +71,7 @@ export function ResultsPanel({
 		return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
 	if (!q.data) return null;
 
-	const r = q.data as PricingResponse;
+	const r = q.data;
 	const g = r.greeks;
 	const se = (name: string) =>
 		(g as Record<string, number | null | undefined>)[`${name}_std_error`];
@@ -96,6 +96,10 @@ export function ResultsPanel({
 						<EngineTag engine={engine} />
 						<Provenance source="manual" />
 						<Freshness at={Date.now()} />
+						<ComputeTime
+							computeMs={r.compute_ms}
+							roundTripMs={r.round_trip_ms}
+						/>
 					</div>
 				</div>
 				{r.diagnostics && (
