@@ -333,3 +333,57 @@ def test_close_endpoint_gives_the_close_on_or_before_a_date():
     )
     assert r["date"] == "2026-09-18" and r["currency"] == "EUR"
     assert r["close"] == pytest.approx(CLOSES["AAA"][date(2026, 9, 18)])
+
+
+# ── Realised-vol proxy and long-dated trades ─────────────────────────────────
+
+
+def test_realised_vol_does_not_depend_on_the_history_loaded():
+    near = pv.MarketData(pv.previous_business_day(END)).realised_vol("AAA", END)
+    far = pv.MarketData(date(2026, 1, 5)).realised_vol("AAA", END)
+    assert near == far
+
+
+def test_missing_closes_lengthen_a_return_instead_of_faking_a_daily_move(
+    monkeypatch,
+):
+    """A lognormal path with 25 % vol: removing three weeks of closes (a
+    source outage) must leave the estimate close to the full-data one, since
+    the return across the gap is measured over the three weeks it spans."""
+    import numpy as np
+
+    rng = np.random.default_rng(7)
+    days = [d.date() for d in pd.bdate_range(END - timedelta(days=130), END)]
+    sigma = 0.25
+    r = rng.normal(-0.5 * sigma**2 / 252, sigma / np.sqrt(252), len(days))
+    path = dict(zip(days, 100 * np.exp(np.cumsum(r))))
+    gap = {
+        d: v for d, v in path.items() if not date(2026, 7, 20) <= d <= date(2026, 8, 7)
+    }
+    monkeypatch.setitem(CLOSES, "FULL", path)
+    monkeypatch.setitem(CLOSES, "GAP", gap)
+    md = pv.MarketData(END)
+    full = md.realised_vol("FULL", END)[1]
+    gapped = md.realised_vol("GAP", END)[1]
+    assert full == pytest.approx(sigma, rel=0.25)
+    assert gapped == pytest.approx(full, rel=0.1)
+
+
+def test_a_trade_older_than_the_lookback_is_converted_at_its_trade_date_fx():
+    """The snapshot loads market data from the first trade, so a purchase in
+    another currency long ago still has its trade-date FX (no NaN)."""
+    trades = [
+        Trade(
+            id="1",
+            instrument_id="EQ:BBB",
+            trade_date=date(2026, 1, 5),
+            quantity=100,
+            price=50.0,
+            fees=1,
+        )
+    ]
+    pf = _equity_pf(base="EUR", trades=trades)
+    snap = pv.snapshot(pf, END)
+    assert math.isfinite(snap.total_pnl)
+    points, _ = pv.history(pf, date(2026, 1, 1), END)
+    assert points[-1].cumulative_pnl == pytest.approx(snap.total_pnl, abs=1e-8)

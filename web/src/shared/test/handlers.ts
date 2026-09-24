@@ -130,6 +130,9 @@ export const handlers = [
 		return HttpResponse.json(saved);
 	}),
 
+	http.get("*/api/portfolio-valuation/demos", () =>
+		HttpResponse.json(fx.portfolioDemos()),
+	),
 	http.post("*/api/portfolio-valuation/snapshot", () =>
 		HttpResponse.json(fx.portfolioSnapshot()),
 	),

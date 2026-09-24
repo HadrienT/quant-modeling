@@ -4,6 +4,7 @@ import { ApiError } from "./errors";
 import { queryKeys } from "./queryKeys";
 import { STALE } from "./queryClient";
 import type {
+	DemoPortfolio,
 	Portfolio,
 	PortfolioHistory,
 	PortfolioSnapshot,
@@ -105,6 +106,24 @@ export function useTickerClose(ticker: string, date: string) {
 						params: { query: { ticker, date } },
 						signal: s,
 					}),
+				);
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/** Read-only demo portfolios, each trade priced from the market on its date. */
+export function usePortfolioDemos() {
+	return useQuery({
+		queryKey: queryKeys.portfolio.demos(),
+		staleTime: STALE.history,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal, LONG_TIMEOUT_MS);
+			try {
+				return await unwrap<DemoPortfolio[]>(
+					api.GET("/api/portfolio-valuation/demos", { signal: s }),
 				);
 			} finally {
 				s.cleanup();

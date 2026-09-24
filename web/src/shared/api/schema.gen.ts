@@ -271,6 +271,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio-valuation/demos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Portfolio Demos List
+         * @description Demo ledgers, each trade priced from the stored market on its date
+         *     (portfolio_demos.py). Built once a day; a demo whose data is missing is
+         *     left out and logged.
+         */
+        get: operations["portfolio_demos_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolio-valuation/history": {
         parameters: {
             query?: never;
@@ -1726,6 +1748,12 @@ export interface components {
             spot: number;
             /** Ticker */
             ticker: string;
+        };
+        /** DemoPortfolio */
+        DemoPortfolio: {
+            /** Description */
+            description: string;
+            portfolio: components["schemas"]["Portfolio-Output"];
         };
         /**
          * DerivativeSpec
@@ -4168,6 +4196,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_demos_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoPortfolio"][];
                 };
             };
         };

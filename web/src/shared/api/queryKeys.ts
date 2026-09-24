@@ -55,6 +55,7 @@ export const queryKeys = {
 		snapshot: (ledger: string) => ["portfolio", "snapshot", ledger] as const,
 		history: (ledger: string, window: string) =>
 			["portfolio", "history", ledger, window] as const,
+		demos: () => ["portfolio", "demos"] as const,
 		close: (ticker: string, date: string) =>
 			["portfolio", "close", ticker, date] as const,
 	},

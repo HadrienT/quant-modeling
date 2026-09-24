@@ -7,7 +7,8 @@ import { toast } from "@/shared/ui";
 
 /**
  * The list of portfolios and what can be done to it: select (kept in the
- * URL), create, rename, delete, import. Oldest first, so a portfolio does
+ * URL), create, rename, delete, import — and the read-only demos, opened
+ * with `?demo=` and copied into one's own portfolios. Oldest first, so a portfolio does
  * not move in the list when it is edited.
  */
 export function usePortfolioBook(repo: PortfolioRepository) {
@@ -24,14 +25,16 @@ export function usePortfolioBook(repo: PortfolioRepository) {
 	const portfolios = list.data ?? [];
 	const known = portfolios.some((p) => p.id === search.id);
 	const selectedId = known ? search.id! : (portfolios[0]?.id ?? null);
+	const demoId = search.demo ?? null;
 
 	useEffect(() => {
-		if (list.data && selectedId !== (search.id ?? null)) {
+		if (!demoId && list.data && selectedId !== (search.id ?? null)) {
 			navigate({ search: () => (selectedId ? { id: selectedId } : {}) });
 		}
-	}, [list.data, selectedId, search.id, navigate]);
+	}, [demoId, list.data, selectedId, search.id, navigate]);
 
 	const select = (id: string) => navigate({ search: () => ({ id }) });
+	const selectDemo = (id: string) => navigate({ search: () => ({ demo: id }) });
 	const refresh = () => list.refetch();
 
 	async function create() {
@@ -76,14 +79,29 @@ export function usePortfolioBook(repo: PortfolioRepository) {
 		}
 	}
 
+	/** A demo becomes one's own portfolio: same trades, now editable. */
+	async function copyDemo(demo: Portfolio) {
+		try {
+			const created = await repo.importPortfolio({ ...demo, owner: "" });
+			await refresh();
+			select(created.id);
+			toast.success(`"${demo.name}" copied to your portfolios`);
+		} catch {
+			toast.error("Could not copy the demo");
+		}
+	}
+
 	return {
 		list,
 		portfolios,
 		selectedId,
+		demoId,
 		select,
+		selectDemo,
 		create,
 		rename,
 		remove,
 		importJson,
+		copyDemo,
 	};
 }
