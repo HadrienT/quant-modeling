@@ -123,7 +123,7 @@ export function FxCorrelationPanel({
 				<>
 					<MetricRow>
 						<Metric
-							label="Correlation ρ"
+							label="Correlation"
 							value={f2(c.correlation)}
 							footnote={`95% CI [${f2(c.ci_low)}, ${f2(c.ci_high)}]`}
 						/>
