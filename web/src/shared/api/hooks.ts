@@ -17,6 +17,7 @@ import type {
 	DeltaSurfaceResponse,
 	LocalVolSurfaceResponse,
 	MarketHistoryResponse,
+	MarketId,
 	Portfolio,
 	PortfolioSummary,
 	RateCurrency,
@@ -68,13 +69,34 @@ export function useHealth() {
 }
 
 /* ── Market ────────────────────────────────────────────────────────────── */
-export function useTickers() {
+/** Without a market: the historical S&P 500 + index-ETF list (backtest). */
+export function useTickers(market?: MarketId) {
 	return useQuery({
-		queryKey: queryKeys.market.tickers(),
+		queryKey: queryKeys.market.tickers(market),
 		queryFn: async ({ signal }) => {
 			const s = signalWithTimeout(signal);
 			try {
-				return await unwrap(api.GET("/market/tickers", { signal: s }));
+				return await unwrap(
+					api.GET("/market/tickers", {
+						params: { query: market ? { market } : {} },
+						signal: s,
+					}),
+				);
+			} finally {
+				s.cleanup();
+			}
+		},
+		staleTime: STALE.history,
+	});
+}
+
+export function useMarkets() {
+	return useQuery({
+		queryKey: queryKeys.market.markets(),
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return await unwrap(api.GET("/market/markets", { signal: s }));
 			} finally {
 				s.cleanup();
 			}

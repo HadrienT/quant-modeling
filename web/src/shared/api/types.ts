@@ -17,6 +17,9 @@ export type GovernmentCurveResponse = Schemas["GovernmentCurveResponse"];
 export type BenchmarkRate = Schemas["BenchmarkRate"];
 export type RateCurrency = RatesOverviewResponse["currency"];
 export type MarketHistoryResponse = Schemas["MarketHistoryResponse"];
+export type MarketInfo = Schemas["MarketInfo"];
+export type MarketId = MarketInfo["id"];
+export type TickerInfo = Schemas["TickerInfo"];
 
 // FastAPI splits models used for both request and response bodies.
 export type Portfolio = Schemas["Portfolio-Output"];

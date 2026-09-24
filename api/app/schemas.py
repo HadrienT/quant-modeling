@@ -386,6 +386,7 @@ class MarketHistoryPoint(BaseModel):
 
 class MarketHistoryResponse(BaseModel):
     ticker: str
+    currency: str = Field("USD", description="ISO currency of the closes (never converted).")
     points: List[MarketHistoryPoint]
 
 

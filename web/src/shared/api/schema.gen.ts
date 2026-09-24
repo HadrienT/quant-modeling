@@ -467,6 +467,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/market/markets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Markets */
+        get: operations["list_markets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/market/prices/history": {
         parameters: {
             query?: never;
@@ -1924,10 +1941,41 @@ export interface components {
         };
         /** MarketHistoryResponse */
         MarketHistoryResponse: {
+            /**
+             * Currency
+             * @description ISO currency of the closes (never converted).
+             * @default USD
+             */
+            currency: string;
             /** Points */
             points: components["schemas"]["MarketHistoryPoint"][];
             /** Ticker */
             ticker: string;
+        };
+        /** MarketInfo */
+        MarketInfo: {
+            /** As Of */
+            as_of?: string | null;
+            /** Currency */
+            currency: string;
+            /** Has Options */
+            has_options: boolean;
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "SP500" | "CAC40" | "DAX" | "FTSE100" | "NIKKEI225";
+            /** Members */
+            members: number;
+            /** Name */
+            name: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** MarketsResponse */
+        MarketsResponse: {
+            /** Markets */
+            markets: components["schemas"]["MarketInfo"][];
         };
         /** MethodologySection */
         MethodologySection: {
@@ -2740,8 +2788,27 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** TickerInfo */
+        TickerInfo: {
+            /** Currency */
+            currency: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "index" | "equity";
+            /** Name */
+            name?: string | null;
+            /** Ticker */
+            ticker: string;
+        };
         /** TickersResponse */
         TickersResponse: {
+            /**
+             * Members
+             * @default []
+             */
+            members: components["schemas"]["TickerInfo"][];
             /** Tickers */
             tickers: string[];
         };
@@ -3908,6 +3975,26 @@ export interface operations {
             };
         };
     };
+    list_markets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketsResponse"];
+                };
+            };
+        };
+    };
     market_history: {
         parameters: {
             query: {
@@ -4009,7 +4096,9 @@ export interface operations {
     };
     list_tickers: {
         parameters: {
-            query?: never;
+            query?: {
+                market?: ("SP500" | "CAC40" | "DAX" | "FTSE100" | "NIKKEI225") | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4023,6 +4112,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TickersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
