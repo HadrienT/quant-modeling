@@ -14,6 +14,7 @@ import {
 } from "@/shared/ui";
 import { getConfig } from "@/shared/config";
 import { useAuthProviders, useSessionActions } from "@/shared/session";
+import googleLogo from "./google-g.svg";
 
 const schema = z.object({
 	username: z.string().min(2, "At least 2 characters"),
@@ -70,11 +71,14 @@ export function AuthDialog() {
 				{providers.data?.google && (
 					<>
 						{/* Full-page navigation: the OAuth dance happens on the API + Google. */}
-						<Button asChild variant="secondary">
-							<a href={`${getConfig().apiBase}/api/auth/google/login`}>
-								Continue with Google
-							</a>
-						</Button>
+						<a
+							href={`${getConfig().apiBase}/api/auth/google/login`}
+							aria-label="Sign in with Google"
+							title="Sign in with Google"
+							className="mx-auto flex size-11 items-center justify-center rounded-full border border-hairline bg-surface shadow-sm transition-colors hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-accent"
+						>
+							<img src={googleLogo} alt="" className="size-5" />
+						</a>
 						<div
 							className="flex items-center gap-2 text-2xs text-ink-secondary"
 							aria-hidden="true"

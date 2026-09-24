@@ -120,7 +120,10 @@ def test_full_flow_creates_google_account(fake_google):
     assert loc.startswith("/#qm_auth=")
     token = loc.split("qm_auth=")[1]
     me = c.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"}).json()
-    assert me == {"username": "google:1234567890", "email": "alice@example.com"}
+    assert me["username"] == "google:1234567890"
+    assert me["email"] == "alice@example.com"
+    assert me["provider"] == "google"
+    assert me["created_at"]
 
 
 def test_second_login_reuses_account(fake_google):

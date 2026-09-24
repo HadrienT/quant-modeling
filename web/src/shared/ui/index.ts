@@ -4,6 +4,7 @@ export { Badge, type BadgeProps } from "./badge";
 export { Input, Label, Skeleton, Separator, Card } from "./primitives";
 export * from "./dialog";
 export * from "./popover";
+export * from "./dropdown-menu";
 export * from "./tooltip";
 export * from "./tabs";
 export { Combobox } from "./combobox";

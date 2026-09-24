@@ -3113,8 +3113,16 @@ export interface components {
         };
         /** UserInfo */
         UserInfo: {
+            /** Created At */
+            created_at?: string | null;
             /** Email */
             email?: string | null;
+            /**
+             * Provider
+             * @default password
+             * @enum {string}
+             */
+            provider: "password" | "google";
             /** Username */
             username: string;
         };

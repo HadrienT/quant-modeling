@@ -162,7 +162,12 @@ export const handlers = [
 	http.get("*/api/auth/me", ({ request }) => {
 		const auth = request.headers.get("Authorization");
 		return auth
-			? HttpResponse.json({ username: "demo" })
+			? HttpResponse.json({
+					username: "google:1234567890",
+					email: "alice@example.com",
+					provider: "google",
+					created_at: "2026-09-19T10:00:00+00:00",
+				})
 			: HttpResponse.json(
 					{ code: "unauthorized", message: "Invalid token" },
 					{ status: 401 },

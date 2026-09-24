@@ -145,6 +145,14 @@ const aboutRoute = createRoute({
 	component: AboutPage,
 });
 
+// ── Profile (from the avatar menu, not in the nav) ───────────────────────
+const ProfilePage = lazy(() => import("@/features/auth/ProfilePage"));
+const profileRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/profile",
+	component: ProfilePage,
+});
+
 const routeTree = rootRoute.addChildren([
 	indexRoute,
 	visualizeRoute,
@@ -157,6 +165,7 @@ const routeTree = rootRoute.addChildren([
 	portfolioRoute,
 	backtestRoute,
 	aboutRoute,
+	profileRoute,
 ]);
 
 export const router = createRouter({
