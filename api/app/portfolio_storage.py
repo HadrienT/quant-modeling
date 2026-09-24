@@ -62,7 +62,7 @@ def get_portfolio(portfolio_id: str, owner: str) -> Optional[Portfolio]:
 
 def save_portfolio(portfolio: Portfolio) -> None:
     get_storage().write_json(
-        _key(portfolio.id, portfolio.owner), portfolio.model_dump()
+        _key(portfolio.id, portfolio.owner), portfolio.model_dump(mode="json")
     )
 
 
