@@ -2,4 +2,6 @@
 pip-tools
 black
 pytest
+# Validates events against the envelope JSON Schema copied from quant-platform.
+jsonschema
 httpx

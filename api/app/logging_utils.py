@@ -3,6 +3,8 @@ import logging
 import os
 from pathlib import Path
 
+from .request_context import current_trace_id
+
 LOGGER_NAME = "quantmodeling.api"
 
 
@@ -54,6 +56,11 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
         }
+        # The active trace (blueprint WP 18d): in Loki, a log line then links
+        # to its trace in Tempo, and a trace finds its log lines.
+        trace_id = current_trace_id()
+        if trace_id:
+            payload["trace_id"] = trace_id
         if extras:
             payload["extra"] = self._round_floats(extras)
         if record.exc_info:

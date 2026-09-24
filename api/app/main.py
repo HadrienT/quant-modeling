@@ -9,6 +9,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
 from .audit.middleware import AuditMiddleware
+from .audit.sinks import close_sink, get_sink
 from .logging_utils import configure_logging
 from .routers.market import router as market_router
 from .routers.pricing import router as pricing_router
@@ -18,6 +19,8 @@ from .routers.portfolio import router as portfolio_router
 from .routers.auth import router as auth_router
 from .routers.backtest import router as backtest_router
 from .routers.assistant import router as assistant_router
+from .routers.admin import router as admin_router
+from .telemetry import setup_telemetry, shutdown_telemetry
 
 configure_logging()
 
@@ -101,6 +104,9 @@ app.add_middleware(
 )
 
 app.add_middleware(AuditMiddleware)
+# Outermost, so the audit middleware already runs inside the request's span and
+# every audit event carries its trace id (blueprint WP 18d).
+setup_telemetry(app)
 
 
 class HealthResponse(BaseModel):
@@ -111,6 +117,20 @@ class HealthResponse(BaseModel):
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", version=os.getenv("COMMIT_SHA", "dev"))
+
+
+@app.on_event("startup")
+def _start_audit_sink() -> None:
+    # Built at startup rather than on the first event: the Kafka producer's
+    # thread starts republishing a spool left by a previous run straight away.
+    get_sink()
+
+
+@app.on_event("shutdown")
+def _flush_audit_and_telemetry() -> None:
+    # Queued audit events are flushed to Kafka, or spooled (blueprint WP 18b).
+    close_sink()
+    shutdown_telemetry()
 
 
 @app.on_event("shutdown")
@@ -131,3 +151,4 @@ app.include_router(portfolio_router)
 app.include_router(auth_router)
 app.include_router(backtest_router)
 app.include_router(assistant_router)
+app.include_router(admin_router)

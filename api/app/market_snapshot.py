@@ -23,6 +23,9 @@ from typing import Dict, List, Optional
 import quantmodeling as qm
 
 from . import db
+from .audit.payloads import MarketInputStatus
+from .telemetry import tracer
+from .valuation import record_market_input
 
 #: A valuation date may sit this many days after the snapshot it prices
 #: against: a weekend plus a holiday. Beyond that the surface is stale
@@ -78,6 +81,22 @@ def _quote(r: "db.OptionChainRow", ttm: float) -> "qm.RawOptionQuote":
     return q
 
 
+def _chain_row_key(r: "db.OptionChainRow") -> tuple:
+    """The fields of a stored quote that the calibration reads: what the
+    valuation record hashes to detect a revised chain."""
+    return (
+        r.expiry.isoformat(),
+        r.option_type,
+        r.strike,
+        r.bid,
+        r.ask,
+        r.last_price,
+        r.volume,
+        r.open_interest,
+        r.implied_volatility,
+    )
+
+
 def _store(fn, *args):
     try:
         return fn(*args)
@@ -91,6 +110,15 @@ def local_vol_market(
     ticker: str, rate: float, valuation_date: date
 ) -> LocalVolMarket:
     """Stored chain + close + dividend yield -> calibrated Dupire grid."""
+    with tracer.start_as_current_span(
+        "market_snapshot.load", attributes={"qm.valuation_date": str(valuation_date)}
+    ):
+        return _local_vol_market(ticker, rate, valuation_date)
+
+
+def _local_vol_market(
+    ticker: str, rate: float, valuation_date: date
+) -> LocalVolMarket:
     ticker = ticker.upper().strip()
 
     snap = _store(db.options_snapshot_date_on_or_before, ticker, valuation_date)
@@ -142,6 +170,33 @@ def local_vol_market(
             f"the stored snapshot of '{ticker}' on {snap.isoformat()} has no "
             "unexpired quotes"
         )
+
+    # What the valuation record keeps of each input (blueprint WP 18e): its
+    # date, its source table and a hash of the value, so a replay can tell a
+    # revised datum from a code change. The spot is `stale` past the gap at
+    # which a warning is raised below — the same rule, not a second one.
+    spot_status = (
+        MarketInputStatus.STALE
+        if (snap - spot_date).days > SPOT_GAP_WARN_DAYS
+        else MarketInputStatus.OBSERVED
+    )
+    record_market_input(
+        f"spot:{ticker}", "db:prices.sp500_daily", spot_date.isoformat(), spot_status, spot
+    )
+    record_market_input(
+        f"dividend:{ticker}",
+        "db:prices.dividend_yields",
+        div_row[0].isoformat(),
+        MarketInputStatus.OBSERVED,
+        dividend,
+    )
+    record_market_input(
+        f"option_chain:{ticker}",
+        "db:options.chain_snapshot",
+        snap.isoformat(),
+        MarketInputStatus.OBSERVED,
+        [_chain_row_key(r) for r in rows],
+    )
 
     result = qm.calibrate_vol_surface(
         quotes, spot, rate, dividend, -0.6, 0.6, 100, 50,

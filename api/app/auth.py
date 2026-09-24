@@ -237,3 +237,15 @@ def require_user(user: Optional[str] = Depends(optional_user)) -> str:
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     return user
+
+
+def _admin_users() -> set[str]:
+    return {u.strip() for u in os.getenv("QM_ADMIN_USERS", "").split(",") if u.strip()}
+
+
+def require_admin(user: str = Depends(require_user)) -> str:
+    """Accounts named in `QM_ADMIN_USERS` (comma-separated). Unset, nobody is
+    an administrator: an admin route is closed rather than open by default."""
+    if user not in _admin_users():
+        raise HTTPException(status_code=403, detail="Administrator only")
+    return user

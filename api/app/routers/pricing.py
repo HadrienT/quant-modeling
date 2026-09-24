@@ -2,34 +2,13 @@ import asyncio
 from typing import Callable, TypeVar
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from ..logging_utils import get_logger
-from ..pricing_service import (
-    price_american_vanilla,
-    price_asian,
-    price_autocall,
-    price_barrier,
-    price_basket,
-    price_commodity_forward,
-    price_commodity_option,
-    price_dated_asian,
-    price_digital,
-    price_dispersion_swap,
-    price_fixed_rate_bond,
-    price_future,
-    price_fx_forward,
-    price_fx_option,
-    price_lookback,
-    price_mountain,
-    price_rainbow,
-    price_script,
-    price_vanilla,
-    price_variance_swap,
-    price_volatility_swap,
-    price_zero_coupon_bond,
-    validate_script,
-)
+from .. import telemetry, valuation
+from ..audit import emit
+from ..pricing_service import validate_script
+from ..request_context import current_ip_hash
 from ..schemas import (
     AmericanVanillaRequest,
     AsianRequest,
@@ -41,10 +20,10 @@ from ..schemas import (
     DatedAsianRequest,
     DigitalRequest,
     DispersionSwapRequest,
-    FixedRateBondRequest,
-    FutureRequest,
     FXForwardRequest,
     FXOptionRequest,
+    FixedRateBondRequest,
+    FutureRequest,
     LookbackRequest,
     MountainRequest,
     PricingResponse,
@@ -59,7 +38,6 @@ from ..schemas import (
 )
 
 router = APIRouter()
-logger = get_logger()
 _PRICING_TIMEOUT_SECONDS = 20
 _T = TypeVar("_T")
 
@@ -75,157 +53,81 @@ async def _run_with_timeout(func: Callable[..., _T], *args) -> _T:
         ) from exc
 
 
+async def _price(
+    product_id: str,
+    req: BaseModel,
+    user_errors: tuple[type[Exception], ...] = (),
+) -> PricingResponse:
+    """Every pricing endpoint goes through here (blueprint WP 18e): the
+    pricing runs under the market-inputs collector and the `engine.price`
+    span, and a successful one is recorded as a `pricing.valuation` event —
+    what a replay re-runs (valuation.py). Its duration and failures feed
+    `qm_pricing_duration_seconds` and `qm_pricing_errors_total`.
+
+    `user_errors` are exceptions the pricer raises for a bad input (a
+    malformed script, missing market data): they become a 422."""
+    product = valuation.PRODUCTS[product_id]
+    labels = {
+        "product": product_id,
+        "engine": product.engine(req),
+        "model": product.model(req),
+    }
+    try:
+        priced = await _run_with_timeout(valuation.price, product_id, req)
+    except HTTPException as exc:
+        telemetry.pricing_errors.add(
+            1,
+            {
+                "product": product_id,
+                "code": "timeout" if exc.status_code == 408 else str(exc.status_code),
+            },
+        )
+        raise
+    except user_errors as exc:
+        telemetry.pricing_errors.add(
+            1, {"product": product_id, "code": "invalid_input"}
+        )
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception:
+        telemetry.pricing_errors.add(1, {"product": product_id, "code": "internal"})
+        raise
+    telemetry.pricing_duration.record(priced.duration_s, labels)
+    emit(
+        "pricing.valuation",
+        valuation.payload(product_id, req, priced, ip_hash=current_ip_hash()),
+    )
+    return priced.response
+
+
 @router.post("/price/option/vanilla", response_model=PricingResponse)
 async def price_vanilla_endpoint(req: VanillaRequest) -> PricingResponse:
-    logger.info(
-        "price_vanilla request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "is_american": req.is_american,
-            "engine": req.engine,
-            "n_paths": req.n_paths,
-            "seed": req.seed,
-            "mc_epsilon": req.mc_epsilon,
-            "tree_steps": req.tree_steps,
-        },
-    )
-    resp = await _run_with_timeout(price_vanilla, req)
-    logger.info(
-        "price_vanilla response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp
+    return await _price("vanilla", req)
 
 
 @router.post("/price/option/american-vanilla", response_model=PricingResponse)
-async def price_american_vanilla_endpoint(req: AmericanVanillaRequest) -> PricingResponse:
-    logger.info(
-        "price_american_vanilla request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "engine": req.engine,
-            "tree_steps": req.tree_steps,
-        },
-    )
-    resp = await _run_with_timeout(price_american_vanilla, req)
-    logger.info(
-        "price_american_vanilla response",
-        extra={
-            "npv": resp.npv,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp
+async def price_american_vanilla_endpoint(
+    req: AmericanVanillaRequest,
+) -> PricingResponse:
+    return await _price("american_vanilla", req)
 
 
 @router.post("/price/option/asian", response_model=PricingResponse)
 async def price_asian_endpoint(req: AsianRequest) -> PricingResponse:
-    logger.info(
-        "price_asian request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "average_type": req.average_type,
-            "engine": req.engine,
-            "n_paths": req.n_paths,
-            "seed": req.seed,
-            "mc_epsilon": req.mc_epsilon,
-        },
-    )
-    resp = await _run_with_timeout(price_asian, req)
-    logger.info(
-        "price_asian response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp
+    return await _price("asian", req)
 
 
 @router.post("/price/option/dated-asian", response_model=PricingResponse)
 async def price_dated_asian_endpoint(req: DatedAsianRequest) -> PricingResponse:
-    logger.info(
-        "price_dated_asian request",
-        extra={
-            "valuation_date": req.valuation_date.isoformat(),
-            "n_fixings": len(req.fixing_dates),
-            "geometric": req.geometric,
-            "day_count": req.day_count,
-            "sampler": req.sampler,
-            "n_paths": req.n_paths,
-        },
-    )
-    resp = await _run_with_timeout(price_dated_asian, req)
-    logger.info(
-        "price_dated_asian response",
-        extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error},
-    )
-    return resp
+    return await _price("dated_asian", req)
 
 
 @router.post("/price/scripted", response_model=PricingResponse)
 async def price_script_endpoint(req: ScriptRequest) -> PricingResponse:
     """blueprint/wp/16-scripting.md §8.3. Not under /price/option/* — kept as
-    its own top-level path, mirroring the language's own scope."""
-    logger.info(
-        "price_script request",
-        extra={
-            "valuation_date": req.valuation_date.isoformat(),
-            "fuzzy": req.fuzzy,
-            "sampler": req.sampler,
-            "n_paths": req.n_paths,
-            "greeks_method": req.greeks_method,
-        },
-    )
-    try:
-        resp = await _run_with_timeout(price_script, req)
-    except (RuntimeError, ValueError) as exc:
-        # A malformed script (ScriptError) or a bad market input (InvalidInput)
-        # — both are user-input errors, not server failures.
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    logger.info(
-        "price_script response",
-        extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error},
-    )
-    return resp
+    its own top-level path, mirroring the language's own scope. A malformed
+    script (ScriptError) or a bad market input (InvalidInput, missing market
+    data) is a user-input error, not a server failure."""
+    return await _price("script", req, user_errors=(RuntimeError, ValueError))
 
 
 @router.post("/price/scripted/validate", response_model=ScriptValidateResponse)
@@ -242,332 +144,90 @@ async def validate_script_endpoint(
 
 @router.post("/price/option/barrier", response_model=PricingResponse)
 async def price_barrier_endpoint(req: BarrierRequest) -> PricingResponse:
-    logger.info(
-        "price_barrier request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "barrier_kind": req.barrier_kind,
-            "barrier_level": req.barrier_level,
-            "rebate": req.rebate,
-            "n_paths": req.n_paths,
-            "seed": req.seed,
-            "mc_epsilon": req.mc_epsilon,
-        },
-    )
-    resp = await _run_with_timeout(price_barrier, req)
-    logger.info(
-        "price_barrier response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp
+    return await _price("barrier", req)
 
 
 @router.post("/price/option/digital", response_model=PricingResponse)
 async def price_digital_endpoint(req: DigitalRequest) -> PricingResponse:
-    logger.info(
-        "price_digital request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "payoff_type": req.payoff_type,
-            "cash_amount": req.cash_amount,
-        },
-    )
-    resp = await _run_with_timeout(price_digital, req)
-    logger.info(
-        "price_digital response",
-        extra={
-            "npv": resp.npv,
-            "diagnostics": resp.diagnostics,
-        },
-    )
-    return resp
+    return await _price("digital", req)
 
 
 @router.post("/price/option/lookback", response_model=PricingResponse)
 async def price_lookback_endpoint(req: LookbackRequest) -> PricingResponse:
-    logger.info(
-        "price_lookback request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "vol": req.vol,
-            "is_call": req.is_call,
-            "style": req.style,
-            "extremum": req.extremum,
-            "n_steps": req.n_steps,
-            "n_paths": req.n_paths,
-            "seed": req.seed,
-            "mc_antithetic": req.mc_antithetic,
-        },
-    )
-    resp = await _run_with_timeout(price_lookback, req)
-    logger.info(
-        "price_lookback response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp
+    return await _price("lookback", req)
 
 
 @router.post("/price/option/basket", response_model=PricingResponse)
 async def price_basket_endpoint(req: BasketRequest) -> PricingResponse:
-    logger.info(
-        "price_basket request",
-        extra={
-            "n_assets": len(req.spots),
-            "spots": req.spots,
-            "vols": req.vols,
-            "weights": req.weights,
-            "pairwise_correlation": req.pairwise_correlation,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "is_call": req.is_call,
-            "n_paths": req.n_paths,
-            "seed": req.seed,
-        },
-    )
-    resp = await _run_with_timeout(price_basket, req)
-    logger.info(
-        "price_basket response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "delta": resp.greeks.delta,
-            "gamma": resp.greeks.gamma,
-            "vega": resp.greeks.vega,
-            "theta": resp.greeks.theta,
-            "rho": resp.greeks.rho,
-        },
-    )
-    return resp
+    return await _price("basket", req)
 
 
 @router.post("/price/future", response_model=PricingResponse)
 async def price_future_endpoint(req: FutureRequest) -> PricingResponse:
-    logger.info(
-        "price_future request",
-        extra={
-            "spot": req.spot,
-            "strike": req.strike,
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "dividend": req.dividend,
-            "notional": req.notional,
-        },
-    )
-    resp = await _run_with_timeout(price_future, req)
-    logger.info(
-        "price_future response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-        },
-    )
-    return resp
+    return await _price("future", req)
 
 
 @router.post("/price/bond/zero-coupon", response_model=PricingResponse)
-async def price_zero_coupon_bond_endpoint(req: ZeroCouponBondRequest) -> PricingResponse:
-    logger.info(
-        "price_zero_coupon_bond request",
-        extra={
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "notional": req.notional,
-            "discount_times": req.discount_times,
-            "discount_factors": req.discount_factors,
-        },
-    )
-    resp = await _run_with_timeout(price_zero_coupon_bond, req)
-    logger.info(
-        "price_zero_coupon_bond response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "bond_analytics": resp.bond_analytics.model_dump() if resp.bond_analytics else None,
-        },
-    )
-    return resp
+async def price_zero_coupon_bond_endpoint(
+    req: ZeroCouponBondRequest,
+) -> PricingResponse:
+    return await _price("zero_coupon_bond", req)
 
 
 @router.post("/price/bond/fixed-rate", response_model=PricingResponse)
 async def price_fixed_rate_bond_endpoint(req: FixedRateBondRequest) -> PricingResponse:
-    logger.info(
-        "price_fixed_rate_bond request",
-        extra={
-            "maturity": req.maturity,
-            "rate": req.rate,
-            "coupon_rate": req.coupon_rate,
-            "coupon_frequency": req.coupon_frequency,
-            "notional": req.notional,
-            "discount_times": req.discount_times,
-            "discount_factors": req.discount_factors,
-        },
-    )
-    resp = await _run_with_timeout(price_fixed_rate_bond, req)
-    logger.info(
-        "price_fixed_rate_bond response",
-        extra={
-            "npv": resp.npv,
-            "mc_std_error": resp.mc_std_error,
-            "diagnostics": resp.diagnostics,
-            "bond_analytics": resp.bond_analytics.model_dump() if resp.bond_analytics else None,
-        },
-    )
-    return resp
+    return await _price("fixed_rate_bond", req)
 
-
-# ---------------------------------------------------------------------------
-# Autocall
-# ---------------------------------------------------------------------------
 
 @router.post("/price/structured/autocall", response_model=PricingResponse)
 async def price_autocall_endpoint(req: AutocallRequest) -> PricingResponse:
-    logger.info("price_autocall request", extra={"spot": req.spot, "vol": req.vol, "n_obs": len(req.observation_dates)})
-    resp = await _run_with_timeout(price_autocall, req)
-    logger.info("price_autocall response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
-    return resp
+    return await _price("autocall", req)
 
-
-# ---------------------------------------------------------------------------
-# Mountain (Himalaya)
-# ---------------------------------------------------------------------------
 
 @router.post("/price/structured/mountain", response_model=PricingResponse)
 async def price_mountain_endpoint(req: MountainRequest) -> PricingResponse:
-    logger.info("price_mountain request", extra={"n_assets": len(req.spots), "n_obs": len(req.observation_dates)})
-    resp = await _run_with_timeout(price_mountain, req)
-    logger.info("price_mountain response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
-    return resp
+    return await _price("mountain", req)
 
-
-# ---------------------------------------------------------------------------
-# Variance Swap
-# ---------------------------------------------------------------------------
 
 @router.post("/price/volatility/variance-swap", response_model=PricingResponse)
 async def price_variance_swap_endpoint(req: VarianceSwapRequest) -> PricingResponse:
-    logger.info("price_variance_swap request", extra={"spot": req.spot, "strike_var": req.strike_var, "engine": req.engine})
-    resp = await _run_with_timeout(price_variance_swap, req)
-    logger.info("price_variance_swap response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
-    return resp
+    return await _price("variance_swap", req)
 
-
-# ---------------------------------------------------------------------------
-# Volatility Swap
-# ---------------------------------------------------------------------------
 
 @router.post("/price/volatility/volatility-swap", response_model=PricingResponse)
 async def price_volatility_swap_endpoint(req: VolatilitySwapRequest) -> PricingResponse:
-    logger.info("price_volatility_swap request", extra={"spot": req.spot, "strike_vol": req.strike_vol})
-    resp = await _run_with_timeout(price_volatility_swap, req)
-    logger.info("price_volatility_swap response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
-    return resp
+    return await _price("volatility_swap", req)
 
-
-# ---------------------------------------------------------------------------
-# Dispersion Swap
-# ---------------------------------------------------------------------------
 
 @router.post("/price/volatility/dispersion-swap", response_model=PricingResponse)
 async def price_dispersion_swap_endpoint(req: DispersionSwapRequest) -> PricingResponse:
-    logger.info("price_dispersion_swap request", extra={"n_assets": len(req.spots), "strike_spread": req.strike_spread})
-    resp = await _run_with_timeout(price_dispersion_swap, req)
-    logger.info("price_dispersion_swap response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
-    return resp
+    return await _price("dispersion_swap", req)
 
-
-# ---------------------------------------------------------------------------
-# FX Forward
-# ---------------------------------------------------------------------------
 
 @router.post("/price/fx/forward", response_model=PricingResponse)
 async def price_fx_forward_endpoint(req: FXForwardRequest) -> PricingResponse:
-    logger.info("price_fx_forward request", extra={"spot": req.spot, "strike": req.strike, "maturity": req.maturity})
-    resp = await _run_with_timeout(price_fx_forward, req)
-    logger.info("price_fx_forward response", extra={"npv": resp.npv})
-    return resp
+    return await _price("fx_forward", req)
 
-
-# ---------------------------------------------------------------------------
-# FX Option
-# ---------------------------------------------------------------------------
 
 @router.post("/price/fx/option", response_model=PricingResponse)
 async def price_fx_option_endpoint(req: FXOptionRequest) -> PricingResponse:
-    logger.info("price_fx_option request", extra={"spot": req.spot, "strike": req.strike, "is_call": req.is_call})
-    resp = await _run_with_timeout(price_fx_option, req)
-    logger.info("price_fx_option response", extra={"npv": resp.npv})
-    return resp
+    return await _price("fx_option", req)
 
-
-# ---------------------------------------------------------------------------
-# Commodity Forward
-# ---------------------------------------------------------------------------
 
 @router.post("/price/commodity/forward", response_model=PricingResponse)
-async def price_commodity_forward_endpoint(req: CommodityForwardRequest) -> PricingResponse:
-    logger.info("price_commodity_forward request", extra={"spot": req.spot, "strike": req.strike})
-    resp = await _run_with_timeout(price_commodity_forward, req)
-    logger.info("price_commodity_forward response", extra={"npv": resp.npv})
-    return resp
+async def price_commodity_forward_endpoint(
+    req: CommodityForwardRequest,
+) -> PricingResponse:
+    return await _price("commodity_forward", req)
 
-
-# ---------------------------------------------------------------------------
-# Commodity Option
-# ---------------------------------------------------------------------------
 
 @router.post("/price/commodity/option", response_model=PricingResponse)
-async def price_commodity_option_endpoint(req: CommodityOptionRequest) -> PricingResponse:
-    logger.info("price_commodity_option request", extra={"spot": req.spot, "strike": req.strike, "is_call": req.is_call})
-    resp = await _run_with_timeout(price_commodity_option, req)
-    logger.info("price_commodity_option response", extra={"npv": resp.npv})
-    return resp
+async def price_commodity_option_endpoint(
+    req: CommodityOptionRequest,
+) -> PricingResponse:
+    return await _price("commodity_option", req)
 
-
-# ---------------------------------------------------------------------------
-# Rainbow (worst-of / best-of)
-# ---------------------------------------------------------------------------
 
 @router.post("/price/option/rainbow", response_model=PricingResponse)
 async def price_rainbow_endpoint(req: RainbowRequest) -> PricingResponse:
-    logger.info("price_rainbow request", extra={"n_assets": len(req.spots), "kind": req.rainbow_kind, "is_call": req.is_call})
-    resp = await _run_with_timeout(price_rainbow, req)
-    logger.info("price_rainbow response", extra={"npv": resp.npv, "mc_std_error": resp.mc_std_error})
-    return resp
+    return await _price("rainbow", req)

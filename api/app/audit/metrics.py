@@ -1,9 +1,12 @@
-"""In-process counters for the audit trail itself (WP §5.1: `qm_audit_dropped_total`).
+"""In-process state of the audit trail itself (WP §5.1: `qm_audit_dropped_total`,
+`qm_audit_spool_depth`).
 
-A real Prometheus export is WP 18d (OTel Collector); until then this gives
-`emit()` something to increment when a transport fails, and tests something to
-assert on. Every increment is also printed to stderr — "an event dropped must
-be visible" (WP §5.1), even without a dashboard.
+These are plain values the transports update; `telemetry.py` exports them over
+OTLP as observable instruments (lot 18d), so they exist — at 0 — from the
+moment the API starts, which is what lets an `increase()` alert fire on the
+very first drop (quant-platform ADR-013 §2). Every drop is also printed to
+stderr — "an event dropped must be visible" (WP §5.1), even without a
+dashboard.
 """
 
 from __future__ import annotations
@@ -29,4 +32,17 @@ class Counter:
             self._value = 0
 
 
+class Gauge:
+    def __init__(self) -> None:
+        self._value = 0
+
+    def set(self, value: int) -> None:
+        self._value = value
+
+    @property
+    def value(self) -> int:
+        return self._value
+
+
 audit_dropped_total = Counter()
+audit_spool_depth = Gauge()

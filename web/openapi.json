@@ -888,6 +888,24 @@
         "title": "CleanedIVSurfaceResponse",
         "type": "object"
       },
+      "CodeBuild": {
+        "properties": {
+          "api_sha": {
+            "title": "Api Sha",
+            "type": "string"
+          },
+          "lib_build": {
+            "title": "Lib Build",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_sha",
+          "lib_build"
+        ],
+        "title": "CodeBuild",
+        "type": "object"
+      },
       "CommodityForwardRequest": {
         "properties": {
           "convenience_yield": {
@@ -1412,6 +1430,67 @@
           "maturity"
         ],
         "title": "DispersionSwapRequest",
+        "type": "object"
+      },
+      "DriftedInput": {
+        "properties": {
+          "current_as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current As Of"
+          },
+          "current_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Hash"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recorded_as_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded As Of"
+          },
+          "recorded_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Hash"
+          }
+        },
+        "required": [
+          "name",
+          "recorded_hash",
+          "current_hash",
+          "recorded_as_of",
+          "current_as_of"
+        ],
+        "title": "DriftedInput",
         "type": "object"
       },
       "EngineType": {
@@ -2804,6 +2883,69 @@
         "title": "RatesCurveResponse",
         "type": "object"
       },
+      "ReplayOutcome": {
+        "enum": [
+          "reproduced",
+          "drifted_inputs",
+          "drifted_code",
+          "not_reproduced"
+        ],
+        "title": "ReplayOutcome",
+        "type": "string"
+      },
+      "ReplayResponse": {
+        "properties": {
+          "current_code": {
+            "$ref": "#/components/schemas/CodeBuild"
+          },
+          "drifted_inputs": {
+            "items": {
+              "$ref": "#/components/schemas/DriftedInput"
+            },
+            "title": "Drifted Inputs",
+            "type": "array"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "npv_difference": {
+            "title": "Npv Difference",
+            "type": "number"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ReplayOutcome"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "recorded_code": {
+            "$ref": "#/components/schemas/CodeBuild"
+          },
+          "recorded_npv": {
+            "title": "Recorded Npv",
+            "type": "number"
+          },
+          "replayed_npv": {
+            "title": "Replayed Npv",
+            "type": "number"
+          }
+        },
+        "required": [
+          "event_id",
+          "product",
+          "outcome",
+          "recorded_npv",
+          "replayed_npv",
+          "npv_difference",
+          "drifted_inputs",
+          "recorded_code",
+          "current_code"
+        ],
+        "title": "ReplayResponse",
+        "type": "object"
+      },
       "RiskEntry": {
         "description": "One model parameter's AAD sensitivity (blueprint/wp/17-aad.md \u00a713.1).\nPresent only when priced with greeks_method=\"aad\" -- unlike Greeks'\nfive fixed slots, a future model with a local-vol grid or a multi-asset\ncorrelation matrix reports here regardless of how many parameters it\nhas.",
         "properties": {
@@ -3879,6 +4021,67 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/replay/{event_id}": {
+      "post": {
+        "description": "Re-prices the valuation recorded under `event_id` and compares:\n`reproduced`, `drifted_inputs` (which datum), `drifted_code` (from which\nbuild to which) or `not_reproduced`.",
+        "operationId": "replay_valuation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Not an administrator."
+          },
+          "404": {
+            "description": "No such event in the audit database."
+          },
+          "422": {
+            "description": "The event is not a replayable valuation."
+          },
+          "503": {
+            "description": "The audit database is not configured or unreachable."
+          }
+        },
+        "summary": "Replay Valuation Endpoint",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/assistant/scripting/chat": {
       "post": {
         "operationId": "scripting_chat",
@@ -6306,7 +6509,7 @@
     },
     "/price/scripted": {
       "post": {
-        "description": "blueprint/wp/16-scripting.md \u00a78.3. Not under /price/option/* \u2014 kept as\nits own top-level path, mirroring the language's own scope.",
+        "description": "blueprint/wp/16-scripting.md \u00a78.3. Not under /price/option/* \u2014 kept as\nits own top-level path, mirroring the language's own scope. A malformed\nscript (ScriptError) or a bad market input (InvalidInput, missing market\ndata) is a user-input error, not a server failure.",
         "operationId": "price_script",
         "requestBody": {
           "content": {

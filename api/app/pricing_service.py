@@ -38,6 +38,7 @@ from .schemas import (
     VolatilitySwapRequest,
     ZeroCouponBondRequest,
 )
+from .telemetry import tracer
 
 
 def _pricing_response_from_dict(result: Dict) -> PricingResponse:
@@ -200,26 +201,30 @@ def price_script(req: ScriptRequest) -> PricingResponse:
         spot, dividend, vol = req.spot, req.dividend, req.vol
         k_grid, t_grid, sigma = [], [], []
 
-    result = qm.price_script(
-        req.script,
-        spot,
-        req.rate,
-        dividend,
-        vol,
-        valuation_date.isoformat(),
-        req.day_count,
-        req.fuzzy,
-        req.default_eps,
-        req.n_paths,
-        req.seed,
-        req.sampler,
-        req.greeks_method,
-        req.model,
-        k_grid,
-        t_grid,
-        sigma,
-        req.steps_per_year,
-    )
+    with tracer.start_as_current_span(
+        "engine.price",
+        attributes={"qm.product": "script", "qm.model": req.model, "qm.engine": "mc"},
+    ):
+        result = qm.price_script(
+            req.script,
+            spot,
+            req.rate,
+            dividend,
+            vol,
+            valuation_date.isoformat(),
+            req.day_count,
+            req.fuzzy,
+            req.default_eps,
+            req.n_paths,
+            req.seed,
+            req.sampler,
+            req.greeks_method,
+            req.model,
+            k_grid,
+            t_grid,
+            sigma,
+            req.steps_per_year,
+        )
     result["warnings"] = market_warnings + list(result.get("warnings", []))
     return _pricing_response_from_dict(result)
 
