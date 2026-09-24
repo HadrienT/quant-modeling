@@ -174,6 +174,67 @@ def fred_latest_value(series_id: str) -> Optional[float]:
         return float(row[0]) if row else None
 
 
+# ── Rates: macro.fred_series_latest (USD) and macro.intl_rates (EUR/GBP/CHF/JPY) ─
+
+#: The two tables of rate series, both shaped (series_id, date, value in %).
+#: A whitelist: the table name is interpolated into SQL, never a caller string.
+RATE_TABLES = {
+    "fred": "macro.fred_series_latest",
+    "intl": "macro.intl_rates",
+}
+
+
+def rates_curve_snapshot(
+    table: str, series_ids: Sequence[str]
+) -> Optional[Tuple[date, dict]]:
+    """The latest date on which EVERY series of a curve has a value, with the
+    values on that date — one market date for the whole curve, never pillars
+    of different days spliced together. None if no such date exists."""
+    relation = RATE_TABLES[table]
+    ids = list(series_ids)
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT date FROM {relation} "
+            "WHERE series_id = ANY(%s) AND value IS NOT NULL "
+            "GROUP BY date HAVING count(DISTINCT series_id) = %s "
+            "ORDER BY date DESC LIMIT 1",
+            (ids, len(set(ids))),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cur.execute(
+            f"SELECT series_id, value FROM {relation} "
+            "WHERE series_id = ANY(%s) AND date = %s",
+            (ids, row[0]),
+        )
+        return row[0], {sid: float(v) for sid, v in cur.fetchall()}
+
+
+def rates_latest(table: str, series_ids: Sequence[str]) -> dict:
+    """{series_id: (date, value)} — each series' own latest observation."""
+    relation = RATE_TABLES[table]
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT DISTINCT ON (series_id) series_id, date, value FROM {relation} "
+            "WHERE series_id = ANY(%s) AND value IS NOT NULL "
+            "ORDER BY series_id, date DESC",
+            (list(series_ids),),
+        )
+        return {sid: (d, float(v)) for sid, d, v in cur.fetchall()}
+
+
+def rates_history(table: str, series_id: str, since: date) -> List[Tuple[date, float]]:
+    relation = RATE_TABLES[table]
+    with _cursor() as cur:
+        cur.execute(
+            f"SELECT date, value FROM {relation} "
+            "WHERE series_id = %s AND value IS NOT NULL AND date >= %s ORDER BY date",
+            (series_id, since),
+        )
+        return [(d, float(v)) for d, v in cur.fetchall()]
+
+
 # ── options.chain_snapshot ───────────────────────────────────────────────────
 
 

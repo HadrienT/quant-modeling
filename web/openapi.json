@@ -751,6 +751,65 @@
         "title": "BatchPriceResponse",
         "type": "object"
       },
+      "BenchmarkRate": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "backward_looking": {
+            "title": "Backward Looking",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "overnight",
+              "policy",
+              "compounded",
+              "interbank_monthly"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "series_id": {
+            "title": "Series Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "series_id",
+          "label",
+          "kind",
+          "backward_looking",
+          "rate",
+          "as_of"
+        ],
+        "title": "BenchmarkRate",
+        "type": "object"
+      },
       "BondAnalytics": {
         "properties": {
           "convexity": {
@@ -1013,24 +1072,6 @@
           "maturity"
         ],
         "title": "CommodityOptionRequest",
-        "type": "object"
-      },
-      "CurvePointResponse": {
-        "properties": {
-          "x": {
-            "title": "X",
-            "type": "number"
-          },
-          "y": {
-            "title": "Y",
-            "type": "number"
-          }
-        },
-        "required": [
-          "x",
-          "y"
-        ],
-        "title": "CurvePointResponse",
         "type": "object"
       },
       "DatedAsianRequest": {
@@ -1695,6 +1736,100 @@
         "title": "FutureRequest",
         "type": "object"
       },
+      "GovernmentCurveResponse": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "forward": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RatePoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuously compounded forwards over forward_period_years, by start tenor.",
+            "title": "Forward"
+          },
+          "forward_period_years": {
+            "title": "Forward Period Years",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "no_derivation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Derivation"
+          },
+          "quote": {
+            "enum": [
+              "par_semiannual",
+              "zero_continuous"
+            ],
+            "title": "Quote",
+            "type": "string"
+          },
+          "quoted": {
+            "items": {
+              "$ref": "#/components/schemas/QuotedRatePoint"
+            },
+            "title": "Quoted",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "zero": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RatePoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuously compounded zero rates, sampled between the first and last pillar; None when not derivable (see no_derivation).",
+            "title": "Zero"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "source_url",
+          "quote",
+          "as_of",
+          "quoted",
+          "zero",
+          "forward",
+          "forward_period_years"
+        ],
+        "title": "GovernmentCurveResponse",
+        "type": "object"
+      },
       "Greeks": {
         "properties": {
           "delta": {
@@ -2138,6 +2273,27 @@
           "points"
         ],
         "title": "MarketHistoryResponse",
+        "type": "object"
+      },
+      "MethodologySection": {
+        "properties": {
+          "paragraphs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paragraphs",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "paragraphs"
+        ],
+        "title": "MethodologySection",
         "type": "object"
       },
       "ModelWarning": {
@@ -2773,6 +2929,34 @@
         "title": "Providers",
         "type": "object"
       },
+      "QuotedRatePoint": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "series_id": {
+            "title": "Series Id",
+            "type": "string"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "tenor",
+          "label",
+          "series_id",
+          "rate"
+        ],
+        "title": "QuotedRatePoint",
+        "type": "object"
+      },
       "RainbowKind": {
         "enum": [
           "worst-of",
@@ -2862,25 +3046,146 @@
         "title": "RainbowRequest",
         "type": "object"
       },
-      "RatesCurveResponse": {
+      "RateHistoryPoint": {
         "properties": {
-          "curve": {
-            "title": "Curve",
+          "date": {
+            "format": "date",
+            "title": "Date",
             "type": "string"
           },
-          "zero": {
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "rate"
+        ],
+        "title": "RateHistoryPoint",
+        "type": "object"
+      },
+      "RatePoint": {
+        "properties": {
+          "rate": {
+            "description": "Decimal (0.0397 = 3.97 %).",
+            "title": "Rate",
+            "type": "number"
+          },
+          "tenor": {
+            "description": "Years.",
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "tenor",
+          "rate"
+        ],
+        "title": "RatePoint",
+        "type": "object"
+      },
+      "RatesHistoryResponse": {
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "points": {
             "items": {
-              "$ref": "#/components/schemas/CurvePointResponse"
+              "$ref": "#/components/schemas/RateHistoryPoint"
             },
-            "title": "Zero",
+            "title": "Points",
+            "type": "array"
+          },
+          "series_id": {
+            "title": "Series Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "series_id",
+          "points"
+        ],
+        "title": "RatesHistoryResponse",
+        "type": "object"
+      },
+      "RatesOverviewResponse": {
+        "properties": {
+          "benchmarks": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkRate"
+            },
+            "title": "Benchmarks",
+            "type": "array"
+          },
+          "currency": {
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "CHF",
+              "JPY"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "government": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GovernmentCurveResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "government_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Government Unavailable"
+          },
+          "headline_series": {
+            "title": "Headline Series",
+            "type": "string"
+          },
+          "methodology": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologySection"
+            },
+            "title": "Methodology",
+            "type": "array"
+          },
+          "unit": {
+            "const": "decimal",
+            "default": "decimal",
+            "title": "Unit",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
             "type": "array"
           }
         },
         "required": [
-          "curve",
-          "zero"
+          "currency",
+          "government",
+          "benchmarks",
+          "headline_series",
+          "methodology",
+          "warnings"
         ],
-        "title": "RatesCurveResponse",
+        "title": "RatesOverviewResponse",
         "type": "object"
       },
       "ReplayOutcome": {
@@ -5817,42 +6122,47 @@
         "summary": "Market History"
       }
     },
-    "/market/rates/curve": {
+    "/market/rates/history": {
       "get": {
-        "operationId": "rates_curve",
+        "operationId": "rates_history",
         "parameters": [
           {
             "in": "query",
-            "name": "curve",
-            "required": false,
+            "name": "currency",
+            "required": true,
             "schema": {
-              "default": "Treasury",
-              "pattern": "^(Treasury|SOFR|FedFunds)$",
-              "title": "Curve",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "CHF",
+                "JPY"
+              ],
+              "title": "Currency",
+              "type": "string"
+            }
+          },
+          {
+            "description": "One of the currency's reference rates.",
+            "in": "query",
+            "name": "series_id",
+            "required": true,
+            "schema": {
+              "description": "One of the currency's reference rates.",
+              "title": "Series Id",
               "type": "string"
             }
           },
           {
             "in": "query",
-            "name": "curve_type",
+            "name": "years",
             "required": false,
             "schema": {
-              "default": "zero",
-              "pattern": "^(zero|forward)$",
-              "title": "Curve Type",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "fixed_period_years",
-            "required": false,
-            "schema": {
-              "default": 0.5,
-              "exclusiveMinimum": 0.0,
-              "maximum": 10.0,
-              "title": "Fixed Period Years",
-              "type": "number"
+              "default": 5,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Years",
+              "type": "integer"
             }
           }
         ],
@@ -5861,7 +6171,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RatesCurveResponse"
+                  "$ref": "#/components/schemas/RatesHistoryResponse"
                 }
               }
             },
@@ -5878,7 +6188,68 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Rates Curve"
+        "summary": "Rates History"
+      }
+    },
+    "/market/rates/overview": {
+      "get": {
+        "operationId": "rates_overview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "default": "USD",
+              "enum": [
+                "USD",
+                "EUR",
+                "GBP",
+                "CHF",
+                "JPY"
+              ],
+              "title": "Currency",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Length \u0394 of the forward rates, in years.",
+            "in": "query",
+            "name": "forward_period_years",
+            "required": false,
+            "schema": {
+              "default": 0.5,
+              "description": "Length \u0394 of the forward rates, in years.",
+              "exclusiveMinimum": 0.0,
+              "maximum": 10.0,
+              "title": "Forward Period Years",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rates Overview"
       }
     },
     "/market/tickers": {

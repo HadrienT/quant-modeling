@@ -389,14 +389,70 @@ class MarketHistoryResponse(BaseModel):
     points: List[MarketHistoryPoint]
 
 
-class CurvePointResponse(BaseModel):
-    x: float
-    y: float
+class RatePoint(BaseModel):
+    tenor: float = Field(description="Years.")
+    rate: float = Field(description="Decimal (0.0397 = 3.97 %).")
 
 
-class RatesCurveResponse(BaseModel):
-    curve: str
-    zero: List[CurvePointResponse]
+class QuotedRatePoint(BaseModel):
+    tenor: float
+    label: str
+    series_id: str
+    rate: float
+
+
+class GovernmentCurveResponse(BaseModel):
+    name: str
+    source: str
+    source_url: str
+    quote: Literal["par_semiannual", "zero_continuous"]
+    as_of: date
+    quoted: List[QuotedRatePoint]
+    zero: Optional[List[RatePoint]] = Field(
+        description="Continuously compounded zero rates, sampled between the first "
+        "and last pillar; None when not derivable (see no_derivation)."
+    )
+    forward: Optional[List[RatePoint]] = Field(
+        description="Continuously compounded forwards over forward_period_years, by start tenor."
+    )
+    forward_period_years: float
+    no_derivation: Optional[str] = None
+
+
+class BenchmarkRate(BaseModel):
+    series_id: str
+    label: str
+    kind: Literal["overnight", "policy", "compounded", "interbank_monthly"]
+    backward_looking: bool
+    rate: Optional[float]
+    as_of: Optional[date]
+
+
+class MethodologySection(BaseModel):
+    title: str
+    paragraphs: List[str]
+
+
+class RatesOverviewResponse(BaseModel):
+    currency: Literal["USD", "EUR", "GBP", "CHF", "JPY"]
+    unit: Literal["decimal"] = "decimal"
+    government: Optional[GovernmentCurveResponse]
+    government_unavailable: Optional[str] = None
+    benchmarks: List[BenchmarkRate]
+    headline_series: str
+    methodology: List[MethodologySection]
+    warnings: List[str]
+
+
+class RateHistoryPoint(BaseModel):
+    date: date
+    rate: float
+
+
+class RatesHistoryResponse(BaseModel):
+    currency: str
+    series_id: str
+    points: List[RateHistoryPoint]
 
 
 # ---------------------------------------------------------------------------

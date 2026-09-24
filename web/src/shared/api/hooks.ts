@@ -3,6 +3,7 @@ import {
 	useMutation,
 	useQuery,
 	useQueryClient,
+	keepPreviousData,
 } from "@tanstack/react-query";
 import { LONG_TIMEOUT_MS, api, signalWithTimeout } from "./client";
 import { ApiError } from "./errors";
@@ -18,7 +19,9 @@ import type {
 	MarketHistoryResponse,
 	Portfolio,
 	PortfolioSummary,
-	RatesCurveResponse,
+	RateCurrency,
+	RatesHistoryResponse,
+	RatesOverviewResponse,
 	SABRPathRequest,
 	SimulationCalibrateRequest,
 	SimulationCalibrateResponse,
@@ -190,29 +193,51 @@ export function useLocalVolSurface(ticker: string | null) {
 	});
 }
 
-export function useRatesCurve(
-	curve: "Treasury" | "SOFR" | "FedFunds",
-	curveType: "zero" | "forward" = "zero",
-	fixedPeriodYears = 0.5,
+export function useRatesOverview(
+	currency: RateCurrency,
+	forwardPeriodYears = 0.5,
 ) {
 	return useQuery({
-		queryKey: queryKeys.market.ratesCurve(curve, curveType, fixedPeriodYears),
+		queryKey: queryKeys.market.ratesOverview(currency, forwardPeriodYears),
+		staleTime: STALE.rates,
+		// Keep the page on screen while another currency or forward period loads.
+		placeholderData: keepPreviousData,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return (await unwrap(
+					api.GET("/market/rates/overview", {
+						params: {
+							query: { currency, forward_period_years: forwardPeriodYears },
+						},
+						signal: s,
+					}),
+				)) as RatesOverviewResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+export function useRatesHistory(
+	currency: RateCurrency,
+	seriesId: string | undefined,
+	years = 5,
+) {
+	return useQuery({
+		queryKey: queryKeys.market.ratesHistory(currency, seriesId ?? "", years),
+		enabled: !!seriesId,
 		staleTime: STALE.rates,
 		queryFn: async ({ signal }) => {
 			const s = signalWithTimeout(signal);
 			try {
 				return (await unwrap(
-					api.GET("/market/rates/curve", {
-						params: {
-							query: {
-								curve,
-								curve_type: curveType,
-								fixed_period_years: fixedPeriodYears,
-							},
-						},
+					api.GET("/market/rates/history", {
+						params: { query: { currency, series_id: seriesId!, years } },
 						signal: s,
 					}),
-				)) as RatesCurveResponse;
+				)) as RatesHistoryResponse;
 			} finally {
 				s.cleanup();
 			}

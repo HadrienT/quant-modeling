@@ -484,15 +484,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/market/rates/curve": {
+    "/market/rates/history": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Rates Curve */
-        get: operations["rates_curve"];
+        /** Rates History */
+        get: operations["rates_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/market/rates/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rates Overview */
+        get: operations["rates_overview"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1301,6 +1318,24 @@ export interface components {
             portfolio: components["schemas"]["Portfolio-Output"];
             risk_summary: components["schemas"]["PortfolioRiskSummary"];
         };
+        /** BenchmarkRate */
+        BenchmarkRate: {
+            /** As Of */
+            as_of: string | null;
+            /** Backward Looking */
+            backward_looking: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "overnight" | "policy" | "compounded" | "interbank_monthly";
+            /** Label */
+            label: string;
+            /** Rate */
+            rate: number | null;
+            /** Series Id */
+            series_id: string;
+        };
         /** BondAnalytics */
         BondAnalytics: {
             /** Convexity */
@@ -1412,13 +1447,6 @@ export interface components {
             strike: number;
             /** Vol */
             vol: number;
-        };
-        /** CurvePointResponse */
-        CurvePointResponse: {
-            /** X */
-            x: number;
-            /** Y */
-            y: number;
         };
         /**
          * DatedAsianRequest
@@ -1708,6 +1736,41 @@ export interface components {
             /** Strike */
             strike: number;
         };
+        /** GovernmentCurveResponse */
+        GovernmentCurveResponse: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Forward
+             * @description Continuously compounded forwards over forward_period_years, by start tenor.
+             */
+            forward: components["schemas"]["RatePoint"][] | null;
+            /** Forward Period Years */
+            forward_period_years: number;
+            /** Name */
+            name: string;
+            /** No Derivation */
+            no_derivation?: string | null;
+            /**
+             * Quote
+             * @enum {string}
+             */
+            quote: "par_semiannual" | "zero_continuous";
+            /** Quoted */
+            quoted: components["schemas"]["QuotedRatePoint"][];
+            /** Source */
+            source: string;
+            /** Source Url */
+            source_url: string;
+            /**
+             * Zero
+             * @description Continuously compounded zero rates, sampled between the first and last pillar; None when not derivable (see no_derivation).
+             */
+            zero: components["schemas"]["RatePoint"][] | null;
+        };
         /** Greeks */
         Greeks: {
             /** Delta */
@@ -1865,6 +1928,13 @@ export interface components {
             points: components["schemas"]["MarketHistoryPoint"][];
             /** Ticker */
             ticker: string;
+        };
+        /** MethodologySection */
+        MethodologySection: {
+            /** Paragraphs */
+            paragraphs: string[];
+            /** Title */
+            title: string;
         };
         /**
          * ModelWarning
@@ -2169,6 +2239,17 @@ export interface components {
             /** Google */
             google: boolean;
         };
+        /** QuotedRatePoint */
+        QuotedRatePoint: {
+            /** Label */
+            label: string;
+            /** Rate */
+            rate: number;
+            /** Series Id */
+            series_id: string;
+            /** Tenor */
+            tenor: number;
+        };
         /**
          * RainbowKind
          * @enum {string}
@@ -2223,12 +2304,62 @@ export interface components {
             /** Vols */
             vols: number[];
         };
-        /** RatesCurveResponse */
-        RatesCurveResponse: {
-            /** Curve */
-            curve: string;
-            /** Zero */
-            zero: components["schemas"]["CurvePointResponse"][];
+        /** RateHistoryPoint */
+        RateHistoryPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Rate */
+            rate: number;
+        };
+        /** RatePoint */
+        RatePoint: {
+            /**
+             * Rate
+             * @description Decimal (0.0397 = 3.97 %).
+             */
+            rate: number;
+            /**
+             * Tenor
+             * @description Years.
+             */
+            tenor: number;
+        };
+        /** RatesHistoryResponse */
+        RatesHistoryResponse: {
+            /** Currency */
+            currency: string;
+            /** Points */
+            points: components["schemas"]["RateHistoryPoint"][];
+            /** Series Id */
+            series_id: string;
+        };
+        /** RatesOverviewResponse */
+        RatesOverviewResponse: {
+            /** Benchmarks */
+            benchmarks: components["schemas"]["BenchmarkRate"][];
+            /**
+             * Currency
+             * @enum {string}
+             */
+            currency: "USD" | "EUR" | "GBP" | "CHF" | "JPY";
+            government: components["schemas"]["GovernmentCurveResponse"] | null;
+            /** Government Unavailable */
+            government_unavailable?: string | null;
+            /** Headline Series */
+            headline_series: string;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /**
+             * Unit
+             * @default decimal
+             * @constant
+             */
+            unit: "decimal";
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * ReplayOutcome
@@ -3809,12 +3940,13 @@ export interface operations {
             };
         };
     };
-    rates_curve: {
+    rates_history: {
         parameters: {
-            query?: {
-                curve?: string;
-                curve_type?: string;
-                fixed_period_years?: number;
+            query: {
+                currency: "USD" | "EUR" | "GBP" | "CHF" | "JPY";
+                /** @description One of the currency's reference rates. */
+                series_id: string;
+                years?: number;
             };
             header?: never;
             path?: never;
@@ -3828,7 +3960,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatesCurveResponse"];
+                    "application/json": components["schemas"]["RatesHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rates_overview: {
+        parameters: {
+            query?: {
+                currency?: "USD" | "EUR" | "GBP" | "CHF" | "JPY";
+                /** @description Length Δ of the forward rates, in years. */
+                forward_period_years?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatesOverviewResponse"];
                 };
             };
             /** @description Validation Error */

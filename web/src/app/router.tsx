@@ -53,6 +53,7 @@ const marketRoute = createRoute({
 		tab: z.enum(["prices", "vol", "rates"]).default("prices"),
 		ticker: z.string().optional(),
 		surface: z.enum(["raw", "cleaned", "localvol"]).optional(),
+		ccy: z.enum(["USD", "EUR", "GBP", "CHF", "JPY"]).optional(),
 	}).parse,
 	component: MarketPage,
 });

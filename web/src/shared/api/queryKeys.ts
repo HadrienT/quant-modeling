@@ -24,8 +24,10 @@ export const queryKeys = {
 			["market", "iv-surface-cleaned", ticker] as const,
 		localVolSurface: (ticker: string) =>
 			["market", "local-vol-surface", ticker] as const,
-		ratesCurve: (curve: string, kind: string, fixedPeriodYears: number) =>
-			["market", "rates", curve, kind, fixedPeriodYears] as const,
+		ratesOverview: (currency: string, forwardPeriodYears: number) =>
+			["market", "rates", "overview", currency, forwardPeriodYears] as const,
+		ratesHistory: (currency: string, seriesId: string, years: number) =>
+			["market", "rates", "history", currency, seriesId, years] as const,
 	},
 
 	pricing: {

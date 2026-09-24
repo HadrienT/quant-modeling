@@ -57,7 +57,10 @@ export default function MarketPage() {
 					<VolTab ticker={ticker} />
 				</TabsContent>
 				<TabsContent value="rates">
-					<RatesTab />
+					<RatesTab
+						currency={search.ccy ?? "USD"}
+						onCurrency={(ccy) => set({ ccy })}
+					/>
 				</TabsContent>
 			</Tabs>
 		</div>

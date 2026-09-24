@@ -11,7 +11,11 @@ export type CleanedIVSurfaceResponse = Schemas["CleanedIVSurfaceResponse"];
 export type DeltaBucketRow = Schemas["DeltaBucketRow"];
 export type DeltaSurfaceResponse = Schemas["DeltaSurfaceResponse"];
 export type LocalVolSurfaceResponse = Schemas["LocalVolSurfaceResponse"];
-export type RatesCurveResponse = Schemas["RatesCurveResponse"];
+export type RatesOverviewResponse = Schemas["RatesOverviewResponse"];
+export type RatesHistoryResponse = Schemas["RatesHistoryResponse"];
+export type GovernmentCurveResponse = Schemas["GovernmentCurveResponse"];
+export type BenchmarkRate = Schemas["BenchmarkRate"];
+export type RateCurrency = RatesOverviewResponse["currency"];
 export type MarketHistoryResponse = Schemas["MarketHistoryResponse"];
 
 // FastAPI splits models used for both request and response bodies.
