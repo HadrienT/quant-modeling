@@ -98,7 +98,7 @@ de schémas**. Le producteur enregistre son schéma au déploiement ; le
 consommateur le lit dans le registre. Le registre est donc littéralement
 l'endroit où deux dépôts se rencontrent — c'est le rôle qu'il joue en entreprise.
 
-**Le dépôt existe** : `~/quant-platform` (créé localement, son propre
+**Le dépôt existe** : `~/quant-platform`, publié sur <https://github.com/HadrienT/quant-platform> (son propre
 `CLAUDE.md` et son blueprint `WP 00–06`). Ce document reste la **vue d'ensemble**
 et la conception côté producteur (lots 18a et 18e, et le `KafkaSink` de 18b) ;
 pour la moitié plateforme, **le contrat (topics, enveloppe, rôles SQL) est
