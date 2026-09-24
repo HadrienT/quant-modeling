@@ -54,6 +54,9 @@ const marketRoute = createRoute({
 		ticker: z.string().optional(),
 		surface: z.enum(["raw", "cleaned", "localvol"]).optional(),
 		ccy: z.enum(["USD", "EUR", "GBP", "CHF", "JPY"]).optional(),
+		market: z
+			.enum(["SP500", "CAC40", "DAX", "FTSE100", "NIKKEI225"])
+			.optional(),
 	}).parse,
 	component: MarketPage,
 });

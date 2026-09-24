@@ -33,7 +33,53 @@ export function priceHistory(ticker: string, days = 252) {
 			close: Math.round(price * 100) / 100,
 		});
 	}
-	return { ticker, points };
+	const currency = ticker.endsWith(".PA")
+		? "EUR"
+		: ticker.endsWith(".L")
+			? "GBP"
+			: "USD";
+	return { ticker, currency, points };
+}
+
+export const MARKETS = [
+	{
+		id: "SP500",
+		name: "S&P 500",
+		currency: "USD",
+		members: 503,
+		as_of: "2026-09-24",
+		has_options: true,
+		note: "Option chains for a fixed set of liquid names.",
+	},
+	{
+		id: "CAC40",
+		name: "CAC 40",
+		currency: "EUR",
+		members: 40,
+		as_of: "2026-09-24",
+		has_options: false,
+		note: "No free option data: Yahoo Finance publishes option chains for US listings only.",
+	},
+];
+
+export function marketTickers(market: string | null) {
+	if (market === "CAC40") {
+		const members = [
+			{ ticker: "^FCHI", name: "CAC 40", kind: "index", currency: "EUR" },
+			{ ticker: "MC.PA", name: "LVMH", kind: "equity", currency: "EUR" },
+			{ ticker: "AIR.PA", name: "Airbus", kind: "equity", currency: "EUR" },
+		];
+		return { tickers: members.map((m) => m.ticker), members };
+	}
+	const members = TICKERS.map((t) => ({
+		ticker: t,
+		name: null,
+		kind: "equity",
+		currency: "USD",
+	}));
+	return market
+		? { tickers: TICKERS, members }
+		: { tickers: TICKERS, members: [] };
 }
 
 /** Strike/maturity grid with genuine holes (null = strike without a quote). */

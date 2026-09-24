@@ -15,8 +15,14 @@ export const handlers = [
 		HttpResponse.json({ status: "ok", version: "mock" }),
 	),
 
-	http.get("*/market/tickers", () =>
-		HttpResponse.json({ tickers: fx.TICKERS }),
+	http.get("*/market/tickers", ({ request }) =>
+		HttpResponse.json(
+			fx.marketTickers(new URL(request.url).searchParams.get("market")),
+		),
+	),
+
+	http.get("*/market/markets", () =>
+		HttpResponse.json({ markets: fx.MARKETS }),
 	),
 
 	http.get("*/market/prices/history", ({ request }) => {

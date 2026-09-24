@@ -21,8 +21,24 @@ import { SurfaceDiagnostics } from "./SurfaceDiagnostics";
  * SurfaceDiagnostics, a secondary section: valuable for a quant checking
  * data quality, not what a trader opens first.
  */
-export function VolTab({ ticker }: { ticker: string }) {
-	const delta = useDeltaSurface(ticker || null);
+export function VolTab({
+	ticker,
+	unavailable,
+}: {
+	ticker: string;
+	/** Why this market has no volatility surface (no option data), if so. */
+	unavailable?: string | null;
+}) {
+	// Not asked for at all when the market has no option chains: a request
+	// that can only fail would show an error for what is a known absence.
+	const delta = useDeltaSurface(unavailable ? null : ticker || null);
+
+	if (unavailable)
+		return (
+			<p className="rounded-sm border border-hairline bg-surface p-3 text-sm text-ink-secondary">
+				{unavailable}
+			</p>
+		);
 
 	if (!ticker)
 		return (

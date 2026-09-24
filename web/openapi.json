@@ -2256,6 +2256,12 @@
       },
       "MarketHistoryResponse": {
         "properties": {
+          "currency": {
+            "default": "USD",
+            "description": "ISO currency of the closes (never converted).",
+            "title": "Currency",
+            "type": "string"
+          },
           "points": {
             "items": {
               "$ref": "#/components/schemas/MarketHistoryPoint"
@@ -2273,6 +2279,85 @@
           "points"
         ],
         "title": "MarketHistoryResponse",
+        "type": "object"
+      },
+      "MarketInfo": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "has_options": {
+            "title": "Has Options",
+            "type": "boolean"
+          },
+          "id": {
+            "enum": [
+              "SP500",
+              "CAC40",
+              "DAX",
+              "FTSE100",
+              "NIKKEI225"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "currency",
+          "members",
+          "has_options"
+        ],
+        "title": "MarketInfo",
+        "type": "object"
+      },
+      "MarketsResponse": {
+        "properties": {
+          "markets": {
+            "items": {
+              "$ref": "#/components/schemas/MarketInfo"
+            },
+            "title": "Markets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "markets"
+        ],
+        "title": "MarketsResponse",
         "type": "object"
       },
       "MethodologySection": {
@@ -3912,8 +3997,54 @@
         "title": "StressResult",
         "type": "object"
       },
+      "TickerInfo": {
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "index",
+              "equity"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "kind",
+          "currency"
+        ],
+        "title": "TickerInfo",
+        "type": "object"
+      },
       "TickersResponse": {
         "properties": {
+          "members": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TickerInfo"
+            },
+            "title": "Members",
+            "type": "array"
+          },
           "tickers": {
             "items": {
               "type": "string"
@@ -6070,6 +6201,24 @@
         "summary": "Health"
       }
     },
+    "/market/markets": {
+      "get": {
+        "operationId": "list_markets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Markets"
+      }
+    },
     "/market/prices/history": {
       "get": {
         "operationId": "market_history",
@@ -6079,7 +6228,7 @@
             "name": "ticker",
             "required": true,
             "schema": {
-              "maxLength": 12,
+              "maxLength": 16,
               "minLength": 1,
               "title": "Ticker",
               "type": "string"
@@ -6255,6 +6404,31 @@
     "/market/tickers": {
       "get": {
         "operationId": "list_tickers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "market",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "SP500",
+                    "CAC40",
+                    "DAX",
+                    "FTSE100",
+                    "NIKKEI225"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Market"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6265,6 +6439,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Tickers"

@@ -13,7 +13,9 @@ export const queryKeys = {
 
 	market: {
 		all: () => ["market"] as const,
-		tickers: () => ["market", "tickers"] as const,
+		tickers: (market?: string) =>
+			["market", "tickers", market ?? "all"] as const,
+		markets: () => ["market", "markets"] as const,
 		history: (ticker: string, range: string) =>
 			["market", "history", ticker, range] as const,
 		rawIvSurface: (ticker: string) =>

@@ -12,9 +12,19 @@ import { realizedVol } from "./realizedVol";
 
 const RANGES = ["1M", "3M", "YTD", "1Y", "5Y", "max"];
 
-export function PricesTab({ ticker }: { ticker: string }) {
+export function PricesTab({
+	ticker,
+	isIndex = false,
+}: {
+	ticker: string;
+	/** An index level is in points, not in its currency. */
+	isIndex?: boolean;
+}) {
 	const [range, setRange] = useState("1Y");
 	const history = usePriceHistory(ticker || null, range);
+	// Prices are in the line's own currency, never converted (API: currency).
+	const ccy = isIndex ? "pts" : history.data?.currency;
+	const inCcy = (label: string) => (ccy ? `${label} (${ccy})` : label);
 
 	const stats = useMemo(() => {
 		const pts = history.data?.points ?? [];
@@ -66,16 +76,16 @@ export function PricesTab({ ticker }: { ticker: string }) {
 			{stats && (
 				<MetricRow>
 					<Metric
-						label="Last"
+						label={inCcy("Last")}
 						value={<NumberCell value={stats.last} magnitude="price" />}
 						change={<DeltaBadge value={stats.changePct} magnitude="rate" />}
 					/>
 					<Metric
-						label="Period high"
+						label={inCcy("Period high")}
 						value={<NumberCell value={stats.high} magnitude="price" />}
 					/>
 					<Metric
-						label="Period low"
+						label={inCcy("Period low")}
 						value={<NumberCell value={stats.low} magnitude="price" />}
 					/>
 					<Metric
@@ -91,7 +101,9 @@ export function PricesTab({ ticker }: { ticker: string }) {
 			)}
 
 			<PriceSeriesChart
-				title={ticker ? `${ticker} — ${range}` : "Price"}
+				title={
+					ticker ? `${ticker} — ${range}${ccy ? ` · ${ccy}` : ""}` : "Price"
+				}
 				isLoading={history.isLoading}
 				error={history.error}
 				candles={history.data?.points.map((p) => ({

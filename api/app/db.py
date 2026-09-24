@@ -9,6 +9,8 @@ tables already cover what they need.
 
 Tables it reads:
   prices.sp500_daily          (date, ticker, open, high, low, close, volume)
+  prices.intl_equity_daily    (date, ticker, …, close, volume, currency)  CAC 40, DAX, FTSE 100, Nikkei 225
+  prices.equity_universe      (market, ticker, name, kind, currency, as_of)
   prices.dividend_yields      (date, ticker, trailing_yield)
   macro.fred_series_latest    (series_id, date, value)  — current vintage view
   options.chain_snapshot      (date, ticker, expiry, option_type, strike,
@@ -100,22 +102,92 @@ def sp500_tickers() -> List[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+#: Every daily-close table, as one relation: the S&P 500 (USD) and data-ingest's
+#: CAC 40 / DAX / FTSE 100 / Nikkei 225 table (currency per row, pence already
+#: converted to pounds). Equity tickers never collide (Yahoo suffixes .PA, .DE,
+#: .L, .T), but the S&P 500 list also carries a few index symbols, among them
+#: ^FCHI, ^GDAXI, ^FTSE and ^N225 — so one close per date is kept, the
+#: international table's first: it is refreshed for those markets and its
+#: closes are never NULL.
+_ALL_CLOSES = (
+    "(SELECT date, ticker, close, 0 AS priority FROM prices.intl_equity_daily "
+    " UNION ALL SELECT date, ticker, close, 1 FROM prices.sp500_daily) AS closes"
+)
+
+
 def price_history(
     ticker: str, since: Optional[date] = None
 ) -> List[Tuple[date, float]]:
-    sql = "SELECT date, close FROM prices.sp500_daily WHERE ticker = %s"
+    sql = (
+        f"SELECT DISTINCT ON (date) date, close FROM {_ALL_CLOSES} "
+        "WHERE ticker = %s AND close IS NOT NULL"
+    )
     params: list = [ticker.upper()]
     if since is not None:
         sql += " AND date >= %s"
         params.append(since)
-    sql += " AND close IS NOT NULL ORDER BY date ASC"
+    sql += " ORDER BY date ASC, priority ASC"
     with _cursor() as cur:
         cur.execute(sql, params)
         return [(r[0], float(r[1])) for r in cur.fetchall()]
 
 
+# ── prices.equity_universe (markets and their members) ──────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class MarketMember:
+    ticker: str
+    name: Optional[str]
+    kind: str  # "index" | "equity"
+    currency: str
+
+
+def equity_markets() -> List[Tuple[str, int, date]]:
+    """(market, number of members, as_of) for each market's CURRENT
+    composition — its latest as_of; a company that left an index keeps an
+    older row, which this ignores."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT market, count(*) FILTER (WHERE kind = 'equity'), max(as_of) "
+            "FROM prices.equity_universe u "
+            "WHERE as_of = (SELECT max(as_of) FROM prices.equity_universe "
+            "               WHERE market = u.market) "
+            "GROUP BY market"
+        )
+        return [(m, int(n), d) for m, n, d in cur.fetchall()]
+
+
+def market_members(market: str) -> List[MarketMember]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT ticker, name, kind, currency FROM prices.equity_universe "
+            "WHERE market = %s AND as_of = (SELECT max(as_of) "
+            "FROM prices.equity_universe WHERE market = %s) "
+            "ORDER BY kind DESC, ticker",  # the index first, then its members
+            (market, market),
+        )
+        return [MarketMember(*row) for row in cur.fetchall()]
+
+
+def ticker_currency(ticker: str) -> Optional[str]:
+    """The ISO currency a ticker's prices are stored in, or None if unknown
+    (e.g. an index ETF outside the universe; those are US listings)."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT currency FROM prices.equity_universe WHERE ticker = %s LIMIT 1",
+            (ticker.upper(),),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 def prices_wide(tickers: Sequence[str], since: Optional[date] = None) -> pd.DataFrame:
-    """date-indexed, one column per ticker, adjusted close."""
+    """date-indexed, one column per ticker, adjusted close.
+
+    S&P 500 only, on purpose: this feeds the multi-asset backtest, and closes
+    in EUR, GBP and JPY side by side with USD would be summed as if they were
+    one currency. Opening it to the other markets needs FX conversion first."""
     sql = (
         "SELECT date, ticker, close FROM prices.sp500_daily "
         "WHERE ticker = ANY(%s) AND close IS NOT NULL"
