@@ -26,12 +26,14 @@ export function TransactionsTable({
 	instruments,
 	currencies,
 	onDelete,
+	readOnly = false,
 }: {
 	trades: Trade[];
 	instruments: Instrument[];
 	/** instrument id → currency, from the valuation (a stock's is the listing's) */
 	currencies: Record<string, string>;
 	onDelete: (id: string) => void;
+	readOnly?: boolean;
 }) {
 	const [confirming, setConfirming] = useState<string | null>(null);
 	const byId = new Map(instruments.map((i) => [i.id, i]));
@@ -105,7 +107,7 @@ export function TransactionsTable({
 									{t.note}
 								</td>
 								<td className="p-2 text-right whitespace-nowrap">
-									{confirming === t.id ? (
+									{readOnly ? null : confirming === t.id ? (
 										<>
 											<Button
 												size="sm"

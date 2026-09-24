@@ -9,6 +9,7 @@ POST /api/portfolio-valuation/snapshot   positions marked to market at a date
 POST /api/portfolio-valuation/history    daily P&L over a window
 POST /api/portfolio-valuation/migrate    a position-based portfolio → ledger
 GET  /api/portfolio-valuation/close      a ticker's close on a date (trade form)
+GET  /api/portfolio-valuation/demos      read-only demo portfolios
 """
 
 from datetime import date, timedelta
@@ -19,12 +20,15 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .. import db
+from .. import portfolio_demos
 from .. import portfolio_valuation as pv
+from ..logging_utils import get_logger
 from ..portfolio_ledger import migrate, validate
 from ..portfolio_schemas import Portfolio
 from ..schemas import MethodologySection
 
 router = APIRouter(prefix="/api/portfolio-valuation", tags=["portfolios"])
+logger = get_logger()
 
 #: A valuation reprices every derivative for every day of a window.
 MAX_INSTRUMENTS = 200
@@ -205,3 +209,28 @@ async def ticker_close(
         )
     d, close = rows[-1]
     return CloseResponse(ticker=ticker, date=d, close=close, currency=ccy or "USD")
+
+
+class DemoPortfolio(BaseModel):
+    portfolio: Portfolio
+    description: str
+
+
+@router.get("/demos", response_model=List[DemoPortfolio])
+async def portfolio_demos_list() -> List[DemoPortfolio]:
+    """Demo ledgers, each trade priced from the stored market on its date
+    (portfolio_demos.py). Built once a day; a demo whose data is missing is
+    left out and logged."""
+    try:
+        built = await run_in_threadpool(portfolio_demos.demos)
+    except db.StoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+    out = []
+    for demo, pf, error in built:
+        if pf is None:
+            logger.warning("demo portfolio %s unavailable: %s", demo.id, error)
+            continue
+        out.append(DemoPortfolio(portfolio=pf, description=demo.description))
+    return out

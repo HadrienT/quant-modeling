@@ -307,6 +307,19 @@ export function portfolio(name = "Desk book") {
 	};
 }
 
+export function portfolioDemos() {
+	return [
+		{
+			portfolio: {
+				...portfolio("Euro blue chips"),
+				id: "demo-euro-blue-chips",
+				owner: "demo",
+			},
+			description: "Five large euro-area names bought in January.",
+		},
+	];
+}
+
 export function portfolioSnapshot() {
 	const input = (name: string, status: string, value: number) => ({
 		name,

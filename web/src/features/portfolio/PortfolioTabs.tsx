@@ -13,12 +13,15 @@ import { TransactionsTable } from "./TransactionsTable";
 export function PortfolioTabs({
 	pf,
 	snap,
+	readOnly = false,
 	onTrade,
 	onDelete,
 	onDeletePosition,
 }: {
 	pf: Portfolio;
 	snap: PortfolioSnapshot | undefined;
+	/** a demo: nothing that edits the ledger is shown */
+	readOnly?: boolean;
 	onTrade: (preset: TradePreset) => void;
 	onDelete: (tradeId: string) => void;
 	onDeletePosition: (instrumentId: string) => void;
@@ -62,6 +65,7 @@ export function PortfolioTabs({
 				<HoldingsTable
 					positions={positions}
 					base={pf.base_currency}
+					readOnly={readOnly}
 					onDelete={setDeleting}
 					onTrade={(p, side) => {
 						const instrument = instruments.find(
@@ -85,6 +89,7 @@ export function PortfolioTabs({
 					trades={pf.transactions ?? []}
 					instruments={instruments}
 					currencies={currencies}
+					readOnly={readOnly}
 					onDelete={onDelete}
 				/>
 			</TabsContent>

@@ -129,4 +129,43 @@ describe("portfolio book", () => {
 			expect(first!.instruments!.map((i) => i.id)).toEqual(["cac-call"]);
 		});
 	});
+
+	it("opens a demo read-only, and copies it into one's own portfolios", async () => {
+		renderPage();
+		await userEvent.click(await screen.findByRole("tab", { name: "Demos" }));
+		await userEvent.click(
+			await screen.findByRole("button", { name: /Euro blue chips/ }),
+		);
+		expect(
+			await screen.findByText(/Demo portfolio · read-only/),
+		).toBeInTheDocument();
+		expect(await screen.findByText("Market value")).toBeInTheDocument();
+		// nothing that edits the ledger
+		expect(
+			screen.queryByRole("button", { name: /New trade/ }),
+		).not.toBeInTheDocument();
+		const row = await screen.findByRole("row", { name: /MC\.PA — LVMH/ });
+		expect(
+			within(row).queryByRole("button", { name: "Sell" }),
+		).not.toBeInTheDocument();
+
+		await userEvent.click(
+			screen.getByRole("button", { name: /Copy to my portfolios/ }),
+		);
+		await waitFor(() =>
+			expect(stored().map((p) => p.name)).toEqual([
+				"Long book",
+				"Hedges",
+				"Euro blue chips",
+			]),
+		);
+		const copy = stored()[2]!;
+		expect(copy.id).not.toBe("demo-euro-blue-chips");
+		expect(copy.owner).toBe("");
+		expect(copy.transactions).toHaveLength(3);
+		// the copy is now open, and editable
+		expect(
+			await screen.findByRole("button", { name: /New trade/ }),
+		).toBeInTheDocument();
+	});
 });

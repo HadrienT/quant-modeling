@@ -9,8 +9,11 @@ Desk practice, within what the stored market data allows:
   underlying's close for the spot, the time left to expiry (so the value
   decays), the zero rate at that horizon from the currency's government curve
   (rates.py), the underlying's dividend yield where stored — and for the
-  volatility, the underlying's realised volatility over the last 63 trading
-  days, a PROXY (implied volatilities are not stored for these names). Each
+  volatility, the underlying's realised volatility over the last 63 business
+  days, a PROXY (implied volatilities are not stored for these names). It is
+  measured over TIME, not over a count of closes: squared log returns summed
+  over the elapsed time (a return spanning missing days counts for all of
+  them), so a gap in the stored closes neither shrinks nor stretches it. Each
   input carries its status — observed / stale / proxied / default, the
   vocabulary of the valuation record — so a mark says what it rests on. A
   field the market cannot supply (a multi-asset basket's correlations, a
@@ -50,13 +53,17 @@ from .portfolio_ledger import Holding, QTY_EPS, sorted_trades
 from .portfolio_schemas import DerivativeSpec, EquitySpec, Instrument, Portfolio
 from .storage import get_storage
 
+YEAR_DAYS = 365.25
 #: Close older than this (calendar days) is marked `stale`.
 STALE_AFTER_DAYS = 5
-#: Realised-vol proxy window, in trading days (three months).
+#: Realised-vol proxy window, in business days (three months).
 VOL_WINDOW = 63
+#: Fewest returns in the window for a realised vol at all.
+VOL_MIN_RETURNS = 20
+#: Business days (Mon–Fri) in a year: the clock the realised vol runs on.
+WEEKDAYS_PER_YEAR = YEAR_DAYS * 5 / 7
 #: Market data read before a window, for the vol proxy and on-or-before lookups.
 LOOKBACK_DAYS = 140
-YEAR_DAYS = 365.25
 
 
 # ── Market data for a valuation run ──────────────────────────────────────────
@@ -133,13 +140,25 @@ class MarketData:
         return self._divs[ticker]
 
     def realised_vol(self, ticker: str, d: date) -> Optional[Tuple[date, float]]:
+        """Annualised realised vol over the VOL_WINDOW business days up to d:
+        sqrt(sum r_i^2 / T), r_i the log returns between consecutive stored
+        closes and T the business-day time they span, in years. The maximum-
+        likelihood variance of a Brownian motion seen at irregular times (zero
+        drift): missing closes lengthen a return's interval instead of being
+        read as one-day moves, and the result does not depend on how much
+        history was loaded before the window."""
         s = self.closes(ticker)
-        i = bisect.bisect_right(s.dates, d)
-        window = s.values[max(0, i - VOL_WINDOW - 1) : i]
-        if len(window) < VOL_WINDOW // 2:
+        start = np.busday_offset(d, -VOL_WINDOW, roll="backward").astype(date)
+        lo = bisect.bisect_left(s.dates, start)
+        hi = bisect.bisect_right(s.dates, d)
+        dates, values = s.dates[lo:hi], s.values[lo:hi]
+        if len(dates) - 1 < VOL_MIN_RETURNS:
             return None
-        r = np.diff(np.log(np.asarray(window, dtype=float)))
-        return s.dates[i - 1], float(np.std(r, ddof=1) * math.sqrt(252))
+        r = np.diff(np.log(np.asarray(values, dtype=float)))
+        elapsed = np.busday_count(dates[0], dates[-1]) / WEEKDAYS_PER_YEAR
+        if elapsed <= 0:
+            return None
+        return dates[-1], float(math.sqrt(float(np.sum(r**2)) / elapsed))
 
 
 # ── Marks ────────────────────────────────────────────────────────────────────
@@ -438,7 +457,9 @@ def previous_business_day(d: date) -> date:
 
 
 def snapshot(pf: Portfolio, as_of: date, md: Optional[MarketData] = None) -> Snapshot:
-    md = md or MarketData(previous_business_day(as_of))
+    # From the first trade: its cost basis is converted at its trade-date FX.
+    first = min((t.trade_date for t in pf.transactions), default=as_of)
+    md = md or MarketData(min(first, previous_business_day(as_of)))
     by_id = {i.id: i for i in pf.instruments}
     holding, base_holding = _replay_base(pf, as_of, md)
     prev = previous_business_day(as_of)
@@ -656,8 +677,10 @@ METHODOLOGY = [
             "underlying's close for the spot, the time left to expiry, the zero rate at "
             "that horizon from the currency's government curve (Rates tab), the stored "
             "dividend yield. Implied volatilities are not stored for these names, so the "
-            "volatility is the underlying's 63-day realised volatility — a proxy, shown "
-            "as such. What the market cannot supply keeps its trade-time value "
+            "volatility is the underlying's realised volatility over the last 63 business "
+            "days — a proxy, shown as such. It is measured over elapsed time: squared "
+            "log returns divided by the time they span, so a missing close makes one "
+            "longer return rather than a false one-day jump. What the market cannot supply keeps its trade-time value "
             "(status 'default').",
             "An expired derivative is not valued past its expiry: book its settlement as "
             "a closing trade.",

@@ -124,7 +124,10 @@ const PortfolioPage = lazy(() => import("@/features/portfolio/PortfolioPage"));
 const portfolioRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/portfolio",
-	validateSearch: z.object({ id: z.string().optional() }).parse,
+	validateSearch: z.object({
+		id: z.string().optional(),
+		demo: z.string().optional(),
+	}).parse,
 	component: PortfolioPage,
 });
 

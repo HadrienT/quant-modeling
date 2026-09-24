@@ -1352,6 +1352,23 @@
         "title": "DeltaSurfaceResponse",
         "type": "object"
       },
+      "DemoPortfolio": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Output"
+          }
+        },
+        "required": [
+          "portfolio",
+          "description"
+        ],
+        "title": "DemoPortfolio",
+        "type": "object"
+      },
       "DerivativeSpec": {
         "description": "A derivative priced by the pricing registry (valuation.PRODUCTS).\n\n`params` is the pricing request at trade time (decimals, as the API takes\nthem). At each valuation date its market fields are replaced by that\nday's market (portfolio_valuation.py): spot from `underlying`'s close, the\ntime left to `expiry`, the rate from the currency's curve, the vol from\nthe underlying's history \u2014 whatever the stored market allows.",
         "properties": {
@@ -6523,6 +6540,32 @@
           }
         },
         "summary": "Ticker Close",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/demos": {
+      "get": {
+        "description": "Demo ledgers, each trade priced from the stored market on its date\n(portfolio_demos.py). Built once a day; a demo whose data is missing is\nleft out and logged.",
+        "operationId": "portfolio_demos_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DemoPortfolio"
+                  },
+                  "title": "Response Portfolio Demos List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Portfolio Demos List",
         "tags": [
           "portfolios"
         ]

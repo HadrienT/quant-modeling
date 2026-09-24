@@ -1,23 +1,14 @@
-import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
-import { usePortfolioSnapshot } from "@/shared/api";
-import {
-	type Ledger,
-	bookTrade,
-	deletePosition,
-	deleteTrade,
-} from "@/shared/portfolio";
+import { usePortfolioDemos } from "@/shared/api";
+import type { Ledger } from "@/shared/portfolio";
 import { Button, toast } from "@/shared/ui";
 import { EmptyState, ErrorState, TableSkeleton } from "@/shared/ui/states";
 import { useMe } from "@/shared/session";
+import { DemoBanner } from "./DemoBanner";
 import { MigrationBanner } from "./MigrationBanner";
-import { PnlSummary } from "./PnlSummary";
-import { PortfolioMethodology } from "./PortfolioMethodology";
 import { PortfolioSidebar } from "./PortfolioSidebar";
-import { PortfolioTabs } from "./PortfolioTabs";
 import { PortfolioToolbar } from "./PortfolioToolbar";
-import { TradeForm, type TradePreset } from "./TradeForm";
+import { PortfolioView } from "./PortfolioView";
 import { usePortfolioBook } from "./usePortfolioBook";
 import { useRepository } from "./useRepository";
 
@@ -25,31 +16,32 @@ import { useRepository } from "./useRepository";
  * Portfolio (WP 09): a journal of trades, the positions it leaves, marked
  * to market every day. Stocks and derivatives alike; selling more than is
  * held opens a short. Valued server-side from the ledger, wherever the
- * portfolio is kept (this device or the account). The portfolios are
- * listed in a sidebar: select, rename, delete.
+ * portfolio is kept (this device or the account). The sidebar lists one's
+ * portfolios (select, rename, delete) and the read-only demos.
  */
 export default function PortfolioPage() {
 	const repo = useRepository();
 	const me = useMe();
 	const qc = useQueryClient();
 	const book = usePortfolioBook(repo);
-	const { list, selectedId } = book;
-	const [trading, setTrading] = useState<TradePreset | "new" | null>(null);
+	const { list, selectedId, demoId } = book;
+	const demos = usePortfolioDemos();
+	const demo = demoId
+		? demos.data?.find((d) => d.portfolio.id === demoId)
+		: undefined;
 
 	const detailKey = ["portfolio", "detail", repo.kind, selectedId];
 	const detail = useQuery({
 		queryKey: detailKey,
-		enabled: Boolean(selectedId),
+		enabled: Boolean(selectedId) && !demoId,
 		queryFn: () => repo.get(selectedId!),
 	});
-	const pf = detail.data;
-	const snapshot = usePortfolioSnapshot(pf);
-	const snap = snapshot.data;
+	const pf = demoId ? demo?.portfolio : detail.data;
 
 	async function save(ledger: Ledger) {
-		if (!pf) return;
+		if (!detail.data) return;
 		try {
-			const saved = await repo.putLedger(pf.id, ledger);
+			const saved = await repo.putLedger(detail.data.id, ledger);
 			qc.setQueryData(detailKey, saved);
 			void list.refetch();
 		} catch (e) {
@@ -57,14 +49,16 @@ export default function PortfolioPage() {
 		}
 	}
 
-	const hasTrades = (pf?.transactions?.length ?? 0) > 0;
-
 	return (
 		<div className="mx-auto grid max-w-[1600px] gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-			{(list.data?.length ?? 0) > 0 && (
+			{list.data && (
 				<PortfolioSidebar
 					portfolios={book.portfolios}
 					selectedId={selectedId}
+					demos={demos.data ?? []}
+					demosLoading={demos.isLoading}
+					demoId={demoId}
+					onSelectDemo={book.selectDemo}
 					storage={repo.kind}
 					onSelect={book.select}
 					onCreate={() => void book.create()}
@@ -77,31 +71,45 @@ export default function PortfolioPage() {
 					<h1 className="truncate text-lg font-semibold text-ink">
 						{pf?.name ?? "Portfolio"}
 					</h1>
-					<PortfolioToolbar
-						pf={pf}
-						onBaseCurrency={(c) =>
-							pf &&
-							void save({
-								instruments: pf.instruments ?? [],
-								transactions: pf.transactions ?? [],
-								base_currency: c,
-							})
-						}
-						onImport={(f) => void book.importJson(f)}
-					/>
+					{!demoId && (
+						<PortfolioToolbar
+							pf={pf}
+							onBaseCurrency={(c) =>
+								pf &&
+								void save({
+									instruments: pf.instruments ?? [],
+									transactions: pf.transactions ?? [],
+									base_currency: c,
+								})
+							}
+							onImport={(f) => void book.importJson(f)}
+						/>
+					)}
 				</header>
 
-				{repo.kind === "local" && !me.data && <MigrationBanner />}
+				{demo && (
+					<DemoBanner
+						description={demo.description}
+						onCopy={() => void book.copyDemo(demo.portfolio)}
+					/>
+				)}
+				{!demoId && repo.kind === "local" && !me.data && <MigrationBanner />}
 
-				{list.isLoading ? (
+				{list.isLoading || (demoId && demos.isLoading) ? (
 					<TableSkeleton />
 				) : list.error ? (
 					<ErrorState error={list.error} onRetry={() => list.refetch()} />
+				) : demoId && demos.error ? (
+					<ErrorState error={demos.error} onRetry={() => demos.refetch()} />
 				) : !pf ? (
 					<EmptyState
 						kind="nothing-yet"
-						title="No portfolio yet"
-						description="Create one, then book trades: its positions and P&L follow."
+						title={demoId ? "Demo not found" : "No portfolio yet"}
+						description={
+							demoId
+								? "This demo is not available right now."
+								: "Create one and book trades — or open a demo to see a valued portfolio first."
+						}
 						action={
 							<Button size="sm" onClick={() => void book.create()}>
 								Create portfolio
@@ -109,58 +117,11 @@ export default function PortfolioPage() {
 						}
 					/>
 				) : (
-					<>
-						{snapshot.error ? (
-							<ErrorState
-								error={snapshot.error}
-								onRetry={() => snapshot.refetch()}
-							/>
-						) : snap ? (
-							<PnlSummary snap={snap} />
-						) : (
-							hasTrades && <TableSkeleton />
-						)}
-
-						<div>
-							<Button
-								size="sm"
-								onClick={() => setTrading(trading ? null : "new")}
-							>
-								<Plus className="size-3.5" /> New trade
-							</Button>
-						</div>
-						{trading && (
-							<TradeForm
-								key={
-									trading === "new"
-										? "new"
-										: `${trading.instrument.id}-${trading.side}`
-								}
-								preset={trading === "new" ? undefined : trading}
-								onCancel={() => setTrading(null)}
-								onBook={(instrument, draft) => {
-									void save(bookTrade(pf, instrument, draft));
-									setTrading(null);
-								}}
-							/>
-						)}
-
-						{!hasTrades ? (
-							<p className="text-sm text-ink-muted">
-								No trades yet. Book a purchase (or a sale, to open a short).
-							</p>
-						) : (
-							<PortfolioTabs
-								pf={pf}
-								snap={snap}
-								onTrade={setTrading}
-								onDelete={(id) => void save(deleteTrade(pf, id))}
-								onDeletePosition={(id) => void save(deletePosition(pf, id))}
-							/>
-						)}
-
-						{snap && <PortfolioMethodology sections={snap.methodology} />}
-					</>
+					<PortfolioView
+						key={pf.id}
+						pf={pf}
+						onSave={demoId ? undefined : (l) => void save(l)}
+					/>
 				)}
 			</div>
 		</div>
