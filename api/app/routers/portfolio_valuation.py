@@ -44,6 +44,26 @@ class InputView(BaseModel):
     as_of: Optional[date]
 
 
+class ModelParamView(BaseModel):
+    name: str
+    value: Optional[float] = None
+    text: Optional[str] = None
+    status: Literal["observed", "calibrated", "stale", "proxied", "contract", "default"]
+    source: str = ""
+
+
+class ModelView(BaseModel):
+    """The model a derivative's mark was priced with (portfolio_models.py)."""
+
+    model: str
+    engine: str
+    why: str
+    params: List[ModelParamView]
+    std_error: Optional[float] = Field(
+        None, description="Monte-Carlo standard error of the unit mark."
+    )
+
+
 class PositionMark(BaseModel):
     instrument_id: str
     label: str
@@ -65,6 +85,7 @@ class PositionMark(BaseModel):
     inputs: List[InputView]
     greeks: Dict[str, Optional[float]]
     note: Optional[str]
+    model: Optional[ModelView] = None
 
 
 class SnapshotRequest(BaseModel):
@@ -145,8 +166,15 @@ async def portfolio_snapshot(req: SnapshotRequest) -> SnapshotResponse:
         base_currency=s.base_currency,
         positions=[
             PositionMark(
-                **{k: v for k, v in vars(p).items() if k != "inputs"},
+                **{k: v for k, v in vars(p).items() if k not in ("inputs", "model")},
                 inputs=[InputView(**vars(i)) for i in p.inputs],
+                model=(
+                    ModelView(
+                        **{**vars(p.model), "params": [vars(x) for x in p.model.params]}
+                    )
+                    if p.model
+                    else None
+                ),
             )
             for p in s.positions
         ],

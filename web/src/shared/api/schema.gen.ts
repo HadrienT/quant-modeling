@@ -2435,6 +2435,44 @@ export interface components {
         MigrateRequest: {
             portfolio: components["schemas"]["Portfolio-Input"];
         };
+        /** ModelParamView */
+        ModelParamView: {
+            /** Name */
+            name: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "observed" | "calibrated" | "stale" | "proxied" | "contract" | "default";
+            /** Text */
+            text?: string | null;
+            /** Value */
+            value?: number | null;
+        };
+        /**
+         * ModelView
+         * @description The model a derivative's mark was priced with (portfolio_models.py).
+         */
+        ModelView: {
+            /** Engine */
+            engine: string;
+            /** Model */
+            model: string;
+            /** Params */
+            params: components["schemas"]["ModelParamView"][];
+            /**
+             * Std Error
+             * @description Monte-Carlo standard error of the unit mark.
+             */
+            std_error?: number | null;
+            /** Why */
+            why: string;
+        };
         /**
          * ModelWarning
          * @description Something the script's price depends on that the chosen model cannot
@@ -2760,6 +2798,7 @@ export interface components {
             market_value: number | null;
             /** Market Value Base */
             market_value_base: number | null;
+            model?: components["schemas"]["ModelView"] | null;
             /** Note */
             note: string | null;
             /** Quantity */

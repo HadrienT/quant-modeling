@@ -3026,6 +3026,103 @@
         "title": "MigrateRequest",
         "type": "object"
       },
+      "ModelParamView": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "observed",
+              "calibrated",
+              "stale",
+              "proxied",
+              "contract",
+              "default"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "ModelParamView",
+        "type": "object"
+      },
+      "ModelView": {
+        "description": "The model a derivative's mark was priced with (portfolio_models.py).",
+        "properties": {
+          "engine": {
+            "title": "Engine",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "params": {
+            "items": {
+              "$ref": "#/components/schemas/ModelParamView"
+            },
+            "title": "Params",
+            "type": "array"
+          },
+          "std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Monte-Carlo standard error of the unit mark.",
+            "title": "Std Error"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "engine",
+          "why",
+          "params"
+        ],
+        "title": "ModelView",
+        "type": "object"
+      },
       "ModelWarning": {
         "description": "Something the script's price depends on that the chosen model cannot\ncapture (scripting/model_advice.hpp).",
         "properties": {
@@ -3672,6 +3769,16 @@
               }
             ],
             "title": "Market Value Base"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "note": {
             "anyOf": [

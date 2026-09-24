@@ -3,6 +3,7 @@ import { ChevronRight, Trash2 } from "lucide-react";
 import type { PositionMark } from "@/shared/api";
 import { Badge, Button, DeltaBadge, NumberCell } from "@/shared/ui";
 import { MarkInputs } from "./MarkInputs";
+import { ModelTooltip } from "./ModelTooltip";
 import { STATUS_TONE, worstStatus } from "./markStatus";
 
 const HEAD = [
@@ -69,22 +70,25 @@ export function HoldingsTable({
 							<Fragment key={p.instrument_id}>
 								<tr className="border-t border-hairline hover:bg-surface-raised">
 									<td className="p-2 text-left text-ink">
-										<button
-											type="button"
-											aria-expanded={open === p.instrument_id}
-											className="inline-flex items-center gap-1 text-left"
-											onClick={() =>
-												setOpen(
-													open === p.instrument_id ? null : p.instrument_id,
-												)
-											}
-										>
-											<ChevronRight
-												className={`size-3 transition-transform ${open === p.instrument_id ? "rotate-90" : ""}`}
-											/>
-											{p.label}
-											{p.quantity < 0 && <Badge tone="warning">short</Badge>}
-										</button>
+										<span className="inline-flex items-center gap-1.5">
+											<button
+												type="button"
+												aria-expanded={open === p.instrument_id}
+												className="inline-flex items-center gap-1 text-left"
+												onClick={() =>
+													setOpen(
+														open === p.instrument_id ? null : p.instrument_id,
+													)
+												}
+											>
+												<ChevronRight
+													className={`size-3 transition-transform ${open === p.instrument_id ? "rotate-90" : ""}`}
+												/>
+												{p.label}
+												{p.quantity < 0 && <Badge tone="warning">short</Badge>}
+											</button>
+											<ModelTooltip position={p} />
+										</span>
 									</td>
 									<td className="p-2 text-right">
 										<NumberCell value={p.quantity} className="text-xs" />
