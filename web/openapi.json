@@ -947,6 +947,35 @@
         "title": "CleanedIVSurfaceResponse",
         "type": "object"
       },
+      "CloseResponse": {
+        "properties": {
+          "close": {
+            "title": "Close",
+            "type": "number"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "date",
+          "close",
+          "currency"
+        ],
+        "title": "CloseResponse",
+        "type": "object"
+      },
       "CodeBuild": {
         "properties": {
           "api_sha": {
@@ -1323,6 +1352,61 @@
         "title": "DeltaSurfaceResponse",
         "type": "object"
       },
+      "DerivativeSpec": {
+        "description": "A derivative priced by the pricing registry (valuation.PRODUCTS).\n\n`params` is the pricing request at trade time (decimals, as the API takes\nthem). At each valuation date its market fields are replaced by that\nday's market (portfolio_valuation.py): spot from `underlying`'s close, the\ntime left to `expiry`, the rate from the currency's curve, the vol from\nthe underlying's history \u2014 whatever the stored market allows.",
+        "properties": {
+          "currency": {
+            "default": "USD",
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "expiry": {
+            "format": "date",
+            "title": "Expiry",
+            "type": "string"
+          },
+          "kind": {
+            "const": "derivative",
+            "default": "derivative",
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "underlying": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlying"
+          }
+        },
+        "required": [
+          "product",
+          "params",
+          "expiry"
+        ],
+        "title": "DerivativeSpec",
+        "type": "object"
+      },
       "DigitalPayoffKind": {
         "enum": [
           "cash-or-nothing",
@@ -1544,6 +1628,26 @@
         ],
         "title": "EngineType",
         "type": "string"
+      },
+      "EquitySpec": {
+        "description": "A listed share or index, marked at its stored close (any market of the\nMarket page). Its currency is the listing's (prices.equity_universe).",
+        "properties": {
+          "kind": {
+            "const": "equity",
+            "default": "equity",
+            "title": "Kind",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker"
+        ],
+        "title": "EquitySpec",
+        "type": "object"
       },
       "FXForwardRequest": {
         "properties": {
@@ -2288,6 +2392,207 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HistoryPointView": {
+        "properties": {
+          "cumulative_pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Pnl"
+          },
+          "daily_pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Pnl"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "market_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Value"
+          }
+        },
+        "required": [
+          "date",
+          "market_value",
+          "daily_pnl",
+          "cumulative_pnl"
+        ],
+        "title": "HistoryPointView",
+        "type": "object"
+      },
+      "HistoryRequest": {
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          },
+          "window": {
+            "default": "3M",
+            "enum": [
+              "1M",
+              "3M",
+              "6M",
+              "1Y",
+              "ALL"
+            ],
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "portfolio"
+        ],
+        "title": "HistoryRequest",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "properties": {
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPointView"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "base_currency",
+          "points",
+          "warnings"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "InputView": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "observed",
+              "stale",
+              "proxied",
+              "default"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "value",
+          "as_of"
+        ],
+        "title": "InputView",
+        "type": "object"
+      },
+      "Instrument": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "spec": {
+            "discriminator": {
+              "mapping": {
+                "derivative": "#/components/schemas/DerivativeSpec",
+                "equity": "#/components/schemas/EquitySpec"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EquitySpec"
+              },
+              {
+                "$ref": "#/components/schemas/DerivativeSpec"
+              }
+            ],
+            "title": "Spec"
+          }
+        },
+        "required": [
+          "id",
+          "spec"
+        ],
+        "title": "Instrument",
+        "type": "object"
+      },
       "LocalVolResponse": {
         "description": "Pricing result from the Dupire local-vol MC engine.",
         "properties": {
@@ -2692,6 +2997,18 @@
         "title": "MethodologySection",
         "type": "object"
       },
+      "MigrateRequest": {
+        "properties": {
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          }
+        },
+        "required": [
+          "portfolio"
+        ],
+        "title": "MigrateRequest",
+        "type": "object"
+      },
       "ModelWarning": {
         "description": "Something the script's price depends on that the chosen model cannot\ncapture (scripting/model_advice.hpp).",
         "properties": {
@@ -2803,8 +3120,20 @@
         "type": "object"
       },
       "Portfolio-Input": {
-        "description": "Full portfolio model stored as JSON in GCS.",
+        "description": "A portfolio, stored as JSON (storage.py). Version 2 is a ledger:\n`instruments` and `transactions`; positions are derived from them\n(portfolio_ledger.py). Version 1 held `positions` directly and is migrated\non read.",
         "properties": {
+          "base_currency": {
+            "default": "EUR",
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Base Currency",
+            "type": "string"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -2812,6 +3141,13 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "instruments": {
+            "items": {
+              "$ref": "#/components/schemas/Instrument"
+            },
+            "title": "Instruments",
+            "type": "array"
           },
           "name": {
             "default": "Untitled Portfolio",
@@ -2830,9 +3166,21 @@
             "title": "Positions",
             "type": "array"
           },
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/Trade"
+            },
+            "title": "Transactions",
+            "type": "array"
+          },
           "updated_at": {
             "title": "Updated At",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -2842,8 +3190,20 @@
         "type": "object"
       },
       "Portfolio-Output": {
-        "description": "Full portfolio model stored as JSON in GCS.",
+        "description": "A portfolio, stored as JSON (storage.py). Version 2 is a ledger:\n`instruments` and `transactions`; positions are derived from them\n(portfolio_ledger.py). Version 1 held `positions` directly and is migrated\non read.",
         "properties": {
+          "base_currency": {
+            "default": "EUR",
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Base Currency",
+            "type": "string"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -2851,6 +3211,13 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "instruments": {
+            "items": {
+              "$ref": "#/components/schemas/Instrument"
+            },
+            "title": "Instruments",
+            "type": "array"
           },
           "name": {
             "default": "Untitled Portfolio",
@@ -2869,9 +3236,21 @@
             "title": "Positions",
             "type": "array"
           },
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/Trade"
+            },
+            "title": "Transactions",
+            "type": "array"
+          },
           "updated_at": {
             "title": "Updated At",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -2992,10 +3371,12 @@
         "type": "object"
       },
       "Position-Input": {
-        "description": "A single position in a portfolio.",
+        "description": "A position of the portfolios before the ledger (version 1) \u2014 read only to\nbe migrated (portfolio_ledger.migrate). product_type was spelled two ways\n(this enum, or the front's catalog keys), hence a plain string.",
         "properties": {
           "category": {
-            "$ref": "#/components/schemas/ProductCategory"
+            "default": "",
+            "title": "Category",
+            "type": "string"
           },
           "direction": {
             "default": "long",
@@ -3022,7 +3403,8 @@
             "type": "object"
           },
           "product_type": {
-            "$ref": "#/components/schemas/ProductType"
+            "title": "Product Type",
+            "type": "string"
           },
           "quantity": {
             "default": 1.0,
@@ -3042,17 +3424,18 @@
         },
         "required": [
           "id",
-          "product_type",
-          "category"
+          "product_type"
         ],
         "title": "Position",
         "type": "object"
       },
       "Position-Output": {
-        "description": "A single position in a portfolio.",
+        "description": "A position of the portfolios before the ledger (version 1) \u2014 read only to\nbe migrated (portfolio_ledger.migrate). product_type was spelled two ways\n(this enum, or the front's catalog keys), hence a plain string.",
         "properties": {
           "category": {
-            "$ref": "#/components/schemas/ProductCategory"
+            "default": "",
+            "title": "Category",
+            "type": "string"
           },
           "direction": {
             "default": "long",
@@ -3079,7 +3462,8 @@
             "type": "object"
           },
           "product_type": {
-            "$ref": "#/components/schemas/ProductType"
+            "title": "Product Type",
+            "type": "string"
           },
           "quantity": {
             "default": 1.0,
@@ -3099,8 +3483,7 @@
         },
         "required": [
           "id",
-          "product_type",
-          "category"
+          "product_type"
         ],
         "title": "Position",
         "type": "object"
@@ -3164,6 +3547,178 @@
           }
         },
         "title": "PositionGreeks",
+        "type": "object"
+      },
+      "PositionMark": {
+        "properties": {
+          "average_cost": {
+            "title": "Average Cost",
+            "type": "number"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "day_pnl_base": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Pnl Base"
+          },
+          "fees_base": {
+            "title": "Fees Base",
+            "type": "number"
+          },
+          "fx_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Base units per instrument-currency unit.",
+            "title": "Fx Rate"
+          },
+          "greeks": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Greeks",
+            "type": "object"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/InputView"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "equity",
+              "derivative"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mark"
+          },
+          "market_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Value"
+          },
+          "market_value_base": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Value Base"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          },
+          "realised_base": {
+            "title": "Realised Base",
+            "type": "number"
+          },
+          "unrealised": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unrealised"
+          },
+          "unrealised_base": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unrealised Base"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "label",
+          "kind",
+          "currency",
+          "quantity",
+          "average_cost",
+          "mark",
+          "market_value",
+          "market_value_base",
+          "unrealised",
+          "unrealised_base",
+          "realised_base",
+          "fees_base",
+          "day_pnl_base",
+          "fx_rate",
+          "inputs",
+          "greeks",
+          "note"
+        ],
+        "title": "PositionMark",
         "type": "object"
       },
       "PositionResult": {
@@ -3269,48 +3824,6 @@
         ],
         "title": "PricingResponse",
         "type": "object"
-      },
-      "ProductCategory": {
-        "enum": [
-          "vanilla",
-          "exotic",
-          "fixed-income",
-          "structured",
-          "volatility",
-          "fx",
-          "commodity",
-          "rainbow"
-        ],
-        "title": "ProductCategory",
-        "type": "string"
-      },
-      "ProductType": {
-        "enum": [
-          "european-call",
-          "european-put",
-          "american-call",
-          "american-put",
-          "asian",
-          "barrier",
-          "digital",
-          "lookback",
-          "basket",
-          "zero-coupon-bond",
-          "fixed-rate-bond",
-          "future",
-          "autocall",
-          "mountain",
-          "variance-swap",
-          "volatility-swap",
-          "dispersion-swap",
-          "fx-forward",
-          "fx-option",
-          "commodity-forward",
-          "commodity-option",
-          "rainbow"
-        ],
-        "title": "ProductType",
-        "type": "string"
       },
       "Providers": {
         "properties": {
@@ -4354,6 +4867,110 @@
         "title": "SimulationPathsResponse",
         "type": "object"
       },
+      "SnapshotRequest": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          }
+        },
+        "required": [
+          "portfolio"
+        ],
+        "title": "SnapshotRequest",
+        "type": "object"
+      },
+      "SnapshotResponse": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "day_pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Pnl"
+          },
+          "fees": {
+            "title": "Fees",
+            "type": "number"
+          },
+          "market_value": {
+            "title": "Market Value",
+            "type": "number"
+          },
+          "methodology": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologySection"
+            },
+            "title": "Methodology",
+            "type": "array"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/PositionMark"
+            },
+            "title": "Positions",
+            "type": "array"
+          },
+          "realised": {
+            "title": "Realised",
+            "type": "number"
+          },
+          "total_pnl": {
+            "title": "Total Pnl",
+            "type": "number"
+          },
+          "unrealised": {
+            "title": "Unrealised",
+            "type": "number"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "base_currency",
+          "positions",
+          "market_value",
+          "unrealised",
+          "realised",
+          "fees",
+          "total_pnl",
+          "day_pnl",
+          "warnings",
+          "methodology"
+        ],
+        "title": "SnapshotResponse",
+        "type": "object"
+      },
       "StressBump": {
         "description": "A single scenario bump.",
         "properties": {
@@ -4468,6 +5085,56 @@
           "tickers"
         ],
         "title": "TickersResponse",
+        "type": "object"
+      },
+      "Trade": {
+        "description": "A buy (quantity > 0) or a sell (quantity < 0) at a unit price in the\ninstrument's currency. Fees are a cost (>= 0).",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "fees": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Fees",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "number"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "instrument_id",
+          "trade_date",
+          "quantity",
+          "price"
+        ],
+        "title": "Trade",
         "type": "object"
       },
       "UserInfo": {
@@ -5791,6 +6458,184 @@
         "summary": "Local Vol Surface",
         "tags": [
           "local-vol"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/close": {
+      "get": {
+        "description": "The close on or before a date \u2014 the default price of a trade form.",
+        "operationId": "ticker_close",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ticker",
+            "required": true,
+            "schema": {
+              "maxLength": 16,
+              "minLength": 1,
+              "title": "Ticker",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ticker Close",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/history": {
+      "post": {
+        "operationId": "portfolio_history",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio History",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/migrate": {
+      "post": {
+        "operationId": "portfolio_migrate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Portfolio-Output"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Migrate",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/snapshot": {
+      "post": {
+        "operationId": "portfolio_snapshot",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Snapshot",
+        "tags": [
+          "portfolios"
         ]
       }
     },

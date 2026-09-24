@@ -241,56 +241,167 @@ export function pricingResponse(overrides?: Record<string, unknown>) {
 }
 
 let pfSeq = 1;
+/** A ledger (portfolio v2): 100 MC.PA bought, 30 sold; 2 CAC 40 calls. */
 export function portfolio(name = "Desk book") {
-	const products: [string, string, string][] = [
-		["european-call", "vanilla", "AAPL Dec 190 C"],
-		["european-put", "vanilla", "AAPL Dec 170 P"],
-		["barrier", "exotic", "MSFT up-and-out 480"],
-		["autocall", "structured", "NVDA phoenix 6m"],
-		["asian", "exotic", "SPY arithmetic Asian"],
-		["digital", "exotic", "TSLA cash-or-nothing"],
-		["fixed-rate-bond", "fixed-income", "5y 4% bond"],
-		["future", "fixed-income", "SPY future"],
-		["variance-swap", "volatility", "SPX var swap"],
-		["basket", "exotic", "FANG basket call"],
-	];
 	return {
 		id: `pf-${pfSeq++}`,
 		name,
 		owner: "",
+		version: 2,
+		base_currency: "EUR" as const,
 		created_at: "2026-01-04T09:00:00Z",
 		updated_at: "2026-02-01T14:30:00Z",
-		positions: products.map(([product_type, category, label], i) => ({
-			id: `pos-${i + 1}`,
-			label,
-			product_type,
-			category,
-			direction: i % 3 === 0 ? "short" : "long",
-			quantity: (i + 1) * 10,
-			entry_price: 8 + i,
-			parameters: {
-				spot: 185,
-				strike: 190,
-				maturity: 0.5,
-				vol: 0.22,
-				rate: 0.04,
+		positions: [],
+		instruments: [
+			{
+				id: "EQ:MC.PA",
+				label: "MC.PA — LVMH",
+				spec: { kind: "equity" as const, ticker: "MC.PA" },
 			},
-			result: {
-				npv: (9 + i) * (i % 3 === 0 ? -1 : 1),
-				unit_price: 9 + i * 0.5,
-				greeks: {
-					delta: 0.4 - i * 0.03,
-					gamma: 0.02,
-					vega: 0.18,
-					theta: -0.03,
-					rho: 0.1,
+			{
+				id: "cac-call",
+				label: "^FCHI European option K=8200 2027-03-19",
+				spec: {
+					kind: "derivative" as const,
+					product: "vanilla",
+					params: { strike: 8200, is_call: true },
+					underlying: "^FCHI",
+					expiry: "2027-03-19",
+					currency: "EUR" as const,
 				},
-				priced_at: "2026-02-01T14:30:00Z",
-				engine: i % 2 ? "mc" : "analytic",
-				diagnostics: "",
-				mc_std_error: i % 2 ? 0.03 : 0,
 			},
-		})),
+		],
+		transactions: [
+			{
+				id: "t1",
+				instrument_id: "EQ:MC.PA",
+				trade_date: "2026-06-02",
+				quantity: 100,
+				price: 480,
+				fees: 5,
+				note: "",
+				created_at: "2026-06-02T10:00:00Z",
+			},
+			{
+				id: "t2",
+				instrument_id: "EQ:MC.PA",
+				trade_date: "2026-07-06",
+				quantity: -30,
+				price: 455,
+				fees: 5,
+				note: "trim",
+				created_at: "2026-07-06T10:00:00Z",
+			},
+			{
+				id: "t3",
+				instrument_id: "cac-call",
+				trade_date: "2026-06-10",
+				quantity: 2,
+				price: 250,
+				fees: 0,
+				note: "",
+				created_at: "2026-06-10T10:00:00Z",
+			},
+		],
+	};
+}
+
+export function portfolioSnapshot() {
+	const input = (name: string, status: string, value: number) => ({
+		name,
+		status,
+		value,
+		as_of: "2026-09-18",
+	});
+	return {
+		as_of: "2026-09-18",
+		base_currency: "EUR",
+		positions: [
+			{
+				instrument_id: "EQ:MC.PA",
+				label: "MC.PA — LVMH",
+				kind: "equity",
+				currency: "EUR",
+				quantity: 70,
+				average_cost: 480,
+				mark: 440,
+				market_value: 30800,
+				market_value_base: 30800,
+				unrealised: -2800,
+				unrealised_base: -2800,
+				realised_base: -760,
+				fees_base: 10,
+				day_pnl_base: 140,
+				fx_rate: 1,
+				inputs: [input("close", "observed", 440)],
+				greeks: { delta: 1 },
+				note: null,
+			},
+			{
+				instrument_id: "cac-call",
+				label: "^FCHI European option K=8200 2027-03-19",
+				kind: "derivative",
+				currency: "EUR",
+				quantity: 2,
+				average_cost: 250,
+				mark: 184.9,
+				market_value: 369.8,
+				market_value_base: 369.8,
+				unrealised: -130.2,
+				unrealised_base: -130.2,
+				realised_base: 0,
+				fees_base: 0,
+				day_pnl_base: -12.4,
+				fx_rate: 1,
+				inputs: [
+					input("spot", "observed", 8081.43),
+					input("time to expiry", "observed", 0.4819),
+					input("vol (63-day realised)", "proxied", 0.1185),
+				],
+				greeks: { delta: 0.45 },
+				note: null,
+			},
+		],
+		market_value: 31169.8,
+		unrealised: -2930.2,
+		realised: -760,
+		fees: 10,
+		total_pnl: -3690.2,
+		day_pnl: 127.6,
+		warnings: [],
+		methodology: [
+			{
+				title: "Marking",
+				paragraphs: ["Each position is marked with that day's market."],
+			},
+		],
+	};
+}
+
+export function portfolioHistory() {
+	return {
+		base_currency: "EUR",
+		warnings: [],
+		points: [
+			{
+				date: "2026-09-16",
+				market_value: 31000,
+				daily_pnl: -50,
+				cumulative_pnl: -3800,
+			},
+			{
+				date: "2026-09-17",
+				market_value: 31040,
+				daily_pnl: -17.8,
+				cumulative_pnl: -3817.8,
+			},
+			{
+				date: "2026-09-18",
+				market_value: 31169.8,
+				daily_pnl: 127.6,
+				cumulative_pnl: -3690.2,
+			},
+		],
 	};
 }
 

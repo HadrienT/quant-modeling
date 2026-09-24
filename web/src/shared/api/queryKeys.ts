@@ -52,6 +52,11 @@ export const queryKeys = {
 		var: (id: string, confidence: number, horizon: number) =>
 			["portfolio", "var", id, confidence, horizon] as const,
 		stress: (id: string) => ["portfolio", "stress", id] as const,
+		snapshot: (ledger: string) => ["portfolio", "snapshot", ledger] as const,
+		history: (ledger: string, window: string) =>
+			["portfolio", "history", ledger, window] as const,
+		close: (ticker: string, date: string) =>
+			["portfolio", "close", ticker, date] as const,
 	},
 
 	backtest: {

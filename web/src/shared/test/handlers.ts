@@ -98,8 +98,8 @@ export const handlers = [
 				name: p.name,
 				created_at: p.created_at,
 				updated_at: p.updated_at,
-				n_positions: p.positions.length,
-				total_value: p.positions.reduce((s, x) => s + (x.result?.npv ?? 0), 0),
+				n_positions: p.instruments.length,
+				total_value: 0,
 			})),
 		),
 	),
@@ -114,30 +114,26 @@ export const handlers = [
 				);
 	}),
 
-	http.post("*/api/portfolios/:id/price", ({ params }) => {
-		const p = portfolios.get(String(params.id));
-		if (!p)
-			return HttpResponse.json(
-				{ code: "not_found", message: "Portfolio not found" },
-				{ status: 404 },
-			);
-		const priced = p.positions.filter((x) => x.result);
+	http.put("*/api/portfolios/:id", async ({ params, request }) => {
+		const body = (await request.json()) as ReturnType<typeof fx.portfolio>;
+		const saved = { ...body, id: String(params.id) };
+		portfolios.set(saved.id, saved);
+		return HttpResponse.json(saved);
+	}),
+
+	http.post("*/api/portfolio-valuation/snapshot", () =>
+		HttpResponse.json(fx.portfolioSnapshot()),
+	),
+	http.post("*/api/portfolio-valuation/history", () =>
+		HttpResponse.json(fx.portfolioHistory()),
+	),
+	http.get("*/api/portfolio-valuation/close", ({ request }) => {
+		const u = new URL(request.url).searchParams;
 		return HttpResponse.json({
-			portfolio: p,
-			risk_summary: {
-				total_npv: priced.reduce((s, x) => s + (x.result?.npv ?? 0), 0),
-				total_pnl: priced.reduce(
-					(s, x) => s + ((x.result?.npv ?? 0) - x.entry_price * x.quantity),
-					0,
-				),
-				total_delta: 0,
-				total_gamma: 0,
-				total_vega: 0,
-				total_theta: 0,
-				total_rho: 0,
-				positions_priced: priced.length,
-				positions_total: p.positions.length,
-			},
+			ticker: u.get("ticker"),
+			date: u.get("date"),
+			close: 440,
+			currency: "EUR",
 		});
 	}),
 
