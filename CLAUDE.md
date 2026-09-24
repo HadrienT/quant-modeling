@@ -17,9 +17,38 @@ de donnée de marché.
 |---|---|---|
 | Cœur C++ | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc), `pricers`, `utils` (Sobol, pont brownien, control variates, greeks) |
 | Bindings | `bindings/python/` | pybind11 → wheel `quantmodeling` |
-| API | `api/app/` | FastAPI : `routers/` (pricing, market, portfolio, backtest, auth, local-vol, assistant), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), auth JWT, cache |
+| API | `api/app/` | FastAPI : `routers/` (pricing, market, portfolio, backtest, auth, local-vol, assistant, admin), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), `audit/` (événements d'audit vers le Kafka de `quant-platform`), `valuation.py` + `replay.py` (enregistrement et replay des valorisations), `telemetry.py` (OpenTelemetry), auth JWT, cache |
 | Front | `web/src/` | React 18 + Vite + TypeScript |
 | CLI | `main.cpp` | binaire de démo |
+
+## Dépôts voisins
+
+Ce dépôt n'est pas seul sur le serveur ; trois dépôts frères, chacun avec son
+propre `CLAUDE.md`, portent ce qui n'est pas du pricing :
+
+| Dépôt | Rôle pour quant-modeling |
+|---|---|
+| `~/data-ingest` | **Toute l'ingestion des données de marché** (Airflow → Postgres). quant-modeling ne fait que lire cette base (`PGHOST=data-ingest-postgres` via le réseau Docker `dataplatform`). Une donnée manquante se corrige là-bas, pas ici |
+| `~/quant-platform` | **Destination des logs, événements d'audit et de la télémétrie** : Kafka, Postgres d'audit append-only, OpenTelemetry Collector → Prometheus / Loki / Tempo, Grafana. Contrat producteur ↔ plateforme : `~/quant-platform/docs/contract.md`. Côté ici, le producteur est `api/app/audit/` (`emit()`, `record_fallback()`), conception dans `blueprint/wp/18-observability.md` |
+| `~/AgenticEnv` | `llama-server` de l'assistant de scripting (voir plus bas) |
+
+Branchement vers `quant-platform` (WP 18, fait) : en **prod**, les événements
+d'audit partent dans son Kafka (`QM_AUDIT_SINK=kafka`, `kafka:9092`) et les
+métriques / traces dans son OTel Collector (`otel-collector:4318`), par le
+réseau `dataplatform` ; si la plateforme est absente, les événements attendent
+dans `LOG_DIR/spool` et repartent seuls, le site n'en dépend jamais. En **dev**,
+le transport reste le spool : `dataplatform` mène à la plateforme **de
+production**, dont la base d'audit est en ajout seul — ne jamais y envoyer
+d'événement de test (un broker jetable pour les essais). Chaque pricing émet un
+`pricing.valuation` (`api/app/valuation.py`) que `POST /api/admin/replay/{id}`
+sait rejouer. Tout nouveau log ou événement métier passe par `api/app/audit/`
+(`emit()`, `record_fallback()`), toute nouvelle métrique par
+`api/app/telemetry.py` — jamais un ticker, un utilisateur ou une IP comme
+étiquette. Les logs applicatifs vont sur stdout et dans `LOG_DIR/api.jsonl`
+(`api/app/logging_utils.py`), avec le `trace_id`. Exploitation :
+`deploy/RUNBOOK.md` §9.
+
+## Données de marché
 
 Les données de marché viennent de **la base Postgres alimentée par
 `~/data-ingest`** (cours, chaînes d'options, rendements de dividende, courbes
@@ -32,6 +61,8 @@ anciens endpoints (`vol_surface.py`, `routers/local_vol_pricing.py`,
 tant que `data-ingest` n'est pas fiable : ne pas les étendre, ne pas les
 retirer sans décision du mainteneur. Le dossier `notebooks/` est un bac à sable
 personnel, hors périmètre. Plus de BigQuery — le projet est entièrement hors cloud.
+
+## Assistant de scripting
 
 **Assistant de scripting** (`api/app/assistant/`, route `POST /api/assistant/scripting/chat`,
 chat de la page `/scripting`) : il parle au `llama-server` de `~/AgenticEnv`, dont
@@ -54,7 +85,7 @@ parseur et échoue s'ils ne passent plus.
 | `cmake --preset release` | `-march=native` + benchmarks google-benchmark |
 | `scripts/build_wheel.sh` | wheel pybind11 dans `dist/` |
 | `scripts/run_api.sh` | venv + wheel + `uvicorn --reload` |
-| `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché), depuis la racine (`pytest.ini`). Pas encore lancés par la CI |
+| `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché, piste d'audit, producteur Kafka sur un faux broker, replay des valorisations), depuis la racine (`pytest.ini`). Lancés par la CI (job `pytest`, avec le vrai wheel) |
 | `docker compose up --build` | stack complète (API + front avec HMR) |
 | `cd web && npm run dev` | front seul |
 | `cd web && npx tsc --noEmit` | typecheck du front |

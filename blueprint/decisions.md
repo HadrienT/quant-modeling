@@ -206,3 +206,50 @@ grilles à trous — est `noUncheckedIndexedAccess`, conservé.
 
 **Écarté.** *Garder le drapeau et suffixer `| undefined` partout* : bruit de
 lecture permanent sur des centaines de props pour rien.
+
+---
+
+## ADR-011 — Le producteur d'audit branché sur `quant-platform` (WP 18b, 18d, 18e)
+
+Les arbitrages de fond du WP 18 (Kafka malgré le volume, deux dépôts, base
+d'audit dédiée, deux chemins parallèles, perte bornée côté producteur, JSON
+Schema avant Avro, un seul broker, IP hachée à l'émission) sont ceux de son
+[§11](wp/18-observability.md#11-décisions), D1 à D9 ; côté plateforme, le
+contrat est canonique dans `~/quant-platform/docs/contract.md`. Cet ADR ne
+consigne que ce que l'implémentation côté API a tranché.
+
+**Décisions.**
+
+1. **Un replay a quatre issues, pas trois.** Le WP en prévoit trois
+   (`reproduced`, `drifted_inputs`, `drifted_code`). Mêmes données, même code,
+   prix différent n'entre dans aucune : c'est un pricing non déterministe à
+   graine fixée, « un bug à corriger, pas une tolérance à élargir » (WP 18e).
+   Le ranger dans l'une des trois cacherait précisément ce bug ; il a donc sa
+   propre issue, `not_reproduced`. La tolérance est relative 1e-12 : un replay
+   refait le même calcul, tout écart plus grand est réel.
+2. **`drifted_code` compare le couple (SHA de l'API, SHA du wheel)**, pas le
+   seul wheel : un changement de `pricing_service.py` (l'aiguillage d'un produit
+   vers un engine) change un prix autant qu'un changement du C++.
+3. **Le modèle et l'engine enregistrés sont ceux qui ont tourné**, déduits par
+   le registre `valuation.PRODUCTS` à l'image de l'aiguillage de
+   `pricing_service.py`, pas ceux que la requête demandait : une américaine
+   demandée en `mc` est pricée sur un arbre binomial, et l'enregistrement le
+   dit. Le routeur et le replay passent par ce même registre.
+4. **Les entrées saisies par l'utilisateur ne sont pas des `market_inputs`.**
+   Une valorisation manuelle (spot, vol tapés) a une liste vide ; ses entrées
+   sont dans `request`, verbatim. Seules les données lues en base (le local-vol
+   du scripting : spot, dividende, chaîne d'options) y figurent, avec date,
+   source, statut et empreinte.
+5. **En développement, le transport reste le spool.** Le réseau `dataplatform`
+   mène à la plateforme **de production**, dont la base d'audit est
+   append-only : un événement de test y resterait pour toujours. La prod envoie
+   à Kafka par défaut ; le dev seulement si on le pointe explicitement vers un
+   broker jetable.
+6. **Une panne de Kafka produit deux lignes de log, pas une par événement** :
+   l'entrée en panne et le rétablissement (avec le nombre d'événements passés
+   par le spool). Sinon une panne pendant du trafic noierait Loki.
+
+**Écarté.** *Élargir la tolérance du replay pour absorber le non-déterminisme*
+(voir 1) ; *recalculer les `market_inputs` depuis la requête* (une donnée
+révisée en base serait invisible) ; *le transport Kafka par défaut en dev*
+(voir 5).

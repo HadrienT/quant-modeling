@@ -7,6 +7,18 @@
 | **Branches** | `core/observability` dans ce dépôt ; un dépôt séparé `quant-platform` pour l'infrastructure (voir [§1](#1-où-ça-vit--deux-dépôts-un-contrat)) |
 | **Références** | Fed / OCC, *SR 11-7 — Supervisory Guidance on Model Risk Management*, 2011 ; PRA, *SS1/23 — Model risk management principles for banks*, 2023 ; Shapira, Palino, Sivaram, Petty, *Kafka: The Definitive Guide*, 2ᵉ éd., O'Reilly 2021 ; Kleppmann, *Designing Data-Intensive Applications*, O'Reilly 2017 (ch. 11) ; Richardson, *Microservices Patterns*, Manning 2018 (transactional outbox) ; Majors, Fong-Jones, Miranda, *Observability Engineering*, O'Reilly 2022 |
 
+> **État (septembre 2026).** Côté `quant-modeling`, les lots **18a, 18b
+> (`KafkaSink`), 18d (instrumentation de l'API) et 18e** sont livrés, et le
+> branchement sur la plateforme est le défaut en production
+> (`docker-compose.prod.yml`). Côté `quant-platform`, ses lots 00–06 (Kafka,
+> base d'audit et puits, télémétrie, qualité des données et alertes, registre,
+> laboratoire) sont construits. Reste ouvert côté producteur : l'encodage
+> **Avro** des événements (18g, optionnel — ils partent en JSON, que le puits
+> accepte, D7). Écarts à ce document consignés dans
+> [ADR-011](../decisions.md#adr-011--le-producteur-daudit-branché-sur-quant-platform-wp-18b-18d-18e),
+> dont une quatrième issue de replay, `not_reproduced`. Procédure
+> d'exploitation : [`deploy/RUNBOOK.md`](../../deploy/RUNBOOK.md) §9.
+
 > **Ce lot a deux buts qui ne pèsent pas pareil.** Le premier est pratique :
 > savoir quand l'API quitte la base pour un repli, qui se connecte, quels
 > pricings tournent. Le second est pédagogique et il est explicite : **apprendre
