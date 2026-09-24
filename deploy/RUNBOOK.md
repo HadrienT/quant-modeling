@@ -384,14 +384,28 @@ repartent tout seuls vers Kafka quand il répond (vérifié toutes les 30 s).
 si elle se reproduit (`reproduced`), si une donnée de marché a été révisée
 (`drifted_inputs`), si le code a changé (`drifted_code`), ou si le prix diffère
 sans cause (`not_reproduced`, un bug). Il lit la base d'audit avec le rôle
-**en lecture seule** `audit_reader`. Dans `~/quant-modeling-prod/.env` :
+**en lecture seule** `audit_reader`. Deux lignes à ajouter dans
+`~/quant-modeling-prod/.env` (depuis ce dossier) :
 
 ```bash
-# le mot de passe du rôle audit_reader, tel que la plateforme l'a généré :
-grep AUDIT_DB_READER_PASSWORD ~/quant-platform-prod/.env
-QM_AUDIT_DB_PASSWORD=<la valeur ci-dessus>
-QM_ADMIN_USERS=<ton nom d'utilisateur sur le site>   # séparés par des virgules
+# 1. le mot de passe du rôle audit_reader, copié sans être affiché
+#    (jamais celui de writer / owner / admin) :
+echo "QM_AUDIT_DB_PASSWORD=$(grep '^AUDIT_DB_READER_PASSWORD=' ~/quant-platform-prod/.env | cut -d= -f2- | awk '{print $1}')" >> .env
+
+# 2. les comptes administrateurs, séparés par des virgules :
+echo "QM_ADMIN_USERS=<nom1>,<nom2>" >> .env
 ```
+
+Un compte Google s'appelle `google:<identifiant>`, pas l'email ; un compte par
+mot de passe et un compte Google sont deux utilisateurs distincts. Pour lister
+les noms (noms et emails seulement) :
+
+```bash
+docker exec quant-modeling python3 -c "import json; [print(n, '|', u.get('email') or '-') for n, u in json.load(open('/app/data/auth/users.json')).items()]"
+```
+
+`/api/auth/me` ouvert dans le navigateur ne marche pas pour ça : le jeton de
+session est dans `localStorage` et n'est envoyé que par l'application.
 
 puis `./scripts/deploy.sh`. Sans ces deux variables, l'endpoint répond 503
 (pas de base) ou 403 (pas administrateur) ; le reste n'est pas affecté.
