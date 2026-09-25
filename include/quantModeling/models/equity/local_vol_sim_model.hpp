@@ -110,7 +110,7 @@ namespace quantModeling
                 const Time t = sim_timeline_[k];
                 const Time dt = t - t_prev;
 
-                const T sig = local_vol_at(to_double(S), t);
+                const T sig = local_vol_at(S, t);
                 const T drift = (r_ - q_ - 0.5 * sig * sig) * dt;
                 const T vol_sqrt_dt = sig * sqrt(dt);
                 S *= exp(drift + vol_sqrt_dt * gaussians[k]);
@@ -153,17 +153,25 @@ namespace quantModeling
         const std::vector<Real> &T_grid() const { return T_grid_; }
 
       private:
-        /// Bilinear lookup, T-valued corners, double weights and clamping --
-        /// same bracketing as models/volatility.hpp's GridLocalVol::value(),
-        /// generalised so the four corners can be Number instead of double.
-        T local_vol_at(double S, double t) const
+        /// Bilinear lookup -- same bracketing as models/volatility.hpp's
+        /// GridLocalVol::value(), generalised so the corners can be Number.
+        /// The cell is chosen on the double value of the spot, but the strike
+        /// weight is a function of the spot itself (T): sigma_loc(S_t) moves
+        /// with S_t, and S_t with every earlier vol, so dropping that
+        /// dependence would lose the part of a local vega (and of the delta)
+        /// that flows through the path -- measured at ~19 % of the vega on a
+        /// skewed SPY surface before this was fixed. Outside the grid the vol
+        /// is flat in S, so the weight is then a constant.
+        T local_vol_at(const T &S_t, double t) const
         {
             using std::max;
 
             const int nK = static_cast<int>(K_grid_.size());
             const int nT = static_cast<int>(T_grid_.size());
 
-            S = std::clamp(S, K_grid_.front(), K_grid_.back());
+            const double S_raw = to_double(S_t);
+            const double S = std::clamp(S_raw, K_grid_.front(), K_grid_.back());
+            const bool inside = S == S_raw;
             t = std::clamp(t, T_grid_.front(), T_grid_.back());
 
             auto it_K = std::lower_bound(K_grid_.begin(), K_grid_.end(), S);
@@ -197,7 +205,9 @@ namespace quantModeling
             const double T0 = T_grid_[static_cast<std::size_t>(j0)];
             const double T1 = T_grid_[static_cast<std::size_t>(j1)];
             const double dK = K1 - K0, dT = T1 - T0;
-            const double wK = (dK > 1e-12) ? (S - K0) / dK : 0.0;
+            const T wK = dK <= 1e-12 ? T(0.0)
+                         : inside    ? T((S_t - K0) / dK)
+                                     : T((S - K0) / dK);
             const double wT = (dT > 1e-12) ? (t - T0) / dT : 0.0;
 
             auto cell = [&](int i, int j) -> const T &

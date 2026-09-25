@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { usePricing } from "@/shared/api";
 import type { ProductDescriptor } from "@/shared/products";
 import { Button } from "@/shared/ui";
+import { MarketVegaPanel } from "./MarketVegaPanel";
 import { ModelComparison } from "./ModelComparison";
 import { ModelDecision } from "./scripting/ModelDecision";
 import { ModelWarnings } from "./scripting/ModelWarnings";
@@ -56,6 +57,7 @@ export function ScriptedPanel({
 						{compare ? "Hide the model comparison" : "Compare the dynamics"}
 					</Button>
 					{compare && <ModelComparison product={p} values={values} />}
+					<MarketVegaPanel body={body} />
 				</div>
 			) : (
 				<p className="text-2xs text-ink-muted">

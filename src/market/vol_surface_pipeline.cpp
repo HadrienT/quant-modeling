@@ -67,6 +67,7 @@ namespace quantModeling
             report.iterations = calibration.report.iterations;
             report.converged = calibration.report.converged;
             report.butterfly_arbitrage_free = calibration.butterfly_arbitrage_free;
+            report.quotes = slice_quotes;
 
             calibrations.push_back(std::move(calibration));
             reports.push_back(report);

@@ -33,6 +33,7 @@ from ..schemas import (
     ScriptValidateRequest,
     ScriptValidateResponse,
     ScriptedProductRequest,
+    MarketVegaResponse,
     RiskProfileRequest,
     RiskProfileResponse,
     RiskProfileRow,
@@ -173,6 +174,20 @@ async def risk_profile_endpoint(req: RiskProfileRequest) -> RiskProfileResponse:
             "levels fixed at the reference spot on the trade date."
         ),
     )
+
+
+@router.post("/price/market-vega", response_model=MarketVegaResponse)
+async def market_vega_endpoint(req: ScriptedProductRequest) -> MarketVegaResponse:
+    """Vega by quoted option (market_vega.py, blueprint/wp/17-aad.md §11):
+    the product under the local vol of the ticker's stored chain,
+    differentiated by AAD, then through Dupire and each SVI fit to every
+    quoted implied vol. One underlying, a ticker."""
+    from .. import market_vega
+
+    try:
+        return await _run_with_timeout(market_vega.market_vega, req)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/price/scripted/validate", response_model=ScriptValidateResponse)

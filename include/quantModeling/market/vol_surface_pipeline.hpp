@@ -27,6 +27,9 @@ namespace quantModeling
         std::size_t iterations = 0;
         bool converged = false;
         bool butterfly_arbitrage_free = false;
+        /// The cleaned quotes the slice was fitted to (log-moneyness, implied
+        /// vol, weight): the market the superbucket differentiates against.
+        std::vector<SVISliceQuote> quotes;
     };
 
     struct VolSurfacePipelineResult

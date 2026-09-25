@@ -3106,6 +3106,73 @@
         "title": "MarketInfo",
         "type": "object"
       },
+      "MarketVegaResponse": {
+        "description": "dV / d(each quoted implied vol) of a library product under the local\nvol of the stored chain: the Dupire superbucket (lot 17h).",
+        "properties": {
+          "maturities": {
+            "items": {
+              "$ref": "#/components/schemas/MaturityVega"
+            },
+            "title": "Maturities",
+            "type": "array"
+          },
+          "mc_std_error": {
+            "title": "Mc Std Error",
+            "type": "number"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "npv": {
+            "title": "Npv",
+            "type": "number"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteVegaRow"
+            },
+            "title": "Quotes",
+            "type": "array"
+          },
+          "snapshot": {
+            "format": "date",
+            "title": "Snapshot",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          },
+          "total_std_error": {
+            "title": "Total Std Error",
+            "type": "number"
+          },
+          "total_vega": {
+            "description": "Sum over the quotes: a parallel +1 vol point on the chain.",
+            "title": "Total Vega",
+            "type": "number"
+          }
+        },
+        "required": [
+          "product",
+          "ticker",
+          "snapshot",
+          "npv",
+          "mc_std_error",
+          "total_vega",
+          "total_std_error",
+          "maturities",
+          "quotes",
+          "method"
+        ],
+        "title": "MarketVegaResponse",
+        "type": "object"
+      },
       "MarketsResponse": {
         "properties": {
           "markets": {
@@ -3120,6 +3187,35 @@
           "markets"
         ],
         "title": "MarketsResponse",
+        "type": "object"
+      },
+      "MaturityVega": {
+        "properties": {
+          "n_quotes": {
+            "title": "N Quotes",
+            "type": "integer"
+          },
+          "std_error": {
+            "title": "Std Error",
+            "type": "number"
+          },
+          "ttm": {
+            "title": "Ttm",
+            "type": "number"
+          },
+          "vega": {
+            "description": "Sum of the quote vegas of the maturity.",
+            "title": "Vega",
+            "type": "number"
+          }
+        },
+        "required": [
+          "ttm",
+          "vega",
+          "std_error",
+          "n_quotes"
+        ],
+        "title": "MaturityVega",
         "type": "object"
       },
       "MethodologySection": {
@@ -4504,6 +4600,49 @@
           "correlation"
         ],
         "title": "QuantoRequest",
+        "type": "object"
+      },
+      "QuoteVegaRow": {
+        "properties": {
+          "implied_vol": {
+            "description": "The quoted implied vol.",
+            "title": "Implied Vol",
+            "type": "number"
+          },
+          "log_moneyness": {
+            "description": "ln(K / F_T).",
+            "title": "Log Moneyness",
+            "type": "number"
+          },
+          "std_error": {
+            "description": "Monte-Carlo standard error of the vega.",
+            "title": "Std Error",
+            "type": "number"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "ttm": {
+            "description": "Maturity of the quote, years.",
+            "title": "Ttm",
+            "type": "number"
+          },
+          "vega": {
+            "description": "Price change for +1 vol point on this quote alone.",
+            "title": "Vega",
+            "type": "number"
+          }
+        },
+        "required": [
+          "ttm",
+          "strike",
+          "log_moneyness",
+          "implied_vol",
+          "vega",
+          "std_error"
+        ],
+        "title": "QuoteVegaRow",
         "type": "object"
       },
       "QuotedRatePoint": {
@@ -9370,6 +9509,45 @@
           }
         },
         "summary": "Price Fx Option Endpoint"
+      }
+    },
+    "/price/market-vega": {
+      "post": {
+        "description": "Vega by quoted option (market_vega.py, blueprint/wp/17-aad.md \u00a711):\nthe product under the local vol of the ticker's stored chain,\ndifferentiated by AAD, then through Dupire and each SVI fit to every\nquoted implied vol. One underlying, a ticker.",
+        "operationId": "market_vega",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptedProductRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketVegaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Market Vega Endpoint"
       }
     },
     "/price/option/american-vanilla": {

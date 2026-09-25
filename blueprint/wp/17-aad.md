@@ -759,17 +759,37 @@ fonctions implicites** à l'optimum : si `R(θ, m) = 0` caractérise la
 calibration, `dθ/dm = −(∂R/∂θ)⁻¹ ∂R/∂m`, et les deux jacobiennes se calculent
 elles-mêmes par AAD.
 
-**Deux dépendances bloquantes, à dire franchement :**
+**Fait (lot 17h).** Les deux prérequis sont levés (Dupire depuis SVI et le
+framework de calibration sont en C++).
+[`market/superbucket.hpp`](../../include/quantModeling/market/superbucket.hpp) :
 
-- la calibration Dupire est **en Python**
-  ([`api/app/local_vol/dupire.py`](../../api/app/local_vol/dupire.py),
-  [`iv_surface.py`](../../api/app/local_vol/iv_surface.py)) ; le C++ ne reçoit
-  qu'une grille pré-calculée. Le superbucket exige de la porter en C++
-  templé — ce que la roadmap demande déjà en §1d ;
-- il n'y a **aucun framework de calibration** en C++ (roadmap, chantier 0).
+1. **À travers Dupire** : la grille est reconstruite sur une tape AAD — mêmes
+   cases, même remplissage des trous au plus proche voisin
+   (`nearest_valid_sources`, partagé avec la construction en double), mêmes
+   bornes — puis ensemencée par ∂V/∂σ_loc (la fonctionnelle
+   L = Σ (∂V/∂σ_loc)·σ_loc, une seule propagation) : ∂V/∂θ pour chaque
+   tranche SVI.
+2. **À travers chaque ajustement SVI** : théorème des fonctions implicites à
+   l'optimum de Σ wᵢ rᵢ², avec le hessien de Gauss-Newton
+   ([ADR-A9](#adr-a9--le-hessien-de-gauss-newton-pour-le-théorème-des-fonctions-implicites)) :
+   ∂V/∂mᵢ = wᵢ Jᵢ·(JᵀWJ)⁻¹ ∂V/∂θ, J par AAD ; un paramètre en butée est gelé.
 
-Cette partie est donc la dernière du lot, et elle ne démarre qu'après ces deux
-prérequis.
+Résultat : ∂V/∂(chaque vol implicite cotée de la chaîne stockée), pour
+n'importe quel produit scripté — `POST /price/market-vega`
+([`market_vega.py`](../../api/app/market_vega.py)), surface divergente
+maturité × moneyness sur la page pricing. L'erreur Monte-Carlo de chaque vega
+est mesurée : 8 lots AAD indépendants, chacun passé dans le superbucket
+(linéaire en ∂V/∂σ_loc). Tests : ∂V/∂θ = différences finies sur les paramètres
+SVI ; la vega d'une cotation = « choquer, recalibrer, repricer » à 2 % ; la
+somme des vegas = choc parallèle de toute la chaîne recalibrée.
+
+**Bug trouvé en chemin, corrigé.** `LocalVolSimModel` (lot 17e) calculait le
+poids d'interpolation en strike sur `to_double(S)` : la dépendance de σ_loc(S_t)
+au spot — donc aux vols antérieures via le chemin — était coupée. Sur une grille
+plate c'est sans effet (∂σ/∂S = 0), d'où l'invisibilité ; sur la surface SPY la
+vega AAD sous-estimait le repricing de ~19 %, et le delta AAD en vol locale était
+faux aussi. Le poids est désormais un `T` (même correction dans `SLVSimModel`),
+et deux tests comparent AAD et repricing sur une surface pentue.
 
 ---
 
@@ -868,7 +888,7 @@ chose à montrer.
 | **17e** | `MultiAssetBSSimModel<T>`, `LocalVolSimModel<T>` ; benchmark ; surface du lot 15 | **le tableau du panier à 50 sous-jacents**, et la courbe coût / nombre de paramètres |
 | **17f** | Multi-adjoints | matrice = *m* runs mono |
 | **17g** | Expression templates | mêmes risques, tape plus petite, gain de temps mesuré au benchmark |
-| **17h** | Calibration : Dupire C++ templé, superbucket ; théorème des fonctions implicites | ∂V/∂σ_impl ; **attend** Dupire en C++ et le framework de calibration |
+| **17h** | Calibration : Dupire C++ templé, superbucket ; théorème des fonctions implicites | ∂V/∂σ_impl — **fait** : vega par cotation, somme = choc parallèle recalibré |
 
 **17a + 17b + 17c est le livrable défendable minimal** : « j'ai écrit une tape
 AAD, un `Number` à surcharge d'opérateurs, et un Monte-Carlo adjoint avec
@@ -991,6 +1011,23 @@ générateur du livre, n'est pas porté.
 Sobol existant la satisfont tous deux, et ils sont déjà testés
 (`testSobol.cpp`). Porter MRG32k3a reste possible pour une fidélité stricte :
 c'est une implémentation de plus de la même interface.
+
+---
+
+### ADR-A9 — Le hessien de Gauss-Newton pour le théorème des fonctions implicites
+
+**Décision.** À l'optimum d'un ajustement SVI (moindres carrés pondérés
+Σ wᵢ rᵢ², rᵢ = iv(kᵢ; θ) − mᵢ), dθ/dm = H⁻¹ JᵀW avec H = JᵀWJ, sans le terme
+Σ wᵢ rᵢ ∇²rᵢ du hessien exact. Les paramètres en butée de leur calibration
+sont gelés (dθ/dm = 0).
+
+**Pourquoi.** Le livre applique le théorème des fonctions implicites avec les
+jacobiennes calculées par AAD ; il ne tranche pas la forme du hessien. Le terme
+omis est proportionnel aux résidus du fit : nul sur un ajustement parfait (c'est
+ce que vérifient les tests, sur des cotations SVI exactes), du premier ordre
+dans les résidus sinon (quelques dixièmes de point de vol sur une vraie chaîne).
+Le hessien exact demanderait des dérivées secondes du résidu, hors du périmètre
+d'ordre 1 de l'AAD du lot ([§12](#12-ordre-2)).
 
 ---
 

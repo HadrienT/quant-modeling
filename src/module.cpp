@@ -8,6 +8,7 @@
 #include "quantModeling/market/heston_calibration.hpp"
 #include "quantModeling/market/sabr_calibration.hpp"
 #include "quantModeling/market/slv_calibration.hpp"
+#include "quantModeling/market/superbucket.hpp"
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/date.hpp"
@@ -27,7 +28,9 @@
 #include "quantModeling/scripting/script_model_factory.hpp"
 
 #include <algorithm>
+#include <array>
 #include <map>
+#include <tuple>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -588,6 +591,10 @@ static py::dict calibrate_vol_surface_impl(
         sd["iterations"] = s.iterations;
         sd["converged"] = s.converged;
         sd["butterfly_arbitrage_free"] = s.butterfly_arbitrage_free;
+        py::list quotes;
+        for (const auto &q : s.quotes)
+            quotes.append(py::make_tuple(q.log_moneyness, q.market_iv, q.weight));
+        sd["quotes"] = quotes;
         slices.append(sd);
     }
 
@@ -719,6 +726,58 @@ static py::dict calibrate_slv_leverage_impl(double spot, double rate, double div
     // a caller can count how much of the grid sits on it.
     out["leverage_floor"] = settings.leverage_floor;
     out["leverage_cap"] = settings.leverage_cap;
+    return out;
+}
+
+// ── Dupire superbucket (lot 17h): dV/dsigma_loc -> dV/d(quoted implied vol) ─
+
+static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, double rate,
+                                        double dividend, double k_min, double k_max,
+                                        std::size_t n_strikes, std::size_t n_maturities,
+                                        const std::vector<double> &dV_dsigma_loc)
+{
+    using namespace quantModeling;
+    std::vector<SVISliceCalibration> slices;
+    std::vector<std::vector<SVISliceQuote>> quotes;
+    for (const py::handle h : slices_py)
+    {
+        const py::dict d = py::reinterpret_borrow<py::dict>(h);
+        SVISliceCalibration c;
+        c.ttm = d["ttm"].cast<double>();
+        c.params = SVIParams{d["a"].cast<double>(), d["b"].cast<double>(),
+                             d["rho"].cast<double>(), d["m"].cast<double>(),
+                             d["sigma"].cast<double>()};
+        std::vector<SVISliceQuote> q;
+        for (const py::handle t : d["quotes"].cast<py::list>())
+        {
+            const auto [k, iv, w] = t.cast<std::tuple<double, double, double>>();
+            q.push_back({k, iv, w});
+        }
+        slices.push_back(c);
+        quotes.push_back(std::move(q));
+    }
+    SuperbucketResult r;
+    {
+        py::gil_scoped_release release;
+        r = dupire_superbucket(slices, quotes, spot, rate, dividend, k_min, k_max, n_strikes,
+                               n_maturities, dV_dsigma_loc);
+    }
+    py::list rows;
+    for (const QuoteVega &v : r.quotes)
+    {
+        py::dict d;
+        d["slice"] = v.slice;
+        d["ttm"] = v.ttm;
+        d["log_moneyness"] = v.log_moneyness;
+        d["strike"] = v.strike;
+        d["implied_vol"] = v.implied_vol;
+        d["vega"] = v.vega;
+        rows.append(d);
+    }
+    py::dict out;
+    out["quotes"] = rows;
+    out["dV_dsvi"] = r.dV_dsvi;
+    out["at_bound"] = r.at_bound;
     return out;
 }
 
@@ -978,24 +1037,33 @@ static py::dict price_script(const std::string &script, double spot, double rate
 
     if (greeks_method == "aad")
     {
-        ScriptedProduct<aad::Number> product(
-            script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
-        auto sim_model = scripting::make_script_model<aad::Number>(spec);
-        check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+        // The tape is thread_local (aad::Number::tape), so the adjoint
+        // simulation releases the GIL like the plain one: independent AAD
+        // runs (the superbucket's batches) go in parallel on Python threads.
+        std::optional<AADSimulResults> aad_res;
+        std::vector<scripting::Advice> aad_advice;
+        std::size_t aad_events = 0;
+        {
+            py::gil_scoped_release release;
+            ScriptedProduct<aad::Number> product(
+                script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+            auto sim_model = scripting::make_script_model<aad::Number>(spec);
+            check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+            aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
+                                   seed_value);
+            aad_events = product.timeline().size();
+            aad_advice = scripting::advise(product.analysis(), kind,
+                                           product.timeline().back(), surface_T);
+        }
 
-        const AADSimulResults aad_res =
-            simulate_aad(product, *sim_model, static_cast<std::size_t>(paths), seed_value);
-
-        PricingResult res = to_pricing_result(aad_res);
-        res.diagnostics += " | scripted, " +
-                           std::to_string(product.timeline().size()) + " events" +
+        PricingResult res = to_pricing_result(*aad_res);
+        res.diagnostics += " | scripted, " + std::to_string(aad_events) + " events" +
                            (fuzzy ? ", fuzzy" : ", hard") + model_note;
         if (sampler == "sobol")
             res.diagnostics += " | sobol requested but not available under AAD "
                                "yet (lot 17d) -- used pseudo-random instead";
         py::dict out = pricing_result_to_dict(res);
-        out["warnings"] = advice_to_py(scripting::advise(
-            product.analysis(), kind, product.timeline().back(), surface_T));
+        out["warnings"] = advice_to_py(aad_advice);
         return out;
     }
 
@@ -1326,6 +1394,13 @@ PYBIND11_MODULE(quantmodeling, m)
         "The simplest model that captures what the script's price depends on "
         "(scripting/model_advice.hpp recommend()), among those available: "
         "{model, code, reason}.");
+    m.def("dupire_superbucket", &dupire_superbucket_impl, py::arg("slices"), py::arg("spot"),
+          py::arg("rate"), py::arg("dividend"), py::arg("k_min"), py::arg("k_max"),
+          py::arg("n_strikes"), py::arg("n_maturities"), py::arg("dV_dsigma_loc"),
+          "dV / d(each quoted implied vol) from dV/dsigma_loc (the local-vol AAD "
+          "risks, K-major): through Dupire on an AAD tape, then through each SVI "
+          "fit by the implicit function theorem (market/superbucket.hpp, lot 17h). "
+          "`slices` are calibrate_vol_surface's, with their `quotes`.");
     m.def("calibrate_heston", &calibrate_heston_impl, py::arg("strikes"),
           py::arg("ttms"), py::arg("implied_vols"), py::arg("spot"), py::arg("rate"),
           py::arg("dividend"),
