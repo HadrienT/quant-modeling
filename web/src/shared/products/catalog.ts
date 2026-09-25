@@ -48,7 +48,7 @@ const bump = <T extends object>(v: Record<string, unknown>, extra: T) => ({
 	...extra,
 });
 
-export const CATALOG: ProductDescriptor[] = [
+const HAND_WRITTEN: ProductDescriptor[] = [
 	{
 		key: "vanilla",
 		category: "vanilla",
@@ -629,10 +629,21 @@ function disabled(
 	};
 }
 
-// The script library's products follow the hand-written catalog. The four
-// doc-only entries they make priceable (forward-start, cliquet, Napoleon,
-// corridor) are now scripted and keep their reference sheets.
-CATALOG.push(...SCRIPTED_CATALOG);
+/**
+ * The script library's products come first: each is validated by the real
+ * parser and priced by the generic engine under a calibrated model of the
+ * user's choice. The four doc-only entries they made priceable (forward-
+ * start, cliquet, Napoleon, corridor) are now scripted and keep their
+ * reference sheets. The hand-written catalog follows.
+ */
+export const CATALOG: ProductDescriptor[] = [
+	...SCRIPTED_CATALOG,
+	...HAND_WRITTEN,
+];
+
+/** Where the workbench and the products page open: the analytic vanilla,
+ * instant and independent of the market database. */
+export const DEFAULT_PRODUCT_KEY = "vanilla";
 
 export const CATALOG_BY_KEY = new Map(CATALOG.map((p) => [p.key, p]));
 

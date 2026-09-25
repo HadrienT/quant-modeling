@@ -1,7 +1,11 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { decodeParams, encodeParams } from "@/shared/products/workbenchLink";
-import { CATALOG, CATALOG_BY_KEY, type EngineKey } from "@/shared/products";
+import {
+	CATALOG_BY_KEY,
+	DEFAULT_PRODUCT_KEY,
+	type EngineKey,
+} from "@/shared/products";
 
 /**
  * All view state lives in the URL (WP 07 §6): a pricing session is a link.
@@ -25,7 +29,7 @@ export function useWorkbench() {
 	const productKey =
 		search.product && CATALOG_BY_KEY.has(search.product)
 			? search.product
-			: CATALOG[0]!.key;
+			: DEFAULT_PRODUCT_KEY;
 	const descriptor = CATALOG_BY_KEY.get(productKey)!;
 
 	const engine = (search.engine ?? descriptor.engines[0]!.key) as EngineKey;

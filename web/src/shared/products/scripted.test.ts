@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG, CATALOG_BY_KEY } from "./catalog";
+import { CATALOG, CATALOG_BY_KEY, DEFAULT_PRODUCT_KEY } from "./catalog";
 import { SCRIPTED_PRODUCTS, scriptedKey } from "./scripted";
 import { fieldsFromSchema } from "./zodFields";
 
@@ -39,6 +39,20 @@ describe("scripted catalog entries", () => {
 			unit: "%",
 			group: "contract",
 		});
+	});
+
+	it("lists the scripted families first, by family, before the rest", () => {
+		const cats = [...new Set(CATALOG.map((p) => p.category))];
+		expect(cats.slice(0, 7)).toEqual([
+			"script-vanilla",
+			"script-barrier",
+			"script-path",
+			"script-cliquet",
+			"script-note",
+			"script-volatility",
+			"script-multi",
+		]);
+		expect(CATALOG_BY_KEY.get(DEFAULT_PRODUCT_KEY)?.enabled).toBe(true);
 	});
 
 	it("keys never collide with the hand-written catalog", () => {
