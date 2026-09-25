@@ -9,6 +9,7 @@ import {
 	type Reference,
 } from "@/shared/products";
 import { Badge } from "@/shared/ui";
+import { ScriptedReference } from "./ScriptedReference";
 
 /**
  * The dedicated product reference (Products page). Same content as the ⓘ
@@ -22,6 +23,7 @@ export function ProductReference({
 	descriptor: ProductDescriptor;
 }) {
 	const doc = descriptor.docKey ? PRODUCT_DOCS[descriptor.docKey] : undefined;
+	const scripted = descriptor.scripted;
 	const payoffs = doc
 		? Array.isArray(doc.payoff)
 			? doc.payoff
@@ -40,10 +42,16 @@ export function ProductReference({
 				<h1 className="text-2xl font-semibold text-ink">
 					{doc?.title ?? descriptor.label}
 				</h1>
-				{doc && (
+				{doc ? (
 					<p className="text-sm leading-relaxed text-ink-secondary">
 						<InlineMath text={doc.summary} />
 					</p>
+				) : (
+					scripted && (
+						<p className="text-sm leading-relaxed text-ink-secondary">
+							{scripted.summary}
+						</p>
+					)
 				)}
 				{descriptor.enabled && (
 					<Link
@@ -57,10 +65,14 @@ export function ProductReference({
 				)}
 			</header>
 
+			{scripted && <ScriptedReference product={scripted} withSources={!doc} />}
+
 			{!doc ? (
-				<p className="text-sm text-ink-muted">
-					No reference sheet for this product yet.
-				</p>
+				!scripted && (
+					<p className="text-sm text-ink-muted">
+						No reference sheet for this product yet.
+					</p>
+				)
 			) : (
 				<>
 					<Section title="Payoff">

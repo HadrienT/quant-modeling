@@ -4,7 +4,14 @@ export type {
 	EngineKey,
 	EngineCapability,
 	GreekName,
+	ScriptedProduct,
 } from "./types";
+export {
+	SCRIPTED_PRODUCTS,
+	SINGLE_MODELS,
+	scriptedKey,
+	scriptedRequest,
+} from "./scripted";
 export { CATALOG, CATALOG_BY_KEY, CATEGORY_LABELS } from "./catalog";
 export { f, pct } from "./schema";
 export { PRODUCT_DOCS, type ProductDoc, type Reference } from "./docs";

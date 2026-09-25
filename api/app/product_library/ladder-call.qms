@@ -1,0 +1,22 @@
+# title: Ladder call
+# category: Asians, lookbacks and ladders
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: An at-the-money call that locks in gains: once the stock closes above a rung, at least that rung is paid.
+# param: step = 0.1 | percent | Gap between rungs, % of the initial level
+#
+# Three rungs above the initial level, daily closes. Pays the larger of the
+# final call and the highest rung reached.
+
+2027-01-04
+    step = 0.1
+    s0 = spot()
+    rung = 1
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    if spot() >= (1 + step) * s0 then rung = max(rung, 1 + step) endIf
+    if spot() >= (1 + 2 * step) * s0 then rung = max(rung, 1 + 2 * step) endIf
+    if spot() >= (1 + 3 * step) * s0 then rung = max(rung, 1 + 3 * step) endIf
+
+2028-01-04
+    pays max(max(spot() - s0, 0), (rung - 1) * s0)

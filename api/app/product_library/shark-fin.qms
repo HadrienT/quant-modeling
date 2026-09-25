@@ -1,0 +1,32 @@
+# title: Shark fin note
+# category: Barriers and touch options
+# underlyings: 1
+# source: Rubinstein & Reiner, Breaking Down the Barriers, Risk, 1991
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A capital-protected note paying the stock's rise, unless the stock ever closes at or above the barrier: then only a rebate on top of the capital.
+# param: notional = 1000 | amount | Notional
+# param: participation = 1.0 | percent | Participation in the rise
+# param: barrier = 1.25 | percent | Knock-out barrier, % of the initial level
+# param: rebate = 0.05 | percent | Rebate if knocked out, % of notional
+#
+# Capital protected at maturity; daily closes. Its payoff chart looks like a
+# shark's fin: rising, then a cliff.
+
+2027-01-04
+    notional = 1000
+    participation = 1.0
+    barrier = 1.25
+    rebate = 0.05
+    s0 = spot()
+    alive = 1
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    if spot() >= barrier * s0 then alive = 0 endIf
+
+2028-01-04
+    if spot() >= barrier * s0 then alive = 0 endIf
+    if alive = 1 then
+        pays notional * (1 + participation * max(spot() / s0 - 1, 0))
+    else
+        pays notional * (1 + rebate)
+    endIf

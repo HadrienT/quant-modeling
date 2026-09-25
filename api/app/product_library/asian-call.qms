@@ -1,0 +1,24 @@
+# title: Arithmetic Asian call
+# category: Asians, lookbacks and ladders
+# underlyings: 1
+# source: Kemna & Vorst, A Pricing Method for Options Based on Average Asset Values, Journal of Banking & Finance, 1990
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call on the average of twelve monthly closes instead of the final price: cheaper than a vanilla, and hard to manipulate at expiry.
+# param: strike = 1.0 | percent | Strike, % of the initial level
+#
+# Twelve monthly fixings, the last one on the maturity date.
+
+2027-01-04
+    strike = 1.0
+    s0 = spot()
+    acc = 0
+    n = 0
+
+schedule(2027-02-04, 2027-12-04, 1M, US, F)
+    acc = acc + spot()
+    n = n + 1
+
+2028-01-04
+    acc = acc + spot()
+    n = n + 1
+    pays max(acc / n - strike * s0, 0)

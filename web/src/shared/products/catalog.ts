@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { EngineKey, ProductDescriptor } from "./types";
 import { bsCore, bsCoreDefaults, f, mcCoreDefaults, pct } from "./schema";
+import { SCRIPTED_CATALOG } from "./scripted";
 
 /**
  * THE product catalog — dependencies.md §3.4, WP 07 §1.
@@ -570,21 +571,18 @@ export const CATALOG: ProductDescriptor[] = [
 	),
 
 	// Documented from Bouzoubaa & Osseiran (2010) at the maintainer's
-	// request; no pricing engine exists for any of these in this repo.
+	// request; not expressible as a payoff script yet (a chooser and a
+	// compound need a conditional expectation), so no pricing engine.
 	// docOnly() (not disabled()) because there is no real endpoint to type
 	// -- see types.ts's ProductDescriptor.endpoint doc comment.
-	docOnly("forward-start", "exotic", "Forward start option", "forward-start"),
 	docOnly("compound", "exotic", "Compound option", "compound"),
 	docOnly("chooser", "exotic", "Chooser option", "chooser"),
-	docOnly("cliquet", "structured", "Cliquet (ratchet) option", "cliquet"),
-	docOnly("napoleon", "structured", "Napoleon option", "napoleon"),
 	docOnly(
 		"double-barrier",
 		"exotic",
 		"Double barrier option",
 		"double-barrier",
 	),
-	docOnly("corridor", "structured", "Corridor / range accrual", "corridor"),
 ];
 
 function docOnly(
@@ -631,6 +629,11 @@ function disabled(
 	};
 }
 
+// The script library's products follow the hand-written catalog. The four
+// doc-only entries they make priceable (forward-start, cliquet, Napoleon,
+// corridor) are now scripted and keep their reference sheets.
+CATALOG.push(...SCRIPTED_CATALOG);
+
 export const CATALOG_BY_KEY = new Map(CATALOG.map((p) => [p.key, p]));
 
 export const CATEGORY_LABELS: Record<ProductDescriptor["category"], string> = {
@@ -641,4 +644,11 @@ export const CATEGORY_LABELS: Record<ProductDescriptor["category"], string> = {
 	volatility: "Volatility",
 	fx: "FX",
 	commodity: "Commodity",
+	"script-vanilla": "Scripts · Vanillas & digitals",
+	"script-barrier": "Scripts · Barriers & touch",
+	"script-path": "Scripts · Asians, lookbacks, ladders",
+	"script-cliquet": "Scripts · Cliquets",
+	"script-note": "Scripts · Structured notes",
+	"script-volatility": "Scripts · Volatility",
+	"script-multi": "Scripts · Multi-asset",
 };

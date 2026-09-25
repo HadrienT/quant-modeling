@@ -1,0 +1,33 @@
+# title: Corridor variance swap
+# category: Volatility
+# underlyings: 1
+# source: Demeterfi, Derman, Kamal & Zou, A Guide to Volatility and Variance Swaps, Journal of Derivatives, 1999
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A variance swap that only counts the days the stock starts inside a corridor: cheaper downside or upside variance.
+# param: variance_notional = 10000 | amount | Variance notional
+# param: vol_strike = 0.2 | percent | Volatility strike
+# param: low = 0.8 | percent | Corridor low, % of the initial level
+# param: high = 1.2 | percent | Corridor high, % of the initial level
+#
+# A return enters the sum only if the previous close was inside the
+# corridor; the annualisation still divides by every day observed.
+
+2027-01-04
+    variance_notional = 10000
+    vol_strike = 0.2
+    low = 0.8
+    high = 1.2
+    s0 = spot()
+    prev = spot()
+    sumsq = 0
+    n = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf
+    n = n + 1
+    prev = spot()
+
+2028-01-04
+    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf
+    n = n + 1
+    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)

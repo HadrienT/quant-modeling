@@ -1,0 +1,31 @@
+# title: Altiplano
+# category: Multi-asset
+# underlyings: 3
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A capital-protected note paying a large coupon if none of three stocks ever closes a month below the barrier; otherwise a basket call instead.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.2 | percent | Coupon if no stock breaches
+# param: barrier = 0.8 | percent | Barrier on each stock, % of its initial level
+#
+# Monthly monitoring of each stock against its own strike-date level.
+
+2027-01-04
+    notional = 1000
+    coupon = 0.2
+    barrier = 0.8
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+    breached = 0
+
+schedule(2027-02-04, 2027-12-04, 1M, US, F)
+    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf
+
+2028-01-04
+    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf
+    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3
+    if breached = 0 then
+        pays notional * (1 + coupon)
+    else
+        pays notional * (1 + max(basket - 1, 0))
+    endIf

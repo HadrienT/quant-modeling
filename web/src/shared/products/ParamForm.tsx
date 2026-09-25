@@ -22,7 +22,7 @@ export function ParamForm({
 	/** fields set elsewhere: not shown, still validated with their values */
 	hide?: readonly string[];
 }) {
-	const fields = fieldsFromSchema(descriptor.schema).filter(
+	const fields = fieldsFromSchema(descriptor.schema, descriptor.fields).filter(
 		(f) => !hide.includes(f.name),
 	);
 	const {

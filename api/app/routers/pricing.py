@@ -32,6 +32,7 @@ from ..schemas import (
     ScriptRequest,
     ScriptValidateRequest,
     ScriptValidateResponse,
+    ScriptedProductRequest,
     VanillaRequest,
     VarianceSwapRequest,
     VolatilitySwapRequest,
@@ -129,6 +130,17 @@ async def price_script_endpoint(req: ScriptRequest) -> PricingResponse:
     script (ScriptError) or a bad market input (InvalidInput, missing market
     data) is a user-input error, not a server failure."""
     return await _price("script", req, user_errors=(RuntimeError, ValueError))
+
+
+@router.post("/price/scripted-product", response_model=PricingResponse)
+async def price_scripted_product_endpoint(
+    req: ScriptedProductRequest,
+) -> PricingResponse:
+    """A product of the script library from its term sheet
+    (blueprint/wp/16-scripting.md §8.8); the response carries the script
+    priced. Pricing the same terms under several `model`s with one `seed`
+    compares the models on common random numbers."""
+    return await _price("scripted_product", req, user_errors=(RuntimeError, ValueError))
 
 
 @router.post("/price/scripted/validate", response_model=ScriptValidateResponse)

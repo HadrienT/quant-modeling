@@ -1,0 +1,33 @@
+# title: Worst-of barrier reverse convertible
+# category: Multi-asset
+# underlyings: 3
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Quarterly coupons on three stocks; the capital is at risk if the worst of them ever closes at or below the barrier and ends below its initial level.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.03 | percent | Quarterly coupon, % of notional
+# param: barrier = 0.6 | percent | Knock-in barrier on the worst, % of initial
+#
+# Knock-in on the worst performer, daily closes. The higher coupon than a
+# single-stock version pays for the short correlation.
+
+2027-01-04
+    notional = 1000
+    coupon = 0.03
+    barrier = 0.6
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+    ki = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))
+    if worst <= barrier then ki = 1 endIf
+
+2027-04-05  2027-07-06  2027-10-04
+    pays notional * coupon
+
+2028-01-04
+    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))
+    if worst <= barrier then ki = 1 endIf
+    pays notional * coupon
+    if ki = 1 and worst < 1 then pays notional * worst else pays notional endIf

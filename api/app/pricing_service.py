@@ -35,6 +35,7 @@ from .schemas import (
     ScriptRequest,
     ScriptValidateRequest,
     ScriptValidateResponse,
+    ScriptedProductRequest,
     UnderlyingUsed,
     VanillaRequest,
     VarianceSwapRequest,
@@ -319,6 +320,17 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
     )
 
 
+def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
+    """A library product from its term sheet (product_templates.py): the
+    script is rendered with the terms, then priced like any script."""
+    from . import product_templates
+
+    script = product_templates.render(req.product, req.terms, req.valuation_date)
+    fields = req.model_dump(exclude={"product", "terms"})
+    response = price_script(ScriptRequest(script=script, **fields))
+    return response.model_copy(update={"script": script})
+
+
 def price_script(req: ScriptRequest) -> PricingResponse:
     """Choose the model (req.model, or the one the script needs for 'auto'),
     calibrate what it needs from the database, then price."""
@@ -330,7 +342,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
     market_warnings: List[Dict] = []
     valuation_date = req.valuation_date
     market = None
-    if req.model != "black_scholes" and req.ticker:
+    if req.ticker and (req.model != "black_scholes" or req.spot is None):
         # Market data comes from the database data-ingest fills, never from a
         # live source. A stored snapshot is a market date, and that date is
         # the valuation date the script is priced on.
@@ -375,6 +387,9 @@ def price_script(req: ScriptRequest) -> PricingResponse:
     if market is not None:
         spot, dividend, vol = market.spot, market.dividend, 0.0
         k_grid, t_grid = market.K_grid, market.T_grid
+        if model == "black_scholes":
+            vol = _atm_implied_vol(req, market, valuation_date)
+            choice["calibration"]["flat_vol"] = vol
     else:
         spot, dividend, vol = req.spot, req.dividend, req.vol
         k_grid, t_grid = [], []
@@ -411,6 +426,37 @@ def price_script(req: ScriptRequest) -> PricingResponse:
     result["warnings"] = market_warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)
     return response.model_copy(update={"model_choice": ModelChoice(**choice)})
+
+
+def _atm_implied_vol(req, market, valuation_date) -> float:
+    """Flat Black-Scholes on a ticker: the at-the-money implied vol of the
+    stored SVI smile at the script's last event (sticky strike, K = spot)."""
+    from . import vol_smile
+    from .audit.payloads import MarketInputStatus
+    from .valuation import record_market_input
+
+    parsed = qm.validate_script(req.script, valuation_date.isoformat(), req.day_count)
+    horizon = parsed["events"][-1]["t"] if parsed["events"] else 0.0
+    smile = vol_smile.Smile(
+        ticker=market.ticker,
+        snapshot=market.valuation_date,
+        spot=market.spot,
+        rate=market.rate,
+        dividend=market.dividend,
+        slices=tuple(sorted(market.svi_slices, key=lambda s: s["ttm"])),
+        K_grid=(),
+        T_grid=(),
+        sigma_loc_flat=(),
+    )
+    vol = smile.implied_vol(market.spot, max(horizon, 1e-4))
+    record_market_input(
+        f"vol:{market.ticker}",
+        "db:options.chain_snapshot",
+        market.valuation_date.isoformat(),
+        MarketInputStatus.OBSERVED,
+        vol,
+    )
+    return vol
 
 
 def _recommend(req: ScriptRequest, valuation_date, market, stochastic: bool) -> Dict:

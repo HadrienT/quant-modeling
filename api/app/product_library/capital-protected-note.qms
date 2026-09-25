@@ -1,0 +1,19 @@
+# title: Capital-protected note
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: The capital back for sure, plus a share of the stock's rise up to a cap: a zero-coupon bond and a call spread.
+# param: notional = 1000 | amount | Notional
+# param: participation = 0.8 | percent | Participation in the rise
+# param: cap = 0.4 | percent | Cap on the performance
+#
+# Two years, 100% capital protection.
+
+2027-01-04
+    notional = 1000
+    participation = 0.8
+    cap = 0.4
+    s0 = spot()
+
+2029-01-04
+    pays notional * (1 + participation * min(max(spot() / s0 - 1, 0), cap))

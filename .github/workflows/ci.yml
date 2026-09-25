@@ -217,6 +217,14 @@ jobs:
             exit 1
           fi
 
+      - name: Regenerate the product library and check drift
+        run: |
+          python scripts/gen_product_library.py web/src/shared/products/scripted.gen.json
+          if ! git diff --exit-code -- web/src/shared/products/scripted.gen.json; then
+            echo "::error::Product library drift. Run: python scripts/gen_product_library.py"
+            exit 1
+          fi
+
   # Blueprint WP 14 §6 — build & publish the self-hosted image on main.
   publish-image:
     if: github.ref == 'refs/heads/main'

@@ -1,0 +1,29 @@
+# title: Range accrual note
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Earns a coupon on each day the stock closes inside a range around its initial level; capital protected.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.08 | percent | Coupon per year if every day is in range
+# param: low = 0.9 | percent | Lower bound, % of the initial level
+# param: high = 1.1 | percent | Upper bound, % of the initial level
+#
+# Coupon at maturity = coupon x (days in range / days observed).
+
+2027-01-04
+    notional = 1000
+    coupon = 0.08
+    low = 0.9
+    high = 1.1
+    s0 = spot()
+    inside = 0
+    n = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    n = n + 1
+    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf
+
+2028-01-04
+    n = n + 1
+    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf
+    pays notional * (1 + coupon * inside / n)

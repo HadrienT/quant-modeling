@@ -1,0 +1,40 @@
+# title: Athena (express) autocall
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Redeemed at the first anniversary the stock is at or above the autocall level, with a coupon per year elapsed; capital at risk below the protection barrier after three years.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.08 | percent | Coupon per year, % of notional
+# param: autocall = 1.0 | percent | Autocall level, % of the initial level
+# param: protection = 0.6 | percent | Protection barrier at maturity, % of the initial level
+#
+# Snowball coupon: the coupon times the number of years at redemption.
+
+2027-01-04
+    notional = 1000
+    coupon = 0.08
+    autocall = 1.0
+    protection = 0.6
+    s0 = spot()
+    alive = 1
+
+2028-01-04
+    if spot() >= autocall * s0 then
+        pays notional * (1 + coupon)
+        alive = 0
+    endIf
+
+2029-01-04
+    if alive = 1 and spot() >= autocall * s0 then
+        pays notional * (1 + 2 * coupon)
+        alive = 0
+    endIf
+
+2030-01-04
+    if alive = 1 then
+        if spot() >= autocall * s0 then
+            pays notional * (1 + 3 * coupon)
+        else
+            if spot() < protection * s0 then pays notional * spot() / s0 else pays notional endIf
+        endIf
+    endIf

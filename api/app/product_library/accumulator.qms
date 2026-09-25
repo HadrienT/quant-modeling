@@ -1,0 +1,32 @@
+# title: Accumulator
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Buys one share a week at a discount to the initial level, twice as many when the stock is below that price, until it closes at or above the knock-out level.
+# param: strike = 0.9 | percent | Purchase price, % of the initial level
+# param: knock_out = 1.05 | percent | Knock-out level, % of the initial level
+# param: gearing = 2 | number | Shares bought below the strike, per share above
+#
+# Weekly for six months. Each purchase is marked at the close: its value is
+# (spot - strike) per share, paid on the purchase date. The knock-out is
+# checked first: no purchase on the day it knocks out.
+
+2027-01-04
+    strike = 0.9
+    knock_out = 1.05
+    gearing = 2
+    s0 = spot()
+    k = strike * s0
+    alive = 1
+
+schedule(2027-01-11, 2027-06-28, 1W, US, F)
+    if spot() >= knock_out * s0 then alive = 0 endIf
+    if alive = 1 then
+        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf
+    endIf
+
+2027-07-06
+    if spot() >= knock_out * s0 then alive = 0 endIf
+    if alive = 1 then
+        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf
+    endIf

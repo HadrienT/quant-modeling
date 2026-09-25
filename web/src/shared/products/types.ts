@@ -8,7 +8,40 @@ export type ProductCategory =
 	| "structured"
 	| "volatility"
 	| "fx"
-	| "commodity";
+	| "commodity"
+	// Products of the script library (api/app/product_library), by family.
+	| "script-vanilla"
+	| "script-barrier"
+	| "script-path"
+	| "script-cliquet"
+	| "script-note"
+	| "script-volatility"
+	| "script-multi";
+
+/** A product of the script library, as scripted.gen.json describes it. */
+export type ScriptedProduct = {
+	slug: string;
+	title: string;
+	category: string;
+	underlyings: number;
+	sources: string[];
+	summary: string;
+	params: {
+		name: string;
+		default: number;
+		unit: "percent" | "amount" | "number";
+		label: string;
+	}[];
+	script: string;
+};
+
+/** Per-field overrides of what zodFields derives from a schema. */
+export type FieldOverride = {
+	label?: string;
+	unit?: string;
+	group?: "contract" | "market" | "engine";
+	step?: number;
+};
 
 export type EngineKey = "analytic" | "mc" | "binomial" | "trinomial" | "pde";
 
@@ -47,6 +80,10 @@ export type ProductDescriptor = {
 	/** → productDocs (WP 99). */
 	docKey?: string;
 	greeks: GreekName[];
+	/** labels / units / groups for fields zodFields cannot name itself. */
+	fields?: Record<string, FieldOverride>;
+	/** set for a product of the script library: its template. */
+	scripted?: ScriptedProduct;
 	/** map UI-unit form values to the API request body (units converted at the edge). */
 	toRequest: (values: Record<string, unknown>, engine: EngineKey) => unknown;
 };

@@ -1,0 +1,30 @@
+# title: Rainbow call
+# category: Multi-asset
+# underlyings: 3
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call on a basket whose weights go by rank: the largest weight on the best performer, the smallest on the worst.
+# param: notional = 1000 | amount | Notional
+# param: w_best = 0.5 | percent | Weight of the best performer
+# param: w_middle = 0.3 | percent | Weight of the second
+# param: w_worst = 0.2 | percent | Weight of the worst
+#
+# With three stocks the middle performer is the sum minus the best and the
+# worst.
+
+2027-01-04
+    notional = 1000
+    w_best = 0.5
+    w_middle = 0.3
+    w_worst = 0.2
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+
+2028-01-04
+    p0 = spot(0) / s0
+    p1 = spot(1) / s1
+    p2 = spot(2) / s2
+    best = max(p0, max(p1, p2))
+    worst = min(p0, min(p1, p2))
+    middle = p0 + p1 + p2 - best - worst
+    pays notional * max(w_best * best + w_middle * middle + w_worst * worst - 1, 0)

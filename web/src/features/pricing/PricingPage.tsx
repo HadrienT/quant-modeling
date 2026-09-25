@@ -9,6 +9,7 @@ import {
 } from "@/shared/products";
 import { Button, cn, copyText, toast } from "@/shared/ui";
 import { ResultsPanel } from "./ResultsPanel";
+import { ScriptedPanel } from "./ScriptedPanel";
 import { useWorkbench } from "./useWorkbench";
 
 /** The pricing workbench (WP 07). Files in this feature stay under ~200 lines. */
@@ -129,6 +130,15 @@ export default function PricingPage() {
 							values={wb.values}
 							engine={wb.engine}
 						/>
+						{wb.descriptor.scripted && (
+							<div className="mt-4">
+								<ScriptedPanel
+									descriptor={wb.descriptor}
+									values={wb.values}
+									engine={wb.engine}
+								/>
+							</div>
+						)}
 					</div>
 					{showCompare && wb.compare && (
 						<div>

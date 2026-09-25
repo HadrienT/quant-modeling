@@ -14,8 +14,14 @@ describe("product docs", () => {
 		}
 	});
 
-	it("every enabled product has a doc card", () => {
+	it("every enabled product has a doc card, or a sourced script header", () => {
 		for (const p of CATALOG.filter((p) => p.enabled)) {
+			if (p.scripted) {
+				// A library script documents itself: summary and sources.
+				expect(p.scripted.summary.length, p.key).toBeGreaterThan(20);
+				expect(p.scripted.sources.length, p.key).toBeGreaterThan(0);
+				continue;
+			}
 			expect(p.docKey, `${p.key} has no docKey`).toBeTruthy();
 		}
 	});

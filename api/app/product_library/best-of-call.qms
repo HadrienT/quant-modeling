@@ -1,0 +1,19 @@
+# title: Best-of call
+# category: Multi-asset
+# underlyings: 3
+# source: Stulz, Options on the Minimum or the Maximum of Two Risky Assets, Journal of Financial Economics, 1982
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call on the best performer of three stocks: expensive, and worth more the less the stocks move together.
+# param: notional = 1000 | amount | Notional
+# param: strike = 1.0 | percent | Strike on the best performance
+
+2027-01-04
+    notional = 1000
+    strike = 1.0
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+
+2028-01-04
+    best = max(spot(0) / s0, max(spot(1) / s1, spot(2) / s2))
+    pays notional * max(best - strike, 0)

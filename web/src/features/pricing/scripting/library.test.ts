@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alignToValuationDate } from "./alignDates";
-import { CATEGORY_ORDER, SCRIPT_LIBRARY, parseProduct } from "./library";
+import { CATEGORY_ORDER, SCRIPT_LIBRARY } from "./library";
 import { countUnderlyings, underlyingsRequest } from "./underlyings";
 
 const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
@@ -13,23 +13,18 @@ describe("the product library", () => {
 			expect(p.title).not.toBe(p.slug);
 			expect(p.summary.length).toBeGreaterThan(20);
 			expect(p.sources.length).toBeGreaterThan(0);
-			expect(p.script).not.toMatch(/^# (title|category|source):/m);
+			expect(p.script).not.toMatch(/^# (title|category|source|param):/m);
 			// The count the page infers from the script is the declared one.
 			expect(countUnderlyings(p.script)).toBe(p.underlyings);
 		}
 	});
 
-	it("keeps the explanatory comments and drops the header", () => {
-		const p = parseProduct(
-			"x",
-			"# title: X\n# category: Cliquets\n# underlyings: 2\n# source: A\n# source: B\n# summary: S\n#\n# Terms.\n2027-01-04\n    pays 1\n",
-		);
-		expect(p).toMatchObject({
-			title: "X",
-			underlyings: 2,
-			sources: ["A", "B"],
-		});
-		expect(p.script.startsWith("# Terms.\n2027-01-04")).toBe(true);
+	it("loads each script without its header, terms assigned first", () => {
+		const p = SCRIPT_LIBRARY.find(
+			(x) => x.slug === "barrier-reverse-convertible",
+		)!;
+		expect(p.params.map((x) => x.name)).toContain("barrier");
+		expect(p.script).toMatch(/^ {4}barrier = 0\.6$/m);
 	});
 });
 

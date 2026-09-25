@@ -976,7 +976,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			},
 		],
 		notes: [
-			"No pricing engine in this repo yet — documentation only.",
+			"Priced here as a payoff script of the product library (api/app/product_library), by Monte-Carlo under the dynamics chosen on the workbench. On auto the model is stochastic-local vol: the payoff carries state from one date to the next, so it depends on the forward smile.",
 			"The scaling trick above is exact only under flat vol; it is also the reason forward-start risk is a clean probe of forward-skew assumptions (see modelDependency).",
 		],
 		references: [
@@ -1101,7 +1101,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			},
 		],
 		notes: [
-			"No pricing engine in this repo yet — documentation only.",
+			"Priced here as a payoff script of the product library (api/app/product_library), by Monte-Carlo under the dynamics chosen on the workbench. On auto the model is stochastic-local vol: the payoff carries state from one date to the next, so it depends on the forward smile.",
 			"Built entirely from forward-start legs (one per period) — see that entry for the single-period building block and its forward-skew sensitivity.",
 		],
 		references: [
@@ -1140,7 +1140,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			},
 		],
 		notes: [
-			"No pricing engine in this repo yet — documentation only.",
+			"Priced here as a payoff script of the product library (api/app/product_library), by Monte-Carlo under the dynamics chosen on the workbench. On auto the model is stochastic-local vol: the payoff carries state from one date to the next, so it depends on the forward smile.",
 			"The worst-of-period-returns structure makes this short volatility and short skew at once — a stress test even sharper than the plain cliquet for forward-smile assumptions.",
 		],
 		references: [
@@ -1273,7 +1273,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			},
 		],
 		notes: [
-			"No pricing engine in this repo yet — documentation only.",
+			"Priced here as a payoff script of the product library (api/app/product_library), by Monte-Carlo under the dynamics chosen on the workbench. On auto the model is stochastic-local vol: the payoff carries state from one date to the next, so it depends on the forward smile.",
 			"The closed-form sum-of-digitals price is exact per-date but ignores the joint (path) distribution across dates — fine for the expectation since the indicator is linear in each date's own marginal, but NOT sufficient for path-dependent Greeks like day-to-day range risk.",
 		],
 		references: [

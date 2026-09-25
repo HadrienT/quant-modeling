@@ -1,0 +1,20 @@
+# title: Reverse convertible
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A one-year note paying a high coupon; the capital comes back in full only if the stock ends at or above the strike, otherwise in proportion to its fall.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.1 | percent | Coupon, % of notional
+# param: strike = 1.0 | percent | Strike, % of the initial level
+#
+# The investor is short a put: that premium pays for the coupon.
+
+2027-01-04
+    notional = 1000
+    coupon = 0.1
+    strike = 1.0
+    s0 = spot()
+
+2028-01-04
+    pays notional * coupon
+    if spot() >= strike * s0 then pays notional else pays notional * spot() / (strike * s0) endIf

@@ -1,0 +1,45 @@
+# title: Worst-of Phoenix autocall
+# category: Multi-asset
+# underlyings: 3
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: The most traded structured product: quarterly coupons while the worst of three stocks is above the coupon barrier, early redemption above the autocall level, capital at risk below the protection barrier at maturity.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.025 | percent | Quarterly coupon, % of notional
+# param: autocall = 1.0 | percent | Autocall level on the worst
+# param: coupon_barrier = 0.7 | percent | Coupon barrier on the worst
+# param: protection = 0.6 | percent | Protection barrier at maturity
+#
+# Two years, quarterly observations on the worst performer, no coupon
+# memory.
+
+2027-01-04
+    notional = 1000
+    coupon = 0.025
+    autocall = 1.0
+    coupon_barrier = 0.7
+    protection = 0.6
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+    alive = 1
+
+schedule(2027-04-05, 2028-10-04, 3M, US, F)
+    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))
+    if alive = 1 then
+        if worst >= autocall then
+            pays notional * (1 + coupon)
+            alive = 0
+        else
+            if worst >= coupon_barrier then pays notional * coupon endIf
+        endIf
+    endIf
+
+2029-01-04
+    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))
+    if alive = 1 then
+        if worst >= coupon_barrier then
+            pays notional * (1 + coupon)
+        else
+            if worst < protection then pays notional * worst else pays notional endIf
+        endIf
+    endIf

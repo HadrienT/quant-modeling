@@ -1013,6 +1013,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/scripted-product": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Price Scripted Product Endpoint
+         * @description A product of the script library from its term sheet
+         *     (blueprint/wp/16-scripting.md §8.8); the response carries the script
+         *     priced. Pricing the same terms under several `model`s with one `seed`
+         *     compares the models on common random numbers.
+         */
+        post: operations["price_scripted_product"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/scripted/validate": {
         parameters: {
             query?: never;
@@ -2485,6 +2508,11 @@ export interface components {
         };
         /** ModelCalibration */
         ModelCalibration: {
+            /**
+             * Flat Vol
+             * @description Flat Black-Scholes on a ticker: the at-the-money implied vol of the stored smile at the script's last date.
+             */
+            flat_vol?: number | null;
             heston?: components["schemas"]["HestonFit"] | null;
             leverage?: components["schemas"]["LeverageFit"] | null;
             /**
@@ -2981,6 +3009,11 @@ export interface components {
             npv: number;
             /** Risks */
             risks?: components["schemas"]["RiskEntry"][] | null;
+            /**
+             * Script
+             * @description Scripted library products only: the script priced.
+             */
+            script?: string | null;
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];
         };
@@ -3289,26 +3322,7 @@ export interface components {
         };
         /**
          * ScriptRequest
-         * @description Price a payoff described in text (blueprint/wp/16-scripting.md) — a
-         *     single underlying reachable as `spot()`, priced by the generic Monte-Carlo
-         *     engine. `fuzzy` smooths comparisons for a usable pathwise delta on
-         *     digitals and barriers; discrete tests (flags) stay crisp either way.
-         *
-         *     A script only describes a payoff; the dynamics its price depends on come
-         *     from `model`. "auto" (the default) picks the simplest model that captures
-         *     what the script's price depends on (scripting/model_advice.hpp
-         *     recommend()): local vol for a payoff on each date's spot, stochastic-
-         *     local vol for one carrying state across dates, flat Black-Scholes when no
-         *     `ticker` is given. The response's `model_choice` says which and why.
-         *     "black_scholes" takes `spot`, `vol` (one flat volatility). "local_vol",
-         *     "heston" and "slv" take a `ticker` and price against the stored market
-         *     data in the database data-ingest fills (option-chain snapshot, close,
-         *     dividend yield) -- never a live source. A stored snapshot is a market
-         *     date: the script is priced on the latest snapshot on or before
-         *     `valuation_date` (at most a few days earlier), and the response says so.
-         *     Missing or stale stored data is an error naming what to refresh. Either
-         *     way, `warnings` in the response reports what the script's price depends
-         *     on that the chosen model cannot capture.
+         * @description Price a payoff described in text.
          */
         ScriptRequest: {
             /**
@@ -3346,7 +3360,7 @@ export interface components {
             greeks_method: "none" | "aad";
             /**
              * Model
-             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
+             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
              * @default auto
              * @enum {string}
              */
@@ -3460,6 +3474,117 @@ export interface components {
             recommendation: components["schemas"]["ModelRecommendation"];
             /** Variables */
             variables: string[];
+        };
+        /**
+         * ScriptedProductRequest
+         * @description Price a product of the script library (api/app/product_library) from
+         *     its term sheet: the terms replace the defaults the script declares, and
+         *     the dates start a week after the valuation date. The response carries the
+         *     script actually priced.
+         */
+        ScriptedProductRequest: {
+            /**
+             * Correlation
+             * @description n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).
+             */
+            correlation?: number[][] | null;
+            /**
+             * Day Count
+             * @default ACT/365F
+             * @enum {string}
+             */
+            day_count: "ACT/365F" | "ACT/360" | "30/360" | "ACT/ACT";
+            /**
+             * Default Eps
+             * @default 0.01
+             */
+            default_eps: number;
+            /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /**
+             * Fuzzy
+             * @default false
+             */
+            fuzzy: boolean;
+            /**
+             * Greeks Method
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol': the adjoint engine does not have Sobol support yet (lot 17d) and falls back to pseudo-random, noted in the response's diagnostics.
+             * @default none
+             * @enum {string}
+             */
+            greeks_method: "none" | "aad";
+            /**
+             * Model
+             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
+             * @default auto
+             * @enum {string}
+             */
+            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            /**
+             * N Paths
+             * @default 50000
+             */
+            n_paths: number;
+            /**
+             * Product
+             * @description Library slug, e.g. 'worst-of-autocall'.
+             */
+            product: string;
+            /** Rate */
+            rate: number;
+            /**
+             * Sampler
+             * @default pseudo
+             * @enum {string}
+             */
+            sampler: "pseudo" | "sobol";
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /**
+             * Spot
+             * @description Required for model='black_scholes' (and 'auto' without a ticker).
+             */
+            spot?: number | null;
+            /**
+             * Steps Per Year
+             * @description Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly).
+             * @default 52
+             */
+            steps_per_year: number;
+            /**
+             * Terms
+             * @description Term name -> value (percent terms as fractions: 0.6 = 60 %). Missing terms take the product's defaults.
+             */
+            terms?: {
+                [key: string]: number;
+            };
+            /**
+             * Ticker
+             * @description Underlying whose stored option chain is calibrated (every model but black_scholes); must be in data-ingest's tracked universe.
+             */
+            ticker?: string | null;
+            /**
+             * Underlyings
+             * @description For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend.
+             */
+            underlyings?: components["schemas"]["ScriptUnderlying"][] | null;
+            /**
+             * Valuation Date
+             * Format: date
+             * @description Time 0. Defaults to today (UTC) when omitted.
+             */
+            valuation_date?: string;
+            /**
+             * Vol
+             * @description Required for model='black_scholes' (and 'auto' without a ticker).
+             */
+            vol?: number | null;
         };
         /**
          * ScriptingChatRequest
@@ -5853,6 +5978,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ScriptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_scripted_product: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptedProductRequest"];
             };
         };
         responses: {
