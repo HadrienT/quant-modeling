@@ -10,8 +10,8 @@ alternatives rejetées dans [`decisions.md`](decisions.md).
 > dans [`../etc/roadmap.md`](../etc/roadmap.md) — sauf pour deux points : le
 > lot [15](wp/15-future-quant-surfaces.md) définit les emplacements que le
 > nouveau front doit réserver pour ces sujets, afin de ne pas avoir à le
-> re-découper dans six mois ; et les lots [16](wp/16-scripting.md) et
-> [17](wp/17-aad.md) sont de gros morceaux de conception du **cœur C++** — ils
+> re-découper dans six mois ; et les lots [16](wp/16-scripting.md),
+> [17](wp/17-aad.md) et [19](wp/19-gpu.md) sont de gros morceaux de conception du **cœur C++** — ils
 > sont ici parce que la convention du projet veut que ceux-là vivent dans
 > `blueprint/wp/`.
 
@@ -92,6 +92,7 @@ est à remplacer, pas à déplacer : c'est le préalable du
 | [16](wp/16-scripting.md) | Scripting de payoffs *(cœur C++)* | Langage de payoff façon Andreasen & Savine : lexer, AST, visiteurs, logique floue, un seul moteur MC pour tout produit |
 | [17](wp/17-aad.md) | AAD *(cœur C++)* | Différentiation adjointe façon Savine : tape en blocs, `Number`, check-pointing, AAD parallèle, multi-adjoints, expression templates, risques à travers la calibration |
 | [18](wp/18-observability.md) | Observabilité & piste d'audit *(transverse, Kafka)* | Événements métier dans Kafka, base d'audit append-only, replis tracés (`record_fallback`), télémétrie OpenTelemetry + Grafana, reproductibilité et replay des valorisations. Infra dans un dépôt séparé [`quant-platform`](https://github.com/HadrienT/quant-platform) |
+| [19](wp/19-gpu.md) | Monte-Carlo GPU *(cœur C++, CUDA)* | Les deux V100 : Sobol et Philox adressables, pont brownien dans le moteur générique, réduction de variance à la Glasserman, scripts en bytecode, AAD par duaux et adjoint par chemin, reproductibilité bit à bit sur 1 ou 2 GPU, benchmark en temps pour une erreur donnée |
 | [99](wp/99-recovered-work.md) | Travail perdu à refaire | Fiches produit disparues avec la VM |
 
 ## 5. Graphe de dépendances
