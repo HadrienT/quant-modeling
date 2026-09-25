@@ -635,7 +635,7 @@ erreurs standard combinées. Sur SPY (24/09/2026), un up-and-out call
 **Long ou short quoi.** La page produits porte, pour chaque produit, le tableau
 de Bouzoubaa & Osseiran : le porteur est-il long ou short chaque paramètre de
 marché. **Calculé**, pas affirmé ([`risk_profile.py`](../../api/app/risk_profile.py),
-`POST /products/risk-profile`) : marché de référence affiché (spot 100, vol
+`POST /price/risk-profile`) : marché de référence affiché (spot 100, vol
 25 %, taux 3 %, dividende 1 %, corrélation 50 %), niveaux figés à la date de
 trade (la date de strike est un fixing passé), choc de chaque paramètre et
 signe de la variation ; spot (delta), convexité (gamma), vol, taux,

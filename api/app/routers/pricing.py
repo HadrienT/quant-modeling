@@ -146,12 +146,13 @@ async def price_scripted_product_endpoint(
     return await _price("scripted_product", req, user_errors=(RuntimeError, ValueError))
 
 
-@router.post("/products/risk-profile", response_model=RiskProfileResponse)
+@router.post("/price/risk-profile", response_model=RiskProfileResponse)
 async def risk_profile_endpoint(req: RiskProfileRequest) -> RiskProfileResponse:
     """Long or short what, for a library product: every market parameter
     bumped on a reference market, the sign of the price change (holder's
     side), with paired Monte-Carlo errors (risk_profile.py). Cached per
-    product and terms."""
+    product and terms. Under /price/ like every computation: the production
+    nginx (and the dev proxy) only forward /api/, /market/ and /price/."""
     from .. import risk_profile
 
     try:

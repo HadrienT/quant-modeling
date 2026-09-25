@@ -35,7 +35,7 @@ export function useScriptedRiskProfile(slug: string | undefined) {
 		enabled: Boolean(slug),
 		staleTime: Infinity,
 		queryFn: async (): Promise<RiskProfile> => {
-			const { data, error } = await api.POST("/products/risk-profile", {
+			const { data, error } = await api.POST("/price/risk-profile", {
 				body: { product: slug!, terms: {} },
 			});
 			if (error !== undefined) throw ApiError.from(error);
