@@ -1,0 +1,26 @@
+# title: Locally capped cliquet
+# category: Cliquets
+# underlyings: 1
+# source: Wilmott, Cliquet Options and Volatility Models, Wilmott Magazine, 2002
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Adds up four quarterly returns, each floored and capped: a guaranteed-positive, capped exposure to steady growth.
+# param: notional = 1000 | amount | Notional
+# param: local_floor = 0.0 | percent | Floor on each quarterly return
+# param: local_cap = 0.03 | percent | Cap on each quarterly return
+#
+# Each quarter's return is measured from the previous quarter's close.
+
+2027-01-04
+    notional = 1000
+    local_floor = 0.0
+    local_cap = 0.03
+    ref = spot()
+    total = 0
+
+2027-04-05  2027-07-06  2027-10-04
+    total = total + min(max(spot() / ref - 1, local_floor), local_cap)
+    ref = spot()
+
+2028-01-04
+    total = total + min(max(spot() / ref - 1, local_floor), local_cap)
+    pays notional * total

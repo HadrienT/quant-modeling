@@ -32,6 +32,10 @@ from ..schemas import (
     ScriptRequest,
     ScriptValidateRequest,
     ScriptValidateResponse,
+    ScriptedProductRequest,
+    RiskProfileRequest,
+    RiskProfileResponse,
+    RiskProfileRow,
     VanillaRequest,
     VarianceSwapRequest,
     VolatilitySwapRequest,
@@ -129,6 +133,45 @@ async def price_script_endpoint(req: ScriptRequest) -> PricingResponse:
     script (ScriptError) or a bad market input (InvalidInput, missing market
     data) is a user-input error, not a server failure."""
     return await _price("script", req, user_errors=(RuntimeError, ValueError))
+
+
+@router.post("/price/scripted-product", response_model=PricingResponse)
+async def price_scripted_product_endpoint(
+    req: ScriptedProductRequest,
+) -> PricingResponse:
+    """A product of the script library from its term sheet
+    (blueprint/wp/16-scripting.md §8.8); the response carries the script
+    priced. Pricing the same terms under several `model`s with one `seed`
+    compares the models on common random numbers."""
+    return await _price("scripted_product", req, user_errors=(RuntimeError, ValueError))
+
+
+@router.post("/products/risk-profile", response_model=RiskProfileResponse)
+async def risk_profile_endpoint(req: RiskProfileRequest) -> RiskProfileResponse:
+    """Long or short what, for a library product: every market parameter
+    bumped on a reference market, the sign of the price change (holder's
+    side), with paired Monte-Carlo errors (risk_profile.py). Cached per
+    product and terms."""
+    from .. import risk_profile
+
+    try:
+        price, se, rows = await _run_with_timeout(
+            risk_profile.risk_profile, req.product, req.terms
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RiskProfileResponse(
+        product=req.product,
+        price=price,
+        price_std_error=se,
+        reference=risk_profile.REFERENCE,
+        rows=[RiskProfileRow(**r.__dict__) for r in rows],
+        method=(
+            f"Bump and reprice on {risk_profile.BATCHES} batches of "
+            f"{risk_profile.PATHS_PER_BATCH:,} paths with common random numbers; "
+            "levels fixed at the reference spot on the trade date."
+        ),
+    )
 
 
 @router.post("/price/scripted/validate", response_model=ScriptValidateResponse)

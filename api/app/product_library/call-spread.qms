@@ -1,0 +1,15 @@
+# title: Call spread (capped call)
+# category: Vanillas and digitals
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call whose gain is capped: long a call at the strike, short a call at the cap.
+# param: strike = 1.0 | percent | Strike, % of the initial level
+# param: cap = 1.2 | percent | Cap, % of the initial level
+
+2027-01-04
+    strike = 1.0
+    cap = 1.2
+    s0 = spot()
+
+2028-01-04
+    pays min(max(spot() - strike * s0, 0), (cap - strike) * s0)

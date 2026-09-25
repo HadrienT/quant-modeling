@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { FieldOverride } from "./types";
 
 /**
  * Derive renderable field metadata from a product's zod schema (WP 07 §2).
@@ -105,7 +106,10 @@ function defOf(node: unknown): AnyDef {
 	return (cur as { _def?: AnyDef })?._def ?? {};
 }
 
-export function fieldsFromSchema(schema: z.ZodType): FieldMeta[] {
+export function fieldsFromSchema(
+	schema: z.ZodType,
+	overrides: Record<string, FieldOverride> = {},
+): FieldMeta[] {
 	let node: unknown = schema;
 	for (let i = 0; i < 8; i++) {
 		const d = (node as { _def?: AnyDef })?._def;
@@ -134,7 +138,8 @@ export function fieldsFromSchema(schema: z.ZodType): FieldMeta[] {
 		const min = checks.find((c) => c.kind === "min")?.value;
 		const max = checks.find((c) => c.kind === "max")?.value;
 
-		return {
+		const o = overrides[name] ?? {};
+		const meta: FieldMeta = {
 			name,
 			kind,
 			options,
@@ -154,5 +159,6 @@ export function fieldsFromSchema(schema: z.ZodType): FieldMeta[] {
 					? "market"
 					: "contract",
 		};
+		return { ...meta, ...o };
 	});
 }

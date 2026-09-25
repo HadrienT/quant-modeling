@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	useCalibrateSimulation,
 	useSimulateBlackScholesPaths,
+	useSimulateModelPaths,
 	useSimulateSabrPaths,
 } from "@/shared/api";
 import type {
 	SimulationCalibrateResponse,
 	SimulationModel,
 } from "@/shared/api/types";
-
-const ANIMATION_MS = 2200;
+import { useHestonParams } from "./useHestonParams";
+import { usePathReveal } from "./usePathReveal";
 
 /**
  * All state and side effects for the simulation page: model/mode selection,
@@ -48,35 +49,29 @@ export function useSimulation() {
 	const [calibrated, setCalibrated] =
 		useState<SimulationCalibrateResponse | null>(null);
 
+	// Heston params (also the SLV's, read-only there: its leverage is
+	// calibrated with them)
+	const heston = useHestonParams();
+
 	const calibrate = useCalibrateSimulation();
 	const simulateBS = useSimulateBlackScholesPaths();
 	const simulateSABR = useSimulateSabrPaths();
-	const simulate = model === "black_scholes" ? simulateBS : simulateSABR;
+	const simulateModel = useSimulateModelPaths();
+	const surfaceModel =
+		model === "local_vol" || model === "heston" || model === "slv";
+	const simulate =
+		model === "black_scholes"
+			? simulateBS
+			: model === "sabr"
+				? simulateSABR
+				: simulateModel;
 
-	const [revealCount, setRevealCount] = useState(0);
-	const animRef = useRef<number | undefined>(undefined);
-
-	function playAnimation(steps: number) {
-		if (animRef.current !== undefined) cancelAnimationFrame(animRef.current);
-		const start = performance.now();
-		const step = (now: number) => {
-			const frac = Math.min((now - start) / ANIMATION_MS, 1);
-			setRevealCount(Math.round(frac * steps));
-			if (frac < 1) animRef.current = requestAnimationFrame(step);
-		};
-		animRef.current = requestAnimationFrame(step);
-	}
-
-	useEffect(() => {
-		return () => {
-			if (animRef.current !== undefined) cancelAnimationFrame(animRef.current);
-		};
-	}, []);
+	const { revealCount, setRevealCount, playAnimation } = usePathReveal();
 
 	const data = simulate.data;
 	useEffect(() => {
 		if (data) playAnimation(data.time_grid.length - 1);
-	}, [data]);
+	}, [data, playAnimation]);
 
 	function runCalibration() {
 		setCalibrated(null);
@@ -92,6 +87,11 @@ export function useSimulation() {
 				onSuccess: (resp) => {
 					setCalibrated(resp);
 					setTtm(String(resp.ttm));
+					if (resp.heston) heston.fromFit(resp.heston);
+					if (resp.model !== "sabr") {
+						setSpot(String(resp.spot));
+						setDividend(String(resp.dividend * 100));
+					}
 					if (resp.model === "black_scholes") {
 						setSpot(String(resp.spot));
 						setDividend(String(resp.dividend * 100));
@@ -110,7 +110,28 @@ export function useSimulation() {
 
 	function runSimulation() {
 		setRevealCount(0);
-		if (model === "black_scholes") {
+		const grid = {
+			ttm: Number(ttm),
+			n_steps: Number(nSteps),
+			n_paths: Number(nPaths),
+			seed: Number(seed),
+		};
+		if (surfaceModel) {
+			// Local vol and SLV read the ticker's surface; Heston runs on the
+			// parameters shown (typed, or filled in by a calibration).
+			simulateModel.mutate(
+				model === "heston"
+					? {
+							model,
+							spot: Number(spot),
+							dividend: Number(dividend) / 100,
+							heston: heston.toParams(),
+							rate: Number(rate) / 100,
+							...grid,
+						}
+					: { model, ticker, rate: Number(rate) / 100, ...grid },
+			);
+		} else if (model === "black_scholes") {
 			simulateBS.mutate({
 				spot: Number(spot),
 				rate: Number(rate) / 100,
@@ -173,6 +194,8 @@ export function useSimulation() {
 		setNu,
 		ticker,
 		setTicker,
+		heston,
+		surfaceModel,
 		calibrated,
 		setCalibrated,
 		calibrate,

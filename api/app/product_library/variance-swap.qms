@@ -1,0 +1,27 @@
+# title: Variance swap
+# category: Volatility
+# underlyings: 1
+# source: Demeterfi, Derman, Kamal & Zou, A Guide to Volatility and Variance Swaps, Journal of Derivatives, 1999
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Exchanges the realised variance of daily returns over a year for a fixed volatility strike squared.
+# param: variance_notional = 10000 | amount | Variance notional
+# param: vol_strike = 0.2 | percent | Volatility strike
+#
+# Realised variance = 252 / n x sum of squared daily log returns (zero mean).
+
+2027-01-04
+    variance_notional = 10000
+    vol_strike = 0.2
+    prev = spot()
+    sumsq = 0
+    n = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    sumsq = sumsq + log(spot() / prev) ^ 2
+    n = n + 1
+    prev = spot()
+
+2028-01-04
+    sumsq = sumsq + log(spot() / prev) ^ 2
+    n = n + 1
+    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)

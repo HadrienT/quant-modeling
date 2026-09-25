@@ -5,6 +5,7 @@
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/engines/analytic/heston_cos.hpp"
+#include "quantModeling/engines/mc/path_simulation.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/slv_calibration.hpp"
 #include "quantModeling/market/valuation_context.hpp"
@@ -261,6 +262,31 @@ namespace quantModeling
         EXPECT_THROW(make_script_model<Real>(s), InvalidInput);
         s = two_assets(0.5);
         EXPECT_EQ(make_script_model<Real>(s)->n_underlyings(), 2u);
+    }
+
+    TEST(ScriptModels, SimulatedPathsOfEveryModelAverageToTheForward)
+    {
+        // Whatever the dynamics, the risk-neutral mean of S_T is the forward:
+        // the display simulator drives the same models the pricer does.
+        const Grid g = make_grid(0.3);
+        for (const std::string model : {"black_scholes", "local_vol", "heston"})
+        {
+            ScriptModelSpec s = spec(model, g);
+            s.dividend = 0.01;
+            s.heston = kHeston;
+            auto m = make_script_model<Real>(s);
+            PathSimulationSettings settings;
+            settings.n_steps = 12;
+            settings.n_paths = 40000;
+            settings.seed = 9;
+            const SimulatedPaths out = simulate_model_paths(*m, 100.0, 1.0, settings);
+            ASSERT_EQ(out.time_grid.size(), 13u);
+            double sum = 0.0;
+            for (const auto &path : out.paths)
+                sum += path.back();
+            EXPECT_NEAR(sum / 40000.0, 100.0 * std::exp(0.02), 0.6) << model;
+            EXPECT_DOUBLE_EQ(out.paths.front().front(), 100.0);
+        }
     }
 
 } // namespace quantModeling

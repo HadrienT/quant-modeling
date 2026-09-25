@@ -1,0 +1,25 @@
+# title: Double no-touch
+# category: Barriers and touch options
+# underlyings: 1
+# source: Reiner & Rubinstein, Unscrambling the Binary Code, Risk, 1991
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Pays a fixed amount if the stock stays strictly inside a range at every close: a bet on low volatility.
+# param: low = 0.85 | percent | Lower barrier, % of the initial level
+# param: high = 1.15 | percent | Upper barrier, % of the initial level
+# param: payout = 100 | amount | Cash paid if never touched
+#
+# Daily closes, six months.
+
+2027-01-04
+    low = 0.85
+    high = 1.15
+    payout = 100
+    s0 = spot()
+    inside = 1
+
+schedule(2027-01-05, 2027-06-30, 1D, US, F)
+    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf
+
+2027-07-06
+    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf
+    if inside = 1 then pays payout endIf

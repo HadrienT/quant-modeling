@@ -1,0 +1,24 @@
+# title: Everest
+# category: Multi-asset
+# underlyings: 3
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A long capital-protected note paying a yearly coupon and, at maturity, the rise of the worst of three stocks.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.02 | percent | Guaranteed yearly coupon
+#
+# Three years. Coupons are guaranteed; the capital is protected, and the
+# worst performance is paid if positive.
+
+2027-01-04
+    notional = 1000
+    coupon = 0.02
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+
+2028-01-04  2029-01-04
+    pays notional * coupon
+
+2030-01-04
+    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))
+    pays notional * (1 + coupon + max(worst - 1, 0))

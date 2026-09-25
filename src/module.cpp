@@ -1715,4 +1715,53 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("ttm"), py::arg("n_steps") = 100, py::arg("n_paths") = 30, py::arg("seed") = 1,
           "Simulate illustrative SABR paths via Euler discretisation -- for a display chart, "
           "not pricing (see market/sabr_pde.hpp for arbitrage-free pricing).");
+    m.def(
+        "simulate_model_paths",
+        [](const std::string &model, double spot, double rate, double dividend, double vol,
+           const std::vector<double> &K_grid, const std::vector<double> &T_grid,
+           const std::vector<double> &sigma_loc_flat,
+           const std::map<std::string, double> &heston,
+           const std::vector<double> &leverage_flat, double ttm, std::size_t n_steps,
+           long long n_paths, int seed, int steps_per_year)
+        {
+            using namespace quantModeling;
+            scripting::ScriptModelSpec spec;
+            spec.model = model;
+            spec.spot = spot;
+            spec.rate = rate;
+            spec.dividend = dividend;
+            spec.vol = vol;
+            spec.K_grid = K_grid;
+            spec.T_grid = T_grid;
+            spec.sigma_loc_flat = sigma_loc_flat;
+            spec.leverage_flat = leverage_flat;
+            if (model == "heston" || model == "slv")
+                spec.heston = heston_from_py(heston);
+            spec.max_dt = 1.0 / static_cast<double>(std::max(steps_per_year, 1));
+
+            PathSimulationSettings settings;
+            settings.n_steps = n_steps;
+            settings.n_paths = n_paths;
+            settings.seed = static_cast<std::uint64_t>(seed > 0 ? seed : 1);
+            SimulatedPaths res;
+            {
+                py::gil_scoped_release release;
+                auto sim = scripting::make_script_model<Real>(spec);
+                res = simulate_model_paths(*sim, spot, ttm, settings);
+            }
+            py::dict out;
+            out["time_grid"] = res.time_grid;
+            out["paths"] = res.paths;
+            return out;
+        },
+        py::arg("model"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
+        py::arg("vol") = 0.0, py::arg("K_grid") = std::vector<double>{},
+        py::arg("T_grid") = std::vector<double>{},
+        py::arg("sigma_loc_flat") = std::vector<double>{},
+        py::arg("heston") = std::map<std::string, double>{},
+        py::arg("leverage_flat") = std::vector<double>{}, py::arg("ttm") = 1.0,
+        py::arg("n_steps") = 100, py::arg("n_paths") = 30, py::arg("seed") = 1,
+        py::arg("steps_per_year") = 252,
+        "Illustrative paths of a script model (black_scholes, local_vol, heston, slv) "
+        "with its calibrated inputs, on a regular grid of n_steps dates to ttm.");
 }

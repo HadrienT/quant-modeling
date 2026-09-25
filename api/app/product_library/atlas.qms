@@ -1,0 +1,27 @@
+# title: Atlas
+# category: Multi-asset
+# underlyings: 4
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call on a four-stock basket from which the best and the worst performers are removed at maturity.
+# param: notional = 1000 | amount | Notional
+# param: strike = 1.0 | percent | Strike on the middle basket
+#
+# The basket is the average of the two middle performers.
+
+2027-01-04
+    notional = 1000
+    strike = 1.0
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+    s3 = spot(3)
+
+2028-01-04
+    p0 = spot(0) / s0
+    p1 = spot(1) / s1
+    p2 = spot(2) / s2
+    p3 = spot(3) / s3
+    best = max(max(p0, p1), max(p2, p3))
+    worst = min(min(p0, p1), min(p2, p3))
+    middle = (p0 + p1 + p2 + p3 - best - worst) / 2
+    pays notional * max(middle - strike, 0)

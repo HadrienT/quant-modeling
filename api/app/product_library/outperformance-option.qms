@@ -1,0 +1,20 @@
+# title: Outperformance option
+# category: Multi-asset
+# underlyings: 2
+# source: Margrabe, The Value of an Option to Exchange One Asset for Another, Journal of Finance, 1978
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Pays how much the first stock outperformed the second over the year, if it did.
+# param: notional = 1000 | amount | Notional
+# param: spread = 0.0 | percent | Outperformance strike
+#
+# spot(0) is the stock expected to outperform, spot(1) the benchmark. Its
+# value rises as their correlation falls.
+
+2027-01-04
+    notional = 1000
+    spread = 0.0
+    s0 = spot(0)
+    s1 = spot(1)
+
+2028-01-04
+    pays notional * max(spot(0) / s0 - spot(1) / s1 - spread, 0)

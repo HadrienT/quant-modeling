@@ -1,0 +1,16 @@
+# title: Forward-start call
+# category: Vanillas and digitals
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call whose strike is set three months from now, at a percentage of the spot on that date: the price of future volatility, not of today's moneyness.
+# param: strike = 1.0 | percent | Strike, % of the spot on the strike date
+#
+# The strike is fixed on 2027-04-05; the option matures on 2028-01-04.
+# Its value depends on the forward smile.
+
+2027-04-05
+    strike = 1.0
+    k = strike * spot()
+
+2028-01-04
+    pays max(spot() - k, 0)

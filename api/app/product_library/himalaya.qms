@@ -1,0 +1,36 @@
+# title: Himalaya
+# category: Multi-asset
+# underlyings: 3
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Each year the best performer of the remaining stocks is locked in and removed; pays the average of the locked performances above the strike.
+# param: notional = 1000 | amount | Notional
+# param: strike = 1.0 | percent | Strike on the average locked performance
+#
+# Three stocks, three yearly observations. A removed stock gets a
+# performance of -1000 so it can never be the best again.
+
+2027-01-04
+    notional = 1000
+    strike = 1.0
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+    in0 = 1
+    in1 = 1
+    in2 = 1
+    total = 0
+
+2028-01-04  2029-01-04  2030-01-04
+    q0 = in0 * spot(0) / s0 - (1 - in0) * 1000
+    q1 = in1 * spot(1) / s1 - (1 - in1) * 1000
+    q2 = in2 * spot(2) / s2 - (1 - in2) * 1000
+    best = max(q0, max(q1, q2))
+    total = total + best
+    if q0 = best then
+        in0 = 0
+    else
+        if q1 = best then in1 = 0 else in2 = 0 endIf
+    endIf
+
+2030-01-07
+    pays notional * max(total / 3 - strike, 0)

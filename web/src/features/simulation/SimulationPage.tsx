@@ -6,10 +6,10 @@ import { ParamsForm } from "./ParamsForm";
 import { useSimulation } from "./useSimulation";
 
 /**
- * Simulation page: pick a dynamics (Black-Scholes or SABR — the two models
- * with a real market calibrator today, see CalibratePanel), set parameters
- * by hand, or calibrate against a real ticker's option chain, and watch
- * simulated paths draw themselves in.
+ * Simulation page: pick a dynamics (Black-Scholes, SABR, local vol, Heston,
+ * stochastic-local vol), set parameters by hand or calibrate against a
+ * ticker's option chain (see CalibratePanel; local vol and SLV only from a
+ * ticker's stored surface), and watch simulated paths draw themselves in.
  *
  * "Draw themselves in" is a client-side reveal animation (useSimulation's
  * playAnimation) over paths computed in one batch server-side
@@ -18,6 +18,14 @@ import { useSimulation } from "./useSimulation";
  * itself stays on Hagan's formula / the arbitrage-free PDE); this page is
  * for building intuition about a dynamics, not for pricing anything.
  */
+const MODEL_NAMES: Record<SimulationModel, string> = {
+	black_scholes: "Black-Scholes",
+	sabr: "SABR",
+	local_vol: "Local vol (Dupire)",
+	heston: "Heston",
+	slv: "Stochastic-local vol",
+};
+
 export default function SimulationPage() {
 	const sim = useSimulation();
 	const {
@@ -55,12 +63,19 @@ export default function SimulationPage() {
 							className="rounded border border-hairline bg-surface px-2 py-1"
 							value={model}
 							onChange={(e) => {
-								setModel(e.target.value as SimulationModel);
+								const next = e.target.value as SimulationModel;
+								setModel(next);
 								setCalibrated(null);
+								// Their surface is the ticker's: nothing to type by hand.
+								if (next === "local_vol" || next === "slv")
+									setMode("calibrate");
 							}}
 						>
-							<option value="black_scholes">Black-Scholes</option>
-							<option value="sabr">SABR</option>
+							{Object.entries(MODEL_NAMES).map(([key, label]) => (
+								<option key={key} value={key}>
+									{label}
+								</option>
+							))}
 						</select>
 					</label>
 
@@ -73,6 +88,12 @@ export default function SimulationPage() {
 									: "text-ink-secondary"
 							}`}
 							onClick={() => setMode("manual")}
+							disabled={model === "local_vol" || model === "slv"}
+							title={
+								model === "local_vol" || model === "slv"
+									? "Calibrated on a ticker's stored option chain only"
+									: undefined
+							}
 						>
 							Manual
 						</button>
@@ -112,7 +133,7 @@ export default function SimulationPage() {
 			<SimulationPathsChart
 				paths={chartPaths}
 				revealCount={data ? revealCount : undefined}
-				title={`${model === "black_scholes" ? "Black-Scholes" : "SABR"} — ${nPaths} simulated paths`}
+				title={`${MODEL_NAMES[model]} — ${nPaths} simulated paths`}
 				subtitle={`T = ${ttm} years, ${nSteps} steps`}
 				isLoading={simulate.isPending}
 				error={simulate.error}

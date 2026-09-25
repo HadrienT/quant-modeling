@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -130,9 +130,11 @@ class ScriptUnderlying(BaseModel):
     dividend: float = 0.0
 
 
-class ScriptRequest(BaseModel):
-    """Price a payoff described in text (blueprint/wp/16-scripting.md) — a
-    single underlying reachable as `spot()`, priced by the generic Monte-Carlo
+class ScriptPricingInputs(BaseModel):
+    """How a payoff script is priced (blueprint/wp/16-scripting.md), whatever
+    the script: model, market, underlyings, Monte-Carlo settings. The script
+    comes from ScriptRequest (typed) or ScriptedProductRequest (a library
+    product and its terms). Priced by the generic Monte-Carlo
     engine. `fuzzy` smooths comparisons for a usable pathwise delta on
     digitals and barriers; discrete tests (flags) stay crisp either way.
 
@@ -152,14 +154,15 @@ class ScriptRequest(BaseModel):
     way, `warnings` in the response reports what the script's price depends
     on that the chosen model cannot capture."""
 
-    script: str = Field(..., min_length=1, description="The script source text.")
     model: Literal["auto", "black_scholes", "local_vol", "heston", "slv"] = Field(
         "auto",
         description=(
             "'auto': the model the script needs, among those the inputs allow "
             "(a ticker for the market models, else spot and vol for flat "
             "Black-Scholes); announced in the response's model_choice. "
-            "'black_scholes': flat vol (needs spot and vol). 'local_vol': "
+            "'black_scholes': flat vol (spot and vol, or a ticker: then the "
+            "at-the-money implied vol of its stored smile at the script's last "
+            "date). 'local_vol': "
             "Dupire surface calibrated from the ticker's stored option-chain "
             "snapshot. 'heston': Heston calibrated to that surface. 'slv': "
             "stochastic-local vol, the calibrated Heston times a leverage that "
@@ -233,13 +236,16 @@ class ScriptRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _model_inputs_present(self) -> "ScriptRequest":
+    def _model_inputs_present(self) -> "ScriptPricingInputs":
         if self.underlyings is not None:
             return self._multi_asset_inputs()
         flat_inputs = self.spot is not None and self.vol is not None
         if self.model == "black_scholes":
-            if not flat_inputs:
-                raise ValueError("model='black_scholes' requires both spot and vol")
+            if not flat_inputs and self.ticker is None:
+                raise ValueError(
+                    "model='black_scholes' requires spot and vol, or a ticker "
+                    "(then the at-the-money implied vol of its stored smile)"
+                )
         elif self.model == "auto":
             if self.ticker is None and not flat_inputs:
                 raise ValueError(
@@ -250,7 +256,7 @@ class ScriptRequest(BaseModel):
             raise ValueError(f"model='{self.model}' requires a ticker")
         return self
 
-    def _multi_asset_inputs(self) -> "ScriptRequest":
+    def _multi_asset_inputs(self) -> "ScriptPricingInputs":
         u = self.underlyings or []
         if self.model not in ("auto", "black_scholes"):
             raise ValueError(
@@ -271,6 +277,28 @@ class ScriptRequest(BaseModel):
         if c is None or len(c) != n or any(len(row) != n for row in c):
             raise ValueError(f"typed underlyings need an {n} x {n} correlation")
         return self
+
+
+class ScriptRequest(ScriptPricingInputs):
+    """Price a payoff described in text."""
+
+    script: str = Field(..., min_length=1, description="The script source text.")
+
+
+class ScriptedProductRequest(ScriptPricingInputs):
+    """Price a product of the script library (api/app/product_library) from
+    its term sheet: the terms replace the defaults the script declares, and
+    the dates start a week after the valuation date. The response carries the
+    script actually priced."""
+
+    product: str = Field(
+        ..., min_length=1, description="Library slug, e.g. 'worst-of-autocall'."
+    )
+    terms: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Term name -> value (percent terms as fractions: 0.6 = 60 %). Missing terms take the product's defaults.",
+    )
+    n_paths: int = Field(50_000, ge=1_000, le=5_000_000)
 
 
 class ScriptValidateRequest(BaseModel):
@@ -497,6 +525,11 @@ class ModelCalibration(BaseModel):
     snapshot: date
     heston: Optional[HestonFit] = None
     leverage: Optional[LeverageFit] = None
+    flat_vol: Optional[float] = Field(
+        None,
+        description="Flat Black-Scholes on a ticker: the at-the-money implied "
+        "vol of the stored smile at the script's last date.",
+    )
     seconds: float = Field(
         ..., description="Wall time of the calibration (cached per snapshot)."
     )
@@ -540,6 +573,9 @@ class PricingResponse(BaseModel):
     warnings: List[ModelWarning] = Field(default_factory=list)
     model_choice: Optional[ModelChoice] = Field(
         None, description="Scripted payoffs only: the model used and why."
+    )
+    script: Optional[str] = Field(
+        None, description="Scripted library products only: the script priced."
     )
     compute_ms: Optional[float] = Field(
         None,
@@ -990,6 +1026,9 @@ class LocalVolSurfaceResponse(BaseModel):
 class SimulationModel(str, Enum):
     black_scholes = "black_scholes"
     sabr = "sabr"
+    local_vol = "local_vol"
+    heston = "heston"
+    slv = "slv"
 
 
 class BSPathRequest(BaseModel):
@@ -1044,8 +1083,9 @@ class SimulationCalibrateResponse(BaseModel):
     dividend: float
     forward: float
     ttm: float
-    slice_ttm: float = Field(
-        description="The calibrated SVI slice's own maturity, closest to the requested ttm"
+    slice_ttm: Optional[float] = Field(
+        None,
+        description="Black-Scholes and SABR: the calibrated SVI slice's own maturity, closest to the requested ttm",
     )
     vol: Optional[float] = None
     alpha: Optional[float] = None
@@ -1054,5 +1094,84 @@ class SimulationCalibrateResponse(BaseModel):
     nu: Optional[float] = None
     rmse: Optional[float] = None
     converged: Optional[bool] = None
-    n_clean_quotes: int
-    cleaning_summary: str
+    n_clean_quotes: Optional[int] = None
+    cleaning_summary: Optional[str] = None
+    snapshot: Optional[date] = Field(
+        None, description="Local vol, Heston, SLV: the stored option-chain snapshot."
+    )
+    surface: Optional[str] = Field(
+        None, description="Local vol, SLV: the calibrated surface, in words."
+    )
+    heston: Optional[HestonFit] = None
+    leverage: Optional[LeverageFit] = None
+
+
+class HestonParams(BaseModel):
+    v0: float = Field(..., ge=0)
+    kappa: float = Field(..., gt=0)
+    theta: float = Field(..., gt=0)
+    xi: float = Field(..., gt=0)
+    rho: float = Field(..., ge=-1, le=1)
+
+
+class ModelPathRequest(BaseModel):
+    """Paths of local vol, Heston or SLV. Local vol and SLV need a `ticker`:
+    the surface (and the SLV leverage) come from its stored option chain.
+    Heston takes `heston` with `spot`, `dividend` typed, or a `ticker` whose
+    surface it is calibrated to."""
+
+    model: Literal["local_vol", "heston", "slv"]
+    ticker: Optional[str] = Field(None, min_length=1)
+    spot: Optional[float] = Field(None, gt=0)
+    dividend: Optional[float] = Field(
+        None,
+        description="Typed Heston only (default 0); a ticker's comes from the database.",
+    )
+    heston: Optional[HestonParams] = None
+    rate: float = 0.05
+    ttm: float = Field(gt=0, le=10)
+    n_steps: int = Field(100, ge=2, le=1000)
+    n_paths: int = Field(30, ge=1, le=500)
+    seed: int = 1
+
+    @model_validator(mode="after")
+    def _inputs(self) -> "ModelPathRequest":
+        typed = self.heston is not None and self.spot is not None
+        if self.model == "heston" and not (typed or self.ticker):
+            raise ValueError("heston needs its parameters and a spot, or a ticker")
+        if self.model != "heston" and not self.ticker:
+            raise ValueError(f"{self.model} needs a ticker (its surface is calibrated)")
+        return self
+
+
+class RiskProfileRequest(BaseModel):
+    """A library product whose risk profile to compute (risk_profile.py)."""
+
+    product: str = Field(..., min_length=1)
+    terms: Dict[str, float] = Field(default_factory=dict)
+
+
+class RiskProfileRow(BaseModel):
+    factor: str
+    bump: str = Field(..., description="The bump applied to the parameter.")
+    change: float = Field(..., description="Price change for the bump.")
+    std_error: float = Field(
+        ..., description="Paired Monte-Carlo standard error of the change."
+    )
+    position: Literal["long", "short", "not significant", "negligible"] = Field(
+        ...,
+        description="The holder's position: long if the price rises with the "
+        "parameter. 'not significant' within two standard errors, "
+        "'negligible' below 0.01 % of the price.",
+    )
+
+
+class RiskProfileResponse(BaseModel):
+    product: str
+    price: float
+    price_std_error: float
+    reference: Dict[str, float] = Field(
+        ..., description="The reference market the profile is computed on."
+    )
+    rows: List[RiskProfileRow]
+    method: str

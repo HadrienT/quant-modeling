@@ -1,0 +1,23 @@
+# title: One-touch (down)
+# category: Barriers and touch options
+# underlyings: 1
+# source: Reiner & Rubinstein, Unscrambling the Binary Code, Risk, 1991
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Pays a fixed amount at maturity if the stock closes at or below the touch level at least once.
+# param: level = 0.8 | percent | Touch level, % of the initial level
+# param: payout = 100 | amount | Cash paid if touched
+#
+# Daily closes; paid at maturity, not when touched.
+
+2027-01-04
+    level = 0.8
+    payout = 100
+    s0 = spot()
+    touched = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    if spot() <= level * s0 then touched = 1 endIf
+
+2028-01-04
+    if spot() <= level * s0 then touched = 1 endIf
+    if touched = 1 then pays payout endIf

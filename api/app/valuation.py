@@ -152,6 +152,14 @@ PRODUCTS: dict[str, Product] = {
         scheme=lambda r: r.sampler,
         own_spans=True,
     ),
+    "scripted_product": Product(
+        s.ScriptedProductRequest,
+        ps.price_scripted_product,
+        lambda r: r.model,
+        _const("mc"),
+        scheme=lambda r: r.sampler,
+        own_spans=True,
+    ),
     "barrier": Product(
         s.BarrierRequest, ps.price_barrier, _const("black_scholes"), _const("mc")
     ),

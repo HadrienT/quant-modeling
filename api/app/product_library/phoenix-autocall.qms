@@ -1,0 +1,51 @@
+# title: Phoenix autocall with memory
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Semi-annual coupons paid when the stock is above the coupon barrier, with missed coupons caught up; redeemed early above the autocall level; capital at risk below the protection barrier at maturity.
+# param: notional = 1000 | amount | Notional
+# param: coupon = 0.05 | percent | Coupon per period, % of notional
+# param: autocall = 1.0 | percent | Autocall level, % of the initial level
+# param: coupon_barrier = 0.7 | percent | Coupon barrier, % of the initial level
+# param: protection = 0.6 | percent | Protection barrier at maturity, % of the initial level
+#
+# Below the protection barrier at maturity the capital is repaid in
+# proportion to the fall (European knock-in).
+
+2027-01-04
+    notional = 1000
+    coupon = 0.05
+    autocall = 1.0
+    coupon_barrier = 0.7
+    protection = 0.6
+    s0 = spot()
+    miss = 0
+    alive = 1
+
+2027-07-06  2028-01-04  2028-07-06
+    if alive = 1 then
+        if spot() >= autocall * s0 then
+            pays notional * (1 + coupon * (miss + 1))
+            alive = 0
+        else
+            if spot() >= coupon_barrier * s0 then
+                pays notional * coupon * (miss + 1)
+                miss = 0
+            else
+                miss = miss + 1
+            endIf
+        endIf
+    endIf
+
+2029-01-04
+    if alive = 1 then
+        if spot() >= coupon_barrier * s0 then
+            pays notional * (1 + coupon * (miss + 1))
+        else
+            if spot() < protection * s0 then
+                pays notional * spot() / s0
+            else
+                pays notional
+            endIf
+        endIf
+    endIf

@@ -1,0 +1,20 @@
+# title: Basket call
+# category: Multi-asset
+# underlyings: 3
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call on the equally weighted average performance of three stocks: diversification makes it cheaper than three calls.
+# param: notional = 1000 | amount | Notional
+# param: strike = 1.0 | percent | Strike on the basket performance
+#
+# Performance of each stock = final / strike-date level.
+
+2027-01-04
+    notional = 1000
+    strike = 1.0
+    s0 = spot(0)
+    s1 = spot(1)
+    s2 = spot(2)
+
+2028-01-04
+    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3
+    pays notional * max(basket - strike, 0)

@@ -32,30 +32,71 @@ export function ParamsForm(sim: UseSimulation) {
 		setNPaths,
 		seed,
 		setSeed,
+		heston,
 	} = sim;
+	const marketFields = (
+		<>
+			<Field
+				label="Spot"
+				inputMode="decimal"
+				value={spot}
+				onChange={(e) => setSpot(e.target.value)}
+			/>
+			<Field
+				label="Rate %"
+				inputMode="decimal"
+				value={rate}
+				onChange={(e) => setRate(e.target.value)}
+			/>
+			<Field
+				label="Dividend %"
+				inputMode="decimal"
+				value={dividend}
+				onChange={(e) => setDividend(e.target.value)}
+			/>
+		</>
+	);
 
 	return (
 		<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-			{model === "black_scholes" ? (
+			{model === "heston" || model === "slv" ? (
 				<>
-					<Field
-						label="Spot"
-						inputMode="decimal"
-						value={spot}
-						onChange={(e) => setSpot(e.target.value)}
-					/>
-					<Field
-						label="Rate %"
-						inputMode="decimal"
-						value={rate}
-						onChange={(e) => setRate(e.target.value)}
-					/>
-					<Field
-						label="Dividend %"
-						inputMode="decimal"
-						value={dividend}
-						onChange={(e) => setDividend(e.target.value)}
-					/>
+					{model === "heston" ? (
+						marketFields
+					) : (
+						<Field
+							label="Rate %"
+							inputMode="decimal"
+							value={rate}
+							onChange={(e) => setRate(e.target.value)}
+						/>
+					)}
+					{heston.fields.map((f) => (
+						<Field
+							key={f.label}
+							label={f.label}
+							inputMode="decimal"
+							value={f.value}
+							readOnly={model === "slv"}
+							title={
+								model === "slv"
+									? "The leverage was calibrated with these: SLV always runs with the calibrated Heston"
+									: undefined
+							}
+							onChange={(e) => f.set(e.target.value)}
+						/>
+					))}
+				</>
+			) : model === "local_vol" ? (
+				<Field
+					label="Rate %"
+					inputMode="decimal"
+					value={rate}
+					onChange={(e) => setRate(e.target.value)}
+				/>
+			) : model === "black_scholes" ? (
+				<>
+					{marketFields}
 					<Field
 						label="Vol %"
 						inputMode="decimal"

@@ -1,0 +1,1184 @@
+[
+	{
+		"slug": "accumulator",
+		"title": "Accumulator",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Buys one share a week at a discount to the initial level, twice as many when the stock is below that price, until it closes at or above the knock-out level.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 0.9,
+				"unit": "percent",
+				"label": "Purchase price, % of the initial level"
+			},
+			{
+				"name": "knock_out",
+				"default": 1.05,
+				"unit": "percent",
+				"label": "Knock-out level, % of the initial level"
+			},
+			{
+				"name": "gearing",
+				"default": 2.0,
+				"unit": "number",
+				"label": "Shares bought below the strike, per share above"
+			}
+		],
+		"script": "# Weekly for six months. Each purchase is marked at the close: its value is\n# (spot - strike) per share, paid on the purchase date. The knock-out is\n# checked first: no purchase on the day it knocks out.\n\n2027-01-04\n    strike = 0.9\n    knock_out = 1.05\n    gearing = 2\n    s0 = spot()\n    k = strike * s0\n    alive = 1\n\nschedule(2027-01-11, 2027-06-28, 1W, US, F)\n    if spot() >= knock_out * s0 then alive = 0 endIf\n    if alive = 1 then\n        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf\n    endIf\n\n2027-07-06\n    if spot() >= knock_out * s0 then alive = 0 endIf\n    if alive = 1 then\n        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf\n    endIf\n"
+	},
+	{
+		"slug": "altiplano",
+		"title": "Altiplano",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A capital-protected note paying a large coupon if none of three stocks ever closes a month below the barrier; otherwise a basket call instead.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.2,
+				"unit": "percent",
+				"label": "Coupon if no stock breaches"
+			},
+			{
+				"name": "barrier",
+				"default": 0.8,
+				"unit": "percent",
+				"label": "Barrier on each stock, % of its initial level"
+			}
+		],
+		"script": "# Monthly monitoring of each stock against its own strike-date level.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.2\n    barrier = 0.8\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    breached = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n\n2028-01-04\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    if breached = 0 then\n        pays notional * (1 + coupon)\n    else\n        pays notional * (1 + max(basket - 1, 0))\n    endIf\n"
+	},
+	{
+		"slug": "asian-call",
+		"title": "Arithmetic Asian call",
+		"category": "Asians, lookbacks and ladders",
+		"underlyings": 1,
+		"sources": [
+			"Kemna & Vorst, A Pricing Method for Options Based on Average Asset Values, Journal of Banking & Finance, 1990",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call on the average of twelve monthly closes instead of the final price: cheaper than a vanilla, and hard to manipulate at expiry.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			}
+		],
+		"script": "# Twelve monthly fixings, the last one on the maturity date.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    acc = 0\n    n = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    acc = acc + spot()\n    n = n + 1\n\n2028-01-04\n    acc = acc + spot()\n    n = n + 1\n    pays max(acc / n - strike * s0, 0)\n"
+	},
+	{
+		"slug": "asian-in-call",
+		"title": "Averaging-in call",
+		"category": "Asians, lookbacks and ladders",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call whose strike is the average of the first three monthly closes, so a bad entry day does not set the strike.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the average of the first three fixings"
+			}
+		],
+		"script": "2027-01-04\n    strike = 1.0\n    acc = spot()\n\n2027-02-04  2027-03-04\n    acc = acc + spot()\n\n2028-01-04\n    pays max(spot() - strike * acc / 3, 0)\n"
+	},
+	{
+		"slug": "athena-autocall",
+		"title": "Athena (express) autocall",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Redeemed at the first anniversary the stock is at or above the autocall level, with a coupon per year elapsed; capital at risk below the protection barrier after three years.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.08,
+				"unit": "percent",
+				"label": "Coupon per year, % of notional"
+			},
+			{
+				"name": "autocall",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Autocall level, % of the initial level"
+			},
+			{
+				"name": "protection",
+				"default": 0.6,
+				"unit": "percent",
+				"label": "Protection barrier at maturity, % of the initial level"
+			}
+		],
+		"script": "# Snowball coupon: the coupon times the number of years at redemption.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    autocall = 1.0\n    protection = 0.6\n    s0 = spot()\n    alive = 1\n\n2028-01-04\n    if spot() >= autocall * s0 then\n        pays notional * (1 + coupon)\n        alive = 0\n    endIf\n\n2029-01-04\n    if alive = 1 and spot() >= autocall * s0 then\n        pays notional * (1 + 2 * coupon)\n        alive = 0\n    endIf\n\n2030-01-04\n    if alive = 1 then\n        if spot() >= autocall * s0 then\n            pays notional * (1 + 3 * coupon)\n        else\n            if spot() < protection * s0 then pays notional * spot() / s0 else pays notional endIf\n        endIf\n    endIf\n"
+	},
+	{
+		"slug": "atlas",
+		"title": "Atlas",
+		"category": "Multi-asset",
+		"underlyings": 4,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call on a four-stock basket from which the best and the worst performers are removed at maturity.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike on the middle basket"
+			}
+		],
+		"script": "# The basket is the average of the two middle performers.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    s3 = spot(3)\n\n2028-01-04\n    p0 = spot(0) / s0\n    p1 = spot(1) / s1\n    p2 = spot(2) / s2\n    p3 = spot(3) / s3\n    best = max(max(p0, p1), max(p2, p3))\n    worst = min(min(p0, p1), min(p2, p3))\n    middle = (p0 + p1 + p2 + p3 - best - worst) / 2\n    pays notional * max(middle - strike, 0)\n"
+	},
+	{
+		"slug": "barrier-reverse-convertible",
+		"title": "Barrier reverse convertible",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Rubinstein & Reiner, Breaking Down the Barriers, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Quarterly coupons; the capital is at risk only if the stock ever closes at or below the barrier and ends below its initial level.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.025,
+				"unit": "percent",
+				"label": "Quarterly coupon, % of notional"
+			},
+			{
+				"name": "barrier",
+				"default": 0.6,
+				"unit": "percent",
+				"label": "Knock-in barrier, % of the initial level"
+			}
+		],
+		"script": "# Coupons are paid whatever happens; daily closes for the barrier.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.025\n    barrier = 0.6\n    s0 = spot()\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then ki = 1 endIf\n\n2027-04-05  2027-07-06  2027-10-04\n    pays notional * coupon\n\n2028-01-04\n    if spot() <= barrier * s0 then ki = 1 endIf\n    pays notional * coupon\n    if ki = 1 and spot() < s0 then pays notional * spot() / s0 else pays notional endIf\n"
+	},
+	{
+		"slug": "basket-call",
+		"title": "Basket call",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call on the equally weighted average performance of three stocks: diversification makes it cheaper than three calls.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike on the basket performance"
+			}
+		],
+		"script": "# Performance of each stock = final / strike-date level.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    pays notional * max(basket - strike, 0)\n"
+	},
+	{
+		"slug": "best-of-call",
+		"title": "Best-of call",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Stulz, Options on the Minimum or the Maximum of Two Risky Assets, Journal of Financial Economics, 1982",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call on the best performer of three stocks: expensive, and worth more the less the stocks move together.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike on the best performance"
+			}
+		],
+		"script": "2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    best = max(spot(0) / s0, max(spot(1) / s1, spot(2) / s2))\n    pays notional * max(best - strike, 0)\n"
+	},
+	{
+		"slug": "bonus-certificate",
+		"title": "Bonus certificate",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Tracks the stock, but pays at least the bonus level if it never closes at or below the barrier.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "bonus",
+				"default": 1.2,
+				"unit": "percent",
+				"label": "Bonus level, % of the initial level"
+			},
+			{
+				"name": "barrier",
+				"default": 0.7,
+				"unit": "percent",
+				"label": "Barrier, % of the initial level"
+			}
+		],
+		"script": "# Once the barrier is touched the certificate is plain stock.\n\n2027-01-04\n    notional = 1000\n    bonus = 1.2\n    barrier = 0.7\n    s0 = spot()\n    hit = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then hit = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then hit = 1 endIf\n    if hit = 0 then\n        pays notional * max(spot() / s0, bonus)\n    else\n        pays notional * spot() / s0\n    endIf\n"
+	},
+	{
+		"slug": "call-spread",
+		"title": "Call spread (capped call)",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call whose gain is capped: long a call at the strike, short a call at the cap.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			},
+			{
+				"name": "cap",
+				"default": 1.2,
+				"unit": "percent",
+				"label": "Cap, % of the initial level"
+			}
+		],
+		"script": "2027-01-04\n    strike = 1.0\n    cap = 1.2\n    s0 = spot()\n\n2028-01-04\n    pays min(max(spot() - strike * s0, 0), (cap - strike) * s0)\n"
+	},
+	{
+		"slug": "capital-protected-note",
+		"title": "Capital-protected note",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "The capital back for sure, plus a share of the stock's rise up to a cap: a zero-coupon bond and a call spread.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "participation",
+				"default": 0.8,
+				"unit": "percent",
+				"label": "Participation in the rise"
+			},
+			{
+				"name": "cap",
+				"default": 0.4,
+				"unit": "percent",
+				"label": "Cap on the performance"
+			}
+		],
+		"script": "# Two years, 100% capital protection.\n\n2027-01-04\n    notional = 1000\n    participation = 0.8\n    cap = 0.4\n    s0 = spot()\n\n2029-01-04\n    pays notional * (1 + participation * min(max(spot() / s0 - 1, 0), cap))\n"
+	},
+	{
+		"slug": "cliquet",
+		"title": "Locally capped cliquet",
+		"category": "Cliquets",
+		"underlyings": 1,
+		"sources": [
+			"Wilmott, Cliquet Options and Volatility Models, Wilmott Magazine, 2002",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Adds up four quarterly returns, each floored and capped: a guaranteed-positive, capped exposure to steady growth.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "local_floor",
+				"default": 0.0,
+				"unit": "percent",
+				"label": "Floor on each quarterly return"
+			},
+			{
+				"name": "local_cap",
+				"default": 0.03,
+				"unit": "percent",
+				"label": "Cap on each quarterly return"
+			}
+		],
+		"script": "# Each quarter's return is measured from the previous quarter's close.\n\n2027-01-04\n    notional = 1000\n    local_floor = 0.0\n    local_cap = 0.03\n    ref = spot()\n    total = 0\n\n2027-04-05  2027-07-06  2027-10-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    ref = spot()\n\n2028-01-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    pays notional * total\n"
+	},
+	{
+		"slug": "corridor-variance-swap",
+		"title": "Corridor variance swap",
+		"category": "Volatility",
+		"underlyings": 1,
+		"sources": [
+			"Demeterfi, Derman, Kamal & Zou, A Guide to Volatility and Variance Swaps, Journal of Derivatives, 1999",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A variance swap that only counts the days the stock starts inside a corridor: cheaper downside or upside variance.",
+		"params": [
+			{
+				"name": "variance_notional",
+				"default": 10000.0,
+				"unit": "amount",
+				"label": "Variance notional"
+			},
+			{
+				"name": "vol_strike",
+				"default": 0.2,
+				"unit": "percent",
+				"label": "Volatility strike"
+			},
+			{
+				"name": "low",
+				"default": 0.8,
+				"unit": "percent",
+				"label": "Corridor low, % of the initial level"
+			},
+			{
+				"name": "high",
+				"default": 1.2,
+				"unit": "percent",
+				"label": "Corridor high, % of the initial level"
+			}
+		],
+		"script": "# A return enters the sum only if the previous close was inside the\n# corridor; the annualisation still divides by every day observed.\n\n2027-01-04\n    variance_notional = 10000\n    vol_strike = 0.2\n    low = 0.8\n    high = 1.2\n    s0 = spot()\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf\n    n = n + 1\n    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)\n"
+	},
+	{
+		"slug": "digital-call",
+		"title": "Digital call (cash-or-nothing)",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Reiner & Rubinstein, Unscrambling the Binary Code, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Pays a fixed amount if the stock ends above the strike, nothing otherwise.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			},
+			{
+				"name": "payout",
+				"default": 100.0,
+				"unit": "amount",
+				"label": "Cash paid if above the strike"
+			}
+		],
+		"script": "# A hard threshold makes the Monte-Carlo delta noisy: tick Fuzzy to smooth it.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    if spot() > strike * s0 then pays payout endIf\n"
+	},
+	{
+		"slug": "discount-certificate",
+		"title": "Discount certificate",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "The stock bought at a discount, with the upside capped: long the stock, short a call.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional of stock at the initial level"
+			},
+			{
+				"name": "cap",
+				"default": 1.05,
+				"unit": "percent",
+				"label": "Cap, % of the initial level"
+			}
+		],
+		"script": "# The discount is the price of the call sold, visible in the present value.\n\n2027-01-04\n    notional = 1000\n    cap = 1.05\n    s0 = spot()\n\n2028-01-04\n    pays notional * min(spot() / s0, cap)\n"
+	},
+	{
+		"slug": "double-no-touch",
+		"title": "Double no-touch",
+		"category": "Barriers and touch options",
+		"underlyings": 1,
+		"sources": [
+			"Reiner & Rubinstein, Unscrambling the Binary Code, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Pays a fixed amount if the stock stays strictly inside a range at every close: a bet on low volatility.",
+		"params": [
+			{
+				"name": "low",
+				"default": 0.85,
+				"unit": "percent",
+				"label": "Lower barrier, % of the initial level"
+			},
+			{
+				"name": "high",
+				"default": 1.15,
+				"unit": "percent",
+				"label": "Upper barrier, % of the initial level"
+			},
+			{
+				"name": "payout",
+				"default": 100.0,
+				"unit": "amount",
+				"label": "Cash paid if never touched"
+			}
+		],
+		"script": "# Daily closes, six months.\n\n2027-01-04\n    low = 0.85\n    high = 1.15\n    payout = 100\n    s0 = spot()\n    inside = 1\n\nschedule(2027-01-05, 2027-06-30, 1D, US, F)\n    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf\n\n2027-07-06\n    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf\n    if inside = 1 then pays payout endIf\n"
+	},
+	{
+		"slug": "down-and-in-put",
+		"title": "Down-and-in put",
+		"category": "Barriers and touch options",
+		"underlyings": 1,
+		"sources": [
+			"Rubinstein & Reiner, Breaking Down the Barriers, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A put that only comes to life if the stock closes at or below the barrier at some point.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			},
+			{
+				"name": "barrier",
+				"default": 0.7,
+				"unit": "percent",
+				"label": "Knock-in barrier, % of the initial level"
+			}
+		],
+		"script": "# Daily closes. The building block of every barrier reverse convertible.\n\n2027-01-04\n    strike = 1.0\n    barrier = 0.7\n    s0 = spot()\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then ki = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then ki = 1 endIf\n    if ki = 1 then pays max(strike * s0 - spot(), 0) endIf\n"
+	},
+	{
+		"slug": "european-call",
+		"title": "European call",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Black & Scholes, The Pricing of Options and Corporate Liabilities, Journal of Political Economy, 1973",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "The right to buy the stock at its strike level one year later: pays the rise of the stock over the strike, nothing if it ends below.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			}
+		],
+		"script": "# Paid in the stock's currency, per share.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays max(spot() - strike * s0, 0)\n"
+	},
+	{
+		"slug": "everest",
+		"title": "Everest",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A long capital-protected note paying a yearly coupon and, at maturity, the rise of the worst of three stocks.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.02,
+				"unit": "percent",
+				"label": "Guaranteed yearly coupon"
+			}
+		],
+		"script": "# Three years. Coupons are guaranteed; the capital is protected, and the\n# worst performance is paid if positive.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.02\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04  2029-01-04\n    pays notional * coupon\n\n2030-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    pays notional * (1 + coupon + max(worst - 1, 0))\n"
+	},
+	{
+		"slug": "fixed-lookback-call",
+		"title": "Fixed-strike lookback call",
+		"category": "Asians, lookbacks and ladders",
+		"underlyings": 1,
+		"sources": [
+			"Goldman, Sosin & Gatto, Path Dependent Options: Buy at the Low, Sell at the High, Journal of Finance, 1979",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call on the highest weekly close of the year rather than the final one.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			}
+		],
+		"script": "2027-01-04\n    strike = 1.0\n    s0 = spot()\n    hi = spot()\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    hi = max(hi, spot())\n\n2028-01-04\n    hi = max(hi, spot())\n    pays max(hi - strike * s0, 0)\n"
+	},
+	{
+		"slug": "floating-lookback-call",
+		"title": "Floating-strike lookback call",
+		"category": "Asians, lookbacks and ladders",
+		"underlyings": 1,
+		"sources": [
+			"Goldman, Sosin & Gatto, Path Dependent Options: Buy at the Low, Sell at the High, Journal of Finance, 1979",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Buy at the lowest close of the year: pays the final price minus the minimum close.",
+		"params": [],
+		"script": "# The minimum is taken over every daily close from the strike date on.\n\n2027-01-04\n    lo = spot()\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    lo = min(lo, spot())\n\n2028-01-04\n    lo = min(lo, spot())\n    pays spot() - lo\n"
+	},
+	{
+		"slug": "forward-start-call",
+		"title": "Forward-start call",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call whose strike is set three months from now, at a percentage of the spot on that date: the price of future volatility, not of today's moneyness.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the spot on the strike date"
+			}
+		],
+		"script": "# The strike is fixed on 2027-04-05; the option matures on 2028-01-04.\n# Its value depends on the forward smile.\n\n2027-04-05\n    strike = 1.0\n    k = strike * spot()\n\n2028-01-04\n    pays max(spot() - k, 0)\n"
+	},
+	{
+		"slug": "globally-floored-cliquet",
+		"title": "Globally floored cliquet",
+		"category": "Cliquets",
+		"underlyings": 1,
+		"sources": [
+			"Wilmott, Cliquet Options and Volatility Models, Wilmott Magazine, 2002",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Twelve monthly returns, each clipped to a range, summed, with a guaranteed minimum on the total.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "local_floor",
+				"default": -0.03,
+				"unit": "percent",
+				"label": "Floor on each monthly return"
+			},
+			{
+				"name": "local_cap",
+				"default": 0.03,
+				"unit": "percent",
+				"label": "Cap on each monthly return"
+			},
+			{
+				"name": "global_floor",
+				"default": 0.02,
+				"unit": "percent",
+				"label": "Guaranteed minimum of the sum"
+			}
+		],
+		"script": "# The global floor is what makes it sensitive to the forward smile.\n\n2027-01-04\n    notional = 1000\n    local_floor = -0.03\n    local_cap = 0.03\n    global_floor = 0.02\n    ref = spot()\n    total = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    ref = spot()\n\n2028-01-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    pays notional * max(total, global_floor)\n"
+	},
+	{
+		"slug": "himalaya",
+		"title": "Himalaya",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Each year the best performer of the remaining stocks is locked in and removed; pays the average of the locked performances above the strike.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike on the average locked performance"
+			}
+		],
+		"script": "# Three stocks, three yearly observations. A removed stock gets a\n# performance of -1000 so it can never be the best again.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    in0 = 1\n    in1 = 1\n    in2 = 1\n    total = 0\n\n2028-01-04  2029-01-04  2030-01-04\n    q0 = in0 * spot(0) / s0 - (1 - in0) * 1000\n    q1 = in1 * spot(1) / s1 - (1 - in1) * 1000\n    q2 = in2 * spot(2) / s2 - (1 - in2) * 1000\n    best = max(q0, max(q1, q2))\n    total = total + best\n    if q0 = best then\n        in0 = 0\n    else\n        if q1 = best then in1 = 0 else in2 = 0 endIf\n    endIf\n\n2030-01-07\n    pays notional * max(total / 3 - strike, 0)\n"
+	},
+	{
+		"slug": "ladder-call",
+		"title": "Ladder call",
+		"category": "Asians, lookbacks and ladders",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "An at-the-money call that locks in gains: once the stock closes above a rung, at least that rung is paid.",
+		"params": [
+			{
+				"name": "step",
+				"default": 0.1,
+				"unit": "percent",
+				"label": "Gap between rungs, % of the initial level"
+			}
+		],
+		"script": "# Three rungs above the initial level, daily closes. Pays the larger of the\n# final call and the highest rung reached.\n\n2027-01-04\n    step = 0.1\n    s0 = spot()\n    rung = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= (1 + step) * s0 then rung = max(rung, 1 + step) endIf\n    if spot() >= (1 + 2 * step) * s0 then rung = max(rung, 1 + 2 * step) endIf\n    if spot() >= (1 + 3 * step) * s0 then rung = max(rung, 1 + 3 * step) endIf\n\n2028-01-04\n    pays max(max(spot() - s0, 0), (rung - 1) * s0)\n"
+	},
+	{
+		"slug": "napoleon",
+		"title": "Napoleon",
+		"category": "Cliquets",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Each year pays a fixed coupon plus the worst monthly return of that year, floored at zero; capital back after two years.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.08,
+				"unit": "percent",
+				"label": "Fixed part of the yearly coupon"
+			}
+		],
+		"script": "# Each year's coupon is paid on its anniversary; the capital is repaid with\n# the last one.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    ref = spot()\n    worst = 1\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n\n2028-01-04\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n    pays notional * max(coupon + worst, 0)\n    worst = 1\n\nschedule(2028-02-04, 2028-12-04, 1M, US, F)\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n\n2029-01-04\n    worst = min(worst, spot() / ref - 1)\n    pays notional * (1 + max(coupon + worst, 0))\n"
+	},
+	{
+		"slug": "one-touch",
+		"title": "One-touch (down)",
+		"category": "Barriers and touch options",
+		"underlyings": 1,
+		"sources": [
+			"Reiner & Rubinstein, Unscrambling the Binary Code, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Pays a fixed amount at maturity if the stock closes at or below the touch level at least once.",
+		"params": [
+			{
+				"name": "level",
+				"default": 0.8,
+				"unit": "percent",
+				"label": "Touch level, % of the initial level"
+			},
+			{
+				"name": "payout",
+				"default": 100.0,
+				"unit": "amount",
+				"label": "Cash paid if touched"
+			}
+		],
+		"script": "# Daily closes; paid at maturity, not when touched.\n\n2027-01-04\n    level = 0.8\n    payout = 100\n    s0 = spot()\n    touched = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= level * s0 then touched = 1 endIf\n\n2028-01-04\n    if spot() <= level * s0 then touched = 1 endIf\n    if touched = 1 then pays payout endIf\n"
+	},
+	{
+		"slug": "outperformance-option",
+		"title": "Outperformance option",
+		"category": "Multi-asset",
+		"underlyings": 2,
+		"sources": [
+			"Margrabe, The Value of an Option to Exchange One Asset for Another, Journal of Finance, 1978",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Pays how much the first stock outperformed the second over the year, if it did.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "spread",
+				"default": 0.0,
+				"unit": "percent",
+				"label": "Outperformance strike"
+			}
+		],
+		"script": "# spot(0) is the stock expected to outperform, spot(1) the benchmark. Its\n# value rises as their correlation falls.\n\n2027-01-04\n    notional = 1000\n    spread = 0.0\n    s0 = spot(0)\n    s1 = spot(1)\n\n2028-01-04\n    pays notional * max(spot(0) / s0 - spot(1) / s1 - spread, 0)\n"
+	},
+	{
+		"slug": "phoenix-autocall",
+		"title": "Phoenix autocall with memory",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Semi-annual coupons paid when the stock is above the coupon barrier, with missed coupons caught up; redeemed early above the autocall level; capital at risk below the protection barrier at maturity.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.05,
+				"unit": "percent",
+				"label": "Coupon per period, % of notional"
+			},
+			{
+				"name": "autocall",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Autocall level, % of the initial level"
+			},
+			{
+				"name": "coupon_barrier",
+				"default": 0.7,
+				"unit": "percent",
+				"label": "Coupon barrier, % of the initial level"
+			},
+			{
+				"name": "protection",
+				"default": 0.6,
+				"unit": "percent",
+				"label": "Protection barrier at maturity, % of the initial level"
+			}
+		],
+		"script": "# Below the protection barrier at maturity the capital is repaid in\n# proportion to the fall (European knock-in).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.05\n    autocall = 1.0\n    coupon_barrier = 0.7\n    protection = 0.6\n    s0 = spot()\n    miss = 0\n    alive = 1\n\n2027-07-06  2028-01-04  2028-07-06\n    if alive = 1 then\n        if spot() >= autocall * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n            alive = 0\n        else\n            if spot() >= coupon_barrier * s0 then\n                pays notional * coupon * (miss + 1)\n                miss = 0\n            else\n                miss = miss + 1\n            endIf\n        endIf\n    endIf\n\n2029-01-04\n    if alive = 1 then\n        if spot() >= coupon_barrier * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n        else\n            if spot() < protection * s0 then\n                pays notional * spot() / s0\n            else\n                pays notional\n            endIf\n        endIf\n    endIf\n"
+	},
+	{
+		"slug": "rainbow-call",
+		"title": "Rainbow call",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call on a basket whose weights go by rank: the largest weight on the best performer, the smallest on the worst.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "w_best",
+				"default": 0.5,
+				"unit": "percent",
+				"label": "Weight of the best performer"
+			},
+			{
+				"name": "w_middle",
+				"default": 0.3,
+				"unit": "percent",
+				"label": "Weight of the second"
+			},
+			{
+				"name": "w_worst",
+				"default": 0.2,
+				"unit": "percent",
+				"label": "Weight of the worst"
+			}
+		],
+		"script": "# With three stocks the middle performer is the sum minus the best and the\n# worst.\n\n2027-01-04\n    notional = 1000\n    w_best = 0.5\n    w_middle = 0.3\n    w_worst = 0.2\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    p0 = spot(0) / s0\n    p1 = spot(1) / s1\n    p2 = spot(2) / s2\n    best = max(p0, max(p1, p2))\n    worst = min(p0, min(p1, p2))\n    middle = p0 + p1 + p2 - best - worst\n    pays notional * max(w_best * best + w_middle * middle + w_worst * worst - 1, 0)\n"
+	},
+	{
+		"slug": "range-accrual",
+		"title": "Range accrual note",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Earns a coupon on each day the stock closes inside a range around its initial level; capital protected.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.08,
+				"unit": "percent",
+				"label": "Coupon per year if every day is in range"
+			},
+			{
+				"name": "low",
+				"default": 0.9,
+				"unit": "percent",
+				"label": "Lower bound, % of the initial level"
+			},
+			{
+				"name": "high",
+				"default": 1.1,
+				"unit": "percent",
+				"label": "Upper bound, % of the initial level"
+			}
+		],
+		"script": "# Coupon at maturity = coupon x (days in range / days observed).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    low = 0.9\n    high = 1.1\n    s0 = spot()\n    inside = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    n = n + 1\n    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf\n\n2028-01-04\n    n = n + 1\n    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf\n    pays notional * (1 + coupon * inside / n)\n"
+	},
+	{
+		"slug": "reverse-cliquet",
+		"title": "Reverse cliquet",
+		"category": "Cliquets",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A large coupon from which every negative monthly return is subtracted, floored at zero: the investor sells downside volatility.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.4,
+				"unit": "percent",
+				"label": "Maximum coupon"
+			}
+		],
+		"script": "# Capital protected. Coupon at maturity: max(coupon + sum of the negative\n# monthly returns, 0).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.4\n    ref = spot()\n    losses = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    losses = losses + min(spot() / ref - 1, 0)\n    ref = spot()\n\n2028-01-04\n    losses = losses + min(spot() / ref - 1, 0)\n    pays notional * (1 + max(coupon + losses, 0))\n"
+	},
+	{
+		"slug": "reverse-convertible",
+		"title": "Reverse convertible",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A one-year note paying a high coupon; the capital comes back in full only if the stock ends at or above the strike, otherwise in proportion to its fall.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.1,
+				"unit": "percent",
+				"label": "Coupon, % of notional"
+			},
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			}
+		],
+		"script": "# The investor is short a put: that premium pays for the coupon.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.1\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays notional * coupon\n    if spot() >= strike * s0 then pays notional else pays notional * spot() / (strike * s0) endIf\n"
+	},
+	{
+		"slug": "shark-fin",
+		"title": "Shark fin note",
+		"category": "Barriers and touch options",
+		"underlyings": 1,
+		"sources": [
+			"Rubinstein & Reiner, Breaking Down the Barriers, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A capital-protected note paying the stock's rise, unless the stock ever closes at or above the barrier: then only a rebate on top of the capital.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "participation",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Participation in the rise"
+			},
+			{
+				"name": "barrier",
+				"default": 1.25,
+				"unit": "percent",
+				"label": "Knock-out barrier, % of the initial level"
+			},
+			{
+				"name": "rebate",
+				"default": 0.05,
+				"unit": "percent",
+				"label": "Rebate if knocked out, % of notional"
+			}
+		],
+		"script": "# Capital protected at maturity; daily closes. Its payoff chart looks like a\n# shark's fin: rising, then a cliff.\n\n2027-01-04\n    notional = 1000\n    participation = 1.0\n    barrier = 1.25\n    rebate = 0.05\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then\n        pays notional * (1 + participation * max(spot() / s0 - 1, 0))\n    else\n        pays notional * (1 + rebate)\n    endIf\n"
+	},
+	{
+		"slug": "twin-win",
+		"title": "Twin-win certificate",
+		"category": "Structured notes",
+		"underlyings": 1,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Gains whichever way the stock moves, as long as it never closes at or below the barrier.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "barrier",
+				"default": 0.7,
+				"unit": "percent",
+				"label": "Barrier, % of the initial level"
+			}
+		],
+		"script": "# Above the barrier the investor earns the absolute performance; once\n# touched, plain stock.\n\n2027-01-04\n    notional = 1000\n    barrier = 0.7\n    s0 = spot()\n    hit = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then hit = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then hit = 1 endIf\n    if hit = 0 then\n        pays notional * (1 + abs(spot() / s0 - 1))\n    else\n        pays notional * spot() / s0\n    endIf\n"
+	},
+	{
+		"slug": "up-and-out-call",
+		"title": "Up-and-out call",
+		"category": "Barriers and touch options",
+		"underlyings": 1,
+		"sources": [
+			"Rubinstein & Reiner, Breaking Down the Barriers, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call that dies if the stock ever closes at or above the barrier.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			},
+			{
+				"name": "barrier",
+				"default": 1.3,
+				"unit": "percent",
+				"label": "Knock-out barrier, % of the initial level"
+			}
+		],
+		"script": "# Barrier checked at every close (a daily grid approximates continuous\n# monitoring). No rebate.\n\n2027-01-04\n    strike = 1.0\n    barrier = 1.3\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - strike * s0, 0) endIf\n"
+	},
+	{
+		"slug": "variance-swap",
+		"title": "Variance swap",
+		"category": "Volatility",
+		"underlyings": 1,
+		"sources": [
+			"Demeterfi, Derman, Kamal & Zou, A Guide to Volatility and Variance Swaps, Journal of Derivatives, 1999",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Exchanges the realised variance of daily returns over a year for a fixed volatility strike squared.",
+		"params": [
+			{
+				"name": "variance_notional",
+				"default": 10000.0,
+				"unit": "amount",
+				"label": "Variance notional"
+			},
+			{
+				"name": "vol_strike",
+				"default": 0.2,
+				"unit": "percent",
+				"label": "Volatility strike"
+			}
+		],
+		"script": "# Realised variance = 252 / n x sum of squared daily log returns (zero mean).\n\n2027-01-04\n    variance_notional = 10000\n    vol_strike = 0.2\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)\n"
+	},
+	{
+		"slug": "volatility-swap",
+		"title": "Volatility swap",
+		"category": "Volatility",
+		"underlyings": 1,
+		"sources": [
+			"Demeterfi, Derman, Kamal & Zou, A Guide to Volatility and Variance Swaps, Journal of Derivatives, 1999",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Exchanges realised volatility (not variance) for a fixed strike.",
+		"params": [
+			{
+				"name": "vega_notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Amount per volatility point"
+			},
+			{
+				"name": "vol_strike",
+				"default": 0.2,
+				"unit": "percent",
+				"label": "Volatility strike"
+			}
+		],
+		"script": "# Realised volatility = sqrt(252 / n x sum of squared daily log returns).\n\n2027-01-04\n    vega_notional = 1000\n    vol_strike = 0.2\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    pays 100 * vega_notional * (sqrt(252 * sumsq / n) - vol_strike)\n"
+	},
+	{
+		"slug": "worst-of-autocall",
+		"title": "Worst-of Phoenix autocall",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "The most traded structured product: quarterly coupons while the worst of three stocks is above the coupon barrier, early redemption above the autocall level, capital at risk below the protection barrier at maturity.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.025,
+				"unit": "percent",
+				"label": "Quarterly coupon, % of notional"
+			},
+			{
+				"name": "autocall",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Autocall level on the worst"
+			},
+			{
+				"name": "coupon_barrier",
+				"default": 0.7,
+				"unit": "percent",
+				"label": "Coupon barrier on the worst"
+			},
+			{
+				"name": "protection",
+				"default": 0.6,
+				"unit": "percent",
+				"label": "Protection barrier at maturity"
+			}
+		],
+		"script": "# Two years, quarterly observations on the worst performer, no coupon\n# memory.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.025\n    autocall = 1.0\n    coupon_barrier = 0.7\n    protection = 0.6\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    alive = 1\n\nschedule(2027-04-05, 2028-10-04, 3M, US, F)\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if alive = 1 then\n        if worst >= autocall then\n            pays notional * (1 + coupon)\n            alive = 0\n        else\n            if worst >= coupon_barrier then pays notional * coupon endIf\n        endIf\n    endIf\n\n2029-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if alive = 1 then\n        if worst >= coupon_barrier then\n            pays notional * (1 + coupon)\n        else\n            if worst < protection then pays notional * worst else pays notional endIf\n        endIf\n    endIf\n"
+	},
+	{
+		"slug": "worst-of-call",
+		"title": "Worst-of call",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Stulz, Options on the Minimum or the Maximum of Two Risky Assets, Journal of Financial Economics, 1982",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call on the worst performer of three stocks: it pays only if all three rose, so it is cheap and long correlation.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike on the worst performance"
+			}
+		],
+		"script": "2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    pays notional * max(worst - strike, 0)\n"
+	},
+	{
+		"slug": "worst-of-reverse-convertible",
+		"title": "Worst-of barrier reverse convertible",
+		"category": "Multi-asset",
+		"underlyings": 3,
+		"sources": [
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Quarterly coupons on three stocks; the capital is at risk if the worst of them ever closes at or below the barrier and ends below its initial level.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 1000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "coupon",
+				"default": 0.03,
+				"unit": "percent",
+				"label": "Quarterly coupon, % of notional"
+			},
+			{
+				"name": "barrier",
+				"default": 0.6,
+				"unit": "percent",
+				"label": "Knock-in barrier on the worst, % of initial"
+			}
+		],
+		"script": "# Knock-in on the worst performer, daily closes. The higher coupon than a\n# single-stock version pays for the short correlation.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.03\n    barrier = 0.6\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n\n2027-04-05  2027-07-06  2027-10-04\n    pays notional * coupon\n\n2028-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n    pays notional * coupon\n    if ki = 1 and worst < 1 then pays notional * worst else pays notional endIf\n"
+	}
+]
