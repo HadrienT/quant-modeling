@@ -9753,6 +9753,45 @@
         "summary": "Price Vanilla Endpoint"
       }
     },
+    "/price/risk-profile": {
+      "post": {
+        "description": "Long or short what, for a library product: every market parameter\nbumped on a reference market, the sign of the price change (holder's\nside), with paired Monte-Carlo errors (risk_profile.py). Cached per\nproduct and terms. Under /price/ like every computation: the production\nnginx (and the dev proxy) only forward /api/, /market/ and /price/.",
+        "operationId": "risk_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Risk Profile Endpoint"
+      }
+    },
     "/price/scripted": {
       "post": {
         "description": "blueprint/wp/16-scripting.md \u00a78.3. Not under /price/option/* \u2014 kept as\nits own top-level path, mirroring the language's own scope. A malformed\nscript (ScriptError) or a bad market input (InvalidInput, missing market\ndata) is a user-input error, not a server failure.",
@@ -10058,45 +10097,6 @@
           }
         },
         "summary": "Price Volatility Swap Endpoint"
-      }
-    },
-    "/products/risk-profile": {
-      "post": {
-        "description": "Long or short what, for a library product: every market parameter\nbumped on a reference market, the sign of the price change (holder's\nside), with paired Monte-Carlo errors (risk_profile.py). Cached per\nproduct and terms.",
-        "operationId": "risk_profile",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RiskProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RiskProfileResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Risk Profile Endpoint"
       }
     }
   }
