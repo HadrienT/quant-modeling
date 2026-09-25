@@ -289,4 +289,82 @@ namespace quantModeling
         }
     }
 
+    namespace
+    {
+        /// Price and AAD risks of `vanilla` under a spec, same seed.
+        AADSimulResults aad_run(ScriptModelSpec s)
+        {
+            using aad::Number;
+            aad::Tape tape;
+            Number::tape = &tape;
+            ScriptedProduct<Number> product(vanilla, ctx());
+            auto m = make_script_model<Number>(s);
+            const AADSimulResults res = simulate_aad(product, *m, 60000, 17);
+            Number::tape = nullptr;
+            return res;
+        }
+
+        double aad_price(ScriptModelSpec s)
+        {
+            return aad_run(std::move(s)).price;
+        }
+
+        double risk(const AADSimulResults &r, const std::string &label)
+        {
+            for (std::size_t i = 0; i < r.risk_labels.size(); ++i)
+                if (r.risk_labels[i] == label)
+                    return r.risks[i];
+            return std::nan("");
+        }
+    } // namespace
+
+    TEST(ScriptModels, LocalVolAADRisksMatchRepricingOnASkewedSurface)
+    {
+        // The vol depends on the spot, and the spot on every earlier vol: the
+        // adjoint must follow that path. It once did not (the strike weight
+        // was a double), which the flat-surface tests could not see.
+        const Grid g = make_grid(0.6);
+        const AADSimulResults res = aad_run(spec("local_vol", g));
+
+        double vega = 0.0;
+        for (std::size_t i = 0; i < res.risk_labels.size(); ++i)
+            if (res.risk_labels[i].rfind("lvol[", 0) == 0)
+                vega += res.risks[i];
+        const double h = 1e-3;
+        ScriptModelSpec up = spec("local_vol", g), dn = up;
+        for (double &x : up.sigma_loc_flat)
+            x += h;
+        for (double &x : dn.sigma_loc_flat)
+            x -= h;
+        EXPECT_NEAR(vega, (aad_price(up) - aad_price(dn)) / (2 * h), 0.01 * std::fabs(vega));
+
+        ScriptModelSpec su = spec("local_vol", g), sd = su;
+        su.spot += 0.1;
+        sd.spot -= 0.1;
+        const double delta_fd = (aad_price(su) - aad_price(sd)) / 0.2;
+        EXPECT_NEAR(risk(res, "spot"), delta_fd, 0.01 * std::fabs(delta_fd));
+    }
+
+    TEST(ScriptModels, SLVAADDeltaMatchesRepricingWithASkewedLeverage)
+    {
+        Grid g;
+        for (int i = 0; i <= 40; ++i)
+            g.K.push_back(50.0 + 2.5 * i);
+        g.T = {0.25, 0.5, 1.0, 2.0};
+        std::vector<double> lev;
+        for (double k : g.K)
+            for (std::size_t j = 0; j < g.T.size(); ++j)
+                lev.push_back(1.0 + 0.8 * (100.0 - k) / 100.0);
+        ScriptModelSpec s = spec("slv", g);
+        s.heston = kHeston;
+        s.leverage_flat = lev;
+        const AADSimulResults res = aad_run(s);
+
+        ScriptModelSpec su = s, sd = s;
+        su.spot += 0.1;
+        sd.spot -= 0.1;
+        const double delta_fd = (aad_price(su) - aad_price(sd)) / 0.2;
+        EXPECT_NEAR(risk(res, "spot"), delta_fd, 0.01 * std::fabs(delta_fd));
+    }
+
 } // namespace quantModeling

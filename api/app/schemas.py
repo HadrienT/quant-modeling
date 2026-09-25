@@ -1175,3 +1175,39 @@ class RiskProfileResponse(BaseModel):
     )
     rows: List[RiskProfileRow]
     method: str
+
+
+class QuoteVegaRow(BaseModel):
+    ttm: float = Field(..., description="Maturity of the quote, years.")
+    strike: float
+    log_moneyness: float = Field(..., description="ln(K / F_T).")
+    implied_vol: float = Field(..., description="The quoted implied vol.")
+    vega: float = Field(
+        ..., description="Price change for +1 vol point on this quote alone."
+    )
+    std_error: float = Field(..., description="Monte-Carlo standard error of the vega.")
+
+
+class MaturityVega(BaseModel):
+    ttm: float
+    vega: float = Field(..., description="Sum of the quote vegas of the maturity.")
+    std_error: float
+    n_quotes: int
+
+
+class MarketVegaResponse(BaseModel):
+    """dV / d(each quoted implied vol) of a library product under the local
+    vol of the stored chain: the Dupire superbucket (lot 17h)."""
+
+    product: str
+    ticker: str
+    snapshot: date
+    npv: float
+    mc_std_error: float
+    total_vega: float = Field(
+        ..., description="Sum over the quotes: a parallel +1 vol point on the chain."
+    )
+    total_std_error: float
+    maturities: List[MaturityVega]
+    quotes: List[QuoteVegaRow]
+    method: str

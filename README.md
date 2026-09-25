@@ -68,12 +68,24 @@ real parser before showing it to you. No made-up syntax reaches the screen.
   binomial/trinomial trees, Crank-Nicolson PDE, and Monte Carlo (Heston QE,
   Heston COS, a rough Bergomi hybrid scheme) with antithetic variates,
   control variates, Sobol sequences and a Brownian bridge.
+- **Calibrated on real data**: SVI per maturity and Dupire local vol from the
+  stored option chains; Heston fitted to that surface (COS pricing,
+  Levenberg-Marquardt, exact implied-vol error reported); stochastic-local vol
+  whose leverage (particle method) makes Heston reprice every vanilla.
 - **A payoff scripting language** (lexer → parser → AST → fuzzy-logic
   evaluator, Andreasen–Savine style): one generic Monte-Carlo engine prices
-  *any* scripted payoff instead of a dedicated code path per product.
+  *any* scripted payoff instead of a dedicated code path per product. The
+  model is read off the script (local vol for payoffs on each date's spot,
+  SLV for path-dependent ones, correlated Black-Scholes for several
+  underlyings), announced, and every dynamics can be compared on one seed. A
+  frozen library of 42 structures from Bouzoubaa & Osseiran is priced from a
+  term sheet, each with a computed long/short risk profile.
 - **Adjoint algorithmic differentiation**: an operator-overloading tape
   (`Number`, checkpointing, a parallel-AAD path) computing full Greek vectors
-  in roughly the cost of one extra valuation, instead of bumping every input.
+  in roughly the cost of one extra valuation, instead of bumping every input
+  — carried through the calibration (Dupire on the tape, the SVI fits by the
+  implicit function theorem) to **the vega of any scripted product to each
+  quoted option of the chain**.
 - **Property-based tests over exact-number tests**: call-put parity,
   `in + out = vanilla`, monotonicity bounds, measured log-log convergence
   order — not just "this number equals that number."

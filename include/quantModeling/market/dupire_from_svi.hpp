@@ -6,6 +6,7 @@
 #include "quantModeling/models/volatility.hpp"
 
 #include <cstddef>
+#include <vector>
 
 namespace quantModeling
 {
@@ -50,6 +51,21 @@ namespace quantModeling
                                       Real k_min, Real k_max,
                                       std::size_t n_strikes = 100, std::size_t n_maturities = 50,
                                       const DupireFromSVIParams &params = {});
+
+    /// No valid cell anywhere on the grid to copy from.
+    inline constexpr std::size_t kNoSource = static_cast<std::size_t>(-1);
+
+    /**
+     * For each cell of a K-major (n_strikes x n_maturities) grid, the cell
+     * whose value it takes: itself where the value is not NaN, else the
+     * nearest valid cell in grid-index space (a ring search outward), or
+     * kNoSource if there is none. build_local_vol_grid fills the gaps of the
+     * Dupire formula this way; the superbucket (market/superbucket.hpp)
+     * replays the same map on its tape.
+     */
+    std::vector<std::size_t> nearest_valid_sources(const std::vector<Real> &grid,
+                                                   std::size_t n_strikes,
+                                                   std::size_t n_maturities);
 
 } // namespace quantModeling
 

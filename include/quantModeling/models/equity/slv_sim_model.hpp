@@ -120,7 +120,7 @@ namespace quantModeling
                 const double z_spot = gaussians[g++];
                 const double z_indep = gaussians[g++];
 
-                const T Lp = leverage_at(to_double(S), t);
+                const T Lp = leverage_at(S, t);
                 const T v_plus = max(v, kVarianceFloor);
                 const T sqrt_v_plus = sqrt(v_plus);
                 const T dW_vol = rho_ * z_spot + sqrt(1.0 - rho_ * rho_) * z_indep;
@@ -184,14 +184,19 @@ namespace quantModeling
         /// starts exactly at s0, so there is no S-dependence to speak of
         /// yet), which column 0 already approximates closely for a short
         /// first interval, and is not otherwise stored anywhere to look up.
-        T leverage_at(double S, double t) const
+        T leverage_at(const T &S_t, double t) const
         {
             using std::max;
 
             const int nK = static_cast<int>(K_grid_.size());
             const int nT = static_cast<int>(T_grid_.size());
 
-            S = std::clamp(S, K_grid_.front(), K_grid_.back());
+            // As in LocalVolSimModel::local_vol_at: the cell on the double
+            // value, the strike weight a function of the spot (T), constant
+            // outside the grid where the leverage is flat in S.
+            const double S_raw = to_double(S_t);
+            const double S = std::clamp(S_raw, K_grid_.front(), K_grid_.back());
+            const bool inside = S == S_raw;
             const double tc = std::clamp(t, T_grid_.front(), T_grid_.back());
 
             auto it_K = std::lower_bound(K_grid_.begin(), K_grid_.end(), S);
@@ -214,7 +219,9 @@ namespace quantModeling
             const double K0 = K_grid_[static_cast<std::size_t>(i0)];
             const double K1 = K_grid_[static_cast<std::size_t>(i1)];
             const double dK = K1 - K0;
-            const double wK = (dK > 1e-12) ? (S - K0) / dK : 0.0;
+            const T wK = dK <= 1e-12 ? T(0.0)
+                         : inside    ? T((S_t - K0) / dK)
+                                     : T((S - K0) / dK);
 
             auto cell = [&](int i) -> const T &
             { return leverage_[static_cast<std::size_t>(i) * static_cast<std::size_t>(nT) +

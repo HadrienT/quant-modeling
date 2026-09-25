@@ -36,61 +36,62 @@ namespace quantModeling
         return std::clamp(local_var, params.min_local_var, params.max_local_var);
     }
 
-    namespace
+    std::vector<std::size_t> nearest_valid_sources(const std::vector<Real> &grid,
+                                                   std::size_t n_strikes,
+                                                   std::size_t n_maturities)
     {
+        // Nearest-neighbour fill, matching dupire.py's fallback: ring search
+        // outward in grid-index space, good enough for the sparse, localised
+        // gaps this formula produces in practice (a pervasively unstable
+        // calibration should have failed its own report long before a grid is
+        // built from it).
+        const auto valid_at = [&](std::size_t i, std::size_t j)
+        { return !std::isnan(grid[i * n_maturities + j]); };
 
-        /// Nearest-neighbour fill for NaN cells, matching dupire.py's
-        /// fallback: ring search outward in grid-index space, good enough for
-        /// the sparse, localised gaps this formula produces in practice (a
-        /// pervasively unstable calibration should have failed its own
-        /// report long before a grid is built from it).
-        void fill_gaps_nearest_neighbour(std::vector<Real> &grid, std::size_t n_strikes, std::size_t n_maturities)
+        std::vector<std::size_t> source(grid.size(), kNoSource);
+        for (std::size_t i = 0; i < n_strikes; ++i)
         {
-            const std::vector<Real> source = grid;
-            const auto valid_at = [&](std::size_t i, std::size_t j)
-            { return !std::isnan(source[i * n_maturities + j]); };
-
-            for (std::size_t i = 0; i < n_strikes; ++i)
+            for (std::size_t j = 0; j < n_maturities; ++j)
             {
-                for (std::size_t j = 0; j < n_maturities; ++j)
+                if (valid_at(i, j))
                 {
-                    if (!std::isnan(source[i * n_maturities + j]))
-                        continue;
+                    source[i * n_maturities + j] = i * n_maturities + j;
+                    continue;
+                }
 
-                    bool found = false;
-                    const std::size_t max_radius = n_strikes + n_maturities;
-                    for (std::size_t radius = 1; radius <= max_radius && !found; ++radius)
+                bool found = false;
+                const std::size_t max_radius = n_strikes + n_maturities;
+                for (std::size_t radius = 1; radius <= max_radius && !found; ++radius)
+                {
+                    for (std::size_t di = 0; di <= radius && !found; ++di)
                     {
-                        for (std::size_t di = 0; di <= radius && !found; ++di)
+                        const std::size_t dj = radius - di;
+                        const long long signs[2] = {1, -1};
+                        for (const long long si : signs)
                         {
-                            const std::size_t dj = radius - di;
-                            const long long signs[2] = {1, -1};
-                            for (const long long si : signs)
+                            for (const long long sj : signs)
                             {
-                                for (const long long sj : signs)
-                                {
-                                    const long long ci = static_cast<long long>(i) + si * static_cast<long long>(di);
-                                    const long long cj = static_cast<long long>(j) + sj * static_cast<long long>(dj);
-                                    if (ci < 0 || cj < 0)
-                                        continue;
-                                    const auto ui = static_cast<std::size_t>(ci);
-                                    const auto uj = static_cast<std::size_t>(cj);
-                                    if (ui >= n_strikes || uj >= n_maturities || !valid_at(ui, uj))
-                                        continue;
-                                    grid[i * n_maturities + j] = source[ui * n_maturities + uj];
-                                    found = true;
-                                    break;
-                                }
-                                if (found)
-                                    break;
+                                const long long ci = static_cast<long long>(i) + si * static_cast<long long>(di);
+                                const long long cj = static_cast<long long>(j) + sj * static_cast<long long>(dj);
+                                if (ci < 0 || cj < 0)
+                                    continue;
+                                const auto ui = static_cast<std::size_t>(ci);
+                                const auto uj = static_cast<std::size_t>(cj);
+                                if (ui >= n_strikes || uj >= n_maturities || !valid_at(ui, uj))
+                                    continue;
+                                source[i * n_maturities + j] = ui * n_maturities + uj;
+                                found = true;
+                                break;
                             }
+                            if (found)
+                                break;
                         }
                     }
                 }
             }
         }
-
-    } // namespace
+        return source;
+    }
 
     GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend,
                                       Real k_min, Real k_max,
@@ -128,12 +129,13 @@ namespace quantModeling
             }
         }
 
-        fill_gaps_nearest_neighbour(loc_var, n_strikes, n_maturities);
+        const std::vector<std::size_t> source =
+            nearest_valid_sources(loc_var, n_strikes, n_maturities);
 
         std::vector<Real> sigma_loc(loc_var.size());
         for (std::size_t idx = 0; idx < loc_var.size(); ++idx)
         {
-            const Real v = std::isnan(loc_var[idx]) ? params.min_local_var : loc_var[idx];
+            const Real v = source[idx] == kNoSource ? params.min_local_var : loc_var[source[idx]];
             sigma_loc[idx] = std::sqrt(std::clamp(v, params.min_local_var, params.max_local_var));
         }
 

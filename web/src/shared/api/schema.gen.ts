@@ -839,6 +839,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/market-vega": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Market Vega Endpoint
+         * @description Vega by quoted option (market_vega.py, blueprint/wp/17-aad.md §11):
+         *     the product under the local vol of the ticker's stored chain,
+         *     differentiated by AAD, then through Dupire and each SVI fit to every
+         *     quoted implied vol. One underlying, a ticker.
+         */
+        post: operations["market_vega"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/american-vanilla": {
         parameters: {
             query?: never;
@@ -2551,10 +2574,57 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /**
+         * MarketVegaResponse
+         * @description dV / d(each quoted implied vol) of a library product under the local
+         *     vol of the stored chain: the Dupire superbucket (lot 17h).
+         */
+        MarketVegaResponse: {
+            /** Maturities */
+            maturities: components["schemas"]["MaturityVega"][];
+            /** Mc Std Error */
+            mc_std_error: number;
+            /** Method */
+            method: string;
+            /** Npv */
+            npv: number;
+            /** Product */
+            product: string;
+            /** Quotes */
+            quotes: components["schemas"]["QuoteVegaRow"][];
+            /**
+             * Snapshot
+             * Format: date
+             */
+            snapshot: string;
+            /** Ticker */
+            ticker: string;
+            /** Total Std Error */
+            total_std_error: number;
+            /**
+             * Total Vega
+             * @description Sum over the quotes: a parallel +1 vol point on the chain.
+             */
+            total_vega: number;
+        };
         /** MarketsResponse */
         MarketsResponse: {
             /** Markets */
             markets: components["schemas"]["MarketInfo"][];
+        };
+        /** MaturityVega */
+        MaturityVega: {
+            /** N Quotes */
+            n_quotes: number;
+            /** Std Error */
+            std_error: number;
+            /** Ttm */
+            ttm: number;
+            /**
+             * Vega
+             * @description Sum of the quote vegas of the maturity.
+             */
+            vega: number;
         };
         /** MethodologySection */
         MethodologySection: {
@@ -3204,6 +3274,36 @@ export interface components {
              * @description Asset volatility σ_S.
              */
             vol: number;
+        };
+        /** QuoteVegaRow */
+        QuoteVegaRow: {
+            /**
+             * Implied Vol
+             * @description The quoted implied vol.
+             */
+            implied_vol: number;
+            /**
+             * Log Moneyness
+             * @description ln(K / F_T).
+             */
+            log_moneyness: number;
+            /**
+             * Std Error
+             * @description Monte-Carlo standard error of the vega.
+             */
+            std_error: number;
+            /** Strike */
+            strike: number;
+            /**
+             * Ttm
+             * @description Maturity of the quote, years.
+             */
+            ttm: number;
+            /**
+             * Vega
+             * @description Price change for +1 vol point on this quote alone.
+             */
+            vega: number;
         };
         /** QuotedRatePoint */
         QuotedRatePoint: {
@@ -5835,6 +5935,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    market_vega: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptedProductRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketVegaResponse"];
                 };
             };
             /** @description Validation Error */

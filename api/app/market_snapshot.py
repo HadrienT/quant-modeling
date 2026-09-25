@@ -43,6 +43,11 @@ SPOT_GAP_WARN_DAYS = 3
 #: Same rule as db._MAX_DIVIDEND_AGE_DAYS: a trailing yield moves slowly.
 MAX_DIVIDEND_GAP_DAYS = 30
 
+#: The log-moneyness band requested for the Dupire grid (clamped by the
+#: pipeline to what every slice observed) and its size.
+K_MIN, K_MAX = -0.6, 0.6
+N_STRIKES, N_MATURITIES = 100, 50
+
 
 class MarketDataUnavailable(RuntimeError):
     """The database lacks (or holds too stale) what pricing needs."""
@@ -64,6 +69,12 @@ class LocalVolMarket:
     svi_slices: List[Dict[str, float]] = field(default_factory=list)
     #: Flat rate the calibration's forwards used.
     rate: float = 0.0
+    #: The log-moneyness range and grid size the Dupire grid was built on:
+    #: what the superbucket (market_vega.py) rebuilds it with.
+    k_min: float = -0.6
+    k_max: float = 0.6
+    n_strikes: int = 100
+    n_maturities: int = 50
 
 
 def _ttm(expiry: date, as_of: date) -> float:
@@ -209,10 +220,10 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         spot,
         rate,
         dividend,
-        -0.6,
-        0.6,
-        100,
-        50,
+        K_MIN,
+        K_MAX,
+        N_STRIKES,
+        N_MATURITIES,
         cleaning_params=qm.CleaningParams(),
     )
 
@@ -254,4 +265,8 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         warnings=warnings,
         svi_slices=[dict(sl) for sl in result.get("slices", [])],
         rate=rate,
+        k_min=float(result.get("k_min", K_MIN)),
+        k_max=float(result.get("k_max", K_MAX)),
+        n_strikes=N_STRIKES,
+        n_maturities=N_MATURITIES,
     )

@@ -67,6 +67,7 @@ target_sources(quantModeling
         src/market/sabr_calibration.cpp
         src/market/slv_calibration.cpp
         src/market/heston_calibration.cpp
+        src/market/superbucket.cpp
         src/market/calibration/levenberg_marquardt.cpp
         src/instruments/equity/vanilla.cpp
         src/instruments/equity/asian.cpp
@@ -240,6 +241,7 @@ if(QM_BUILD_TESTS)
     tests/testSABRPDE.cpp
     tests/testSABRCalibration.cpp
     tests/testHestonCalibration.cpp
+    tests/testSuperbucket.cpp
     tests/testModelRecommendation.cpp
     tests/testHeston.cpp
     tests/testHestonCOS.cpp
