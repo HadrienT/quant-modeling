@@ -2469,6 +2469,45 @@
         "title": "HestonFit",
         "type": "object"
       },
+      "HestonParams": {
+        "properties": {
+          "kappa": {
+            "exclusiveMinimum": 0.0,
+            "title": "Kappa",
+            "type": "number"
+          },
+          "rho": {
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Rho",
+            "type": "number"
+          },
+          "theta": {
+            "exclusiveMinimum": 0.0,
+            "title": "Theta",
+            "type": "number"
+          },
+          "v0": {
+            "minimum": 0.0,
+            "title": "V0",
+            "type": "number"
+          },
+          "xi": {
+            "exclusiveMinimum": 0.0,
+            "title": "Xi",
+            "type": "number"
+          }
+        },
+        "required": [
+          "v0",
+          "kappa",
+          "theta",
+          "xi",
+          "rho"
+        ],
+        "title": "HestonParams",
+        "type": "object"
+      },
       "HistoryPointView": {
         "properties": {
           "cumulative_pnl": {
@@ -3320,6 +3359,102 @@
           "status"
         ],
         "title": "ModelParamView",
+        "type": "object"
+      },
+      "ModelPathRequest": {
+        "description": "Paths of local vol, Heston or SLV. Local vol and SLV need a `ticker`:\nthe surface (and the SLV leverage) come from its stored option chain.\nHeston takes `heston` with `spot`, `dividend` typed, or a `ticker` whose\nsurface it is calibrated to.",
+        "properties": {
+          "dividend": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Typed Heston only (default 0); a ticker's comes from the database.",
+            "title": "Dividend"
+          },
+          "heston": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HestonParams"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "enum": [
+              "local_vol",
+              "heston",
+              "slv"
+            ],
+            "title": "Model",
+            "type": "string"
+          },
+          "n_paths": {
+            "default": 30,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "N Paths",
+            "type": "integer"
+          },
+          "n_steps": {
+            "default": 100,
+            "maximum": 1000.0,
+            "minimum": 2.0,
+            "title": "N Steps",
+            "type": "integer"
+          },
+          "rate": {
+            "default": 0.05,
+            "title": "Rate",
+            "type": "number"
+          },
+          "seed": {
+            "default": 1,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "spot": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
+          },
+          "ttm": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Ttm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "model",
+          "ttm"
+        ],
+        "title": "ModelPathRequest",
         "type": "object"
       },
       "ModelRecommendation": {
@@ -5545,8 +5680,15 @@
             "title": "Beta"
           },
           "cleaning_summary": {
-            "title": "Cleaning Summary",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleaning Summary"
           },
           "converged": {
             "anyOf": [
@@ -5567,12 +5709,39 @@
             "title": "Forward",
             "type": "number"
           },
+          "heston": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HestonFit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeverageFit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "$ref": "#/components/schemas/SimulationModel"
           },
           "n_clean_quotes": {
-            "title": "N Clean Quotes",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Clean Quotes"
           },
           "nu": {
             "anyOf": [
@@ -5608,13 +5777,45 @@
             "title": "Rmse"
           },
           "slice_ttm": {
-            "description": "The calibrated SVI slice's own maturity, closest to the requested ttm",
-            "title": "Slice Ttm",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Black-Scholes and SABR: the calibrated SVI slice's own maturity, closest to the requested ttm",
+            "title": "Slice Ttm"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Local vol, Heston, SLV: the stored option-chain snapshot.",
+            "title": "Snapshot"
           },
           "spot": {
             "title": "Spot",
             "type": "number"
+          },
+          "surface": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Local vol, SLV: the calibrated surface, in words.",
+            "title": "Surface"
           },
           "ticker": {
             "title": "Ticker",
@@ -5642,10 +5843,7 @@
           "spot",
           "dividend",
           "forward",
-          "ttm",
-          "slice_ttm",
-          "n_clean_quotes",
-          "cleaning_summary"
+          "ttm"
         ],
         "title": "SimulationCalibrateResponse",
         "type": "object"
@@ -5653,7 +5851,10 @@
       "SimulationModel": {
         "enum": [
           "black_scholes",
-          "sabr"
+          "sabr",
+          "local_vol",
+          "heston",
+          "slv"
         ],
         "title": "SimulationModel",
         "type": "string"
@@ -8226,7 +8427,7 @@
     },
     "/api/simulation/calibrate": {
       "post": {
-        "description": "Fetch the ticker's chain (DB-first, live yfinance fallback), run the\nexisting SVI vol-surface pipeline, pick the calibrated slice closest to\nthe requested maturity, and either read its ATM vol off (Black-Scholes)\nor fit SABR to it (see vol_surface.sabr_quotes_from_svi_slice).",
+        "description": "Black-Scholes and SABR: fetch the ticker's chain (DB-first, live\nyfinance fallback -- kept on purpose for these two, see CLAUDE.md), run\nthe existing SVI vol-surface pipeline, pick the calibrated slice closest\nto the requested maturity, and either read its ATM vol off\n(Black-Scholes) or fit SABR to it (see\nvol_surface.sabr_quotes_from_svi_slice). Local vol, Heston and SLV are\ncalibrated on the stored chain only (_calibrate_surface_model).",
         "operationId": "calibrate",
         "requestBody": {
           "content": {
@@ -8302,6 +8503,48 @@
           }
         },
         "summary": "Simulate Black Scholes",
+        "tags": [
+          "simulation"
+        ]
+      }
+    },
+    "/api/simulation/paths/model": {
+      "post": {
+        "description": "Local vol, Heston or SLV paths (engines/mc/path_simulation.hpp's\nsimulate_model_paths, the same models the script pricer uses).",
+        "operationId": "simulate_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPathRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationPathsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simulate Model",
         "tags": [
           "simulation"
         ]

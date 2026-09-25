@@ -1026,6 +1026,9 @@ class LocalVolSurfaceResponse(BaseModel):
 class SimulationModel(str, Enum):
     black_scholes = "black_scholes"
     sabr = "sabr"
+    local_vol = "local_vol"
+    heston = "heston"
+    slv = "slv"
 
 
 class BSPathRequest(BaseModel):
@@ -1080,8 +1083,9 @@ class SimulationCalibrateResponse(BaseModel):
     dividend: float
     forward: float
     ttm: float
-    slice_ttm: float = Field(
-        description="The calibrated SVI slice's own maturity, closest to the requested ttm"
+    slice_ttm: Optional[float] = Field(
+        None,
+        description="Black-Scholes and SABR: the calibrated SVI slice's own maturity, closest to the requested ttm",
     )
     vol: Optional[float] = None
     alpha: Optional[float] = None
@@ -1090,8 +1094,54 @@ class SimulationCalibrateResponse(BaseModel):
     nu: Optional[float] = None
     rmse: Optional[float] = None
     converged: Optional[bool] = None
-    n_clean_quotes: int
-    cleaning_summary: str
+    n_clean_quotes: Optional[int] = None
+    cleaning_summary: Optional[str] = None
+    snapshot: Optional[date] = Field(
+        None, description="Local vol, Heston, SLV: the stored option-chain snapshot."
+    )
+    surface: Optional[str] = Field(
+        None, description="Local vol, SLV: the calibrated surface, in words."
+    )
+    heston: Optional[HestonFit] = None
+    leverage: Optional[LeverageFit] = None
+
+
+class HestonParams(BaseModel):
+    v0: float = Field(..., ge=0)
+    kappa: float = Field(..., gt=0)
+    theta: float = Field(..., gt=0)
+    xi: float = Field(..., gt=0)
+    rho: float = Field(..., ge=-1, le=1)
+
+
+class ModelPathRequest(BaseModel):
+    """Paths of local vol, Heston or SLV. Local vol and SLV need a `ticker`:
+    the surface (and the SLV leverage) come from its stored option chain.
+    Heston takes `heston` with `spot`, `dividend` typed, or a `ticker` whose
+    surface it is calibrated to."""
+
+    model: Literal["local_vol", "heston", "slv"]
+    ticker: Optional[str] = Field(None, min_length=1)
+    spot: Optional[float] = Field(None, gt=0)
+    dividend: Optional[float] = Field(
+        None,
+        description="Typed Heston only (default 0); a ticker's comes from the database.",
+    )
+    heston: Optional[HestonParams] = None
+    rate: float = 0.05
+    ttm: float = Field(gt=0, le=10)
+    n_steps: int = Field(100, ge=2, le=1000)
+    n_paths: int = Field(30, ge=1, le=500)
+    seed: int = 1
+
+    @model_validator(mode="after")
+    def _inputs(self) -> "ModelPathRequest":
+        typed = self.heston is not None and self.spot is not None
+        if self.model == "heston" and not (typed or self.ticker):
+            raise ValueError("heston needs its parameters and a spot, or a ticker")
+        if self.model != "heston" and not self.ticker:
+            raise ValueError(f"{self.model} needs a ticker (its surface is calibrated)")
+        return self
 
 
 class RiskProfileRequest(BaseModel):

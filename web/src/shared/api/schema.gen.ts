@@ -497,10 +497,13 @@ export interface paths {
         put?: never;
         /**
          * Calibrate
-         * @description Fetch the ticker's chain (DB-first, live yfinance fallback), run the
-         *     existing SVI vol-surface pipeline, pick the calibrated slice closest to
-         *     the requested maturity, and either read its ATM vol off (Black-Scholes)
-         *     or fit SABR to it (see vol_surface.sabr_quotes_from_svi_slice).
+         * @description Black-Scholes and SABR: fetch the ticker's chain (DB-first, live
+         *     yfinance fallback -- kept on purpose for these two, see CLAUDE.md), run
+         *     the existing SVI vol-surface pipeline, pick the calibrated slice closest
+         *     to the requested maturity, and either read its ATM vol off
+         *     (Black-Scholes) or fit SABR to it (see
+         *     vol_surface.sabr_quotes_from_svi_slice). Local vol, Heston and SLV are
+         *     calibrated on the stored chain only (_calibrate_surface_model).
          */
         post: operations["calibrate"];
         delete?: never;
@@ -520,6 +523,27 @@ export interface paths {
         put?: never;
         /** Simulate Black Scholes */
         post: operations["simulate_black_scholes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/simulation/paths/model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Simulate Model
+         * @description Local vol, Heston or SLV paths (engines/mc/path_simulation.hpp's
+         *     simulate_model_paths, the same models the script pricer uses).
+         */
+        post: operations["simulate_model"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2286,6 +2310,19 @@ export interface components {
             /** Xi */
             xi: number;
         };
+        /** HestonParams */
+        HestonParams: {
+            /** Kappa */
+            kappa: number;
+            /** Rho */
+            rho: number;
+            /** Theta */
+            theta: number;
+            /** V0 */
+            v0: number;
+            /** Xi */
+            xi: number;
+        };
         /** HistoryPointView */
         HistoryPointView: {
             /** Cumulative Pnl */
@@ -2603,6 +2640,52 @@ export interface components {
             text?: string | null;
             /** Value */
             value?: number | null;
+        };
+        /**
+         * ModelPathRequest
+         * @description Paths of local vol, Heston or SLV. Local vol and SLV need a `ticker`:
+         *     the surface (and the SLV leverage) come from its stored option chain.
+         *     Heston takes `heston` with `spot`, `dividend` typed, or a `ticker` whose
+         *     surface it is calibrated to.
+         */
+        ModelPathRequest: {
+            /**
+             * Dividend
+             * @description Typed Heston only (default 0); a ticker's comes from the database.
+             */
+            dividend?: number | null;
+            heston?: components["schemas"]["HestonParams"] | null;
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "local_vol" | "heston" | "slv";
+            /**
+             * N Paths
+             * @default 30
+             */
+            n_paths: number;
+            /**
+             * N Steps
+             * @default 100
+             */
+            n_steps: number;
+            /**
+             * Rate
+             * @default 0.05
+             */
+            rate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /** Spot */
+            spot?: number | null;
+            /** Ticker */
+            ticker?: string | null;
+            /** Ttm */
+            ttm: number;
         };
         /**
          * ModelRecommendation
@@ -3724,16 +3807,18 @@ export interface components {
             /** Beta */
             beta?: number | null;
             /** Cleaning Summary */
-            cleaning_summary: string;
+            cleaning_summary?: string | null;
             /** Converged */
             converged?: boolean | null;
             /** Dividend */
             dividend: number;
             /** Forward */
             forward: number;
+            heston?: components["schemas"]["HestonFit"] | null;
+            leverage?: components["schemas"]["LeverageFit"] | null;
             model: components["schemas"]["SimulationModel"];
             /** N Clean Quotes */
-            n_clean_quotes: number;
+            n_clean_quotes?: number | null;
             /** Nu */
             nu?: number | null;
             /** Rho */
@@ -3742,11 +3827,21 @@ export interface components {
             rmse?: number | null;
             /**
              * Slice Ttm
-             * @description The calibrated SVI slice's own maturity, closest to the requested ttm
+             * @description Black-Scholes and SABR: the calibrated SVI slice's own maturity, closest to the requested ttm
              */
-            slice_ttm: number;
+            slice_ttm?: number | null;
+            /**
+             * Snapshot
+             * @description Local vol, Heston, SLV: the stored option-chain snapshot.
+             */
+            snapshot?: string | null;
             /** Spot */
             spot: number;
+            /**
+             * Surface
+             * @description Local vol, SLV: the calibrated surface, in words.
+             */
+            surface?: string | null;
             /** Ticker */
             ticker: string;
             /** Ttm */
@@ -3758,7 +3853,7 @@ export interface components {
          * SimulationModel
          * @enum {string}
          */
-        SimulationModel: "black_scholes" | "sabr";
+        SimulationModel: "black_scholes" | "sabr" | "local_vol" | "heston" | "slv";
         /** SimulationPathsResponse */
         SimulationPathsResponse: {
             model: components["schemas"]["SimulationModel"];
@@ -5162,6 +5257,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BSPathRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationPathsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelPathRequest"];
             };
         };
         responses: {

@@ -27,6 +27,7 @@ import type {
 	RateCurrency,
 	RatesHistoryResponse,
 	RatesOverviewResponse,
+	ModelPathRequest,
 	SABRPathRequest,
 	SimulationCalibrateRequest,
 	SimulationCalibrateResponse,
@@ -428,6 +429,22 @@ export function useSimulateSabrPaths() {
 			try {
 				return (await unwrap(
 					api.POST("/api/simulation/paths/sabr", { body: req, signal: s }),
+				)) as SimulationPathsResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/** Local vol, Heston or SLV paths (POST /api/simulation/paths/model). */
+export function useSimulateModelPaths() {
+	return useMutation<SimulationPathsResponse, ApiError, ModelPathRequest>({
+		mutationFn: async (req) => {
+			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
+			try {
+				return (await unwrap(
+					api.POST("/api/simulation/paths/model", { body: req, signal: s }),
 				)) as SimulationPathsResponse;
 			} finally {
 				s.cleanup();

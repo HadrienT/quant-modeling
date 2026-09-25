@@ -605,6 +605,53 @@ modèle de taux stochastique branché), les produits rappelables par l'émetteur
 et les choosers (il faut une espérance conditionnelle — régression de type
 Longstaff-Schwartz — que le langage n'a pas), la vol locale multi-actifs.
 
+### 8.8 Du term sheet au script : le catalogue, la comparaison de modèles, le profil de risque
+
+**Source unique.** Les 42 scripts vivent dans
+[`api/app/product_library/`](../../api/app/product_library/) : l'API les possède,
+le front les lit par `web/src/shared/products/scripted.gen.json`
+(`scripts/gen_product_library.py`, commité, dérive vérifiée par la CI comme
+`openapi.json`). Chaque script déclare ses **termes**
+(`# param: barrier = 0.60 | percent | Knock-in barrier`) et les assigne au
+premier événement ; [`product_templates.py`](../../api/app/product_templates.py)
+ne remplace que ces nombres, et décale les dates par semaines entières. Le
+fichier reste un script lisible, identique sur la page de scripting.
+
+**Pricing.** `POST /price/scripted-product` (produit + termes + les entrées de
+pricing communes à `ScriptRequest`) rend le script et le price ; la réponse
+porte le script pricé, et l'audit l'enregistre comme toute valorisation. Sur la
+page pricing, 42 entrées de catalogue générées (familles « Scripts · … »), dont
+les quatre fiches documentaires désormais pricées (forward-start, cliquet,
+Napoléon, corridor). Le modèle de dynamique est un champ du formulaire : `auto`
+par défaut, les quatre au choix.
+
+**Comparer les dynamiques.** « Compare the dynamics » price les mêmes termes
+sous Black-Scholes, vol locale, Heston et SLV, même graine, même marché :
+Black-Scholes sur un ticker prend la vol implicite à la monnaie du smile stocké
+à la maturité du script. Un écart n'est affiché comme tel qu'au-delà de deux
+erreurs standard combinées. Sur SPY (24/09/2026), un up-and-out call
+(barrière 120 %) vaut 19,4 en vol plate, 29,1 en vol locale, 34,4 en SLV.
+
+**Long ou short quoi.** La page produits porte, pour chaque produit, le tableau
+de Bouzoubaa & Osseiran : le porteur est-il long ou short chaque paramètre de
+marché. **Calculé**, pas affirmé ([`risk_profile.py`](../../api/app/risk_profile.py),
+`POST /products/risk-profile`) : marché de référence affiché (spot 100, vol
+25 %, taux 3 %, dividende 1 %, corrélation 50 %), niveaux figés à la date de
+trade (la date de strike est un fixing passé), choc de chaque paramètre et
+signe de la variation ; spot (delta), convexité (gamma), vol, taux,
+dividendes, corrélation, et sur un sous-jacent le **skew** (vol locale qui
+décroît avec le strike contre une surface plate, même moteur) et la **vol de
+vol** (ξ de Heston). Erreurs **appariées** : 8 lots de tirages communs, l'erreur
+d'une variation est la dispersion de ses 8 différences ; en deçà de deux
+erreurs, « not significant », en deçà de 0,01 % du prix, « negligible ». Les
+produits du catalogue écrit à la main sont chiffrés de même, par leur propre
+pricer.
+
+**Simulation.** La page simulation ajoute vol locale, Heston et SLV, simulés
+par les modèles mêmes du pricer (`simulate_model_paths`,
+`engines/mc/path_simulation.hpp`) et calibrés sur la chaîne **stockée**
+uniquement (Black-Scholes et SABR gardent leur ancien chemin, repli compris).
+
 ## 9. Tests
 
 Conformément à [`CLAUDE.md`](../../CLAUDE.md) : des tests de **propriété**, pas

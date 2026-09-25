@@ -1,5 +1,7 @@
 #include "quantModeling/engines/mc/path_simulation.hpp"
 
+#include "quantModeling/core/sample.hpp"
+
 #include "quantModeling/utils/inverse_normal.hpp"
 #include "quantModeling/utils/rng.hpp"
 
@@ -93,6 +95,46 @@ namespace quantModeling
             }
         }
         return result;
+    }
+
+    SimulatedPaths simulate_model_paths(
+        ISimulationModel<Real> &model, Real spot, Real ttm,
+        const PathSimulationSettings &settings)
+    {
+        if (!(ttm > 0.0) || settings.n_steps < 1 || settings.n_paths < 1)
+            throw InvalidInput("simulate_model_paths: need ttm > 0, n_steps >= 1 and n_paths >= 1");
+
+        const std::size_t n = settings.n_steps;
+        TimeLine timeline(n);
+        for (std::size_t i = 0; i < n; ++i)
+            timeline[i] = ttm * static_cast<Real>(i + 1) / static_cast<Real>(n);
+        const std::vector<SampleDef> defline(n);
+        model.init(timeline, defline);
+
+        SimulatedPaths out;
+        out.time_grid.reserve(n + 1);
+        out.time_grid.push_back(0.0);
+        out.time_grid.insert(out.time_grid.end(), timeline.begin(), timeline.end());
+
+        Scenario<Real> scenario;
+        allocate_scenario(scenario, defline, model.n_underlyings());
+        std::vector<double> gaussians(model.sim_dim());
+        Pcg32 rng = RngFactory(settings.seed).make(0);
+        NormalBoxMuller bm;
+        out.paths.reserve(static_cast<std::size_t>(settings.n_paths));
+        for (long long p = 0; p < settings.n_paths; ++p)
+        {
+            for (double &g : gaussians)
+                g = bm(rng);
+            model.generate_path(gaussians, scenario);
+            std::vector<Real> path;
+            path.reserve(n + 1);
+            path.push_back(spot);
+            for (const Sample<Real> &s : scenario)
+                path.push_back(s.spots.front());
+            out.paths.push_back(std::move(path));
+        }
+        return out;
     }
 
 } // namespace quantModeling

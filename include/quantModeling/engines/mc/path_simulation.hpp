@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/equity/sabr.hpp"
+#include "quantModeling/models/simulation_model.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -55,6 +56,19 @@ namespace quantModeling
      */
     SimulatedPaths simulate_sabr_paths(
         Real forward, const SABRParams &params, Real ttm,
+        const PathSimulationSettings &settings = {});
+
+    /**
+     * Paths of any timeline simulation model (models/simulation_model.hpp) --
+     * local vol, Heston, SLV, multi-asset Black-Scholes -- on a regular grid
+     * of n_steps dates up to ttm: the model is initialised with that grid as
+     * its product timeline, so it takes its own internal steps between the
+     * dates (an Euler model refines them to its max_dt) and reports the spot
+     * of asset 0 at each. `spot` is the value shown at time 0 (the model
+     * does not expose its own).
+     */
+    SimulatedPaths simulate_model_paths(
+        ISimulationModel<Real> &model, Real spot, Real ttm,
         const PathSimulationSettings &settings = {});
 
 } // namespace quantModeling
