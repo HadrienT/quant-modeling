@@ -1,0 +1,24 @@
+# title: Volatility swap
+# category: Volatility
+# underlyings: 1
+# source: Demeterfi, Derman, Kamal & Zou, A Guide to Volatility and Variance Swaps, Journal of Derivatives, 1999
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Exchanges realised volatility (not variance) for a 20% strike: 1,000 per volatility point.
+#
+# Realised volatility = sqrt(252 / n x sum of squared daily log returns).
+# Vega notional 1,000 per point: pays 100,000 x (realised vol - 20%).
+
+2027-01-04
+    prev = spot()
+    sumsq = 0
+    n = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    sumsq = sumsq + log(spot() / prev) ^ 2
+    n = n + 1
+    prev = spot()
+
+2028-01-04
+    sumsq = sumsq + log(spot() / prev) ^ 2
+    n = n + 1
+    pays 100000 * (sqrt(252 * sumsq / n) - 0.20)

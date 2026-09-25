@@ -1,0 +1,25 @@
+# title: Barrier reverse convertible
+# category: Structured notes
+# underlyings: 1
+# source: Rubinstein & Reiner, Breaking Down the Barriers, Risk, 1991
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Quarterly 2.5% coupons; the capital is at risk only if the stock ever closes at or below 60% of its initial level and ends below it.
+#
+# Notional 1000. Coupons are paid whatever happens. Knock-in barrier 60%,
+# daily closes; if it was touched and the stock ends below its initial
+# level, the capital is repaid in proportion to the fall.
+
+2027-01-04
+    s0 = spot()
+    ki = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    if spot() <= 0.60 * s0 then ki = 1 endIf
+
+2027-04-05  2027-07-06  2027-10-04
+    pays 1000 * 0.025
+
+2028-01-04
+    if spot() <= 0.60 * s0 then ki = 1 endIf
+    pays 1000 * 0.025
+    if ki = 1 and spot() < s0 then pays 1000 * spot() / s0 else pays 1000 endIf

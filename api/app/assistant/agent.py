@@ -101,6 +101,19 @@ def check_script(script: str, valuation_date: str, day_count: str) -> CheckResul
     overflow = _schedule_overflow(script, [e["date"] for e in parsed["events"]])
     if overflow:
         return CheckResult(False, error=overflow)
+    # A multi-asset script is smoke-priced on n identical, 50%-correlated
+    # underlyings: this checks it runs, not what it is worth.
+    n = int(parsed.get("analysis", {}).get("n_underlyings", 1))
+    multi = (
+        dict(
+            spots=[_SMOKE["spot"]] * n,
+            dividends=[_SMOKE["dividend"]] * n,
+            vols=[_SMOKE["vol"]] * n,
+            correlation=[1.0 if i == j else 0.5 for i in range(n) for j in range(n)],
+        )
+        if n > 1
+        else {}
+    )
     try:
         priced = qm.price_script(
             script,
@@ -116,6 +129,7 @@ def check_script(script: str, valuation_date: str, day_count: str) -> CheckResul
             _SMOKE["seed"],
             "pseudo",
             "none",
+            **multi,
         )
     except (RuntimeError, ValueError) as exc:
         return CheckResult(False, error=_explain(str(exc)))

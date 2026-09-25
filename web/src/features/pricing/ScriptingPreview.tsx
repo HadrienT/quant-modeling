@@ -2,8 +2,10 @@ import { useMemo, useState } from "react";
 import { usePricing } from "@/shared/api";
 import { Button, Field } from "@/shared/ui";
 import { MetricRowSkeleton } from "@/shared/ui/states";
-import { SCRIPTING_EXAMPLES } from "./scripting/examples";
 import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
+import { alignToValuationDate } from "./scripting/alignDates";
+import { DEFAULT_PRODUCT } from "./scripting/library";
+import { LibraryPicker } from "./scripting/LibraryPicker";
 import { ScriptEditor } from "./scripting/ScriptEditor";
 import { ScriptRejected } from "./scripting/ScriptRejected";
 import { AssistantSidebar } from "./scripting/assistant/AssistantSidebar";
@@ -14,28 +16,35 @@ import { ModelChoice, type ScriptModel } from "./scripting/ModelChoice";
 import { ModelDecision } from "./scripting/ModelDecision";
 import { ModelWarnings } from "./scripting/ModelWarnings";
 import { ScriptResult } from "./scripting/ScriptResult";
+import {
+	countUnderlyings,
+	underlyingsRequest,
+	useUnderlyings,
+} from "./scripting/underlyings";
+import { UnderlyingsFields } from "./scripting/UnderlyingsFields";
 
 /**
  * Preview surface for the payoff scripting language (blueprint/wp/16-scripting.md).
  * Deliberately standalone — WP 16 §8.4 — it does NOT go through the WP 07
- * product catalog; it exists so a script can be exercised from the browser
- * while the catalog integration is designed.
+ * product catalog. Its product library (scripting/library/*.qms) writes the
+ * structured products of Bouzoubaa & Osseiran as scripts.
  *
  * Endpoints: POST /price/scripted, POST /price/scripted/validate. Regenerate
  * schema.gen.ts after an API change: `python scripts/gen_openapi.py
  * web/openapi.json && cd web && npm run api:types:local`.
  */
-const DEFAULT_SCRIPT = SCRIPTING_EXAMPLES["European call"] ?? "";
+const today = () => new Date().toISOString().slice(0, 10);
 
 export default function ScriptingPreview() {
-	const [script, setScript] = useState(DEFAULT_SCRIPT);
+	const [product, setProduct] = useState(DEFAULT_PRODUCT);
+	const [script, setScript] = useState(() =>
+		alignToValuationDate(DEFAULT_PRODUCT.script, today()),
+	);
 	const [spot, setSpot] = useState("100");
 	const [ratePct, setRatePct] = useState("3");
 	const [divPct, setDivPct] = useState("0");
 	const [volPct, setVolPct] = useState("20");
-	const [valuationDate, setValuationDate] = useState(() =>
-		new Date().toISOString().slice(0, 10),
-	);
+	const [valuationDate, setValuationDate] = useState(today);
 	const [dayCount, setDayCount] = useState<DayCount>("ACT/365F");
 	const [fuzzy, setFuzzy] = useState(false);
 	const [defaultEps, setDefaultEps] = useState("1");
@@ -45,6 +54,9 @@ export default function ScriptingPreview() {
 	const [model, setModel] = useState<ScriptModel>("auto");
 	const [ticker, setTicker] = useState("SPY");
 	const [request, setRequest] = useState<Record<string, unknown> | null>(null);
+	const underlyings = useUnderlyings();
+	const n = useMemo(() => countUnderlyings(script), [script]);
+	const market = model !== "black_scholes";
 
 	const price = usePricing({
 		endpoint: request ? "/price/scripted" : null,
@@ -59,16 +71,22 @@ export default function ScriptingPreview() {
 		() => (error ? parseScriptDiagnostic(error.message) : null),
 		[error],
 	);
+	const single = market
+		? { ticker }
+		: {
+				spot: Number(spot),
+				dividend: Number(divPct) / 100,
+				vol: Number(volPct) / 100,
+			};
 
 	return (
 		<div className="mx-auto flex max-w-5xl flex-col gap-6">
 			<header className="flex flex-col gap-1">
-				<h1 className="text-lg font-semibold text-ink">
-					Payoff scripting — preview
-				</h1>
+				<h1 className="text-lg font-semibold text-ink">Payoff scripting</h1>
 				<p className="text-sm text-ink-secondary">
-					Describe a product in text; it prices through the same generic
-					Monte-Carlo engine as every other product — no dedicated payoff code.
+					Describe a product in text, or start from the library; it prices
+					through the same generic Monte-Carlo engine as every other product —
+					no dedicated payoff code.
 				</p>
 			</header>
 
@@ -80,13 +98,7 @@ export default function ScriptingPreview() {
 						setRequest({
 							script,
 							model,
-							...(model === "black_scholes"
-								? {
-										spot: Number(spot),
-										dividend: Number(divPct) / 100,
-										vol: Number(volPct) / 100,
-									}
-								: { ticker }),
+							...(n > 1 ? underlyingsRequest(n, market, underlyings) : single),
 							rate: Number(ratePct) / 100,
 							valuation_date: valuationDate,
 							day_count: dayCount,
@@ -98,23 +110,13 @@ export default function ScriptingPreview() {
 						});
 					}}
 				>
-					<label className="flex flex-col gap-1">
-						<span className="text-2xs text-ink-muted uppercase">Example</span>
-						<select
-							className="rounded border border-hairline bg-surface px-2 py-1 text-sm"
-							onChange={(e) => {
-								const next = SCRIPTING_EXAMPLES[e.target.value];
-								if (next) setScript(next);
-							}}
-							defaultValue="European call"
-						>
-							{Object.keys(SCRIPTING_EXAMPLES).map((name) => (
-								<option key={name} value={name}>
-									{name}
-								</option>
-							))}
-						</select>
-					</label>
+					<LibraryPicker
+						product={product}
+						onPick={(p) => {
+							setProduct(p);
+							setScript(alignToValuationDate(p.script, valuationDate));
+						}}
+					/>
 
 					<ScriptEditor
 						value={script}
@@ -128,10 +130,13 @@ export default function ScriptingPreview() {
 						ticker={ticker}
 						onTicker={setTicker}
 						recommendation={validate.data?.recommendation}
+						multi={n > 1}
 					/>
 
+					{n > 1 && <UnderlyingsFields n={n} market={market} u={underlyings} />}
+
 					<ScriptingMarketFields
-						marketDriven={model !== "black_scholes"}
+						marketDriven={market || n > 1}
 						valuationDate={valuationDate}
 						onValuationDate={setValuationDate}
 						spot={spot}
@@ -159,7 +164,7 @@ export default function ScriptingPreview() {
 								checked={fuzzy}
 								onChange={(e) => setFuzzy(e.target.checked)}
 							/>
-							Fuzzy (smoothed comparisons — WP 16c)
+							Fuzzy (smoothed comparisons, for digitals and barriers)
 						</label>
 						{fuzzy && (
 							<Field

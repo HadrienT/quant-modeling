@@ -1,0 +1,30 @@
+# title: Napoleon
+# category: Cliquets
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Each year pays 8% plus the worst monthly return of that year, floored at zero; capital back after two years.
+#
+# Notional 1000. Year 1 and year 2 each pay max(8% + worst monthly return, 0)
+# on their anniversary; the capital is repaid with the last coupon.
+
+2027-01-04
+    ref = spot()
+    worst = 1
+
+schedule(2027-02-04, 2027-12-04, 1M, US, F)
+    worst = min(worst, spot() / ref - 1)
+    ref = spot()
+
+2028-01-04
+    worst = min(worst, spot() / ref - 1)
+    ref = spot()
+    pays 1000 * max(0.08 + worst, 0)
+    worst = 1
+
+schedule(2028-02-04, 2028-12-04, 1M, US, F)
+    worst = min(worst, spot() / ref - 1)
+    ref = spot()
+
+2029-01-04
+    worst = min(worst, spot() / ref - 1)
+    pays 1000 * (1 + max(0.08 + worst, 0))

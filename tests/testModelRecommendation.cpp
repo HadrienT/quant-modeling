@@ -145,4 +145,20 @@ namespace quantModeling
         EXPECT_STREQ(scripting::model_name(ModelKind::StochasticLocalVol), "slv");
     }
 
+    TEST(ModelRecommendation, SeveralUnderlyingsGetCorrelatedBlackScholesWithTheCorrelationNoted)
+    {
+        const std::string worst_of =
+            "2025-06-03\n    pays max(min(spot(0) / 100, spot(1) / 50) - 1, 0)\n";
+        for (const ModelAvailability avail : {ModelAvailability{true, true},
+                                              ModelAvailability{false, false}})
+        {
+            const auto r = recommend(analyze(worst_of), avail);
+            EXPECT_EQ(r.model, ModelKind::BlackScholesFlatVol);
+            EXPECT_EQ(r.code, "multi_asset");
+        }
+        const auto adv = advise(analyze(worst_of), ModelKind::BlackScholesFlatVol, 1.0, 0.0);
+        EXPECT_TRUE(has(adv, "correlation"));
+        EXPECT_TRUE(has(adv, "flat_vol_smile"));
+    }
+
 } // namespace quantModeling

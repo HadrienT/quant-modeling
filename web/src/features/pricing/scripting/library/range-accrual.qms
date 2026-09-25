@@ -1,0 +1,21 @@
+# title: Range accrual note
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Earns 8% a year on each day the stock closes between 90% and 110% of its initial level; capital protected.
+#
+# Notional 1000. Coupon at maturity = 8% x (days in range / days observed).
+
+2027-01-04
+    s0 = spot()
+    inside = 0
+    n = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    n = n + 1
+    if spot() >= 0.90 * s0 and spot() <= 1.10 * s0 then inside = inside + 1 endIf
+
+2028-01-04
+    n = n + 1
+    if spot() >= 0.90 * s0 and spot() <= 1.10 * s0 then inside = inside + 1 endIf
+    pays 1000 * (1 + 0.08 * inside / n)

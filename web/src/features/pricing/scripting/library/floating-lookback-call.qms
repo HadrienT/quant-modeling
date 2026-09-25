@@ -1,0 +1,18 @@
+# title: Floating-strike lookback call
+# category: Asians, lookbacks and ladders
+# underlyings: 1
+# source: Goldman, Sosin & Gatto, Path Dependent Options: Buy at the Low, Sell at the High, Journal of Finance, 1979
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Buy at the lowest close of the year: pays the final price minus the minimum close.
+#
+# The minimum is taken over every daily close from the strike date on.
+
+2027-01-04
+    lo = spot()
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    lo = min(lo, spot())
+
+2028-01-04
+    lo = min(lo, spot())
+    pays spot() - lo

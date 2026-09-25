@@ -294,6 +294,10 @@ def _model_spec(product: Product, req: BaseModel, resp: PricingResponse) -> Mode
         return ModelSpec(name=product.model(req))
     params: dict[str, str | int | float | None] = {"requested": choice.requested}
     calibration_id = None
+    for i, u in enumerate(choice.underlyings or []):
+        params[f"vol[{i}]"] = u.vol
+        if u.ticker:
+            params[f"ticker[{i}]"] = u.ticker
     cal = choice.calibration
     if cal is not None:
         calibration_id = f"{cal.ticker}:{cal.snapshot.isoformat()}"

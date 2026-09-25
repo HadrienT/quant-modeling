@@ -1,0 +1,20 @@
+# title: Reverse cliquet
+# category: Cliquets
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A 40% coupon from which every negative monthly return is subtracted, floored at zero: the investor sells downside volatility.
+#
+# Notional 1000, capital protected. Coupon at maturity:
+# max(40% + sum of the negative monthly returns, 0).
+
+2027-01-04
+    ref = spot()
+    losses = 0
+
+schedule(2027-02-04, 2027-12-04, 1M, US, F)
+    losses = losses + min(spot() / ref - 1, 0)
+    ref = spot()
+
+2028-01-04
+    losses = losses + min(spot() / ref - 1, 0)
+    pays 1000 * (1 + max(0.40 + losses, 0))

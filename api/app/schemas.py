@@ -120,6 +120,16 @@ class DatedAsianRequest(BaseModel):
     seed: int = 1
 
 
+class ScriptUnderlying(BaseModel):
+    """One underlying of a multi-asset script (spot(i) is the i-th): a ticker
+    whose inputs come from the database, or typed flat Black-Scholes inputs."""
+
+    ticker: Optional[str] = Field(None, min_length=1)
+    spot: Optional[float] = Field(None, gt=0.0)
+    vol: Optional[float] = Field(None, gt=0.0)
+    dividend: float = 0.0
+
+
 class ScriptRequest(BaseModel):
     """Price a payoff described in text (blueprint/wp/16-scripting.md) — a
     single underlying reachable as `spot()`, priced by the generic Monte-Carlo
@@ -161,6 +171,24 @@ class ScriptRequest(BaseModel):
         None,
         min_length=1,
         description="Underlying whose stored option chain is calibrated (every model but black_scholes); must be in data-ingest's tracked universe.",
+    )
+    underlyings: Optional[List[ScriptUnderlying]] = Field(
+        None,
+        min_length=2,
+        max_length=8,
+        description=(
+            "For a script that reads spot(1), spot(2)...: one entry per "
+            "underlying, in spot(i) order. Either every entry has a ticker "
+            "(spot, dividend, at-the-money implied vol and historical "
+            "correlation from the database) or every entry has spot and vol "
+            "(then `correlation` is required). Priced under correlated "
+            "Black-Scholes; replaces ticker/spot/vol/dividend."
+        ),
+    )
+    correlation: Optional[List[List[float]]] = Field(
+        None,
+        description="n x n correlation matrix of the typed underlyings "
+        "(ignored with tickers, whose correlation is historical).",
     )
     steps_per_year: int = Field(
         52,
@@ -206,6 +234,8 @@ class ScriptRequest(BaseModel):
 
     @model_validator(mode="after")
     def _model_inputs_present(self) -> "ScriptRequest":
+        if self.underlyings is not None:
+            return self._multi_asset_inputs()
         flat_inputs = self.spot is not None and self.vol is not None
         if self.model == "black_scholes":
             if not flat_inputs:
@@ -218,6 +248,28 @@ class ScriptRequest(BaseModel):
                 )
         elif self.ticker is None:
             raise ValueError(f"model='{self.model}' requires a ticker")
+        return self
+
+    def _multi_asset_inputs(self) -> "ScriptRequest":
+        u = self.underlyings or []
+        if self.model not in ("auto", "black_scholes"):
+            raise ValueError(
+                f"model='{self.model}' is single-underlying; several "
+                "underlyings are priced under correlated Black-Scholes "
+                "(model='auto' or 'black_scholes')"
+            )
+        with_ticker = [x.ticker is not None for x in u]
+        if all(with_ticker):
+            return self
+        if any(with_ticker) or not all(x.spot and x.vol for x in u):
+            raise ValueError(
+                "underlyings: give every entry a ticker, or every entry a spot "
+                "and a vol"
+            )
+        n = len(u)
+        c = self.correlation
+        if c is None or len(c) != n or any(len(row) != n for row in c):
+            raise ValueError(f"typed underlyings need an {n} x {n} correlation")
         return self
 
 
@@ -450,6 +502,16 @@ class ModelCalibration(BaseModel):
     )
 
 
+class UnderlyingUsed(BaseModel):
+    """What one underlying of a multi-asset script was priced with."""
+
+    ticker: Optional[str] = None
+    spot: float
+    dividend: float
+    vol: float
+    vol_source: str = Field(..., description="Where the vol comes from.")
+
+
 class ModelChoice(BaseModel):
     """The model a scripted payoff was priced under: requested, chosen, why,
     and what was calibrated for it."""
@@ -461,6 +523,11 @@ class ModelChoice(BaseModel):
     )
     reason: str
     calibration: Optional[ModelCalibration] = None
+    underlyings: Optional[List[UnderlyingUsed]] = Field(
+        None, description="Multi-asset scripts: each underlying, in spot(i) order."
+    )
+    correlation: Optional[List[List[float]]] = None
+    correlation_source: Optional[str] = None
 
 
 class PricingResponse(BaseModel):

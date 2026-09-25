@@ -3179,6 +3179,34 @@
             "title": "Code",
             "type": "string"
           },
+          "correlation": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation"
+          },
+          "correlation_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Source"
+          },
           "model": {
             "enum": [
               "black_scholes",
@@ -3203,6 +3231,21 @@
             ],
             "title": "Requested",
             "type": "string"
+          },
+          "underlyings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UnderlyingUsed"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Multi-asset scripts: each underlying, in spot(i) order.",
+            "title": "Underlyings"
           }
         },
         "required": [
@@ -4767,6 +4810,24 @@
       "ScriptRequest": {
         "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.\n\nA script only describes a payoff; the dynamics its price depends on come\nfrom `model`. \"auto\" (the default) picks the simplest model that captures\nwhat the script's price depends on (scripting/model_advice.hpp\nrecommend()): local vol for a payoff on each date's spot, stochastic-\nlocal vol for one carrying state across dates, flat Black-Scholes when no\n`ticker` is given. The response's `model_choice` says which and why.\n\"black_scholes\" takes `spot`, `vol` (one flat volatility). \"local_vol\",\n\"heston\" and \"slv\" take a `ticker` and price against the stored market\ndata in the database data-ingest fills (option-chain snapshot, close,\ndividend yield) -- never a live source. A stored snapshot is a market\ndate: the script is priced on the latest snapshot on or before\n`valuation_date` (at most a few days earlier), and the response says so.\nMissing or stale stored data is an error naming what to refresh. Either\nway, `warnings` in the response reports what the script's price depends\non that the chosen model cannot capture.",
         "properties": {
+          "correlation": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).",
+            "title": "Correlation"
+          },
           "day_count": {
             "default": "ACT/365F",
             "enum": [
@@ -4882,6 +4943,23 @@
             "description": "Underlying whose stored option chain is calibrated (every model but black_scholes); must be in data-ingest's tracked universe.",
             "title": "Ticker"
           },
+          "underlyings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScriptUnderlying"
+                },
+                "maxItems": 8,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend.",
+            "title": "Underlyings"
+          },
           "valuation_date": {
             "description": "Time 0. Defaults to today (UTC) when omitted.",
             "format": "date",
@@ -4907,6 +4985,54 @@
           "rate"
         ],
         "title": "ScriptRequest",
+        "type": "object"
+      },
+      "ScriptUnderlying": {
+        "description": "One underlying of a multi-asset script (spot(i) is the i-th): a ticker\nwhose inputs come from the database, or typed flat Black-Scholes inputs.",
+        "properties": {
+          "dividend": {
+            "default": 0.0,
+            "title": "Dividend",
+            "type": "number"
+          },
+          "spot": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
+          },
+          "vol": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vol"
+          }
+        },
+        "title": "ScriptUnderlying",
         "type": "object"
       },
       "ScriptValidateRequest": {
@@ -5509,6 +5635,47 @@
           "price"
         ],
         "title": "Trade",
+        "type": "object"
+      },
+      "UnderlyingUsed": {
+        "description": "What one underlying of a multi-asset script was priced with.",
+        "properties": {
+          "dividend": {
+            "title": "Dividend",
+            "type": "number"
+          },
+          "spot": {
+            "title": "Spot",
+            "type": "number"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
+          },
+          "vol": {
+            "title": "Vol",
+            "type": "number"
+          },
+          "vol_source": {
+            "description": "Where the vol comes from.",
+            "title": "Vol Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spot",
+          "dividend",
+          "vol",
+          "vol_source"
+        ],
+        "title": "UnderlyingUsed",
         "type": "object"
       },
       "UserInfo": {
