@@ -7,7 +7,32 @@
 
 ---
 
-## 1. Diagnostic de l'existant
+## 0. Où on en est (septembre 2026)
+
+Le diagnostic du §1 est celui de départ, conservé pour mémoire : plusieurs de
+ses « trous » sont comblés. État par chantier :
+
+| Chantier | Fait | Reste |
+|---|---|---|
+| **0. Fondations** | Framework de calibration C++ (`ObjectiveFunction`, Levenberg-Marquardt, rapport en points de vol) ; `DayCounter`, calendriers, `Schedule` ; bootstrap de courbe | Multi-courbe OIS / projection ; Hull-White calibré sur swaptions (pas de swaptions) |
+| **1. Vol stochastique** | Heston (COS « Little Heston Trap », QE d'Andersen) ; SABR + calibration ; SVI + Dupire en C++ ; rough Bergomi (schéma hybride) ; **Heston calibré sur la chaîne stockée, SLV (levier par particules)** ; le modèle est choisi pour chaque script et les dynamiques se comparent sur la page pricing | Rough Bergomi non calibré ; grille de Dupire étroite et bruitée en T (issue #82) |
+| **2. AAD** | Lots 17a–17g (tape, check-pointing, parallèle bit-à-bit, multi-adjoints, expression templates) ; **17h : superbucket Dupire, vega par cotation d'option** | Ordre 2 hors dérivées finies sur AAD |
+| **3. GPU** | — | Tout : aucun fichier `.cu` |
+| **4. Taux, crédit, xVA** | Hull-White / Vasicek / CIR (modèles seuls) | LSMC, swaps / swaptions, multi-courbe, crédit, moteur d'exposition, CVA |
+| **5. ML** | — | Tout |
+
+**Sur « arrêter d'ajouter des produits ».** La bibliothèque de scripts (42
+produits de Bouzoubaa & Osseiran, `api/app/product_library/`) n'ajoute aucun
+payoff C++ : elle sert la profondeur (choix et comparaison des modèles, profils
+de risque calculés, superbucket). Elle est **gelée** : un 43ᵉ script n'aurait
+pas plus de valeur qu'un 25ᵉ payoff.
+
+**Suite, dans l'ordre** : chantier 3 (GPU), puis LSMC — qui débloque aussi les
+scripts rappelables et les choosers (issue #86) — puis le chantier 4.
+
+---
+
+## 1. Diagnostic de l'existant (point de départ)
 
 ### 1.1 Ce qui est déjà un atout
 
