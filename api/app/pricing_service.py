@@ -26,6 +26,7 @@ from .schemas import (
     LookbackExtremum,
     LookbackRequest,
     LookbackStyle,
+    ModelChoice,
     MountainRequest,
     PricingResponse,
     QuantoRequest,
@@ -182,29 +183,103 @@ def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
     return ScriptValidateResponse(**result)
 
 
+def _user_choice(model: str) -> Dict:
+    return {
+        "requested": model,
+        "model": model,
+        "code": "user",
+        "reason": "Chosen by hand.",
+    }
+
+
+def _calibration_of(market, sv, model: str) -> Dict:
+    """What was calibrated for `model`, for the response."""
+    out: Dict = {"ticker": market.ticker, "snapshot": market.valuation_date}
+    if sv is None:
+        out["seconds"] = 0.0
+        return out
+    out["seconds"] = sv.seconds
+    out["heston"] = {
+        **sv.heston,
+        "iv_rmse": sv.iv_rmse,
+        "iv_worst": sv.iv_worst,
+        "n_quotes": sv.n_quotes,
+        "n_maturities": sv.n_maturities,
+        "feller": sv.feller,
+    }
+    if model == "slv":
+        out["leverage"] = {
+            "min": sv.leverage_min,
+            "max": sv.leverage_max,
+            "clamped_share": sv.leverage_clamped_share,
+            "n_particles": sv.n_particles,
+        }
+    return out
+
+
 def price_script(req: ScriptRequest) -> PricingResponse:
+    """Choose the model (req.model, or the one the script needs for 'auto'),
+    calibrate what it needs from the database, then price."""
+    from . import market_snapshot, stochastic_vol
+
     market_warnings: List[Dict] = []
     valuation_date = req.valuation_date
-    if req.model == "local_vol":
+    market = None
+    if req.model != "black_scholes" and req.ticker:
         # Market data comes from the database data-ingest fills, never from a
         # live source. A stored snapshot is a market date, and that date is
         # the valuation date the script is priced on.
-        from . import market_snapshot
-
         market = market_snapshot.local_vol_market(
             req.ticker, req.rate, req.valuation_date
         )
         valuation_date = market.valuation_date
+        market_warnings = list(market.warnings)
+
+    model = req.model
+    if model == "auto":
+        choice = {"requested": "auto", **_recommend(req, valuation_date, market, True)}
+    else:
+        choice = _user_choice(model)
+
+    sv = None
+    if choice["model"] in ("heston", "slv"):
+        try:
+            sv = stochastic_vol.calibrate(market)
+        except stochastic_vol.CalibrationUnavailable as exc:
+            if req.model != "auto":
+                raise ValueError(
+                    f"model='{req.model}' cannot be calibrated: {exc}"
+                ) from exc
+            # 'auto' falls back to the best model still available, and says so.
+            choice = {
+                "requested": "auto",
+                **_recommend(req, valuation_date, market, False),
+            }
+            market_warnings.append(
+                {
+                    "code": "stochastic_calibration_failed",
+                    "severity": "warning",
+                    "message": f"Stochastic-vol calibration failed ({exc}); "
+                    f"priced under {choice['model']} instead.",
+                }
+            )
+    model = choice["model"]
+    if market is not None:
+        choice["calibration"] = _calibration_of(market, sv, model)
+
+    if market is not None:
         spot, dividend, vol = market.spot, market.dividend, 0.0
-        k_grid, t_grid, sigma = market.K_grid, market.T_grid, market.sigma_loc_flat
-        market_warnings = market.warnings
+        k_grid, t_grid = market.K_grid, market.T_grid
     else:
         spot, dividend, vol = req.spot, req.dividend, req.vol
-        k_grid, t_grid, sigma = [], [], []
+        k_grid, t_grid = [], []
+    sigma = market.sigma_loc_flat if model == "local_vol" else []
+    heston = sv.heston if sv is not None else {}
+    leverage = list(sv.leverage_flat) if (sv is not None and model == "slv") else []
 
     with tracer.start_as_current_span(
         "engine.price",
-        attributes={"qm.product": "script", "qm.model": req.model, "qm.engine": "mc"},
+        attributes={"qm.product": "script", "qm.model": model, "qm.engine": "mc"},
     ):
         result = qm.price_script(
             req.script,
@@ -220,14 +295,27 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             req.seed,
             req.sampler,
             req.greeks_method,
-            req.model,
-            k_grid,
-            t_grid,
+            model,
+            k_grid if model in ("local_vol", "slv") else [],
+            t_grid if model in ("local_vol", "slv") else [],
             sigma,
             req.steps_per_year,
+            heston=heston,
+            leverage_flat=leverage,
         )
     result["warnings"] = market_warnings + list(result.get("warnings", []))
-    return _pricing_response_from_dict(result)
+    response = _pricing_response_from_dict(result)
+    return response.model_copy(update={"model_choice": ModelChoice(**choice)})
+
+
+def _recommend(req: ScriptRequest, valuation_date, market, stochastic: bool) -> Dict:
+    return qm.recommend_script_model(
+        req.script,
+        valuation_date.isoformat(),
+        req.day_count,
+        market_surface=market is not None,
+        stochastic=stochastic,
+    )
 
 
 _BARRIER_KIND_MAP = {

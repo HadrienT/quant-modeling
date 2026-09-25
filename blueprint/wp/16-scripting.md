@@ -462,8 +462,11 @@ que trois choses — les dates d'événements, le nombre de sous-jacents
 
 | `model` | Dynamique | Entrées |
 |---|---|---|
+| `auto` (défaut de l'API) | le modèle que le script exige, voir [§8.6](#86-choix-automatique-du-modèle) | `ticker`, ou `spot` + `vol` sans marché |
 | `black_scholes` | une vol plate | `spot`, `vol` |
 | `local_vol` | surface de Dupire (Euler, `steps_per_year`) | `ticker` : la chaîne d'options **stockée** est calibrée (`calibrate_vol_surface`) ; spot et dividende viennent aussi de la base |
+| `heston` | Heston calibré sur la surface SVI (simulation Bates sans sauts, Euler à troncature complète) | `ticker` |
+| `slv` | vol stochastique-locale : le Heston calibré × un levier L(S,t) qui reproduit les marginales de Dupire | `ticker` |
 
 **Les données viennent de la base, jamais de Yahoo.** [`market_snapshot.py`](../../api/app/market_snapshot.py)
 lit ce que `~/data-ingest` a stocké (snapshot d'options, clôtures, rendements de
@@ -478,8 +481,7 @@ cours en retard sur la chaîne est accepté jusqu'à 7 jours mais signalé
 ligne de dividende absente veut dire « jamais ingéré » (un non-payeur est stocké
 à 0,0), pas « zéro ».
 
-**Le garde-fou.** Comme rien n'apparie automatiquement produit et modèle, une
-passe d'analyse lit sur l'arbre ce dont le prix dépend
+**Le garde-fou.** Une passe d'analyse lit sur l'arbre ce dont le prix dépend
 ([`script_analyzer.hpp`](../../include/quantModeling/scripting/visitors/script_analyzer.hpp)) — des faits
 **structurels**, jamais une estimation numérique :
 
@@ -504,12 +506,61 @@ drapeaux avec le modèle choisi et renvoie des `warnings` (`code`, `severity`,
 l'observé), `surface_extrapolated` (événements au-delà de la dernière maturité
 calibrée). `validate_script` expose l'analyse avant tout pricing.
 
-**Hors périmètre, à dessein.** Le choix reste humain, y compris chez un desk :
-l'outil le rend explicite, il ne le devine pas. Heston/Bates ne sont pas
-branchés sur les scripts (leur calibration n'est pas câblée) — c'est ce que
-`forward_smile` désigne. `spot(i)` (multi-sous-jacents) n'a pas de modèle côté
-API : `price_script` le refuse explicitement au lieu de laisser l'évaluateur
-échouer.
+`spot(i)` (multi-sous-jacents) n'a pas de modèle côté API : `price_script` le
+refuse explicitement au lieu de laisser l'évaluateur échouer.
+
+### 8.6 Choix automatique du modèle
+
+La même analyse sert à **choisir** le modèle, pas seulement à avertir
+([ADR-S8](#adr-s8--le-modèle-est-choisi-pour-lutilisateur-et-annoncé)) :
+[`recommend()`](../../include/quantModeling/scripting/model_advice.hpp) renvoie le
+modèle le plus simple qui capture ce dont le prix dépend, parmi ceux que
+l'appelant peut calibrer :
+
+| Le script… | Modèle | Pourquoi |
+|---|---|---|
+| sans `ticker` (pas de surface stockée) | `black_scholes` | seul modèle disponible ; `flat_vol_smile` avertit si le payoff y est sensible |
+| linéaire en spot | `local_vol` | tout modèle calé sur les forwards donne le même prix ; la surface fournit spot et dividende |
+| dépend du spot de chaque date **séparément** (vanille, digitale, somme d'européennes) | `local_vol` | seules les marginales comptent, que Dupire reproduit exactement ; un modèle stochastique ajouterait du coût, pas de précision |
+| porte un **état** d'une date à l'autre (barrière, moyenne, knock-in) | `slv` | le prix dépend du smile forward ; la SLV garde les marginales exactes et y ajoute une dynamique de vol |
+| idem, mais la calibration stochastique échoue | `local_vol` | repli annoncé (`stochastic_calibration_failed`) |
+
+Un script qui mêle une vanille et une barrière reçoit **un seul** modèle, celui
+de sa partie la plus exigeante : on ne price pas deux morceaux d'un même payoff
+sous deux lois du spot, et le modèle calibré reprice de toute façon la partie
+vanille. `heston` seul n'est **jamais** recommandé — il ne reprice les vanilles
+qu'à son erreur de calibration près — mais reste disponible à la main.
+
+La page `/scripting` a `auto` par défaut ; la réponse porte `model_choice`
+(modèle demandé, retenu, raison, calibration : paramètres Heston, erreur du fit
+en points de vol, étendue du levier et part de la grille bloquée à ses bornes).
+L'événement d'audit `pricing.valuation` enregistre le modèle **retenu** et ses
+paramètres (`ModelSpec.params`, `calibration_id = ticker:snapshot`).
+
+**Calibration** ([`stochastic_vol.py`](../../api/app/stochastic_vol.py)), une fois
+par (ticker, snapshot, taux), en cache :
+
+1. **Heston** ([`heston_calibration.hpp`](../../include/quantModeling/market/heston_calibration.hpp))
+   sur la surface SVI déjà nettoyée, lue à k = z·σ_ATM·√T pour
+   z ∈ {−2 … +1,5} et T ≥ 0,05 an. Levenberg-Marquardt sur les prix COS des
+   options hors de la monnaie, résidus divisés par la vega de marché — l'écart
+   de vol implicite au premier ordre, sans inversion par résidu ; l'erreur
+   **exacte** en vol implicite est mesurée à la fin. Huit points de départ en
+   parallèle (la vallée κ/ξ est plate). Le pricer COS est vectorisé par
+   maturité : la fonction caractéristique ne dépend pas du strike.
+2. **Levier SLV** ([`slv_calibration.hpp`](../../include/quantModeling/market/slv_calibration.hpp),
+   méthode particulaire de Guyon & Henry-Labordère) sur la grille de Dupire de
+   la même surface : 50 000 particules, graine fixe (un replay reproduit le prix).
+
+**Limites connues, affichées plutôt que masquées.** Sur SPX/SPY, Heston ne suit
+pas la pente de skew du court terme (≈ 2 points de vol de RMSE, κ souvent à sa
+borne basse) : c'est la dynamique qu'on lui emprunte, les marginales viennent du
+levier. La SLV est appliquée sans *mixing fraction* (vol de vol pleine) : la
+calibrer demanderait des cotations d'exotiques qui ne sont pas stockées. Enfin la
+SLV n'est exacte que là où la grille de Dupire l'est ; cette grille couvre
+l'intervalle de log-moneyness observé par **toutes** les tranches (étroit quand
+une tranche d'un jour est cotée) et hérite du bruit de ∂w/∂T d'une interpolation
+linéaire en T.
 
 ---
 
@@ -659,6 +710,27 @@ régime où le biais domine plutôt qu'une décroissance stricte. Le widening
 d'intervalle (abstraction de `total = total + x`) n'apporte rien tant qu'aucune
 condition ne porte sur une variable accumulée.
 
+### ADR-S8 — Le modèle est choisi pour l'utilisateur, et annoncé
+
+**Décision.** L'API accepte `model="auto"` et en fait son défaut : le modèle est
+choisi par `recommend()` à partir de l'analyse structurelle du script, annoncé
+dans la réponse (`model_choice`) et enregistré dans l'audit. Les quatre modèles
+restent sélectionnables à la main.
+
+**Écart au livre.** Andreasen & Savine laissent le modèle entièrement à
+l'appelant : le script décrit le produit, le modèle est fourni par ailleurs. Ce
+découplage est conservé tel quel dans le cœur (`ScriptedProduct` ne sait rien du
+modèle, `make_script_model` ne sait rien du script) ; le choix automatique est
+une **politique** posée au-dessus, dans `model_advice.hpp` à côté de `advise()`,
+qui lit la même analyse. La version précédente de ce lot écrivait « le choix
+reste humain, l'outil le rend explicite » : le mainteneur a tranché pour un
+choix par défaut, toujours explicite.
+
+**Pourquoi.** Un utilisateur qui ne connaît pas les produits structurés ne sait
+pas qu'une barrière dépend du smile forward et une vanille non. La règle d'un
+desk — le modèle le plus simple qui capture ce dont le prix dépend, un seul
+modèle par produit — se lit sur l'arbre, sans estimation numérique.
+
 ---
 
 ## 13. Bibliographie
@@ -669,3 +741,6 @@ condition ne porte sur une variable accumulée.
 | Architecture de simulation, AAD | Savine, *Modern Computational Finance: AAD and Parallel Simulations*, Wiley 2018 |
 | Le scripting en salle de marché | Andreasen & Huge, « Random Grids », *Risk*, 2011 |
 | Lissage et pathwise | Glasserman, *Monte Carlo Methods in Financial Engineering*, §7.2–7.3 |
+| Heston | Heston, « A Closed-Form Solution for Options with Stochastic Volatility », *RFS* 6(2), 1993 |
+| Pricing COS | Fang & Oosterlee, « A Novel Pricing Method for European Options Based on Fourier-Cosine Series Expansions », *SIAM J. Sci. Comput.* 31, 2008 |
+| Calibration SLV | Guyon & Henry-Labordère, « Being Particular About Calibration », *Risk*, janvier 2012 |

@@ -16,12 +16,12 @@ so when it does not:
 | Quanto | Black-Scholes with the quanto drift adjustment, asset vol from the smile, FX vol and asset/FX correlation estimated from history (no FX options stored) | same, asset vol proxied |
 | Future | cost of carry, no volatility | — |
 
-Not used, and why: Heston and rough Bergomi exist in the C++ core but are
-neither exposed to Python nor calibrated to stored data, and a stochastic-
-volatility model that does not reprice the day's vanillas would mark a book
-off its own hedges. Stochastic-local volatility (the SLV simulator, also in
-the core) is the full desk standard for barriers; it needs a calibrated
-leverage function, which the pipeline does not produce yet.
+Not used, and why: rough Bergomi exists in the C++ core but is not
+calibrated to stored data. Heston alone does not reprice the day's vanillas,
+which would mark a book off its own hedges. Stochastic-local volatility, the
+full desk standard for barriers, is calibrated on the stored surface for the
+scripting page (stochastic_vol.py) but not used for marks yet: a history of
+marks would need one Heston fit and one leverage calibration per snapshot.
 """
 
 from __future__ import annotations

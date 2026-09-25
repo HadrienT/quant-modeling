@@ -2409,6 +2409,66 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HestonFit": {
+        "description": "Heston calibrated to the stored surface (market/heston_calibration.hpp).\niv_rmse / iv_worst: exact implied-vol errors over the fitted points, in\nvol (0.01 = one vol point).",
+        "properties": {
+          "feller": {
+            "description": "2 kappa theta > xi^2.",
+            "title": "Feller",
+            "type": "boolean"
+          },
+          "iv_rmse": {
+            "title": "Iv Rmse",
+            "type": "number"
+          },
+          "iv_worst": {
+            "title": "Iv Worst",
+            "type": "number"
+          },
+          "kappa": {
+            "title": "Kappa",
+            "type": "number"
+          },
+          "n_maturities": {
+            "title": "N Maturities",
+            "type": "integer"
+          },
+          "n_quotes": {
+            "title": "N Quotes",
+            "type": "integer"
+          },
+          "rho": {
+            "title": "Rho",
+            "type": "number"
+          },
+          "theta": {
+            "title": "Theta",
+            "type": "number"
+          },
+          "v0": {
+            "title": "V0",
+            "type": "number"
+          },
+          "xi": {
+            "title": "Xi",
+            "type": "number"
+          }
+        },
+        "required": [
+          "v0",
+          "kappa",
+          "theta",
+          "xi",
+          "rho",
+          "iv_rmse",
+          "iv_worst",
+          "n_quotes",
+          "n_maturities",
+          "feller"
+        ],
+        "title": "HestonFit",
+        "type": "object"
+      },
       "HistoryPointView": {
         "properties": {
           "cumulative_pnl": {
@@ -2608,6 +2668,36 @@
           "spec"
         ],
         "title": "Instrument",
+        "type": "object"
+      },
+      "LeverageFit": {
+        "description": "The SLV leverage L(K, T) on the Dupire grid (market/slv_calibration.hpp).",
+        "properties": {
+          "clamped_share": {
+            "description": "Share of grid points held at the calibration's floor or cap, where the marginals are not the surface's.",
+            "title": "Clamped Share",
+            "type": "number"
+          },
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
+          "min": {
+            "title": "Min",
+            "type": "number"
+          },
+          "n_particles": {
+            "title": "N Particles",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "clamped_share",
+          "n_particles"
+        ],
+        "title": "LeverageFit",
         "type": "object"
       },
       "LocalVolResponse": {
@@ -3026,6 +3116,104 @@
         "title": "MigrateRequest",
         "type": "object"
       },
+      "ModelCalibration": {
+        "properties": {
+          "heston": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HestonFit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeverageFit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seconds": {
+            "description": "Wall time of the calibration (cached per snapshot).",
+            "title": "Seconds",
+            "type": "number"
+          },
+          "snapshot": {
+            "format": "date",
+            "title": "Snapshot",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "snapshot",
+          "seconds"
+        ],
+        "title": "ModelCalibration",
+        "type": "object"
+      },
+      "ModelChoice": {
+        "description": "The model a scripted payoff was priced under: requested, chosen, why,\nand what was calibrated for it.",
+        "properties": {
+          "calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelCalibration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code": {
+            "description": "Stable key of the reason ('user' when chosen by hand).",
+            "title": "Code",
+            "type": "string"
+          },
+          "model": {
+            "enum": [
+              "black_scholes",
+              "local_vol",
+              "heston",
+              "slv"
+            ],
+            "title": "Model",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested": {
+            "enum": [
+              "auto",
+              "black_scholes",
+              "local_vol",
+              "heston",
+              "slv"
+            ],
+            "title": "Requested",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested",
+          "model",
+          "code",
+          "reason"
+        ],
+        "title": "ModelChoice",
+        "type": "object"
+      },
       "ModelParamView": {
         "properties": {
           "name": {
@@ -3077,6 +3265,37 @@
           "status"
         ],
         "title": "ModelParamView",
+        "type": "object"
+      },
+      "ModelRecommendation": {
+        "description": "The model 'auto' picks for a script, and why (scripting/model_advice.hpp\nrecommend()).",
+        "properties": {
+          "code": {
+            "description": "Stable key of the reason.",
+            "title": "Code",
+            "type": "string"
+          },
+          "model": {
+            "enum": [
+              "black_scholes",
+              "local_vol",
+              "heston",
+              "slv"
+            ],
+            "title": "Model",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "code",
+          "reason"
+        ],
+        "title": "ModelRecommendation",
         "type": "object"
       },
       "ModelView": {
@@ -3926,6 +4145,17 @@
             "title": "Mc Std Error",
             "type": "number"
           },
+          "model_choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelChoice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripted payoffs only: the model used and why."
+          },
           "npv": {
             "title": "Npv",
             "type": "number"
@@ -4535,7 +4765,7 @@
         "type": "object"
       },
       "ScriptRequest": {
-        "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.\n\nA script only describes a payoff; the dynamics its price depends on come\nfrom `model`. \"black_scholes\" takes `spot`, `vol` (one flat volatility).\n\"local_vol\" takes a `ticker` and prices against the stored market data in\nthe database data-ingest fills (option-chain snapshot, close, dividend\nyield) -- never a live source -- so skew is priced. A stored snapshot is a\nmarket date: the script is priced on the latest snapshot on or before\n`valuation_date` (at most a few days earlier), and the response says so.\nMissing or stale stored data is an error naming what to refresh. Either\nway, `warnings` in the response reports what the script's price depends\non that the chosen model cannot capture.",
+        "description": "Price a payoff described in text (blueprint/wp/16-scripting.md) \u2014 a\nsingle underlying reachable as `spot()`, priced by the generic Monte-Carlo\nengine. `fuzzy` smooths comparisons for a usable pathwise delta on\ndigitals and barriers; discrete tests (flags) stay crisp either way.\n\nA script only describes a payoff; the dynamics its price depends on come\nfrom `model`. \"auto\" (the default) picks the simplest model that captures\nwhat the script's price depends on (scripting/model_advice.hpp\nrecommend()): local vol for a payoff on each date's spot, stochastic-\nlocal vol for one carrying state across dates, flat Black-Scholes when no\n`ticker` is given. The response's `model_choice` says which and why.\n\"black_scholes\" takes `spot`, `vol` (one flat volatility). \"local_vol\",\n\"heston\" and \"slv\" take a `ticker` and price against the stored market\ndata in the database data-ingest fills (option-chain snapshot, close,\ndividend yield) -- never a live source. A stored snapshot is a market\ndate: the script is priced on the latest snapshot on or before\n`valuation_date` (at most a few days earlier), and the response says so.\nMissing or stale stored data is an error naming what to refresh. Either\nway, `warnings` in the response reports what the script's price depends\non that the chosen model cannot capture.",
         "properties": {
           "day_count": {
             "default": "ACT/365F",
@@ -4575,11 +4805,14 @@
             "type": "string"
           },
           "model": {
-            "default": "black_scholes",
-            "description": "'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot (needs ticker; spot and dividend come from the database).",
+            "default": "auto",
+            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.",
             "enum": [
+              "auto",
               "black_scholes",
-              "local_vol"
+              "local_vol",
+              "heston",
+              "slv"
             ],
             "title": "Model",
             "type": "string"
@@ -4625,12 +4858,12 @@
                 "type": "null"
               }
             ],
-            "description": "Required for model='black_scholes'.",
+            "description": "Required for model='black_scholes' (and 'auto' without a ticker).",
             "title": "Spot"
           },
           "steps_per_year": {
             "default": 52,
-            "description": "Euler steps per year for model='local_vol' (ignored by black_scholes, which is simulated exactly).",
+            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly).",
             "maximum": 504.0,
             "minimum": 12.0,
             "title": "Steps Per Year",
@@ -4646,7 +4879,7 @@
                 "type": "null"
               }
             ],
-            "description": "Underlying whose stored option chain is calibrated (model='local_vol'); must be in data-ingest's tracked universe.",
+            "description": "Underlying whose stored option chain is calibrated (every model but black_scholes); must be in data-ingest's tracked universe.",
             "title": "Ticker"
           },
           "valuation_date": {
@@ -4665,7 +4898,7 @@
                 "type": "null"
               }
             ],
-            "description": "Required for model='black_scholes'.",
+            "description": "Required for model='black_scholes' (and 'auto' without a ticker).",
             "title": "Vol"
           }
         },
@@ -4721,6 +4954,10 @@
             "title": "Events",
             "type": "array"
           },
+          "recommendation": {
+            "$ref": "#/components/schemas/ModelRecommendation",
+            "description": "What model='auto' picks when the ticker's surface and its stochastic-vol calibration are available (the usual case); the pricing response's model_choice reports the actual choice."
+          },
           "variables": {
             "items": {
               "type": "string"
@@ -4732,7 +4969,8 @@
         "required": [
           "events",
           "variables",
-          "analysis"
+          "analysis",
+          "recommendation"
         ],
         "title": "ScriptValidateResponse",
         "type": "object"

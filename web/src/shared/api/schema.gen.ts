@@ -2209,6 +2209,37 @@ export interface components {
             /** Version */
             version: string;
         };
+        /**
+         * HestonFit
+         * @description Heston calibrated to the stored surface (market/heston_calibration.hpp).
+         *     iv_rmse / iv_worst: exact implied-vol errors over the fitted points, in
+         *     vol (0.01 = one vol point).
+         */
+        HestonFit: {
+            /**
+             * Feller
+             * @description 2 kappa theta > xi^2.
+             */
+            feller: boolean;
+            /** Iv Rmse */
+            iv_rmse: number;
+            /** Iv Worst */
+            iv_worst: number;
+            /** Kappa */
+            kappa: number;
+            /** N Maturities */
+            n_maturities: number;
+            /** N Quotes */
+            n_quotes: number;
+            /** Rho */
+            rho: number;
+            /** Theta */
+            theta: number;
+            /** V0 */
+            v0: number;
+            /** Xi */
+            xi: number;
+        };
         /** HistoryPointView */
         HistoryPointView: {
             /** Cumulative Pnl */
@@ -2269,6 +2300,23 @@ export interface components {
             label: string;
             /** Spec */
             spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"];
+        };
+        /**
+         * LeverageFit
+         * @description The SLV leverage L(K, T) on the Dupire grid (market/slv_calibration.hpp).
+         */
+        LeverageFit: {
+            /**
+             * Clamped Share
+             * @description Share of grid points held at the calibration's floor or cap, where the marginals are not the surface's.
+             */
+            clamped_share: number;
+            /** Max */
+            max: number;
+            /** Min */
+            min: number;
+            /** N Particles */
+            n_particles: number;
         };
         /**
          * LocalVolResponse
@@ -2435,6 +2483,48 @@ export interface components {
         MigrateRequest: {
             portfolio: components["schemas"]["Portfolio-Input"];
         };
+        /** ModelCalibration */
+        ModelCalibration: {
+            heston?: components["schemas"]["HestonFit"] | null;
+            leverage?: components["schemas"]["LeverageFit"] | null;
+            /**
+             * Seconds
+             * @description Wall time of the calibration (cached per snapshot).
+             */
+            seconds: number;
+            /**
+             * Snapshot
+             * Format: date
+             */
+            snapshot: string;
+            /** Ticker */
+            ticker: string;
+        };
+        /**
+         * ModelChoice
+         * @description The model a scripted payoff was priced under: requested, chosen, why,
+         *     and what was calibrated for it.
+         */
+        ModelChoice: {
+            calibration?: components["schemas"]["ModelCalibration"] | null;
+            /**
+             * Code
+             * @description Stable key of the reason ('user' when chosen by hand).
+             */
+            code: string;
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "black_scholes" | "local_vol" | "heston" | "slv";
+            /** Reason */
+            reason: string;
+            /**
+             * Requested
+             * @enum {string}
+             */
+            requested: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+        };
         /** ModelParamView */
         ModelParamView: {
             /** Name */
@@ -2453,6 +2543,25 @@ export interface components {
             text?: string | null;
             /** Value */
             value?: number | null;
+        };
+        /**
+         * ModelRecommendation
+         * @description The model 'auto' picks for a script, and why (scripting/model_advice.hpp
+         *     recommend()).
+         */
+        ModelRecommendation: {
+            /**
+             * Code
+             * @description Stable key of the reason.
+             */
+            code: string;
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "black_scholes" | "local_vol" | "heston" | "slv";
+            /** Reason */
+            reason: string;
         };
         /**
          * ModelView
@@ -2857,6 +2966,8 @@ export interface components {
             greeks: components["schemas"]["Greeks"];
             /** Mc Std Error */
             mc_std_error: number;
+            /** @description Scripted payoffs only: the model used and why. */
+            model_choice?: components["schemas"]["ModelChoice"] | null;
             /** Npv */
             npv: number;
             /** Risks */
@@ -3175,11 +3286,16 @@ export interface components {
          *     digitals and barriers; discrete tests (flags) stay crisp either way.
          *
          *     A script only describes a payoff; the dynamics its price depends on come
-         *     from `model`. "black_scholes" takes `spot`, `vol` (one flat volatility).
-         *     "local_vol" takes a `ticker` and prices against the stored market data in
-         *     the database data-ingest fills (option-chain snapshot, close, dividend
-         *     yield) -- never a live source -- so skew is priced. A stored snapshot is a
-         *     market date: the script is priced on the latest snapshot on or before
+         *     from `model`. "auto" (the default) picks the simplest model that captures
+         *     what the script's price depends on (scripting/model_advice.hpp
+         *     recommend()): local vol for a payoff on each date's spot, stochastic-
+         *     local vol for one carrying state across dates, flat Black-Scholes when no
+         *     `ticker` is given. The response's `model_choice` says which and why.
+         *     "black_scholes" takes `spot`, `vol` (one flat volatility). "local_vol",
+         *     "heston" and "slv" take a `ticker` and price against the stored market
+         *     data in the database data-ingest fills (option-chain snapshot, close,
+         *     dividend yield) -- never a live source. A stored snapshot is a market
+         *     date: the script is priced on the latest snapshot on or before
          *     `valuation_date` (at most a few days earlier), and the response says so.
          *     Missing or stale stored data is an error naming what to refresh. Either
          *     way, `warnings` in the response reports what the script's price depends
@@ -3216,11 +3332,11 @@ export interface components {
             greeks_method: "none" | "aad";
             /**
              * Model
-             * @description 'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot (needs ticker; spot and dividend come from the database).
-             * @default black_scholes
+             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (needs spot and vol). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
+             * @default auto
              * @enum {string}
              */
-            model: "black_scholes" | "local_vol";
+            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
             /**
              * N Paths
              * @default 200000
@@ -3246,18 +3362,18 @@ export interface components {
             seed: number;
             /**
              * Spot
-             * @description Required for model='black_scholes'.
+             * @description Required for model='black_scholes' (and 'auto' without a ticker).
              */
             spot?: number | null;
             /**
              * Steps Per Year
-             * @description Euler steps per year for model='local_vol' (ignored by black_scholes, which is simulated exactly).
+             * @description Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly).
              * @default 52
              */
             steps_per_year: number;
             /**
              * Ticker
-             * @description Underlying whose stored option chain is calibrated (model='local_vol'); must be in data-ingest's tracked universe.
+             * @description Underlying whose stored option chain is calibrated (every model but black_scholes); must be in data-ingest's tracked universe.
              */
             ticker?: string | null;
             /**
@@ -3268,7 +3384,7 @@ export interface components {
             valuation_date?: string;
             /**
              * Vol
-             * @description Required for model='black_scholes'.
+             * @description Required for model='black_scholes' (and 'auto' without a ticker).
              */
             vol?: number | null;
         };
@@ -3303,6 +3419,8 @@ export interface components {
             analysis: components["schemas"]["ScriptAnalysis"];
             /** Events */
             events: components["schemas"]["ScriptEvent"][];
+            /** @description What model='auto' picks when the ticker's surface and its stochastic-vol calibration are available (the usual case); the pricing response's model_choice reports the actual choice. */
+            recommendation: components["schemas"]["ModelRecommendation"];
             /** Variables */
             variables: string[];
         };

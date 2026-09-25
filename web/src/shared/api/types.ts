@@ -4,6 +4,10 @@ import type { components } from "./schema.gen";
 export type Schemas = components["schemas"];
 
 export type PricingResponse = Schemas["PricingResponse"];
+export type ModelChoice = Schemas["ModelChoice"];
+export type ModelRecommendation = Schemas["ModelRecommendation"];
+/** The model a scripted payoff is requested under ("auto" = chosen for it). */
+export type ScriptModel = Schemas["ScriptRequest"]["model"];
 export type Greeks = Schemas["Greeks"];
 export type BondAnalytics = Schemas["BondAnalytics"];
 

@@ -141,7 +141,7 @@ def test_the_service_prices_on_the_snapshot_date_and_merges_the_warnings(fake, m
 
     seen = {}
 
-    def fake_price_script(*args):
+    def fake_price_script(*args, **kwargs):
         seen["args"] = args
         return {"npv": 1.0, "greeks": {}, "diagnostics": "d", "mc_std_error": 0.0,
                 "warnings": [{"code": "forward_smile", "severity": "info", "message": "m"}]}

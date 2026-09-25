@@ -285,6 +285,29 @@ def price(product_id: str, req: BaseModel) -> Priced:
     return Priced(response, inputs, time.perf_counter() - start)
 
 
+def _model_spec(product: Product, req: BaseModel, resp: PricingResponse) -> ModelSpec:
+    """The model the pricing actually ran: for a script priced with
+    model='auto', the one chosen, with what was calibrated for it (a replay
+    re-derives both from the same stored snapshot)."""
+    choice = resp.model_choice
+    if choice is None:
+        return ModelSpec(name=product.model(req))
+    params: dict[str, str | int | float | None] = {"requested": choice.requested}
+    calibration_id = None
+    cal = choice.calibration
+    if cal is not None:
+        calibration_id = f"{cal.ticker}:{cal.snapshot.isoformat()}"
+        if cal.heston is not None:
+            params.update(
+                {
+                    k: getattr(cal.heston, k)
+                    for k in ("v0", "kappa", "theta", "xi", "rho")
+                }
+            )
+            params["heston_iv_rmse"] = cal.heston.iv_rmse
+    return ModelSpec(name=choice.model, params=params, calibration_id=calibration_id)
+
+
 def payload(
     product_id: str, req: BaseModel, priced: Priced, *, ip_hash: str | None
 ) -> ValuationPayload:
@@ -295,7 +318,7 @@ def payload(
         product=product_id,
         request=request,
         request_hash=value_hash(request),
-        model=ModelSpec(name=product.model(req)),
+        model=_model_spec(product, req, resp),
         engine=engine_spec(product, req),
         market_inputs=priced.market_inputs,
         result=ValuationResult(
