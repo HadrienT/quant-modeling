@@ -149,5 +149,13 @@ export function scriptedRequest(
 	};
 }
 
-export const SCRIPTED_CATALOG: ProductDescriptor[] =
-	SCRIPTED_PRODUCTS.map(descriptor);
+const FAMILY_ORDER = Object.values(FAMILY);
+
+/** By family (the library's order), then by name. */
+export const SCRIPTED_CATALOG: ProductDescriptor[] = SCRIPTED_PRODUCTS.map(
+	descriptor,
+).sort(
+	(a, b) =>
+		FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category) ||
+		a.label.localeCompare(b.label),
+);

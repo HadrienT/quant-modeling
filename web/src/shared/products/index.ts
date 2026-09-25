@@ -12,7 +12,12 @@ export {
 	scriptedKey,
 	scriptedRequest,
 } from "./scripted";
-export { CATALOG, CATALOG_BY_KEY, CATEGORY_LABELS } from "./catalog";
+export {
+	CATALOG,
+	CATALOG_BY_KEY,
+	CATEGORY_LABELS,
+	DEFAULT_PRODUCT_KEY,
+} from "./catalog";
 export { f, pct } from "./schema";
 export { PRODUCT_DOCS, type ProductDoc, type Reference } from "./docs";
 export { Formula, InlineMath } from "./Formula";
