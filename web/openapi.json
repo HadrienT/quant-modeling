@@ -4717,6 +4717,116 @@
         "title": "RiskEntry",
         "type": "object"
       },
+      "RiskProfileRequest": {
+        "description": "A library product whose risk profile to compute (risk_profile.py).",
+        "properties": {
+          "product": {
+            "minLength": 1,
+            "title": "Product",
+            "type": "string"
+          },
+          "terms": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Terms",
+            "type": "object"
+          }
+        },
+        "required": [
+          "product"
+        ],
+        "title": "RiskProfileRequest",
+        "type": "object"
+      },
+      "RiskProfileResponse": {
+        "properties": {
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "price_std_error": {
+            "title": "Price Std Error",
+            "type": "number"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "reference": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "The reference market the profile is computed on.",
+            "title": "Reference",
+            "type": "object"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RiskProfileRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "product",
+          "price",
+          "price_std_error",
+          "reference",
+          "rows",
+          "method"
+        ],
+        "title": "RiskProfileResponse",
+        "type": "object"
+      },
+      "RiskProfileRow": {
+        "properties": {
+          "bump": {
+            "description": "The bump applied to the parameter.",
+            "title": "Bump",
+            "type": "string"
+          },
+          "change": {
+            "description": "Price change for the bump.",
+            "title": "Change",
+            "type": "number"
+          },
+          "factor": {
+            "title": "Factor",
+            "type": "string"
+          },
+          "position": {
+            "description": "The holder's position: long if the price rises with the parameter. 'not significant' within two standard errors, 'negligible' below 0.01 % of the price.",
+            "enum": [
+              "long",
+              "short",
+              "not significant",
+              "negligible"
+            ],
+            "title": "Position",
+            "type": "string"
+          },
+          "std_error": {
+            "description": "Paired Monte-Carlo standard error of the change.",
+            "title": "Std Error",
+            "type": "number"
+          }
+        },
+        "required": [
+          "factor",
+          "bump",
+          "change",
+          "std_error",
+          "position"
+        ],
+        "title": "RiskProfileRow",
+        "type": "object"
+      },
       "SABRPathRequest": {
         "properties": {
           "alpha": {
@@ -9705,6 +9815,45 @@
           }
         },
         "summary": "Price Volatility Swap Endpoint"
+      }
+    },
+    "/products/risk-profile": {
+      "post": {
+        "description": "Long or short what, for a library product: every market parameter\nbumped on a reference market, the sign of the price change (holder's\nside), with paired Monte-Carlo errors (risk_profile.py). Cached per\nproduct and terms.",
+        "operationId": "risk_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Risk Profile Endpoint"
       }
     }
   }

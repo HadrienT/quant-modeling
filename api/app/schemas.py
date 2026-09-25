@@ -1092,3 +1092,36 @@ class SimulationCalibrateResponse(BaseModel):
     converged: Optional[bool] = None
     n_clean_quotes: int
     cleaning_summary: str
+
+
+class RiskProfileRequest(BaseModel):
+    """A library product whose risk profile to compute (risk_profile.py)."""
+
+    product: str = Field(..., min_length=1)
+    terms: Dict[str, float] = Field(default_factory=dict)
+
+
+class RiskProfileRow(BaseModel):
+    factor: str
+    bump: str = Field(..., description="The bump applied to the parameter.")
+    change: float = Field(..., description="Price change for the bump.")
+    std_error: float = Field(
+        ..., description="Paired Monte-Carlo standard error of the change."
+    )
+    position: Literal["long", "short", "not significant", "negligible"] = Field(
+        ...,
+        description="The holder's position: long if the price rises with the "
+        "parameter. 'not significant' within two standard errors, "
+        "'negligible' below 0.01 % of the price.",
+    )
+
+
+class RiskProfileResponse(BaseModel):
+    product: str
+    price: float
+    price_std_error: float
+    reference: Dict[str, float] = Field(
+        ..., description="The reference market the profile is computed on."
+    )
+    rows: List[RiskProfileRow]
+    method: str

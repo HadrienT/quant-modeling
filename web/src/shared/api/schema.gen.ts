@@ -1142,6 +1142,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/products/risk-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Risk Profile Endpoint
+         * @description Long or short what, for a library product: every market parameter
+         *     bumped on a reference market, the sign of the price change (holder's
+         *     side), with paired Monte-Carlo errors (risk_profile.py). Cached per
+         *     product and terms.
+         */
+        post: operations["risk_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3258,6 +3281,64 @@ export interface components {
             std_error: number;
             /** Value */
             value: number;
+        };
+        /**
+         * RiskProfileRequest
+         * @description A library product whose risk profile to compute (risk_profile.py).
+         */
+        RiskProfileRequest: {
+            /** Product */
+            product: string;
+            /** Terms */
+            terms?: {
+                [key: string]: number;
+            };
+        };
+        /** RiskProfileResponse */
+        RiskProfileResponse: {
+            /** Method */
+            method: string;
+            /** Price */
+            price: number;
+            /** Price Std Error */
+            price_std_error: number;
+            /** Product */
+            product: string;
+            /**
+             * Reference
+             * @description The reference market the profile is computed on.
+             */
+            reference: {
+                [key: string]: number;
+            };
+            /** Rows */
+            rows: components["schemas"]["RiskProfileRow"][];
+        };
+        /** RiskProfileRow */
+        RiskProfileRow: {
+            /**
+             * Bump
+             * @description The bump applied to the parameter.
+             */
+            bump: string;
+            /**
+             * Change
+             * @description Price change for the bump.
+             */
+            change: number;
+            /** Factor */
+            factor: string;
+            /**
+             * Position
+             * @description The holder's position: long if the price rises with the parameter. 'not significant' within two standard errors, 'negligible' below 0.01 % of the price.
+             * @enum {string}
+             */
+            position: "long" | "short" | "not significant" | "negligible";
+            /**
+             * Std Error
+             * @description Paired Monte-Carlo standard error of the change.
+             */
+            std_error: number;
         };
         /** SABRPathRequest */
         SABRPathRequest: {
@@ -6219,6 +6300,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    risk_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiskProfileResponse"];
                 };
             };
             /** @description Validation Error */

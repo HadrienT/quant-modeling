@@ -9,6 +9,7 @@ import {
 	type Reference,
 } from "@/shared/products";
 import { Badge } from "@/shared/ui";
+import { RiskProfileTable } from "./RiskProfileTable";
 import { ScriptedReference } from "./ScriptedReference";
 
 /**
@@ -64,6 +65,10 @@ export function ProductReference({
 					</Link>
 				)}
 			</header>
+
+			<Section title="Long or short what (risk profile)">
+				<RiskProfileTable descriptor={descriptor} />
+			</Section>
 
 			{scripted && <ScriptedReference product={scripted} withSources={!doc} />}
 
