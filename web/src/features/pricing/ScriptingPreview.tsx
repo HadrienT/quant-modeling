@@ -11,6 +11,7 @@ import { useValidateScript } from "./scripting/useValidateScript";
 import { parseScriptDiagnostic } from "./scripting/parseScriptDiagnostic";
 import { ValidationSummary } from "./scripting/ValidationSummary";
 import { ModelChoice, type ScriptModel } from "./scripting/ModelChoice";
+import { ModelDecision } from "./scripting/ModelDecision";
 import { ModelWarnings } from "./scripting/ModelWarnings";
 import { ScriptResult } from "./scripting/ScriptResult";
 
@@ -41,7 +42,7 @@ export default function ScriptingPreview() {
 	const [sampler, setSampler] = useState<"pseudo" | "sobol">("pseudo");
 	const [nPaths, setNPaths] = useState("200000");
 	const [seed, setSeed] = useState("1");
-	const [model, setModel] = useState<ScriptModel>("black_scholes");
+	const [model, setModel] = useState<ScriptModel>("auto");
 	const [ticker, setTicker] = useState("SPY");
 	const [request, setRequest] = useState<Record<string, unknown> | null>(null);
 
@@ -79,13 +80,13 @@ export default function ScriptingPreview() {
 						setRequest({
 							script,
 							model,
-							...(model === "local_vol"
-								? { ticker }
-								: {
+							...(model === "black_scholes"
+								? {
 										spot: Number(spot),
 										dividend: Number(divPct) / 100,
 										vol: Number(volPct) / 100,
-									}),
+									}
+								: { ticker }),
 							rate: Number(ratePct) / 100,
 							valuation_date: valuationDate,
 							day_count: dayCount,
@@ -126,10 +127,11 @@ export default function ScriptingPreview() {
 						onModel={setModel}
 						ticker={ticker}
 						onTicker={setTicker}
+						recommendation={validate.data?.recommendation}
 					/>
 
 					<ScriptingMarketFields
-						marketDriven={model === "local_vol"}
+						marketDriven={model !== "black_scholes"}
 						valuationDate={valuationDate}
 						onValuationDate={setValuationDate}
 						spot={spot}
@@ -201,6 +203,7 @@ export default function ScriptingPreview() {
 
 			{price.isLoading && <MetricRowSkeleton />}
 			{error && <ScriptRejected message={error.message} />}
+			{r?.model_choice && <ModelDecision choice={r.model_choice} />}
 			{r && <ModelWarnings warnings={r.warnings ?? []} />}
 			{r && <ScriptResult result={r} />}
 		</div>

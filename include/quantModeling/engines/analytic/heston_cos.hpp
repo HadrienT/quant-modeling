@@ -5,6 +5,7 @@
 #include "quantModeling/models/equity/heston.hpp"
 
 #include <cstddef>
+#include <vector>
 
 namespace quantModeling
 {
@@ -55,6 +56,20 @@ namespace quantModeling
     Real heston_cos_price(
         Real forward, Real strike, Real ttm, Real discount_factor,
         const HestonParams &params, bool is_call,
+        const HestonCOSSettings &settings = {});
+
+    /**
+     * heston_cos_price for several strikes of one maturity at once -- the
+     * shape a calibration asks for (a smile per maturity). The range width
+     * b - a = 2 L sqrt(c2) and the offset x - a = L sqrt(c2) - c1 do not
+     * depend on the strike, so the characteristic function is evaluated
+     * once per series term and shared by every strike: only the payoff
+     * coefficients U_k (which depend on a, hence on K) are per strike.
+     * Returns exactly what heston_cos_price returns strike by strike.
+     */
+    std::vector<Real> heston_cos_prices(
+        Real forward, const std::vector<Real> &strikes, Real ttm,
+        Real discount_factor, const HestonParams &params, bool is_call,
         const HestonCOSSettings &settings = {});
 
 } // namespace quantModeling

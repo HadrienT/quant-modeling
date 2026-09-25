@@ -66,26 +66,52 @@ namespace quantModeling
         const HestonParams &params, bool is_call,
         const HestonCOSSettings &settings)
     {
-        const Real x = std::log(forward / strike);
+        return heston_cos_prices(forward, {strike}, ttm, discount_factor, params,
+                                 is_call, settings)
+            .front();
+    }
 
+    std::vector<Real> heston_cos_prices(
+        Real forward, const std::vector<Real> &strikes, Real ttm,
+        Real discount_factor, const HestonParams &params, bool is_call,
+        const HestonCOSSettings &settings)
+    {
         const auto [c1, c2] = estimate_cumulants(ttm, params, settings.cumulant_step);
         const Real half_width = settings.truncation_L * std::sqrt(std::max(c2, Real(1e-12)));
-        const Real a = x + c1 - half_width;
-        const Real b = x + c1 + half_width;
+        // For x = ln(F/K): a = x + c1 - half_width and b = x + c1 + half_width,
+        // so b - a and x - a are the same for every strike.
+        const Real width = 2.0 * half_width;
+        const Real x_minus_a = half_width - c1;
 
-        Real sum = 0.0;
+        // phi(omega_k) * exp(i omega_k (x - a)): strike-independent.
+        std::vector<Real> phi_rotated(settings.n_terms);
         for (std::size_t k = 0; k < settings.n_terms; ++k)
         {
-            const Real omega = static_cast<Real>(k) * std::numbers::pi_v<Real> / (b - a);
+            const Real omega = static_cast<Real>(k) * std::numbers::pi_v<Real> / width;
             const C phi = heston_log_return_characteristic_function(omega, ttm, params);
-            const C rotation = std::exp(C(0.0, omega * (x - a)));
-            const Real term = (phi * rotation).real() * put_u_k(k, a, b);
-            sum += (k == 0 ? 0.5 : 1.0) * term; // the cosine series' k=0 term is weighted by one-half
+            phi_rotated[k] = (phi * std::exp(C(0.0, omega * x_minus_a))).real();
         }
 
-        const Real put_price = discount_factor * strike * sum;
-        const Real price = is_call ? put_price + discount_factor * (forward - strike) : put_price;
-        return std::max(price, Real(0.0)); // guards against small negative numerical noise from the truncated series
+        std::vector<Real> prices;
+        prices.reserve(strikes.size());
+        for (const Real strike : strikes)
+        {
+            const Real x = std::log(forward / strike);
+            const Real a = x + c1 - half_width;
+            const Real b = a + width;
+
+            Real sum = 0.0;
+            for (std::size_t k = 0; k < settings.n_terms; ++k)
+            {
+                const Real term = phi_rotated[k] * put_u_k(k, a, b);
+                sum += (k == 0 ? 0.5 : 1.0) * term; // the cosine series' k=0 term is weighted by one-half
+            }
+
+            const Real put_price = discount_factor * strike * sum;
+            const Real price = is_call ? put_price + discount_factor * (forward - strike) : put_price;
+            prices.push_back(std::max(price, Real(0.0))); // guards against small negative numerical noise from the truncated series
+        }
+        return prices;
     }
 
 } // namespace quantModeling

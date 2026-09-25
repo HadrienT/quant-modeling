@@ -5,7 +5,7 @@ export type DayCount = (typeof DAY_COUNTS)[number];
 
 /** The flat Black-Scholes market inputs + MC settings shared by ScriptingPreview. */
 export function ScriptingMarketFields(props: {
-	/** Local vol: spot, dividend and vol come from the calibrated surface. */
+	/** Market models (every one but flat Black-Scholes): spot, dividend and vol come from the stored market. */
 	marketDriven?: boolean;
 	valuationDate: string;
 	onValuationDate: (v: string) => void;

@@ -5,7 +5,9 @@
 #include "quantModeling/pricers/registry.hpp"
 #include "quantModeling/engines/mc/local_vol.hpp"
 #include "quantModeling/engines/mc/path_simulation.hpp"
+#include "quantModeling/market/heston_calibration.hpp"
 #include "quantModeling/market/sabr_calibration.hpp"
+#include "quantModeling/market/slv_calibration.hpp"
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/date.hpp"
@@ -25,6 +27,7 @@
 #include "quantModeling/scripting/script_model_factory.hpp"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -633,6 +636,101 @@ static py::dict calibrate_sabr_slice_impl(
     return out;
 }
 
+// ── Stochastic-vol calibration: Heston on an implied-vol surface, then the
+//    SLV leverage on the Dupire grid of that same surface ───────────────────
+
+static quantModeling::HestonParams heston_from_py(const std::map<std::string, double> &d)
+{
+    auto get = [&](const char *key)
+    {
+        const auto it = d.find(key);
+        if (it == d.end())
+            throw std::invalid_argument(std::string("heston parameters need '") + key + "'");
+        return it->second;
+    };
+    return quantModeling::HestonParams{get("v0"), get("kappa"), get("theta"), get("xi"),
+                                       get("rho")};
+}
+
+static py::dict calibrate_heston_impl(const std::vector<double> &strikes,
+                                      const std::vector<double> &ttms,
+                                      const std::vector<double> &implied_vols,
+                                      double spot, double rate, double dividend)
+{
+    using namespace quantModeling;
+    if (strikes.size() != ttms.size() || strikes.size() != implied_vols.size())
+        throw std::invalid_argument("calibrate_heston: strikes, ttms and implied_vols must have the same length");
+
+    std::vector<HestonCalibrationQuote> quotes;
+    quotes.reserve(strikes.size());
+    for (std::size_t i = 0; i < strikes.size(); ++i)
+        quotes.push_back({strikes[i], ttms[i], implied_vols[i], 1.0});
+
+    HestonCalibration res;
+    {
+        py::gil_scoped_release release;
+        res = calibrate_heston(std::move(quotes), spot, rate, dividend);
+    }
+
+    py::dict out;
+    out["v0"] = res.params.v0;
+    out["kappa"] = res.params.kappa;
+    out["theta"] = res.params.theta;
+    out["xi"] = res.params.xi;
+    out["rho"] = res.params.rho;
+    out["iv_rmse"] = res.iv_rmse;
+    out["iv_worst"] = res.iv_worst;
+    out["n_quotes"] = res.n_quotes;
+    out["n_unpriced"] = res.n_unpriced;
+    out["n_maturities"] = res.n_maturities;
+    out["n_starts"] = res.n_starts;
+    out["iterations"] = res.report.iterations;
+    out["converged"] = res.report.converged;
+    out["feller"] = res.feller;
+    out["wall_time_seconds"] = res.report.wall_time_seconds;
+    return out;
+}
+
+static py::dict calibrate_slv_leverage_impl(double spot, double rate, double dividend,
+                                            const std::map<std::string, double> &heston,
+                                            const std::vector<double> &K_grid,
+                                            const std::vector<double> &T_grid,
+                                            const std::vector<double> &sigma_loc_flat,
+                                            std::size_t n_particles, int seed)
+{
+    using namespace quantModeling;
+    const HestonParams h = heston_from_py(heston);
+    SLVCalibrationSettings settings;
+    settings.n_particles = n_particles;
+    settings.seed = static_cast<std::uint64_t>(seed > 0 ? seed : 1);
+
+    SLVLeverageGrid grid;
+    {
+        py::gil_scoped_release release;
+        grid = calibrate_slv_leverage(spot, rate, dividend, h, K_grid, T_grid,
+                                      sigma_loc_flat, settings);
+    }
+    py::dict out;
+    out["K_grid"] = grid.K_grid;
+    out["T_grid"] = grid.T_grid;
+    out["leverage_flat"] = grid.leverage;
+    out["n_particles"] = settings.n_particles;
+    // The clamp a bucket's estimate is held to where E[v|S] is unreliable:
+    // a caller can count how much of the grid sits on it.
+    out["leverage_floor"] = settings.leverage_floor;
+    out["leverage_cap"] = settings.leverage_cap;
+    return out;
+}
+
+static py::dict recommendation_to_py(const quantModeling::scripting::Recommendation &r)
+{
+    py::dict d;
+    d["model"] = std::string(quantModeling::scripting::model_name(r.model));
+    d["code"] = r.code;
+    d["reason"] = r.reason;
+    return d;
+}
+
 // ── Path simulation (display/illustration, not a pricing engine) ───────────
 
 static py::dict simulate_black_scholes_paths_impl(
@@ -742,12 +840,18 @@ static py::dict price_dated_asian(double spot, double rate, double dividend,
 //    pointed line/column message; the API layer turns that into a 422.
 //
 // The script never says which dynamics its price depends on -- the model is
-// a separate choice, made here:
+// a separate choice, made here (recommend_script_model says which one the
+// script needs; the API picks it when asked for 'auto'):
 //   model = "black_scholes": one flat vol (`vol`).
 //   model = "local_vol":     a Dupire surface (K_grid / T_grid /
 //                            sigma_loc_flat, the shape calibrate_vol_surface
 //                            returns), simulated by Euler steps of
 //                            1/steps_per_year.
+//   model = "heston":        calibrated Heston parameters (`heston`, the
+//                            dict calibrate_heston returns).
+//   model = "slv":           `heston` plus the leverage grid
+//                            calibrate_slv_leverage returns (K_grid /
+//                            T_grid / leverage_flat).
 // Whatever the choice, `warnings` reports what the script's price depends on
 // that the chosen model cannot capture (scripting/model_advice.hpp) --
 // structural facts read off the script, never a guess at the size of the
@@ -787,7 +891,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &sigma_loc_flat,
                              int steps_per_year,
                              const std::map<std::string, std::vector<double>>
-                                 &historical_fixings)
+                                 &historical_fixings,
+                             const std::map<std::string, double> &heston,
+                             const std::vector<double> &leverage_flat)
 {
     using namespace quantModeling;
 
@@ -806,16 +912,40 @@ static py::dict price_script(const std::string &script, double spot, double rate
         throw std::invalid_argument("price_script: steps_per_year must be >= 1");
     const double max_dt = 1.0 / static_cast<double>(steps_per_year);
 
-    const bool local_vol = (model == "local_vol");
-    const scripting::ModelKind kind =
-        local_vol ? scripting::ModelKind::LocalVolSurface
-                  : scripting::ModelKind::BlackScholesFlatVol;
-    const double surface_T = (local_vol && !T_grid.empty()) ? T_grid.back() : 0.0;
-    const std::string model_note =
-        local_vol ? " | model local_vol (" + std::to_string(K_grid.size()) + "x" +
-                        std::to_string(T_grid.size()) + " surface, " +
-                        std::to_string(steps_per_year) + " steps/yr)"
-                  : " | model black_scholes (flat vol)";
+    scripting::ScriptModelSpec spec;
+    spec.model = model;
+    spec.spot = spot;
+    spec.rate = rate;
+    spec.dividend = dividend;
+    spec.vol = vol;
+    spec.K_grid = K_grid;
+    spec.T_grid = T_grid;
+    spec.sigma_loc_flat = sigma_loc_flat;
+    spec.leverage_flat = leverage_flat;
+    spec.max_dt = max_dt;
+
+    scripting::ModelKind kind = scripting::ModelKind::BlackScholesFlatVol;
+    std::string model_note = " | model black_scholes (flat vol)";
+    const std::string grid = std::to_string(K_grid.size()) + "x" +
+                             std::to_string(T_grid.size());
+    const std::string steps = std::to_string(steps_per_year) + " steps/yr";
+    if (model == "local_vol")
+    {
+        kind = scripting::ModelKind::LocalVolSurface;
+        model_note = " | model local_vol (" + grid + " surface, " + steps + ")";
+    }
+    else if (model == "heston" || model == "slv")
+    {
+        spec.heston = heston_from_py(heston);
+        kind = model == "heston" ? scripting::ModelKind::Heston
+                                 : scripting::ModelKind::StochasticLocalVol;
+        model_note = model == "heston"
+                         ? " | model heston (" + steps + ")"
+                         : " | model slv (" + grid + " leverage, " + steps + ")";
+    }
+    const bool has_surface = kind == scripting::ModelKind::LocalVolSurface ||
+                             kind == scripting::ModelKind::StochasticLocalVol;
+    const double surface_T = (has_surface && !T_grid.empty()) ? T_grid.back() : 0.0;
 
     auto check_underlyings = [&](std::size_t needed, std::size_t available)
     {
@@ -830,9 +960,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     {
         ScriptedProduct<aad::Number> product(
             script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
-        auto sim_model = scripting::make_script_model<aad::Number>(
-            model, spot, rate, dividend, vol, K_grid, T_grid, sigma_loc_flat,
-            max_dt);
+        auto sim_model = scripting::make_script_model<aad::Number>(spec);
         check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
 
         const AADSimulResults aad_res =
@@ -862,8 +990,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
         py::gil_scoped_release release;
         ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps},
                                       fixings);
-        auto sim_model = scripting::make_script_model<Real>(
-            model, spot, rate, dividend, vol, K_grid, T_grid, sigma_loc_flat, max_dt);
+        auto sim_model = scripting::make_script_model<Real>(spec);
         check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
 
         PricingSettings settings;
@@ -932,6 +1059,11 @@ static py::dict validate_script(const std::string &script,
     out["events"] = events;
     out["variables"] = variables;
     out["analysis"] = analysis;
+    // What 'auto' picks when the market surface and its stochastic-vol
+    // calibration are both available -- the usual case, announced before
+    // pricing; price_script's caller reports the actual choice.
+    out["recommendation"] = recommendation_to_py(
+        scripting::recommend(a, scripting::ModelAvailability{true, true}));
     return out;
 }
 
@@ -1142,6 +1274,8 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("steps_per_year") = 52,
           py::arg("historical_fixings") =
               std::map<std::string, std::vector<double>>{},
+          py::arg("heston") = std::map<std::string, double>{},
+          py::arg("leverage_flat") = std::vector<double>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
@@ -1149,6 +1283,38 @@ PYBIND11_MODULE(quantmodeling, m)
           "(blueprint/wp/17-aad.md), at roughly 3-5x one price's cost "
           "regardless of how many. 'bump' is not offered for scripted "
           "payoffs.");
+    m.def(
+        "recommend_script_model",
+        [](const std::string &script, const std::string &valuation_date,
+           const std::string &day_count, bool market_surface, bool stochastic)
+        {
+            using namespace quantModeling;
+            const Date valuation = Date::from_iso(valuation_date);
+            const ValuationContext ctx{valuation, &day_counter_by_name(day_count),
+                                       &NullCalendar::instance()};
+            const ScriptedProduct<Real> product(script, ctx);
+            return recommendation_to_py(scripting::recommend(
+                product.analysis(),
+                scripting::ModelAvailability{market_surface, stochastic}));
+        },
+        py::arg("script"), py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
+        py::arg("market_surface") = true, py::arg("stochastic") = true,
+        "The simplest model that captures what the script's price depends on "
+        "(scripting/model_advice.hpp recommend()), among those available: "
+        "{model, code, reason}.");
+    m.def("calibrate_heston", &calibrate_heston_impl, py::arg("strikes"),
+          py::arg("ttms"), py::arg("implied_vols"), py::arg("spot"), py::arg("rate"),
+          py::arg("dividend"),
+          "Fit Heston (v0, kappa, theta, xi, rho) to an implied-vol surface by "
+          "Levenberg-Marquardt on COS prices (market/heston_calibration.hpp). "
+          "iv_rmse / iv_worst are the exact implied-vol errors, in vol points.");
+    m.def("calibrate_slv_leverage", &calibrate_slv_leverage_impl, py::arg("spot"),
+          py::arg("rate"), py::arg("dividend"), py::arg("heston"), py::arg("K_grid"),
+          py::arg("T_grid"), py::arg("sigma_loc_flat"), py::arg("n_particles") = 50000,
+          py::arg("seed") = 1,
+          "Leverage L(K, T) such that Heston dynamics times L reproduce the "
+          "given Dupire grid's marginals (particle method, "
+          "market/slv_calibration.hpp). Same K-major layout as sigma_loc_flat.");
     m.def("validate_script", &validate_script, py::arg("script"),
           py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
           "Parse a payoff script and resolve its timeline without pricing "

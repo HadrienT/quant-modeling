@@ -127,43 +127,58 @@ class ScriptRequest(BaseModel):
     digitals and barriers; discrete tests (flags) stay crisp either way.
 
     A script only describes a payoff; the dynamics its price depends on come
-    from `model`. "black_scholes" takes `spot`, `vol` (one flat volatility).
-    "local_vol" takes a `ticker` and prices against the stored market data in
-    the database data-ingest fills (option-chain snapshot, close, dividend
-    yield) -- never a live source -- so skew is priced. A stored snapshot is a
-    market date: the script is priced on the latest snapshot on or before
+    from `model`. "auto" (the default) picks the simplest model that captures
+    what the script's price depends on (scripting/model_advice.hpp
+    recommend()): local vol for a payoff on each date's spot, stochastic-
+    local vol for one carrying state across dates, flat Black-Scholes when no
+    `ticker` is given. The response's `model_choice` says which and why.
+    "black_scholes" takes `spot`, `vol` (one flat volatility). "local_vol",
+    "heston" and "slv" take a `ticker` and price against the stored market
+    data in the database data-ingest fills (option-chain snapshot, close,
+    dividend yield) -- never a live source. A stored snapshot is a market
+    date: the script is priced on the latest snapshot on or before
     `valuation_date` (at most a few days earlier), and the response says so.
     Missing or stale stored data is an error naming what to refresh. Either
     way, `warnings` in the response reports what the script's price depends
     on that the chosen model cannot capture."""
 
     script: str = Field(..., min_length=1, description="The script source text.")
-    model: Literal["black_scholes", "local_vol"] = Field(
-        "black_scholes",
+    model: Literal["auto", "black_scholes", "local_vol", "heston", "slv"] = Field(
+        "auto",
         description=(
+            "'auto': the model the script needs, among those the inputs allow "
+            "(a ticker for the market models, else spot and vol for flat "
+            "Black-Scholes); announced in the response's model_choice. "
             "'black_scholes': flat vol (needs spot and vol). 'local_vol': "
             "Dupire surface calibrated from the ticker's stored option-chain "
-            "snapshot (needs ticker; spot and dividend come from the database)."
+            "snapshot. 'heston': Heston calibrated to that surface. 'slv': "
+            "stochastic-local vol, the calibrated Heston times a leverage that "
+            "reprices the surface. The market models need a ticker; spot and "
+            "dividend then come from the database."
         ),
     )
     ticker: Optional[str] = Field(
         None,
         min_length=1,
-        description="Underlying whose stored option chain is calibrated (model='local_vol'); must be in data-ingest's tracked universe.",
+        description="Underlying whose stored option chain is calibrated (every model but black_scholes); must be in data-ingest's tracked universe.",
     )
     steps_per_year: int = Field(
         52,
         ge=12,
         le=504,
-        description="Euler steps per year for model='local_vol' (ignored by black_scholes, which is simulated exactly).",
+        description="Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly).",
     )
     spot: Optional[float] = Field(
-        None, gt=0.0, description="Required for model='black_scholes'."
+        None,
+        gt=0.0,
+        description="Required for model='black_scholes' (and 'auto' without a ticker).",
     )
     rate: float
     dividend: float = 0.0
     vol: Optional[float] = Field(
-        None, gt=0.0, description="Required for model='black_scholes'."
+        None,
+        gt=0.0,
+        description="Required for model='black_scholes' (and 'auto' without a ticker).",
     )
     valuation_date: date = Field(
         default_factory=_today_utc,
@@ -191,11 +206,18 @@ class ScriptRequest(BaseModel):
 
     @model_validator(mode="after")
     def _model_inputs_present(self) -> "ScriptRequest":
+        flat_inputs = self.spot is not None and self.vol is not None
         if self.model == "black_scholes":
-            if self.spot is None or self.vol is None:
+            if not flat_inputs:
                 raise ValueError("model='black_scholes' requires both spot and vol")
+        elif self.model == "auto":
+            if self.ticker is None and not flat_inputs:
+                raise ValueError(
+                    "model='auto' requires a ticker (market models) or spot and "
+                    "vol (flat Black-Scholes)"
+                )
         elif self.ticker is None:
-            raise ValueError("model='local_vol' requires a ticker")
+            raise ValueError(f"model='{self.model}' requires a ticker")
         return self
 
 
@@ -228,10 +250,25 @@ class ScriptAnalysis(BaseModel):
     path_dependent: bool
 
 
+class ModelRecommendation(BaseModel):
+    """The model 'auto' picks for a script, and why (scripting/model_advice.hpp
+    recommend())."""
+
+    model: Literal["black_scholes", "local_vol", "heston", "slv"]
+    code: str = Field(..., description="Stable key of the reason.")
+    reason: str
+
+
 class ScriptValidateResponse(BaseModel):
     events: List[ScriptEvent]
     variables: List[str]
     analysis: ScriptAnalysis
+    recommendation: ModelRecommendation = Field(
+        ...,
+        description="What model='auto' picks when the ticker's surface and its "
+        "stochastic-vol calibration are available (the usual case); the "
+        "pricing response's model_choice reports the actual choice.",
+    )
 
 
 class BarrierRequest(BaseModel):
@@ -373,6 +410,59 @@ class ModelWarning(BaseModel):
     message: str
 
 
+class HestonFit(BaseModel):
+    """Heston calibrated to the stored surface (market/heston_calibration.hpp).
+    iv_rmse / iv_worst: exact implied-vol errors over the fitted points, in
+    vol (0.01 = one vol point)."""
+
+    v0: float
+    kappa: float
+    theta: float
+    xi: float
+    rho: float
+    iv_rmse: float
+    iv_worst: float
+    n_quotes: int
+    n_maturities: int
+    feller: bool = Field(..., description="2 kappa theta > xi^2.")
+
+
+class LeverageFit(BaseModel):
+    """The SLV leverage L(K, T) on the Dupire grid (market/slv_calibration.hpp)."""
+
+    min: float
+    max: float
+    clamped_share: float = Field(
+        ...,
+        description="Share of grid points held at the calibration's floor or "
+        "cap, where the marginals are not the surface's.",
+    )
+    n_particles: int
+
+
+class ModelCalibration(BaseModel):
+    ticker: str
+    snapshot: date
+    heston: Optional[HestonFit] = None
+    leverage: Optional[LeverageFit] = None
+    seconds: float = Field(
+        ..., description="Wall time of the calibration (cached per snapshot)."
+    )
+
+
+class ModelChoice(BaseModel):
+    """The model a scripted payoff was priced under: requested, chosen, why,
+    and what was calibrated for it."""
+
+    requested: Literal["auto", "black_scholes", "local_vol", "heston", "slv"]
+    model: Literal["black_scholes", "local_vol", "heston", "slv"]
+    code: str = Field(
+        ..., description="Stable key of the reason ('user' when chosen by hand)."
+    )
+    reason: str
+    calibration: Optional[ModelCalibration] = None
+
+
 class PricingResponse(BaseModel):
     npv: float
     greeks: Greeks
@@ -381,6 +471,9 @@ class PricingResponse(BaseModel):
     mc_std_error: float
     risks: Optional[List[RiskEntry]] = None
     warnings: List[ModelWarning] = Field(default_factory=list)
+    model_choice: Optional[ModelChoice] = Field(
+        None, description="Scripted payoffs only: the model used and why."
+    )
     compute_ms: Optional[float] = Field(
         None,
         description="Server-side wall time of the pricing itself (the engine "
