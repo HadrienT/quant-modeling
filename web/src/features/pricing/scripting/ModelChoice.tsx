@@ -15,6 +15,9 @@ export function ModelChoice(props: {
 	onTicker: (t: string) => void;
 	/** From the last "Validate": what auto would pick for this script. */
 	recommendation?: ModelRecommendation | null;
+	/** The script reads several underlyings: their tickers are asked for
+	 * separately (UnderlyingsFields). */
+	multi?: boolean;
 }) {
 	const rec = props.model === "auto" ? props.recommendation : null;
 	return (
@@ -34,7 +37,7 @@ export function ModelChoice(props: {
 						))}
 					</select>
 				</label>
-				{props.model !== "black_scholes" && (
+				{props.model !== "black_scholes" && !props.multi && (
 					<Field
 						label="Ticker"
 						value={props.ticker}

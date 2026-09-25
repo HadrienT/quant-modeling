@@ -1,0 +1,19 @@
+# title: Fixed-strike lookback call
+# category: Asians, lookbacks and ladders
+# underlyings: 1
+# source: Goldman, Sosin & Gatto, Path Dependent Options: Buy at the Low, Sell at the High, Journal of Finance, 1979
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call on the highest weekly close of the year rather than the final one, struck at the initial level.
+#
+# Strike 100% of the strike-date level; maximum over weekly closes.
+
+2027-01-04
+    s0 = spot()
+    hi = spot()
+
+schedule(2027-01-11, 2027-12-27, 1W, US, F)
+    hi = max(hi, spot())
+
+2028-01-04
+    hi = max(hi, spot())
+    pays max(hi - s0, 0)

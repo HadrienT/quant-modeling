@@ -35,6 +35,7 @@ from .schemas import (
     ScriptRequest,
     ScriptValidateRequest,
     ScriptValidateResponse,
+    UnderlyingUsed,
     VanillaRequest,
     VarianceSwapRequest,
     VolatilitySwapRequest,
@@ -217,10 +218,114 @@ def _calibration_of(market, sv, model: str) -> Dict:
     return out
 
 
+def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
+    """A script reading spot(0), spot(1)...: correlated Black-Scholes, inputs
+    from the database (tickers) or typed."""
+    from . import multi_asset_market
+
+    parsed = qm.validate_script(
+        req.script, req.valuation_date.isoformat(), req.day_count
+    )
+    n, given = parsed["analysis"]["n_underlyings"], len(req.underlyings)
+    if n != given:
+        raise ValueError(
+            f"the script reads {n} underlying(s) (spot(0) to spot({n - 1})) "
+            f"but {given} are given"
+        )
+    horizon = parsed["events"][-1]["t"] if parsed["events"] else 0.0
+    warnings: List[Dict] = []
+    if req.underlyings[0].ticker is not None:
+        m = multi_asset_market.multi_asset_market(
+            [u.ticker for u in req.underlyings],
+            req.rate,
+            req.valuation_date,
+            horizon,
+        )
+        used = [
+            UnderlyingUsed(
+                ticker=a.ticker,
+                spot=a.spot,
+                dividend=a.dividend,
+                vol=a.vol,
+                vol_source=a.vol_source,
+            )
+            for a in m.assets
+        ]
+        corr, corr_source, warnings = m.correlation, m.correlation_source, m.warnings
+    else:
+        used = [
+            UnderlyingUsed(
+                spot=u.spot, dividend=u.dividend, vol=u.vol, vol_source="typed"
+            )
+            for u in req.underlyings
+        ]
+        corr, corr_source = req.correlation, "typed"
+
+    rec = qm.recommend_script_model(
+        req.script,
+        req.valuation_date.isoformat(),
+        req.day_count,
+        market_surface=False,
+        stochastic=False,
+    )
+    choice = (
+        {"requested": "auto", **rec}
+        if req.model == "auto"
+        else _user_choice("black_scholes")
+    )
+    with tracer.start_as_current_span(
+        "engine.price",
+        attributes={
+            "qm.product": "script",
+            "qm.model": "black_scholes",
+            "qm.engine": "mc",
+        },
+    ):
+        result = qm.price_script(
+            req.script,
+            used[0].spot,
+            req.rate,
+            used[0].dividend,
+            used[0].vol,
+            req.valuation_date.isoformat(),
+            req.day_count,
+            req.fuzzy,
+            req.default_eps,
+            req.n_paths,
+            req.seed,
+            req.sampler,
+            req.greeks_method,
+            "black_scholes",
+            [],
+            [],
+            [],
+            req.steps_per_year,
+            spots=[u.spot for u in used],
+            dividends=[u.dividend for u in used],
+            vols=[u.vol for u in used],
+            correlation=[x for row in corr for x in row],
+        )
+    result["warnings"] = warnings + list(result.get("warnings", []))
+    response = _pricing_response_from_dict(result)
+    return response.model_copy(
+        update={
+            "model_choice": ModelChoice(
+                **choice,
+                underlyings=used,
+                correlation=corr,
+                correlation_source=corr_source,
+            )
+        }
+    )
+
+
 def price_script(req: ScriptRequest) -> PricingResponse:
     """Choose the model (req.model, or the one the script needs for 'auto'),
     calibrate what it needs from the database, then price."""
     from . import market_snapshot, stochastic_vol
+
+    if req.underlyings is not None:
+        return _price_multi_asset(req)
 
     market_warnings: List[Dict] = []
     valuation_date = req.valuation_date

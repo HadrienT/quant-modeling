@@ -106,17 +106,31 @@ EXAMPLES: dict[str, str] = {
         "        endIf\n"
         "    endIf\n"
     ),
+    "Worst-of call on three stocks, strike 100% of the initial levels": (
+        "2026-12-10\n"
+        "    s0 = spot(0)\n"
+        "    s1 = spot(1)\n"
+        "    s2 = spot(2)\n"
+        "\n"
+        "2027-12-10\n"
+        "    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n"
+        "    pays 1000 * max(worst - 1, 0)\n"
+    ),
 }
 
 _LANGUAGE = """\
 A script is a list of dated EVENTS. A date line is followed by INDENTED
 statements that run when a simulated path reaches that date. A date line is
 either one or several ISO dates (YYYY-MM-DD) on the same line, or a single
-schedule(...) that generates the dates (see below). There is exactly one
-underlying, read with spot(). The script is priced by a Monte-Carlo engine
-under a model the user picks on the page (Black-Scholes by default); the
-script text does not depend on that choice, and the page warns when the chosen
-model cannot capture what a script depends on.
+schedule(...) that generates the dates (see below). spot() reads the
+underlying. A multi-asset script (worst-of, best-of, basket, outperformance,
+mountain range) reads spot(0), spot(1), ... spot(7): spot(0) is spot(), and
+the page asks for one underlying per index (tickers, or typed spot and vol
+with a correlation). The script is priced by a Monte-Carlo engine under a
+model chosen on the page (by default the page picks the one the script needs:
+local vol, stochastic-local vol for path-dependent payoffs, correlated
+Black-Scholes for several underlyings); the script text does not depend on
+that choice.
 
 Statements (nothing else exists):
   name = expr                       assign a variable
@@ -167,10 +181,13 @@ Semantics you must respect:
   write them in chronological order anyway.
 - Keywords are case-insensitive; the closing keyword is `endIf`.
 - spot() always takes parentheses.
-- The playground prices a single-underlying payoff: no baskets (spot(0) is the
-  same as spot(); spot(1) is rejected), no rates or forward accessors (no
-  libor, no fwd), no loops, no `elseif`, no functions beyond the list above (no
-  pow, no normcdf: use ^). Nest an if inside an else instead of `elseif`.
+- Underlyings are numbered from 0 with no gaps: a script reading spot(2)
+  also has spot(0) and spot(1). Performances of several underlyings are
+  ratios to their own initial levels (s0 = spot(0), s1 = spot(1) at the first
+  event); min and max take two arguments, so nest them for three or more.
+- No rates or forward accessors (no libor, no fwd), no loops, no `elseif`, no
+  functions beyond the list above (no pow, no normcdf: use ^). Nest an if
+  inside an else instead of `elseif`.
 - Division by zero and log/sqrt of a negative number silently produce NaN: guard
   divisors that can be zero.
 - Notional and strike are numbers written in the script. Percent levels are
@@ -183,8 +200,9 @@ Semantics you must respect:
 
 _BEHAVIOUR = """\
 How to work with the user:
-- Reply in the user's language (French or English). Identifiers, variable
-  names and comments inside scripts are in English.
+- Always reply in English, whatever language the user writes in: the site
+  is in English. Identifiers, variable names and comments inside scripts are
+  in English too.
 - If the user asks a QUESTION (about the language, about their current script,
   about an error, about what is possible), answer it directly and briefly. The
   "missing terms" procedure below only applies when the user asks you to WRITE
@@ -204,10 +222,10 @@ How to work with the user:
   Example of the expected behaviour for a bare product name (only then, and
   never copied for another kind of request):
 
-    User: "Un autocall."
-    Assistant: "Pour l'écrire il me manque : 1) les dates d'observation et la
-    maturité, 2) le niveau de rappel (en % du niveau initial), 3) le coupon,
-    avec ou sans mémoire, 4) la barrière de protection du capital."
+    User: "An autocall."
+    Assistant: "To write it I need: 1) the observation dates and the
+    maturity, 2) the autocall level (as a % of the initial level), 3) the
+    coupon, with or without memory, 4) the capital protection barrier."
 
 - Never change a term the user gave. If a date is not strictly after the
   valuation date, or a term cannot be expressed in this language, say so and

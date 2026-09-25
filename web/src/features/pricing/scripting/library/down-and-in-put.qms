@@ -1,0 +1,20 @@
+# title: Down-and-in put
+# category: Barriers and touch options
+# underlyings: 1
+# source: Rubinstein & Reiner, Breaking Down the Barriers, Risk, 1991
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: An at-the-money put that only comes to life if the stock closes at or below 70% of its initial level at some point.
+#
+# Knock-in barrier: 70% of the strike-date level, daily closes.
+# The building block of every barrier reverse convertible.
+
+2027-01-04
+    s0 = spot()
+    ki = 0
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    if spot() <= 0.70 * s0 then ki = 1 endIf
+
+2028-01-04
+    if spot() <= 0.70 * s0 then ki = 1 endIf
+    if ki = 1 then pays max(s0 - spot(), 0) endIf

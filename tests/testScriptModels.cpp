@@ -205,4 +205,62 @@ namespace quantModeling
                     4.0 * (under_slv.std_error() + under_lv.std_error()) + 0.10);
     }
 
+    namespace
+    {
+        ScriptModelSpec two_assets(double rho)
+        {
+            ScriptModelSpec s;
+            s.model = "black_scholes";
+            s.rate = 0.03;
+            s.spots = {100.0, 95.0};
+            s.dividends = {0.01, 0.02};
+            s.vols = {0.25, 0.30};
+            s.correlation = {1.0, rho, rho, 1.0};
+            return s;
+        }
+
+    } // namespace
+
+    TEST(ScriptModels, TwoAssetExchangeOptionMatchesMargrabe)
+    {
+        // max(S1 - S2, 0) depends only on the ratio's vol,
+        // sqrt(s1^2 + s2^2 - 2 rho s1 s2): the script, the multi-asset model
+        // and the correlation mixing are all checked against one formula.
+        const double rho = 0.4, T = 1.0;
+        const ScriptModelSpec s = two_assets(rho);
+        const SimulationMCResult res =
+            run("2025-06-03\n    pays max(spot(0) - spot(1), 0)\n", s);
+
+        const double sig = std::sqrt(0.25 * 0.25 + 0.30 * 0.30 - 2 * rho * 0.25 * 0.30);
+        const double f1 = 100.0 * std::exp(-0.01 * T), f2 = 95.0 * std::exp(-0.02 * T);
+        const double d1 = (std::log(f1 / f2) + 0.5 * sig * sig * T) / (sig * std::sqrt(T));
+        const double margrabe = f1 * norm_cdf(d1) - f2 * norm_cdf(d1 - sig * std::sqrt(T));
+        EXPECT_NEAR(res.npv(), margrabe, 4.0 * res.std_error() + 0.02);
+    }
+
+    TEST(ScriptModels, AWorstOfCallIsWorthLessThanEitherCallAndMoreAsCorrelationRises)
+    {
+        const std::string worst_of =
+            "2025-06-03\n    pays max(min(spot(0) / 100, spot(1) / 95) - 1, 0)\n";
+        const std::string first = "2025-06-03\n    pays max(spot(0) / 100 - 1, 0)\n";
+        const double wo_low = run(worst_of, two_assets(0.0)).npv();
+        const double wo_high = run(worst_of, two_assets(0.8)).npv();
+        EXPECT_LT(wo_high, run(first, two_assets(0.8)).npv());
+        EXPECT_GT(wo_high, wo_low); // less dispersion, a better worst performer
+    }
+
+    TEST(ScriptModels, MultiAssetInputsAreChecked)
+    {
+        ScriptModelSpec s = two_assets(0.5);
+        s.correlation = {1.0, 0.5, 0.4, 1.0};
+        EXPECT_THROW(make_script_model<Real>(s), InvalidInput); // not symmetric
+        s = two_assets(1.5);
+        EXPECT_THROW(make_script_model<Real>(s), InvalidInput); // out of [-1, 1]
+        s = two_assets(0.5);
+        s.vols.pop_back();
+        EXPECT_THROW(make_script_model<Real>(s), InvalidInput);
+        s = two_assets(0.5);
+        EXPECT_EQ(make_script_model<Real>(s)->n_underlyings(), 2u);
+    }
+
 } // namespace quantModeling

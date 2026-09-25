@@ -6,9 +6,13 @@
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/heston.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
+#include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
 #include "quantModeling/models/equity/slv_sim_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
+#include <Eigen/Core>
+
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -27,6 +31,14 @@ namespace quantModeling::scripting
         double rate = 0.0;
         double dividend = 0.0;
         double vol = 0.0; ///< black_scholes
+        /// black_scholes on several underlyings (spot(0), spot(1), ...): one
+        /// spot, dividend yield and flat vol per asset, and their correlation
+        /// matrix, row-major n x n. Used instead of spot/dividend/vol when
+        /// `spots` has two or more entries.
+        std::vector<double> spots;
+        std::vector<double> dividends;
+        std::vector<double> vols;
+        std::vector<double> correlation;
         /// local_vol: the Dupire grid; slv: the leverage grid's axes.
         std::vector<double> K_grid;
         std::vector<double> T_grid;
@@ -42,7 +54,8 @@ namespace quantModeling::scripting
      *        script_analyzer.hpp, and model_advice.hpp's recommend() turns
      *        that into a choice (the caller may override it).
      *
-     *  "black_scholes": one flat vol, simulated exactly.
+     *  "black_scholes": one flat vol, simulated exactly; with `spots`,
+     *                   several correlated underlyings, one flat vol each.
      *  "local_vol":     a Dupire surface in the shape calibrate_vol_surface
      *                   returns (K_grid, T_grid, sigma_loc_flat, K-major).
      *  "heston":        Heston stochastic volatility with calibrated
@@ -67,6 +80,30 @@ namespace quantModeling::scripting
         };
         const HestonParams &h = s.heston;
 
+        if (s.model == "black_scholes" && s.spots.size() > 1)
+        {
+            const std::size_t n = s.spots.size();
+            if (s.dividends.size() != n || s.vols.size() != n)
+                throw InvalidInput("price_script: spots, dividends and vols need one entry per underlying");
+            if (s.correlation.size() != n * n)
+                throw InvalidInput("price_script: the correlation matrix must be n x n for n underlyings");
+            for (double v : s.vols)
+                if (!(v > 0.0))
+                    throw InvalidInput("price_script: black_scholes needs every vol > 0");
+            Eigen::MatrixXd corr(static_cast<Eigen::Index>(n), static_cast<Eigen::Index>(n));
+            for (std::size_t i = 0; i < n; ++i)
+                for (std::size_t j = 0; j < n; ++j)
+                {
+                    const double c = s.correlation[i * n + j];
+                    if (i == j ? std::abs(c - 1.0) > 1e-12 : !(c >= -1.0 && c <= 1.0))
+                        throw InvalidInput("price_script: a correlation matrix has a unit diagonal and entries in [-1, 1]");
+                    if (std::abs(c - s.correlation[j * n + i]) > 1e-12)
+                        throw InvalidInput("price_script: the correlation matrix must be symmetric");
+                    corr(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) = c;
+                }
+            return std::make_unique<MultiAssetBSSimModel<T>>(
+                to_T(s.spots), T(s.rate), to_T(s.dividends), to_T(s.vols), corr);
+        }
         if (s.model == "black_scholes")
         {
             if (!(s.vol > 0.0))

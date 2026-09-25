@@ -827,7 +827,7 @@ METHODOLOGY = [
             "The list of transactions is the portfolio: a position is the sum of the "
             "trades on an instrument, so selling part of it reduces it and selling more "
             "than is held opens a short. Nothing edits a position except another trade.",
-            "Cost is the weighted average cost (prix moyen pondéré): buying moves the "
+            "Cost is the weighted average cost: buying moves the "
             "average cost, selling realises (price − average cost) × quantity sold and "
             "leaves it unchanged. Fees are charged to realised P&L when paid. Realised + "
             "unrealised always equals market value plus sale proceeds minus purchase "

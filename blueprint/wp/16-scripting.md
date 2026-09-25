@@ -463,7 +463,7 @@ que trois choses — les dates d'événements, le nombre de sous-jacents
 | `model` | Dynamique | Entrées |
 |---|---|---|
 | `auto` (défaut de l'API) | le modèle que le script exige, voir [§8.6](#86-choix-automatique-du-modèle) | `ticker`, ou `spot` + `vol` sans marché |
-| `black_scholes` | une vol plate | `spot`, `vol` |
+| `black_scholes` | une vol plate ; avec `spot(1)`… : Black-Scholes multi-actifs corrélé (`MultiAssetBSSimModel`), une vol plate par actif | `spot`, `vol` ; ou `underlyings` (tickers, ou spot/vol saisis + `correlation`) |
 | `local_vol` | surface de Dupire (Euler, `steps_per_year`) | `ticker` : la chaîne d'options **stockée** est calibrée (`calibrate_vol_surface`) ; spot et dividende viennent aussi de la base |
 | `heston` | Heston calibré sur la surface SVI (simulation Bates sans sauts, Euler à troncature complète) | `ticker` |
 | `slv` | vol stochastique-locale : le Heston calibré × un levier L(S,t) qui reproduit les marginales de Dupire | `ticker` |
@@ -563,6 +563,47 @@ une tranche d'un jour est cotée) et hérite du bruit de ∂w/∂T d'une interpo
 linéaire en T.
 
 ---
+
+### 8.7 Multi-sous-jacents et bibliothèque de produits
+
+**Plusieurs sous-jacents.** Un script qui lit `spot(1)`, `spot(2)`… (jusqu'à 8)
+est pricé sous Black-Scholes multi-actifs corrélé, seul modèle multi-actifs
+branché : `recommend()` le choisit (`multi_asset`) et `advise()` signale la vol
+plate par actif (`flat_vol_smile`) et la corrélation comme hypothèse
+(`correlation`). Entrées ([`multi_asset_market.py`](../../api/app/multi_asset_market.py)),
+toutes lues en base et enregistrées pour l'audit : clôture et rendement de
+dividende par actif ; vol implicite **à la monnaie** du smile SVI de l'actif à
+la dernière date du script, ou à défaut vol réalisée 63 jours (`vol_proxied`) ;
+corrélation historique des rendements entre clôtures communes sur un an
+(semi-définie positive par construction), avec un avertissement
+`correlation_sparse_history` quand l'historique stocké a des trous de plus de
+5 jours. Ou bien spot, vol, dividende et corrélation saisis.
+
+**Bibliothèque.** Les produits structurés de Bouzoubaa & Osseiran (*Exotic
+Options and Hybrids*, Wiley 2010) sont écrits **en scripts**, sans une ligne de
+payoff C++ — c'est ce qui les rend compatibles avec la règle de la roadmap
+« arrêter d'ajouter des produits » : le catalogue codé ne grossit pas.
+42 scripts lisibles et commentés dans
+[`web/src/features/pricing/scripting/library/`](../../web/src/features/pricing/scripting/library/),
+un fichier par produit, avec un en-tête (titre, famille, nombre de
+sous-jacents, sources, résumé) : vanilles et digitales, barrières et options à
+toucher, asiatiques, lookbacks et ladders, cliquets (plafonné, à plancher global,
+reverse, Napoléon), notes structurées (reverse convertible, barrière, discount,
+bonus, twin-win, capital garanti, Phoenix, Athena, accumulateur, range accrual),
+volatilité (variance, vol, corridor) et multi-actifs (basket, worst-of, best-of,
+outperformance, rainbow, worst-of reverse convertible et autocall, Himalaya,
+Everest, Atlas, Altiplano). Niveaux relatifs (`s0 = spot()` à la date de
+strike) pour valoir sur n'importe quel ticker ; la page décale les dates par
+semaines entières pour que le produit démarre une semaine après la date de
+valorisation. [`test_script_library.py`](../../api/tests/test_script_library.py)
+parse et price chaque fichier et vérifie des relations d'ordre (worst-of <
+basket < best-of, barrière < vanille, variance swap ≈ écart de variance).
+
+**Hors d'atteinte des scripts, et pourquoi** : les quantos et composites (pas
+de modèle actions + change dans les scripts), les hybrides actions-taux (pas de
+modèle de taux stochastique branché), les produits rappelables par l'émetteur
+et les choosers (il faut une espérance conditionnelle — régression de type
+Longstaff-Schwartz — que le langage n'a pas), la vol locale multi-actifs.
 
 ## 9. Tests
 

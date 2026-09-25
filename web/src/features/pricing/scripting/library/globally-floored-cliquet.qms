@@ -1,0 +1,21 @@
+# title: Globally floored cliquet
+# category: Cliquets
+# underlyings: 1
+# source: Wilmott, Cliquet Options and Volatility Models, Wilmott Magazine, 2002
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Twelve monthly returns, each clipped to [-3%, +3%], summed, with a guaranteed minimum of 2% on the total.
+#
+# Notional 1000. Local floor -3%, local cap +3%, global floor 2%.
+# The global floor is what makes it sensitive to the forward smile.
+
+2027-01-04
+    ref = spot()
+    total = 0
+
+schedule(2027-02-04, 2027-12-04, 1M, US, F)
+    total = total + min(max(spot() / ref - 1, -0.03), 0.03)
+    ref = spot()
+
+2028-01-04
+    total = total + min(max(spot() / ref - 1, -0.03), 0.03)
+    pays 1000 * max(total, 0.02)

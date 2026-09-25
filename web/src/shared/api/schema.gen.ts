@@ -2512,6 +2512,10 @@ export interface components {
              * @description Stable key of the reason ('user' when chosen by hand).
              */
             code: string;
+            /** Correlation */
+            correlation?: number[][] | null;
+            /** Correlation Source */
+            correlation_source?: string | null;
             /**
              * Model
              * @enum {string}
@@ -2524,6 +2528,11 @@ export interface components {
              * @enum {string}
              */
             requested: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            /**
+             * Underlyings
+             * @description Multi-asset scripts: each underlying, in spot(i) order.
+             */
+            underlyings?: components["schemas"]["UnderlyingUsed"][] | null;
         };
         /** ModelParamView */
         ModelParamView: {
@@ -3303,6 +3312,11 @@ export interface components {
          */
         ScriptRequest: {
             /**
+             * Correlation
+             * @description n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).
+             */
+            correlation?: number[][] | null;
+            /**
              * Day Count
              * @default ACT/365F
              * @enum {string}
@@ -3377,6 +3391,11 @@ export interface components {
              */
             ticker?: string | null;
             /**
+             * Underlyings
+             * @description For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend.
+             */
+            underlyings?: components["schemas"]["ScriptUnderlying"][] | null;
+            /**
              * Valuation Date
              * Format: date
              * @description Time 0. Defaults to today (UTC) when omitted.
@@ -3386,6 +3405,24 @@ export interface components {
              * Vol
              * @description Required for model='black_scholes' (and 'auto' without a ticker).
              */
+            vol?: number | null;
+        };
+        /**
+         * ScriptUnderlying
+         * @description One underlying of a multi-asset script (spot(i) is the i-th): a ticker
+         *     whose inputs come from the database, or typed flat Black-Scholes inputs.
+         */
+        ScriptUnderlying: {
+            /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /** Spot */
+            spot?: number | null;
+            /** Ticker */
+            ticker?: string | null;
+            /** Vol */
             vol?: number | null;
         };
         /**
@@ -3653,6 +3690,25 @@ export interface components {
              * Format: date
              */
             trade_date: string;
+        };
+        /**
+         * UnderlyingUsed
+         * @description What one underlying of a multi-asset script was priced with.
+         */
+        UnderlyingUsed: {
+            /** Dividend */
+            dividend: number;
+            /** Spot */
+            spot: number;
+            /** Ticker */
+            ticker?: string | null;
+            /** Vol */
+            vol: number;
+            /**
+             * Vol Source
+             * @description Where the vol comes from.
+             */
+            vol_source: string;
         };
         /** UserInfo */
         UserInfo: {

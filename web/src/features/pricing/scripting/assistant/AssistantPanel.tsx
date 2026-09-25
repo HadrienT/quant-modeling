@@ -4,9 +4,9 @@ import { MessageBody } from "./MessageBody";
 import { useAssistantChat, type EditorContext } from "./useAssistantChat";
 
 const STARTERS = [
-	"Explique mon script étape par étape.",
-	"Écris un call asiatique, fixings mensuels sur 6 mois, strike 100.",
-	"Quelles sont les limites du langage ?",
+	"Explain my script step by step.",
+	"Write an Asian call, monthly fixings over 6 months, strike 100.",
+	"What are the limits of the language?",
 ];
 
 /**

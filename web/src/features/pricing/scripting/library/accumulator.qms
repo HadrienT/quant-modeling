@@ -1,0 +1,26 @@
+# title: Accumulator
+# category: Structured notes
+# underlyings: 1
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Buys one share a week at 90% of the initial level, two when the stock is below that price, until it closes at or above 105%.
+#
+# Weekly for six months. Each purchase is marked at the close: its value is
+# (spot - strike) per share, paid on the purchase date. The knock-out is
+# checked first: no purchase on the day it knocks out.
+
+2027-01-04
+    s0 = spot()
+    k = 0.90 * s0
+    alive = 1
+
+schedule(2027-01-11, 2027-06-28, 1W, US, F)
+    if spot() >= 1.05 * s0 then alive = 0 endIf
+    if alive = 1 then
+        if spot() >= k then pays spot() - k else pays 2 * (spot() - k) endIf
+    endIf
+
+2027-07-06
+    if spot() >= 1.05 * s0 then alive = 0 endIf
+    if alive = 1 then
+        if spot() >= k then pays spot() - k else pays 2 * (spot() - k) endIf
+    endIf

@@ -57,7 +57,26 @@ namespace quantModeling::scripting
         std::vector<Advice> out;
         const bool smile_sensitive = a.nonlinear_in_spot || a.spot_threshold_test;
 
-        if (model == ModelKind::BlackScholesFlatVol && smile_sensitive)
+        const bool multi_asset = a.n_underlyings > 1;
+
+        if (multi_asset)
+        {
+            if (smile_sensitive)
+                out.push_back(
+                    {"flat_vol_smile", "warning",
+                     "The script reads several underlyings, each simulated "
+                     "with one flat volatility: the skew of each asset is not "
+                     "captured, and worst-of or barrier payoffs are the most "
+                     "sensitive to it. Multi-asset local vol is not available "
+                     "for scripts yet."});
+            out.push_back(
+                {"correlation", "info",
+                 "The price depends on the joint law of the underlyings: the "
+                 "correlation matrix is an input (historical, or typed), not "
+                 "implied from market prices. Worst-of and best-of payoffs "
+                 "are the most sensitive to it."});
+        }
+        else if (model == ModelKind::BlackScholesFlatVol && smile_sensitive)
         {
             out.push_back(
                 {"flat_vol_smile", "warning",
@@ -181,6 +200,13 @@ namespace quantModeling::scripting
      */
     inline Recommendation recommend(const ScriptAnalysis &a, const ModelAvailability &avail)
     {
+        if (a.n_underlyings > 1)
+            return {ModelKind::BlackScholesFlatVol, "multi_asset",
+                    "The script reads several underlyings, so they are "
+                    "simulated jointly: correlated Black-Scholes, each asset at "
+                    "its own volatility, with the correlation matrix given. It "
+                    "is the only multi-asset model available for scripts."};
+
         if (!avail.market_surface)
             return {ModelKind::BlackScholesFlatVol, "no_market_data",
                     "No market surface to calibrate (no ticker with a stored "

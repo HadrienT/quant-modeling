@@ -842,7 +842,10 @@ static py::dict price_dated_asian(double spot, double rate, double dividend,
 // The script never says which dynamics its price depends on -- the model is
 // a separate choice, made here (recommend_script_model says which one the
 // script needs; the API picks it when asked for 'auto'):
-//   model = "black_scholes": one flat vol (`vol`).
+//   model = "black_scholes": one flat vol (`vol`); for a script reading
+//                            spot(1), spot(2)...: `spots`, `dividends`,
+//                            `vols` (one per asset) and `correlation`
+//                            (row-major n x n).
 //   model = "local_vol":     a Dupire surface (K_grid / T_grid /
 //                            sigma_loc_flat, the shape calibrate_vol_surface
 //                            returns), simulated by Euler steps of
@@ -893,7 +896,11 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::map<std::string, std::vector<double>>
                                  &historical_fixings,
                              const std::map<std::string, double> &heston,
-                             const std::vector<double> &leverage_flat)
+                             const std::vector<double> &leverage_flat,
+                             const std::vector<double> &spots,
+                             const std::vector<double> &dividends,
+                             const std::vector<double> &vols,
+                             const std::vector<double> &correlation)
 {
     using namespace quantModeling;
 
@@ -922,10 +929,23 @@ static py::dict price_script(const std::string &script, double spot, double rate
     spec.T_grid = T_grid;
     spec.sigma_loc_flat = sigma_loc_flat;
     spec.leverage_flat = leverage_flat;
+    spec.spots = spots;
+    spec.dividends = dividends;
+    spec.vols = vols;
+    spec.correlation = correlation;
     spec.max_dt = max_dt;
 
     scripting::ModelKind kind = scripting::ModelKind::BlackScholesFlatVol;
-    std::string model_note = " | model black_scholes (flat vol)";
+    std::string model_note =
+        spots.size() > 1
+            ? " | model black_scholes (" + std::to_string(spots.size()) +
+                  " correlated assets, flat vols)"
+            : " | model black_scholes (flat vol)";
+    if (spots.size() > 1 && model != "black_scholes")
+        throw std::invalid_argument(
+            "price_script: model '" + model +
+            "' is single-underlying; several underlyings are priced under "
+            "black_scholes");
     const std::string grid = std::to_string(K_grid.size()) + "x" +
                              std::to_string(T_grid.size());
     const std::string steps = std::to_string(steps_per_year) + " steps/yr";
@@ -1276,6 +1296,10 @@ PYBIND11_MODULE(quantmodeling, m)
               std::map<std::string, std::vector<double>>{},
           py::arg("heston") = std::map<std::string, double>{},
           py::arg("leverage_flat") = std::vector<double>{},
+          py::arg("spots") = std::vector<double>{},
+          py::arg("dividends") = std::vector<double>{},
+          py::arg("vols") = std::vector<double>{},
+          py::arg("correlation") = std::vector<double>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "

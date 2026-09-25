@@ -1,0 +1,15 @@
+# title: Digital call (cash-or-nothing)
+# category: Vanillas and digitals
+# underlyings: 1
+# source: Reiner & Rubinstein, Unscrambling the Binary Code, Risk, 1991
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: Pays a fixed 100 if the stock ends above its strike-date level, nothing otherwise.
+#
+# A hard threshold makes the Monte-Carlo delta noisy: tick "Fuzzy" to
+# smooth the comparison.
+
+2027-01-04
+    s0 = spot()
+
+2028-01-04
+    if spot() > s0 then pays 100 endIf

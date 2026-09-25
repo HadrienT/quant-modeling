@@ -132,6 +132,11 @@ const KEYWORD_COMPLETIONS: Completion[] = [
 
 const FUNCTION_COMPLETIONS: Completion[] = [
 	{ label: "spot()", type: "function", detail: "the underlying's level" },
+	{
+		label: "spot(1)",
+		type: "function",
+		detail: "the second underlying's level (spot(0) is spot())",
+	},
 	{ label: "min(", type: "function", detail: "min(a, b)" },
 	{ label: "max(", type: "function", detail: "max(a, b)" },
 	{ label: "log(", type: "function", detail: "log(x)" },

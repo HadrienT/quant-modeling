@@ -6,6 +6,10 @@
 const ROWS: Array<{ term: string; body: string }> = [
 	{ term: "spot()", body: "the underlying's level at the current event date." },
 	{
+		term: "spot(0) spot(1) …",
+		body: "several underlyings (worst-of, basket, outperformance): spot(0) is spot(). The page then asks for one ticker, or typed inputs, per underlying.",
+	},
+	{
 		term: "name = expr",
 		body: "assign a variable. Variables persist from one event to the next — this is how path-dependency is expressed.",
 	},
@@ -26,6 +30,14 @@ const ROWS: Array<{ term: string; body: string }> = [
 		term: "date1  date2  …",
 		body: "a date line may list several dates — the same block then applies to each.",
 	},
+	{
+		term: "schedule(start, end, 1M, US, F)",
+		body: "generates the dates: tenor D W M Y, calendar TARGET US UK NONE, convention F MF P MP U.",
+	},
+	{
+		term: "df(date)",
+		body: "discount factor from the current event date to a later date.",
+	},
 ];
 
 export function LanguageReference() {
@@ -41,8 +53,8 @@ export function LanguageReference() {
 				))}
 			</dl>
 			<p className="text-2xs text-ink-muted">
-				Every event must fall strictly after the valuation date — historical
-				fixings aren't supported yet.
+				Every event must fall strictly after the valuation date: this page has
+				no field for past fixings.
 			</p>
 		</div>
 	);

@@ -3,6 +3,7 @@ import type { ModelChoice } from "@/shared/api";
 import { formatDuration, formatNumber } from "@/shared/format";
 import { Badge } from "@/shared/ui";
 import { MODEL_LABELS } from "./modelLabels";
+import { UnderlyingsUsed } from "./UnderlyingsUsed";
 
 type Calibration = NonNullable<ModelChoice["calibration"]>;
 
@@ -75,6 +76,7 @@ export function ModelDecision({ choice }: { choice: ModelChoice }) {
 				</Badge>
 			</div>
 			{auto && <p className="text-sm text-ink-secondary">{choice.reason}</p>}
+			{choice.underlyings && <UnderlyingsUsed choice={choice} />}
 			{cal && (
 				<details className="text-2xs" open={Boolean(cal.heston)}>
 					<summary className="cursor-pointer text-ink-muted">
