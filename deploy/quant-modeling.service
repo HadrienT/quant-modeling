@@ -1,6 +1,7 @@
-# Brings the production stack up on boot and keeps it defined across reboots,
-# even after a manual `docker compose down`. The containers themselves carry
-# `restart: unless-stopped`, so this unit is belt-and-braces.
+# Brings the production stack up on boot. The containers themselves carry
+# `restart: unless-stopped`, so dockerd restarts them on its own at boot; this
+# unit is belt-and-braces (and brings the stack back after a manual
+# `docker compose down`).
 #
 # Install:
 #   sudo cp deploy/quant-modeling.service /etc/systemd/system/
@@ -11,8 +12,17 @@
 
 [Unit]
 Description=quant-modeling production stack (docker compose)
-Requires=docker.service
-After=docker.service
+# `Wants=`, not `Requires=`: with `Requires=`, a failed first start of docker
+# (observed 2026-09-25, an ordering cycle in another unit made systemd drop
+# jobs at boot) marks this unit "dependency failed" and systemd never retries
+# it. With `Wants=`, deploy.sh runs anyway, fails if docker is not up yet, and
+# `Restart=on-failure` below tries again once docker has recovered.
+Wants=docker.service network-online.target
+After=docker.service network-online.target
+# Retry every 30 s, at most 20 times in 15 minutes, then give up (a real bug
+# should not rebuild forever).
+StartLimitIntervalSec=15min
+StartLimitBurst=20
 
 [Service]
 Type=oneshot
@@ -24,8 +34,15 @@ SupplementaryGroups=docker
 # offline), rebuilds (Docker layer cache → fast), records the tag in .env, and
 # brings up the stack including the `tunnel` profile.
 ExecStart=/bin/bash scripts/deploy.sh
-ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml --profile tunnel down
+Restart=on-failure
+RestartSec=30s
 TimeoutStartSec=0
+# No ExecStop. It used to run `docker compose down`, which DELETES the
+# containers at every shutdown, so after a reboot dockerd had nothing to
+# restart and the site depended entirely on this unit starting. Without it,
+# dockerd stops the containers at shutdown and restarts them at boot, like the
+# quant-platform and data-ingest stacks. To take the site down on purpose, see
+# deploy/RUNBOOK.md "Opérations courantes".
 
 [Install]
 WantedBy=multi-user.target

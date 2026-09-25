@@ -261,6 +261,21 @@ sudo systemctl enable --now quant-modeling.service
 sudo systemctl enable docker          # docker lui-même au boot
 ```
 
+Après une modification de `deploy/quant-modeling.service` dans git, recopier
+le fichier et relancer `sudo systemctl daemon-reload` : systemd lit la copie de
+`/etc/systemd/system/`, pas celle du dépôt.
+
+L'unité n'est qu'une ceinture de sécurité : les conteneurs ont
+`restart: unless-stopped` et dockerd les relance seul au boot. C'est pourquoi
+l'unité n'a **pas** d'`ExecStop` : un `docker compose down` à l'extinction
+supprimait les conteneurs, et le site ne dépendait plus que de cette unité.
+Elle réessaie toutes les 30 s si docker n'est pas prêt (`Restart=on-failure`).
+
+`llama-bridge.socket` (dans `~/AgenticEnv`, pour l'assistant de scripting) doit
+dater d'**après** le 25/09/2026. L'ancienne version formait une boucle
+d'ordre de démarrage avec docker : systemd supprimait des étapes du boot, et
+cette unité ne démarrait plus. `scripts/status.sh` le signale.
+
 `data-ingest` doit aussi revenir au boot. Si ce n'est pas déjà le cas, crée une
 unit analogue pour `~/data-ingest` (même modèle : `Type=oneshot`,
 `RemainAfterExit=yes`, `ExecStart=/usr/bin/docker compose up -d`).
@@ -307,7 +322,7 @@ sudo reboot
 curl -sf https://tramonihadrien.com/health
 ```
 
-Si ça répond `ok`, les critères « redémarre proprement après reboot » et
+`./scripts/status.sh` doit tout afficher en vert. Si ça répond `ok`, les critères « redémarre proprement après reboot » et
 « aucune action manuelle » sont validés.
 
 ---
@@ -432,6 +447,7 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 | Tâche | Commande |
 |---|---|
 | **Déployer une mise à jour** | `./scripts/deploy.sh` (fait le `git pull` lui-même) |
+| **Tout voir d'un coup** (site, plateforme, data-ingest, LLM) | `./scripts/status.sh` — en continu : `watch -c -n 10 ./scripts/status.sh` |
 | Voir l'état | `dc ps` |
 | Logs de l'app | `dc logs -f app` |
 | Logs du tunnel | `dc --profile tunnel logs -f cloudflared` |
@@ -449,6 +465,7 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 | Symptôme | Piste |
 |---|---|
 | `https://…` → 502 / 1033 | Le conteneur `app` n'est pas *healthy* ou `cloudflared` ne le joint pas. `docker compose -f docker-compose.prod.yml ps`, puis les logs des deux. |
+| Site coupé après un reboot | `./scripts/status.sh`, puis `journalctl -b -u quant-modeling.service`. « Dependency failed » ou « ordering cycle » : voir §5 (`llama-bridge.socket`). Dépannage immédiat : `./scripts/deploy.sh`. |
 | Boucle de redirection HTTPS | Mode SSL/TLS Cloudflare sur *Flexible* → passer à **Full (strict)**. |
 | Page blanche / JS non exécuté | **Rocket Loader** encore activé → Off. Vider le cache Cloudflare (Caching → Purge Everything). |
 | Violations CSP dans la console | Une ressource externe s'est glissée dans le build. La CSP interdit toute origine tierce — c'est voulu (blueprint WP 14 §3). |
