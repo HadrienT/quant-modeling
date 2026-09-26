@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import { Button, Field } from "@/shared/ui";
 import { Metric, MetricRow } from "@/shared/ui/density";
 import { ErrorState } from "@/shared/ui/states";
 import type { SimulationCalibrateResponse } from "@/shared/api/types";
 import type { UseSimulation } from "./useSimulation";
+import { useTreasuryRate } from "./useTreasuryRate";
 
 const pct = (x: number | null | undefined) =>
 	x == null ? "—" : `${(x * 100).toFixed(2)}%`;
@@ -27,6 +29,15 @@ export function CalibratePanel(sim: UseSimulation) {
 		runCalibration,
 	} = sim;
 
+	// The rate follows the Treasury curve at the target maturity until the
+	// user types one of their own.
+	const treasury = useTreasuryRate(Number(ttm));
+	const [manualRate, setManualRate] = useState(false);
+	const suggested = treasury ? (treasury.rate * 100).toFixed(2) : null;
+	useEffect(() => {
+		if (!manualRate && suggested != null) setRate(suggested);
+	}, [manualRate, suggested, setRate]);
+
 	return (
 		<div className="flex flex-col gap-3 rounded-md border border-hairline bg-canvas p-3">
 			<div className="flex flex-wrap items-end gap-3">
@@ -45,7 +56,10 @@ export function CalibratePanel(sim: UseSimulation) {
 					label="Rate %"
 					inputMode="decimal"
 					value={rate}
-					onChange={(e) => setRate(e.target.value)}
+					onChange={(e) => {
+						setManualRate(true);
+						setRate(e.target.value);
+					}}
 				/>
 				{model === "sabr" && (
 					<Field
@@ -62,6 +76,26 @@ export function CalibratePanel(sim: UseSimulation) {
 					{calibrate.isPending ? "Calibrating…" : "Calibrate"}
 				</Button>
 			</div>
+
+			<p className="text-2xs text-ink-muted">
+				Rate: the risk-free rate of the forwards F = S·e^(r−q)T that place the
+				smile, and the drift of the simulated paths.{" "}
+				{treasury && !manualRate && (
+					<>
+						Set to the US Treasury zero rate at {treasury.ttm}y (continuous,
+						curve of {treasury.asOf}).
+					</>
+				)}
+				{treasury && manualRate && (
+					<button
+						type="button"
+						className="text-accent hover:underline"
+						onClick={() => setManualRate(false)}
+					>
+						Use the US Treasury zero rate ({suggested}%)
+					</button>
+				)}
+			</p>
 
 			{calibrate.error && <ErrorState error={calibrate.error} compact />}
 
