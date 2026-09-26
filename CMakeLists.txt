@@ -297,12 +297,18 @@ if(QM_BUILD_TESTS)
     tests/testLevenbergMarquardt.cpp
     tests/testPhilox.cpp
     tests/testLogicalBlocks.cpp
+    tests/testScriptBytecode.cpp
   )
 
   target_link_libraries(quantModeling_tests
     PRIVATE
       quantModeling
       GTest::gtest_main
+  )
+
+  # The script library (blueprint WP 19 lot G2 prices every product of it).
+  target_compile_definitions(quantModeling_tests PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library"
   )
 
   target_compile_options(quantModeling_tests PRIVATE

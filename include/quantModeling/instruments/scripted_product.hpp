@@ -6,6 +6,8 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
 #include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/scripting/bytecode.hpp"
+#include "quantModeling/scripting/compiler.hpp"
 #include "quantModeling/scripting/evaluator.hpp"
 #include "quantModeling/scripting/event.hpp"
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
@@ -54,6 +56,11 @@ namespace quantModeling
     {
         bool fuzzy = false; ///< 16c — FuzzyEvaluator; hard only for now
         double default_eps = 0.01;
+        /// Price through the compiled bytecode (blueprint/wp/19-gpu.md §3,
+        /// lot G2) rather than by walking the tree. Same numbers to the bit
+        /// (tests/testScriptBytecode.cpp); the tree evaluators remain the
+        /// oracle, and the bytecode is what the GPU runs.
+        bool bytecode = true;
     };
 
     /**
@@ -144,9 +151,27 @@ namespace quantModeling
             evaluator_->set_variable_count(indexer.count());
 
             if (!historical_events_.empty())
-                evaluator_->set_baseline(
-                    replay_historical(indexer.count(), historical_fixings));
+            {
+                baseline_ = replay_historical(indexer.count(), historical_fixings);
+                evaluator_->set_baseline(baseline_);
+            }
+
+            if (settings.bytecode)
+            {
+                program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy);
+                vars_.assign(static_cast<std::size_t>(program_.n_vars), T(0));
+                stack_.assign(static_cast<std::size_t>(program_.max_stack), T(0));
+                degrees_.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
+                if_slots_.assign(static_cast<std::size_t>(program_.n_if_slots), T(0));
+                if_mode_.assign(program_.ifs.size(), 0);
+                compiled_ = true;
+            }
         }
+
+        /// The compiled script (empty when ScriptSettings::bytecode is off).
+        const scripting::Program &program() const { return program_; }
+        /// Variable state every future path starts from (empty: all zero).
+        const std::vector<T> &baseline() const { return baseline_; }
 
         const TimeLine &timeline() const override { return timeline_; }
         const std::vector<SampleDef> &defline() const override { return defline_; }
@@ -186,6 +211,8 @@ namespace quantModeling
 
         void payoffs(const Scenario<T> &path, std::vector<T> &out) const override
         {
+            if (compiled_)
+                return payoffs_compiled(path, out);
             evaluator_->initialize();
             for (std::size_t i = 0; i < events_.size(); ++i)
             {
@@ -197,6 +224,36 @@ namespace quantModeling
         }
 
       private:
+        /// The bytecode path: the tree evaluator's semantics, including its
+        /// run-time checks on what the model supplies.
+        void payoffs_compiled(const Scenario<T> &path, std::vector<T> &out) const
+        {
+            if (baseline_.empty())
+                std::fill(vars_.begin(), vars_.end(), T(0));
+            else
+                vars_ = baseline_;
+            scripting::Machine<T> m{vars_.data(), stack_.data(), degrees_.data(), if_slots_.data(),
+                                    if_mode_.data(), T(0)};
+            const scripting::ProgramView view = program_.view();
+            for (std::size_t i = 0; i < events_.size(); ++i)
+            {
+                const Sample<T> &smp = path[i];
+                const std::int32_t max_spot = program_.event_max_spot[i];
+                if (max_spot >= 0 && static_cast<std::size_t>(max_spot) >= smp.spots.size())
+                    throw InvalidInput("spot(" + std::to_string(max_spot) + "): the model only carries " +
+                                       std::to_string(smp.spots.size()) +
+                                       " underlying(s) -- ScriptedProduct::n_underlyings() reports "
+                                       "what the script actually needs");
+                const std::int32_t max_df = program_.event_max_df[i];
+                if (max_df >= 0 && static_cast<std::size_t>(max_df) >= smp.discounts.size())
+                    throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
+                                       "DiscountLookupResolver must run before this product is priced");
+                scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire);
+            }
+            out.assign(1, m.payoff);
+        }
+
         /// Sort-merge the events onto a canonical Time axis. Events sorted by
         /// date already; those within TIMELINE_EPS of each other collapse to
         /// one (statements concatenated in date order — WP §7). An event on
@@ -268,6 +325,12 @@ namespace quantModeling
         std::vector<std::string> labels_{"price"};
         mutable std::unique_ptr<scripting::Evaluator<T>>
             evaluator_; ///< per-path state (§5.4); hard or fuzzy
+        std::vector<T> baseline_;
+        scripting::Program program_;
+        bool compiled_ = false;
+        // The machine's per-path buffers (one product per thread, like evaluator_).
+        mutable std::vector<T> vars_, stack_, degrees_, if_slots_;
+        mutable std::vector<int> if_mode_;
     };
 
 } // namespace quantModeling
