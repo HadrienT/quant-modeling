@@ -8,6 +8,7 @@
 #include "quantModeling/instruments/base.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/gaussian_source.hpp"
+#include "quantModeling/utils/philox.hpp"
 
 /**
  * @file vanilla_bs.hpp
@@ -89,6 +90,16 @@ namespace quantModeling::mc
             rho.add(v.rho);
             gamma.add(v.gamma);
             theta.add(v.theta);
+        }
+
+        QM_HOST_DEVICE void merge(const VanillaStats &o)
+        {
+            payoff.merge(o.payoff);
+            delta.merge(o.delta);
+            vega.merge(o.vega);
+            rho.merge(o.rho);
+            gamma.merge(o.gamma);
+            theta.merge(o.theta);
         }
     };
 
@@ -236,6 +247,52 @@ namespace quantModeling::mc
         }
 
         return stats;
+    }
+
+    /**
+     * @brief One unit of the counter-based vanilla simulation
+     *        (blueprint/wp/19-gpu.md §2.3): unit u draws z = Φ⁻¹(Philox(seed,
+     *        u, 0)), and with Antithetic evaluates the pair (z, −z).
+     *
+     * A pure function of (seed, u): the CPU (reduce_logical_blocks) and the
+     * GPU kernel (src/gpu/vanilla_bs.cu) call this same code, so they see the
+     * same draws whatever the split of units between threads and devices.
+     */
+    template <OptionType CP, bool Antithetic, bool IS>
+    struct VanillaPhiloxUnit
+    {
+        VanillaTerminalSpec spec;
+        uint64_t seed = 0;
+        Real is_shift = 0.0;
+
+        QM_HOST_DEVICE VanillaPathValues eval_one(Real z_raw) const
+        {
+            if constexpr (IS)
+            {
+                const Real w = std::exp(-is_shift * z_raw - 0.5 * is_shift * is_shift);
+                return scale(eval_vanilla_path<CP>(spec, z_raw + is_shift), w);
+            }
+            else
+            {
+                return eval_vanilla_path<CP>(spec, z_raw);
+            }
+        }
+
+        QM_HOST_DEVICE VanillaPathValues operator()(uint64_t unit) const
+        {
+            const Real z = inverse_normal_cdf(philox_uniform(seed, unit, 0));
+            if constexpr (Antithetic)
+                return average_pair(eval_one(z), eval_one(-z));
+            else
+                return eval_one(z);
+        }
+    };
+
+    /// Number of units for n_paths: pairs (rounded up) with antithetic.
+    inline uint64_t vanilla_units(long long n_paths, bool antithetic)
+    {
+        const auto n = static_cast<uint64_t>(n_paths);
+        return antithetic ? (n + 1) / 2 : n;
     }
 
 } // namespace quantModeling::mc

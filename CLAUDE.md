@@ -83,6 +83,7 @@ parseur et échoue s'ils ne passent plus.
 | `ctest --test-dir build --output-on-failure -j16` | tests C++ — ou `scripts/make.sh` qui enchaîne les trois. Chaque `TEST()` tourne dans son propre process (`gtest_discover_tests`), donc `-j` parallélise sans partage d'état ; 16 mesuré à ~1,7 Go au-dessus de ce qui tourne déjà sur la machine (`NPROC=n scripts/make.sh` pour changer) |
 | `cmake --preset asan` puis `ctest --test-dir build-asan -j8` | sanitizers (address + UB) — ou `scripts/make_asan.sh`. ASan triple grosso modo la mémoire par process ; 8 mesuré à ~8,4 Go au-dessus de la ligne de base, une part plus significative de la marge qu'avec le preset par défaut (`NPROC=n scripts/make_asan.sh` pour changer) |
 | `cmake --preset release` | `-march=native` + benchmarks google-benchmark |
+| `cmake --preset cuda && cmake --build build-cuda` | backend CUDA (WP 19, les deux V100) dans `build-cuda/` ; nvcc prend `g++-13` comme hôte (CUDA 12.4 refuse gcc 14). `ctest --test-dir build-cuda -L gpu` pour les seuls tests GPU (la CI n'a pas de GPU et ne les construit pas) ; `build-cuda/qm_gpu_bench` pour le benchmark en temps pour une erreur donnée |
 | `scripts/build_wheel.sh` | wheel pybind11 dans `dist/` |
 | `scripts/run_api.sh` | venv + wheel + `uvicorn --reload` |
 | `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché, piste d'audit, producteur Kafka sur un faux broker, replay des valorisations), depuis la racine (`pytest.ini`). Lancés par la CI (job `pytest`, avec le vrai wheel) |

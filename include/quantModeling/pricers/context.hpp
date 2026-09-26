@@ -36,6 +36,27 @@ namespace quantModeling
         Stratified
     };
 
+    /// Uniform generator for pseudo-random sampling. Pcg32 is the historical
+    /// stream; Philox is counter-based (blueprint/wp/19-gpu.md §2.3): draw j
+    /// of path p is a pure function of (seed, p, j), which is what the GPU
+    /// runs, so a CPU run with Philox reproduces the GPU's draws.
+    enum class RngKind
+    {
+        Pcg32,
+        Philox
+    };
+
+    /// Where Monte-Carlo paths run (blueprint/wp/19-gpu.md §8). Auto takes
+    /// the GPU when a device is present and the engine supports the request
+    /// there, the CPU otherwise; Gpu refuses to fall back. A GPU run always
+    /// uses Philox.
+    enum class ComputeDevice
+    {
+        Cpu,
+        Gpu,
+        Auto
+    };
+
     struct PricingSettings
     {
         int mc_paths = 0;
@@ -61,6 +82,8 @@ namespace quantModeling
         /// to make that choice, rather than a raw string compared ad hoc at
         /// every call site.
         GreeksMethod greeks = GreeksMethod::Bump;
+        RngKind mc_rng = RngKind::Pcg32;
+        ComputeDevice mc_device = ComputeDevice::Cpu;
     };
 
     struct MarketView

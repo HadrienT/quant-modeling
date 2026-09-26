@@ -97,7 +97,10 @@ et un « saut » pour les répartir. Un générateur **à compteur** — Philox4
   nombres que le GPU. Le moteur générique CPU gagne l'option `philox` ;
   `pcg32` reste le défaut des moteurs existants (pas de changement de nombres
   sous les pieds des tests actuels).
-- Uniformes en 53 bits (deux mots de 32), puis `inverse_normal`.
+- Uniformes sur **52 bits** (deux mots de 32), u = (m + ½)/2⁵², puis
+  `inverse_normal`. Pas 53 : (2⁵³ − 1) + ½ n'est pas un double et s'arrondit
+  à 2⁵³, soit u = 1 et Φ⁻¹(u) = +∞ — le test de l'intervalle ouvert l'a
+  attrapé au lot G0. Les tirages extrêmes valent ±8,2σ.
 
 ### 2.4 Le pont brownien dans le moteur générique
 
@@ -218,14 +221,30 @@ même que le CPU avec le même générateur.
   chaque bloc logique est réduit par le même arbre ; les partiels sont fusionnés
   dans l'ordre des indices, sur l'hôte. Deux GPU se partagent des blocs logiques
   entiers : le résultat ne dépend pas de leur nombre.
-- Le CPU applique le même groupement quand on lui demande Philox : CPU et GPU
-  donnent alors les mêmes bits.
+- Le CPU applique le même groupement quand on lui demande Philox
+  ([`engines/mc/logical_blocks.hpp`](../../include/quantModeling/engines/mc/logical_blocks.hpp)
+  rejoue l'arbre du kernel). Les **tirages** sont alors identiques bit à bit
+  (arithmétique entière), mais les **résultats** CPU et GPU diffèrent de
+  quelques ulp (~10⁻¹⁶ relatif) : `exp`, `log` et `erfc` de libdevice ne sont
+  pas ceux de la glibc, et nvcc contracte `a*b + c` en FMA. Mesuré au lot G0
+  (vanille, 1,6·10⁷ chemins : 1 à 3 ulp sur la moyenne). Le bit à bit tient
+  donc **entre GPU** (même code machine) — 1 GPU = 2 GPU, un ou plusieurs
+  lancements — et le CPU est un oracle à 10⁻¹² près, bien sous l'erreur
+  Monte-Carlo. Forcer l'égalité exacte demanderait `--fmad=false` et nos
+  propres `exp`/`log` sur les deux cibles : pas justifié.
 
 ## 8. Intégration
 
 - **CMake** : option `QM_ENABLE_CUDA` (défaut OFF), `CMAKE_CUDA_ARCHITECTURES=70`,
   sources `.cu` dans `src/gpu/` ; sans l'option, le dépôt compile comme
-  aujourd'hui.
+  aujourd'hui (`src/gpu/cpu_only.cpp` répond « aucun device »). Preset
+  `cuda` → `build-cuda/`. CUDA 12.4 refuse gcc 14 : nvcc compile avec
+  **g++-13** comme hôte, le reste avec le g++ du projet, et le dossier
+  `libstdc++` de gcc 13 est retiré de l'édition de liens.
+- **Réglages** (`PricingSettings`) : `mc_rng` (`Pcg32` par défaut, `Philox`)
+  et `mc_device` (`Cpu` par défaut, `Gpu`, `Auto`). `Gpu` refuse de se
+  replier ; `Auto` prend le GPU si un device est présent et que le moteur
+  sait y faire la requête. Défauts inchangés : aucun nombre existant ne bouge.
 - **Détection à l'exécution** : `cudaGetDeviceCount` à la première requête ;
   le registre route vers `GpuSimulationEngine` si un device est présent et que
   le produit / modèle y est supporté, sinon le CPU. Le choix est dit dans les
@@ -248,6 +267,19 @@ Le livrable qui compte. Tableau publié dans le README :
 | Up-and-out quotidien, vol locale | … | … | … | … |
 | Worst-of autocall, 3 actifs | … | … | … | … |
 | Superbucket (AAD vol locale) | … | … | … | … |
+
+Premier point (lot G0, `build-cuda/qm_gpu_bench`) — call ATM, S = K = 100,
+T = 1, σ = 20 %, antithétique, Philox, les six estimateurs du kernel (prix,
+delta trajectoriel, vega et rho LRM, gamma et theta par différences à
+nombres communs) ; 6,2·10⁷ paires pour 1e-4 relatif :
+
+| | CPU 1 thread | CPU 8 threads | 1 V100 |
+|---|---|---|---|
+| Vanille BS (pseudo, Philox) | 8,92 s | 1,30 s | 0,032 s |
+
+Même prix aux trois colonnes (9,226547, erreur 9,2·10⁻⁴). Le kernel ne lit
+rien en mémoire : il est limité par le **calcul FP64** (Φ⁻¹, trois `exp` par
+chemin), ce qui est le régime où les V100 (FP64 à 1:2) ont leur avantage.
 
 Métrique : **temps pour atteindre une erreur standard de 1e-4** (en relatif),
 par échantillonneur (pseudo / Sobol + pont) — un speedup sans erreur standard
@@ -273,7 +305,7 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 
 | Lot | Contenu | Acceptation |
 |---|---|---|
-| **G0** | CMake CUDA ; Philox hôte/device ; réduction Welford ; le kernel vanille existant sur GPU | Prix GPU = prix CPU ; premier point du benchmark |
+| **G0** | CMake CUDA ; Philox hôte/device ; réduction Welford ; le kernel vanille existant sur GPU | Prix GPU = prix CPU ; premier point du benchmark — **fait** : tirages identiques bit à bit, prix à quelques ulp ([§7](#7-reproductibilité-bit-à-bit)), bit à bit entre les deux V100 ; 280× un thread CPU ([§9](#9-benchmark)) |
 | **G1** | Pont brownien dans le moteur générique (CPU) ; directions Joe-Kuo jusqu'à 21 201 ; Sobol device ; modèles en foncteurs | Sobol + pont bat le pseudo-aléatoire en log-log sur un asiatique ; mêmes lois CPU / GPU |
 | **G2** | Compilateur et interpréteur de bytecode, CPU puis GPU | Les 42 scripts : même prix arbre / bytecode / GPU |
 | **G3** | Variables de contrôle et stratification génériques ; AAD : duaux, puis adjoint par chemin en vol locale | Réduction de variance mesurée ; risques GPU = AAD CPU ; superbucket sur GPU |
