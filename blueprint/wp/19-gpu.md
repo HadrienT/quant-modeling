@@ -192,6 +192,41 @@ et à chaque date d'événement interprète la plage correspondante ; ses variab
   à la rédaction du lot, le livre en décrit le principe. Consigné en
   [ADR-G1](#adr-g1--un-bytecode-pas-larbre-sur-le-device).
 
+**Fait (G2).** `scripting/compiler.hpp` traduit l'arbre (après les passes du
+front-end) en instructions ; `scripting::run_event` (`bytecode.hpp`) les
+interprète sur des pointeurs bruts — la même fonction sur CPU
+(`ScriptedProduct`, par défaut) et dans le kernel. Il reproduit les deux
+évaluateurs opération par opération : sur les 42 scripts, arbre et bytecode
+donnent **les mêmes bits**, en dur, en flou et pour chaque risque AAD
+(`tests/testScriptBytecode.cpp`) ; l'arbre reste l'oracle. Les `if` flous
+reçoivent des emplacements de sauvegarde fixes, attribués à la compilation et
+réutilisés d'une date à l'autre (deux dates ne tournent jamais ensemble) : sur
+la bibliothèque, 19 emplacements et 3 `if` imbriqués au plus, contre 3 720 sans
+réutilisation — ce qui tient dans la mémoire locale d'un thread.
+
+Sur GPU (`gpu/script.hpp`, `engines/mc/script_engine.hpp`) : un thread par
+chemin (ou paire antithétique) avance le modèle décrit en données plates
+(`models/device_model.hpp` ; Black-Scholes mono et multi-actifs à taux plat,
+vol locale, Heston, SLV) et exécute le bytecode de chaque date. Mêmes unités,
+tirages Philox et arbre de réduction que le moteur générique CPU en
+`mc_rng = Philox`, qui est son oracle : les 42 scripts donnent le même prix à
+10⁻⁹ près sous les quatre dynamiques, dur et flou
+(`tests/gpu/testGpuScripts.cpp`). Hors du périmètre du kernel — Sobol, sauts,
+courbe de taux, AAD, script trop profond — `auto` reste sur le CPU et le dit
+dans les diagnostics, `gpu` refuse avec la raison.
+
+| Script (BS / SLV) | CPU, 10⁵ chemins | GPU, 10⁶ chemins | Gain par chemin |
+|---|---|---|---|
+| Variance swap (249 dates) | 2,70 s / 3,65 s | 100 ms / 263 ms | ×270 / ×139 |
+| Double no-touch | 0,77 s / 1,35 s | 44 ms / 125 ms | ×175 / ×108 |
+| Phoenix autocall | 39 ms / 721 ms | 3,7 ms / 72 ms | ×105 / ×100 |
+| Asiatique | 68 ms / 492 ms | 4,3 ms / 50 ms | ×157 / ×99 |
+
+Le bytecode seul rend aussi le CPU ~2 fois plus rapide que l'arbre. API :
+`device` et `rng` sur les requêtes de script ; le sélecteur *Compute* et le
+panneau *CPU vs GPU* s'appliquent aux produits scriptés de la page Pricing, et
+la page Scripting a son sélecteur.
+
 ## 4. Les modèles : un ensemble fermé
 
 Chaque modèle devient un agrégat de paramètres plats avec
@@ -359,7 +394,7 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 |---|---|---|
 | **G0** | CMake CUDA ; Philox hôte/device ; réduction Welford ; le kernel vanille existant sur GPU | Prix GPU = prix CPU ; premier point du benchmark — **fait** : tirages identiques bit à bit, prix à quelques ulp ([§7](#7-reproductibilité-bit-à-bit)), bit à bit entre les deux V100 ; 280× un thread CPU ([§9](#9-benchmark)) |
 | **G1** | Pont brownien dans le moteur générique (CPU) ; directions Joe-Kuo jusqu'à 21 201 ; Sobol device ; modèles en foncteurs | Sobol + pont bat le pseudo-aléatoire en log-log sur un asiatique ; mêmes lois CPU / GPU — **fait** : pente −0,89 contre −0,50, erreur ÷19 à 2¹⁷ chemins ; Sobol GPU = CPU bit à bit sur les 21 201 dimensions ; vol locale, Heston et SLV suivent sur GPU les chemins du CPU ([§2.4](#24-le-pont-brownien-dans-le-moteur-générique), [§4](#4-les-modèles--un-ensemble-fermé)) |
-| **G2** | Compilateur et interpréteur de bytecode, CPU puis GPU | Les 42 scripts : même prix arbre / bytecode / GPU |
+| **G2** | Compilateur et interpréteur de bytecode, CPU puis GPU | Les 42 scripts : même prix arbre / bytecode / GPU — **fait** : arbre = bytecode au bit près (dur, flou, AAD) ; GPU = CPU Philox sous Black-Scholes, vol locale, Heston et SLV ; ×2 sur CPU, ×100 à ×270 par chemin sur GPU ([§3](#3-les-scripts--un-bytecode)) |
 | **G3** | Variables de contrôle et stratification génériques ; AAD : duaux, puis adjoint par chemin en vol locale | Réduction de variance mesurée ; risques GPU = AAD CPU ; superbucket sur GPU |
 | **G4** | Deux GPU, reproductibilité bit à bit, benchmark complet | 1 GPU = 2 GPU bit à bit ; tableau publié |
 
@@ -379,7 +414,10 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 ### ADR-G1 — Un bytecode, pas l'arbre, sur le device
 
 **Décision.** Le script est compilé en bytecode de machine à pile, interprété
-par un kernel. **Pourquoi.** Un arbre de nœuds alloués, parcouru par visiteur,
+par un kernel — et, depuis G2, aussi sur le CPU par défaut (même code).
+La vérification que le livre décrit ce principe n'a pas pu être faite à la
+rédaction du lot (le livre n'est pas dans le dépôt) : à confirmer par le
+mainteneur ; l'évaluateur visiteur reste l'oracle, bit pour bit. **Pourquoi.** Un arbre de nœuds alloués, parcouru par visiteur,
 fait tout ce qu'un GPU craint (pointeurs, virtuels, allocation). Le bytecode
 est plat, indexé, identique CPU / GPU. **Écart au livre** : le livre évalue
 l'arbre ; la compilation est une optimisation dont le principe est à confirmer

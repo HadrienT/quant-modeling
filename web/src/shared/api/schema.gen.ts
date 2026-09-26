@@ -3671,6 +3671,11 @@ export interface components {
              */
             default_eps: number;
             /**
+             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random only; 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. Ignored with greeks_method='aad'.
+             * @default cpu
+             */
+            device: components["schemas"]["ComputeDevice"];
+            /**
              * Dividend
              * @default 0
              */
@@ -3701,6 +3706,11 @@ export interface components {
             n_paths: number;
             /** Rate */
             rate: number;
+            /**
+             * @description CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price.
+             * @default pcg32
+             */
+            rng: components["schemas"]["McRng"];
             /**
              * Sampler
              * @default pseudo
@@ -3829,6 +3839,11 @@ export interface components {
              */
             default_eps: number;
             /**
+             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random only; 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. Ignored with greeks_method='aad'.
+             * @default cpu
+             */
+            device: components["schemas"]["ComputeDevice"];
+            /**
              * Dividend
              * @default 0
              */
@@ -3864,6 +3879,11 @@ export interface components {
             product: string;
             /** Rate */
             rate: number;
+            /**
+             * @description CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price.
+             * @default pcg32
+             */
+            rng: components["schemas"]["McRng"];
             /**
              * Sampler
              * @default pseudo

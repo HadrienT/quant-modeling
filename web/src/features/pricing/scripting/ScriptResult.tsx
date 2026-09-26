@@ -15,7 +15,9 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 			className="scroll-mt-20 rounded-md border border-hairline bg-surface p-4"
 		>
 			<div className="flex items-baseline justify-between gap-4">
-				<span className="text-2xs text-ink-muted uppercase">Present value</span>
+				<span className="text-2xs text-ink-muted uppercase">
+					Present value · on {r.device === "gpu" ? "GPU" : "CPU"}
+				</span>
 				<ComputeTime computeMs={r.compute_ms} roundTripMs={r.round_trip_ms} />
 			</div>
 			<div className="text-xl">

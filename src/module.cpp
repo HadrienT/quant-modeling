@@ -14,6 +14,7 @@
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
+#include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/gpu/vanilla_bs.hpp"
 #include "quantModeling/instruments/equity/simulatable_asian.hpp"
@@ -962,7 +963,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &spots,
                              const std::vector<double> &dividends,
                              const std::vector<double> &vols,
-                             const std::vector<double> &correlation)
+                             const std::vector<double> &correlation,
+                             const std::string &device, const std::string &rng)
 {
     using namespace quantModeling;
 
@@ -1090,8 +1092,13 @@ static py::dict price_script(const std::string &script, double spot, double rate
         settings.mc_antithetic = true;
         settings.mc_sampler =
             (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
+        // blueprint/wp/19-gpu.md §8: CPU, GPU, or GPU when present.
+        settings.mc_device = device == "gpu"    ? ComputeDevice::Gpu
+                             : device == "auto" ? ComputeDevice::Auto
+                                                : ComputeDevice::Cpu;
+        settings.mc_rng = (rng == "philox") ? RngKind::Philox : RngKind::Pcg32;
 
-        mc = simulate<Real>(product, *sim_model, settings);
+        mc = simulate_script(product, *sim_model, settings);
         n_events = product.timeline().size();
         advice = scripting::advise(product.analysis(), kind, product.timeline().back(),
                                    surface_T);
@@ -1102,6 +1109,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.mc_std_error = mc->std_error();
     res.diagnostics = mc->diagnostics + " | scripted, " + std::to_string(n_events) +
                       " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note;
+    res.device = mc->device;
     py::dict out = pricing_result_to_dict(res);
     out["warnings"] = advice_to_py(advice);
     return out;
@@ -1400,6 +1408,7 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("dividends") = std::vector<double>{},
           py::arg("vols") = std::vector<double>{},
           py::arg("correlation") = std::vector<double>{},
+          py::arg("device") = "cpu", py::arg("rng") = "pcg32",
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "

@@ -3,6 +3,7 @@
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
 #include <Eigen/Cholesky>
@@ -188,6 +189,37 @@ namespace quantModeling
         std::unique_ptr<ISimulationModel<T>> clone() const override
         {
             return std::make_unique<MultiAssetBSSimModel<T>>(*this);
+        }
+
+        bool describe_device(DeviceModel &d) const override
+        {
+            if constexpr (!std::is_same_v<T, Real>)
+                return false;
+            else
+            {
+                const std::size_t n = s0_.size();
+                d = DeviceModel{};
+                d.kind = DeviceModel::Kind::BlackScholes;
+                d.n_assets = static_cast<int>(n);
+                d.r = r_;
+                d.s0 = s0_;
+                for (std::size_t r = 0; r < n; ++r)
+                    for (std::size_t c = 0; c < n; ++c)
+                        d.chol.push_back(chol_(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)));
+                for (std::size_t i = 0; i < steps_.size(); ++i)
+                {
+                    d.t.push_back(steps_[i].t);
+                    d.draws.push_back(steps_[i].draws ? 1 : 0);
+                    d.event.push_back(static_cast<int>(i));
+                    for (std::size_t k = 0; k < n; ++k)
+                    {
+                        d.drift.push_back(steps_[i].draws ? steps_[i].drift[k] : 0.0);
+                        d.vol_sqrt_dt.push_back(steps_[i].draws ? steps_[i].vol_sqrt_dt[k] : 0.0);
+                    }
+                }
+                d.factors = d.stride = static_cast<int>(n);
+                return true;
+            }
         }
 
         const std::vector<T *> &parameters() const override { return params_; }

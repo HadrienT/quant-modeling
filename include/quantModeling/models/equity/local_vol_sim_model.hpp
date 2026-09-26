@@ -5,6 +5,7 @@
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
+#include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
 #include <algorithm>
@@ -145,6 +146,29 @@ namespace quantModeling
         std::unique_ptr<ISimulationModel<T>> clone() const override
         {
             return std::make_unique<LocalVolSimModel<T>>(*this);
+        }
+
+        bool describe_device(DeviceModel &d) const override
+        {
+            if constexpr (!std::is_same_v<T, Real>)
+                return false;
+            else
+            {
+                d = DeviceModel{};
+                d.kind = DeviceModel::Kind::LocalVol;
+                d.r = r_;
+                d.q = q_;
+                d.s0 = {s0_};
+                d.K = K_grid_;
+                d.T_grid = T_grid_;
+                d.grid = sigma_loc_;
+                d.t = sim_timeline_;
+                d.draws.assign(sim_timeline_.size(), 1);
+                d.event.clear();
+                for (const std::ptrdiff_t e : event_index_of_step_)
+                    d.event.push_back(static_cast<int>(e));
+                return true;
+            }
         }
 
         const std::vector<T *> &parameters() const override { return params_; }

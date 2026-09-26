@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { usePricing } from "@/shared/api";
+import { type ComputeDevice, usePricing } from "@/shared/api";
 import type { ProductDescriptor } from "@/shared/products";
 import { Button } from "@/shared/ui";
 import { MarketVegaPanel } from "./MarketVegaPanel";
 import { ModelComparison } from "./ModelComparison";
 import { ModelDecision } from "./scripting/ModelDecision";
 import { ModelWarnings } from "./scripting/ModelWarnings";
+import { pricingBody } from "./requestBody";
 
 /**
  * What the pricing workbench adds for a product of the script library: the
@@ -17,15 +18,17 @@ export function ScriptedPanel({
 	descriptor,
 	values,
 	engine,
+	device = "cpu",
 }: {
 	descriptor: ProductDescriptor;
 	values: Record<string, unknown>;
 	engine: string;
+	device?: ComputeDevice;
 }) {
 	const [compare, setCompare] = useState(false);
 	const body = useMemo(
-		() => descriptor.toRequest(values, engine as never),
-		[descriptor, values, engine],
+		() => pricingBody(descriptor, values, engine, device),
+		[descriptor, values, engine, device],
 	);
 	const q = usePricing({ endpoint: descriptor.endpoint ?? null, body });
 	const p = descriptor.scripted!;

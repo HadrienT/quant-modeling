@@ -318,6 +318,8 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             dividends=[u.dividend for u in used],
             vols=[u.vol for u in used],
             correlation=[x for row in corr for x in row],
+            device=req.device.value,
+            rng=req.rng.value,
         )
     result["warnings"] = warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)
@@ -435,6 +437,8 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             req.steps_per_year,
             heston=heston,
             leverage_flat=leverage,
+            device=req.device.value,
+            rng=req.rng.value,
         )
     result["warnings"] = market_warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)
