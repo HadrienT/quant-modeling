@@ -11,6 +11,7 @@ option(QM_BUILD_TESTS "Build unit tests (GoogleTest)" OFF)
 option(QM_BUILD_PYTHON "Build Python bindings (pybind11)" OFF)
 option(QM_BUILD_BENCHMARKS "Build benchmarks (google-benchmark)" OFF)
 option(QM_NATIVE_ARCH "Optimize for the host CPU (-march=native)" OFF)
+option(QM_ENABLE_CUDA "Build the CUDA Monte-Carlo backend (blueprint/wp/19-gpu.md)" OFF)
 
 # ---- Global Options  ----
 set(CMAKE_CXX_STANDARD 20)
@@ -137,6 +138,38 @@ target_sources(quantModeling
         src/utils/thread_pool.cpp
 )
 
+# ---- CUDA backend (blueprint/wp/19-gpu.md §8) ----
+# Off by default: the CI and the Docker image have no GPU and build exactly as
+# before, with src/gpu/cpu_only.cpp answering "no device". On the server, use
+# the `cuda` preset -- it sets the V100 architecture (sm_70) and g++-13 as
+# nvcc's host compiler (CUDA 12.4 rejects gcc 14; CUDA 12.x is the last branch
+# that supports the V100, so this pin stays).
+if(QM_ENABLE_CUDA)
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 70)
+  endif()
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  # nvcc's host compiler (g++-13) is not the one that links (the project's
+  # g++): drop g++-13's library directory, or its older libstdc++ is linked
+  # against objects built by the newer one.
+  list(FILTER CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES EXCLUDE REGEX "/gcc/")
+  set(CMAKE_CUDA_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  target_sources(quantModeling
+      PRIVATE
+          src/gpu/device.cu
+          src/gpu/vanilla_bs.cu
+          src/gpu/rng.cu
+  )
+  target_link_libraries(quantModeling PUBLIC CUDA::cudart_static)
+  target_compile_options(quantModeling PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -Xcompiler=-Wall>
+  )
+else()
+  target_sources(quantModeling PRIVATE src/gpu/cpu_only.cpp)
+endif()
+
 target_include_directories(quantModeling
     PUBLIC
         ${PROJECT_SOURCE_DIR}/include
@@ -149,12 +182,12 @@ find_package(Threads REQUIRED)
 target_link_libraries(quantModeling PUBLIC Threads::Threads)
 
 target_compile_options(quantModeling PRIVATE
-  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
+  $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
 )
 
 if(QM_NATIVE_ARCH)
   target_compile_options(quantModeling PUBLIC
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-march=native>
+    $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-march=native>
   )
 endif()
 
@@ -260,6 +293,8 @@ if(QM_BUILD_TESTS)
     tests/testInverseNormal.cpp
     tests/testSobol.cpp
     tests/testLevenbergMarquardt.cpp
+    tests/testPhilox.cpp
+    tests/testLogicalBlocks.cpp
   )
 
   target_link_libraries(quantModeling_tests
@@ -274,6 +309,20 @@ if(QM_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(quantModeling_tests)
+
+  # GPU tests: only with the CUDA backend, labelled so that they can be run
+  # (or skipped) as a group -- `ctest -L gpu`. The GitHub CI has no GPU and
+  # never builds them.
+  if(QM_ENABLE_CUDA)
+    add_executable(quantModeling_gpu_tests
+      tests/gpu/testGpuVanilla.cpp
+    )
+    target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)
+    target_compile_options(quantModeling_gpu_tests PRIVATE
+      $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
+    )
+    gtest_discover_tests(quantModeling_gpu_tests PROPERTIES LABELS gpu)
+  endif()
 endif()
 
 # ---- Benchmarks (google-benchmark) ----
@@ -292,6 +341,14 @@ if(QM_BUILD_BENCHMARKS)
   target_compile_options(quantModeling_bench PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra>
   )
+endif()
+
+# ---- GPU benchmark (blueprint/wp/19-gpu.md §9) ----
+# Not google-benchmark: the metric is the wall time to reach a target standard
+# error, not paths per second.
+if(QM_ENABLE_CUDA)
+  add_executable(qm_gpu_bench benchmarks/gpu_time_to_error.cpp)
+  target_link_libraries(qm_gpu_bench PRIVATE quantModeling)
 endif()
 
 # ---- Python binding (pybind11) ----

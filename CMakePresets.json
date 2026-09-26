@@ -49,6 +49,16 @@
         "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=address,undefined",
         "QM_BUILD_PYTHON": "OFF"
       }
+    },
+    {
+      "name": "cuda",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-cuda",
+      "cacheVariables": {
+        "QM_ENABLE_CUDA": "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "70",
+        "CMAKE_CUDA_HOST_COMPILER": "g++-13"
+      }
     }
   ],
   "buildPresets": [
@@ -67,6 +77,10 @@
     {
       "name": "asan",
       "configurePreset": "asan"
+    },
+    {
+      "name": "cuda",
+      "configurePreset": "cuda"
     }
   ]
 }

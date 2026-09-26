@@ -1,5 +1,7 @@
 #include "quantModeling/engines/mc/black_scholes.hpp"
 #include "quantModeling/engines/mc/kernels/vanilla_bs.hpp"
+#include "quantModeling/engines/mc/logical_blocks.hpp"
+#include "quantModeling/gpu/vanilla_bs.hpp"
 #include "quantModeling/instruments/equity/digital.hpp"
 #include "quantModeling/utils/gaussian_source.hpp"
 #include "quantModeling/utils/greeks.hpp"
@@ -42,6 +44,36 @@ namespace quantModeling
             return antithetic
                        ? simulate_vanilla_terminal<OptionType::Put, true>(spec, n_paths, gauss)
                        : simulate_vanilla_terminal<OptionType::Put, false>(spec, n_paths, gauss);
+        }
+
+        template <OptionType CP, bool Antithetic, bool IS>
+        mc::VanillaStats run_vanilla_philox_cpu(const mc::VanillaTerminalSpec &spec,
+                                                uint64_t n_units, uint64_t seed, Real is_shift)
+        {
+            const mc::VanillaPhiloxUnit<CP, Antithetic, IS> unit{spec, seed, is_shift};
+            return mc::reduce_logical_blocks<mc::VanillaStats>(n_units, unit);
+        }
+
+        /// Counter-based run on the CPU: the GPU's units, draws and reduction
+        /// tree, replayed on the host (blueprint/wp/19-gpu.md §7).
+        mc::VanillaStats vanilla_philox_cpu(const mc::VanillaTerminalSpec &spec, OptionType optType,
+                                            bool antithetic, uint64_t n_units, uint64_t seed,
+                                            Real is_shift)
+        {
+            const bool is = (is_shift != Real(0));
+            if (optType == OptionType::Call)
+            {
+                if (antithetic)
+                    return is ? run_vanilla_philox_cpu<OptionType::Call, true, true>(spec, n_units, seed, is_shift)
+                              : run_vanilla_philox_cpu<OptionType::Call, true, false>(spec, n_units, seed, is_shift);
+                return is ? run_vanilla_philox_cpu<OptionType::Call, false, true>(spec, n_units, seed, is_shift)
+                          : run_vanilla_philox_cpu<OptionType::Call, false, false>(spec, n_units, seed, is_shift);
+            }
+            if (antithetic)
+                return is ? run_vanilla_philox_cpu<OptionType::Put, true, true>(spec, n_units, seed, is_shift)
+                          : run_vanilla_philox_cpu<OptionType::Put, true, false>(spec, n_units, seed, is_shift);
+            return is ? run_vanilla_philox_cpu<OptionType::Put, false, true>(spec, n_units, seed, is_shift)
+                      : run_vanilla_philox_cpu<OptionType::Put, false, false>(spec, n_units, seed, is_shift);
         }
     } // namespace
 
@@ -94,8 +126,40 @@ namespace quantModeling
 
         mc::VanillaStats stats;
         std::string diag;
-        if (settings.mc_sampler == SamplerKind::Sobol ||
-            settings.mc_sampler == SamplerKind::Stratified)
+        const bool pseudo = (settings.mc_sampler == SamplerKind::PseudoRandom);
+        if (settings.mc_device == ComputeDevice::Gpu && !pseudo)
+            throw InvalidInput("BSEuroVanillaMCEngine: the GPU runs pseudo-random sampling only "
+                               "(Sobol on the GPU is blueprint/wp/19-gpu.md lot G1)");
+        const bool use_gpu = pseudo && (settings.mc_device == ComputeDevice::Gpu ||
+                                        (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0));
+        const uint64_t seed = static_cast<uint64_t>(static_cast<uint32_t>(settings.mc_seed));
+
+        if (use_gpu || (pseudo && settings.mc_rng == RngKind::Philox))
+        {
+            const uint64_t n_units = mc::vanilla_units(settings.mc_paths, settings.mc_antithetic);
+            if (use_gpu)
+            {
+                gpu::VanillaGpuRequest req;
+                req.spec = spec;
+                req.type = optType;
+                req.antithetic = settings.mc_antithetic;
+                req.is_shift = is_shift;
+                req.n_units = n_units;
+                req.seed = seed;
+                stats = gpu::simulate_vanilla_terminal(req);
+                diag = "BS MC European vanilla (flat r,q,sigma) on GPU (" + gpu::device_name(req.device) +
+                       ") + Philox";
+            }
+            else
+            {
+                stats = vanilla_philox_cpu(spec, optType, settings.mc_antithetic, n_units, seed, is_shift);
+                diag = "BS MC European vanilla (flat r,q,sigma) + Philox";
+            }
+            if (settings.mc_antithetic)
+                diag += " + antithetic";
+        }
+        else if (settings.mc_sampler == SamplerKind::Sobol ||
+                 settings.mc_sampler == SamplerKind::Stratified)
         {
             // Batched estimators (RQMC digital shifts / stratified jitter seeds):
             // draws within a batch are not i.i.d., but batch means are, so the
