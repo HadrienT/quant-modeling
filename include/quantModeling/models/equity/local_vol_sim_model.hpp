@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
 #include <algorithm>
@@ -97,6 +98,12 @@ namespace quantModeling
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
         std::size_t sim_dim() const override { return sim_dim_; }
 
+        /// Every fine-grid step draws: the one diffusion draw.
+        BrownianLayout brownian_layout() const override
+        {
+            return BrownianLayout{sim_timeline_, 1, 1};
+        }
+
         void generate_path(std::span<const double> gaussians,
                            Scenario<T> &path) const override
         {
@@ -110,10 +117,7 @@ namespace quantModeling
                 const Time t = sim_timeline_[k];
                 const Time dt = t - t_prev;
 
-                const T sig = local_vol_at(S, t);
-                const T drift = (r_ - q_ - 0.5 * sig * sig) * dt;
-                const T vol_sqrt_dt = sig * sqrt(dt);
-                S *= exp(drift + vol_sqrt_dt * gaussians[k]);
+                mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
                 t_prev = t;
 
                 const std::ptrdiff_t event = event_index_of_step_[k];
@@ -164,61 +168,14 @@ namespace quantModeling
         /// is flat in S, so the weight is then a constant.
         T local_vol_at(const T &S_t, double t) const
         {
-            using std::max;
+            return mc::local_vol_bilinear(grid(), S_t, t);
+        }
 
-            const int nK = static_cast<int>(K_grid_.size());
-            const int nT = static_cast<int>(T_grid_.size());
-
-            const double S_raw = to_double(S_t);
-            const double S = std::clamp(S_raw, K_grid_.front(), K_grid_.back());
-            const bool inside = S == S_raw;
-            t = std::clamp(t, T_grid_.front(), T_grid_.back());
-
-            auto it_K = std::lower_bound(K_grid_.begin(), K_grid_.end(), S);
-            int i1 = static_cast<int>(it_K - K_grid_.begin());
-            if (i1 >= nK)
-                i1 = nK - 1;
-            int i0 = (i1 > 0) ? i1 - 1 : 0;
-            if (i0 == i1)
-            {
-                if (i1 > 0)
-                    i0 = i1 - 1;
-                else
-                    i1 = 1;
-            }
-
-            auto it_T = std::lower_bound(T_grid_.begin(), T_grid_.end(), t);
-            int j1 = static_cast<int>(it_T - T_grid_.begin());
-            if (j1 >= nT)
-                j1 = nT - 1;
-            int j0 = (j1 > 0) ? j1 - 1 : 0;
-            if (j0 == j1)
-            {
-                if (j1 > 0)
-                    j0 = j1 - 1;
-                else
-                    j1 = 1;
-            }
-
-            const double K0 = K_grid_[static_cast<std::size_t>(i0)];
-            const double K1 = K_grid_[static_cast<std::size_t>(i1)];
-            const double T0 = T_grid_[static_cast<std::size_t>(j0)];
-            const double T1 = T_grid_[static_cast<std::size_t>(j1)];
-            const double dK = K1 - K0, dT = T1 - T0;
-            const T wK = dK <= 1e-12 ? T(0.0)
-                         : inside    ? T((S_t - K0) / dK)
-                                     : T((S - K0) / dK);
-            const double wT = (dT > 1e-12) ? (t - T0) / dT : 0.0;
-
-            auto cell = [&](int i, int j) -> const T &
-            { return sigma_loc_[static_cast<std::size_t>(i) * static_cast<std::size_t>(nT) +
-                                static_cast<std::size_t>(j)]; };
-
-            const T sigma = (1.0 - wK) * (1.0 - wT) * cell(i0, j0) +
-                            wK * (1.0 - wT) * cell(i1, j0) +
-                            (1.0 - wK) * wT * cell(i0, j1) +
-                            wK * wT * cell(i1, j1);
-            return max(sigma, 1e-6);
+        /// The grid as the shared step functors take it (path_steps.hpp).
+        mc::GridView<T> grid() const
+        {
+            return {K_grid_.data(), static_cast<int>(K_grid_.size()), T_grid_.data(),
+                    static_cast<int>(T_grid_.size()), sigma_loc_.data()};
         }
 
         void set_param_pointers()

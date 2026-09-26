@@ -16,7 +16,34 @@ namespace quantModeling
 {
 
     /**
-     * @brief Scrambled Sobol low-discrepancy sequence (up to 1024 dimensions).
+     * @brief Bits of point p of one Sobol dimension, computed directly:
+     *        x_p = XOR of the direction integers V[b] over the set bits b of
+     *        gray(p) = p ^ (p >> 1) (Gray-code ordering, as next_uniform()
+     *        produces them: point 0 is 0, point 1 is V[0], ...).
+     *
+     * Integer arithmetic only: the CPU and the GPU get the same bits
+     * (blueprint/wp/19-gpu.md §2.2, ADR-G2). `V` holds 32 integers.
+     */
+    QM_HOST_DEVICE inline uint32_t sobol_point_bits(const uint32_t *V, uint32_t p)
+    {
+        uint32_t g = p ^ (p >> 1);
+        uint32_t x = 0;
+        for (int b = 0; g != 0; ++b, g >>= 1)
+            if (g & 1u)
+                x ^= V[b];
+        return x;
+    }
+
+    /// The uniform in (0,1) of a shifted coordinate -- same half-ulp offset
+    /// as SobolSequence::next_uniform().
+    QM_HOST_DEVICE inline double sobol_to_uniform(uint32_t bits, uint32_t shift)
+    {
+        constexpr double inv = 1.0 / 4294967296.0; // 2^-32
+        return (static_cast<double>(bits ^ shift) + 0.5) * inv;
+    }
+
+    /**
+     * @brief Scrambled Sobol low-discrepancy sequence (up to 21 201 dimensions).
      *
      * - Direction numbers: Joe-Kuo "new-joe-kuo-6" (good 2-D projections).
      * - Gray-code generation: one XOR per dimension per point.
@@ -51,6 +78,12 @@ namespace quantModeling
         }
 
         int dimension() const { return dim_; }
+
+        /// Direction integers, 32 per dimension (dimension-major), and the
+        /// digital-shift masks: what a GPU kernel needs to compute any
+        /// point with sobol_point_bits() / sobol_to_uniform().
+        std::span<const uint32_t> directions() const { return v_; }
+        std::span<const uint32_t> shifts() const { return shift_; }
 
         /**
          * @brief Write the next point's coordinates (in (0,1)) into out.

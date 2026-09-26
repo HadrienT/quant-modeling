@@ -112,6 +112,12 @@ namespace quantModeling
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
         std::size_t sim_dim() const override { return sim_dim_; }
 
+        /// Every fine-grid step draws: forward and the vol shock's independent part.
+        BrownianLayout brownian_layout() const override
+        {
+            return BrownianLayout{sim_timeline_, 2, 2};
+        }
+
         void generate_path(std::span<const double> gaussians,
                            Scenario<T> &path) const override
         {

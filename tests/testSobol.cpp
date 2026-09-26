@@ -49,6 +49,59 @@ namespace quantModeling
                     << "dim " << d << " bucket " << j;
     }
 
+    // The same net property on the dimensions added for blueprint WP 19
+    // (1 025..21 201): every one-dimensional projection of the first 2^k
+    // points has exactly one point per dyadic interval. Checked on the full
+    // 21 201-dimensional sequence, at the edges of the old limit and of the
+    // new one and at a few points in between.
+    TEST(Sobol, DyadicNetPropertyUpTo21201Dimensions)
+    {
+        constexpr int dim = sobol_detail::kMaxDimension;
+        ASSERT_EQ(dim, 21201);
+        constexpr int k = 9;
+        constexpr int n = 1 << k;
+        const std::vector<int> probe{1023, 1024, 1025, 4096, 11111, 20000, 21199, 21200};
+
+        SobolSequence seq(dim, /*scramble_seed=*/77);
+        std::vector<double> point(dim);
+        std::vector<std::vector<int>> counts(probe.size(), std::vector<int>(n, 0));
+        for (int i = 0; i < n; ++i)
+        {
+            seq.next_uniform(point);
+            for (std::size_t p = 0; p < probe.size(); ++p)
+                ++counts[p][static_cast<size_t>(point[static_cast<size_t>(probe[p])] * n)];
+        }
+        for (std::size_t p = 0; p < probe.size(); ++p)
+            for (int j = 0; j < n; ++j)
+                ASSERT_EQ(counts[p][static_cast<size_t>(j)], 1) << "dim " << probe[p] << " bucket " << j;
+
+        EXPECT_THROW(SobolSequence(dim + 1, 0), InvalidInput);
+    }
+
+    // The direct formula the GPU uses gives the sequence's own bits, at the
+    // start and after a jump, in the first, a middle and the last dimension.
+    TEST(Sobol, DirectPointFormulaMatchesTheSequence)
+    {
+        constexpr int dim = sobol_detail::kMaxDimension;
+        SobolSequence seq(dim, 4242);
+        const auto V = seq.directions();
+        const auto shift = seq.shifts();
+        std::vector<double> point(dim);
+        for (uint32_t start : {0u, (1u << 30) + 7u})
+        {
+            seq.skip_to(start);
+            for (uint32_t p = start; p < start + 300; ++p)
+            {
+                seq.next_uniform(point);
+                for (int d : {0, 1, 777, dim - 1})
+                    ASSERT_EQ(point[static_cast<size_t>(d)],
+                              sobol_to_uniform(sobol_point_bits(&V[static_cast<size_t>(32 * d)], p),
+                                               shift[static_cast<size_t>(d)]))
+                        << "point " << p << " dim " << d;
+            }
+        }
+    }
+
     // 2-D stratification of the first two dimensions: the first 2^k points
     // put exactly one point in each cell of the 2^(k/2) x 2^(k/2) grid.
     TEST(Sobol, TwoDimensionalStratification)
