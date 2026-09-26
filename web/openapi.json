@@ -1103,6 +1103,45 @@
         "title": "CommodityOptionRequest",
         "type": "object"
       },
+      "ComputeDevice": {
+        "description": "Where a Monte-Carlo pricing runs (blueprint/wp/19-gpu.md \u00a78). `auto`\ntakes the GPU when the server has one and the engine supports the request\nthere, the CPU otherwise; `gpu` refuses to fall back.",
+        "enum": [
+          "cpu",
+          "gpu",
+          "auto"
+        ],
+        "title": "ComputeDevice",
+        "type": "string"
+      },
+      "ComputeDevicesResponse": {
+        "description": "What the server can price on (GET /price/devices).",
+        "properties": {
+          "cpu": {
+            "description": "CPU model. The Monte-Carlo engines price on one thread of it.",
+            "title": "Cpu",
+            "type": "string"
+          },
+          "gpu_compiled": {
+            "description": "Whether the native module has the CUDA backend.",
+            "title": "Gpu Compiled",
+            "type": "boolean"
+          },
+          "gpus": {
+            "description": "Names of the usable CUDA devices; empty when the server has none or the native module was built without the CUDA backend.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Gpus",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cpu",
+          "gpu_compiled"
+        ],
+        "title": "ComputeDevicesResponse",
+        "type": "object"
+      },
       "DatedAsianRequest": {
         "description": "Average-price Asian priced from calendar fixing dates through the\ntimeline / day-count architecture (distinct from the legacy AsianRequest,\nwhich takes a single float maturity).",
         "properties": {
@@ -3218,6 +3257,15 @@
         "title": "MaturityVega",
         "type": "object"
       },
+      "McRng": {
+        "description": "Uniform generator of a CPU Monte-Carlo run. `philox` is the GPU's own\ngenerator: with it, CPU and GPU draw the same numbers and their prices\nagree to about 1e-15, so only the compute time differs.",
+        "enum": [
+          "pcg32",
+          "philox"
+        ],
+        "title": "McRng",
+        "type": "string"
+      },
       "MethodologySection": {
         "properties": {
           "paragraphs": {
@@ -4419,6 +4467,16 @@
             ],
             "description": "Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.",
             "title": "Compute Ms"
+          },
+          "device": {
+            "default": "cpu",
+            "description": "Where the pricing actually ran.",
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Device",
+            "type": "string"
           },
           "diagnostics": {
             "title": "Diagnostics",
@@ -6491,6 +6549,11 @@
       },
       "VanillaRequest": {
         "properties": {
+          "device": {
+            "$ref": "#/components/schemas/ComputeDevice",
+            "default": "cpu",
+            "description": "Monte-Carlo only: where the paths run. Ignored by the other engines."
+          },
           "dividend": {
             "title": "Dividend",
             "type": "number"
@@ -6520,6 +6583,8 @@
           },
           "n_paths": {
             "default": 200000,
+            "maximum": 100000000.0,
+            "minimum": 1.0,
             "title": "N Paths",
             "type": "integer"
           },
@@ -6538,6 +6603,11 @@
           "rate": {
             "title": "Rate",
             "type": "number"
+          },
+          "rng": {
+            "$ref": "#/components/schemas/McRng",
+            "default": "pcg32",
+            "description": "Monte-Carlo on the CPU only; a GPU run always uses Philox."
           },
           "seed": {
             "default": 1,
@@ -9395,6 +9465,25 @@
           }
         },
         "summary": "Price Commodity Option Endpoint"
+      }
+    },
+    "/price/devices": {
+      "get": {
+        "description": "What the pricing engines can run on, for the device selector.",
+        "operationId": "compute_devices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComputeDevicesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Compute Devices Endpoint"
       }
     },
     "/price/future": {

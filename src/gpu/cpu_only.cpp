@@ -30,12 +30,17 @@ namespace quantModeling::gpu
 
     mc::VanillaStats simulate_vanilla_terminal(const VanillaGpuRequest &)
     {
-        throw GpuUnavailable("this build has no CUDA backend (configure with QM_ENABLE_CUDA=ON)");
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
+    void warm_up(int)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built without the CUDA backend: QM_ENABLE_CUDA=ON)");
     }
 
     std::vector<double> philox_uniforms(uint64_t, uint64_t, uint32_t, uint32_t, int)
     {
-        throw GpuUnavailable("this build has no CUDA backend (configure with QM_ENABLE_CUDA=ON)");
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built without the CUDA backend: QM_ENABLE_CUDA=ON)");
     }
 
 } // namespace quantModeling::gpu

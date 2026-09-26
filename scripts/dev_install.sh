@@ -62,6 +62,14 @@ if [[ -n "$PYBIND11_CMAKE_DIR" ]]; then
   CONFIG_ARGS+=("--config-settings=cmake.define.pybind11_DIR=$PYBIND11_CMAKE_DIR")
 fi
 
+# GPU backend (blueprint/wp/19-gpu.md): QM_ENABLE_CUDA=1 scripts/dev_install.sh.
+# g++-13 as nvcc's host compiler: CUDA 12.4 rejects gcc 14.
+if [[ "${QM_ENABLE_CUDA:-0}" == "1" ]]; then
+  CONFIG_ARGS+=("--config-settings=cmake.define.QM_ENABLE_CUDA=ON"
+                "--config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=70"
+                "--config-settings=cmake.define.CMAKE_CUDA_HOST_COMPILER=${QM_CUDA_HOST_COMPILER:-g++-13}")
+fi
+
 # Editable install. editable.rebuild (pyproject.toml) makes `import quantmodeling`
 # re-run `cmake --build build/pypkg` when sources change.
 "${PIP[@]}" install --no-build-isolation -ve . "${CONFIG_ARGS[@]}"

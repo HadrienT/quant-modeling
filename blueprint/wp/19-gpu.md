@@ -253,9 +253,23 @@ même que le CPU avec le même générateur.
 - **Mémoire** : les cartes sont partagées (l'assistant de scripting peut en
   prendre). Le nombre de chemins par lancement se **calcule** depuis
   `cudaMemGetInfo` et le coût par chemin (état AAD compris), jamais par défaut.
-- **API / front** : un champ `engine` (`auto` / `cpu` / `gpu`) ; la page de
-  scripting et la comparaison de modèles affichent le temps de calcul et le
-  moteur.
+- **API / front** : un champ `device` (`cpu` / `gpu` / `auto`) — pas
+  `engine`, déjà pris par analytique / MC / EDP / arbres — et `rng`
+  (`pcg32` / `philox`) ; la réponse dit où le calcul a tourné (`device`) et
+  l'audit le consigne (`engine.device`). **Fait pour la vanille européenne**
+  (lot « sélection du device », après G0) : sélecteur *Compute* sur la page
+  Pricing en Monte-Carlo, et panneau **CPU vs GPU** qui lance la même requête
+  sur les deux — Philox et même graine, donc même prix à 10⁻¹⁵ près, seul le
+  temps serveur diffère. `GET /price/devices` décrit le serveur ; le contexte
+  CUDA est créé au démarrage de l'API (0,3 s, +140 Mo de RAM hôte) pour que le
+  premier temps affiché soit celui du pricing. Les produits suivent lot par
+  lot (`gpu: true` dans le catalogue du front) : scripts après G2.
+- **Image de production** : `web/Dockerfile.prod` compile le wheel avec
+  `QM_CUDA=ON` (défaut), avec la même chaîne que le serveur (Debian trixie
+  non-free `nvidia-cuda-toolkit` 12.4 + g++-13) ; le runtime CUDA est lié
+  statiquement, le pilote est monté par le runtime Docker `nvidia`, que
+  `docker-compose.prod.yml` sollicite (`reservations.devices`). Sans GPU au
+  run, la même image price sur CPU.
 
 ## 9. Benchmark
 

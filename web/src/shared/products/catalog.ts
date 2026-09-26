@@ -57,11 +57,14 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		schema: z.object({
 			...bsCore,
 			engine: z.enum(["analytic", "mc", "binomial", "trinomial", "pde"]),
-			n_paths: f.paths(),
+			// Up to the API's cap: CPU and GPU only separate at tens of
+			// millions of paths, below that launch overhead dominates.
+			n_paths: z.coerce.number().int().min(1_000).max(100_000_000),
 			seed: f.seed(),
 			tree_steps: z.coerce.number().int().min(10).max(5000),
 		}),
 		defaults: bump({}, { engine: "analytic", tree_steps: 200 }),
+		gpu: true,
 		engines: [
 			ANALYTIC,
 			MC,

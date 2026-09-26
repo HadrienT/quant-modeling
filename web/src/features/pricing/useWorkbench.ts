@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { decodeParams, encodeParams } from "@/shared/products/workbenchLink";
+import type { ComputeDevice } from "@/shared/api";
 import {
 	CATALOG_BY_KEY,
 	DEFAULT_PRODUCT_KEY,
@@ -38,6 +39,7 @@ export function useWorkbench() {
 		[descriptor, search.p],
 	);
 	const compare = decode<Record<string, unknown> | null>(search.compare, null);
+	const device: ComputeDevice = search.device ?? "cpu";
 
 	const setProduct = useCallback(
 		(key: string) => {
@@ -62,6 +64,15 @@ export function useWorkbench() {
 		[navigate],
 	);
 
+	const setDevice = useCallback(
+		(d: ComputeDevice) => {
+			navigate({
+				search: (prev) => ({ ...prev, device: d === "cpu" ? undefined : d }),
+			});
+		},
+		[navigate],
+	);
+
 	const setCompare = useCallback(
 		(next: Record<string, unknown> | null) => {
 			navigate({
@@ -80,6 +91,8 @@ export function useWorkbench() {
 		engine,
 		values,
 		compare,
+		device,
+		setDevice,
 		setProduct,
 		setEngine,
 		setValues,

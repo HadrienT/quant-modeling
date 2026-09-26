@@ -225,6 +225,7 @@ namespace quantModeling
 
         PricingResult out;
         out.diagnostics = diag;
+        out.device = use_gpu ? "gpu" : "cpu";
         out.npv = N * disc * stats.payoff.mean;
         out.mc_std_error = N * disc * stats.payoff.std_error();
 

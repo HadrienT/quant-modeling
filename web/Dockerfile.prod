@@ -3,8 +3,22 @@ FROM python:3.12-slim AS cpp-builder
 
 WORKDIR /app
 
+# QM_CUDA=ON builds the GPU Monte-Carlo backend (blueprint/wp/19-gpu.md) with
+# the server's own toolchain: Debian trixie's non-free nvidia-cuda-toolkit
+# (CUDA 12.4, the last branch for the V100s) and g++-13 as nvcc's host
+# compiler (CUDA 12.4 rejects trixie's default gcc 14). Build-stage only: the
+# wheel links the CUDA runtime statically, and the driver library is mounted
+# into the container at run time by the NVIDIA container runtime
+# (docker-compose.prod.yml). Without a GPU at run time the same image prices
+# on the CPU. QM_CUDA=OFF gives the CPU-only wheel.
+ARG QM_CUDA=ON
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake libeigen3-dev pybind11-dev ninja-build \
+    && if [ "$QM_CUDA" = "ON" ]; then \
+         sed -i 's/^Components: main$/Components: main contrib non-free/' /etc/apt/sources.list.d/debian.sources \
+         && apt-get update \
+         && apt-get install -y --no-install-recommends nvidia-cuda-toolkit g++-13 ; \
+       fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml CMakeLists.txt README.md ./
@@ -14,6 +28,9 @@ COPY src ./src
 
 RUN python -m pip install --upgrade pip --root-user-action=ignore \
     && python -m pip install --root-user-action=ignore "scikit-build-core>=0.10.2" "pybind11>=3.0.1" build \
+    && if [ "$QM_CUDA" = "ON" ]; then \
+         export CMAKE_ARGS="-DQM_ENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=70 -DCMAKE_CUDA_HOST_COMPILER=g++-13" ; \
+       fi \
     && python -m build --wheel
 
 ### ── Stage 2: Build the frontend with Vite ─────────────────────

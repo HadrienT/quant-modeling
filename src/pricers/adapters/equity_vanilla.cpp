@@ -44,6 +44,8 @@ namespace quantModeling
             in.tree_steps,
             in.pde_space_steps,
             in.pde_time_steps};
+        settings.mc_device = in.device;
+        settings.mc_rng = in.rng;
 
         PricingContext ctx{market, settings, model};
 

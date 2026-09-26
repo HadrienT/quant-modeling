@@ -23,8 +23,7 @@ namespace quantModeling::gpu
     std::vector<double> philox_uniforms(uint64_t seed, uint64_t first_path, uint32_t n_paths, uint32_t draws,
                                         int device)
     {
-        if (device < 0 || device >= device_count())
-            throw GpuUnavailable("no CUDA device " + std::to_string(device));
+        detail::require_device(device);
         detail::check(cudaSetDevice(device), "cudaSetDevice");
         const std::size_t n = static_cast<std::size_t>(n_paths) * draws;
         std::vector<double> host(n);

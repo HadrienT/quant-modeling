@@ -68,6 +68,9 @@ namespace quantModeling
         // positional PricingResult{...} silently shifting every field after
         // an insertion point.
         std::optional<RiskReport> risks;
+        /// Where the engine ran: "cpu" or "gpu" (blueprint/wp/19-gpu.md §8).
+        /// With ComputeDevice::Auto, this is the answer to "which one?".
+        std::string device = "cpu";
     };
 } // namespace quantModeling
 

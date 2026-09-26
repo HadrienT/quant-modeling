@@ -16,6 +16,13 @@ if [ -n "${VCPKG_ROOT:-}" ]; then
   export CMAKE_ARGS="${CMAKE_ARGS:-} -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
 fi
 
+# GPU backend (blueprint/wp/19-gpu.md): QM_ENABLE_CUDA=1 scripts/build_wheel.sh.
+# nvcc's host compiler defaults to g++-13 -- CUDA 12.4 rejects gcc 14, the
+# server's default; override with QM_CUDA_HOST_COMPILER.
+if [ "${QM_ENABLE_CUDA:-0}" = "1" ]; then
+  export CMAKE_ARGS="${CMAKE_ARGS:-} -DQM_ENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=70 -DCMAKE_CUDA_HOST_COMPILER=${QM_CUDA_HOST_COMPILER:-g++-13}"
+fi
+
 python -m build --wheel
 
 echo "Wheel built in dist/"

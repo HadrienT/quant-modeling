@@ -42,6 +42,7 @@ export const queryKeys = {
 		all: () => ["pricing"] as const,
 		option: (endpoint: string, params: unknown) =>
 			["pricing", endpoint, params] as const,
+		devices: () => ["pricing", "devices"] as const,
 	},
 
 	portfolio: {
