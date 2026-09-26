@@ -345,8 +345,9 @@ endif()
 
 # ---- GPU benchmark (blueprint/wp/19-gpu.md §9) ----
 # Not google-benchmark: the metric is the wall time to reach a target standard
-# error, not paths per second.
-if(QM_ENABLE_CUDA)
+# error, not paths per second. A command-line tool like the CLI: the wheel
+# build has neither.
+if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   add_executable(qm_gpu_bench benchmarks/gpu_time_to_error.cpp)
   target_link_libraries(qm_gpu_bench PRIVATE quantModeling)
 endif()
@@ -367,6 +368,8 @@ if(QM_BUILD_PYTHON)
   file(GLOB_RECURSE _qm_stamp_files CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cu
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cuh
     ${CMAKE_CURRENT_SOURCE_DIR}/bindings/*.txt
   )
   list(APPEND _qm_stamp_files ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)

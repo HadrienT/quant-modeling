@@ -419,7 +419,13 @@ def test_a_pricing_emits_its_valuation_record(client, inmemory_sink):
     [event] = _valuations(inmemory_sink)
     p = event.payload
     assert p["product"] == "vanilla"
-    assert p["engine"] == {"name": "mc", "n_paths": 20_000, "seed": 7, "scheme": None}
+    assert p["engine"] == {
+        "name": "mc",
+        "n_paths": 20_000,
+        "seed": 7,
+        "scheme": None,
+        "device": "cpu",
+    }
     assert p["model"]["name"] == "black_scholes"
     assert p["result"]["npv"] == r.json()["npv"]
     assert p["request"]["seed"] == 7 and p["request_hash"].startswith("sha256:")
@@ -449,6 +455,7 @@ def test_the_record_names_the_engine_that_actually_ran(client, inmemory_sink):
         "n_paths": None,
         "seed": None,
         "scheme": None,
+        "device": None,
     }
 
 
@@ -591,9 +598,15 @@ def _points(name: str) -> list:
 def test_a_pricing_is_measured_with_closed_set_labels(client):
     client.post("/price/option/vanilla", json=VANILLA_MC).raise_for_status()
     labels = [dict(p.attributes) for p in _points("qm_pricing_duration")]
-    assert {"product": "vanilla", "engine": "mc", "model": "black_scholes"} in labels
+    assert {
+        "product": "vanilla",
+        "engine": "mc",
+        "model": "black_scholes",
+        "device": "cpu",
+    } in labels
     for attrs in labels:
-        assert set(attrs) == {"product", "engine", "model"}
+        assert set(attrs) == {"product", "engine", "model", "device"}
+        assert attrs["device"] in {"cpu", "gpu"}
 
 
 def test_a_failed_pricing_is_counted_by_error_code(client):

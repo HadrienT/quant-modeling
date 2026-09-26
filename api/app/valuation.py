@@ -247,7 +247,7 @@ PRODUCTS: dict[str, Product] = {
 }
 
 
-def engine_spec(product: Product, req: Any) -> EngineSpec:
+def engine_spec(product: Product, req: Any, device: str | None = None) -> EngineSpec:
     name = product.engine(req)
     mc = name == "mc"
     return EngineSpec(
@@ -255,6 +255,7 @@ def engine_spec(product: Product, req: Any) -> EngineSpec:
         n_paths=getattr(req, "n_paths", None) if mc else None,
         seed=getattr(req, "seed", None) if mc else None,
         scheme=product.scheme(req),
+        device=device if mc else None,
     )
 
 
@@ -331,7 +332,7 @@ def payload(
         request=request,
         request_hash=value_hash(request),
         model=_model_spec(product, req, resp),
-        engine=engine_spec(product, req),
+        engine=engine_spec(product, req, resp.device),
         market_inputs=priced.market_inputs,
         result=ValuationResult(
             npv=resp.npv,

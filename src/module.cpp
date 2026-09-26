@@ -14,6 +14,8 @@
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
+#include "quantModeling/gpu/device.hpp"
+#include "quantModeling/gpu/vanilla_bs.hpp"
 #include "quantModeling/instruments/equity/simulatable_asian.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/calendars.hpp"
@@ -356,6 +358,7 @@ static py::dict pricing_result_to_dict(const quantModeling::PricingResult &res)
     out["greeks"] = greeks;
     out["diagnostics"] = res.diagnostics;
     out["mc_std_error"] = static_cast<double>(res.mc_std_error);
+    out["device"] = res.device;
 
     // Bond analytics (optional fields — only populated for bond instruments)
     py::dict bond_analytics;
@@ -1170,6 +1173,33 @@ PYBIND11_MODULE(quantmodeling, m)
         "section 5.1) -- read by the API's audit trail so a valuation can be "
         "traced to the exact lib_build that produced it.");
 
+    // ── GPU backend (blueprint/wp/19-gpu.md §8) ──
+    py::register_exception<quantModeling::gpu::GpuUnavailable>(m, "GpuUnavailable", PyExc_RuntimeError);
+
+    py::enum_<quantModeling::ComputeDevice>(m, "ComputeDevice")
+        .value("Cpu", quantModeling::ComputeDevice::Cpu)
+        .value("Gpu", quantModeling::ComputeDevice::Gpu)
+        .value("Auto", quantModeling::ComputeDevice::Auto);
+
+    py::enum_<quantModeling::RngKind>(m, "RngKind")
+        .value("Pcg32", quantModeling::RngKind::Pcg32)
+        .value("Philox", quantModeling::RngKind::Philox);
+
+    m.def("gpu_compiled", &quantModeling::gpu::compiled_with_cuda,
+          "True when the native module was built with the CUDA backend.");
+    m.def(
+        "gpu_devices", []()
+        {
+            std::vector<std::string> names;
+            for (int d = 0; d < quantModeling::gpu::device_count(); ++d)
+                names.push_back(quantModeling::gpu::device_name(d));
+            return names; },
+        "Names of the usable CUDA devices (empty on a CPU-only build or host).");
+    m.def("gpu_warm_up", &quantModeling::gpu::warm_up, py::arg("device") = 0,
+          py::call_guard<py::gil_scoped_release>(),
+          "Create the CUDA context and load the kernels, so that the first "
+          "priced request is not charged for them.");
+
     py::enum_<quantModeling::AsianAverageType>(m, "AsianAverageType")
         .value("Arithmetic", quantModeling::AsianAverageType::Arithmetic)
         .value("Geometric", quantModeling::AsianAverageType::Geometric);
@@ -1206,7 +1236,9 @@ PYBIND11_MODULE(quantmodeling, m)
         .def_readwrite("mc_epsilon", &quantModeling::VanillaBSInput::mc_epsilon)
         .def_readwrite("tree_steps", &quantModeling::VanillaBSInput::tree_steps)
         .def_readwrite("pde_space_steps", &quantModeling::VanillaBSInput::pde_space_steps)
-        .def_readwrite("pde_time_steps", &quantModeling::VanillaBSInput::pde_time_steps);
+        .def_readwrite("pde_time_steps", &quantModeling::VanillaBSInput::pde_time_steps)
+        .def_readwrite("device", &quantModeling::VanillaBSInput::device)
+        .def_readwrite("rng", &quantModeling::VanillaBSInput::rng);
 
     py::class_<quantModeling::AmericanVanillaBSInput>(m, "AmericanVanillaBSInput")
         .def(py::init<>())

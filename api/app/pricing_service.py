@@ -12,6 +12,7 @@ from .schemas import (
     BarrierKind,
     BarrierRequest,
     BasketRequest,
+    ComputeDevice,
     CommodityForwardRequest,
     CommodityOptionRequest,
     DatedAsianRequest,
@@ -26,6 +27,7 @@ from .schemas import (
     LookbackExtremum,
     LookbackRequest,
     LookbackStyle,
+    McRng,
     ModelChoice,
     MountainRequest,
     PricingResponse,
@@ -52,6 +54,7 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
         bond_analytics=result.get("bond_analytics"),
         diagnostics=result.get("diagnostics", ""),
         mc_std_error=result.get("mc_std_error", 0.0),
+        device=result.get("device", "cpu"),
         # Only price_script(greeks_method="aad") populates this today
         # (blueprint/wp/17-aad.md §13.1); every other pricer's dict carries
         # risks=None, same as before this field existed.
@@ -59,6 +62,14 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
         # Only price_script populates this (scripting/model_advice.hpp).
         warnings=result.get("warnings", []),
     )
+
+
+_DEVICES = {
+    ComputeDevice.cpu: qm.ComputeDevice.Cpu,
+    ComputeDevice.gpu: qm.ComputeDevice.Gpu,
+    ComputeDevice.auto: qm.ComputeDevice.Auto,
+}
+_RNGS = {McRng.pcg32: qm.RngKind.Pcg32, McRng.philox: qm.RngKind.Philox}
 
 
 def price_vanilla(req: VanillaRequest) -> PricingResponse:
@@ -93,6 +104,8 @@ def price_vanilla(req: VanillaRequest) -> PricingResponse:
         input_data.n_paths = req.n_paths
         input_data.seed = req.seed
         input_data.mc_epsilon = req.mc_epsilon
+        input_data.device = _DEVICES[req.device]
+        input_data.rng = _RNGS[req.rng]
 
         if req.engine == EngineType.pde:
             input_data.pde_space_steps = req.pde_space_steps

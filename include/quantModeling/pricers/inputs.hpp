@@ -6,6 +6,7 @@
 #include "quantModeling/instruments/equity/barrier.hpp"
 #include "quantModeling/instruments/equity/digital.hpp"
 #include "quantModeling/instruments/equity/lookback.hpp"
+#include "quantModeling/pricers/context.hpp"
 #include <vector>
 
 namespace quantModeling
@@ -27,6 +28,11 @@ namespace quantModeling
         int tree_steps = 100;
         int pde_space_steps = 100;
         int pde_time_steps = 100;
+        /// Monte-Carlo only: CPU, GPU, or GPU when present (blueprint/wp/19-gpu.md §8).
+        ComputeDevice device = ComputeDevice::Cpu;
+        /// Monte-Carlo on the CPU only (a GPU run is always Philox): Philox
+        /// gives the GPU's draws, so the two prices agree to a few ulps.
+        RngKind rng = RngKind::Pcg32;
     };
 
     struct AmericanVanillaBSInput

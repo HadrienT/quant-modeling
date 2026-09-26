@@ -1,5 +1,9 @@
 import asyncio
+import functools
+import platform
 from typing import Callable, TypeVar
+
+import quantmodeling as qm
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -10,6 +14,7 @@ from ..audit import emit
 from ..pricing_service import validate_script
 from ..request_context import current_ip_hash
 from ..schemas import (
+    ComputeDevicesResponse,
     AmericanVanillaRequest,
     AsianRequest,
     AutocallRequest,
@@ -97,7 +102,9 @@ async def _price(
     except Exception:
         telemetry.pricing_errors.add(1, {"product": product_id, "code": "internal"})
         raise
-    telemetry.pricing_duration.record(priced.duration_s, labels)
+    telemetry.pricing_duration.record(
+        priced.duration_s, {**labels, "device": priced.response.device}
+    )
     emit(
         "pricing.valuation",
         valuation.payload(product_id, req, priced, ip_hash=current_ip_hash()),
@@ -107,7 +114,31 @@ async def _price(
 
 @router.post("/price/option/vanilla", response_model=PricingResponse)
 async def price_vanilla_endpoint(req: VanillaRequest) -> PricingResponse:
-    return await _price("vanilla", req)
+    # device="gpu" on a server without one is the caller's to fix: a 422 that
+    # says so, not a 500 (blueprint/wp/19-gpu.md §8).
+    return await _price("vanilla", req, user_errors=(qm.GpuUnavailable,))
+
+
+@functools.cache
+def _cpu_model() -> str:
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("model name"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor() or "CPU"
+
+
+@router.get("/price/devices", response_model=ComputeDevicesResponse)
+def compute_devices_endpoint() -> ComputeDevicesResponse:
+    """What the pricing engines can run on, for the device selector."""
+    return ComputeDevicesResponse(
+        cpu=_cpu_model(),
+        gpus=list(qm.gpu_devices()),
+        gpu_compiled=bool(qm.gpu_compiled()),
+    )
 
 
 @router.post("/price/option/american-vanilla", response_model=PricingResponse)

@@ -18,6 +18,25 @@ class EngineType(str, Enum):
     pde = "pde"
 
 
+class ComputeDevice(str, Enum):
+    """Where a Monte-Carlo pricing runs (blueprint/wp/19-gpu.md §8). `auto`
+    takes the GPU when the server has one and the engine supports the request
+    there, the CPU otherwise; `gpu` refuses to fall back."""
+
+    cpu = "cpu"
+    gpu = "gpu"
+    auto = "auto"
+
+
+class McRng(str, Enum):
+    """Uniform generator of a CPU Monte-Carlo run. `philox` is the GPU's own
+    generator: with it, CPU and GPU draw the same numbers and their prices
+    agree to about 1e-15, so only the compute time differs."""
+
+    pcg32 = "pcg32"
+    philox = "philox"
+
+
 class AmericanEngineType(str, Enum):
     binomial = "binomial"
     trinomial = "trinomial"
@@ -60,12 +79,22 @@ class VanillaRequest(BaseModel):
     is_call: bool
     is_american: bool = False
     engine: EngineType = EngineType.analytic
-    n_paths: int = 200000
+    # Capped so that a CPU run (~15 M paths/s on one core) stays inside the
+    # 20 s pricing timeout: a timed-out request cannot stop its C++ thread.
+    n_paths: int = Field(200000, ge=1, le=100_000_000)
     seed: int = 1
     mc_epsilon: float = 0.0
     tree_steps: int = Field(100, ge=10)
     pde_space_steps: int = Field(100, ge=10)
     pde_time_steps: int = Field(100, ge=10)
+    device: ComputeDevice = Field(
+        ComputeDevice.cpu,
+        description="Monte-Carlo only: where the paths run. Ignored by the other engines.",
+    )
+    rng: McRng = Field(
+        McRng.pcg32,
+        description="Monte-Carlo on the CPU only; a GPU run always uses Philox.",
+    )
 
 
 class AmericanVanillaRequest(BaseModel):
@@ -581,6 +610,26 @@ class PricingResponse(BaseModel):
         None,
         description="Server-side wall time of the pricing itself (the engine "
         "call), in milliseconds; excludes network and request parsing.",
+    )
+    device: Literal["cpu", "gpu"] = Field(
+        "cpu", description="Where the pricing actually ran."
+    )
+
+
+class ComputeDevicesResponse(BaseModel):
+    """What the server can price on (GET /price/devices)."""
+
+    cpu: str = Field(
+        ...,
+        description="CPU model. The Monte-Carlo engines price on one thread of it.",
+    )
+    gpus: List[str] = Field(
+        default_factory=list,
+        description="Names of the usable CUDA devices; empty when the server "
+        "has none or the native module was built without the CUDA backend.",
+    )
+    gpu_compiled: bool = Field(
+        ..., description="Whether the native module has the CUDA backend."
     )
 
 

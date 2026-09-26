@@ -73,6 +73,7 @@ const priceRoute = createRoute({
 		engine: z.string().optional(),
 		p: z.string().optional(), // encoded params
 		compare: z.string().optional(),
+		device: z.enum(["cpu", "gpu", "auto"]).optional(),
 	}).parse,
 	component: PricingPage,
 });

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { ProductDescriptor } from "@/shared/products";
-import { usePricing } from "@/shared/api";
+import { type ComputeDevice, usePricing } from "@/shared/api";
 import {
 	ComputeTime,
 	EngineTag,
@@ -24,15 +24,21 @@ export function ResultsPanel({
 	descriptor,
 	values,
 	engine,
+	device = "cpu",
 }: {
 	descriptor: ProductDescriptor;
 	values: Record<string, unknown>;
 	engine: string;
+	device?: ComputeDevice;
 }) {
-	const body = useMemo(
-		() => descriptor.toRequest(values, engine as never),
-		[descriptor, values, engine],
-	);
+	const body = useMemo(() => {
+		const base = descriptor.toRequest(values, engine as never);
+		// GPU-capable MC: always Philox, the GPU's generator, so a CPU and a
+		// GPU price of the same inputs agree to ~1e-15 (blueprint WP 19 §7).
+		return descriptor.gpu && engine === "mc"
+			? { ...(base as object), device, rng: "philox" }
+			: base;
+	}, [descriptor, values, engine, device]);
 	const q = usePricing({ endpoint: descriptor.endpoint ?? null, body });
 
 	const isMc = engine === "mc";
@@ -94,6 +100,9 @@ export function ResultsPanel({
 					</div>
 					<div className="flex flex-col items-end gap-1">
 						<EngineTag engine={engine} />
+						{isMc && descriptor.gpu && (
+							<EngineTag engine={r.device === "gpu" ? "on GPU" : "on CPU"} />
+						)}
 						<Provenance source="manual" />
 						<Freshness at={Date.now()} />
 						<ComputeTime

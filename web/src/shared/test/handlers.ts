@@ -89,6 +89,10 @@ export const handlers = [
 		);
 	}),
 
+	// A CPU-only server by default; tests of the GPU path override it.
+	http.get("*/price/devices", () =>
+		HttpResponse.json({ cpu: "Test CPU", gpus: [], gpu_compiled: false }),
+	),
 	http.post("*/price/*", () => HttpResponse.json(fx.pricingResponse())),
 
 	http.get("*/api/portfolios", () =>

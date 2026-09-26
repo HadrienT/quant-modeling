@@ -37,6 +37,12 @@ namespace quantModeling::gpu
     /// Throws GpuUnavailable when no device can run it.
     mc::VanillaStats simulate_vanilla_terminal(const VanillaGpuRequest &req);
 
+    /// Create the CUDA context on `device` and load every vanilla kernel, so
+    /// that the first priced request does not pay for them (a few hundred
+    /// milliseconds, once per process). A timing shown to a user must be the
+    /// pricing's, not the driver's start-up.
+    void warm_up(int device = 0);
+
 } // namespace quantModeling::gpu
 
 #endif // GPU_VANILLA_BS_HPP

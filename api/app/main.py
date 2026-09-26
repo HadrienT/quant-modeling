@@ -1,3 +1,4 @@
+import logging
 import os
 
 from fastapi import FastAPI, HTTPException, Request
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 
 from .audit.middleware import AuditMiddleware
 from .audit.sinks import close_sink, get_sink
-from .logging_utils import configure_logging
+from .logging_utils import LOGGER_NAME, configure_logging
 from .routers.market import router as market_router
 from .routers.pricing import router as pricing_router
 from .routers.local_vol_pricing import router as local_vol_router
@@ -125,6 +126,23 @@ def _start_audit_sink() -> None:
     # Built at startup rather than on the first event: the Kafka producer's
     # thread starts republishing a spool left by a previous run straight away.
     get_sink()
+
+
+@app.on_event("startup")
+def _warm_up_gpu() -> None:
+    # The first CUDA call of a process creates the context and loads the
+    # kernels (~0.3 s). Paid here, so that the compute time shown for the first
+    # GPU pricing is the pricing's own (blueprint/wp/19-gpu.md §8). A failure
+    # only means the GPU is unusable: the API keeps pricing on the CPU.
+    import quantmodeling as qm
+
+    if not qm.gpu_devices():
+        return
+    try:
+        qm.gpu_warm_up()
+        logging.getLogger(LOGGER_NAME).info("gpu warmed up: %s", qm.gpu_devices()[0])
+    except Exception:  # noqa: BLE001
+        logging.getLogger(LOGGER_NAME).exception("gpu warm-up failed")
 
 
 @app.on_event("shutdown")

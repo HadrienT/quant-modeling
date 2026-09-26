@@ -107,6 +107,12 @@ cd ~/quant-modeling-prod && ./scripts/deploy.sh
   quand même mais les pages *Market* affichent une erreur.
 - L'accès au **compte Cloudflare qui gère déjà `tramonihadrien.com`** (le domaine
   y est déjà délégué — cf. §2).
+- Le **NVIDIA Container Toolkit** (runtime `nvidia` de Docker ; déjà là, il sert
+  aussi au `llama-server` d'AgenticEnv). `docker-compose.prod.yml` réserve les
+  GPU au conteneur `app` pour le Monte-Carlo GPU (WP 19) : **sans ce runtime, le
+  conteneur refuse de démarrer**. Vérifier : `docker info | grep -i runtimes`
+  doit lister `nvidia`. Serveur sans GPU : retirer le bloc `reservations` du
+  compose — l'image, elle, marche telle quelle et price sur CPU.
 
 ---
 
@@ -457,6 +463,7 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 | Arrêter (temporaire) | `dc --profile tunnel down` — systemd le relancera au prochain boot ou `start` |
 | Changer d'adresse publique | dashboard Cloudflare → tunnel `quant-modeling` → Public Hostname ; puis `dc --profile tunnel up -d` |
 | Mettre à jour l'image cloudflared | changer le tag dans `docker-compose.prod.yml`, `./scripts/deploy.sh` |
+| Le GPU est-il vu par l'app ? | `curl -s http://127.0.0.1:8091/price/devices` — `gpus` liste les V100 ; vide = pricing sur CPU seulement |
 
 ---
 
@@ -466,6 +473,8 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 |---|---|
 | `https://…` → 502 / 1033 | Le conteneur `app` n'est pas *healthy* ou `cloudflared` ne le joint pas. `docker compose -f docker-compose.prod.yml ps`, puis les logs des deux. |
 | Site coupé après un reboot | `./scripts/status.sh`, puis `journalctl -b -u quant-modeling.service`. « Dependency failed » ou « ordering cycle » : voir §5 (`llama-bridge.socket`). Dépannage immédiat : `./scripts/deploy.sh`. |
+| `could not select device driver "nvidia"` au `deploy.sh` | Le runtime NVIDIA de Docker manque ou a été désinstallé (voir *Prérequis*). En urgence : retirer le bloc `reservations` de `docker-compose.prod.yml` et redéployer — le site repart sur CPU. |
+| Sélecteur GPU grisé sur le site | `curl -s http://127.0.0.1:8091/price/devices` : `gpu_compiled: false` = image construite avec `QM_CUDA=OFF` ; `gpus: []` = conteneur sans accès aux cartes (`dc exec app nvidia-smi` ne doit pas échouer). |
 | Boucle de redirection HTTPS | Mode SSL/TLS Cloudflare sur *Flexible* → passer à **Full (strict)**. |
 | Page blanche / JS non exécuté | **Rocket Loader** encore activé → Off. Vider le cache Cloudflare (Caching → Purge Everything). |
 | Violations CSP dans la console | Une ressource externe s'est glissée dans le build. La CSP interdit toute origine tierce — c'est voulu (blueprint WP 14 §3). |

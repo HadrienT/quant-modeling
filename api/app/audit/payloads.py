@@ -94,6 +94,8 @@ class EngineSpec(BaseModel):
     n_paths: int | None = None
     seed: int | None = None
     scheme: str | None = None
+    #: Monte-Carlo only: where the paths ran, "cpu" or "gpu" (WP 19 §8).
+    device: str | None = None
 
 
 class ValuationResult(BaseModel):

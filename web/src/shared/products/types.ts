@@ -84,6 +84,11 @@ export type ProductDescriptor = {
 	fields?: Record<string, FieldOverride>;
 	/** set for a product of the script library: its template. */
 	scripted?: ScriptedProduct;
+	/**
+	 * The Monte-Carlo engine can run on the GPU (blueprint WP 19): the request
+	 * takes `device` and `rng`. Grows lot by lot as engines are ported.
+	 */
+	gpu?: boolean;
 	/** map UI-unit form values to the API request body (units converted at the edge). */
 	toRequest: (values: Record<string, unknown>, engine: EngineKey) => unknown;
 };

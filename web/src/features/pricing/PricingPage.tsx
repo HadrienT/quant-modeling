@@ -8,6 +8,8 @@ import {
 	ProductPicker,
 } from "@/shared/products";
 import { Button, cn, copyText, toast } from "@/shared/ui";
+import { ComputeDevicePicker } from "./ComputeDevicePicker";
+import { DeviceRace } from "./DeviceRace";
 import { ResultsPanel } from "./ResultsPanel";
 import { ScriptedPanel } from "./ScriptedPanel";
 import { useWorkbench } from "./useWorkbench";
@@ -58,6 +60,10 @@ export default function PricingPage() {
 							</button>
 						))}
 					</div>
+				)}
+
+				{wb.descriptor.gpu && wb.engine === "mc" && (
+					<ComputeDevicePicker device={wb.device} onChange={wb.setDevice} />
 				)}
 
 				<ParamForm
@@ -129,7 +135,27 @@ export default function PricingPage() {
 							descriptor={wb.descriptor}
 							values={wb.values}
 							engine={wb.engine}
+							device={wb.device}
 						/>
+						{wb.descriptor.gpu &&
+							wb.engine === "mc" &&
+							wb.descriptor.endpoint && (
+								<div className="mt-4">
+									<DeviceRace
+										endpoint={wb.descriptor.endpoint}
+										body={
+											wb.descriptor.toRequest(wb.values, wb.engine) as Record<
+												string,
+												unknown
+											>
+										}
+										paths={
+											Number((wb.values as Record<string, unknown>).n_paths) ||
+											0
+										}
+									/>
+								</div>
+							)}
 						{wb.descriptor.scripted && (
 							<div className="mt-4">
 								<ScriptedPanel
@@ -149,6 +175,7 @@ export default function PricingPage() {
 								descriptor={CATALOG_BY_KEY.get(wb.productKey) ?? wb.descriptor}
 								values={wb.compare}
 								engine={wb.engine}
+								device={wb.device}
 							/>
 						</div>
 					)}

@@ -788,6 +788,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compute Devices Endpoint
+         * @description What the pricing engines can run on, for the device selector.
+         */
+        get: operations["compute_devices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/future": {
         parameters: {
             query?: never;
@@ -1740,6 +1760,35 @@ export interface components {
             vol: number;
         };
         /**
+         * ComputeDevice
+         * @description Where a Monte-Carlo pricing runs (blueprint/wp/19-gpu.md §8). `auto`
+         *     takes the GPU when the server has one and the engine supports the request
+         *     there, the CPU otherwise; `gpu` refuses to fall back.
+         * @enum {string}
+         */
+        ComputeDevice: "cpu" | "gpu" | "auto";
+        /**
+         * ComputeDevicesResponse
+         * @description What the server can price on (GET /price/devices).
+         */
+        ComputeDevicesResponse: {
+            /**
+             * Cpu
+             * @description CPU model. The Monte-Carlo engines price on one thread of it.
+             */
+            cpu: string;
+            /**
+             * Gpu Compiled
+             * @description Whether the native module has the CUDA backend.
+             */
+            gpu_compiled: boolean;
+            /**
+             * Gpus
+             * @description Names of the usable CUDA devices; empty when the server has none or the native module was built without the CUDA backend.
+             */
+            gpus?: string[];
+        };
+        /**
          * DatedAsianRequest
          * @description Average-price Asian priced from calendar fixing dates through the
          *     timeline / day-count architecture (distinct from the legacy AsianRequest,
@@ -2626,6 +2675,14 @@ export interface components {
              */
             vega: number;
         };
+        /**
+         * McRng
+         * @description Uniform generator of a CPU Monte-Carlo run. `philox` is the GPU's own
+         *     generator: with it, CPU and GPU draw the same numbers and their prices
+         *     agree to about 1e-15, so only the compute time differs.
+         * @enum {string}
+         */
+        McRng: "pcg32" | "philox";
         /** MethodologySection */
         MethodologySection: {
             /** Paragraphs */
@@ -3175,6 +3232,13 @@ export interface components {
              * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
              */
             compute_ms?: number | null;
+            /**
+             * Device
+             * @description Where the pricing actually ran.
+             * @default cpu
+             * @enum {string}
+             */
+            device: "cpu" | "gpu";
             /** Diagnostics */
             diagnostics: string;
             greeks: components["schemas"]["Greeks"];
@@ -4175,6 +4239,11 @@ export interface components {
         };
         /** VanillaRequest */
         VanillaRequest: {
+            /**
+             * @description Monte-Carlo only: where the paths run. Ignored by the other engines.
+             * @default cpu
+             */
+            device: components["schemas"]["ComputeDevice"];
             /** Dividend */
             dividend: number;
             /** @default analytic */
@@ -4210,6 +4279,11 @@ export interface components {
             pde_time_steps: number;
             /** Rate */
             rate: number;
+            /**
+             * @description Monte-Carlo on the CPU only; a GPU run always uses Philox.
+             * @default pcg32
+             */
+            rng: components["schemas"]["McRng"];
             /**
              * Seed
              * @default 1
@@ -5845,6 +5919,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compute_devices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComputeDevicesResponse"];
                 };
             };
         };

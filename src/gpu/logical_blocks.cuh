@@ -19,6 +19,18 @@
 namespace quantModeling::gpu::detail
 {
 
+    /// Refuse a device index this process cannot use, in words a user of the
+    /// site can act on.
+    inline void require_device(int device)
+    {
+        const int n = device_count();
+        if (n == 0)
+            throw GpuUnavailable("GPU requested, but this server has no usable CUDA device");
+        if (device < 0 || device >= n)
+            throw GpuUnavailable("GPU " + std::to_string(device) + " requested, but this server has " +
+                                 std::to_string(n) + " usable CUDA device(s)");
+    }
+
     inline void check(cudaError_t err, const char *what)
     {
         if (err != cudaSuccess)
@@ -94,8 +106,7 @@ namespace quantModeling::gpu::detail
     template <class Stats, class UnitFn>
     Stats run_logical_blocks(int device, uint64_t n_units, const UnitFn &fn, uint64_t max_blocks_per_launch)
     {
-        if (device < 0 || device >= device_count())
-            throw GpuUnavailable("no CUDA device " + std::to_string(device));
+        require_device(device);
         check(cudaSetDevice(device), "cudaSetDevice");
 
         const uint64_t n_blocks = mc::LogicalBlocks::count(n_units);

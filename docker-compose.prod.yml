@@ -90,6 +90,15 @@ services:
         limits:
           cpus: "2.0"
           memory: 2g
+        # The V100s, for the GPU Monte-Carlo backend (blueprint/wp/19-gpu.md
+        # §8). Needs the NVIDIA container runtime on the host (installed: it
+        # serves AgenticEnv's llama-server too). Shared, not exclusive: the
+        # engines size their batches from the memory free at the time.
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     logging:
       driver: json-file
       options:

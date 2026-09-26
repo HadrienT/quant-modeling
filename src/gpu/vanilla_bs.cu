@@ -31,4 +31,25 @@ namespace quantModeling::gpu
                                             : dispatch_flags<OptionType::Put>(req);
     }
 
+    void warm_up(int device)
+    {
+        VanillaGpuRequest req;
+        req.spec.S0 = req.spec.K = req.spec.movedSpot = req.spec.movedSpot_upT = req.spec.movedSpot_dnT = 100.0;
+        req.spec.sigma = req.spec.T = req.spec.sqrtT = req.spec.df = req.spec.df_upT = req.spec.df_dnT = 1.0;
+        req.spec.rootVariance = req.spec.rootVariance_upT = req.spec.rootVariance_dnT = 0.2;
+        req.spec.dS = req.spec.theta_bump = 1.0;
+        req.spec.factor_up = req.spec.factor_dn = 1.0;
+        req.n_units = 1;
+        req.device = device;
+        for (OptionType type : {OptionType::Call, OptionType::Put})
+            for (bool anti : {false, true})
+                for (Real is : {0.0, 0.1})
+                {
+                    req.type = type;
+                    req.antithetic = anti;
+                    req.is_shift = is;
+                    simulate_vanilla_terminal(req);
+                }
+    }
+
 } // namespace quantModeling::gpu
