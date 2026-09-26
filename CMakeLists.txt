@@ -95,6 +95,7 @@ target_sources(quantModeling
         src/engines/mc/heston_qe.cpp
         src/engines/mc/rough_bergomi_hybrid.cpp
         src/engines/mc/path_simulation.cpp
+        src/engines/mc/script_engine.cpp
         src/models/rates/flat_rate.cpp
         src/models/rates/vasicek.cpp
         src/models/rates/cir.cpp
@@ -163,6 +164,7 @@ if(QM_ENABLE_CUDA)
           src/gpu/vanilla_bs.cu
           src/gpu/rng.cu
           src/gpu/paths.cu
+          src/gpu/script.cu
   )
   target_link_libraries(quantModeling PUBLIC CUDA::cudart_static)
   target_compile_options(quantModeling PRIVATE
@@ -325,8 +327,12 @@ if(QM_BUILD_TESTS)
     add_executable(quantModeling_gpu_tests
       tests/gpu/testGpuVanilla.cpp
       tests/gpu/testGpuPaths.cpp
+      tests/gpu/testGpuScripts.cpp
     )
     target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)
+    target_compile_definitions(quantModeling_gpu_tests PRIVATE
+      QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library"
+    )
     target_compile_options(quantModeling_gpu_tests PRIVATE
       $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
     )

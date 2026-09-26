@@ -5,6 +5,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
+#include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
 #include <cmath>
@@ -181,6 +182,30 @@ namespace quantModeling
         std::unique_ptr<ISimulationModel<T>> clone() const override
         {
             return std::make_unique<BlackScholesSimModel<T>>(*this);
+        }
+
+        bool describe_device(DeviceModel &d) const override
+        {
+            if constexpr (!std::is_same_v<T, Real>)
+                return false;
+            else
+            {
+                if (curve_)
+                    return false; // the device has a flat rate only
+                d = DeviceModel{};
+                d.kind = DeviceModel::Kind::BlackScholes;
+                d.r = r_;
+                d.s0 = {s0_};
+                for (std::size_t i = 0; i < steps_.size(); ++i)
+                {
+                    d.t.push_back(steps_[i].t);
+                    d.draws.push_back(steps_[i].draws ? 1 : 0);
+                    d.event.push_back(static_cast<int>(i));
+                    d.drift.push_back(steps_[i].drift);
+                    d.vol_sqrt_dt.push_back(steps_[i].vol_sqrt_dt);
+                }
+                return true;
+            }
         }
 
         const std::vector<T *> &parameters() const override { return params_; }

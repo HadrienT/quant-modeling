@@ -62,15 +62,10 @@ export default function PricingPage() {
 					</div>
 				)}
 
-				{(wb.descriptor.gpu || wb.descriptor.scripted) && (
+				{wb.descriptor.gpu && (
 					<ComputeDevicePicker
-						device={wb.descriptor.gpu && wb.engine === "mc" ? wb.device : "cpu"}
+						device={wb.engine === "mc" ? wb.device : "cpu"}
 						onChange={wb.setDevice}
-						unsupported={
-							wb.descriptor.gpu
-								? undefined
-								: "Scripted products run on the CPU until the script compiler reaches the GPU (WP 19, lot G2)."
-						}
 					/>
 				)}
 				{wb.descriptor.gpu && wb.descriptor.endpoint && (
@@ -163,6 +158,7 @@ export default function PricingPage() {
 									descriptor={wb.descriptor}
 									values={wb.values}
 									engine={wb.engine}
+									device={wb.device}
 								/>
 							</div>
 						)}

@@ -3,6 +3,7 @@
 
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/gpu/paths.hpp"
+#include "quantModeling/gpu/script.hpp"
 #include "quantModeling/gpu/rng.hpp"
 #include "quantModeling/gpu/vanilla_bs.hpp"
 
@@ -41,6 +42,12 @@ namespace quantModeling::gpu
     }
 
     std::vector<double> terminal_spots(const PathModelSpec &, const std::vector<Time> &, uint32_t, uint64_t, int)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
+                             "without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
+    WelfordAccumulator simulate_script(const ScriptGpuRequest &)
     {
         throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
                              "without the CUDA backend: QM_ENABLE_CUDA=ON)");

@@ -63,6 +63,8 @@ namespace quantModeling
         }
     };
 
+    struct DeviceModel; // models/device_model.hpp
+
     template <class T = Real>
     struct ISimulationModel
     {
@@ -84,6 +86,12 @@ namespace quantModeling
         /// Valid after init(). Models without Brownian increments to reorder
         /// (or not yet described) keep the default: no bridge.
         virtual BrownianLayout brownian_layout() const { return {}; }
+
+        /// Valid after init(): describe this model as plain data for the GPU
+        /// script engine (blueprint/wp/19-gpu.md §4). False when the device
+        /// cannot simulate it (another model, a term structure of rates, a
+        /// jump, an AAD number type): the caller then stays on the CPU.
+        virtual bool describe_device(DeviceModel &) const { return false; }
 
         /// Non-owning pointers to the model's own differentiable parameters.
         /// A book trap to reproduce exactly: these pointers are invalidated

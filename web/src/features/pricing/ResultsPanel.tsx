@@ -12,6 +12,7 @@ import {
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
 import { ConvergenceChart, GreekProfileChart, PayoffChart } from "@/shared/viz";
 import { blackScholes } from "@/shared/payoff";
+import { pricingBody } from "./requestBody";
 
 const GREEKS = ["delta", "gamma", "vega", "theta", "rho"] as const;
 
@@ -31,14 +32,10 @@ export function ResultsPanel({
 	engine: string;
 	device?: ComputeDevice;
 }) {
-	const body = useMemo(() => {
-		const base = descriptor.toRequest(values, engine as never);
-		// GPU-capable MC: always Philox, the GPU's generator, so a CPU and a
-		// GPU price of the same inputs agree to ~1e-15 (blueprint WP 19 §7).
-		return descriptor.gpu && engine === "mc"
-			? { ...(base as object), device, rng: "philox" }
-			: base;
-	}, [descriptor, values, engine, device]);
+	const body = useMemo(
+		() => pricingBody(descriptor, values, engine, device),
+		[descriptor, values, engine, device],
+	);
 	const q = usePricing({ endpoint: descriptor.endpoint ?? null, body });
 
 	const isMc = engine === "mc";

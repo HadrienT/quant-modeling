@@ -250,6 +250,18 @@ class ScriptPricingInputs(BaseModel):
     sampler: Literal["pseudo", "sobol"] = "pseudo"
     n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
     seed: int = 1
+    device: ComputeDevice = Field(
+        ComputeDevice.cpu,
+        description="Where the paths run (blueprint WP 19 §8). The GPU prices the "
+        "compiled script under Black-Scholes, local vol, Heston or SLV, "
+        "pseudo-random only; 'auto' falls back to the CPU otherwise and says why "
+        "in the diagnostics, 'gpu' refuses. Ignored with greeks_method='aad'.",
+    )
+    rng: McRng = Field(
+        McRng.pcg32,
+        description="CPU runs only; a GPU run always uses Philox, the generator "
+        "with which a CPU run gives the GPU's price.",
+    )
     greeks_method: Literal["none", "aad"] = Field(
         "none",
         description=(

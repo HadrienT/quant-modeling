@@ -110,6 +110,8 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 			},
 		],
 		endpoint: "/price/scripted-product",
+		// the compiled script runs on the GPU (blueprint WP 19, lot G2)
+		gpu: true,
 		docKey: DOC_KEYS[p.slug],
 		greeks: [],
 		fields,

@@ -163,7 +163,7 @@ namespace quantModeling
                 stack_.assign(static_cast<std::size_t>(program_.max_stack), T(0));
                 degrees_.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
                 if_slots_.assign(static_cast<std::size_t>(program_.n_if_slots), T(0));
-                if_mode_.assign(program_.ifs.size(), 0);
+                if_mode_.assign(static_cast<std::size_t>(program_.n_if_modes), 0);
                 compiled_ = true;
             }
         }

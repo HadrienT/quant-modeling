@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { usePricing } from "@/shared/api";
+import { type ComputeDevice, usePricing } from "@/shared/api";
 import { Button, Field } from "@/shared/ui";
 import { MetricRowSkeleton } from "@/shared/ui/states";
+import { ComputeDevicePicker } from "./ComputeDevicePicker";
 import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
 import { alignToValuationDate } from "./scripting/alignDates";
 import { DEFAULT_PRODUCT } from "./scripting/library";
@@ -51,6 +52,7 @@ export default function ScriptingPreview() {
 	const [sampler, setSampler] = useState<"pseudo" | "sobol">("pseudo");
 	const [nPaths, setNPaths] = useState("200000");
 	const [seed, setSeed] = useState("1");
+	const [device, setDevice] = useState<ComputeDevice>("cpu");
 	const [model, setModel] = useState<ScriptModel>("auto");
 	const [ticker, setTicker] = useState("SPY");
 	const [request, setRequest] = useState<Record<string, unknown> | null>(null);
@@ -107,6 +109,8 @@ export default function ScriptingPreview() {
 							sampler,
 							n_paths: Number(nPaths),
 							seed: Number(seed),
+							device,
+							...(device === "cpu" ? {} : { rng: "philox" }),
 						});
 					}}
 				>
@@ -156,6 +160,8 @@ export default function ScriptingPreview() {
 						seed={seed}
 						onSeed={setSeed}
 					/>
+
+					<ComputeDevicePicker device={device} onChange={setDevice} />
 
 					<div className="flex flex-wrap items-center gap-4">
 						<label className="flex items-center gap-2 text-sm">

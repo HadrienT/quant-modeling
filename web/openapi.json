@@ -5311,6 +5311,11 @@
             "title": "Default Eps",
             "type": "number"
           },
+          "device": {
+            "$ref": "#/components/schemas/ComputeDevice",
+            "default": "cpu",
+            "description": "Where the paths run (blueprint WP 19 \u00a78). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random only; 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. Ignored with greeks_method='aad'."
+          },
           "dividend": {
             "default": 0.0,
             "title": "Dividend",
@@ -5354,6 +5359,11 @@
           "rate": {
             "title": "Rate",
             "type": "number"
+          },
+          "rng": {
+            "$ref": "#/components/schemas/McRng",
+            "default": "pcg32",
+            "description": "CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price."
           },
           "sampler": {
             "default": "pseudo",
@@ -5605,6 +5615,11 @@
             "title": "Default Eps",
             "type": "number"
           },
+          "device": {
+            "$ref": "#/components/schemas/ComputeDevice",
+            "default": "cpu",
+            "description": "Where the paths run (blueprint WP 19 \u00a78). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random only; 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. Ignored with greeks_method='aad'."
+          },
           "dividend": {
             "default": 0.0,
             "title": "Dividend",
@@ -5654,6 +5669,11 @@
           "rate": {
             "title": "Rate",
             "type": "number"
+          },
+          "rng": {
+            "$ref": "#/components/schemas/McRng",
+            "default": "pcg32",
+            "description": "CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price."
           },
           "sampler": {
             "default": "pseudo",

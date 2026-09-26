@@ -8,6 +8,8 @@
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/brownian_bridge.hpp"
+#include "quantModeling/engines/mc/logical_blocks.hpp"
+#include "quantModeling/utils/philox.hpp"
 #include "quantModeling/utils/inverse_normal.hpp"
 #include "quantModeling/utils/rng.hpp"
 #include "quantModeling/utils/sobol.hpp"
@@ -29,6 +31,7 @@ namespace quantModeling
         std::vector<Real> std_errors; ///< aligned standard errors
         long long n_paths = 0;
         std::string diagnostics;
+        std::string device = "cpu"; ///< where the paths ran: "cpu" or "gpu"
 
         Real npv() const { return values.empty() ? Real(0) : values.front(); }
         Real std_error() const
@@ -49,6 +52,36 @@ namespace quantModeling
      * The product returns numeraire-deflated payoffs, so the engine only
      * averages — no discounting here.
      */
+    namespace detail
+    {
+        /// Per-label Welford accumulators, mergeable in the logical-block
+        /// tree (engines/mc/logical_blocks.hpp).
+        struct LabelStats
+        {
+            std::vector<WelfordAccumulator> acc;
+
+            void add(const std::vector<Real> &v)
+            {
+                if (acc.empty())
+                    acc.resize(v.size());
+                for (std::size_t l = 0; l < v.size(); ++l)
+                    acc[l].add(v[l]);
+            }
+            void merge(const LabelStats &o)
+            {
+                if (o.acc.empty())
+                    return;
+                if (acc.empty())
+                {
+                    acc = o.acc;
+                    return;
+                }
+                for (std::size_t l = 0; l < acc.size(); ++l)
+                    acc[l].merge(o.acc[l]);
+            }
+        };
+    } // namespace detail
+
     template <class T = Real>
     SimulationMCResult simulate(const ISimulatableProduct<T> &product,
                                 ISimulationModel<T> &model,
@@ -133,6 +166,45 @@ namespace quantModeling
                               std::to_string(B) + " batches, dim=" +
                               std::to_string(dim) + ")" +
                               (bridge ? " + Brownian bridge" : "");
+            return res;
+        }
+
+        // ── Counter-based (blueprint/wp/19-gpu.md §2.3, §7) ──────────────
+        // Unit u is path u -- or, antithetic, the pair (z, −z) of path u,
+        // its payoffs averaged -- with draw j = Φ⁻¹(Philox(seed, u, j)); the
+        // units are reduced by the GPU's tree. The GPU script engine
+        // (engines/mc/script_engine.hpp) runs the same units, draws and tree.
+        if (settings.mc_rng == RngKind::Philox && dim > 0)
+        {
+            const bool anti = settings.mc_antithetic;
+            const auto n_units = static_cast<uint64_t>(anti ? (requested + 1) / 2 : requested);
+            std::vector<Real> out(n_labels), mirror_pay(n_labels);
+            auto unit = [&](uint64_t u) -> std::vector<Real>
+            {
+                for (std::size_t j = 0; j < dim; ++j)
+                    gauss[j] = inverse_normal_cdf(philox_uniform(seed, u, static_cast<uint32_t>(j)));
+                model.generate_path(std::span<const double>(gauss.data(), dim), path);
+                product.payoffs(path, pay);
+                for (std::size_t l = 0; l < n_labels; ++l)
+                    out[l] = static_cast<Real>(pay[l]);
+                if (!anti)
+                    return out;
+                for (std::size_t j = 0; j < dim; ++j)
+                    gauss[j] = -gauss[j];
+                model.generate_path(std::span<const double>(gauss.data(), dim), path);
+                product.payoffs(path, pay);
+                for (std::size_t l = 0; l < n_labels; ++l)
+                    out[l] = 0.5 * (out[l] + static_cast<Real>(pay[l]));
+                return out;
+            };
+            const detail::LabelStats stats = mc::reduce_logical_blocks<detail::LabelStats>(n_units, unit);
+            for (std::size_t l = 0; l < n_labels && l < stats.acc.size(); ++l)
+            {
+                res.values[l] = stats.acc[l].mean;
+                res.std_errors[l] = stats.acc[l].std_error();
+            }
+            res.n_paths = static_cast<long long>(n_units) * (anti ? 2 : 1);
+            res.diagnostics = std::string("SimulationMCEngine + Philox") + (anti ? " + antithetic" : "");
             return res;
         }
 

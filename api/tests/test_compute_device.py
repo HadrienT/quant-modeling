@@ -117,3 +117,57 @@ def test_gpu_gives_the_cpu_philox_price(client):
 def test_path_count_is_capped(client):
     c, _ = client
     assert price(c, n_paths=100_000_001).status_code == 422
+
+
+# ── Scripts on the GPU (blueprint WP 19, lot G2) ────────────────────────────
+
+SCRIPT = {
+    "script": "2027-01-04\n    x = spot()\n2027-06-04\n    pays max(spot() - x, 0)\n",
+    "model": "black_scholes",
+    "spot": 100.0,
+    "vol": 0.25,
+    "rate": 0.03,
+    "valuation_date": "2026-06-01",
+    "n_paths": 50_000,
+    "seed": 3,
+}
+
+
+def price_script(c: TestClient, **overrides):
+    return c.post("/price/scripted", json={**SCRIPT, **overrides})
+
+
+def test_scripts_default_to_the_cpu(client):
+    c, sink = client
+    resp = price_script(c)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["device"] == "cpu"
+    event = next(e for e in sink.events if e.type == "pricing.valuation")
+    assert event.payload["engine"]["device"] == "cpu"
+
+
+@pytest.mark.skipif(HAS_GPU, reason="the server has a GPU")
+def test_script_on_a_missing_gpu_is_a_clear_422(client):
+    c, _ = client
+    resp = price_script(c, device="gpu")
+    assert resp.status_code == 422
+    assert "no usable CUDA device" in resp.json()["message"]
+
+
+@pytest.mark.skipif(not HAS_GPU, reason="no CUDA device")
+def test_script_on_the_gpu_gives_the_cpu_philox_price(client):
+    c, _ = client
+    gpu = price_script(c, device="gpu").json()
+    cpu = price_script(c, device="cpu", rng="philox").json()
+    assert gpu["device"] == "gpu" and cpu["device"] == "cpu"
+    assert "on GPU" in gpu["diagnostics"]
+    assert gpu["npv"] == pytest.approx(cpu["npv"], rel=1e-10)
+    assert gpu["mc_std_error"] == pytest.approx(cpu["mc_std_error"], rel=1e-8)
+
+
+@pytest.mark.skipif(not HAS_GPU, reason="no CUDA device")
+def test_script_with_sobol_on_auto_stays_on_the_cpu_and_says_why(client):
+    c, _ = client
+    body = price_script(c, device="auto", sampler="sobol").json()
+    assert body["device"] == "cpu"
+    assert "on the CPU: " in body["diagnostics"]

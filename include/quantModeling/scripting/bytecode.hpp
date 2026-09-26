@@ -95,12 +95,16 @@ namespace quantModeling::scripting
 
     /// A fuzzy `if`: its affected variables are aff[first .. first + n), its
     /// saved state if_slots[slot .. slot + 3 + 2n) = degree, payoff before,
-    /// payoff after `then`, the variables before, the variables after `then`.
+    /// payoff after `then`, the variables before, the variables after `then`;
+    /// its branch mode is if_mode[mode]. Slots and modes are reused from one
+    /// event to the next (two events never run at once): a daily schedule
+    /// costs the state of one day, not of the year.
     struct FuzzyIf
     {
         std::int32_t first = 0;
         std::int32_t n = 0;
         std::int32_t slot = 0;
+        std::int32_t mode = 0;
     };
 
     /// Read-only view of a compiled program (host or device memory).
@@ -119,7 +123,7 @@ namespace quantModeling::scripting
         T *stack = nullptr;     ///< max_stack
         T *degrees = nullptr;   ///< max_degrees
         T *if_slots = nullptr;  ///< n_if_slots
-        int *if_mode = nullptr; ///< one per fuzzy if
+        int *if_mode = nullptr; ///< n_if_modes
         T payoff{};
     };
 
@@ -471,16 +475,16 @@ namespace quantModeling::scripting
                     const double dt = dbl(degree);
                     if (dt <= 0.0)
                     {
-                        m.if_mode[in.a] = kElseOnly;
+                        m.if_mode[f.mode] = kElseOnly;
                         pc = in.b;
                         break;
                     }
                     if (dt >= 1.0)
                     {
-                        m.if_mode[in.a] = kThenOnly;
+                        m.if_mode[f.mode] = kThenOnly;
                         break;
                     }
-                    m.if_mode[in.a] = kBlend;
+                    m.if_mode[f.mode] = kBlend;
                     slots[0] = degree;
                     slots[1] = m.payoff;
                     for (int i = 0; i < f.n; ++i)
@@ -489,12 +493,12 @@ namespace quantModeling::scripting
                 }
                 case Op::FIfMid:
                 {
-                    if (m.if_mode[in.a] == kThenOnly)
+                    const FuzzyIf &f = p.ifs[in.a];
+                    if (m.if_mode[f.mode] == kThenOnly)
                     {
                         pc = in.b;
                         break;
                     }
-                    const FuzzyIf &f = p.ifs[in.a];
                     T *slots = m.if_slots + f.slot;
                     for (int i = 0; i < f.n; ++i)
                         slots[3 + f.n + i] = m.vars[p.aff[f.first + i]];
@@ -506,9 +510,9 @@ namespace quantModeling::scripting
                 }
                 case Op::FIfEnd:
                 {
-                    if (m.if_mode[in.a] != kBlend)
-                        break;
                     const FuzzyIf &f = p.ifs[in.a];
+                    if (m.if_mode[f.mode] != kBlend)
+                        break;
                     T *slots = m.if_slots + f.slot;
                     const T &degree = slots[0];
                     const T &payoff0 = slots[1];
@@ -539,7 +543,8 @@ namespace quantModeling::scripting
         int n_vars = 0;
         int max_stack = 0;
         int max_degrees = 0;
-        int n_if_slots = 0;
+        int n_if_slots = 0; ///< the most any one event needs
+        int n_if_modes = 0;
         bool fuzzy = false;
 
         ProgramView view() const { return {code.data(), ifs.data(), aff.data()}; }

@@ -42,6 +42,7 @@ namespace quantModeling::scripting
             {
                 p_.event_begin.push_back(pc());
                 max_spot_ = max_df_ = -1;
+                slot_ = mode_ = 0; // an event\'s ifs reuse the previous event\'s slots
                 for (const ExprTree &statement : event.statements)
                     if (statement)
                         statement->accept(*this);
@@ -145,10 +146,15 @@ namespace quantModeling::scripting
             FuzzyIf f;
             f.first = static_cast<std::int32_t>(p_.aff.size());
             f.n = static_cast<std::int32_t>(n.affectedVars.size());
-            f.slot = p_.n_if_slots;
+            // Nested ifs are live at the same time and get disjoint slots;
+            // the counters rewind at the next event.
+            f.slot = slot_;
+            f.mode = mode_++;
             for (std::size_t slot : n.affectedVars)
                 p_.aff.push_back(static_cast<std::int32_t>(slot));
-            p_.n_if_slots += 3 + 2 * f.n;
+            slot_ += 3 + 2 * f.n;
+            p_.n_if_slots = std::max(p_.n_if_slots, slot_);
+            p_.n_if_modes = std::max(p_.n_if_modes, mode_);
             p_.ifs.push_back(f);
 
             const int begin = emit(Op::FIfBegin, id);
@@ -234,6 +240,8 @@ namespace quantModeling::scripting
         Program p_;
         int sp_ = 0;
         int dp_ = 0;
+        int slot_ = 0;
+        int mode_ = 0;
         std::int32_t max_spot_ = -1;
         std::int32_t max_df_ = -1;
     };
