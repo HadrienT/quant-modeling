@@ -79,7 +79,13 @@ donc les mêmes bits.
   variance sur les intégrandes lisses ; il est noté hors périmètre v1
   ([§12](#12-hors-périmètre)).
 - **La limite des 1 024 dimensions** saute : le fichier Joe-Kuo complet en va
-  jusqu'à 21 201. Il faut la lever — un produit quotidien d'un an en SLV
+  jusqu'à 21 201. **Fait (G1)** : les 354 613 entiers sont dans
+  `src/utils/sobol_directions.cpp` (généré, compilé une fois ; l'en-tête ne
+  garde que les déclarations), et le point n se calcule directement
+  (`sobol_point_bits`) — le même code sur le device, identique au CPU bit à
+  bit sur les 21 201 dimensions. Le moteur vanille GPU tourne aussi en Sobol
+  RQMC (une réplique par lancement, les directions et le décalage de la
+  réplique CPU). Il faut la lever — un produit quotidien d'un an en SLV
   demande 2 facteurs × ~300 pas, déjà plus de 600 ; avec le pont brownien, les
   dimensions au-delà des premières ne portent presque rien, mais elles doivent
   exister.
@@ -122,6 +128,28 @@ Invisible pour le pseudo-aléatoire (les incréments restent i.i.d.), décisif
 pour le QMC : c'est ce qui rend Sobol utile sur les produits à trajectoire.
 Corrélation (Heston, multi-actifs) appliquée **après** le pont, par la
 factorisation de Cholesky déjà présente dans les modèles.
+
+**Fait (G1).** Chaque modèle décrit ses tirages par un `BrownianLayout`
+(dates des pas, nombre de facteurs browniens, tirages par pas) ;
+`BridgedGaussians` (`utils/brownian_bridge.hpp`) lit le point de Sobol par
+ordre d'importance — `W_f(T)` de chaque facteur, puis les milieux, puis les
+autres tirages (sauts) dans l'ordre du temps — et rend au modèle ses
+incréments normalisés dans l'ordre du temps. Décrits : Black-Scholes,
+multi-actifs, vol locale, SLV, SABR, Bates (donc Heston), Merton, Kou ;
+rough Bergomi (schéma hybride, vecteurs gaussiens corrélés) garde l'ordre du
+temps. Actif en Sobol seulement (`mc_brownian_bridge`, vrai par défaut). Sur
+un asiatique arithmétique à 52 fixings (erreur RQMC, 32 répliques) :
+
+| 2¹⁷ chemins | erreur standard | pente log-log |
+|---|---|---|
+| Sobol + pont | 1,49·10⁻³ | −0,89 |
+| Sobol, ordre du temps | 3,55·10⁻³ | −0,80 |
+| Pseudo-aléatoire | 2,79·10⁻² | −0,50 |
+
+soit ~350 fois moins de chemins que le pseudo-aléatoire pour la même
+erreur. Contrôles : asiatique géométrique à 52 dates contre sa formule
+fermée à 10⁻³ près, Merton (sauts transmis tels quels) contre la série de
+Merton.
 
 ### 2.5 La réduction de variance, technique par technique
 
@@ -178,6 +206,16 @@ Chaque modèle devient un agrégat de paramètres plats avec
 
 Le choix se fait au lancement (un `switch` sur une énumération → une
 instanciation de kernel par modèle), comme `make_script_model` aujourd'hui.
+
+**Fait (G1) pour vol locale, Heston et SLV** : `models/equity/path_steps.hpp`
+(recherche de maille, interpolation bilinéaire de σ_loc, levier en escalier en
+T, pas d'Euler à troncature complète), templé sur T. Les modèles CPU
+(`LocalVolSimModel`, `SLVSimModel`, `BatesSimModel`) appellent désormais ces
+foncteurs — un seul code — sans qu'aucun bit ne bouge (prix et risques AAD
+comparés avant / après). Le kernel `gpu::terminal_spots` les exécute sur le
+device : nourri des mêmes tirages Philox, chaque chemin GPU égale le chemin CPU à
+10⁻¹¹ près. Le pas de Black-Scholes (mono et multi-actifs) n'a pas encore son
+foncteur : une ligne, ajoutée avec le kernel des scripts (G2).
 
 ## 5. Réduction et estimateurs
 
@@ -320,7 +358,7 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 | Lot | Contenu | Acceptation |
 |---|---|---|
 | **G0** | CMake CUDA ; Philox hôte/device ; réduction Welford ; le kernel vanille existant sur GPU | Prix GPU = prix CPU ; premier point du benchmark — **fait** : tirages identiques bit à bit, prix à quelques ulp ([§7](#7-reproductibilité-bit-à-bit)), bit à bit entre les deux V100 ; 280× un thread CPU ([§9](#9-benchmark)) |
-| **G1** | Pont brownien dans le moteur générique (CPU) ; directions Joe-Kuo jusqu'à 21 201 ; Sobol device ; modèles en foncteurs | Sobol + pont bat le pseudo-aléatoire en log-log sur un asiatique ; mêmes lois CPU / GPU |
+| **G1** | Pont brownien dans le moteur générique (CPU) ; directions Joe-Kuo jusqu'à 21 201 ; Sobol device ; modèles en foncteurs | Sobol + pont bat le pseudo-aléatoire en log-log sur un asiatique ; mêmes lois CPU / GPU — **fait** : pente −0,89 contre −0,50, erreur ÷19 à 2¹⁷ chemins ; Sobol GPU = CPU bit à bit sur les 21 201 dimensions ; vol locale, Heston et SLV suivent sur GPU les chemins du CPU ([§2.4](#24-le-pont-brownien-dans-le-moteur-générique), [§4](#4-les-modèles--un-ensemble-fermé)) |
 | **G2** | Compilateur et interpréteur de bytecode, CPU puis GPU | Les 42 scripts : même prix arbre / bytecode / GPU |
 | **G3** | Variables de contrôle et stratification génériques ; AAD : duaux, puis adjoint par chemin en vol locale | Réduction de variance mesurée ; risques GPU = AAD CPU ; superbucket sur GPU |
 | **G4** | Deux GPU, reproductibilité bit à bit, benchmark complet | 1 GPU = 2 GPU bit à bit ; tableau publié |

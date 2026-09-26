@@ -2,6 +2,7 @@
 // GPU run is refused with GpuUnavailable (blueprint/wp/19-gpu.md §8).
 
 #include "quantModeling/gpu/device.hpp"
+#include "quantModeling/gpu/paths.hpp"
 #include "quantModeling/gpu/rng.hpp"
 #include "quantModeling/gpu/vanilla_bs.hpp"
 
@@ -33,9 +34,27 @@ namespace quantModeling::gpu
         throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built without the CUDA backend: QM_ENABLE_CUDA=ON)");
     }
 
+    mc::VanillaStats simulate_vanilla_sobol(const VanillaSobolGpuRequest &)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
+                             "without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
+    std::vector<double> terminal_spots(const PathModelSpec &, const std::vector<Time> &, uint32_t, uint64_t, int)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
+                             "without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
     void warm_up(int)
     {
         throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
+    std::vector<double> sobol_uniforms(int, uint64_t, uint32_t, uint32_t, int)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
+                             "without the CUDA backend: QM_ENABLE_CUDA=ON)");
     }
 
     std::vector<double> philox_uniforms(uint64_t, uint64_t, uint32_t, uint32_t, int)

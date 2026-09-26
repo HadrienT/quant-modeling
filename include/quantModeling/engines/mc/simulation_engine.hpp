@@ -7,12 +7,14 @@
 #include "quantModeling/models/simulation_model.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/utils/accumulators.hpp"
+#include "quantModeling/utils/brownian_bridge.hpp"
 #include "quantModeling/utils/inverse_normal.hpp"
 #include "quantModeling/utils/rng.hpp"
 #include "quantModeling/utils/sobol.hpp"
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -86,6 +88,17 @@ namespace quantModeling
             const int per_batch = std::max(1, requested / B);
             std::vector<WelfordAccumulator> batch_means(n_labels);
 
+            // Brownian bridge (blueprint/wp/19-gpu.md §2.4): the point's
+            // leading coordinates -- Sobol's best -- go to the terminal values.
+            std::optional<BridgedGaussians> bridge;
+            if (settings.mc_brownian_bridge)
+            {
+                const BrownianLayout layout = model.brownian_layout();
+                if (layout.covers(dim))
+                    bridge.emplace(layout.times, layout.factors, layout.stride);
+            }
+            std::vector<double> point(bridge ? dim : 0);
+
             for (int b = 0; b < B; ++b)
             {
                 const uint64_t batch_seed =
@@ -95,7 +108,15 @@ namespace quantModeling
                 std::vector<WelfordAccumulator> inner(n_labels);
                 for (int p = 0; p < per_batch; ++p)
                 {
-                    sobol.next_gaussian(std::span<double>(gauss.data(), dim));
+                    if (bridge)
+                    {
+                        sobol.next_gaussian(std::span<double>(point.data(), dim));
+                        bridge->map(point, std::span<double>(gauss.data(), dim));
+                    }
+                    else
+                    {
+                        sobol.next_gaussian(std::span<double>(gauss.data(), dim));
+                    }
                     run_payoff(inner);
                 }
                 for (std::size_t l = 0; l < n_labels; ++l)
@@ -110,7 +131,8 @@ namespace quantModeling
             res.n_paths = static_cast<long long>(per_batch) * B;
             res.diagnostics = "SimulationMCEngine + Sobol RQMC (" +
                               std::to_string(B) + " batches, dim=" +
-                              std::to_string(dim) + ")";
+                              std::to_string(dim) + ")" +
+                              (bridge ? " + Brownian bridge" : "");
             return res;
         }
 

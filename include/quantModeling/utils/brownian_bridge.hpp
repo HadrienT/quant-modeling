@@ -2,6 +2,7 @@
 #define UTILS_BROWNIAN_BRIDGE_HPP
 
 #include <cmath>
+#include <cstddef>
 #include <span>
 #include <vector>
 
@@ -114,6 +115,72 @@ namespace quantModeling
         std::vector<Real> t_;
         std::vector<int> bridge_index_, left_index_, right_index_;
         std::vector<Real> left_weight_, right_weight_, std_dev_;
+    };
+
+    /**
+     * @brief Turns one quasi-random point into a model's gaussians in time
+     *        order, the Brownian ones built by the bridge
+     *        (blueprint/wp/19-gpu.md §2.4, Glasserman ch. 3.1 and 5.5).
+     *
+     * The model's gaussians are `n = times.size()` blocks of `stride`, the
+     * first `factors` of each block being independent Brownian increments
+     * scaled to N(0,1) (see BrownianLayout). The point's coordinates are
+     * consumed by order of importance:
+     *
+     *   point[i * factors + f]            bridge variate i of factor f:
+     *                                      i = 0 is W_f(T), then the midpoints
+     *   point[n * factors + s * extra + e] the step's other draws (jumps), in
+     *                                      time order
+     *
+     * so the first `factors` coordinates of a Sobol point — its best
+     * distributed ones — fix every factor's terminal value. Increments are
+     * (W(t_s) − W(t_{s−1})) / √(t_s − t_{s−1}): the model sees i.i.d. N(0,1)
+     * draws exactly as without the bridge, only their joint construction
+     * changes. Allocation-free per path.
+     */
+    class BridgedGaussians
+    {
+      public:
+        BridgedGaussians(std::span<const Time> times, std::size_t factors, std::size_t stride)
+            : bridge_(times), n_(times.size()), factors_(factors), stride_(stride), inv_sqrt_dt_(times.size()), z_(times.size()), w_(times.size())
+        {
+            if (factors == 0 || stride < factors)
+                throw InvalidInput("BridgedGaussians: need 0 < factors <= stride");
+            Time prev = 0.0;
+            for (std::size_t s = 0; s < n_; ++s)
+            {
+                inv_sqrt_dt_[s] = 1.0 / std::sqrt(times[s] - prev);
+                prev = times[s];
+            }
+        }
+
+        std::size_t dim() const { return n_ * stride_; }
+
+        /// point (dim() coordinates, importance order) → out (time order).
+        void map(std::span<const double> point, std::span<double> out)
+        {
+            const std::size_t extra = stride_ - factors_;
+            for (std::size_t f = 0; f < factors_; ++f)
+            {
+                for (std::size_t i = 0; i < n_; ++i)
+                    z_[i] = point[i * factors_ + f];
+                bridge_.transform(z_, w_);
+                Real prev = 0.0;
+                for (std::size_t s = 0; s < n_; ++s)
+                {
+                    out[s * stride_ + f] = (w_[s] - prev) * inv_sqrt_dt_[s];
+                    prev = w_[s];
+                }
+            }
+            for (std::size_t s = 0; s < n_; ++s)
+                for (std::size_t e = 0; e < extra; ++e)
+                    out[s * stride_ + factors_ + e] = point[n_ * factors_ + s * extra + e];
+        }
+
+      private:
+        BrownianBridge bridge_;
+        std::size_t n_, factors_, stride_;
+        std::vector<Real> inv_sqrt_dt_, z_, w_;
     };
 
 } // namespace quantModeling

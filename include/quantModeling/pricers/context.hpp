@@ -84,6 +84,11 @@ namespace quantModeling
         GreeksMethod greeks = GreeksMethod::Bump;
         RngKind mc_rng = RngKind::Pcg32;
         ComputeDevice mc_device = ComputeDevice::Cpu;
+        /// Sobol only: build each factor's Brownian path by bisection
+        /// (terminal value from the first coordinate, then midpoints) for
+        /// models that describe their increments (BrownianLayout) --
+        /// blueprint/wp/19-gpu.md §2.4. No effect on pseudo-random draws.
+        bool mc_brownian_bridge = true;
     };
 
     struct MarketView

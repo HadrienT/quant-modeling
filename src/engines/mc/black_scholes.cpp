@@ -127,14 +127,14 @@ namespace quantModeling
         mc::VanillaStats stats;
         std::string diag;
         const bool pseudo = (settings.mc_sampler == SamplerKind::PseudoRandom);
-        if (settings.mc_device == ComputeDevice::Gpu && !pseudo)
-            throw InvalidInput("BSEuroVanillaMCEngine: the GPU runs pseudo-random sampling only "
-                               "(Sobol on the GPU is blueprint/wp/19-gpu.md lot G1)");
-        const bool use_gpu = pseudo && (settings.mc_device == ComputeDevice::Gpu ||
-                                        (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0));
+        const bool gpu_capable = (settings.mc_sampler != SamplerKind::Stratified);
+        if (settings.mc_device == ComputeDevice::Gpu && !gpu_capable)
+            throw InvalidInput("BSEuroVanillaMCEngine: stratified sampling runs on the CPU only");
+        const bool use_gpu = gpu_capable && (settings.mc_device == ComputeDevice::Gpu ||
+                                             (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0));
         const uint64_t seed = static_cast<uint64_t>(static_cast<uint32_t>(settings.mc_seed));
 
-        if (use_gpu || (pseudo && settings.mc_rng == RngKind::Philox))
+        if (pseudo && (use_gpu || settings.mc_rng == RngKind::Philox))
         {
             const uint64_t n_units = mc::vanilla_units(settings.mc_paths, settings.mc_antithetic);
             if (use_gpu)
@@ -174,7 +174,21 @@ namespace quantModeling
                     (static_cast<uint64_t>(static_cast<uint32_t>(settings.mc_seed)) << 32) |
                     static_cast<uint64_t>(b);
                 mc::VanillaStats batch;
-                if (sobol)
+                if (sobol && use_gpu)
+                {
+                    // The replicate's own directions and shift: the GPU draws
+                    // the CPU's points (blueprint/wp/19-gpu.md §2.2).
+                    const SobolSequence seq(/*dimension=*/1, batch_seed);
+                    gpu::VanillaSobolGpuRequest req;
+                    req.spec = spec;
+                    req.type = optType;
+                    req.is_shift = is_shift;
+                    std::copy_n(seq.directions().begin(), 32, req.directions);
+                    req.shift = seq.shifts()[0];
+                    req.n_points = static_cast<uint64_t>(per_batch);
+                    batch = gpu::simulate_vanilla_sobol(req);
+                }
+                else if (sobol)
                 {
                     SobolGaussianSource gauss(/*dimension=*/1, batch_seed);
                     batch = run_vanilla_kernel(spec, optType, /*antithetic=*/false,
@@ -195,7 +209,8 @@ namespace quantModeling
             }
             diag = std::string("BS MC European vanilla (flat r,q,sigma) + ") +
                    (sobol ? "Sobol RQMC" : "stratified sampling") + " (" +
-                   std::to_string(B) + " batches)";
+                   std::to_string(B) + " batches)" +
+                   (use_gpu ? " on GPU (" + gpu::device_name(0) + ")" : "");
         }
         else
         {

@@ -22,6 +22,12 @@ namespace quantModeling::gpu
     std::vector<double> philox_uniforms(uint64_t seed, uint64_t first_path, uint32_t n_paths, uint32_t draws,
                                         int device = 0);
 
+    /// SobolSequence(dim, scramble_seed)'s uniforms for points first_point ..
+    /// first_point + n_points - 1, computed on the device from the host's
+    /// direction integers and shifts (sobol_point_bits), row-major by point.
+    std::vector<double> sobol_uniforms(int dim, uint64_t scramble_seed, uint32_t first_point, uint32_t n_points,
+                                       int device = 0);
+
 } // namespace quantModeling::gpu
 
 #endif // GPU_RNG_HPP

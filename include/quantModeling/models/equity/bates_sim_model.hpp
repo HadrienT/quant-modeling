@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 #include "quantModeling/utils/stats.hpp"
 
@@ -126,6 +127,12 @@ namespace quantModeling
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
         std::size_t sim_dim() const override { return sim_dim_; }
 
+        /// Every fine-grid step draws: spot and the variance shock's independent part; then the jump count and size.
+        BrownianLayout brownian_layout() const override
+        {
+            return BrownianLayout{sim_timeline_, 2, 4};
+        }
+
         void generate_path(std::span<const double> gaussians,
                            Scenario<T> &path) const override
         {
@@ -154,11 +161,9 @@ namespace quantModeling
 
                 const T v_plus = max(v, kVarianceFloor);
                 const T sqrt_v_plus = sqrt(v_plus);
-                const T dW_vol = rho_ * z_spot + sqrt(1.0 - rho_ * rho_) * z_vol_indep;
 
                 const int n_jumps = sample_poisson(u_poisson, to_double(lambda_) * dt);
-                T log_return = (r_ - q_ - lambda_ * k - 0.5 * v_plus) * dt +
-                               sqrt_v_plus * (sqdt * z_spot);
+                T log_return = mc::heston_log_return(r_, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z_spot);
                 if (n_jumps > 0)
                 {
                     const double n = static_cast<double>(n_jumps);
@@ -167,7 +172,8 @@ namespace quantModeling
                         log_return + (n * jump_mean_ + sqrt(n) * jump_vol_ * z_jump);
                 }
                 S = S * exp(log_return);
-                v = v + kappa_ * (theta_ - v_plus) * dt + xi_ * sqrt_v_plus * (sqdt * dW_vol);
+                mc::heston_variance_step(mc::HestonParamsT<T>{v0_, kappa_, theta_, xi_, rho_}, v, v_plus, sqrt_v_plus,
+                                         sqdt, dt, z_spot, z_vol_indep);
                 t_prev = t;
 
                 const std::ptrdiff_t event = event_index_of_step_[i];

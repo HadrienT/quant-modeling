@@ -32,6 +32,7 @@ target_sources(quantModeling
         src/aad/number.cpp
         src/utils/stats.cpp
         src/utils/greeks.cpp
+        src/utils/sobol_directions.cpp
         src/core/date.cpp
         src/core/period.cpp
         src/core/timegrid.cpp
@@ -161,6 +162,7 @@ if(QM_ENABLE_CUDA)
           src/gpu/device.cu
           src/gpu/vanilla_bs.cu
           src/gpu/rng.cu
+          src/gpu/paths.cu
   )
   target_link_libraries(quantModeling PUBLIC CUDA::cudart_static)
   target_compile_options(quantModeling PRIVATE
@@ -316,6 +318,7 @@ if(QM_BUILD_TESTS)
   if(QM_ENABLE_CUDA)
     add_executable(quantModeling_gpu_tests
       tests/gpu/testGpuVanilla.cpp
+      tests/gpu/testGpuPaths.cpp
     )
     target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)
     target_compile_options(quantModeling_gpu_tests PRIVATE

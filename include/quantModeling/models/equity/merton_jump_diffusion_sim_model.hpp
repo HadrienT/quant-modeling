@@ -110,6 +110,17 @@ namespace quantModeling
         const TimeLine &sim_timeline() const override { return timeline_; }
         std::size_t sim_dim() const override { return sim_dim_; }
 
+        BrownianLayout brownian_layout() const override
+        {
+            BrownianLayout l;
+            l.factors = 1;
+            l.stride = 3;
+            for (const Step &st : steps_)
+                if (st.draws)
+                    l.times.push_back(st.t);
+            return l;
+        }
+
         void generate_path(std::span<const double> gaussians,
                            Scenario<T> &path) const override
         {

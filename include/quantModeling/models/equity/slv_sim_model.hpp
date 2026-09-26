@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
 #include <algorithm>
@@ -100,6 +101,12 @@ namespace quantModeling
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
         std::size_t sim_dim() const override { return sim_dim_; }
 
+        /// Every fine-grid step draws: spot and the variance shock's independent part.
+        BrownianLayout brownian_layout() const override
+        {
+            return BrownianLayout{sim_timeline_, 2, 2};
+        }
+
         void generate_path(std::span<const double> gaussians,
                            Scenario<T> &path) const override
         {
@@ -115,20 +122,9 @@ namespace quantModeling
             {
                 const Time t = sim_timeline_[i];
                 const Time dt = t - t_prev;
-                const double sqdt = std::sqrt(dt);
-
                 const double z_spot = gaussians[g++];
                 const double z_indep = gaussians[g++];
-
-                const T Lp = leverage_at(S, t);
-                const T v_plus = max(v, kVarianceFloor);
-                const T sqrt_v_plus = sqrt(v_plus);
-                const T dW_vol = rho_ * z_spot + sqrt(1.0 - rho_ * rho_) * z_indep;
-
-                const T log_return =
-                    (r_ - q_ - 0.5 * Lp * Lp * v_plus) * dt + Lp * sqrt_v_plus * (sqdt * z_spot);
-                S = S * exp(log_return);
-                v = v + kappa_ * (theta_ - v_plus) * dt + xi_ * sqrt_v_plus * (sqdt * dW_vol);
+                mc::slv_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
                 t_prev = t;
 
                 const std::ptrdiff_t event = event_index_of_step_[i];
@@ -186,50 +182,16 @@ namespace quantModeling
         /// first interval, and is not otherwise stored anywhere to look up.
         T leverage_at(const T &S_t, double t) const
         {
-            using std::max;
-
-            const int nK = static_cast<int>(K_grid_.size());
-            const int nT = static_cast<int>(T_grid_.size());
-
-            // As in LocalVolSimModel::local_vol_at: the cell on the double
-            // value, the strike weight a function of the spot (T), constant
-            // outside the grid where the leverage is flat in S.
-            const double S_raw = to_double(S_t);
-            const double S = std::clamp(S_raw, K_grid_.front(), K_grid_.back());
-            const bool inside = S == S_raw;
-            const double tc = std::clamp(t, T_grid_.front(), T_grid_.back());
-
-            auto it_K = std::lower_bound(K_grid_.begin(), K_grid_.end(), S);
-            int i1 = static_cast<int>(it_K - K_grid_.begin());
-            if (i1 >= nK)
-                i1 = nK - 1;
-            int i0 = (i1 > 0) ? i1 - 1 : 0;
-            if (i0 == i1)
-            {
-                if (i1 > 0)
-                    i0 = i1 - 1;
-                else
-                    i1 = 1;
-            }
-
-            auto it_T = std::lower_bound(T_grid_.begin(), T_grid_.end(), tc);
-            const int j = static_cast<int>(it_T - T_grid_.begin());
-            const int jcol = (j > 0) ? j - 1 : 0;
-
-            const double K0 = K_grid_[static_cast<std::size_t>(i0)];
-            const double K1 = K_grid_[static_cast<std::size_t>(i1)];
-            const double dK = K1 - K0;
-            const T wK = dK <= 1e-12 ? T(0.0)
-                         : inside    ? T((S_t - K0) / dK)
-                                     : T((S - K0) / dK);
-
-            auto cell = [&](int i) -> const T &
-            { return leverage_[static_cast<std::size_t>(i) * static_cast<std::size_t>(nT) +
-                               static_cast<std::size_t>(jcol)]; };
-
-            const T lev = (1.0 - wK) * cell(i0) + wK * cell(i1);
-            return max(lev, 1e-4);
+            return mc::leverage_staircase(leverage_grid(), S_t, t);
         }
+
+        mc::GridView<T> leverage_grid() const
+        {
+            return {K_grid_.data(), static_cast<int>(K_grid_.size()), T_grid_.data(),
+                    static_cast<int>(T_grid_.size()), leverage_.data()};
+        }
+
+        mc::HestonParamsT<T> heston() const { return {v0_, kappa_, theta_, xi_, rho_}; }
 
         void set_param_pointers()
         {

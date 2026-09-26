@@ -9,6 +9,7 @@
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/gaussian_source.hpp"
 #include "quantModeling/utils/philox.hpp"
+#include "quantModeling/utils/sobol.hpp"
 
 /**
  * @file vanilla_bs.hpp
@@ -285,6 +286,36 @@ namespace quantModeling::mc
                 return average_pair(eval_one(z), eval_one(-z));
             else
                 return eval_one(z);
+        }
+    };
+
+    /**
+     * @brief One point of a one-dimensional Sobol replicate: unit u is point u
+     *        of SobolSequence(1, batch seed), through its direction integers
+     *        V and digital shift -- the draws SobolGaussianSource feeds the
+     *        CPU kernel, computed directly so that a GPU thread can start
+     *        anywhere (blueprint/wp/19-gpu.md §2.2).
+     */
+    template <OptionType CP, bool IS>
+    struct VanillaSobolUnit
+    {
+        VanillaTerminalSpec spec;
+        uint32_t V[32] = {};
+        uint32_t shift = 0;
+        Real is_shift = 0.0;
+
+        QM_HOST_DEVICE VanillaPathValues operator()(uint64_t unit) const
+        {
+            const Real z = inverse_normal_cdf(sobol_to_uniform(sobol_point_bits(V, static_cast<uint32_t>(unit)), shift));
+            if constexpr (IS)
+            {
+                const Real w = std::exp(-is_shift * z - 0.5 * is_shift * is_shift);
+                return scale(eval_vanilla_path<CP>(spec, z + is_shift), w);
+            }
+            else
+            {
+                return eval_vanilla_path<CP>(spec, z);
+            }
         }
     };
 

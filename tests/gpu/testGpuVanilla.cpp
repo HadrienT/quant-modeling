@@ -14,6 +14,7 @@
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/utils/philox.hpp"
+#include "quantModeling/utils/sobol.hpp"
 
 // Lot G0 of blueprint/wp/19-gpu.md: the vanilla kernel on the V100s.
 // Built only with QM_ENABLE_CUDA, labelled `gpu` (ctest -L gpu).
@@ -213,12 +214,55 @@ namespace quantModeling
         EXPECT_NEAR(*g.greeks.delta, *bs.results().greeks.delta, 4.0 * *g.greeks.delta_std_error);
     }
 
-    TEST_F(GpuVanillaTest, SobolOnGpuIsRefusedNotRerouted)
+    // Sobol on the device (lot G1): every one of the 21 201 dimensions gives
+    // the CPU's bits, at the start of the sequence and far into it.
+    TEST_F(GpuVanillaTest, SobolPointsAreBitIdenticalToCpu)
+    {
+        constexpr int dim = sobol_detail::kMaxDimension;
+        for (uint32_t first : {0u, (1u << 30) + 7u})
+        {
+            constexpr uint32_t n_points = 12;
+            const std::vector<double> d = gpu::sobol_uniforms(dim, 99, first, n_points);
+            SobolSequence seq(dim, 99);
+            seq.skip_to(first);
+            std::vector<double> point(dim);
+            for (uint32_t p = 0; p < n_points; ++p)
+            {
+                seq.next_uniform(point);
+                for (int k = 0; k < dim; ++k)
+                    ASSERT_EQ(d[std::size_t{p} * dim + static_cast<std::size_t>(k)], point[static_cast<std::size_t>(k)])
+                        << "point " << first + p << " dim " << k;
+            }
+        }
+    }
+
+    // The vanilla engine's Sobol RQMC on the GPU: each replicate draws the
+    // CPU replicate's points, so the prices agree to a few ulps.
+    TEST_F(GpuVanillaTest, SobolEngineOnGpuMatchesCpu)
+    {
+        PricingContext ctx;
+        ctx.model = std::make_shared<BlackScholesModel>(100.0, 0.05, 0.02, 0.20);
+        ctx.settings.mc_paths = 1 << 20;
+        ctx.settings.mc_sampler = SamplerKind::Sobol;
+        VanillaOption option(std::make_shared<PlainVanillaPayoff>(OptionType::Put, 95.0),
+                             std::make_shared<EuropeanExercise>(0.5));
+        BSEuroVanillaMCEngine cpu(ctx);
+        option.accept(cpu);
+        ctx.settings.mc_device = ComputeDevice::Gpu;
+        BSEuroVanillaMCEngine on_gpu(ctx);
+        option.accept(on_gpu);
+        EXPECT_EQ(on_gpu.results().device, "gpu");
+        EXPECT_NE(on_gpu.results().diagnostics.find("Sobol RQMC"), std::string::npos);
+        EXPECT_NEAR(on_gpu.results().npv, cpu.results().npv, 1e-12 * cpu.results().npv);
+        EXPECT_NEAR(on_gpu.results().mc_std_error, cpu.results().mc_std_error, 1e-6 * cpu.results().mc_std_error);
+    }
+
+    TEST_F(GpuVanillaTest, StratifiedOnGpuIsRefusedNotRerouted)
     {
         PricingContext ctx;
         ctx.model = std::make_shared<BlackScholesModel>(100.0, 0.05, 0.02, 0.20);
         ctx.settings.mc_paths = 1 << 12;
-        ctx.settings.mc_sampler = SamplerKind::Sobol;
+        ctx.settings.mc_sampler = SamplerKind::Stratified;
         ctx.settings.mc_device = ComputeDevice::Gpu;
         VanillaOption option(std::make_shared<PlainVanillaPayoff>(OptionType::Call, 100.0),
                              std::make_shared<EuropeanExercise>(1.0));

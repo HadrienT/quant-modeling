@@ -37,6 +37,32 @@ namespace quantModeling
      * read their adjoints back as model risks, without knowing anything about
      * the specific model.
      */
+    /**
+     * @brief Which of a model's per-path gaussians are Brownian increments,
+     *        and on which time grid (blueprint/wp/19-gpu.md §2.4).
+     *
+     * The gaussians come in `times.size()` consecutive blocks of `stride`,
+     * one block per drawing step, in time order; the first `factors` entries
+     * of each block are the step's independent Brownian increments, scaled
+     * to N(0,1) (correlation, if any, is applied by the model afterwards);
+     * the remaining `stride - factors` are other draws (jump counts and
+     * sizes). An empty layout (factors == 0) means "no Brownian structure to
+     * exploit": the engine then feeds the draws in plain time order.
+     */
+    struct BrownianLayout
+    {
+        std::vector<Time> times; ///< end of each drawing step, strictly increasing, > 0
+        std::size_t factors = 0;
+        std::size_t stride = 0;
+
+        bool empty() const { return factors == 0 || times.empty(); }
+        /// The layout describes exactly `dim` gaussians.
+        bool covers(std::size_t dim) const
+        {
+            return !empty() && stride >= factors && times.size() * stride == dim;
+        }
+    };
+
     template <class T = Real>
     struct ISimulationModel
     {
@@ -54,6 +80,10 @@ namespace quantModeling
                                    Scenario<T> &path) const = 0;
 
         virtual std::unique_ptr<ISimulationModel<T>> clone() const = 0;
+
+        /// Valid after init(). Models without Brownian increments to reorder
+        /// (or not yet described) keep the default: no bridge.
+        virtual BrownianLayout brownian_layout() const { return {}; }
 
         /// Non-owning pointers to the model's own differentiable parameters.
         /// A book trap to reproduce exactly: these pointers are invalidated

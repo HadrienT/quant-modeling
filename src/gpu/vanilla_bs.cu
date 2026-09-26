@@ -31,6 +31,32 @@ namespace quantModeling::gpu
                                             : dispatch_flags<OptionType::Put>(req);
     }
 
+    namespace
+    {
+        template <OptionType CP, bool IS>
+        mc::VanillaStats run_sobol(const VanillaSobolGpuRequest &req)
+        {
+            mc::VanillaSobolUnit<CP, IS> unit;
+            unit.spec = req.spec;
+            for (int k = 0; k < 32; ++k)
+                unit.V[k] = req.directions[k];
+            unit.shift = req.shift;
+            unit.is_shift = req.is_shift;
+            return detail::run_logical_blocks<mc::VanillaStats>(req.device, req.n_points, unit,
+                                                                req.max_blocks_per_launch);
+        }
+    } // namespace
+
+    mc::VanillaStats simulate_vanilla_sobol(const VanillaSobolGpuRequest &req)
+    {
+        if (req.n_points > (uint64_t{1} << 32))
+            throw InvalidInput("simulate_vanilla_sobol: at most 2^32 points per replicate");
+        const bool is = (req.is_shift != Real(0));
+        if (req.type == OptionType::Call)
+            return is ? run_sobol<OptionType::Call, true>(req) : run_sobol<OptionType::Call, false>(req);
+        return is ? run_sobol<OptionType::Put, true>(req) : run_sobol<OptionType::Put, false>(req);
+    }
+
     void warm_up(int device)
     {
         VanillaGpuRequest req;
@@ -49,6 +75,13 @@ namespace quantModeling::gpu
                     req.antithetic = anti;
                     req.is_shift = is;
                     simulate_vanilla_terminal(req);
+                    VanillaSobolGpuRequest sob;
+                    sob.spec = req.spec;
+                    sob.type = type;
+                    sob.is_shift = is;
+                    sob.n_points = 1;
+                    sob.device = device;
+                    simulate_vanilla_sobol(sob);
                 }
     }
 

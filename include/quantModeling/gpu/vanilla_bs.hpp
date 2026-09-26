@@ -37,6 +37,23 @@ namespace quantModeling::gpu
     /// Throws GpuUnavailable when no device can run it.
     mc::VanillaStats simulate_vanilla_terminal(const VanillaGpuRequest &req);
 
+    /// One randomised-QMC replicate: points 0 .. n_points-1 of a
+    /// one-dimensional Sobol sequence given by its 32 direction integers and
+    /// digital shift (SobolSequence::directions() / shifts()).
+    struct VanillaSobolGpuRequest
+    {
+        mc::VanillaTerminalSpec spec;
+        OptionType type = OptionType::Call;
+        Real is_shift = 0.0;
+        uint32_t directions[32] = {};
+        uint32_t shift = 0;
+        uint64_t n_points = 0;
+        int device = 0;
+        uint64_t max_blocks_per_launch = 0;
+    };
+
+    mc::VanillaStats simulate_vanilla_sobol(const VanillaSobolGpuRequest &req);
+
     /// Create the CUDA context on `device` and load every vanilla kernel, so
     /// that the first priced request does not pay for them (a few hundred
     /// milliseconds, once per process). A timing shown to a user must be the
