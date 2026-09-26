@@ -62,8 +62,28 @@ export default function PricingPage() {
 					</div>
 				)}
 
-				{wb.descriptor.gpu && wb.engine === "mc" && (
-					<ComputeDevicePicker device={wb.device} onChange={wb.setDevice} />
+				{(wb.descriptor.gpu || wb.descriptor.scripted) && (
+					<ComputeDevicePicker
+						device={wb.descriptor.gpu && wb.engine === "mc" ? wb.device : "cpu"}
+						onChange={wb.setDevice}
+						unsupported={
+							wb.descriptor.gpu
+								? undefined
+								: "Scripted products run on the CPU until the script compiler reaches the GPU (WP 19, lot G2)."
+						}
+					/>
+				)}
+				{wb.descriptor.gpu && wb.descriptor.endpoint && (
+					<DeviceRace
+						endpoint={wb.descriptor.endpoint}
+						body={
+							wb.descriptor.toRequest(wb.values, "mc") as Record<
+								string,
+								unknown
+							>
+						}
+						paths={Number((wb.values as Record<string, unknown>).n_paths) || 0}
+					/>
 				)}
 
 				<ParamForm
@@ -137,25 +157,6 @@ export default function PricingPage() {
 							engine={wb.engine}
 							device={wb.device}
 						/>
-						{wb.descriptor.gpu &&
-							wb.engine === "mc" &&
-							wb.descriptor.endpoint && (
-								<div className="mt-4">
-									<DeviceRace
-										endpoint={wb.descriptor.endpoint}
-										body={
-											wb.descriptor.toRequest(wb.values, wb.engine) as Record<
-												string,
-												unknown
-											>
-										}
-										paths={
-											Number((wb.values as Record<string, unknown>).n_paths) ||
-											0
-										}
-									/>
-								</div>
-							)}
 						{wb.descriptor.scripted && (
 							<div className="mt-4">
 								<ScriptedPanel

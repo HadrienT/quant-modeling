@@ -17,11 +17,20 @@ map $http_x_forwarded_proto $forwarded_proto {
     "~^https?$" $http_x_forwarded_proto;
 }
 
+# The real client address. The request reaches nginx from cloudflared over the
+# compose network, so $remote_addr was cloudflared's container: every visitor
+# shared one rate-limit bucket (a cold page load of ~25 lazy chunks drew 503s)
+# and one audit ip_hash. Cloudflare puts the visitor's address in
+# CF-Connecting-IP; trust it only from private (compose / loopback) peers.
+set_real_ip_from 10.0.0.0/8;
+set_real_ip_from 172.16.0.0/12;
+set_real_ip_from 192.168.0.0/16;
+set_real_ip_from 127.0.0.1;
+real_ip_header   CF-Connecting-IP;
+
 server {
     listen ${PORT};
     server_name _;
-
-    limit_req zone=per_ip burst=20 nodelay;
 
     root /usr/share/nginx/html;
     index index.html;
@@ -51,11 +60,16 @@ server {
     }
 
     # ── reverse-proxy /api → backend API ────────────────────────
+    # Rate-limited per visitor here, where requests cost CPU. Not the static
+    # files: the hashed assets are served from disk, and a first visit loads
+    # dozens of them at once.
     location /api/ {
+        limit_req          zone=per_ip burst=20 nodelay;
         proxy_pass         ${API_URL}/api/;
         proxy_read_timeout 180s;
     }
     location ~ ^/(market|price)/ {
+        limit_req          zone=per_ip burst=20 nodelay;
         proxy_pass         ${API_URL};
         proxy_read_timeout 180s;
     }

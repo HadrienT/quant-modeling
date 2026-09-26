@@ -208,9 +208,9 @@ export default function ScriptingPreview() {
 
 			{price.isLoading && <MetricRowSkeleton />}
 			{error && <ScriptRejected message={error.message} />}
+			{r && <ScriptResult result={r} />}
 			{r?.model_choice && <ModelDecision choice={r.model_choice} />}
 			{r && <ModelWarnings warnings={r.warnings ?? []} />}
-			{r && <ScriptResult result={r} />}
 		</div>
 	);
 }

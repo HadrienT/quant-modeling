@@ -85,7 +85,7 @@ export function DeviceRace({
 				<div className="flex flex-col">
 					<span className="text-xs font-semibold text-ink">CPU vs GPU</span>
 					<span className="text-2xs text-ink-muted">
-						{formatNumber(paths, "plain")} paths, same Philox draws on both
+						{paths.toLocaleString("en-US")} paths, same Philox draws on both
 					</span>
 				</div>
 				<Button size="sm" variant="secondary" disabled={running} onClick={run}>
@@ -104,7 +104,7 @@ export function DeviceRace({
 									<span className="font-semibold text-ink">{label}</span> ·{" "}
 									{sub}
 								</span>
-								<span className="font-mono text-ink tabular-nums">
+								<span className="font-mono whitespace-nowrap text-ink tabular-nums">
 									{formatDuration(r.compute_ms)}
 								</span>
 							</div>
