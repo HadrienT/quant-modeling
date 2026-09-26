@@ -15,21 +15,26 @@ const CHOICES: { key: ComputeDevice; label: string }[] = [
 export function ComputeDevicePicker({
 	device,
 	onChange,
+	unsupported,
 }: {
 	device: ComputeDevice;
 	onChange: (d: ComputeDevice) => void;
+	/** why this product cannot run on the GPU yet (GPU greyed with it) */
+	unsupported?: string;
 }) {
 	const q = useComputeDevices();
 	const gpus = q.data?.gpus ?? [];
-	const noGpu = !q.isLoading && gpus.length === 0;
-	const why = q.data?.gpu_compiled
-		? "The server sees no CUDA device right now."
-		: "This server's pricing library was built without the CUDA backend.";
+	const noGpu = (!q.isLoading && gpus.length === 0) || Boolean(unsupported);
+	const why =
+		unsupported ??
+		(q.data?.gpu_compiled
+			? "The server sees no CUDA device right now."
+			: "This server's pricing library was built without the CUDA backend.");
 
 	return (
 		<div className="flex flex-col gap-1">
 			<span className="text-2xs font-semibold tracking-wide text-ink-muted uppercase">
-				Compute
+				Compute · Monte-Carlo
 			</span>
 			<div className="flex flex-wrap items-center gap-1">
 				{CHOICES.map((c) => {
@@ -65,11 +70,13 @@ export function ComputeDevicePicker({
 					);
 				})}
 				<span className="text-2xs text-ink-muted">
-					{gpus.length > 0
-						? `${gpus.length} × ${gpus[0]}`
-						: noGpu
-							? "no GPU on this server"
-							: ""}
+					{unsupported
+						? "GPU: not for this product yet"
+						: gpus.length > 0
+							? `${gpus.length} × ${gpus[0]}`
+							: noGpu
+								? "no GPU on this server"
+								: ""}
 				</span>
 			</div>
 		</div>

@@ -64,10 +64,15 @@ export function useWorkbench() {
 		[navigate],
 	);
 
+	// Only Monte-Carlo runs on the GPU: asking for it switches the engine.
 	const setDevice = useCallback(
 		(d: ComputeDevice) => {
 			navigate({
-				search: (prev) => ({ ...prev, device: d === "cpu" ? undefined : d }),
+				search: (prev) => ({
+					...prev,
+					device: d === "cpu" ? undefined : d,
+					engine: d === "cpu" ? prev.engine : "mc",
+				}),
 			});
 		},
 		[navigate],
