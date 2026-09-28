@@ -166,11 +166,12 @@ def test_script_on_the_gpu_gives_the_cpu_philox_price(client):
 
 
 @pytest.mark.skipif(not HAS_GPU, reason="no CUDA device")
-def test_script_with_sobol_on_auto_stays_on_the_cpu_and_says_why(client):
+def test_script_with_sobol_on_auto_now_takes_the_gpu(client):
+    # Sobol stayed on the CPU until the GPU got its points and bridge (#102).
     c, _ = client
     body = price_script(c, device="auto", sampler="sobol").json()
-    assert body["device"] == "cpu"
-    assert "on the CPU: " in body["diagnostics"]
+    assert body["device"] == "gpu"
+    assert "Sobol RQMC" in body["diagnostics"]
 
 
 # ── Variance reduction and risks on the GPU (blueprint WP 19, lot G3) ──────
@@ -242,3 +243,60 @@ def test_antithetic_pairs_can_be_turned_off(client):
     assert "antithetic" not in off["diagnostics"]
     se = (on["mc_std_error"] ** 2 + off["mc_std_error"] ** 2) ** 0.5
     assert abs(on["npv"] - off["npv"]) < 4 * se
+
+
+# ── Sobol on the GPU (issue #102) and importance sampling (issue #103) ──────
+
+DEEP_DIGITAL = "2027-06-01\n    if spot() > 180 then pays 100 endIf\n"
+
+
+def _digital_bs():
+    import math
+
+    T, r, q, s = 1.0, 0.03, 0.0, 0.25  # 2026-06-01 -> 2027-06-01, ACT/365F
+    d2 = (math.log(100 / 180) + (r - q - 0.5 * s * s) * T) / (s * math.sqrt(T))
+    return 100 * math.exp(-r * T) * 0.5 * math.erfc(-d2 / math.sqrt(2))
+
+
+def test_importance_sampling_prices_a_rare_digital_tightly(client):
+    c, _ = client
+    plain = price_script(c, script=DEEP_DIGITAL, n_paths=100_000).json()
+    is_ = price_script(
+        c, script=DEEP_DIGITAL, n_paths=100_000, importance_sampling=True
+    ).json()
+    assert "+ importance sampling (drift" in is_["diagnostics"], is_["diagnostics"]
+    exact = _digital_bs()
+    assert abs(is_["npv"] - exact) < 4 * is_["mc_std_error"]
+    assert is_["mc_std_error"] < plain["mc_std_error"] / 3
+
+
+def test_importance_sampling_says_when_it_steps_aside(client):
+    c, _ = client
+    body = price_script(c, importance_sampling=True).json()
+    diag = body["diagnostics"]
+    assert ("+ importance sampling (drift" in diag) != (
+        "(no importance sampling:" in diag
+    )
+
+
+@pytest.mark.skipif(not HAS_GPU, reason="no CUDA device")
+def test_sobol_on_the_gpu_gives_the_cpu_numbers(client):
+    c, _ = client
+    gpu = price_script(c, device="gpu", sampler="sobol").json()
+    cpu = price_script(c, device="cpu", sampler="sobol").json()
+    assert gpu["device"] == "gpu" and "Sobol RQMC" in gpu["diagnostics"]
+    assert gpu["npv"] == pytest.approx(cpu["npv"], rel=1e-10)
+    assert gpu["mc_std_error"] == pytest.approx(cpu["mc_std_error"], rel=1e-6)
+
+
+@pytest.mark.skipif(not HAS_GPU, reason="no CUDA device")
+def test_risks_under_sobol_on_the_gpu_are_the_tapes(client):
+    c, _ = client
+    kw = dict(greeks_method="aad", sampler="sobol", n_paths=16 * 2048)
+    gpu = price_script(c, device="gpu", **kw).json()
+    cpu = price_script(c, device="cpu", **kw).json()
+    assert gpu["device"] == "gpu" and "Sobol RQMC" in gpu["diagnostics"]
+    assert gpu["npv"] == pytest.approx(cpu["npv"], rel=1e-10)
+    by_label = {r["label"]: r["value"] for r in cpu["risks"]}
+    for r in gpu["risks"]:
+        assert r["value"] == pytest.approx(by_label[r["label"]], rel=1e-8, abs=1e-10)

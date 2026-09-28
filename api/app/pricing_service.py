@@ -322,6 +322,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             rng=req.rng.value,
             control_variate=req.control_variate,
             antithetic=req.antithetic,
+            importance_sampling=req.importance_sampling,
         )
     result["warnings"] = warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)
@@ -443,6 +444,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             rng=req.rng.value,
             control_variate=req.control_variate,
             antithetic=req.antithetic,
+            importance_sampling=req.importance_sampling,
         )
     result["warnings"] = market_warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)

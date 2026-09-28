@@ -9,6 +9,7 @@
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/brownian_bridge.hpp"
 #include "quantModeling/engines/mc/logical_blocks.hpp"
+#include "quantModeling/engines/mc/importance_sampling.hpp"
 #include "quantModeling/engines/mc/path_draws.hpp"
 #include "quantModeling/engines/mc/spot_controls.hpp"
 #include "quantModeling/utils/variance_reduction/multi_control.hpp"
@@ -156,10 +157,11 @@ namespace quantModeling
         }
     } // namespace detail
 
-    template <class T = Real>
-    SimulationMCResult simulate(const ISimulatableProduct<T> &product,
-                                ISimulationModel<T> &model,
-                                const PricingSettings &settings)
+    /// One simulation run; `theta` (per Brownian factor) is an importance-
+    /// sampling drift, or null. simulate() below decides whether to use one.
+    template <class T>
+    SimulationMCResult simulate_impl(const ISimulatableProduct<T> &product, ISimulationModel<T> &model,
+                                     const PricingSettings &settings, const std::vector<double> *theta)
     {
         model.init(product.timeline(), product.defline());
 
@@ -214,12 +216,44 @@ namespace quantModeling
         const std::string cv_off =
             settings.mc_spot_control && !cv ? " (no spot control: " + controls.why_none + ")" : "";
 
+        // ── Importance sampling (mc/importance_sampling.hpp): Brownian factor
+        // f drifts by theta_f; each path carries its likelihood ratio, which
+        // weights the payoff and the controls alike.
+        BrownianLayout is_layout;
+        if (theta)
+        {
+            is_layout = model.brownian_layout();
+            if (!is_layout.covers(dim) || theta->size() > is_layout.factors)
+                throw InvalidInput("importance sampling needs a model that describes its Brownian increments");
+        }
+        double path_weight = 1.0;
+        /// gauss holds a path's unshifted draws: shift them, set path_weight.
+        auto shift_gauss = [&]()
+        {
+            if (!theta)
+                return;
+            double log_w = 0.0, prev = 0.0;
+            for (std::size_t d = 0; d < is_layout.times.size(); ++d)
+            {
+                const double sq = std::sqrt(is_layout.times[d] - prev);
+                prev = is_layout.times[d];
+                for (std::size_t f = 0; f < theta->size(); ++f)
+                {
+                    double &z = gauss[d * is_layout.stride + f];
+                    const double mu = (*theta)[f] * sq;
+                    log_w += -mu * z - 0.5 * mu * mu;
+                    z += mu;
+                }
+            }
+            path_weight = std::exp(log_w);
+        };
+
         auto run_payoff = [&](std::vector<WelfordAccumulator> &acc)
         {
             model.generate_path(std::span<const double>(gauss.data(), dim), path);
             product.payoffs(path, pay);
             for (std::size_t l = 0; l < n_labels; ++l)
-                acc[l].add(static_cast<Real>(pay[l]));
+                acc[l].add(theta ? static_cast<Real>(pay[l]) * path_weight : static_cast<Real>(pay[l]));
         };
         auto run_payoff_cv = [&](std::vector<MultiControlAccumulator> &acc)
         {
@@ -227,9 +261,12 @@ namespace quantModeling
             product.payoffs(path, pay);
             CvSample smp;
             read_controls(smp);
+            if (theta)
+                for (int c = 0; c < k; ++c)
+                    smp.v[1 + c] *= path_weight;
             for (std::size_t l = 0; l < n_labels; ++l)
             {
-                smp.v[0] = static_cast<Real>(pay[l]);
+                smp.v[0] = theta ? static_cast<Real>(pay[l]) * path_weight : static_cast<Real>(pay[l]);
                 acc[l].add(smp);
             }
         };
@@ -270,6 +307,7 @@ namespace quantModeling
                     {
                         sobol.next_gaussian(std::span<double>(gauss.data(), dim));
                     }
+                    shift_gauss();
                     if (cv)
                         run_payoff_cv(inner_cv);
                     else
@@ -305,7 +343,7 @@ namespace quantModeling
         // conditional bridge (engines/mc/path_draws.hpp); B independent
         // replicates of m strata give the error. Always Philox.
         const bool stratified = settings.mc_sampler == SamplerKind::Stratified && dim > 0;
-        if ((settings.mc_rng == RngKind::Philox || stratified) && dim > 0)
+        if ((settings.mc_rng == RngKind::Philox || stratified || theta) && dim > 0)
         {
             const bool anti = settings.mc_antithetic;
             const auto n_units = static_cast<uint64_t>(anti ? (requested + 1) / 2 : requested);
@@ -315,36 +353,43 @@ namespace quantModeling
             BrownianLayout layout;
             int B = 1;
             uint64_t per_rep = n_units;
-            if (stratified)
+            const bool shaped = stratified || theta; // draws built step by step by PathDraws
+            if (shaped)
             {
                 layout = model.brownian_layout();
                 if (!layout.covers(dim))
                     throw InvalidInput("stratified sampling needs a model that describes its Brownian increments "
                                        "(this one does not): use pseudo-random or Sobol");
-                B = std::max(2, settings.mc_rqmc_batches);
-                per_rep = std::max<uint64_t>(1, n_units / static_cast<uint64_t>(B));
                 draws.stride = static_cast<int>(layout.stride);
-                draws.strata = per_rep;
                 draws.times = layout.times.data();
                 draws.n_steps = static_cast<int>(layout.times.size());
             }
-            auto fill = [&](uint64_t u, uint64_t stratum)
+            if (stratified)
             {
-                if (!stratified)
+                B = std::max(2, settings.mc_rqmc_batches);
+                per_rep = std::max<uint64_t>(1, n_units / static_cast<uint64_t>(B));
+                draws.strata = per_rep;
+            }
+            if (theta)
+            {
+                draws.theta = theta->data();
+                draws.n_theta = static_cast<int>(theta->size());
+            }
+            /// The unit's draws; sign = -1 is its antithetic mirror (with a
+            /// drift mu: mu - x, not -(mu + x)).
+            auto fill = [&](uint64_t u, uint64_t stratum, double sign)
+            {
+                if (!shaped)
                 {
                     for (std::size_t j = 0; j < dim; ++j)
-                        gauss[j] = inverse_normal_cdf(philox_uniform(seed, u, static_cast<uint32_t>(j)));
+                        gauss[j] = sign * inverse_normal_cdf(philox_uniform(seed, u, static_cast<uint32_t>(j)));
                     return;
                 }
                 draws.begin(u, stratum);
                 for (int d = 0; d < draws.n_steps; ++d)
                     for (int f = 0; f < draws.stride; ++f)
-                        gauss[static_cast<std::size_t>(d * draws.stride + f)] = draws(d, f);
-            };
-            auto mirror = [&]()
-            {
-                for (std::size_t j = 0; j < dim; ++j)
-                    gauss[j] = -gauss[j];
+                        gauss[static_cast<std::size_t>(d * draws.stride + f)] = draws.draw(d, f, sign);
+                path_weight = std::exp(draws.log_weight);
             };
 
             std::vector<Real> out(n_labels);
@@ -354,44 +399,60 @@ namespace quantModeling
             // reducing thread's successive paths in neighbouring strata.
             auto stratum = [&](uint64_t u)
             { return stratified ? mc::stratum_of(u, per_rep) : u; };
+            // The mirror: -z, or with a drift the draws redone with sign -1.
+            auto mirror = [&](uint64_t u)
+            {
+                if (theta)
+                    return fill(rep_first + u, stratum(u), -1.0);
+                for (std::size_t j = 0; j < dim; ++j)
+                    gauss[j] = -gauss[j];
+            };
+            auto weighted = [&](const T &p)
+            { return theta ? static_cast<Real>(p) * path_weight : static_cast<Real>(p); };
             auto unit = [&](uint64_t u) -> std::vector<Real>
             {
-                fill(rep_first + u, stratum(u));
+                fill(rep_first + u, stratum(u), 1.0);
                 model.generate_path(std::span<const double>(gauss.data(), dim), path);
                 product.payoffs(path, pay);
                 for (std::size_t l = 0; l < n_labels; ++l)
-                    out[l] = static_cast<Real>(pay[l]);
+                    out[l] = weighted(pay[l]);
                 if (!anti)
                     return out;
-                mirror();
+                mirror(u);
                 model.generate_path(std::span<const double>(gauss.data(), dim), path);
                 product.payoffs(path, pay);
                 for (std::size_t l = 0; l < n_labels; ++l)
-                    out[l] = 0.5 * (out[l] + static_cast<Real>(pay[l]));
+                    out[l] = 0.5 * (out[l] + weighted(pay[l]));
                 return out;
             };
             auto unit_cv = [&](uint64_t u) -> std::vector<CvSample>
             {
-                fill(rep_first + u, stratum(u));
+                fill(rep_first + u, stratum(u), 1.0);
                 model.generate_path(std::span<const double>(gauss.data(), dim), path);
                 product.payoffs(path, pay);
                 CvSample base;
                 read_controls(base);
+                if (theta)
+                    for (int c = 0; c < k; ++c)
+                        base.v[1 + c] *= path_weight;
                 for (std::size_t l = 0; l < n_labels; ++l)
                 {
                     out_cv[l] = base;
-                    out_cv[l].v[0] = static_cast<Real>(pay[l]);
+                    out_cv[l].v[0] = weighted(pay[l]);
                 }
                 if (!anti)
                     return out_cv;
-                mirror();
+                mirror(u);
                 model.generate_path(std::span<const double>(gauss.data(), dim), path);
                 product.payoffs(path, pay);
                 CvSample other;
                 read_controls(other);
+                if (theta)
+                    for (int c = 0; c < k; ++c)
+                        other.v[1 + c] *= path_weight;
                 for (std::size_t l = 0; l < n_labels; ++l)
                 {
-                    other.v[0] = static_cast<Real>(pay[l]);
+                    other.v[0] = weighted(pay[l]);
                     for (int i = 0; i <= k; ++i)
                         out_cv[l].v[i] = 0.5 * (out_cv[l].v[i] + other.v[i]);
                 }
@@ -490,6 +551,61 @@ namespace quantModeling
         res.diagnostics = std::string("SimulationMCEngine + pseudo-random") +
                           (inv_normal ? " (inverse normal)" : " (Box-Muller)") +
                           (antithetic ? " + antithetic" : "") + cv_note + cv_off;
+        return res;
+    }
+
+    namespace detail
+    {
+        /// The importance-sampling pilot: pseudo-random Philox, no control,
+        /// on its own seed, one eighth of the run (4 096 to 65 536 paths).
+        inline PricingSettings importance_pilot(const PricingSettings &s)
+        {
+            PricingSettings p = s;
+            const int requested = s.mc_paths > 0 ? s.mc_paths : 100000;
+            p.mc_paths = std::clamp(requested / 8, 4096, 65536);
+            p.mc_seed = (s.mc_seed > 0 ? s.mc_seed : 1) ^ 0x5bd1e995;
+            p.mc_sampler = SamplerKind::PseudoRandom;
+            p.mc_rng = RngKind::Philox;
+            p.mc_spot_control = false;
+            return p;
+        }
+    } // namespace detail
+
+    /**
+     * @brief The one Monte-Carlo engine: simulate_impl, with generic
+     *        importance sampling when settings.mc_importance_drift asks for it
+     *        (blueprint/wp/19-gpu.md §2.5, engines/mc/importance_sampling.hpp).
+     *
+     * The GHS drift is a heuristic: a pilot runs with and without it, and the
+     * run keeps it only if the pilot's variance falls -- otherwise it prices
+     * without and says why in the diagnostics.
+     */
+    template <class T = Real>
+    SimulationMCResult simulate(const ISimulatableProduct<T> &product, ISimulationModel<T> &model,
+                                const PricingSettings &settings)
+    {
+        if (!settings.mc_importance_drift)
+            return simulate_impl<T>(product, model, settings, nullptr);
+
+        model.init(product.timeline(), product.defline());
+        const mc::ImportanceDrift drift = mc::find_importance_drift(product, model);
+        if (drift.theta.empty())
+        {
+            SimulationMCResult res = simulate_impl<T>(product, model, settings, nullptr);
+            res.diagnostics += " (no importance sampling: " + drift.why_none + ")";
+            return res;
+        }
+        const PricingSettings pilot = detail::importance_pilot(settings);
+        const Real plain_se = simulate_impl<T>(product, model, pilot, nullptr).std_error();
+        const Real is_se = simulate_impl<T>(product, model, pilot, &drift.theta).std_error();
+        if (!mc::importance_sampling_pays(plain_se, is_se))
+        {
+            SimulationMCResult res = simulate_impl<T>(product, model, settings, nullptr);
+            res.diagnostics += " (no importance sampling: the drift did not lower the pilot's variance)";
+            return res;
+        }
+        SimulationMCResult res = simulate_impl<T>(product, model, settings, &drift.theta);
+        res.diagnostics += mc::importance_note(drift, plain_se, is_se);
         return res;
     }
 

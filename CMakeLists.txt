@@ -304,6 +304,7 @@ if(QM_BUILD_TESTS)
     tests/testMultiControl.cpp
     tests/testVarianceReduction.cpp
     tests/testScriptAdjoint.cpp
+    tests/testSobolAndImportance.cpp
   )
 
   target_link_libraries(quantModeling_tests
@@ -333,6 +334,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuPaths.cpp
       tests/gpu/testGpuScripts.cpp
       tests/gpu/testGpuRisks.cpp
+      tests/gpu/testGpuSobolIs.cpp
     )
     target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)
     target_compile_definitions(quantModeling_gpu_tests PRIVATE

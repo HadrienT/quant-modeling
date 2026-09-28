@@ -150,7 +150,7 @@ namespace quantModeling::mc
                     case DeviceModel::Kind::BlackScholes:
                         if (v.n_assets == 1)
                         {
-                            const double z = sign * draws(d, 0);
+                            const double z = draws.draw(d, 0, sign);
                             if constexpr (kPlain)
                                 S[0] *= exp(v.drift[s] + v.vol_sqrt_dt[s] * z);
                             else
@@ -165,7 +165,7 @@ namespace quantModeling::mc
                             // MultiAssetBSSimModel::generate_path: z = chol * u, full rows
                             double w[L::kAssets];
                             for (int k = 0; k < v.n_assets; ++k)
-                                w[k] = sign * draws(d, k);
+                                w[k] = draws.draw(d, k, sign);
                             for (int a = 0; a < v.n_assets; ++a)
                             {
                                 double acc = 0.0;
@@ -183,20 +183,20 @@ namespace quantModeling::mc
                         break;
                     case DeviceModel::Kind::LocalVol:
                         if constexpr (kPlain)
-                            local_vol_step(v.grid, v.r, v.q, S[0], ts, dt, sign * draws(d, 0));
+                            local_vol_step(v.grid, v.r, v.q, S[0], ts, dt, draws.draw(d, 0, sign));
                         break;
                     case DeviceModel::Kind::SLV:
                         if constexpr (kPlain)
                         {
-                            const double z0 = sign * draws(d, 0);
-                            const double z1 = sign * draws(d, 1);
+                            const double z0 = draws.draw(d, 0, sign);
+                            const double z1 = draws.draw(d, 1, sign);
                             slv_step(v.grid, v.heston, v.r, v.q, S[0], var, ts, dt, z0, z1);
                         }
                         break;
                     case DeviceModel::Kind::Heston:
                     {
-                        const double z0 = sign * draws(d, 0);
-                        const double z1 = sign * draws(d, 1);
+                        const double z0 = draws.draw(d, 0, sign);
+                        const double z1 = draws.draw(d, 1, sign);
                         const double sqdt = sqrt(dt);
                         const T v_plus = max(var, variance_floor());
                         const T sqrt_v_plus = sqrt(v_plus);

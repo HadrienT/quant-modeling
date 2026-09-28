@@ -181,9 +181,11 @@ namespace quantModeling
         s.mc_device = ComputeDevice::Gpu;
         EXPECT_THROW(simulate_script(product, jumps, s), InvalidInput);
 
+        // Sobol, refused here until the GPU got its points and bridge (issue
+        // #102), now runs on the device.
         BlackScholesSimModel<Real> bs(100.0, 0.03, 0.01, 0.25);
         s.mc_sampler = SamplerKind::Sobol;
-        EXPECT_THROW(simulate_script(product, bs, s), InvalidInput);
+        EXPECT_EQ(simulate_script(product, bs, s).device, "gpu");
     }
 
 } // namespace quantModeling

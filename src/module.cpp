@@ -965,7 +965,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &vols,
                              const std::vector<double> &correlation,
                              const std::string &device, const std::string &rng,
-                             bool control_variate, bool antithetic)
+                             bool control_variate, bool antithetic, bool importance_sampling)
 {
     using namespace quantModeling;
 
@@ -1055,6 +1055,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
         std::vector<scripting::Advice> aad_advice;
         std::size_t aad_events = 0;
         std::string aad_device = "cpu", gpu_note;
+        // Both adjoint engines take Sobol RQMC with the Brownian bridge
+        // (blueprint/wp/19-gpu.md §2.2); stratification stays pseudo-random.
+        const SamplerKind aad_sampler = sampler == "sobol" ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
         {
             py::gil_scoped_release release;
             if (device == "gpu" || device == "auto")
@@ -1064,7 +1067,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                 std::string why;
                 aad_res = simulate_script_aad_gpu(product, *sim_model, static_cast<std::size_t>(paths),
-                                                  seed_value, why);
+                                                  seed_value, why, aad_sampler);
                 if (aad_res)
                 {
                     aad_device = "gpu";
@@ -1085,7 +1088,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                 aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
                                        seed_value, first_aad_payoff,
-                                       rng == "philox" ? RngKind::Philox : RngKind::Pcg32);
+                                       rng == "philox" ? RngKind::Philox : RngKind::Pcg32, aad_sampler);
                 aad_events = product.timeline().size();
                 aad_advice = scripting::advise(product.analysis(), kind,
                                                product.timeline().back(), surface_T);
@@ -1096,9 +1099,11 @@ static py::dict price_script(const std::string &script, double spot, double rate
         res.diagnostics += gpu_note + " | scripted, " + std::to_string(aad_events) + " events" +
                            (fuzzy ? ", fuzzy" : ", hard") + model_note;
         res.device = aad_device;
-        if (sampler == "sobol" || sampler == "stratified")
-            res.diagnostics += " | " + sampler + " requested but not available under AAD "
-                                                 "yet -- used pseudo-random instead";
+        if (sampler == "stratified")
+            res.diagnostics += " | stratified sampling is not available under AAD -- used "
+                               "pseudo-random instead";
+        if (importance_sampling)
+            res.diagnostics += " | importance sampling is not available under AAD";
         py::dict out = pricing_result_to_dict(res);
         out["warnings"] = advice_to_py(aad_advice);
         return out;
@@ -1127,6 +1132,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                                                         : SamplerKind::PseudoRandom;
         // blueprint/wp/19-gpu.md §2.5: the deflated spots as control variates.
         settings.mc_spot_control = control_variate;
+        // ... and a GHS drift, kept when a pilot shows it pays.
+        settings.mc_importance_drift = importance_sampling;
         // blueprint/wp/19-gpu.md §8: CPU, GPU, or GPU when present.
         settings.mc_device = device == "gpu"    ? ComputeDevice::Gpu
                              : device == "auto" ? ComputeDevice::Auto
@@ -1445,6 +1452,7 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("correlation") = std::vector<double>{},
           py::arg("device") = "cpu", py::arg("rng") = "pcg32",
           py::arg("control_variate") = false, py::arg("antithetic") = true,
+          py::arg("importance_sampling") = false,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
@@ -1456,7 +1464,10 @@ PYBIND11_MODULE(quantmodeling, m)
           "'pseudo', 'sobol' or 'stratified' (terminal value stratified, "
           "path by Brownian bridge); control_variate: regress the deflated "
           "spots out of the payoff (blueprint/wp/19-gpu.md §2.5); antithetic: "
-          "pair each path with its mirror (price only; the default).");
+          "pair each path with its mirror (price only; the default); "
+          "importance_sampling: a Glasserman-Heidelberger-Shahabuddin drift, "
+          "kept only when a pilot shows it lowers the variance (price only). "
+          "Sobol runs on the GPU and under AAD too.");
     m.def(
         "recommend_script_model",
         [](const std::string &script, const std::string &valuation_date,

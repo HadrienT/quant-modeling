@@ -54,16 +54,37 @@ namespace quantModeling::mc
 
         // Stratification (strata == 0: plain draws).
         uint64_t strata = 0;
-        const Time *times = nullptr; ///< end of each drawing step
+        const Time *times = nullptr; ///< end of each drawing step (stratification, importance sampling)
         int n_steps = 0;             ///< drawing steps
+
+        /// Given draws -- a Sobol point after the Brownian bridge: draw j is
+        /// given[j * given_stride], in the model's time order.
+        const double *given = nullptr;
+        long given_stride = 1;
+
+        /// Importance sampling (Glasserman §4.6): Brownian factor f < n_theta
+        /// gets the drift theta[f], i.e. draw (d, f) is shifted by
+        /// theta[f] sqrt(t_d - t_{d-1}); the path carries the likelihood
+        /// ratio exp(log_weight).
+        const double *theta = nullptr;
+        int n_theta = 0;
 
         // Per path.
         uint64_t unit = 0;
         double W_T = 0.0, W_prev = 0.0, t_prev = 0.0;
+        double log_weight = 0.0;
 
         QM_HOST_DEVICE double plain(uint32_t j) const
         {
             return inverse_normal_cdf(philox_uniform(seed, unit, j));
+        }
+
+        /// Draw f of drawing step d, stateless: the given draw or Philox's
+        /// (what an adjoint pass regenerates; not for stratified draws).
+        QM_HOST_DEVICE double at(int d, int f) const
+        {
+            const long j = static_cast<long>(d) * stride + f;
+            return given ? given[j * given_stride] : plain(static_cast<uint32_t>(j));
         }
 
         /// Start unit `u` (its Philox counter); `stratum` < strata when stratified.
@@ -72,6 +93,7 @@ namespace quantModeling::mc
             unit = u;
             W_prev = 0.0;
             t_prev = 0.0;
+            log_weight = 0.0;
             if (strata == 0 || n_steps == 0)
                 return;
             const double U = philox_uniform(seed, u, static_cast<uint32_t>((n_steps - 1) * stride));
@@ -83,10 +105,12 @@ namespace quantModeling::mc
             W_T = std::sqrt(times[n_steps - 1]) * inverse_normal_cdf(p);
         }
 
-        /// Draw f of drawing step d. Steps must come in increasing order
-        /// (each model reads its draws in time order).
+        /// Draw f of drawing step d, before any shift. Steps must come in
+        /// increasing order (each model reads its draws in time order).
         QM_HOST_DEVICE double operator()(int d, int f)
         {
+            if (given)
+                return at(d, f);
             const auto j = static_cast<uint32_t>(d * stride + f);
             if (strata == 0 || f != 0)
                 return plain(j);
@@ -104,6 +128,21 @@ namespace quantModeling::mc
             W_prev = W;
             t_prev = t;
             return z;
+        }
+
+        /// The draw the model uses: sign x the draw (sign = -1 on the
+        /// antithetic mirror), plus the importance-sampling shift mu, whose
+        /// likelihood ratio phi(z) / phi(z - mu) = exp(-mu x - mu^2 / 2) it
+        /// accumulates (x the unshifted, signed draw).
+        QM_HOST_DEVICE double draw(int d, int f, double sign)
+        {
+            const double x = sign * (*this)(d, f);
+            if (f >= n_theta)
+                return x;
+            const double dt = times[d] - (d > 0 ? times[d - 1] : 0.0);
+            const double mu = theta[f] * std::sqrt(dt);
+            log_weight += -mu * x - 0.5 * mu * mu;
+            return mu + x;
         }
     };
 

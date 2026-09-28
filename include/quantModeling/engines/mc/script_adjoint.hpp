@@ -272,7 +272,7 @@ namespace quantModeling::mc
             }
             const double S_prev = trail.pop();
             const Time t0 = s > 0 ? v.t[s - 1] : 0.0;
-            aS = local_vol_step_adjoint(v.grid, v.r, v.q, S_prev, ts, ts - t0, draws.plain(static_cast<uint32_t>(s)), aS,
+            aS = local_vol_step_adjoint(v.grid, v.r, v.q, S_prev, ts, ts - t0, draws.at(s, 0), aS,
                                         a_r, a_q, grid_adj);
         }
         w.grad[0] += aS;

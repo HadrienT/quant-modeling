@@ -5,7 +5,10 @@
 //   build-cuda/qm_gpu_vr_bench [paths=100000] [seeds=40]
 //
 // For each script and technique -- plain, stratified terminal value, spot
-// controls, both -- with and without antithetic pairs: the *true* spread of
+// controls, both, Sobol RQMC with the Brownian bridge (no mirror: its two
+// rows are the same run), importance sampling (GHS drift, kept only when its
+// pilot pays; its time includes the drift search and the pilot) -- with and
+// without antithetic pairs: the *true* spread of
 // the price over independent seeds (not the estimate a single run reports),
 // the mean reported standard error beside it, the variance ratio to the
 // plain run at the same number of paths (from either), and the GPU time per
@@ -65,26 +68,34 @@ int main(int argc, char **argv)
     for (qm::Real k : K)
         for (qm::Real t : T)
             grid.push_back(0.22 + 0.3 * (100.0 - k) / 100.0 + 0.005 * t);
+    const std::vector<qm::Real> flat(grid.size(), 0.25);
 
     struct Technique
     {
         const char *name;
         qm::SamplerKind sampler;
         bool control;
+        bool importance = false;
     };
     const Technique techniques[] = {{"plain", qm::SamplerKind::PseudoRandom, false},
                                     {"stratified", qm::SamplerKind::Stratified, false},
                                     {"control", qm::SamplerKind::PseudoRandom, true},
-                                    {"both", qm::SamplerKind::Stratified, true}};
+                                    {"both", qm::SamplerKind::Stratified, true},
+                                    {"sobol", qm::SamplerKind::Sobol, false},
+                                    {"importance", qm::SamplerKind::PseudoRandom, false, true}};
 
     std::printf("%d paths per run, %d seeds, local vol (52 steps/yr), GPU %s\n\n", paths, seeds,
                 qm::gpu::device_name(0).c_str());
     std::printf("%-18s %-5s %-11s %10s %10s %8s %8s %8s %8s\n", "script", "anti", "technique", "true sd", "mean se",
                 "var / sd", "var / se", "ms/run", "speed-up");
+    // A rare event beside the library: a one-year digital paying 100 above
+    // 180 % of the spot (~0.8 % likely at 25 % vol) -- importance sampling's
+    // case.
+    const std::string deep_digital = "2027-06-01\n    if spot() > 180 then pays 100 endIf\n";
     for (const std::string name : {"european-call", "asian-call", "phoenix-autocall", "up-and-out-call",
-                                   "worst-of-autocall", "variance-swap"})
+                                   "worst-of-autocall", "variance-swap", "deep-digital"})
     {
-        const qm::ScriptedProduct<qm::Real> product(read_script(name), ctx);
+        const qm::ScriptedProduct<qm::Real> product(name == "deep-digital" ? deep_digital : read_script(name), ctx);
         if (product.n_underlyings() > 1)
             continue;
         double default_cost = 0.0; // se^2 x time of the default: antithetic, nothing else
@@ -105,7 +116,10 @@ int main(int argc, char **argv)
                     set.mc_device = qm::ComputeDevice::Gpu;
                     set.mc_sampler = tech.sampler;
                     set.mc_spot_control = tech.control;
-                    qm::LocalVolSimModel<qm::Real> model(100.0, 0.03, 0.01, K, T, grid, 1.0 / 52.0);
+                    set.mc_importance_drift = tech.importance;
+                    // the rare event under a flat 25 % surface: under the skew, 180 is out of reach
+                    qm::LocalVolSimModel<qm::Real> model(100.0, 0.03, 0.01, K, T,
+                                                         name == "deep-digital" ? flat : grid, 1.0 / 52.0);
                     const auto t0 = std::chrono::steady_clock::now();
                     const qm::SimulationMCResult r = qm::simulate_script(product, model, set);
                     row.ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -120,7 +134,7 @@ int main(int argc, char **argv)
                 row.true_sd = std::sqrt(var);
                 row.mean_se /= seeds;
                 row.ms /= seeds;
-                if (tech.sampler == qm::SamplerKind::PseudoRandom && !tech.control)
+                if (tech.sampler == qm::SamplerKind::PseudoRandom && !tech.control && !tech.importance)
                 {
                     plain_var = var;
                     plain_se = row.mean_se;

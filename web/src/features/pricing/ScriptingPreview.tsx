@@ -3,11 +3,7 @@ import { type ComputeDevice, usePricing } from "@/shared/api";
 import { Button } from "@/shared/ui";
 import { MetricRowSkeleton } from "@/shared/ui/states";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
-import {
-	ScriptingMarketFields,
-	type DayCount,
-	type Sampler,
-} from "./ScriptingMarketFields";
+import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
 import { alignToValuationDate } from "./scripting/alignDates";
 import { FuzzyFields } from "./scripting/FuzzyFields";
 import { DEFAULT_PRODUCT } from "./scripting/library";
@@ -28,6 +24,10 @@ import {
 	useUnderlyings,
 } from "./scripting/underlyings";
 import { UnderlyingsFields } from "./scripting/UnderlyingsFields";
+import {
+	DEFAULT_VARIANCE_REDUCTION,
+	varianceReductionRequest,
+} from "./scripting/VarianceReductionFields";
 
 /**
  * Preview surface for the payoff scripting language (blueprint/wp/16-scripting.md).
@@ -54,9 +54,7 @@ export default function ScriptingPreview() {
 	const [dayCount, setDayCount] = useState<DayCount>("ACT/365F");
 	const [fuzzy, setFuzzy] = useState(false);
 	const [defaultEps, setDefaultEps] = useState("1");
-	const [sampler, setSampler] = useState<Sampler>("pseudo");
-	const [controlVariate, setControlVariate] = useState(false);
-	const [antithetic, setAntithetic] = useState(true);
+	const [vr, setVr] = useState(DEFAULT_VARIANCE_REDUCTION);
 	const [nPaths, setNPaths] = useState("200000");
 	const [seed, setSeed] = useState("1");
 	const [device, setDevice] = useState<ComputeDevice>("cpu");
@@ -113,9 +111,7 @@ export default function ScriptingPreview() {
 							day_count: dayCount,
 							fuzzy,
 							default_eps: Number(defaultEps),
-							sampler,
-							control_variate: controlVariate,
-							antithetic,
+							...varianceReductionRequest(vr),
 							n_paths: Number(nPaths),
 							seed: Number(seed),
 							device,
@@ -162,12 +158,8 @@ export default function ScriptingPreview() {
 						onVolPct={setVolPct}
 						dayCount={dayCount}
 						onDayCount={setDayCount}
-						sampler={sampler}
-						onSampler={setSampler}
-						controlVariate={controlVariate}
-						onControlVariate={setControlVariate}
-						antithetic={antithetic}
-						onAntithetic={setAntithetic}
+						vr={vr}
+						onVr={setVr}
 						nPaths={nPaths}
 						onNPaths={setNPaths}
 						seed={seed}

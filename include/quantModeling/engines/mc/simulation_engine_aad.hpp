@@ -10,6 +10,10 @@
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/utils/inverse_normal.hpp"
 #include "quantModeling/utils/philox.hpp"
+#include "quantModeling/utils/brownian_bridge.hpp"
+#include "quantModeling/utils/sobol.hpp"
+
+#include <optional>
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/rng.hpp"
 
@@ -23,6 +27,10 @@
 
 namespace quantModeling
 {
+
+    /// Sobol RQMC replicates of an adjoint run (simulate_aad, and the GPU's
+    /// dual and adjoint engines, engines/mc/script_engine.hpp).
+    constexpr int kAadRqmcReplicates = 16;
 
     struct AADSimulResults
     {
@@ -120,7 +128,7 @@ namespace quantModeling
         std::uint64_t seed = 1,
         const std::function<aad::Number(const std::vector<aad::Number> &)> &agg =
             first_aad_payoff,
-        RngKind rng_kind = RngKind::Pcg32)
+        RngKind rng_kind = RngKind::Pcg32, SamplerKind sampler = SamplerKind::PseudoRandom)
     {
         using aad::Number;
         using aad::Tape;
@@ -149,6 +157,27 @@ namespace quantModeling
         Pcg32 rng = RngFactory(seed).make(0);
         NormalBoxMuller bm;
 
+        // Sobol RQMC (blueprint/wp/19-gpu.md §2.2, §2.4): kAadRqmcReplicates
+        // digitally shifted replicates, the generic engine's scheme and
+        // Brownian bridge; a batch is a replicate, so the risks' error is
+        // the replicates' spread.
+        const bool sobol = sampler == SamplerKind::Sobol && dim > 0;
+        const std::size_t per_rep =
+            sobol ? std::max<std::size_t>(1, n_paths / static_cast<std::size_t>(kAadRqmcReplicates)) : 0;
+        const std::size_t total = sobol ? per_rep * static_cast<std::size_t>(kAadRqmcReplicates) : n_paths;
+        std::optional<SobolSequence> sequence;
+        std::optional<BridgedGaussians> bridge;
+        std::vector<double> point;
+        if (sobol)
+        {
+            const BrownianLayout layout = model.brownian_layout();
+            if (layout.covers(dim))
+            {
+                bridge.emplace(layout.times, layout.factors, layout.stride);
+                point.resize(dim);
+            }
+        }
+
         tape.mark(); // 4. THE MARK
 
         constexpr std::size_t BATCH = 64;
@@ -156,18 +185,33 @@ namespace quantModeling
         std::vector<WelfordAccumulator> risk_acc(n_params);
 
         std::size_t done = 0;
-        while (done < n_paths)
+        while (done < total)
         {
-            const std::size_t batch_size = std::min(BATCH, n_paths - done);
+            const std::size_t batch_size = sobol ? per_rep : std::min(BATCH, total - done);
             WelfordAccumulator batch_price;
+            if (sobol)
+            {
+                const auto b = static_cast<std::uint64_t>(done / per_rep);
+                sequence.emplace(static_cast<int>(dim),
+                                 (static_cast<std::uint64_t>(static_cast<std::uint32_t>(seed)) << 32) | b);
+            }
 
             for (std::size_t p = 0; p < batch_size; ++p)
             {
                 tape.rewind_to_mark(); // 5. forget the previous path
                 const auto path_index = static_cast<std::uint64_t>(done + p);
-                for (std::size_t d = 0; d < dim; ++d)
-                    gauss[d] = philox ? inverse_normal_cdf(philox_uniform(seed, path_index, static_cast<std::uint32_t>(d)))
-                                      : bm(rng);
+                if (sobol && bridge)
+                {
+                    sequence->next_gaussian(std::span<double>(point.data(), dim));
+                    bridge->map(point, std::span<double>(gauss.data(), dim));
+                }
+                else if (sobol)
+                    sequence->next_gaussian(std::span<double>(gauss.data(), dim));
+                else
+                    for (std::size_t d = 0; d < dim; ++d)
+                        gauss[d] = philox ? inverse_normal_cdf(
+                                                philox_uniform(seed, path_index, static_cast<std::uint32_t>(d)))
+                                          : bm(rng);
                 model.generate_path(std::span<const double>(gauss.data(), dim), path); // recorded after the mark
                 product.payoffs(path, payoffs);
                 Number result = agg(payoffs);
@@ -199,9 +243,13 @@ namespace quantModeling
             res.risks[j] = risk_acc[j].mean;
             res.risk_std_errors[j] = risk_acc[j].std_error();
         }
-        res.n_paths = static_cast<long long>(n_paths);
-        res.diagnostics = "simulate_aad (adjoint, batches of " + std::to_string(BATCH) + ")" +
-                          (philox ? " + Philox" : "");
+        res.n_paths = static_cast<long long>(total);
+        if (sobol)
+            res.diagnostics = "simulate_aad (adjoint) + Sobol RQMC (" + std::to_string(kAadRqmcReplicates) +
+                              " batches)" + (bridge ? " + Brownian bridge" : "");
+        else
+            res.diagnostics = "simulate_aad (adjoint, batches of " + std::to_string(BATCH) + ")" +
+                              (philox ? " + Philox" : "");
 
         return res;
     }

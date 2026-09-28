@@ -233,6 +233,73 @@ Ce que le tableau dit, et qui n'était pas écrit dans le plan :
   (autocall, tests de fin de vie).
 - Aucun défaut ne change : aucun nombre existant ne bouge.
 
+### 2.6 Sobol sur GPU, et l'échantillonnage préférentiel (issues #102, #103)
+
+**Sobol + pont pour les scripts sur GPU.** Ce qui manquait n'était pas Sobol
+(sur le device depuis G1) mais le pont : la bissection de Jäckel veut le point
+entier avant de rendre le premier incrément, soit `dim` doubles par chemin. En
+tableau local, le pilote les réserverait pour tous les threads que la carte peut
+porter (le piège mesuré sur les duaux, §6). Ils vivent donc dans une mémoire de
+travail par thread en mémoire globale (disposition coalescée), le nombre de
+blocs par lancement se calcule depuis `cudaMemGetInfo`, et les 16 répliques
+partagent une grille (le lancement segmenté de G3).
+`mc::sobol_bridged_gaussians` (`engines/mc/sobol_bridge.hpp`) fait sur tables
+plates, en place, ce que font `SobolSequence` et `BridgedGaussians` : sur
+l'hôte, **mêmes bits** que le moteur générique (test dans la CI) ; sur le
+device, les mêmes nombres à 10⁻⁹ près sous Black-Scholes, vol locale, Heston et
+SLV, sur les 42 scripts. Les moteurs de risques suivent : la tape CPU
+(`simulate_aad`) prend Sobol (une réplique par lot, l'erreur des risques est la
+dispersion des répliques), les duaux et l'adjoint vol locale GPU aussi (l'adjoint
+relit les gaussiennes stockées au lieu de les régénérer par Philox) — risques GPU
+= tape à l'arrondi. La vega par cotation (`market_vega`) suit l'échantillonneur
+de la requête.
+
+**Échantillonnage préférentiel générique** (`mc_importance_drift`, champ
+`importance_sampling`). Glasserman, Heidelberger & Shahabuddin (1999 ;
+Glasserman §4.6.2) : le drift au mode de G(z)φ(z), maximiseur de
+log G(z) − |z|²/2 ; ici un drift constant par facteur brownien (le décalage du
+moteur vanille dédié, pour tout script et tout modèle qui décrit ses
+incréments), trouvé sur l'hôte par recherche par coordonnée puis section dorée,
+un chemin — le chemin moyen décalé — par évaluation (`engines/mc/importance_sampling.hpp`).
+Chaque tirage devient μ + x, pondéré par exp(−μ·x − |μ|²/2) ; le miroir
+antithétique est μ − x. C'est un changement de variable de l'intégrande : il se
+compose sans biais avec les paires, la stratification, Sobol et les contrôles
+(pondérés). Le mode GHS n'est qu'une heuristique : un **pilote** (un huitième
+du run, sa propre graine) mesure la variance avec et sans le drift, et le run ne
+le garde que si elle baisse d'au moins 5 % — sinon il s'en passe et le dit. Le
+pilote tire les mêmes nombres sur CPU et GPU : la décision est la même des deux
+côtés.
+
+Mesure (`build-cuda/qm_gpu_vr_bench`, mêmes réglages qu'au §2.5 ; la digitale à
+180 % sous une vol locale plate de 25 %, ~0,8 % de chances) — rapport de
+variance au run simple de même réglage, et gain en temps pour une erreur donnée
+contre le défaut (antithétique seul) :
+
+| Avec paires antithétiques | Sobol + pont | Importance sampling |
+|---|---|---|
+| Call à départ différé | ÷84 (×55) | ÷1,12 (×0,25) |
+| Asiatique, 12 fixings | ÷41 (×44) | refusé par le pilote |
+| Phoenix autocall | ÷10 (×12) | refusé |
+| Up-and-out quotidien | ÷3,0 (×4,1) | refusé |
+| Variance swap (249 dates) | ÷33 (×46) | refusé |
+| Digitale à 180 % | ÷191 (×83) | ÷68 (×9,6) |
+
+(Sobol n'a pas de miroir : ses deux lignes, avec et sans paires, sont le même
+run ; comparé au run simple sans paires, ÷4,8 à ÷241.) Et sur les risques AAD en
+vol locale, à nombre de chemins égal et au même temps : variance ÷6 à ÷30 sur
+la delta, ÷8 à ÷9 sur la plus grande vega locale, ÷12 à ÷263 sur le prix.
+
+Ce que cela dit :
+
+- **Sobol + pont est de loin l'outil le plus fort** du dépôt, ×4 à ×58 en temps
+  pour une erreur donnée, et il ne coûte rien de plus : c'était bien le gain
+  manquant sur GPU.
+- **L'échantillonnage préférentiel est un outil d'événement rare**, et le pilote
+  fait son travail : sur les produits ordinaires il le refuse (le prix est alors
+  celui du run simple, à ~35 ms de pilotes près). Sur une digitale à une seule
+  date, stratifier W(T) fait mieux encore (÷290) : l'IS vaut surtout quand
+  l'événement rare ne se lit pas sur la valeur terminale seule.
+
 ---
 
 ## 3. Les scripts : un bytecode
@@ -546,7 +613,10 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 
 - Brouillage d'Owen (meilleur que le décalage digital sur intégrandes lisses) :
   après G4, si le benchmark le justifie.
-- Échantillonnage préférentiel générique (drift optimal par payoff).
+- ~~Échantillonnage préférentiel générique (drift optimal par payoff).~~ Fait
+  après G3 ([§2.6](#26-sobol-sur-gpu-et-léchantillonnage-préférentiel-issues-102-103)),
+  sous la forme d'un drift constant par facteur ; un drift dépendant du temps
+  (le vrai mode GHS chemin par chemin) reste à faire si un produit le réclame.
 - AAD d'ordre 2 sur GPU.
 - Rough Bergomi et calibration neuronale : chantiers 1c et 5, qui
   s'appuieront sur ce moteur.
