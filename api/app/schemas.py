@@ -269,9 +269,10 @@ class ScriptPricingInputs(BaseModel):
     fuzzy: bool = False
     default_eps: float = Field(0.01, gt=0.0)
     sampler: Literal["pseudo", "sobol", "stratified"] = Field(
-        "pseudo",
-        description="'pseudo' (antithetic pairs), 'sobol' (randomised QMC with "
-        "a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': "
+        "sobol",
+        description="'sobol' (the default: randomised QMC with a Brownian "
+        "bridge, CPU and GPU, prices and AAD risks, the error from 16 "
+        "independent replicates), 'pseudo' (antithetic pairs) or 'stratified': "
         "the terminal value of the "
         "first Brownian factor in equiprobable strata, the path filled in by the "
         "conditional Brownian bridge, the error from 16 independent replicates "

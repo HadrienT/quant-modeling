@@ -5458,8 +5458,8 @@
             "description": "CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price."
           },
           "sampler": {
-            "default": "pseudo",
-            "description": "'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 \u00a72.5).",
+            "default": "sobol",
+            "description": "'sobol' (the default: randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks, the error from 16 independent replicates), 'pseudo' (antithetic pairs) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 \u00a72.5).",
             "enum": [
               "pseudo",
               "sobol",
@@ -5814,8 +5814,8 @@
             "description": "CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price."
           },
           "sampler": {
-            "default": "pseudo",
-            "description": "'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 \u00a72.5).",
+            "default": "sobol",
+            "description": "'sobol' (the default: randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks, the error from 16 independent replicates), 'pseudo' (antithetic pairs) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 \u00a72.5).",
             "enum": [
               "pseudo",
               "sobol",

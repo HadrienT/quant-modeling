@@ -3788,8 +3788,8 @@ export interface components {
             rng: components["schemas"]["McRng"];
             /**
              * Sampler
-             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
-             * @default pseudo
+             * @description 'sobol' (the default: randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks, the error from 16 independent replicates), 'pseudo' (antithetic pairs) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
+             * @default sobol
              * @enum {string}
              */
             sampler: "pseudo" | "sobol" | "stratified";
@@ -3991,8 +3991,8 @@ export interface components {
             rng: components["schemas"]["McRng"];
             /**
              * Sampler
-             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
-             * @default pseudo
+             * @description 'sobol' (the default: randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks, the error from 16 independent replicates), 'pseudo' (antithetic pairs) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
+             * @default sobol
              * @enum {string}
              */
             sampler: "pseudo" | "sobol" | "stratified";
