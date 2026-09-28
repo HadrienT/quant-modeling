@@ -10,6 +10,7 @@ import { ApiError } from "./errors";
 import { queryKeys } from "./queryKeys";
 import { STALE } from "./queryClient";
 import type {
+	AccountExport,
 	BacktestRequest,
 	BacktestResponse,
 	BSPathRequest,
@@ -378,6 +379,28 @@ export function usePortfolio(id: string | null) {
 			} finally {
 				s.cleanup();
 			}
+		},
+	});
+}
+
+/* ── Account (GDPR: a copy of the data, and its erasure) ───────────────── */
+export async function fetchAccountExport(): Promise<AccountExport> {
+	const s = signalWithTimeout(undefined);
+	try {
+		return (await unwrap(
+			api.GET("/api/auth/me/export", { signal: s }),
+		)) as AccountExport;
+	} finally {
+		s.cleanup();
+	}
+}
+
+export function useDeleteAccount() {
+	return useMutation<void, ApiError, void>({
+		// 204 without a body: `unwrap` would call that an empty response.
+		mutationFn: async () => {
+			const { error } = await api.DELETE("/api/auth/me");
+			if (error !== undefined) throw ApiError.from(error);
 		},
 	});
 }

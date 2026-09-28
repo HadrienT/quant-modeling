@@ -3,7 +3,6 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
-	redirect,
 } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppLayout } from "./layout/AppLayout";
@@ -25,15 +24,15 @@ const rootRoute = createRootRoute({
 	notFoundComponent: NotFound,
 });
 
+// ── Home ─────────────────────────────────────────────────────────────────
+const HomePage = lazy(() => import("@/features/home/HomePage"));
 const indexRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/",
-	beforeLoad: () => {
-		throw redirect({ to: "/visualize" });
-	},
+	component: HomePage,
 });
 
-// ── Strategies (home) ────────────────────────────────────────────────────
+// ── Strategies ───────────────────────────────────────────────────────────
 const StrategiesPage = lazy(
 	() => import("@/features/strategies/StrategiesPage"),
 );
@@ -149,6 +148,26 @@ const aboutRoute = createRoute({
 	component: AboutPage,
 });
 
+// ── Legal pages (from the footer, not in the nav) ────────────────────────
+const LegalNoticePage = lazy(() => import("@/features/legal/LegalNoticePage"));
+const PrivacyPage = lazy(() => import("@/features/legal/PrivacyPage"));
+const TermsPage = lazy(() => import("@/features/legal/TermsPage"));
+const legalRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/legal",
+	component: LegalNoticePage,
+});
+const privacyRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/privacy",
+	component: PrivacyPage,
+});
+const termsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/terms",
+	component: TermsPage,
+});
+
 // ── Profile (from the avatar menu, not in the nav) ───────────────────────
 const ProfilePage = lazy(() => import("@/features/auth/ProfilePage"));
 const profileRoute = createRoute({
@@ -169,6 +188,9 @@ const routeTree = rootRoute.addChildren([
 	portfolioRoute,
 	backtestRoute,
 	aboutRoute,
+	legalRoute,
+	privacyRoute,
+	termsRoute,
 	profileRoute,
 ]);
 
@@ -196,3 +218,13 @@ export const ROUTES = [
 	{ path: "/backtest", label: "Backtest" },
 	{ path: "/about", label: "About" },
 ] as const;
+
+/** Browser-tab titles; a path missing here gets the bare site name. */
+export const PAGE_TITLES: Record<string, string> = {
+	...Object.fromEntries(ROUTES.map((r) => [r.path, r.label])),
+	"/dated-asian": "Dated Asian",
+	"/legal": "Legal notice",
+	"/privacy": "Privacy policy",
+	"/terms": "Terms & disclaimer",
+	"/profile": "Profile",
+};

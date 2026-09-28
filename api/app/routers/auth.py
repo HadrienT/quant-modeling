@@ -3,11 +3,13 @@
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from .. import google_oauth
+from ..account import AccountExport, delete_account, export_account
 from ..auth import (
     AuthRequest,
     AuthResponse,
@@ -40,6 +42,19 @@ async def api_login(body: AuthRequest):
 async def api_me(user: str = Depends(require_user)):
     # 401 on an invalid/absent token (was 200 with an empty username — WP 04).
     return user_info(user)
+
+
+@router.get("/me/export", response_model=AccountExport)
+async def api_export_account(user: str = Depends(require_user)):
+    """Everything the server holds for this account, as one JSON document."""
+    return await run_in_threadpool(export_account, user)
+
+
+@router.delete("/me", status_code=204)
+async def api_delete_account(user: str = Depends(require_user)):
+    """Delete the account and its portfolios. Its tokens stop working at once."""
+    await run_in_threadpool(delete_account, user)
+    return Response(status_code=204)
 
 
 @router.get("/providers", response_model=Providers)

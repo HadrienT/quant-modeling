@@ -1,11 +1,13 @@
 import json
 import logging
+import logging.handlers
 import os
 from pathlib import Path
 
 from .request_context import current_trace_id
 
 LOGGER_NAME = "quantmodeling.api"
+LOG_RETENTION_DAYS = 30
 
 
 class JsonFormatter(logging.Formatter):
@@ -73,7 +75,11 @@ def configure_logging() -> logging.Logger:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "api.jsonl"
 
-    handler = logging.FileHandler(log_path, encoding="utf-8")
+    # Rotated at midnight, 30 days kept: the retention the privacy policy
+    # announces (the same as Loki's), instead of a file that never shrinks.
+    handler = logging.handlers.TimedRotatingFileHandler(
+        log_path, when="midnight", backupCount=LOG_RETENTION_DAYS, encoding="utf-8"
+    )
     handler.setFormatter(JsonFormatter())
 
     api_logger = logging.getLogger(LOGGER_NAME)

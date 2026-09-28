@@ -92,17 +92,35 @@ def _save_users(users: dict[str, UserRecord]) -> None:
 
 
 def _create_token(username: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(hours=JWT_EXPIRE_HOURS)
     return jwt.encode(
-        {"sub": username, "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM
+        {"sub": username, "iat": now, "exp": expire},
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
     )
 
 
-def _decode_token(token: str) -> Optional[str]:
+def _decode_claims(token: str) -> Optional[dict]:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]).get("sub")
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except JWTError:
         return None
+
+
+def _token_matches_account(claims: dict) -> bool:
+    """A JWT is stateless: without this check, a token would outlive the
+    deletion of its account, and would even open a new account registered
+    later under the same name. The account must exist, and must not be younger
+    than the token (`iat`; tokens issued before `iat` was added carry none)."""
+    user = _load_users().get(claims.get("sub", ""))
+    if user is None:
+        return False
+    iat = claims.get("iat")
+    if iat is None or not user.created_at:
+        return True
+    created = datetime.fromisoformat(user.created_at).timestamp()
+    return int(iat) >= int(created)
 
 
 def _rate_limit(username: str) -> None:
@@ -227,19 +245,44 @@ def user_info(username: str) -> UserInfo:
     )
 
 
-def decode_bearer_token(authorization: Optional[str]) -> Optional[str]:
-    """Shared by the `optional_user` dependency and `AuditMiddleware`, which
-    decodes once per request to populate `username` in the audit context."""
+def forget_user(username: str) -> bool:
+    """Remove the account record. Its data (portfolios) is the caller's to
+    delete first — see `account.delete_account`."""
+    users = _load_users()
+    if users.pop(username, None) is None:
+        return False
+    _save_users(users)
+    emit(
+        "auth.account_deleted",
+        AuthEventPayload(
+            outcome=AuthOutcome.ACCOUNT_DELETED, ip_hash=current_ip_hash()
+        ),
+        username=username,
+    )
+    return True
+
+
+def _bearer_claims(authorization: Optional[str]) -> Optional[dict]:
     if not authorization:
         return None
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
         return None
-    return _decode_token(parts[1])
+    return _decode_claims(parts[1])
+
+
+def decode_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    """Shared by the `optional_user` dependency and `AuditMiddleware`, which
+    decodes once per request to populate `username` in the audit context."""
+    claims = _bearer_claims(authorization)
+    return claims.get("sub") if claims else None
 
 
 def optional_user(authorization: Optional[str] = Header(default=None)) -> Optional[str]:
-    return decode_bearer_token(authorization)
+    claims = _bearer_claims(authorization)
+    if claims is None or not _token_matches_account(claims):
+        return None
+    return claims.get("sub")
 
 
 def require_user(user: Optional[str] = Depends(optional_user)) -> str:

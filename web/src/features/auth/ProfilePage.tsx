@@ -5,6 +5,7 @@ import { usePortfolios } from "@/shared/api";
 import { formatDate } from "@/shared/format";
 import { useMe, useSessionActions } from "@/shared/session";
 import { Button, Card } from "@/shared/ui";
+import { AccountDataCard } from "./AccountDataCard";
 import { displayName } from "./account";
 import { Avatar } from "./Avatar";
 
@@ -73,7 +74,14 @@ export default function ProfilePage() {
 			<p className="text-xs text-ink-secondary">
 				An account only stores your portfolios on the server. Pricing, market
 				data and the rest of the site work without one.
+				{!google &&
+					" A password account has no email, so a forgotten password cannot be recovered: sign in with Google for an account you mean to keep."}{" "}
+				<Link to="/privacy" className="underline-offset-2 hover:underline">
+					Privacy policy
+				</Link>
 			</p>
+
+			<AccountDataCard name={displayName(user)} />
 
 			<div>
 				<Button variant="secondary" size="sm" onClick={logout}>

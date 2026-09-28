@@ -32,7 +32,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 
-from api.app import auth, replay, schemas, valuation
+from api.app import auth, replay, schemas, storage, valuation
 from api.app.audit import emit
 from api.app.audit.envelope import Event
 from api.app.audit.metrics import audit_dropped_total
@@ -547,13 +547,18 @@ class FakeStore:
 
 
 @pytest.fixture
-def admin_client(client, monkeypatch):
+def admin_client(client, monkeypatch, tmp_path):
     monkeypatch.setenv("QM_ADMIN_USERS", "boss")
+    monkeypatch.setattr(storage, "_INSTANCE", storage.LocalJsonStorage(tmp_path))
     yield client
     set_store_for_testing(None)
 
 
 def _bearer(username: str) -> dict:
+    """A token is only honoured for an account that exists: create it."""
+    users = auth._load_users()
+    users[username] = auth.UserRecord(username=username, hashed_password="")
+    auth._save_users(users)
     return {"Authorization": f"Bearer {auth._create_token(username)}"}
 
 

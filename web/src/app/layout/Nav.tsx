@@ -51,7 +51,8 @@ export function Nav() {
 				</Button>
 
 				<Link
-					to="/visualize"
+					to="/"
+					aria-label="Quant Modeling — home"
 					className="mr-3 flex items-center gap-2 text-sm font-semibold text-ink"
 				>
 					<span className="size-4 rounded-xs bg-accent" aria-hidden="true" />

@@ -55,6 +55,12 @@ class LocalJsonStorage:
             return False
         with self._lock:
             p.unlink()
+            # An empty directory left behind would still carry its name (a
+            # portfolio owner's, for one): prune up to the root.
+            parent = p.parent
+            while parent != self._root and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
         return True
 
     def list_keys(self, prefix: str) -> List[str]:

@@ -31,6 +31,7 @@ export type PortfolioInput = Schemas["Portfolio-Input"];
 export type Position = Schemas["Position-Output"];
 export type PositionInput = Schemas["Position-Input"];
 export type PortfolioSummary = Schemas["PortfolioSummary"];
+export type AccountExport = Schemas["AccountExport"];
 export type PortfolioRiskSummary = Schemas["PortfolioRiskSummary"];
 export type BatchPriceResponse = Schemas["BatchPriceResponse"];
 export type StressBump = Schemas["StressBump"];

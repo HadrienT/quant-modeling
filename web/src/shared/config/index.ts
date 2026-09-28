@@ -53,3 +53,4 @@ export async function loadConfig(): Promise<AppConfig> {
 export function getConfig(): AppConfig {
 	return cache ?? FALLBACK;
 }
+export { SITE } from "./site";
