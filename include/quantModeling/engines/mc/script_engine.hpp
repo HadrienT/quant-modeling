@@ -20,12 +20,12 @@ namespace quantModeling
      *
      * settings.mc_device picks: Cpu runs the generic engine (simulate());
      * Gpu runs the compiled script on the device, or throws saying why it
-     * cannot (a Sobol sampler, a model or a script the kernel does not
-     * support); Auto takes the GPU when a device is present and the request
+     * cannot (a model or a script the kernel does not support); Auto takes the GPU when a device is present and the request
      * fits, the CPU otherwise, and says so in the diagnostics. A GPU run is
-     * Philox, as is the CPU run it is checked against (mc_rng = Philox).
-     * The generic variance reduction (mc_spot_control, SamplerKind::
-     * Stratified) runs on either side, with the same estimators.
+     * Philox or Sobol RQMC (with the Brownian bridge), as is the CPU run it
+     * is checked against (mc_rng = Philox). The generic variance reduction
+     * (mc_spot_control, SamplerKind::Stratified, mc_importance_drift) runs
+     * on either side, with the same estimators.
      */
     SimulationMCResult simulate_script(const ScriptedProduct<Real> &product, ISimulationModel<Real> &model,
                                        const PricingSettings &settings);
@@ -36,13 +36,16 @@ namespace quantModeling
      *        assets) and Heston, the per-path adjoint under local vol (every
      *        sigma_loc point: the superbucket's input).
      *
-     * Same labels, same Philox paths as simulate_aad(..., RngKind::Philox),
-     * its oracle. nullopt, with `why` in words a user can read, when the GPU
-     * cannot take the request (no device, SLV, jumps, a script too large).
+     * Same labels, same paths as simulate_aad(..., RngKind::Philox, sampler),
+     * its oracle -- Philox, or Sobol RQMC with the Brownian bridge
+     * (kAadRqmcReplicates replicates). nullopt, with `why` in words a user
+     * can read, when the GPU cannot take the request (no device, SLV, jumps,
+     * a script too large).
      */
     std::optional<AADSimulResults> simulate_script_aad_gpu(const ScriptedProduct<Real> &product,
                                                            ISimulationModel<Real> &model, std::size_t n_paths,
-                                                           std::uint64_t seed, std::string &why);
+                                                           std::uint64_t seed, std::string &why,
+                                                           SamplerKind sampler = SamplerKind::PseudoRandom);
 
 } // namespace quantModeling
 

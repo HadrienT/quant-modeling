@@ -87,6 +87,16 @@ namespace quantModeling
 
         int size() const { return n_; }
 
+        /// The precomputed construction, for a device copy
+        /// (engines/mc/sobol_bridge.hpp): variate i sets W(t_bridge[i]) from
+        /// W(t_left[i] - 1) (0 when left is 0) and W(t_right[i]).
+        const std::vector<int> &bridge_index() const { return bridge_index_; }
+        const std::vector<int> &left_index() const { return left_index_; }
+        const std::vector<int> &right_index() const { return right_index_; }
+        const std::vector<Real> &left_weight() const { return left_weight_; }
+        const std::vector<Real> &right_weight() const { return right_weight_; }
+        const std::vector<Real> &std_dev() const { return std_dev_; }
+
         /**
          * @brief Build W(t_1)..W(t_n) from n independent N(0,1) variates.
          *
@@ -155,6 +165,10 @@ namespace quantModeling
         }
 
         std::size_t dim() const { return n_ * stride_; }
+        std::size_t factors() const { return factors_; }
+        std::size_t stride() const { return stride_; }
+        const BrownianBridge &bridge() const { return bridge_; }
+        const std::vector<Real> &inv_sqrt_dt() const { return inv_sqrt_dt_; }
 
         /// point (dim() coordinates, importance order) → out (time order).
         void map(std::span<const double> point, std::span<double> out)

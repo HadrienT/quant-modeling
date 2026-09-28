@@ -3690,7 +3690,7 @@ export interface components {
              */
             default_eps: number;
             /**
-             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random or stratified; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
+             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
              * @default cpu
              */
             device: components["schemas"]["ComputeDevice"];
@@ -3706,11 +3706,17 @@ export interface components {
             fuzzy: boolean;
             /**
              * Greeks Method
-             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol' or 'stratified': the adjoint engines run pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same Philox paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
              * @default none
              * @enum {string}
              */
             greeks_method: "none" | "aad";
+            /**
+             * Importance Sampling
+             * @description Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.
+             * @default false
+             */
+            importance_sampling: boolean;
             /**
              * Model
              * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
@@ -3732,7 +3738,7 @@ export interface components {
             rng: components["schemas"]["McRng"];
             /**
              * Sampler
-             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU only) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
+             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
              * @default pseudo
              * @enum {string}
              */
@@ -3871,7 +3877,7 @@ export interface components {
              */
             default_eps: number;
             /**
-             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random or stratified; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
+             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
              * @default cpu
              */
             device: components["schemas"]["ComputeDevice"];
@@ -3887,11 +3893,17 @@ export interface components {
             fuzzy: boolean;
             /**
              * Greeks Method
-             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol' or 'stratified': the adjoint engines run pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same Philox paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
              * @default none
              * @enum {string}
              */
             greeks_method: "none" | "aad";
+            /**
+             * Importance Sampling
+             * @description Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.
+             * @default false
+             */
+            importance_sampling: boolean;
             /**
              * Model
              * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
@@ -3918,7 +3930,7 @@ export interface components {
             rng: components["schemas"]["McRng"];
             /**
              * Sampler
-             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU only) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
+             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
              * @default pseudo
              * @enum {string}
              */

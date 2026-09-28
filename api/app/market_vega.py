@@ -93,6 +93,7 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             steps_per_year=req.steps_per_year,
             device=req.device.value,
             rng=req.rng.value,
+            sampler=req.sampler,
         )
         bucket = qm.dupire_superbucket(
             m.svi_slices,

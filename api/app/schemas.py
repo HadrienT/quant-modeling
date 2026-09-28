@@ -250,7 +250,8 @@ class ScriptPricingInputs(BaseModel):
     sampler: Literal["pseudo", "sobol", "stratified"] = Field(
         "pseudo",
         description="'pseudo' (antithetic pairs), 'sobol' (randomised QMC with "
-        "a Brownian bridge, CPU only) or 'stratified': the terminal value of the "
+        "a Brownian bridge, CPU and GPU, prices and AAD risks) or 'stratified': "
+        "the terminal value of the "
         "first Brownian factor in equiprobable strata, the path filled in by the "
         "conditional Brownian bridge, the error from 16 independent replicates "
         "(blueprint WP 19 §2.5).",
@@ -267,13 +268,21 @@ class ScriptPricingInputs(BaseModel):
         description="Pair each path with its mirror (-z). Price only: the "
         "adjoint engines run plain paths.",
     )
+    importance_sampling: bool = Field(
+        False,
+        description="Shift every Brownian factor by the drift at the mode of "
+        "payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight "
+        "each path by its likelihood ratio; kept only when a pilot shows the "
+        "variance falls, which the diagnostics report. For rare events (a "
+        "deep out-of-the-money digital). Price only.",
+    )
     n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
     seed: int = 1
     device: ComputeDevice = Field(
         ComputeDevice.cpu,
         description="Where the paths run (blueprint WP 19 §8). The GPU prices the "
         "compiled script under Black-Scholes, local vol, Heston or SLV, "
-        "pseudo-random or stratified; with greeks_method='aad' it computes the "
+        "pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the "
         "risks under Black-Scholes, Heston (forward-mode duals) and local vol "
         "(per-path adjoint). 'auto' falls back to the CPU otherwise and says why "
         "in the diagnostics, 'gpu' refuses.",
@@ -290,11 +299,12 @@ class ScriptPricingInputs(BaseModel):
             "from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at "
             "roughly 3-5x the cost of the price alone rather than a bumped "
             "reprice per parameter. 'bump' is not offered for scripted "
-            "payoffs -- only 'none' or 'aad'. Ignored together with "
-            "sampler='sobol' or 'stratified': the adjoint engines run "
-            "pseudo-random, noted in the response's diagnostics. On the GPU "
-            "(device 'gpu' or 'auto') the same risks, on the same Philox "
-            "paths as the CPU tape with rng='philox' (blueprint WP 19 §6)."
+            "payoffs -- only 'none' or 'aad'. With sampler='sobol' the "
+            "adjoint engines run Sobol RQMC with the Brownian bridge; "
+            "'stratified' falls back to pseudo-random, noted in the "
+            "response's diagnostics. On the GPU (device 'gpu' or 'auto') the "
+            "same risks, on the same paths as the CPU tape with "
+            "rng='philox' (blueprint WP 19 §6)."
         ),
     )
 

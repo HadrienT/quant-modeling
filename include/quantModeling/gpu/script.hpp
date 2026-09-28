@@ -7,6 +7,7 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/engines/mc/script_path.hpp"
+#include "quantModeling/engines/mc/sobol_bridge.hpp"
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/scripting/bytecode.hpp"
@@ -81,6 +82,13 @@ namespace quantModeling::gpu
         /// units, unit i of each in stratum i of n_units.
         bool stratified = false;
         int replicates = 1;
+        /// Sobol RQMC: sobol->replicates replicates of n_units points, the
+        /// generic engine's scheme (engines/mc/sobol_bridge_host.hpp); the
+        /// caller keeps the tables alive. Null: Philox.
+        const mc::SobolTables *sobol = nullptr;
+        /// Importance sampling: the drift of each Brownian factor (empty:
+        /// none); every path is weighted by its likelihood ratio.
+        std::vector<double> is_theta;
     };
 
     /// Per replicate (one entry when not stratified): the payoff statistics,
@@ -97,10 +105,11 @@ namespace quantModeling::gpu
     /// script_gpu_unsupported() is not empty.
     ScriptGpuStats simulate_script(const ScriptGpuRequest &req);
 
-    /// Forward-mode risks (Black-Scholes, one or two assets, and Heston):
-    /// the price's Welford, then one per derivative, in the CPU model's label
-    /// order (mc::dual_directions). One path per unit, no mirror.
-    std::vector<WelfordAccumulator> simulate_script_duals(const ScriptGpuRequest &req);
+    /// Forward-mode risks (Black-Scholes, one or two assets, and Heston): per
+    /// replicate (one without Sobol), the price's Welford, then one per
+    /// derivative, in the CPU model's label order (mc::dual_directions). One
+    /// path per unit, no mirror.
+    std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req);
 
     struct ScriptAdjointGpuResult
     {
