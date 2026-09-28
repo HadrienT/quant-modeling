@@ -568,10 +568,41 @@ pas la pente de skew du court terme (≈ 2 points de vol de RMSE, κ souvent à 
 borne basse) : c'est la dynamique qu'on lui emprunte, les marginales viennent du
 levier. La SLV est appliquée sans *mixing fraction* (vol de vol pleine) : la
 calibrer demanderait des cotations d'exotiques qui ne sont pas stockées. Enfin la
-SLV n'est exacte que là où la grille de Dupire l'est ; cette grille couvre
-l'intervalle de log-moneyness observé par **toutes** les tranches (étroit quand
-une tranche d'un jour est cotée) et hérite du bruit de ∂w/∂T d'une interpolation
-linéaire en T.
+SLV n'est exacte que là où la grille de Dupire l'est.
+
+**La grille de Dupire** ([`vol_surface_pipeline.hpp`](../../include/quantModeling/market/vol_surface_pipeline.hpp),
+issue #82). Trois règles, mesurées sur la chaîne SPY stockée :
+
+- *Plage de strikes.* Les tranches de moins de 0,05 an restent hors de la
+  surface (calibrées et affichées, mais `in_surface = false`), et une tranche
+  ne borne la plage que dans sa **portée**, 3 écarts-types de log(S_T/F_T),
+  soit 3·√w(0) : au-delà, les chemins n'y vont pas et son aile SVI est
+  extrapolée. La grille passe de ±7 % (fixée par la tranche d'un jour) à une
+  moneyness de 0,71 à 1,18.
+- *Maturités retenues.* Des SVI calibrés tranche par tranche ne sont pas
+  cohérents en calendrier (sur SPY, la variance totale ATM des tranches
+  longues monte et descend d'un tiers). `select_surface_slices` garde la plus
+  longue chaîne (en tranches, puis en cotations) de tranches deux à deux sans
+  arbitrage calendaire et espacées d'au moins 25 % en T ; ∂w/∂T ≥ 0 partout.
+  Sur SPY : 8 piliers sur 20, cellules sous 5 % de vol locale 3,1 % → 0,9 %.
+- *Colonnes en T.* La variance totale part de zéro avant la première tranche
+  (w = T/T₁·w₁), et la grille a une colonne de part et d'autre de chaque
+  tranche (`local_vol_maturities`) : ∂w/∂T saute aux piliers, et
+  l'interpolation linéaire de la grille porte le saut au lieu de le diluer.
+  Un call 1 an sur SPY avait, au superbucket, des vegas alternées de −2,8 à
+  +3,4 par point sur des tranches voisines (0,76 an : −2,84 ; 0,98 an :
+  +3,35) ; toutes celles qui n'encadrent pas l'échéance sont maintenant
+  sous 0,12 en valeur absolue, les deux piliers qui l'encadrent portant
+  3,07 des 2,89 du total.
+
+Effet sur les prix (SPY, 2026-09-25, 50 000 chemins) : variance swap de
+strike 20 % en vol locale −179,4 → −102,0 (Heston −115,7, Black-Scholes ATM
+−172,8) — l'aile put, que la grille laissait dehors, est entrée ; put
+down-and-in barrière 85 % 23,6 → 25,2. Reste ouvert : la SLV ne retrouve pas
+les marginales de la vol locale sur le variance swap (−73,8 contre −102,0,
+écart déjà présent avant), et la part de levier borné (4 % de la grille,
+presque toute dans des cellules où aucune particule ne passe) n'est pas
+pondérée par les chemins.
 
 ---
 

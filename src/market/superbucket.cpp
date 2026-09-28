@@ -133,7 +133,6 @@ namespace quantModeling
             for (const auto &s : slices)
                 theta.push_back(on_tape(s.params));
 
-            const Real t_min = slices.front().ttm, t_max = slices.back().ttm;
             std::vector<Number> lv(n_strikes * n_maturities);
             std::vector<bool> on(n_strikes * n_maturities, false);
             for (std::size_t i = 0; i < n_strikes; ++i)
@@ -149,20 +148,25 @@ namespace quantModeling
                         lv[idx] = Number(std::clamp(v, params.min_local_var, params.max_local_var));
                         continue; // clamped: flat in the parameters
                     }
-                    // SVISurface::bracket, on the same doubles.
-                    const Real T = std::clamp(Tg[j], t_min, t_max);
-                    std::size_t s = 0;
-                    while (s + 2 < n_slices && slices[s + 1].ttm < T)
-                        ++s;
-                    const Real T0 = slices[s].ttm, T1 = slices[s + 1].ttm;
-                    const Real lam = (T - T0) / (T1 - T0);
+                    // The surface's own bracket, on the same doubles; below
+                    // the first slice the lower one is w = 0.
+                    const SVISurface::Bracket br = surface.bracket(Tg[j]);
+                    const Real lam = br.lambda;
+                    const bool from_zero = br.lower == SVISurface::kZeroSlice;
                     const Real k = std::log(K[i] / (spot * std::exp((rate - dividend) * Tg[j])));
 
-                    const Number w0 = w_of(k, theta[s]), w1 = w_of(k, theta[s + 1]);
+                    const SviNum &up = theta[br.upper];
+                    const Number w1 = w_of(k, up);
+                    Number w0(0.0), wp = lam * wk_of(k, up), wpp = lam * wkk_of(k, up);
+                    if (!from_zero)
+                    {
+                        const SviNum &lo = theta[br.lower];
+                        w0 = w_of(k, lo);
+                        wp = (1.0 - lam) * wk_of(k, lo) + wp;
+                        wpp = (1.0 - lam) * wkk_of(k, lo) + wpp;
+                    }
                     const Number w = (1.0 - lam) * w0 + lam * w1;
-                    const Number wp = (1.0 - lam) * wk_of(k, theta[s]) + lam * wk_of(k, theta[s + 1]);
-                    const Number wpp = (1.0 - lam) * wkk_of(k, theta[s]) + lam * wkk_of(k, theta[s + 1]);
-                    const Number dwdT = (w1 - w0) / (T1 - T0);
+                    const Number dwdT = (w1 - w0) / br.width;
                     const Number term1 = 1.0 - (k * wp) / (2.0 * w);
                     const Number g = term1 * term1 - (wp * wp / 4.0) * (1.0 / w + 0.25) + wpp / 2.0;
                     lv[idx] = dwdT / g;

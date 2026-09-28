@@ -593,8 +593,14 @@ def svi_implied_vol_grid(
     """A regular (strike, maturity) grid of SVI-fitted implied vol, linearly
     interpolating total variance in T between adjacent calibrated slices --
     the arbitrage-checked replacement for the old bicubic-spline surface.
+
+    Only the slices the local-vol grid is built from (`in_surface`, see
+    select_surface_slices in vol_surface_pipeline.hpp): the others are left
+    out of it because their quotes do not span [k_min, k_max] or contradict
+    their neighbours, and would be extrapolated here the same way.
     """
-    ordered = sorted(slices, key=lambda s: s["ttm"])
+    kept = [s for s in slices if s.get("in_surface", True)]
+    ordered = sorted(kept, key=lambda s: s["ttm"])
     t_lo, t_hi = ordered[0]["ttm"], ordered[-1]["ttm"]
 
     T_grid = [
