@@ -48,6 +48,7 @@ def store(monkeypatch):
         lambda t, d: (days[-1].date(), float(wide[t].iloc[-1])),
     )
     monkeypatch.setattr(db, "dividend_yield_on_or_before", lambda t, d: (D, 0.01))
+    monkeypatch.setattr(db, "ticker_currency", lambda t: "USD")
     monkeypatch.setattr(db, "price_history", history)
     monkeypatch.setattr(db, "prices_wide", lambda ts, since: wide[list(ts)])
     monkeypatch.setattr(vol_smile, "smile_for", lambda *a, **k: None)

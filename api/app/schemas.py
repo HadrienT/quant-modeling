@@ -151,9 +151,18 @@ class DatedAsianRequest(BaseModel):
 
 class ScriptUnderlying(BaseModel):
     """One underlying of a multi-asset script (spot(i) is the i-th): a ticker
-    whose inputs come from the database, or typed flat Black-Scholes inputs."""
+    whose inputs come from the database, an exchange rate (`fx`), or typed
+    flat Black-Scholes inputs."""
 
     ticker: Optional[str] = Field(None, min_length=1)
+    fx: Optional[str] = Field(
+        None,
+        pattern="^[A-Z]{3}$",
+        description="An exchange rate as underlying: the price of one unit of "
+        "this currency in the payment currency (ECB fixings), drifting at "
+        "r_d - r_f. With a ticker listed in that currency, spot(i) * spot(j) "
+        "is the asset in the payment currency: a composite.",
+    )
     spot: Optional[float] = Field(None, gt=0.0)
     vol: Optional[float] = Field(None, gt=0.0)
     dividend: float = 0.0
@@ -206,16 +215,26 @@ class ScriptPricingInputs(BaseModel):
     )
     underlyings: Optional[List[ScriptUnderlying]] = Field(
         None,
-        min_length=2,
+        min_length=1,
         max_length=8,
         description=(
             "For a script that reads spot(1), spot(2)...: one entry per "
-            "underlying, in spot(i) order. Either every entry has a ticker "
-            "(spot, dividend, at-the-money implied vol and historical "
-            "correlation from the database) or every entry has spot and vol "
-            "(then `correlation` is required). Priced under correlated "
-            "Black-Scholes; replaces ticker/spot/vol/dividend."
+            "underlying, in spot(i) order. Either every entry has a ticker or "
+            "an `fx` currency (spot, dividend, at-the-money implied vol and "
+            "historical correlation from the database) or every entry has spot "
+            "and vol (then `correlation` is required). Priced under correlated "
+            "Black-Scholes; replaces ticker/spot/vol/dividend. A single entry "
+            "prices a one-asset script in another `currency` (a quanto)."
         ),
+    )
+    currency: Optional[str] = Field(
+        None,
+        pattern="^[A-Z]{3}$",
+        description="Payment currency of a script on `underlyings` read from "
+        "the database; `rate` is its rate. An asset listed in another currency "
+        "is simulated under this currency's measure: its drift is lowered by "
+        "r_d - r_f + rho sigma_S sigma_X (the quanto adjustment). Defaults to "
+        "the first ticker's listing currency.",
     )
     correlation: Optional[List[List[float]]] = Field(
         None,
@@ -337,14 +356,25 @@ class ScriptPricingInputs(BaseModel):
                 "underlyings are priced under correlated Black-Scholes "
                 "(model='auto' or 'black_scholes')"
             )
-        with_ticker = [x.ticker is not None for x in u]
-        if all(with_ticker):
-            return self
-        if any(with_ticker) or not all(x.spot and x.vol for x in u):
+        if any(x.ticker is not None and x.fx is not None for x in u):
             raise ValueError(
-                "underlyings: give every entry a ticker, or every entry a spot "
-                "and a vol"
+                "underlyings: an entry is a ticker or an fx rate, not both"
             )
+        stored = [x.ticker is not None or x.fx is not None for x in u]
+        if all(stored):
+            return self
+        if any(stored) or not all(x.spot and x.vol for x in u):
+            raise ValueError(
+                "underlyings: give every entry a ticker (or an fx currency), or "
+                "every entry a spot and a vol"
+            )
+        if self.currency is not None:
+            raise ValueError(
+                "currency applies to underlyings read from the database; typed "
+                "underlyings carry their drift in their dividend"
+            )
+        if len(u) < 2:
+            raise ValueError("one typed underlying: give spot and vol instead")
         n = len(u)
         c = self.correlation
         if c is None or len(c) != n or any(len(row) != n for row in c):
@@ -612,10 +642,21 @@ class UnderlyingUsed(BaseModel):
     """What one underlying of a multi-asset script was priced with."""
 
     ticker: Optional[str] = None
+    fx: Optional[str] = Field(
+        None, description="An exchange-rate underlying's currency."
+    )
+    currency: Optional[str] = Field(None, description="The currency the spot is in.")
     spot: float
     dividend: float
     vol: float
     vol_source: str = Field(..., description="Where the vol comes from.")
+    drift_adjustment: float = Field(
+        0.0,
+        description="Added to the dividend yield in the simulation: r_f for an "
+        "exchange rate, r_d - r_f + rho sigma_S sigma_X for an asset listed in "
+        "another currency than the payment one (quanto), 0 otherwise.",
+    )
+    drift_source: Optional[str] = None
 
 
 class ModelChoice(BaseModel):

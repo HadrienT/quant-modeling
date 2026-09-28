@@ -5355,6 +5355,19 @@
             "description": "n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).",
             "title": "Correlation"
           },
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Payment currency of a script on `underlyings` read from the database; `rate` is its rate. An asset listed in another currency is simulated under this currency's measure: its drift is lowered by r_d - r_f + rho sigma_S sigma_X (the quanto adjustment). Defaults to the first ticker's listing currency.",
+            "title": "Currency"
+          },
           "day_count": {
             "default": "ACT/365F",
             "enum": [
@@ -5495,14 +5508,14 @@
                   "$ref": "#/components/schemas/ScriptUnderlying"
                 },
                 "maxItems": 8,
-                "minItems": 2,
+                "minItems": 1,
                 "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend.",
+            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).",
             "title": "Underlyings"
           },
           "valuation_date": {
@@ -5533,12 +5546,25 @@
         "type": "object"
       },
       "ScriptUnderlying": {
-        "description": "One underlying of a multi-asset script (spot(i) is the i-th): a ticker\nwhose inputs come from the database, or typed flat Black-Scholes inputs.",
+        "description": "One underlying of a multi-asset script (spot(i) is the i-th): a ticker\nwhose inputs come from the database, an exchange rate (`fx`), or typed\nflat Black-Scholes inputs.",
         "properties": {
           "dividend": {
             "default": 0.0,
             "title": "Dividend",
             "type": "number"
+          },
+          "fx": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An exchange rate as underlying: the price of one unit of this currency in the payment currency (ECB fixings), drifting at r_d - r_f. With a ticker listed in that currency, spot(i) * spot(j) is the asset in the payment currency: a composite.",
+            "title": "Fx"
           },
           "spot": {
             "anyOf": [
@@ -5678,6 +5704,19 @@
             ],
             "description": "n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).",
             "title": "Correlation"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Payment currency of a script on `underlyings` read from the database; `rate` is its rate. An asset listed in another currency is simulated under this currency's measure: its drift is lowered by r_d - r_f + rho sigma_S sigma_X (the quanto adjustment). Defaults to the first ticker's listing currency.",
+            "title": "Currency"
           },
           "day_count": {
             "default": "ACT/365F",
@@ -5827,14 +5866,14 @@
                   "$ref": "#/components/schemas/ScriptUnderlying"
                 },
                 "maxItems": 8,
-                "minItems": 2,
+                "minItems": 1,
                 "type": "array"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend.",
+            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).",
             "title": "Underlyings"
           },
           "valuation_date": {
@@ -6469,9 +6508,50 @@
       "UnderlyingUsed": {
         "description": "What one underlying of a multi-asset script was priced with.",
         "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The currency the spot is in.",
+            "title": "Currency"
+          },
           "dividend": {
             "title": "Dividend",
             "type": "number"
+          },
+          "drift_adjustment": {
+            "default": 0.0,
+            "description": "Added to the dividend yield in the simulation: r_f for an exchange rate, r_d - r_f + rho sigma_S sigma_X for an asset listed in another currency than the payment one (quanto), 0 otherwise.",
+            "title": "Drift Adjustment",
+            "type": "number"
+          },
+          "drift_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drift Source"
+          },
+          "fx": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An exchange-rate underlying's currency.",
+            "title": "Fx"
           },
           "spot": {
             "title": "Spot",

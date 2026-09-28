@@ -531,12 +531,13 @@ def options_snapshot_date_on_or_before(ticker: str, as_of: date) -> Optional[dat
 
 
 def price_on_or_before(ticker: str, as_of: date) -> Optional[Tuple[date, float]]:
-    """Latest (date, close) from prices.sp500_daily with date <= as_of."""
+    """Latest (date, close) with date <= as_of, from the same closes as
+    price_history (the international table first, then sp500_daily)."""
     with _cursor() as cur:
         cur.execute(
-            "SELECT date, close FROM prices.sp500_daily "
+            f"SELECT date, close FROM {_ALL_CLOSES} "
             "WHERE ticker = %s AND date <= %s AND close IS NOT NULL "
-            "ORDER BY date DESC LIMIT 1",
+            "ORDER BY date DESC, priority ASC LIMIT 1",
             (ticker.upper(), as_of),
         )
         row = cur.fetchone()

@@ -1,5 +1,9 @@
 import { Field } from "@/shared/ui";
-import { tickerList, type Underlyings } from "./underlyings";
+import {
+	PAYMENT_CURRENCIES,
+	tickerList,
+	type Underlyings,
+} from "./underlyings";
 
 /** The underlyings of a script reading spot(0) to spot(n-1): tickers when
  * the model reads the market (spot, dividend, implied vol and historical
@@ -15,10 +19,25 @@ export function UnderlyingsFields(props: {
 		return (
 			<div className="flex flex-col gap-1">
 				<Field
-					label={`Tickers — one per underlying, spot(0) to spot(${n - 1})`}
+					label={`Tickers or FX:EUR — one per underlying, spot(0) to spot(${n - 1})`}
 					value={u.tickers}
 					onChange={(e) => u.setTickers(e.target.value)}
 				/>
+				<label className="flex flex-col gap-1 text-sm">
+					<span className="text-2xs text-ink-muted uppercase">Pays in</span>
+					<select
+						className="rounded border border-hairline bg-surface px-2 py-1"
+						value={u.currency}
+						onChange={(e) => u.setCurrency(e.target.value)}
+					>
+						<option value="">Currency of spot(0)</option>
+						{PAYMENT_CURRENCIES.map((c) => (
+							<option key={c} value={c}>
+								{c}
+							</option>
+						))}
+					</select>
+				</label>
 				<p className="text-2xs text-ink-muted">
 					{list.length < n
 						? `The script reads ${n} underlyings: ${n - list.length} more ticker(s) needed.`
@@ -26,6 +45,12 @@ export function UnderlyingsFields(props: {
 								.slice(0, n)
 								.map((t, i) => `spot(${i}) = ${t}`)
 								.join(" · ")}
+				</p>
+				<p className="text-2xs text-ink-muted">
+					An asset listed in another currency than the payment one is simulated
+					under the payment currency's measure (quanto drift); FX:EUR is one
+					euro in the payment currency, so spot(i) × FX:EUR converts a euro
+					asset (a composite).
 				</p>
 			</div>
 		);
