@@ -104,6 +104,7 @@ export default tseslint.config(
 							"backtest",
 							"products",
 							"legal",
+							"home",
 						].map((name) => ({
 							target: `src/features/${name}`,
 							from: "src/features",

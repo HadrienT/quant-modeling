@@ -85,7 +85,7 @@ export function SurfaceView({
 
 	return (
 		<figure className="flex flex-col gap-2 rounded-md border border-hairline bg-surface p-3">
-			<div className="flex items-center justify-between gap-2">
+			<div className="flex flex-wrap items-center justify-between gap-2">
 				<figcaption className="text-sm font-medium text-ink">
 					{title}
 					<span className="ml-2 text-2xs text-ink-muted">

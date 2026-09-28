@@ -3,7 +3,6 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
-	redirect,
 } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppLayout } from "./layout/AppLayout";
@@ -25,15 +24,15 @@ const rootRoute = createRootRoute({
 	notFoundComponent: NotFound,
 });
 
+// ── Home ─────────────────────────────────────────────────────────────────
+const HomePage = lazy(() => import("@/features/home/HomePage"));
 const indexRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/",
-	beforeLoad: () => {
-		throw redirect({ to: "/visualize" });
-	},
+	component: HomePage,
 });
 
-// ── Strategies (home) ────────────────────────────────────────────────────
+// ── Strategies ───────────────────────────────────────────────────────────
 const StrategiesPage = lazy(
 	() => import("@/features/strategies/StrategiesPage"),
 );
@@ -219,3 +218,13 @@ export const ROUTES = [
 	{ path: "/backtest", label: "Backtest" },
 	{ path: "/about", label: "About" },
 ] as const;
+
+/** Browser-tab titles; a path missing here gets the bare site name. */
+export const PAGE_TITLES: Record<string, string> = {
+	...Object.fromEntries(ROUTES.map((r) => [r.path, r.label])),
+	"/dated-asian": "Dated Asian",
+	"/legal": "Legal notice",
+	"/privacy": "Privacy policy",
+	"/terms": "Terms & disclaimer",
+	"/profile": "Profile",
+};

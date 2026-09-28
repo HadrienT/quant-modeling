@@ -32,6 +32,19 @@ describe("robustZExtent", () => {
 		expect(robustMax).toBeLessThan(trueMax);
 	});
 
+	it("draws an exact grid unclipped when it asks for the [0, 1] quantiles", () => {
+		const x = Array.from({ length: 10 }, (_, i) => i);
+		const y = Array.from({ length: 10 }, (_, i) => i);
+		const z = y.map((_, yi) =>
+			x.map((_, xi) => 0.2 + xi * xi * 0.01 + yi * 0.001),
+		);
+		const grid = makeGrid(x, y, z, AXES);
+		expect(robustZExtent(grid)).not.toEqual(zExtent(grid));
+		expect(robustZExtent({ ...grid, displayQuantiles: [0, 1] })).toEqual(
+			zExtent(grid),
+		);
+	});
+
 	it("falls back to the true extent when clipping would collapse the range", () => {
 		// A grid with almost every cell equal: p2 and p98 land on the same
 		// value, which would otherwise divide-by-zero downstream.

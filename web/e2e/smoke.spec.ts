@@ -10,6 +10,7 @@ test("app shell renders", async ({ page }) => {
 test("no horizontal scroll at 390 px", async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	for (const path of [
+		"/",
 		"/visualize",
 		"/market",
 		"/price",

@@ -22,6 +22,10 @@ export type SurfaceGrid = {
 	/** row-major, length x.length * y.length. NaN = hole. z[yi * x.length + xi] */
 	z: Float64Array;
 	axes: { x: AxisSpec; y: AxisSpec; z: AxisSpec };
+	/** Quantiles of z mapped to the display range (see robustZExtent).
+	 * Defaults to 2 %–98 %, for noisy market grids; an exact model surface
+	 * with no outliers to tame passes [0, 1] and is drawn unclipped. */
+	displayQuantiles?: [number, number];
 };
 
 export function makeGrid(
@@ -73,8 +77,8 @@ export function zExtent(grid: SurfaceGrid): [number, number] {
  */
 export function robustZExtent(
 	grid: SurfaceGrid,
-	lowerQ = 0.02,
-	upperQ = 0.98,
+	lowerQ = grid.displayQuantiles?.[0] ?? 0.02,
+	upperQ = grid.displayQuantiles?.[1] ?? 0.98,
 ): [number, number] {
 	const sorted: number[] = [];
 	for (let i = 0; i < grid.z.length; i++) {

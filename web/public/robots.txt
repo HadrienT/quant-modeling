@@ -21,3 +21,5 @@ Disallow: /
 
 User-agent: MJ12bot
 Disallow: /
+
+Sitemap: https://tramonihadrien.com/sitemap.xml
