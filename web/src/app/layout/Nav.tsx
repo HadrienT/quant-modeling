@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import { Command, Moon, Sun } from "lucide-react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { Command, Menu, Moon, Sun, X } from "lucide-react";
 import { Button, cn } from "@/shared/ui";
 import { setTheme, useTheme } from "@/app/theme";
 import { ROUTES } from "@/app/router";
@@ -11,6 +11,18 @@ const CommandPalette = lazy(() => import("@/app/command/CommandPalette"));
 export function Nav() {
 	const theme = useTheme();
 	const [paletteOpen, setPaletteOpen] = useState(false);
+	// Below lg the links do not fit on one line (~970 px with the actions):
+	// they fold into a menu, closed on navigation and on Escape.
+	const [menuOpen, setMenuOpen] = useState(false);
+	const pathname = useRouterState({ select: (s) => s.location.pathname });
+	useEffect(() => setMenuOpen(false), [pathname]);
+	useEffect(() => {
+		if (!menuOpen) return;
+		const onKey = (e: KeyboardEvent) =>
+			e.key === "Escape" && setMenuOpen(false);
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [menuOpen]);
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -25,29 +37,29 @@ export function Nav() {
 
 	return (
 		<header className="sticky top-0 z-40 border-b border-hairline bg-canvas/95 backdrop-blur-sm">
-			<div className="flex h-12 items-center gap-1 px-4">
+			<div className="flex h-12 min-w-0 items-center gap-1 px-4">
+				<Button
+					variant="ghost"
+					size="icon"
+					className="lg:hidden"
+					aria-label={menuOpen ? "Close menu" : "Open menu"}
+					aria-expanded={menuOpen}
+					aria-controls="mobile-nav"
+					onClick={() => setMenuOpen((o) => !o)}
+				>
+					{menuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
+				</Button>
+
 				<Link
 					to="/visualize"
 					className="mr-3 flex items-center gap-2 text-sm font-semibold text-ink"
 				>
 					<span className="size-4 rounded-xs bg-accent" aria-hidden="true" />
-					Quant Modeling
+					<span className="hidden sm:inline">Quant Modeling</span>
 				</Link>
 
-				<nav className="flex items-center gap-0.5">
-					{ROUTES.map((r) => (
-						<Link
-							key={r.path}
-							to={r.path}
-							preload="intent"
-							className={cn(
-								"rounded-sm px-2.5 py-1 text-sm text-ink-secondary transition-colors hover:bg-surface-raised hover:text-ink",
-							)}
-							activeProps={{ className: "bg-surface-raised !text-ink" }}
-						>
-							{r.label}
-						</Link>
-					))}
+				<nav className="hidden items-center gap-0.5 lg:flex">
+					<NavLinks />
 				</nav>
 
 				<div className="ml-auto flex items-center gap-1">
@@ -59,7 +71,7 @@ export function Nav() {
 						aria-label="Open command palette"
 					>
 						<Command className="size-3.5" />
-						<kbd className="text-2xs">⌘K</kbd>
+						<kbd className="hidden text-2xs sm:inline">⌘K</kbd>
 					</Button>
 
 					<Button
@@ -79,6 +91,16 @@ export function Nav() {
 				</div>
 			</div>
 
+			{menuOpen && (
+				<nav
+					id="mobile-nav"
+					aria-label="Pages"
+					className="flex flex-col gap-0.5 border-t border-hairline px-4 py-2 lg:hidden"
+				>
+					<NavLinks />
+				</nav>
+			)}
+
 			{paletteOpen && (
 				<Suspense fallback={null}>
 					<CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
@@ -86,4 +108,21 @@ export function Nav() {
 			)}
 		</header>
 	);
+}
+
+/** The pages, as links: one line on wide screens, a column in the menu. */
+function NavLinks() {
+	return ROUTES.map((r) => (
+		<Link
+			key={r.path}
+			to={r.path}
+			preload="intent"
+			className={cn(
+				"rounded-sm px-2.5 py-1 text-sm text-ink-secondary transition-colors hover:bg-surface-raised hover:text-ink",
+			)}
+			activeProps={{ className: "bg-surface-raised !text-ink" }}
+		>
+			{r.label}
+		</Link>
+	));
 }

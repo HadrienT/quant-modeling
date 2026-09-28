@@ -20,7 +20,7 @@ export default function PricingPage() {
 	const [showCompare, setShowCompare] = useState(!!wb.compare);
 
 	return (
-		<div className="mx-auto grid max-w-[1400px] gap-5 lg:grid-cols-[200px_minmax(320px,380px)_1fr]">
+		<div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-5 lg:grid-cols-[200px_minmax(320px,380px)_1fr]">
 			<aside className="lg:sticky lg:top-16 lg:self-start">
 				<ProductPicker selected={wb.productKey} onSelect={wb.setProduct} />
 			</aside>

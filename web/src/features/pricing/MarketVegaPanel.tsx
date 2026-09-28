@@ -61,7 +61,7 @@ function Result({ v }: { v: MarketVega }) {
 				title="Vega by maturity and moneyness"
 				height={360}
 			/>
-			<div className="grid gap-4 lg:grid-cols-2">
+			<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<table className="text-2xs">
 					<thead className="text-ink-muted uppercase">
 						<tr>
