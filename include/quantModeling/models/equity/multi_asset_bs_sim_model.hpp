@@ -203,6 +203,8 @@ namespace quantModeling
                 d.n_assets = static_cast<int>(n);
                 d.r = r_;
                 d.s0 = s0_;
+                d.divs = q_;
+                d.vols = sigma_;
                 for (std::size_t r = 0; r < n; ++r)
                     for (std::size_t c = 0; c < n; ++c)
                         d.chol.push_back(chol_(static_cast<Eigen::Index>(r), static_cast<Eigen::Index>(c)));
@@ -220,6 +222,14 @@ namespace quantModeling
                 d.factors = d.stride = static_cast<int>(n);
                 return true;
             }
+        }
+
+        bool deflated_spot_mean(std::size_t asset, Time t, Real &mean) const override
+        {
+            if (asset >= s0_.size())
+                return false;
+            mean = to_double(s0_[asset]) * std::exp(-to_double(q_[asset]) * t);
+            return true;
         }
 
         const std::vector<T *> &parameters() const override { return params_; }

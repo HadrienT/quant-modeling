@@ -14,6 +14,11 @@ runs on BATCHES independent seeds, each batch goes through the superbucket
 (it is linear in dV/dsigma_loc), and the error is the dispersion of the
 batch vegas. The batches run on parallel threads (the GIL is released).
 
+With device 'gpu' or 'auto', step 1 runs on the GPU: the per-path adjoint of
+blueprint/wp/19-gpu.md §6 -- the same dV/dsigma_loc as the tape on the same
+paths, ~150 times faster. The batches then run one after the other: the card
+is already full, and threads would only queue on it.
+
 Every vega is per vol point: the price change for a +1 % move of that one
 quote, the rest of the chain unchanged.
 """
@@ -86,6 +91,8 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             T_grid=m.T_grid,
             sigma_loc_flat=m.sigma_loc_flat,
             steps_per_year=req.steps_per_year,
+            device=req.device.value,
+            rng=req.rng.value,
         )
         bucket = qm.dupire_superbucket(
             m.svi_slices,
@@ -98,10 +105,12 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             m.n_maturities,
             _dV_dsigma(priced["risks"], len(m.T_grid), size),
         )
-        return priced["npv"], bucket["quotes"]
+        return priced["npv"], bucket["quotes"], priced.get("device", "cpu")
 
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+    workers = 1 if req.device.value != "cpu" else WORKERS
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         batches = list(pool.map(run, range(BATCHES)))
+    device = "gpu" if all(b[2] == "gpu" for b in batches) else "cpu"
 
     npv, npv_se = _mean_se([b[0] for b in batches])
     template = batches[0][1]
@@ -140,9 +149,12 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
         quotes=rows,
         method=(
             f"Local vol calibrated from the stored chain; adjoint Monte-Carlo on "
-            f"{BATCHES} batches of {per_batch:,} paths; through Dupire on a tape, "
-            "then each SVI fit by the implicit function theorem (Gauss-Newton)."
+            f"{BATCHES} batches of {per_batch:,} paths"
+            + (" (per-path adjoint on the GPU)" if device == "gpu" else "")
+            + "; through Dupire on a tape, then each SVI fit by the implicit "
+            "function theorem (Gauss-Newton)."
         ),
+        device=device,
     )
 
 

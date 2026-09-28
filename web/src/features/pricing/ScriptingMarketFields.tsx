@@ -2,6 +2,7 @@ import { Field } from "@/shared/ui";
 
 const DAY_COUNTS = ["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] as const;
 export type DayCount = (typeof DAY_COUNTS)[number];
+export type Sampler = "pseudo" | "sobol" | "stratified";
 
 /** The flat Black-Scholes market inputs + MC settings shared by ScriptingPreview. */
 export function ScriptingMarketFields(props: {
@@ -19,8 +20,13 @@ export function ScriptingMarketFields(props: {
 	onVolPct: (v: string) => void;
 	dayCount: DayCount;
 	onDayCount: (v: DayCount) => void;
-	sampler: "pseudo" | "sobol";
-	onSampler: (v: "pseudo" | "sobol") => void;
+	sampler: Sampler;
+	onSampler: (v: Sampler) => void;
+	/** Regress the deflated spots out of the payoff (blueprint WP 19 §2.5). */
+	controlVariate: boolean;
+	onControlVariate: (v: boolean) => void;
+	antithetic: boolean;
+	onAntithetic: (v: boolean) => void;
 	nPaths: string;
 	onNPaths: (v: string) => void;
 	seed: string;
@@ -95,13 +101,34 @@ export function ScriptingMarketFields(props: {
 				<select
 					className="rounded border border-hairline bg-surface px-2 py-1"
 					value={props.sampler}
-					onChange={(e) =>
-						props.onSampler(e.target.value as "pseudo" | "sobol")
-					}
+					onChange={(e) => props.onSampler(e.target.value as Sampler)}
 				>
 					<option value="pseudo">Pseudo-random</option>
 					<option value="sobol">Sobol RQMC</option>
+					<option value="stratified">Stratified W(T)</option>
 				</select>
+			</label>
+			<label
+				className="flex items-center gap-2 text-sm"
+				title="Regresses the discounted spot at up to 8 event dates (known means) out of the payoff; the diagnostics give the variance removed."
+			>
+				<input
+					type="checkbox"
+					checked={props.controlVariate}
+					onChange={(e) => props.onControlVariate(e.target.checked)}
+				/>
+				Spot control variates
+			</label>
+			<label
+				className="flex items-center gap-2 text-sm"
+				title="Pairs each path with its mirror. The pairs already cancel what is linear in the spot: the control variates do most without them."
+			>
+				<input
+					type="checkbox"
+					checked={props.antithetic}
+					onChange={(e) => props.onAntithetic(e.target.checked)}
+				/>
+				Antithetic pairs
 			</label>
 		</div>
 	);

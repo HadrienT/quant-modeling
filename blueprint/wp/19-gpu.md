@@ -166,6 +166,73 @@ combinaison publie son **erreur standard mesurée** — la métrique du benchmar
 est le temps pour atteindre une erreur donnée, pas le nombre de chemins
 par seconde ([§9](#9-benchmark)).
 
+**Fait (G3).** Deux techniques génériques, pour tout script, sur CPU comme sur
+GPU — mêmes unités, mêmes tirages Philox, mêmes estimateurs : le GPU redonne les
+nombres du CPU à 10⁻⁹ (`tests/gpu/testGpuRisks.cpp`).
+
+- **Variables de contrôle** (`mc_spot_control`, champ `control_variate` de
+  l'API). Le spot actualisé S_a(t_e)/N(t_e) à au plus 8 dates d'événement
+  (réparties, la dernière incluse ; avec plusieurs actifs, la dernière de
+  chacun) : une martingale de moyenne connue S₀e^{−qt}, que les pas log-Euler
+  des modèles conservent exactement sur la grille
+  (`ISimulationModel::deflated_spot_mean` ; Black-Scholes mono et multi,
+  vol locale, Heston/Bates, SLV). β par **régression multiple** (Glasserman
+  §4.1.3) : Welford multivarié, fusionné par la formule de Chan dans l'arbre de
+  réduction (`utils/variance_reduction/multi_control.hpp`) ; erreur standard de
+  la régression au point X = μ, s²(1/n + (X̄−μ)ᵀS_xx⁻¹(X̄−μ)). Un contrôle
+  colinéaire aux autres est écarté par la factorisation. Le diagnostic de la
+  réponse donne la variance retirée, mesurée sur le run.
+- **Stratification de W(T)** (`SamplerKind::Stratified`, `sampler:
+  "stratified"`). La valeur terminale du premier facteur tombe dans la strate
+  i de m, le reste du chemin est tiré par le **pont conditionnel séquentiel**
+  de (t, W(t)) à (T, W(T)) (Glasserman §4.3.2, `engines/mc/path_draws.hpp`) :
+  O(1) mémoire par chemin au lieu du tableau d'une bissection, et le modèle
+  reçoit toujours ses incréments dans l'ordre du temps. Un chemin par strate ;
+  16 répliques indépendantes donnent l'erreur. Sur GPU, toutes les répliques
+  partagent une grille (bloc g = bloc logique g mod b de la réplique g / b) :
+  à 10⁵ chemins une réplique ne fait qu'un bloc logique, et 16 lancements
+  successifs occupaient 1 SM sur 80 (10 fois plus lent que le run simple).
+- **Les deux ensemble.** Sous stratification, la pente utile est la pente
+  *intra-strate* ; la pente ordinaire (covariance totale) dégradait l'autocall
+  (variance ÷ 3,4 stratifié seul, ÷ 2,3 avec contrôle). Elle est estimée par
+  différences successives entre strates voisines ([ADR-G7](#adr-g7--sous-stratification-la-pente-intra-strate)).
+
+Mesure (`build-cuda/qm_gpu_vr_bench`, vol locale 52 pas/an, 10⁵ chemins,
+40 graines) : rapport de variance au run simple de même réglage à nombre de
+chemins égal (d'après les erreurs rapportées, moyennées sur les graines) et, entre
+parenthèses, **gain en temps pour une erreur donnée** contre le réglage par
+défaut (antithétique seul), erreur² × temps :
+
+| Avec paires antithétiques | Stratifié | Contrôle | Les deux |
+|---|---|---|---|
+| Call à départ différé | ÷1,33 (×1,14) | ÷1,20 (×0,58) | ÷1,33 (×0,54) |
+| Asiatique, 12 fixings | ÷1,11 (×1,11) | ÷1,16 (×0,86) | ÷1,15 (×0,74) |
+| Phoenix autocall | ÷2,79 (×3,39) | ÷1,81 (×1,64) | ÷2,71 (×1,90) |
+| Up-and-out quotidien | ÷1,20 (×1,47) | ÷1,08 (×0,99) | ÷1,21 (×1,26) |
+| Variance swap (249 dates) | ÷1,53 (×1,79) | ÷1,39 (×1,20) | ÷1,92 (×1,87) |
+
+| Sans paires antithétiques | Stratifié | Contrôle | Les deux |
+|---|---|---|---|
+| Call à départ différé | ÷2,14 (×0,57) | ÷4,10 (×0,82) | ÷6,10 (×1,01) |
+| Asiatique, 12 fixings | ÷1,64 (×0,73) | ÷3,99 (×1,33) | ÷4,91 (×1,33) |
+| Phoenix autocall | ÷2,41 (×2,74) | ÷1,27 (×1,05) | ÷2,47 (×1,75) |
+| Up-and-out quotidien | ÷1,43 (×1,68) | ÷1,43 (×1,54) | ÷1,43 (×1,44) |
+| Variance swap (249 dates) | ÷4,20 (×1,02) | ÷13,8 (×3,09) | ÷16,0 (×3,36) |
+
+Ce que le tableau dit, et qui n'était pas écrit dans le plan :
+
+- **Contrôles et paires antithétiques font double emploi.** Une paire (z, −z)
+  annule déjà la partie du payoff linéaire en z, celle que les spots
+  actualisés capturent : avec les paires, les contrôles retirent peu, et leur
+  accumulateur (55 mots par unité au lieu de 3) coûte jusqu'à ×2 le temps d'un
+  script court. Sans les paires, ils sont le meilleur outil du tableau sur les
+  payoffs quasi linéaires en spots (variance swap : ×3,1 en temps). D'où le
+  champ `antithetic` exposé dans l'API et la page Scripting (défaut inchangé).
+- **La stratification est la plus robuste** : jamais perdante, ×1,1 à ×3,4 en
+  temps avec les paires, surtout sur les payoffs où la valeur terminale décide
+  (autocall, tests de fin de vie).
+- Aucun défaut ne change : aucun nombre existant ne bouge.
+
 ---
 
 ## 3. Les scripts : un bytecode
@@ -283,6 +350,72 @@ paramètres :
 Monte-Carlo près ; le bug de vol locale corrigé au lot 17h a montré que cet
 oracle indépendant n'est pas un luxe.
 
+**Fait (G3).** L'oracle est plus strict que prévu : `simulate_aad` gagne
+l'option Philox, donc la tape CPU et le GPU tirent **les mêmes chemins**, et
+les risques doivent être égaux à l'arrondi près, pas à l'erreur Monte-Carlo
+près. Tout le code par chemin est `QM_HOST_DEVICE`
+(`engines/mc/script_path.hpp`, `script_adjoint.hpp`, `scripting/bytecode_adjoint.hpp`) :
+la CI, sans GPU, le vérifie contre la tape script par script
+(`tests/testScriptAdjoint.cpp`), et le kernel ne fait que l'exécuter.
+
+1. **Duaux** (`utils/dual.hpp`, `Dual<N>`) : l'interpréteur et les pas de
+   modèles étant templés sur `T`, `script_path<Dual<N>>` suffit. Directions
+   dans l'ordre des étiquettes du modèle CPU : Black-Scholes (4), deux actifs
+   (7), Heston (8 ; les trois étiquettes de sauts restent à 0 sans saut). Mêmes
+   dérivées locales et même côté aux points anguleux que la tape
+   (`max(l, r)` → l si l > r, `fabs` → +1 en 0) ; une dérivée infinie ou NaN
+   n'est jamais propagée vers une constante (`pow` d'une base négative dans le
+   variance swap), comme la tape n'envoie rien vers une feuille constante.
+2. **Adjoint par chemin en vol locale** : l'aller empile sur la *trace* du
+   chemin le spot de départ de chaque pas et, pour chaque événement, ce que
+   l'adjoint du bytecode demande (opérandes, branches prises) ; le retour
+   dépile : `reverse_event` (une adjointe par opcode, `if` flous compris)
+   donne ∂payoff/∂spot, puis l'adjoint du pas de vol locale écrit à la main
+   remonte d'un pas en ajoutant sa part aux quatre coins de sa maille. Les
+   tirages ne sont pas stockés : Philox les régénère. Pas de boucle dans un
+   script, donc la taille de la trace est connue à la compilation
+   (`trail_bound`) : le nombre de threads par lancement se calcule depuis
+   `cudaMemGetInfo` et le coût par thread (trace + ligne de gradient),
+   jamais par défaut. Pas d'`atomicAdd` : chaque thread a sa ligne de
+   gradient, repliée par warp dans l'ordre des lanes
+   ([ADR-G6](#adr-g6--des-lignes-de-gradient-par-thread-pas-datomicadd)) —
+   bit à bit identique quel que soit le découpage des lancements et sur
+   l'une ou l'autre carte (testé). Erreur standard des risques : lots d'un
+   warp (512 chemins), estimateur par quotient.
+
+Égalité à la tape (Philox, 4 096 chemins, 42 scripts, dur et flou) : prix à
+10⁻¹⁰, risques à 10⁻⁸ de la plus grande (en pratique 10⁻¹⁵ ; 7·10⁻¹⁰ sur un
+Heston à barrière). **Superbucket sur GPU** : `market_vega` passe `device` au
+pricing, dV/dσ_loc vient de l'adjoint GPU, puis le même passage par Dupire et
+les fits SVI ; les vegas par cotation GPU = celles de la tape à 10⁻⁷, et leur
+somme = choc parallèle des cotations (recalibrées, repricées sur GPU à nombres
+aléatoires communs) à 3 % près.
+
+Temps (`build-cuda/qm_gpu_risk_bench`, 102 400 chemins, mêmes chemins des deux
+côtés, écart relatif maximal entre les deux vecteurs de risques) :
+
+| Script (modèle) | Risques | Tape CPU, 1 thread | 1 V100 | Gain | Écart |
+|---|---|---|---|---|---|
+| Call (vol locale 30×12, pas quotidien) | 363 | 13,0 s | 69 ms | ×189 | 2·10⁻¹⁵ |
+| Up-and-out (vol locale) | 363 | 18,4 s | 140 ms | ×132 | 8·10⁻¹⁶ |
+| Phoenix autocall (vol locale) | 363 | 20,5 s | 107 ms | ×191 | 6·10⁻¹⁶ |
+| Variance swap (vol locale) | 363 | 23,0 s | 180 ms | ×128 | 3·10⁻¹⁵ |
+| Phoenix autocall (Black-Scholes, duaux) | 4 | 140 ms | 5,5 ms | ×25 | 4·10⁻¹⁶ |
+| Phoenix autocall (Heston quotidien, duaux) | 11 | 30,6 s | 69 ms | ×444 | 6·10⁻¹⁴ |
+
+Mémoire : le pilote réserve la pile locale d'un kernel pour tous les threads
+que la carte peut porter (2 048 × 80 SM) et la garde après le lancement ; les
+duaux à 8 directions (13 Ko de pile par thread) retenaient ainsi 1,95 Go d'une
+carte que partage le LLM de l'assistant. Chaque calcul de script remet la
+limite de pile à sa valeur d'avant (`StackLimitRestore`) : mesuré, les 1,95 Go
+reviennent. Une carte à court de mémoire renvoie `auto` sur le CPU, avec la
+raison.
+
+Hors du GPU, et dit dans les diagnostics : les risques SLV (grille de levier :
+il faudrait l'adjoint du pas SLV), plus de deux actifs (duaux à 8 directions au
+plus), Sobol et la stratification sous AAD (les deux moteurs adjoints sont
+pseudo-aléatoires).
+
 ## 7. Reproductibilité bit à bit
 
 Exigence de desk (roadmap, chantier 3) : le même chiffre sur 1 ou 2 GPU, et le
@@ -336,7 +469,10 @@ même que le CPU avec le même générateur.
   temps serveur diffère. `GET /price/devices` décrit le serveur ; le contexte
   CUDA est créé au démarrage de l'API (0,3 s, +140 Mo de RAM hôte) pour que le
   premier temps affiché soit celui du pricing. Les produits suivent lot par
-  lot (`gpu: true` dans le catalogue du front) : scripts après G2.
+  lot (`gpu: true` dans le catalogue du front) : scripts après G2. Depuis G3,
+  les risques AAD des scripts (`greeks_method: "aad"`) et la vega par cotation
+  suivent le même champ `device` ; la page Scripting propose l'échantillonneur
+  stratifié, les contrôles et les paires antithétiques.
 - **Image de production** : `web/Dockerfile.prod` compile le wheel avec
   `QM_CUDA=ON` (défaut), avec la même chaîne que le serveur (Debian trixie
   non-free `nvidia-cuda-toolkit` 12.4 + g++-13) ; le runtime CUDA est lié
@@ -368,6 +504,11 @@ Même prix aux trois colonnes (9,226547, erreur 9,2·10⁻⁴). Le kernel ne lit
 rien en mémoire : il est limité par le **calcul FP64** (Φ⁻¹, trois `exp` par
 chemin), ce qui est le régime où les V100 (FP64 à 1:2) ont leur avantage.
 
+Ligne « Superbucket » (lot G3, [§6](#6-aad-sur-gpu)) : dV/dσ_loc sur une grille
+Dupire 30×12 en pas quotidien, 102 400 chemins — tape CPU un thread 13 à 23 s,
+une V100 70 à 180 ms selon le script (×130 à ×190), mêmes risques au
+10⁻¹⁵ près. Les colonnes « CPU 8 threads » et « 2 V100 » viennent avec G4.
+
 Métrique : **temps pour atteindre une erreur standard de 1e-4** (en relatif),
 par échantillonneur (pseudo / Sobol + pont) — un speedup sans erreur standard
 ne vaut rien. Chaque ligne indique aussi ce qui limite le kernel (bande
@@ -383,7 +524,10 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
   pseudo-aléatoire à graine égale).
 - GPU = CPU à l'erreur Monte-Carlo près ; 1 GPU = 2 GPU bit à bit.
 - AAD GPU = AAD CPU à l'erreur près ; somme des vegas par cotation = choc
-  parallèle (le test du lot 17h, sur GPU).
+  parallèle (le test du lot 17h, sur GPU). **Fait (G3)**, plus strict : mêmes
+  chemins Philox, donc égalité à l'arrondi ; le code par chemin tourne aussi
+  sur l'hôte, ce qui met adjoint du bytecode, adjoint vol locale et duaux dans
+  la CI (`tests/testScriptAdjoint.cpp`).
 - La CI GitHub n'a pas de GPU : elle compile sans CUDA et teste tout ce qui
   est CPU (Philox, pont, bytecode) ; les tests GPU tournent sur le serveur
   (`ctest -L gpu`).
@@ -395,7 +539,7 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 | **G0** | CMake CUDA ; Philox hôte/device ; réduction Welford ; le kernel vanille existant sur GPU | Prix GPU = prix CPU ; premier point du benchmark — **fait** : tirages identiques bit à bit, prix à quelques ulp ([§7](#7-reproductibilité-bit-à-bit)), bit à bit entre les deux V100 ; 280× un thread CPU ([§9](#9-benchmark)) |
 | **G1** | Pont brownien dans le moteur générique (CPU) ; directions Joe-Kuo jusqu'à 21 201 ; Sobol device ; modèles en foncteurs | Sobol + pont bat le pseudo-aléatoire en log-log sur un asiatique ; mêmes lois CPU / GPU — **fait** : pente −0,89 contre −0,50, erreur ÷19 à 2¹⁷ chemins ; Sobol GPU = CPU bit à bit sur les 21 201 dimensions ; vol locale, Heston et SLV suivent sur GPU les chemins du CPU ([§2.4](#24-le-pont-brownien-dans-le-moteur-générique), [§4](#4-les-modèles--un-ensemble-fermé)) |
 | **G2** | Compilateur et interpréteur de bytecode, CPU puis GPU | Les 42 scripts : même prix arbre / bytecode / GPU — **fait** : arbre = bytecode au bit près (dur, flou, AAD) ; GPU = CPU Philox sous Black-Scholes, vol locale, Heston et SLV ; ×2 sur CPU, ×100 à ×270 par chemin sur GPU ([§3](#3-les-scripts--un-bytecode)) |
-| **G3** | Variables de contrôle et stratification génériques ; AAD : duaux, puis adjoint par chemin en vol locale | Réduction de variance mesurée ; risques GPU = AAD CPU ; superbucket sur GPU |
+| **G3** | Variables de contrôle et stratification génériques ; AAD : duaux, puis adjoint par chemin en vol locale | Réduction de variance mesurée ; risques GPU = AAD CPU ; superbucket sur GPU — **fait** : stratification ×1,1 à ×3,4 en temps, contrôles ×3,1 sur le variance swap sans paires (et redondants avec elles, mesuré) ; risques GPU = tape CPU à l'arrondi sur les mêmes chemins, ×130 à ×440 ; superbucket GPU = tape, somme = choc parallèle à 3 % ([§2.5](#25-la-réduction-de-variance-technique-par-technique), [§6](#6-aad-sur-gpu)) |
 | **G4** | Deux GPU, reproductibilité bit à bit, benchmark complet | 1 GPU = 2 GPU bit à bit ; tableau publié |
 
 ## 12. Hors périmètre
@@ -451,6 +595,36 @@ adjoint s'écrit une fois. L'AAD CPU (WP 17) reste l'oracle.
 dans l'ordre des indices. **Pourquoi.** L'addition flottante n'est pas
 associative : sans cela, le résultat dépendrait du nombre de GPU et de blocs.
 
+### ADR-G6 — Des lignes de gradient par thread, pas d'`atomicAdd`
+
+**Décision.** Dans l'adjoint par chemin, chaque thread accumule sa part de
+dV/dσ_loc dans sa propre ligne en mémoire globale ; un second kernel replie les
+32 lignes d'un warp dans l'ordre des lanes, l'hôte replie les warps dans
+l'ordre des indices. **Pourquoi.** Le plan (§6) prévoyait `atomicAdd` : l'ordre
+des additions y dépend de l'ordonnancement, donc le résultat change au dernier
+bit d'un run à l'autre — contraire à ADR-G5 et au critère de G4. Les lignes
+coûtent de la mémoire (8 octets par paramètre et par thread d'un lancement),
+que le dimensionnement des lancements compte ; elles donnent aussi, par warp,
+les lots dont on tire l'erreur standard des risques. **Mesuré** : même vecteur
+de risques au bit près pour 1 ou n lancements, sur l'une ou l'autre V100.
+
+### ADR-G7 — Sous stratification, la pente intra-strate
+
+**Décision.** Quand stratification et contrôles se combinent, β vient des
+co-moments des **différences successives** entre strates voisines (chaque
+thread de réduction reçoit 16 strates consécutives, `mc::stratum_of`), pas des
+co-moments totaux. **Pourquoi.** La stratification retire déjà la variance
+entre strates ; ce qui reste, c'est la variance intra-strate, et la pente qui la
+minimise est la pente intra-strate. Avec un chemin par strate on ne peut pas la
+mesurer strate par strate ; des strates voisines se ressemblent, et
+E[(v_{i+1} − v_i)(v_{i+1} − v_i)ᵀ] ≈ 2Σ_intra — l'estimateur des strates
+regroupées de la théorie des sondages (Cochran, *Sampling Techniques*).
+**Mesuré** : la pente ordinaire dégradait l'autocall (÷3,4 stratifié seul,
+÷2,3 combiné) ; avec la pente intra-strate, le combiné égale ou dépasse la
+stratification seule à l'incertitude de la mesure près (autocall ÷2,71 contre
+÷2,79 ; variance swap ÷1,92 contre ÷1,53). **Alternative rejetée** : la régression
+entre répliques (16 points pour jusqu'à 8 contrôles : sur-ajustement).
+
 ## 14. Bibliographie
 
 | Sujet | Référence |
@@ -460,4 +634,6 @@ associative : sans cela, le résultat dépendrait du nombre de GPU et de blocs.
 | Générateur à compteur | Salmon, Moraes, Dror & Shaw, « Parallel Random Numbers: As Easy as 1, 2, 3 », *SC'11*, 2011 |
 | Pont brownien | Jäckel, *Monte Carlo Methods in Finance*, Wiley, 2002 |
 | Brouillage | Owen, « Randomly Permuted (t,m,s)-Nets and (t,s)-Sequences », *Monte Carlo and Quasi-Monte Carlo Methods in Scientific Computing*, Springer, 1995 |
+| Strates regroupées, différences successives | Cochran, *Sampling Techniques*, 3ᵉ éd., Wiley, 1977 |
+| Nombres duaux (mode direct) | Griewank & Walther, *Evaluating Derivatives*, 2ᵉ éd., SIAM, 2008 |
 | Scripting, AAD | Andreasen & Savine, *Modern Computational Finance: Scripting for Derivatives and xVA*, Wiley, 2021 ; Savine, *Modern Computational Finance: AAD and Parallel Simulations*, Wiley, 2018 |

@@ -93,6 +93,14 @@ namespace quantModeling
         /// jump, an AAD number type): the caller then stays on the CPU.
         virtual bool describe_device(DeviceModel &) const { return false; }
 
+        /// E[S_asset(t) / N(t)], the deflated spot's mean, when the model's
+        /// discretisation keeps it a martingale -- what the generic control
+        /// variates need (blueprint/wp/19-gpu.md §2.5). False when unknown.
+        virtual bool deflated_spot_mean(std::size_t /*asset*/, Time /*t*/, Real & /*mean*/) const
+        {
+            return false;
+        }
+
         /// Non-owning pointers to the model's own differentiable parameters.
         /// A book trap to reproduce exactly: these pointers are invalidated
         /// by copying the model (the copy's own members live at different

@@ -300,6 +300,10 @@ if(QM_BUILD_TESTS)
     tests/testPhilox.cpp
     tests/testLogicalBlocks.cpp
     tests/testScriptBytecode.cpp
+    tests/testDual.cpp
+    tests/testMultiControl.cpp
+    tests/testVarianceReduction.cpp
+    tests/testScriptAdjoint.cpp
   )
 
   target_link_libraries(quantModeling_tests
@@ -328,6 +332,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuVanilla.cpp
       tests/gpu/testGpuPaths.cpp
       tests/gpu/testGpuScripts.cpp
+      tests/gpu/testGpuRisks.cpp
     )
     target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)
     target_compile_definitions(quantModeling_gpu_tests PRIVATE
@@ -365,6 +370,16 @@ endif()
 if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   add_executable(qm_gpu_bench benchmarks/gpu_time_to_error.cpp)
   target_link_libraries(qm_gpu_bench PRIVATE quantModeling)
+  # Lot G3: the generic variance reduction, measured over independent seeds.
+  add_executable(qm_gpu_vr_bench benchmarks/gpu_variance_reduction.cpp)
+  target_link_libraries(qm_gpu_vr_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_gpu_vr_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
+  # Lot G3: model risks, GPU (duals, per-path adjoint) against the CPU tape.
+  add_executable(qm_gpu_risk_bench benchmarks/gpu_risks.cpp)
+  target_link_libraries(qm_gpu_risk_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_gpu_risk_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
 endif()
 
 # ---- Python binding (pybind11) ----

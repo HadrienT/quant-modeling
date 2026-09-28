@@ -145,3 +145,17 @@ def test_several_underlyings_are_refused():
                 underlyings=[{"ticker": "A"}, {"ticker": "B"}, {"ticker": "C"}],
             )
         )
+
+
+@pytest.mark.skipif(not qm.gpu_devices(), reason="no CUDA device")
+def test_on_the_gpu_the_superbucket_is_the_tapes(chain):
+    # blueprint/wp/19-gpu.md lot G3: dV/dsigma_loc by the GPU's per-path
+    # adjoint, on the tape's Philox paths (2 048 per batch, a multiple of the
+    # tape's 64: the two means coincide), then the same superbucket.
+    gpu = market_vega.market_vega(_req(device="gpu", n_paths=16_384))
+    cpu = market_vega.market_vega(_req(device="cpu", rng="philox", n_paths=16_384))
+    assert gpu.device == "gpu" and cpu.device == "cpu"
+    assert "on the GPU" in gpu.method
+    assert gpu.total_vega == pytest.approx(cpu.total_vega, rel=1e-8)
+    for g, c in zip(gpu.quotes, cpu.quotes):
+        assert g.vega == pytest.approx(c.vega, rel=1e-7, abs=1e-9)

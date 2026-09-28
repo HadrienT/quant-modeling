@@ -7,6 +7,9 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
 #include "quantModeling/models/simulation_model.hpp"
+#include "quantModeling/pricers/context.hpp"
+#include "quantModeling/utils/inverse_normal.hpp"
+#include "quantModeling/utils/philox.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/rng.hpp"
 
@@ -116,13 +119,17 @@ namespace quantModeling
         ISimulationModel<aad::Number> &model, std::size_t n_paths,
         std::uint64_t seed = 1,
         const std::function<aad::Number(const std::vector<aad::Number> &)> &agg =
-            first_aad_payoff)
+            first_aad_payoff,
+        RngKind rng_kind = RngKind::Pcg32)
     {
         using aad::Number;
         using aad::Tape;
 
         if (n_paths == 0)
             throw InvalidInput("simulate_aad: need at least one path");
+        // Philox: path p's draw j is Phi^-1(Philox(seed, p, j)), as on the GPU
+        // (blueprint/wp/19-gpu.md §6) -- the oracle of its dual and adjoint runs.
+        const bool philox = rng_kind == RngKind::Philox;
 
         Tape &tape = *Number::tape;
         tape.rewind();                                    // 1. empty tape, memory kept
@@ -157,8 +164,10 @@ namespace quantModeling
             for (std::size_t p = 0; p < batch_size; ++p)
             {
                 tape.rewind_to_mark(); // 5. forget the previous path
+                const auto path_index = static_cast<std::uint64_t>(done + p);
                 for (std::size_t d = 0; d < dim; ++d)
-                    gauss[d] = bm(rng);
+                    gauss[d] = philox ? inverse_normal_cdf(philox_uniform(seed, path_index, static_cast<std::uint32_t>(d)))
+                                      : bm(rng);
                 model.generate_path(std::span<const double>(gauss.data(), dim), path); // recorded after the mark
                 product.payoffs(path, payoffs);
                 Number result = agg(payoffs);
@@ -191,8 +200,8 @@ namespace quantModeling
             res.risk_std_errors[j] = risk_acc[j].std_error();
         }
         res.n_paths = static_cast<long long>(n_paths);
-        res.diagnostics =
-            "simulate_aad (adjoint, batches of " + std::to_string(BATCH) + ")";
+        res.diagnostics = "simulate_aad (adjoint, batches of " + std::to_string(BATCH) + ")" +
+                          (philox ? " + Philox" : "");
 
         return res;
     }

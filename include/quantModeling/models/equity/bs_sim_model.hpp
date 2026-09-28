@@ -195,7 +195,10 @@ namespace quantModeling
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::BlackScholes;
                 d.r = r_;
+                d.q = q_;
                 d.s0 = {s0_};
+                d.divs = {q_};
+                d.vols = {sigma_};
                 for (std::size_t i = 0; i < steps_.size(); ++i)
                 {
                     d.t.push_back(steps_[i].t);
@@ -206,6 +209,14 @@ namespace quantModeling
                 }
                 return true;
             }
+        }
+
+        /// S(t) / N(t) is a martingale: E = S0 e^{-q t}, with a flat rate or a
+        /// curve (the drift is the curve's own forward rate).
+        bool deflated_spot_mean(std::size_t, Time t, Real &mean) const override
+        {
+            mean = to_double(s0_) * std::exp(-to_double(q_) * t);
+            return true;
         }
 
         const std::vector<T *> &parameters() const override { return params_; }
