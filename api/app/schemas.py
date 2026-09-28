@@ -222,7 +222,9 @@ class ScriptPricingInputs(BaseModel):
             "underlying, in spot(i) order. Either every entry has a ticker or "
             "an `fx` currency (spot, dividend, at-the-money implied vol and "
             "historical correlation from the database) or every entry has spot "
-            "and vol (then `correlation` is required). Priced under correlated "
+            "and vol (then `correlation` is required). Priced with each asset "
+            "on the Dupire surface of its stored option chain when every ticker "
+            "has one (local vol, drivers correlated), else under correlated "
             "Black-Scholes; replaces ticker/spot/vol/dividend. A single entry "
             "prices a one-asset script in another `currency` (a quanto)."
         ),
@@ -350,11 +352,11 @@ class ScriptPricingInputs(BaseModel):
 
     def _multi_asset_inputs(self) -> "ScriptPricingInputs":
         u = self.underlyings or []
-        if self.model not in ("auto", "black_scholes"):
+        if self.model not in ("auto", "black_scholes", "local_vol"):
             raise ValueError(
                 f"model='{self.model}' is single-underlying; several "
-                "underlyings are priced under correlated Black-Scholes "
-                "(model='auto' or 'black_scholes')"
+                "underlyings are priced under correlated Black-Scholes or local "
+                "vol (model='auto', 'black_scholes' or 'local_vol')"
             )
         if any(x.ticker is not None and x.fx is not None for x in u):
             raise ValueError(

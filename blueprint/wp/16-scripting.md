@@ -464,7 +464,7 @@ que trois choses — les dates d'événements, le nombre de sous-jacents
 |---|---|---|
 | `auto` (défaut de l'API) | le modèle que le script exige, voir [§8.6](#86-choix-automatique-du-modèle) | `ticker`, ou `spot` + `vol` sans marché |
 | `black_scholes` | une vol plate ; avec `spot(1)`… : Black-Scholes multi-actifs corrélé (`MultiAssetBSSimModel`), une vol plate par actif | `spot`, `vol` ; ou `underlyings` (tickers, ou spot/vol saisis + `correlation`) |
-| `local_vol` | surface de Dupire (Euler, `steps_per_year`) | `ticker` : la chaîne d'options **stockée** est calibrée (`calibrate_vol_surface`) ; spot et dividende viennent aussi de la base |
+| `local_vol` | surface de Dupire (Euler, `steps_per_year`) ; avec `spot(1)`… : une surface par actif, moteurs corrélés (`MultiAssetLocalVolSimModel`) | `ticker` : la chaîne d'options **stockée** est calibrée (`calibrate_vol_surface`) ; spot et dividende viennent aussi de la base ; ou `underlyings` (tickers ayant chacun une chaîne stockée) |
 | `heston` | Heston calibré sur la surface SVI (simulation Bates sans sauts, Euler à troncature complète) | `ticker` |
 | `slv` | vol stochastique-locale : le Heston calibré × un levier L(S,t) qui reproduit les marginales de Dupire | `ticker` |
 
@@ -609,10 +609,21 @@ pondérée par les chemins.
 ### 8.7 Multi-sous-jacents et bibliothèque de produits
 
 **Plusieurs sous-jacents.** Un script qui lit `spot(1)`, `spot(2)`… (jusqu'à 8)
-est pricé sous Black-Scholes multi-actifs corrélé, seul modèle multi-actifs
-branché : `recommend()` le choisit (`multi_asset`) et `advise()` signale la vol
-plate par actif (`flat_vol_smile`) et la corrélation comme hypothèse
-(`correlation`). Entrées ([`multi_asset_market.py`](../../api/app/multi_asset_market.py)),
+est pricé en **vol locale multi-actifs** quand chaque ticker a une chaîne
+d'options stockée, toutes du même jour, dans la devise de paiement (issue #86,
+[`multi_asset_local_vol_sim_model.hpp`](../../include/quantModeling/models/equity/multi_asset_local_vol_sim_model.hpp)) :
+chaque actif sur la surface de Dupire de sa propre chaîne — il reprice ses
+vanilles et garde son skew — et leurs moteurs browniens corrélés par la matrice
+historique, faute de produit de corrélation stocké pour l'impliquer (une
+corrélation locale demanderait des options sur panier ou sur indice).
+`recommend()` le choisit (`multi_asset_local_vol`) ; sinon Black-Scholes
+multi-actifs corrélé (`multi_asset`, la raison dit ce qui manque) et `advise()`
+signale la vol plate par actif (`flat_vol_smile`). La corrélation reste une
+hypothèse dans les deux cas (`correlation`). Tests de propriété : sur des
+surfaces plates, l'option d'échange vaut la formule de Margrabe ; chaque actif
+garde sa marginale quelle que soit la corrélation ; l'adjoint d'un payoff sur
+un actif par rapport à la surface d'un autre est exactement nul. CPU seulement
+(le GPU le décline, et le dit). Entrées ([`multi_asset_market.py`](../../api/app/multi_asset_market.py)),
 toutes lues en base et enregistrées pour l'audit : clôture et rendement de
 dividende par actif ; vol implicite **à la monnaie** du smile SVI de l'actif à
 la dernière date du script, ou à défaut vol réalisée 63 jours (`vol_proxied`) ;
@@ -670,7 +681,7 @@ basket < best-of, barrière < vanille, variance swap ≈ écart de variance).
 **Hors d'atteinte des scripts, et pourquoi** : les hybrides actions-taux (pas de
 modèle de taux stochastique branché), les produits rappelables par l'émetteur
 et les choosers (il faut une espérance conditionnelle — régression de type
-Longstaff-Schwartz — que le langage n'a pas), la vol locale multi-actifs.
+Longstaff-Schwartz — que le langage n'a pas).
 
 ### 8.8 Du term sheet au script : le catalogue, la comparaison de modèles, le profil de risque
 

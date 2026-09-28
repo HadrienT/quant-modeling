@@ -134,3 +134,65 @@ def test_malformed_multi_asset_requests_are_refused():
         _req(underlyings=[dict(ticker="AAA"), dict(spot=1.0, vol=0.2)])
     with pytest.raises(ValidationError, match="single-underlying"):
         _req(underlyings=TYPED, correlation=[[1, 0], [0, 1]], model="slv")
+
+
+# ── Multi-asset local vol (issue #86) ────────────────────────────────────────
+
+
+def _surface(ticker, snap, level):
+    from app import market_snapshot
+
+    K = [40.0 + 10.0 * i for i in range(15)]
+    T = [0.1, 0.5, 1.0, 2.0]
+    return market_snapshot.LocalVolMarket(
+        ticker=ticker,
+        valuation_date=snap,
+        spot=100.0 if ticker == "AAA" else 50.0,
+        dividend=0.01,
+        K_grid=K,
+        T_grid=T,
+        sigma_loc_flat=[level for _ in K for _ in T],
+        rate=0.03,
+    )
+
+
+@pytest.fixture
+def surfaces(store, monkeypatch):
+    from app import market_snapshot
+
+    snaps = {"AAA": D, "BBB": D}
+    monkeypatch.setattr(
+        market_snapshot,
+        "local_vol_market",
+        lambda t, r, d: _surface(t, snaps[t], 0.25 if t == "AAA" else 0.3),
+    )
+    return snaps
+
+
+def test_every_stored_chain_gives_each_asset_its_own_local_vol(surfaces):
+    resp = pricing_service.price_script(
+        _req(underlyings=[{"ticker": "AAA"}, {"ticker": "BBB"}])
+    )
+    c = resp.model_choice
+    assert (c.model, c.code) == ("local_vol", "multi_asset_local_vol")
+    assert all("Dupire surface" in u.vol_source for u in c.underlyings)
+    assert [u.spot for u in c.underlyings] == [100.0, 50.0]  # the surfaces' closes
+    assert "one Dupire surface each" in resp.diagnostics
+    assert "flat_vol_smile" not in {w.code for w in resp.warnings}
+
+
+def test_chains_of_different_dates_fall_back_to_black_scholes_and_say_why(surfaces):
+    surfaces["BBB"] = D - timedelta(days=1)
+    resp = pricing_service.price_script(
+        _req(underlyings=[{"ticker": "AAA"}, {"ticker": "BBB"}])
+    )
+    c = resp.model_choice
+    assert (c.model, c.code) == ("black_scholes", "multi_asset")
+    assert "different dates" in c.reason
+
+
+def test_local_vol_asked_without_surfaces_is_refused(store):
+    with pytest.raises(ValueError, match="several underlyings"):
+        pricing_service.price_script(
+            _req(underlyings=[{"ticker": "AAA"}, {"ticker": "BBB"}], model="local_vol")
+        )

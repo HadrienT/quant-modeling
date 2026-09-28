@@ -145,20 +145,26 @@ namespace quantModeling
         EXPECT_STREQ(scripting::model_name(ModelKind::StochasticLocalVol), "slv");
     }
 
-    TEST(ModelRecommendation, SeveralUnderlyingsGetCorrelatedBlackScholesWithTheCorrelationNoted)
+    // Several underlyings: each on its own Dupire surface when every one has
+    // a stored chain (issue #86), correlated Black-Scholes otherwise; the
+    // correlation is an input either way.
+    TEST(ModelRecommendation, SeveralUnderlyingsGetLocalVolWhenEveryChainIsStored)
     {
         const std::string worst_of =
             "2025-06-03\n    pays max(min(spot(0) / 100, spot(1) / 50) - 1, 0)\n";
-        for (const ModelAvailability avail : {ModelAvailability{true, true},
-                                              ModelAvailability{false, false}})
-        {
-            const auto r = recommend(analyze(worst_of), avail);
-            EXPECT_EQ(r.model, ModelKind::BlackScholesFlatVol);
-            EXPECT_EQ(r.code, "multi_asset");
-        }
-        const auto adv = advise(analyze(worst_of), ModelKind::BlackScholesFlatVol, 1.0, 0.0);
-        EXPECT_TRUE(has(adv, "correlation"));
-        EXPECT_TRUE(has(adv, "flat_vol_smile"));
+        const auto lv = recommend(analyze(worst_of), ModelAvailability{true, false});
+        EXPECT_EQ(lv.model, ModelKind::LocalVolSurface);
+        EXPECT_EQ(lv.code, "multi_asset_local_vol");
+        const auto bs = recommend(analyze(worst_of), ModelAvailability{false, false});
+        EXPECT_EQ(bs.model, ModelKind::BlackScholesFlatVol);
+        EXPECT_EQ(bs.code, "multi_asset");
+
+        const auto flat = advise(analyze(worst_of), ModelKind::BlackScholesFlatVol, 1.0, 0.0);
+        EXPECT_TRUE(has(flat, "correlation"));
+        EXPECT_TRUE(has(flat, "flat_vol_smile"));
+        const auto local = advise(analyze(worst_of), ModelKind::LocalVolSurface, 1.0, 2.0);
+        EXPECT_TRUE(has(local, "correlation"));
+        EXPECT_FALSE(has(local, "flat_vol_smile"));
     }
 
 } // namespace quantModeling

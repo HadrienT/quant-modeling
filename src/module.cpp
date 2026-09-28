@@ -972,7 +972,10 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &vols,
                              const std::vector<double> &correlation,
                              const std::string &device, const std::string &rng,
-                             bool control_variate, bool antithetic, bool importance_sampling)
+                             bool control_variate, bool antithetic, bool importance_sampling,
+                             const std::vector<std::vector<double>> &K_grids,
+                             const std::vector<std::vector<double>> &T_grids,
+                             const std::vector<std::vector<double>> &sigma_loc_flats)
 {
     using namespace quantModeling;
 
@@ -1005,6 +1008,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
     spec.dividends = dividends;
     spec.vols = vols;
     spec.correlation = correlation;
+    spec.K_grids = K_grids;
+    spec.T_grids = T_grids;
+    spec.sigma_loc_flats = sigma_loc_flats;
     spec.max_dt = max_dt;
 
     scripting::ModelKind kind = scripting::ModelKind::BlackScholesFlatVol;
@@ -1013,15 +1019,22 @@ static py::dict price_script(const std::string &script, double spot, double rate
             ? " | model black_scholes (" + std::to_string(spots.size()) +
                   " correlated assets, flat vols)"
             : " | model black_scholes (flat vol)";
-    if (spots.size() > 1 && model != "black_scholes")
+    const bool multi_local_vol = spots.size() > 1 && model == "local_vol";
+    if (spots.size() > 1 && model != "black_scholes" && !multi_local_vol)
         throw std::invalid_argument(
             "price_script: model '" + model +
             "' is single-underlying; several underlyings are priced under "
-            "black_scholes");
+            "black_scholes or local_vol");
     const std::string grid = std::to_string(K_grid.size()) + "x" +
                              std::to_string(T_grid.size());
     const std::string steps = std::to_string(steps_per_year) + " steps/yr";
-    if (model == "local_vol")
+    if (multi_local_vol)
+    {
+        kind = scripting::ModelKind::LocalVolSurface;
+        model_note = " | model local_vol (" + std::to_string(spots.size()) +
+                     " correlated assets, one Dupire surface each, " + steps + ")";
+    }
+    else if (model == "local_vol")
     {
         kind = scripting::ModelKind::LocalVolSurface;
         model_note = " | model local_vol (" + grid + " surface, " + steps + ")";
@@ -1037,7 +1050,11 @@ static py::dict price_script(const std::string &script, double spot, double rate
     }
     const bool has_surface = kind == scripting::ModelKind::LocalVolSurface ||
                              kind == scripting::ModelKind::StochasticLocalVol;
-    const double surface_T = (has_surface && !T_grid.empty()) ? T_grid.back() : 0.0;
+    double surface_T = (has_surface && !T_grid.empty()) ? T_grid.back() : 0.0;
+    if (multi_local_vol) // the shortest of the surfaces
+        for (std::size_t i = 0; i < T_grids.size(); ++i)
+            if (!T_grids[i].empty())
+                surface_T = i == 0 ? T_grids[i].back() : std::min(surface_T, T_grids[i].back());
 
     auto check_underlyings = [&](std::size_t needed, std::size_t available)
     {
@@ -1461,6 +1478,9 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("device") = "cpu", py::arg("rng") = "pcg32",
           py::arg("control_variate") = false, py::arg("antithetic") = true,
           py::arg("importance_sampling") = false,
+          py::arg("K_grids") = std::vector<std::vector<double>>{},
+          py::arg("T_grids") = std::vector<std::vector<double>>{},
+          py::arg("sigma_loc_flats") = std::vector<std::vector<double>>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
