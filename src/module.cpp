@@ -700,6 +700,7 @@ static py::dict calibrate_heston_impl(const std::vector<double> &strikes,
     out["converged"] = res.report.converged;
     out["feller"] = res.feller;
     out["wall_time_seconds"] = res.report.wall_time_seconds;
+    out["iv_errors"] = res.iv_errors; // per quote, input order; NaN: unpriced
     return out;
 }
 

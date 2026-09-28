@@ -41,12 +41,15 @@ namespace quantModeling::calibration
             return m;
         }
 
-        /// Central-difference Jacobian (residuals x params), unweighted.
+        /// Finite-difference Jacobian (residuals x params), unweighted:
+        /// central, or forward from the current residuals r0 (half the
+        /// objective calls; backward at an upper bound).
         Eigen::MatrixXd numerical_jacobian(const ObjectiveFunction &objective,
                                            const std::vector<Real> &params,
+                                           const std::vector<Real> &r0,
                                            const std::vector<Real> &lower,
                                            const std::vector<Real> &upper,
-                                           Real fd_step)
+                                           Real fd_step, bool central)
         {
             const auto m = static_cast<Eigen::Index>(objective.num_residuals());
             const auto n = static_cast<Eigen::Index>(objective.num_params());
@@ -60,11 +63,14 @@ namespace quantModeling::calibration
                 std::vector<Real> p_up = params;
                 std::vector<Real> p_dn = params;
                 p_up[jj] = clamp_to_bounds(params[jj] + h, lower[jj], upper[jj]);
-                p_dn[jj] = clamp_to_bounds(params[jj] - h, lower[jj], upper[jj]);
+                if (central)
+                    p_dn[jj] = clamp_to_bounds(params[jj] - h, lower[jj], upper[jj]);
+                else if (p_up[jj] == params[jj]) // at the upper bound: backward
+                    p_dn[jj] = clamp_to_bounds(params[jj] - h, lower[jj], upper[jj]);
                 const Real denom = p_up[jj] - p_dn[jj];
 
-                const std::vector<Real> r_up = objective.residuals(p_up);
-                const std::vector<Real> r_dn = objective.residuals(p_dn);
+                const std::vector<Real> r_up = p_up[jj] == params[jj] ? r0 : objective.residuals(p_up);
+                const std::vector<Real> r_dn = p_dn[jj] == params[jj] ? r0 : objective.residuals(p_dn);
 
                 for (Eigen::Index i = 0; i < m; ++i)
                 {
@@ -102,7 +108,8 @@ namespace quantModeling::calibration
         {
             ++iterations_done;
 
-            const Eigen::MatrixXd J = numerical_jacobian(objective, params, lower, upper, settings.fd_step);
+            const Eigen::MatrixXd J = numerical_jacobian(objective, params, r, lower, upper, settings.fd_step,
+                                                         settings.central_differences);
 
             Eigen::VectorXd rw(static_cast<Eigen::Index>(m));
             Eigen::MatrixXd Jw = J;

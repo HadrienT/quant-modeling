@@ -101,8 +101,15 @@ def heston_targets(
             continue
         forward = market.spot * math.exp((market.rate - market.dividend) * T)
         sigma_atm = math.sqrt(w_atm / T)
+        # Only where the slice was quoted: beyond, SVI extrapolates, and a
+        # target there is the fit's own invention (#97: a -1.87 to +1.06 sd
+        # quoted range at 2.2 years, a +1.5 sd target 25 vol points off).
+        quoted = [q[0] for q in (sl.get("quotes") or [])]
+        k_lo, k_hi = (min(quoted), max(quoted)) if quoted else (-math.inf, math.inf)
         for z in Z_POINTS:
             k = z * sigma_atm * math.sqrt(T)
+            if not k_lo <= k <= k_hi:
+                continue
             w = _svi_w(sl, k)
             if w > 0.0:
                 strikes.append(forward * math.exp(k))

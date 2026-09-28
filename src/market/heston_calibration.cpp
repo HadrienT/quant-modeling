@@ -1,8 +1,10 @@
 #include "quantModeling/market/heston_calibration.hpp"
 
 #include "quantModeling/models/equity/sabr.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <future>
 #include <limits>
@@ -16,7 +18,20 @@ namespace quantModeling
         /// A vega this small (relative to the forward) means the quote says
         /// nothing about volatility; the floor keeps its residual finite.
         constexpr Real kRelativeVegaFloor = 1e-8;
+        /// Scouting iterations per start, and starts kept to convergence.
+        constexpr std::size_t kScoutIterations = 10;
+        constexpr std::size_t kFinalists = 2;
     } // namespace
+
+    calibration::LevenbergMarquardtSettings heston_lm_settings()
+    {
+        calibration::LevenbergMarquardtSettings s;
+        s.central_differences = false;
+        s.cost_tol = 1e-9;
+        s.gradient_tol = 1e-7;
+        s.max_iterations = 100;
+        return s;
+    }
 
     HestonSurfaceObjective::HestonSurfaceObjective(std::vector<HestonCalibrationQuote> quotes,
                                                    Real spot, Real rate, Real dividend,
@@ -169,24 +184,49 @@ namespace quantModeling
         result.n_quotes = objective.num_residuals();
         result.n_starts = candidates.size();
 
-        // The starts are independent and the objective is read-only, so they
-        // run on one thread each: a handful of threads, a few KB apiece.
-        std::vector<std::future<calibration::CalibrationReport>> runs;
-        runs.reserve(candidates.size());
-        for (const auto &start : candidates)
-            runs.push_back(std::async(std::launch::async, [&objective, &settings, start]
-                                      { return calibration::levenberg_marquardt(objective, start, settings); }));
+        const auto t0 = std::chrono::steady_clock::now();
+        // The starts are independent and the objective is read-only: they run
+        // in parallel, at most one per CPU actually available (in the API's
+        // container, 2 -- not the host's 56).
+        const std::size_t threads = std::max<std::size_t>(1, available_cpus());
+        auto run_all = [&](const std::vector<std::vector<Real>> &starts,
+                           const calibration::LevenbergMarquardtSettings &s)
+        {
+            std::vector<calibration::CalibrationReport> out(starts.size());
+            for (std::size_t first = 0; first < starts.size(); first += threads)
+            {
+                std::vector<std::future<calibration::CalibrationReport>> runs;
+                for (std::size_t i = first; i < std::min(starts.size(), first + threads); ++i)
+                    runs.push_back(std::async(std::launch::async, [&objective, &s, start = starts[i]]
+                                              { return calibration::levenberg_marquardt(objective, start, s); }));
+                for (std::size_t i = 0; i < runs.size(); ++i)
+                    out[first + i] = runs[i].get();
+            }
+            return out;
+        };
+
+        // Scouting: a few iterations from every start (the kappa/xi valley is
+        // flat, so a single start is not reliable)...
+        calibration::LevenbergMarquardtSettings scout = settings;
+        scout.max_iterations = std::min<std::size_t>(settings.max_iterations, kScoutIterations);
+        std::vector<calibration::CalibrationReport> scouted = run_all(candidates, scout);
+        std::stable_sort(scouted.begin(), scouted.end(), [](const auto &a, const auto &b)
+                         { return a.rmse < b.rmse; });
+        // ... then the most promising go on to convergence.
+        std::vector<std::vector<Real>> finalists;
+        for (std::size_t i = 0; i < std::min<std::size_t>(kFinalists, scouted.size()); ++i)
+            finalists.push_back(scouted[i].params);
+        std::vector<calibration::CalibrationReport> finals = run_all(finalists, settings);
 
         Real best = std::numeric_limits<Real>::infinity();
-        for (auto &run : runs)
-        {
-            calibration::CalibrationReport report = run.get();
+        for (auto &report : finals)
             if (report.rmse < best)
             {
                 best = report.rmse;
                 result.report = std::move(report);
             }
-        }
+        result.report.wall_time_seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         result.params = HestonSurfaceObjective::unpack(result.report.params);
         result.feller = feller_condition_satisfied(result.params);
 
@@ -196,7 +236,8 @@ namespace quantModeling
         // n_unpriced, never folded into the RMSE as a silent zero.
         Real sq = 0.0;
         std::size_t n = 0;
-        for (const Real e : objective.implied_vol_errors(result.params))
+        result.iv_errors = objective.implied_vol_errors(result.params);
+        for (const Real e : result.iv_errors)
         {
             if (!std::isfinite(e))
             {

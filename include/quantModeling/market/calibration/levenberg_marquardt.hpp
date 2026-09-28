@@ -20,7 +20,12 @@ namespace quantModeling::calibration
         Real gradient_tol = 1e-10; ///< convergence on ||J^T W r||_inf
         Real step_tol = 1e-12;     ///< convergence on ||delta params||_inf, relative to ||params||_inf
         Real cost_tol = 1e-14;     ///< convergence on relative cost decrease
-        Real fd_step = 1e-6;       ///< relative step for the central-difference Jacobian
+        Real fd_step = 1e-6;       ///< relative step for the finite-difference Jacobian
+        /// Central differences (2 n objective calls per Jacobian, O(h^2)) or
+        /// forward from the current residuals (n calls, O(h)): forward is
+        /// enough when the objective is smooth and each call is expensive
+        /// (a whole Heston surface).
+        bool central_differences = true;
     };
 
     struct CalibrationReport
@@ -43,7 +48,7 @@ namespace quantModeling::calibration
      * framework targets (a handful of smile parameters per slice, not
      * thousands), and it composes with any objective without extra machinery.
      *
-     * The Jacobian is central finite differences; there is no analytic
+     * The Jacobian is central (or forward) finite differences; there is no analytic
      * gradient path yet because nothing in the tree is differentiable end to
      * end before WP17 (AAD). This is the numerical-Jacobian oracle that a
      * future AAD-based Jacobian must reproduce to machine precision.

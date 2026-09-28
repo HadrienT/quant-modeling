@@ -31,6 +31,14 @@ namespace quantModeling
      * queue itself. No core sits idle, and there is no deadlock risk from a
      * task that itself spawns and waits on further tasks.
      */
+    /**
+     * @brief CPUs this process may actually run on: the affinity mask,
+     *        capped by a cgroup CPU quota (a container's --cpus). The host's
+     *        core count (hardware_concurrency) overstates it in a container:
+     *        56 cores on the server, 2 CPUs for the API's container.
+     */
+    std::size_t available_cpus();
+
     class ThreadPool
     {
       public:
