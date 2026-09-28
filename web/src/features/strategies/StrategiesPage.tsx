@@ -114,7 +114,7 @@ export default function StrategiesPage() {
 				</div>
 			</header>
 
-			<div className="grid gap-3 rounded-md border border-hairline bg-surface p-3 sm:grid-cols-4">
+			<div className="grid grid-cols-1 gap-3 rounded-md border border-hairline bg-surface p-3 sm:grid-cols-4">
 				{(
 					[
 						["spot", "Spot", 1],
@@ -140,7 +140,7 @@ export default function StrategiesPage() {
 				))}
 			</div>
 
-			<div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+			<div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
 				<div className="flex flex-col gap-2">
 					{state.legs.map((leg, i) => (
 						<LegCard

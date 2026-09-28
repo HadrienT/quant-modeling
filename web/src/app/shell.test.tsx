@@ -65,6 +65,25 @@ describe("app shell", () => {
 		);
 	});
 
+	it("folds the pages into a menu on narrow screens (#78)", async () => {
+		renderShell();
+		const user = userEvent.setup();
+		const button = await screen.findByRole("button", { name: /open menu/i });
+		expect(button).toHaveAttribute("aria-expanded", "false");
+		expect(screen.queryByRole("navigation", { name: "Pages" })).toBeNull();
+
+		await user.click(button);
+		const menu = await screen.findByRole("navigation", { name: "Pages" });
+		expect(menu.querySelectorAll("a").length).toBeGreaterThan(5);
+		expect(screen.getByRole("button", { name: /close menu/i })).toHaveAttribute(
+			"aria-expanded",
+			"true",
+		);
+
+		await user.keyboard("{Escape}");
+		expect(screen.queryByRole("navigation", { name: "Pages" })).toBeNull();
+	});
+
 	it("toggles the theme attribute on <html>", async () => {
 		renderShell();
 		const user = userEvent.setup();

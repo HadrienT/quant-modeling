@@ -21,7 +21,7 @@ export default function ProductsPage() {
 	const descriptor = CATALOG_BY_KEY.get(key)!;
 
 	return (
-		<div className="mx-auto grid max-w-[1400px] gap-8 lg:grid-cols-[240px_1fr]">
+		<div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-8 lg:grid-cols-[240px_1fr]">
 			<aside className="lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:self-start lg:overflow-y-auto lg:pb-6">
 				<ProductPicker
 					selected={key}

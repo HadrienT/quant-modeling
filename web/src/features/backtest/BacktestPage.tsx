@@ -94,7 +94,7 @@ export default function BacktestPage() {
 		<div className="mx-auto flex max-w-5xl flex-col gap-5">
 			<h1 className="text-lg font-semibold text-ink">Backtest</h1>
 
-			<div className="grid gap-3 rounded-md border border-hairline bg-surface p-4 sm:grid-cols-2">
+			<div className="grid grid-cols-1 gap-3 rounded-md border border-hairline bg-surface p-4 sm:grid-cols-2">
 				<div className="sm:col-span-2">
 					<Label>Tickers</Label>
 					<div className="mt-1 flex flex-wrap gap-1.5">

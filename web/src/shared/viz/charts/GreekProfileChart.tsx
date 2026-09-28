@@ -47,7 +47,7 @@ export function GreekProfileChart({
 			}
 		>
 			{profiles && (
-				<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
 					{profiles.map((p) => (
 						<div key={p.name} className="flex flex-col gap-1">
 							<span className="text-2xs font-medium text-ink-secondary uppercase">

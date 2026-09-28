@@ -50,7 +50,7 @@ export default function PortfolioPage() {
 	}
 
 	return (
-		<div className="mx-auto grid max-w-[1600px] gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+		<div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
 			{list.data && (
 				<PortfolioSidebar
 					portfolios={book.portfolios}
