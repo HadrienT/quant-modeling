@@ -107,6 +107,28 @@ namespace quantModeling::calibration
         EXPECT_LT(report.rmse, 1e-8);
     }
 
+    // Forward differences (#97): half the objective calls, the same answer
+    // on a smooth problem.
+    TEST(LevenbergMarquardt, ForwardDifferencesFindTheSameFit)
+    {
+        BSVolFit fit;
+        fit.S = 100.0;
+        fit.T = 1.0;
+        fit.r = 0.03;
+        fit.q = 0.01;
+        constexpr Real true_sigma = 0.22;
+        fit.strikes = {70, 80, 90, 100, 110, 120, 130};
+        for (const Real K : fit.strikes)
+            fit.market_prices.push_back(bs_call_price(fit.S, K, fit.T, fit.r, fit.q, true_sigma));
+
+        LevenbergMarquardtSettings s;
+        s.central_differences = false;
+        const auto report = levenberg_marquardt(fit, {0.10}, s);
+        EXPECT_TRUE(report.converged);
+        EXPECT_NEAR(report.params[0], true_sigma, 1e-6);
+        EXPECT_LT(report.rmse, 1e-8);
+    }
+
     TEST(LevenbergMarquardt, ClampsToBoundsWhenUnconstrainedOptimumIsOutside)
     {
         BSVolFit fit;

@@ -100,20 +100,33 @@ namespace quantModeling
         std::size_t n_maturities = 0;
         std::size_t n_starts = 0;
         bool feller = false; ///< 2 kappa theta > xi^2 (informational, see heston.hpp)
+        /// Model implied vol minus market implied vol per quote, input order
+        /// (NaN where the model price has no Black-76 implied vol).
+        std::vector<Real> iv_errors;
     };
 
     /**
      * Fit Heston (v0, kappa, theta, xi, rho) to a surface of implied vols by
-     * Levenberg-Marquardt, from every candidate start, keeping the lowest
-     * cost. `spot`, `rate` and `dividend` set each maturity's forward and
+     * Levenberg-Marquardt: every candidate start runs a few scouting
+     * iterations, the two best go on to convergence, and the lowest cost
+     * wins. The starts run on at most available_cpus() threads. `spot`, `rate` and `dividend` set each maturity's forward and
      * discount factor (flat rate and yield, the convention of the vol-surface
      * pipeline the quotes usually come from).
      *
      * Throws InvalidInput on an empty surface or a non-positive input.
      */
+    /**
+     * The Levenberg-Marquardt settings of the Heston fit (#97): forward
+     * differences (each objective call prices a whole surface), and
+     * tolerances in the residuals' own unit, vol points -- a relative cost
+     * change of 1e-9 or a gradient of 1e-7 is far below any bid-ask, where
+     * the generic 1e-14 / 1e-10 kept a run going to its iteration cap.
+     */
+    calibration::LevenbergMarquardtSettings heston_lm_settings();
+
     HestonCalibration calibrate_heston(
         std::vector<HestonCalibrationQuote> quotes, Real spot, Real rate, Real dividend,
-        const calibration::LevenbergMarquardtSettings &settings = {},
+        const calibration::LevenbergMarquardtSettings &settings = heston_lm_settings(),
         const HestonCOSSettings &cos = {});
 
 } // namespace quantModeling

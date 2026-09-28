@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <thread>
+
+#include "quantModeling/utils/thread_pool.hpp"
+
 #include "quantModeling/engines/analytic/heston_cos.hpp"
 #include "quantModeling/market/heston_calibration.hpp"
 #include "quantModeling/models/equity/sabr.hpp"
@@ -65,6 +69,30 @@ namespace quantModeling
         EXPECT_NEAR(fit.params.rho, kTruth.rho, 0.03);
         EXPECT_NEAR(fit.params.kappa, kTruth.kappa, 0.5);
         EXPECT_NEAR(fit.params.xi, kTruth.xi, 0.1);
+    }
+
+    // #97: the fit's tuned settings (forward differences, tolerances in vol
+    // points, scouted starts) recover the truth as tightly as the generic
+    // ones, and every quote gets its implied-vol error.
+    TEST(HestonCalibration, TheTunedFitMatchesTheGenericOne)
+    {
+        const HestonCalibration tuned = calibrate_heston(heston_surface(kTruth), kSpot, kRate, kDiv);
+        const HestonCalibration generic =
+            calibrate_heston(heston_surface(kTruth), kSpot, kRate, kDiv, calibration::LevenbergMarquardtSettings{});
+        EXPECT_LT(tuned.iv_rmse, 1e-4);
+        EXPECT_NEAR(tuned.params.v0, generic.params.v0, 1e-4);
+        EXPECT_NEAR(tuned.params.theta, generic.params.theta, 1e-3);
+        EXPECT_NEAR(tuned.params.rho, generic.params.rho, 0.01);
+        ASSERT_EQ(tuned.iv_errors.size(), tuned.n_quotes);
+        for (const Real e : tuned.iv_errors)
+            EXPECT_LT(std::fabs(e), 5e-4);
+    }
+
+    TEST(HestonCalibration, AvailableCpusIsPositiveAndBoundedByTheHost)
+    {
+        const std::size_t n = available_cpus();
+        EXPECT_GE(n, 1u);
+        EXPECT_LE(n, std::max(1u, std::thread::hardware_concurrency()));
     }
 
     TEST(HestonCalibration, AFlatSurfaceGivesAFlatFitWithLittleVolOfVol)
