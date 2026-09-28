@@ -371,8 +371,9 @@ class MarkStore:
     PREFIX = "portfolio-marks"
     #: Bumped whenever the way a mark is computed changes, so that marks
     #: stored by an older method are never served as today's (v2: the desk-
-    #: model policy of portfolio_models.py).
-    METHOD = 2
+    #: model policy of portfolio_models.py; v3: path-dependent products under
+    #: stochastic-local vol).
+    METHOD = 3
 
     def __init__(self) -> None:
         self._mem: Dict[str, Dict[str, dict]] = {}

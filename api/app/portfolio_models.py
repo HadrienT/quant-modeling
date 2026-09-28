@@ -12,16 +12,16 @@ so when it does not:
 |---|---|---|
 | European, American vanilla | Black-Scholes at the smile's implied vol for that strike and maturity (closed form; CRR tree for early exercise) — a vanilla is marked, not modelled | same, at the realised-vol proxy |
 | Digital | Black-Scholes at the strike's implied vol, minus vega × skew: the limit of a tight call spread on the smile, which a flat-vol digital misprices by the whole skew term | flat Black-Scholes |
-| Asian, barrier, lookback | Dupire local volatility — reprices every vanilla of the surface, the standard base for path-dependent equity products — by Monte-Carlo on the product's script (Savine), past fixings replayed | same script, Black-Scholes at the realised-vol proxy |
+| Asian, barrier, lookback | Stochastic-local volatility — Heston fitted to the surface, times a leverage that makes it reprice every vanilla of it (stochastic_vol.py): the desk standard for barriers, whose price rests on the forward smile that local vol flattens — by Monte-Carlo on the product's script (Savine), past fixings replayed; Dupire local volatility where Heston cannot be fitted | same script, Black-Scholes at the realised-vol proxy |
 | Quanto | Black-Scholes with the quanto drift adjustment, asset vol from the smile, FX vol and asset/FX correlation estimated from history (no FX options stored) | same, asset vol proxied |
 | Future | cost of carry, no volatility | — |
 
 Not used, and why: rough Bergomi exists in the C++ core but is not
 calibrated to stored data. Heston alone does not reprice the day's vanillas,
-which would mark a book off its own hedges. Stochastic-local volatility, the
-full desk standard for barriers, is calibrated on the stored surface for the
-scripting page (stochastic_vol.py) but not used for marks yet: a history of
-marks would need one Heston fit and one leverage calibration per snapshot.
+which would mark a book off its own hedges. The stochastic-local-vol
+calibration is one Heston fit and one leverage per (ticker, snapshot): a
+history of marks runs one per snapshot once, then reads it from the store
+(stochastic_vol.py), and the warm-up has each new snapshot's ready.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
-from . import scripted_payoffs, valuation, vol_smile
+from . import scripted_payoffs, stochastic_vol, valuation, vol_smile
 from .portfolio_marks import Input, Mark, ModelInfo, ModelParam
 from .portfolio_schemas import DerivativeSpec
 
@@ -351,6 +351,40 @@ def _frozen(params: dict) -> tuple:
     return tuple(sorted((k, params[k]) for k in keep if k in params))
 
 
+def _slv_params(sv: "stochastic_vol.StochasticVol", smile) -> List[ModelParam]:
+    """Heston and its leverage, as the position's model details show them."""
+    fit = f"Heston fitted to the {smile.ticker} SVI surface of {sv.snapshot}"
+    h = sv.heston
+    return [
+        ModelParam(
+            "initial vol √v0", math.sqrt(h["v0"]), status="calibrated", source=fit
+        ),
+        ModelParam(
+            "long-run vol √θ", math.sqrt(h["theta"]), status="calibrated", source=fit
+        ),
+        ModelParam("mean reversion κ", h["kappa"], status="calibrated", source=fit),
+        ModelParam("vol of vol ξ", h["xi"], status="calibrated", source=fit),
+        ModelParam("spot-vol correlation ρ", h["rho"], status="calibrated", source=fit),
+        ModelParam(
+            "Heston fit error, implied vol RMSE",
+            sv.iv_rmse,
+            status="calibrated",
+            source=f"worst point {sv.iv_worst * 100:.2f} vol points, "
+            f"{sv.n_quotes} points on {sv.n_maturities} maturities",
+        ),
+        ModelParam(
+            "leverage L(K, T)",
+            text=f"{sv.leverage_min:.2f} to {sv.leverage_max:.2f}",
+            status="calibrated",
+            source=(
+                f"particle method, {sv.n_particles:,} particles; "
+                f"{sv.leverage_clamped_share:.1%} of the grid at its floor or cap, "
+                "where the surface is not matched"
+            ),
+        ),
+    ]
+
+
 def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
     u = spec.underlying
     start_raw = params.get("start_date")
@@ -385,11 +419,33 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
     K = float(params.get("strike", S))
     T = max((spec.expiry - d).days / 365.25, 1e-6)
     sigma, vparam, vinput, smile = _asset_vol(spec, params, d, md, K, T)
+    sv, sv_failure = None, ""
+    if smile is not None:
+        try:
+            sv = stochastic_vol.calibrate(smile.market())
+        except stochastic_vol.CalibrationUnavailable as exc:
+            sv_failure = str(exc)
 
     def run(spot: float) -> dict:
         common = dict(
             n_paths=SCRIPT_PATHS, seed=SCRIPT_SEED, historical_fixings=fixings
         )
+        if sv is not None:
+            return qm.price_script(
+                t.script,
+                spot,
+                r,
+                q,
+                0.0,
+                d.isoformat(),
+                model="slv",
+                K_grid=list(smile.K_grid),
+                T_grid=list(smile.T_grid),
+                steps_per_year=252,
+                heston=sv.heston,
+                leverage_flat=list(sv.leverage_flat),
+                **common,
+            )
         if smile is not None:
             return qm.price_script(
                 t.script,
@@ -457,12 +513,31 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
             source=f"seed {SCRIPT_SEED}, same draws every day",
         ),
     ]
-    if smile is not None:
+    extra: List[ModelParam] = []
+    if sv is not None:
+        model = "Stochastic-local volatility (Heston × leverage)"
+        why = (
+            "Path-dependent payoffs depend on the forward smile, not one vol. Local volatility "
+            "reprices the day's vanillas but flattens the forward smile, which barriers are "
+            "sensitive to; Heston gives the smile its dynamics, and a leverage function on top "
+            "makes it reprice the same vanillas. Past fixings are replayed, so a seasoned "
+            "product is priced from where it is."
+        )
+        vparam = replace(
+            vparam,
+            name="local vol surface",
+            value=None,
+            text=f"{len(smile.K_grid)}×{len(smile.T_grid)} grid from the SVI fit",
+        )
+        extra = _slv_params(sv, smile)
+    elif smile is not None:
         model = "Dupire local volatility"
         why = (
             "Path-dependent payoffs depend on the forward smile, not one vol: local volatility "
             "reprices every vanilla of the day's surface and is the standard base for equity "
             "exotics. Past fixings are replayed, so a seasoned product is priced from where it is."
+            f" Stochastic-local volatility, the model used when it can be calibrated, could not "
+            f"be here: {sv_failure}"
         )
         vparam = replace(
             vparam,
@@ -493,7 +568,7 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
             model,
             "Monte-Carlo on the product's script (Savine scripting engine)",
             why,
-            _market_params(params, inputs) + [vparam] + contract + past + mc,
+            _market_params(params, inputs) + [vparam] + extra + contract + past + mc,
             std_error=float(res["mc_std_error"]),
         ),
     )
