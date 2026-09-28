@@ -16,8 +16,8 @@ ses « trous » sont comblés. État par chantier :
 |---|---|---|
 | **0. Fondations** | Framework de calibration C++ (`ObjectiveFunction`, Levenberg-Marquardt, rapport en points de vol) ; `DayCounter`, calendriers, `Schedule` ; bootstrap de courbe | Multi-courbe OIS / projection ; Hull-White calibré sur swaptions (pas de swaptions) |
 | **1. Vol stochastique** | Heston (COS « Little Heston Trap », QE d'Andersen) ; SABR + calibration ; SVI + Dupire en C++ ; rough Bergomi (schéma hybride) ; **Heston calibré sur la chaîne stockée, SLV (levier par particules)** ; le modèle est choisi pour chaque script et les dynamiques se comparent sur la page pricing | Rough Bergomi non calibré ; grille de Dupire étroite et bruitée en T (issue #82) |
-| **2. AAD** | Lots 17a–17g (tape, check-pointing, parallèle bit-à-bit, multi-adjoints, expression templates) ; **17h : superbucket Dupire, vega par cotation d'option** | Ordre 2 hors dérivées finies sur AAD |
-| **3. GPU** | — | Tout : aucun fichier `.cu` |
+| **2. AAD** | Lots 17a–17g (tape, check-pointing, parallèle bit-à-bit, multi-adjoints, expression templates) ; **17h : superbucket Dupire, vega par cotation d'option** ; **sur GPU** : duaux (Black-Scholes, Heston) et adjoint par chemin en vol locale, égaux à la tape à l'arrondi, ×130 à ×440 | Ordre 2 hors dérivées finies sur AAD ; risques SLV sur GPU |
+| **3. GPU** | **Fait (WP 19, lots G0–G4).** Philox et Sobol maison (bit à bit CPU = GPU), pont brownien, scripts compilés en bytecode et exécutés sur GPU, réduction de variance générique (contrôles, stratification, importance sampling), Sobol + pont sur GPU, **deux V100 au bit près**, benchmark publié (README, `blueprint/wp/19-gpu.md` §9) : une barrière quotidienne sous vol locale passe de 169 min sur un cœur à 12,7 s sur deux V100, 2,3 s en Sobol | Profilage des kernels (compteurs matériels, issue #105) |
 | **4. Taux, crédit, xVA** | Hull-White / Vasicek / CIR (modèles seuls) | LSMC, swaps / swaptions, multi-courbe, crédit, moteur d'exposition, CVA |
 | **5. ML** | — | Tout |
 
@@ -27,8 +27,14 @@ payoff C++ : elle sert la profondeur (choix et comparaison des modèles, profils
 de risque calculés, superbucket). Elle est **gelée** : un 43ᵉ script n'aurait
 pas plus de valeur qu'un 25ᵉ payoff.
 
-**Suite, dans l'ordre** : chantier 3 (GPU), puis LSMC — qui débloque aussi les
-scripts rappelables et les choosers (issue #86) — puis le chantier 4.
+**Suite, dans l'ordre** : les chantiers 2 et 3 sont faits, ce qui lève le
+prérequis du §5 (« le xVA sans GPU ni AAD reste un jouet »). D'abord la qualité
+des modèles calibrés — calibration Heston (issue #97), grille de Dupire
+(issue #82) — dont dépend tout ce qui suit ; puis LSMC, qui débloque aussi les
+scripts rappelables et les choosers (issue #86) ; puis le chantier 4, dont le
+moteur d'exposition tournera sur les deux V100 et dont les sensibilités CVA
+viendront de l'AAD. Alternative plus courte : le chantier 1c (rough Bergomi
+calibré, sur GPU) et le 5 option A (sa calibration neuronale).
 
 ---
 
@@ -243,6 +249,28 @@ annoncé sans erreur standard associée ne vaut rien — la bonne métrique est
 > Qu'est-ce qui limite ton kernel, la bande passante mémoire ou le calcul ? Comment
 > assures-tu que deux GPU ne consomment pas les mêmes nombres quasi-aléatoires ?
 > Pourquoi la réduction en float naïve est-elle dangereuse à 10⁸ chemins ?
+
+**Fait (WP 19, septembre 2026)** — conception, mesures et décisions dans
+[`blueprint/wp/19-gpu.md`](../blueprint/wp/19-gpu.md). Ce qui a différé du plan
+ci-dessus, et pourquoi :
+- **Pas cuRAND** : Philox et Sobol (directions Joe-Kuo, jusqu'à 21 201
+  dimensions) écrits dans le dépôt, pour que le CPU et le GPU tirent les mêmes
+  bits — c'est ce qui fait du CPU l'oracle du GPU (ADR-G2, G3).
+- **Pas de tableaux de chemins** : chaque chemin est une fonction pure de (graine,
+  indice) ; seuls les accumulateurs remontent. Les deux cartes se partagent des
+  **blocs logiques** d'indices, et l'ordre des additions est fixé par les
+  indices : 1 GPU = 2 GPU au bit près, vérifié (ADR-G5).
+- **Au-delà du plan** : les scripts compilés en bytecode et exécutés sur GPU,
+  l'AAD sans tape sur GPU (duaux, adjoint par chemin), la réduction de variance
+  générique mesurée technique par technique, et le brouillage d'Owen évalué sur
+  toute la bibliothèque puis écarté (le verdict change de sens avec le nombre de
+  points).
+- Réponses aux trois questions : les kernels de prix ne lisent que de petites
+  tables en cache et sont limités par le calcul FP64 (mesuré au lot G0 ; le
+  profilage fin attend l'accès aux compteurs, issue #105) ; les nombres ne se
+  chevauchent pas parce qu'un tirage est une fonction de son indice de chemin, et
+  les cartes se partagent des plages d'indices disjointes ; la réduction est un
+  Welford fusionné par la formule de Chan, dans un arbre fixe.
 
 ---
 
