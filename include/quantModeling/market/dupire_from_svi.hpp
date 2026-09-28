@@ -36,9 +36,25 @@ namespace quantModeling
                                     const DupireFromSVIParams &params = {}) noexcept;
 
     /**
-     * Builds the (K_grid, T_grid, sigma_loc) grid GridLocalVol needs: T over
-     * [surface.ttm_min(), surface.ttm_max()] (there is nothing to extrapolate
-     * from beyond the calibrated maturities), strikes over log-moneyness
+     * The maturity columns of the local-vol grid: n_maturities points on
+     * (0, surface.ttm_max()], aligned on the slices. Linear total variance
+     * makes dw/dT, and so the local vol, jump at every slice; each segment
+     * [T_{i-1}, T_i] gets a column at each edge -- T_i itself, and
+     * T_{i-1} (1 + 1e-9) for the right limit -- so GridLocalVol's linear
+     * interpolation in T carries the jump exactly instead of blending two
+     * segments over a column. The other columns go to the segments in
+     * proportion to their length. A column straddling a slice gives the
+     * superbucket (market/superbucket.hpp) of a one-year call vegas of
+     * opposite signs to short slices, where Dupire gives it none. Equal
+     * steps when n_maturities is below two per segment.
+     */
+    std::vector<Real> local_vol_maturities(const SVISurface &surface, std::size_t n_maturities);
+
+    /**
+     * Builds the (K_grid, T_grid, sigma_loc) grid GridLocalVol needs: T on
+     * local_vol_maturities (the surface grows from zero variance before its
+     * first slice, and there is nothing to extrapolate from beyond its
+     * last), strikes over log-moneyness
      * [k_min, k_max] converted at each grid maturity's own forward. Cells
      * where svi_surface_local_variance is unstable are filled from the
      * nearest valid cell -- matching dupire.py's fallback -- but no

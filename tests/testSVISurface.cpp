@@ -92,12 +92,36 @@ namespace quantModeling
         EXPECT_NEAR(surface.total_variance_dT(k, T), fd, 1e-6);
     }
 
-    TEST(SVISurface, ClampsQueriesOutsideItsMaturityRange)
+    TEST(SVISurface, ClampsQueriesPastItsLastSlice)
     {
         const SVISurface surface = two_slice_surface();
         const Real k = 0.1;
         EXPECT_NEAR(surface.total_variance(k, 5.0), surface.total_variance(k, surface.ttm_max()), 1e-12);
-        EXPECT_NEAR(surface.total_variance(k, -1.0), surface.total_variance(k, surface.ttm_min()), 1e-12);
+        EXPECT_EQ(surface.total_variance(k, -1.0), 0.0);
+    }
+
+    // Before the first slice, variance grows linearly from zero: implied vol
+    // is the first slice's, and dw/dT integrates to exactly w_1 over
+    // [0, T_1] -- what a local vol on that interval must deliver.
+    TEST(SVISurface, GrowsFromZeroVarianceBeforeTheFirstSlice)
+    {
+        const SVISurface surface = two_slice_surface();
+        const SVIParams &first = surface.slices().front().params;
+        for (const Real k : {-0.3, 0.0, 0.2})
+            for (const Real T : {0.01, 0.1, 0.2})
+            {
+                const Real lam = T / 0.25;
+                EXPECT_NEAR(surface.total_variance(k, T), lam * svi_total_variance(k, first), 1e-15);
+                EXPECT_NEAR(surface.total_variance_dk(k, T), lam * svi_total_variance_dk(k, first), 1e-15);
+                EXPECT_NEAR(surface.total_variance_dk2(k, T), lam * svi_total_variance_dk2(k, first), 1e-15);
+                EXPECT_NEAR(surface.total_variance_dT(k, T) * 0.25, svi_total_variance(k, first), 1e-15);
+                EXPECT_NEAR(surface.implied_vol(k, T), surface.implied_vol(k, 0.25), 1e-12);
+            }
+    }
+
+    TEST(SVISurface, RejectsANonPositiveMaturity)
+    {
+        EXPECT_THROW(SVISurface({make_slice(0.0, 0.02), make_slice(1.0, 0.10)}), InvalidInput);
     }
 
     TEST(SVISurface, ImpliedVolIsTheSquareRootOfTotalVarianceOverT)

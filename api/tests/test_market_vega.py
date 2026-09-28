@@ -25,10 +25,10 @@ def _iv(k: float, T: float) -> float:
     return math.sqrt(w / T)
 
 
-def _chain(shift: float = 0.0):
+def _chain(shift: float = 0.0, expiries=EXPIRIES):
     n = lambda z: 0.5 * math.erfc(-z / math.sqrt(2))  # noqa: E731
     quotes = []
-    for T in EXPIRIES:
+    for T in expiries:
         F = SPOT * math.exp((RATE - DIV) * T)
         for K in range(75, 136, 5):
             iv = _iv(math.log(K / F), T) + shift
@@ -43,10 +43,10 @@ def _chain(shift: float = 0.0):
     return quotes
 
 
-def _market(shift: float = 0.0) -> market_snapshot.LocalVolMarket:
+def _market(shift: float = 0.0, expiries=EXPIRIES) -> market_snapshot.LocalVolMarket:
     ms = market_snapshot
     r = qm.calibrate_vol_surface(
-        _chain(shift),
+        _chain(shift, expiries),
         SPOT,
         RATE,
         DIV,
@@ -134,6 +134,27 @@ def test_the_vega_sits_at_the_product_maturity(chain):
     out = market_vega.market_vega(_req())
     near = sum(m.vega for m in out.maturities if 0.5 <= m.ttm <= 1.5)
     assert near > 0.7 * out.total_vega
+
+
+def test_the_maturities_before_the_product_carry_almost_none(chain):
+    # Dupire: the price of a call depends on the surface at its own maturity
+    # only. The grid's columns sit on both sides of every slice
+    # (local_vol_maturities), so the earlier slices move it little.
+    out = market_vega.market_vega(_req())
+    early = [m for m in out.maturities if m.ttm < 0.9]
+    assert early and all(abs(m.vega) < 0.1 * out.total_vega for m in early)
+
+
+def test_a_short_slice_stays_out_of_the_surface_and_gets_no_vega(monkeypatch):
+    # A 0.02y expiry is below SurfaceSliceSelection::min_ttm: calibrated and
+    # reported, but not a pillar of the local vol -- so none of its quotes
+    # moves the price.
+    m = _market(expiries=(0.02,) + EXPIRIES)
+    monkeypatch.setattr(market_snapshot, "local_vol_market", lambda *a: m)
+    flags = {round(s["ttm"], 4): s["in_surface"] for s in m.svi_slices}
+    assert flags == {0.02: False, 0.25: True, 0.5: True, 1.0: True, 1.5: True}
+    out = market_vega.market_vega(_req())
+    assert {round(q.ttm, 4) for q in out.quotes} == {0.25, 0.5, 1.0, 1.5}
 
 
 def test_several_underlyings_are_refused():

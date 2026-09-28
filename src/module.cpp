@@ -596,6 +596,7 @@ static py::dict calibrate_vol_surface_impl(
         sd["iterations"] = s.iterations;
         sd["converged"] = s.converged;
         sd["butterfly_arbitrage_free"] = s.butterfly_arbitrage_free;
+        sd["in_surface"] = s.in_surface;
         py::list quotes;
         for (const auto &q : s.quotes)
             quotes.append(py::make_tuple(q.log_moneyness, q.market_iv, q.weight));
@@ -748,6 +749,10 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
     for (const py::handle h : slices_py)
     {
         const py::dict d = py::reinterpret_borrow<py::dict>(h);
+        // Only the slices the grid was built from (calibrate_vol_surface's
+        // select_surface_slices); a slice left out moves no local vol.
+        if (d.contains("in_surface") && !d["in_surface"].cast<bool>())
+            continue;
         SVISliceCalibration c;
         c.ttm = d["ttm"].cast<double>();
         c.params = SVIParams{d["a"].cast<double>(), d["b"].cast<double>(),
