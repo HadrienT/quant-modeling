@@ -658,6 +658,11 @@ class PricingResponse(BaseModel):
     device: Literal["cpu", "gpu"] = Field(
         "cpu", description="Where the pricing actually ran."
     )
+    gpus: int = Field(
+        0,
+        description="GPUs the Monte-Carlo shared its paths between (0 on the "
+        "CPU). The result is the same bits for any count (blueprint WP 19 §7).",
+    )
 
 
 class ComputeDevicesResponse(BaseModel):

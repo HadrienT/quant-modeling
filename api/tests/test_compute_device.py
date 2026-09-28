@@ -300,3 +300,27 @@ def test_risks_under_sobol_on_the_gpu_are_the_tapes(client):
     by_label = {r["label"]: r["value"] for r in cpu["risks"]}
     for r in gpu["risks"]:
         assert r["value"] == pytest.approx(by_label[r["label"]], rel=1e-8, abs=1e-10)
+
+
+# ── Two GPUs (blueprint WP 19, lot G4) ──────────────────────────────────────
+
+
+@pytest.mark.skipif(not HAS_GPU, reason="no CUDA device")
+def test_the_response_and_the_audit_say_how_many_gpus(client):
+    c, sink = client
+    # enough paths for every card to join (a card needs 128 logical blocks)
+    body = price_script(c, device="gpu", n_paths=2_200_000).json()
+    n = len(qm.gpu_devices())
+    assert body["gpus"] == n
+    if n > 1:
+        assert f"{n} x " in body["diagnostics"]
+    event = next(e for e in sink.events if e.type == "pricing.valuation")
+    assert event.payload["engine"]["gpus"] == n
+
+
+def test_the_cpu_reports_no_gpu(client):
+    c, sink = client
+    body = price_script(c).json()
+    assert body["gpus"] == 0
+    event = next(e for e in sink.events if e.type == "pricing.valuation")
+    assert event.payload["engine"]["gpus"] is None

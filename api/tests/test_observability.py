@@ -425,6 +425,7 @@ def test_a_pricing_emits_its_valuation_record(client, inmemory_sink):
         "seed": 7,
         "scheme": None,
         "device": "cpu",
+        "gpus": None,
     }
     assert p["model"]["name"] == "black_scholes"
     assert p["result"]["npv"] == r.json()["npv"]
@@ -456,6 +457,7 @@ def test_the_record_names_the_engine_that_actually_ran(client, inmemory_sink):
         "seed": None,
         "scheme": None,
         "device": None,
+        "gpus": None,
     }
 
 

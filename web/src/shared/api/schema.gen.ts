@@ -3248,6 +3248,12 @@ export interface components {
             device: "cpu" | "gpu";
             /** Diagnostics */
             diagnostics: string;
+            /**
+             * Gpus
+             * @description GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 §7).
+             * @default 0
+             */
+            gpus: number;
             greeks: components["schemas"]["Greeks"];
             /** Mc Std Error */
             mc_std_error: number;

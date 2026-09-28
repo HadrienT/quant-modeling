@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { PricingResult } from "@/shared/api";
+import { deviceLabel, type PricingResult } from "@/shared/api";
 import { ComputeTime, Uncertainty } from "@/shared/ui/density";
 
 /** A scripted product's price, its Monte-Carlo error and how long it took.
@@ -16,7 +16,7 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 		>
 			<div className="flex items-baseline justify-between gap-4">
 				<span className="text-2xs text-ink-muted uppercase">
-					Present value · on {r.device === "gpu" ? "GPU" : "CPU"}
+					Present value · on {deviceLabel(r)}
 				</span>
 				<ComputeTime computeMs={r.compute_ms} roundTripMs={r.round_trip_ms} />
 			</div>

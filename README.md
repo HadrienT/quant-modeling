@@ -90,6 +90,36 @@ real parser before showing it to you. No made-up syntax reaches the screen.
   `in + out = vanilla`, monotonicity bounds, measured log-log convergence
   order — not just "this number equals that number."
 
+## Monte-Carlo on two GPUs
+
+Payoff scripts compile to a stack-machine bytecode that runs unchanged on the
+CPU and in a CUDA kernel on two Tesla V100s, with prices and model risks
+(forward-mode duals, a hand-written per-path adjoint for local vol). Every
+path is a pure function of (seed, path index) and every reduction follows the
+path indices, so **one GPU, two GPUs and the CPU give the same number** — bit
+for bit between GPU counts, to 1e-12 against the CPU. Wall time to a 1e-4
+relative standard error (1e-3 on the delta for the superbucket), the CPU
+columns running the kernels' own per-path code
+(`build-cuda/qm_gpu_table_bench`; `*` = timed on a fraction and scaled):
+
+| Pseudo-random | Paths | CPU 1 thread | CPU 8 threads | 1 V100 | 2 V100 |
+|---|---|---|---|---|---|
+| Vanilla Black-Scholes | 1.25e8 | 8.9 s | 1.3 s | 28 ms | 17 ms |
+| Up-and-out, daily, local vol | 1.55e8 | 169 min * | 27 min * | 25.2 s | 12.7 s |
+| Worst-of autocall, 3 assets | 3.8e6 | 10.3 s | 1.5 s | 41 ms | 34 ms |
+| Superbucket (363 local-vol risks) | 8.5e5 | 51.5 s * | 7.5 s | 237 ms | 237 ms |
+
+| Sobol RQMC + Brownian bridge | Paths | CPU 1 thread | CPU 8 threads | 1 V100 | 2 V100 |
+|---|---|---|---|---|---|
+| Vanilla Black-Scholes | 1.3e5 | 17 ms | 3 ms | 5 ms | 6 ms |
+| Up-and-out, daily, local vol | 3.4e7 | 35 min * | 291 s * | 4.5 s | 2.3 s |
+| Worst-of autocall, 3 assets | 1.0e6 | 2.8 s | 478 ms | 10 ms | 9 ms |
+| Superbucket (363 local-vol risks) | 1.6e4 | 695 ms | 119 ms | 13 ms | 14 ms |
+
+A card joins a run only with enough work (128 logical blocks) to pay for its
+start-up; small runs stay on one. Design, measurements and decisions:
+[`blueprint/wp/19-gpu.md`](blueprint/wp/19-gpu.md).
+
 ## Stack
 
 | Layer | Tech |

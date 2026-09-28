@@ -49,6 +49,7 @@ namespace quantModeling
             req.discount_mats = mats;
             req.antithetic = settings.mc_antithetic && !sobol; // the CPU's Sobol has no mirror
             req.seed = static_cast<uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1);
+            req.devices = gpu::devices_for(settings.mc_gpus); // the same bits on one card or all (lot G4)
             const auto n_units = static_cast<uint64_t>(req.antithetic ? (requested + 1) / 2 : requested);
             req.n_units = n_units;
             if (theta)
@@ -85,7 +86,10 @@ namespace quantModeling
 
             SimulationMCResult res;
             res.labels = product.payoff_labels();
-            std::string note = "SimulationMCEngine on GPU (" + gpu::device_name(req.device) + ")";
+            std::string note = "SimulationMCEngine on GPU (" +
+                               gpu::devices_label(std::vector<int>(req.devices.begin(),
+                                                                   req.devices.begin() + gpu::gpus_used(req))) +
+                               ")";
             std::string cv_note = k > 0 ? " + spot control" : "";
             if (!stratified && !sobol)
             {
@@ -132,6 +136,7 @@ namespace quantModeling
             }
             res.diagnostics = note + (req.antithetic ? " + antithetic" : "") + cv_note + cv_off;
             res.device = "gpu";
+            res.gpus = gpu::gpus_used(req);
             return res;
         }
     } // namespace
@@ -200,7 +205,7 @@ namespace quantModeling
     std::optional<AADSimulResults> simulate_script_aad_gpu(const ScriptedProduct<Real> &product,
                                                            ISimulationModel<Real> &model, std::size_t n_paths,
                                                            std::uint64_t seed, std::string &why,
-                                                           SamplerKind sampler)
+                                                           SamplerKind sampler, int max_gpus)
     {
         if (gpu::device_count() == 0)
         {
@@ -248,6 +253,7 @@ namespace quantModeling
         req.antithetic = false; // the CPU adjoint's paths, one per unit
         req.n_units = static_cast<uint64_t>(n_paths);
         req.seed = seed;
+        req.devices = gpu::devices_for(max_gpus);
         // Sobol: simulate_aad's replicates (engines/mc/simulation_engine_aad.hpp).
         std::optional<mc::SobolTables> tables;
         if (sobol)
@@ -267,7 +273,9 @@ namespace quantModeling
             res.n_paths = static_cast<long long>(req.n_units) * (sobol ? kAadRqmcReplicates : 1);
             res.risks.assign(res.risk_labels.size(), 0.0);
             res.risk_std_errors.assign(res.risk_labels.size(), 0.0);
-            const std::string card = gpu::device_name(req.device);
+            res.gpus = gpu::gpus_used(req);
+            const std::string card = gpu::devices_label(
+                std::vector<int>(req.devices.begin(), req.devices.begin() + res.gpus));
             if (adjoint)
             {
                 const gpu::ScriptAdjointGpuResult r = gpu::simulate_script_adjoint(req);

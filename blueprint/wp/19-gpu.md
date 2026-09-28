@@ -506,6 +506,24 @@ même que le CPU avec le même générateur.
   Monte-Carlo. Forcer l'égalité exacte demanderait `--fmad=false` et nos
   propres `exp`/`log` sur les deux cibles : pas justifié.
 
+**Fait (G4).** Un calcul partage ses blocs logiques entre les cartes :
+`detail::run_on_devices` (`src/gpu/logical_blocks.cuh`) donne à la carte k la
+k-ième plage contiguë de blocs, sur son propre thread hôte, avec sa propre
+copie du script, du modèle et des tables Sobol ; chaque bloc est réduit par le
+même arbre quelle que soit la carte, et l'hôte replie les partiels dans l'ordre
+des blocs. Pour l'adjoint, les sommes de gradient par warp remontent bloc par
+bloc et l'hôte les replie dans l'ordre global — les lots de l'erreur standard
+sont les mêmes. Par défaut, un calcul GPU prend toutes les cartes utilisables
+(`PricingSettings::mc_gpus = 0`) : c'est sans effet sur les nombres, seulement
+sur le temps. **Vérifié bit à bit** (`tests/gpu/testGpuTwoCards.cpp`) : vanille
+(Philox et Sobol, nombre d'unités impair), scripts (Philox, contrôles,
+stratification, Sobol, importance sampling ; vol locale, Heston,
+Black-Scholes, trois actifs), risques par duaux et par adjoint (Philox et
+Sobol) — 1 carte, 2 cartes, et les deux cartes dans l'autre ordre. La réponse
+de l'API et l'événement d'audit disent combien de cartes ont servi (`gpus`,
+ajout optionnel au bloc `engine`, compatible `BACKWARD` selon le contrat de
+`quant-platform`).
+
 ## 8. Intégration
 
 - **CMake** : option `QM_ENABLE_CUDA` (défaut OFF), `CMAKE_CUDA_ARCHITECTURES=70`,
@@ -549,14 +567,60 @@ même que le CPU avec le même générateur.
 
 ## 9. Benchmark
 
-Le livrable qui compte. Tableau publié dans le README :
+Le livrable qui compte. **Fait (G4)**, publié dans le README
+(`build-cuda/qm_gpu_table_bench`) : temps pour atteindre une erreur standard
+relative de 10⁻⁴ sur le prix (10⁻³ sur la delta pour le superbucket, dont
+l'unité de travail est un chemin *et* 363 dérivées). Les colonnes CPU font
+tourner le code même des kernels (`script_path`, `script_lv_adjoint_path`, le
+kernel vanille) sur l'hôte, sur les mêmes blocs logiques : on compare le
+matériel, pas deux implémentations. Pseudo-aléatoire : un pilote fixe le nombre
+de chemins ; Sobol : on double jusqu'à atteindre la cible (erreur atteinte
+donnée). `*` : au-delà de 30 s, chronométré sur une fraction du travail (au
+moins un quart du budget, coûts fixes négligeables) et extrapolé linéairement.
 
-| | CPU 1 thread | CPU 8 threads | 1 V100 | 2 V100 |
-|---|---|---|---|---|
-| Vanille BS | … | … | … | … |
-| Up-and-out quotidien, vol locale | … | … | … | … |
-| Worst-of autocall, 3 actifs | … | … | … | … |
-| Superbucket (AAD vol locale) | … | … | … | … |
+Pseudo-aléatoire (Philox ; paires antithétiques sauf le superbucket) :
+
+| | Chemins | CPU 1 thread | CPU 8 threads | 1 V100 | 2 V100 |
+|---|---|---|---|---|---|
+| Vanille BS | 1,25·10⁸ | 8,9 s | 1,3 s | 28 ms | 17 ms |
+| Up-and-out quotidien, vol locale | 1,55·10⁸ | 169 min * | 27 min * | 25,2 s | 12,7 s |
+| Worst-of autocall, 3 actifs | 3,8·10⁶ | 10,3 s | 1,5 s | 41 ms | 34 ms |
+| Superbucket (363 risques) | 8,5·10⁵ | 51,5 s * | 7,5 s | 237 ms | 237 ms |
+
+Sobol RQMC + pont brownien (16 répliques) :
+
+| | Chemins | Erreur atteinte | CPU 1 thread | CPU 8 threads | 1 V100 | 2 V100 |
+|---|---|---|---|---|---|---|
+| Vanille BS | 1,3·10⁵ | 7,5·10⁻⁵ | 17 ms | 3 ms | 5 ms | 6 ms |
+| Up-and-out quotidien, vol locale | 3,4·10⁷ | 8,6·10⁻⁵ | 35 min * | 291 s * | 4,5 s | 2,3 s |
+| Worst-of autocall, 3 actifs | 1,0·10⁶ | 6,6·10⁻⁵ | 2,8 s | 478 ms | 10 ms | 9 ms |
+| Superbucket (363 risques) | 1,6·10⁴ | 7,6·10⁻⁴ | 695 ms | 119 ms | 13 ms | 14 ms |
+
+Lecture :
+
+- **Le cas qui justifie les cartes** — une barrière quotidienne sous vol locale,
+  252 pas × 1,5·10⁸ chemins : près de trois heures sur un cœur, 27 minutes sur
+  huit, **12,7 s sur deux V100** (×800 contre un cœur, ×2 d'une carte à deux).
+  Avec Sobol + pont, il faut 4,6 fois moins de chemins : **2,3 s**, soit ×4 400
+  contre la référence d'un cœur en pseudo-aléatoire.
+- **Deux cartes font ×2 quand le travail est gros**, rien quand il est petit :
+  une carte ne rejoint un calcul qu'avec au moins 128 blocs logiques à faire
+  (`gpu::kMinBlocksPerDevice` ; sinon son démarrage coûte plus qu'il ne
+  rapporte : mesuré 6 ms sur une carte, 13 ms sur deux pour une réplique de
+  deux blocs). Le superbucket pseudo-aléatoire (208 blocs) reste ainsi sur une
+  carte. Le nombre de cartes réellement utilisées est dans la réponse
+  (`gpus`), l'audit et les diagnostics.
+- **Sobol + pont** divise le nombre de chemins par 4,6 (barrière quotidienne) à
+  ~1 000 (vanille) : sur les petits problèmes, ce sont alors les coûts fixes
+  (copies, lancement) qui dominent, d'où des colonnes GPU de quelques ms.
+- **Ce qui limite chaque kernel** (bande passante ou calcul) reste à mesurer :
+  `ncu` n'a pas accès aux compteurs matériels sans droit administrateur
+  (`ERR_NVGPUCTRPERM` ; il faut `NVreg_RestrictProfilingToAdminUsers=0` au
+  module `nvidia`, ou lancer `ncu` en root). Ce que l'on sait par
+  construction : les kernels de prix ne lisent que des tables de quelques Ko
+  (en cache) et sont limités par le calcul FP64 (Φ⁻¹, `exp`), comme mesuré au
+  lot G0 ; l'adjoint et Sobol + pont écrivent et relisent leur mémoire de
+  travail par thread en mémoire globale, coalescée.
 
 Premier point (lot G0, `build-cuda/qm_gpu_bench`) — call ATM, S = K = 100,
 T = 1, σ = 20 %, antithétique, Philox, les six estimateurs du kernel (prix,
@@ -571,10 +635,11 @@ Même prix aux trois colonnes (9,226547, erreur 9,2·10⁻⁴). Le kernel ne lit
 rien en mémoire : il est limité par le **calcul FP64** (Φ⁻¹, trois `exp` par
 chemin), ce qui est le régime où les V100 (FP64 à 1:2) ont leur avantage.
 
-Ligne « Superbucket » (lot G3, [§6](#6-aad-sur-gpu)) : dV/dσ_loc sur une grille
-Dupire 30×12 en pas quotidien, 102 400 chemins — tape CPU un thread 13 à 23 s,
-une V100 70 à 180 ms selon le script (×130 à ×190), mêmes risques au
-10⁻¹⁵ près. Les colonnes « CPU 8 threads » et « 2 V100 » viennent avec G4.
+Ligne « Superbucket » (lot G3, [§6](#6-aad-sur-gpu)) : contre la **tape** CPU
+(et non le code du kernel sur l'hôte comme dans le tableau ci-dessus), dV/dσ_loc
+sur une grille Dupire 30×12 en pas quotidien, 102 400 chemins — tape un thread
+13 à 23 s, une V100 70 à 180 ms selon le script (×130 à ×190), mêmes risques au
+10⁻¹⁵ près.
 
 Métrique : **temps pour atteindre une erreur standard de 1e-4** (en relatif),
 par échantillonneur (pseudo / Sobol + pont) — un speedup sans erreur standard
@@ -607,12 +672,29 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 | **G1** | Pont brownien dans le moteur générique (CPU) ; directions Joe-Kuo jusqu'à 21 201 ; Sobol device ; modèles en foncteurs | Sobol + pont bat le pseudo-aléatoire en log-log sur un asiatique ; mêmes lois CPU / GPU — **fait** : pente −0,89 contre −0,50, erreur ÷19 à 2¹⁷ chemins ; Sobol GPU = CPU bit à bit sur les 21 201 dimensions ; vol locale, Heston et SLV suivent sur GPU les chemins du CPU ([§2.4](#24-le-pont-brownien-dans-le-moteur-générique), [§4](#4-les-modèles--un-ensemble-fermé)) |
 | **G2** | Compilateur et interpréteur de bytecode, CPU puis GPU | Les 42 scripts : même prix arbre / bytecode / GPU — **fait** : arbre = bytecode au bit près (dur, flou, AAD) ; GPU = CPU Philox sous Black-Scholes, vol locale, Heston et SLV ; ×2 sur CPU, ×100 à ×270 par chemin sur GPU ([§3](#3-les-scripts--un-bytecode)) |
 | **G3** | Variables de contrôle et stratification génériques ; AAD : duaux, puis adjoint par chemin en vol locale | Réduction de variance mesurée ; risques GPU = AAD CPU ; superbucket sur GPU — **fait** : stratification ×1,1 à ×3,4 en temps, contrôles ×3,1 sur le variance swap sans paires (et redondants avec elles, mesuré) ; risques GPU = tape CPU à l'arrondi sur les mêmes chemins, ×130 à ×440 ; superbucket GPU = tape, somme = choc parallèle à 3 % ([§2.5](#25-la-réduction-de-variance-technique-par-technique), [§6](#6-aad-sur-gpu)) |
-| **G4** | Deux GPU, reproductibilité bit à bit, benchmark complet | 1 GPU = 2 GPU bit à bit ; tableau publié |
+| **G4** | Deux GPU, reproductibilité bit à bit, benchmark complet | 1 GPU = 2 GPU bit à bit ; tableau publié — **fait** : bit à bit sur la vanille, les scripts (tous échantillonneurs) et les risques ; tableau au [§9](#9-benchmark) et dans le README ; profilage des kernels en attente des droits sur les compteurs |
 
 ## 12. Hors périmètre
 
 - Brouillage d'Owen (meilleur que le décalage digital sur intégrandes lisses) :
-  après G4, si le benchmark le justifie.
+  après G4, si le benchmark le justifie. **Évalué, écarté** : brouillage imbriqué
+  par hachage (Burley, « Practical Hash-based Owen Scrambling », JCGT 9(4),
+  2020 — sans état, idéal pour le GPU) contre le décalage digital, même pont,
+  vol locale, 16 répliques, dispersion vraie sur 20 graines (chaque rapport
+  incertain de ±45 %) :
+
+  | Rapport de variance, décalage / Owen | 6,6·10⁴ points | 1,05·10⁶ points |
+  |---|---|---|
+  | Call à départ différé | 1,40 | 1,61 |
+  | Asiatique | 0,77 | 1,88 |
+  | Phoenix autocall | 0,31 | 0,41 |
+  | Up-and-out quotidien | 0,80 | 1,16 |
+  | Variance swap | 1,23 | 2,25 |
+
+  Gains modestes sur les intégrandes lisses, **pertes nettes sur l'autocall**
+  (coupons digitaux, barrière) : nos payoffs sont rarement lisses. Le code n'a
+  pas été gardé ; la mesure se refait en rajoutant `owen_scramble` au calcul
+  des coordonnées de `mc::sobol_bridged_gaussians`.
 - ~~Échantillonnage préférentiel générique (drift optimal par payoff).~~ Fait
   après G3 ([§2.6](#26-sobol-sur-gpu-et-léchantillonnage-préférentiel-issues-102-103)),
   sous la forme d'un drift constant par facteur ; un drift dépendant du temps

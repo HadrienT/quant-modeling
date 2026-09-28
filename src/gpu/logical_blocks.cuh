@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <functional>
+#include <thread>
 #include <type_traits>
 #include <string>
 #include <vector>
@@ -151,6 +153,73 @@ namespace quantModeling::gpu::detail
     using AfterLaunch = std::function<void(uint64_t first_block, uint64_t count)>;
 
     /**
+     * @brief The partials of logical blocks [first, last) -- global indices
+     *        over `blocks_per_segment`-block segments of n_units units -- on
+     *        `device`, in block order, in as few launches as memory allows.
+     */
+    template <class Stats, class UnitFn>
+    std::vector<Stats> run_block_range(int device, uint64_t first, uint64_t last, uint64_t blocks_per_segment,
+                                       uint64_t n_units, const UnitFn &fn, uint64_t max_blocks_per_launch,
+                                       const AfterLaunch &after_launch = {})
+    {
+        require_device(device);
+        check(cudaSetDevice(device), "cudaSetDevice");
+        std::vector<Stats> partials(static_cast<size_t>(last > first ? last - first : 0));
+        if (last <= first)
+            return partials;
+
+        // Only the partials live on the device; take at most half of what is
+        // free (the assistant's LLM shares the card) and cap one launch so a
+        // single kernel stays short.
+        uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / sizeof(Stats));
+        per_launch = std::min<uint64_t>(per_launch, uint64_t{1} << 20);
+        if (max_blocks_per_launch > 0)
+            per_launch = std::min(per_launch, max_blocks_per_launch);
+        per_launch = std::min(per_launch, last - first);
+
+        Stats *d_partials = nullptr;
+        check(cudaMalloc(&d_partials, per_launch * sizeof(Stats)), "cudaMalloc");
+        try
+        {
+            for (uint64_t b = first; b < last; b += per_launch)
+            {
+                const uint64_t count = std::min(per_launch, last - b);
+                logical_block_kernel<Stats, UnitFn><<<static_cast<unsigned>(count), mc::LogicalBlocks::kThreadsPerBlock>>>(
+                    b, blocks_per_segment, n_units, fn, d_partials);
+                check(cudaGetLastError(), "kernel launch");
+                check(cudaMemcpy(&partials[static_cast<size_t>(b - first)], d_partials, count * sizeof(Stats),
+                                 cudaMemcpyDeviceToHost),
+                      "cudaMemcpy");
+                if (after_launch)
+                    after_launch(b, count);
+            }
+        }
+        catch (...)
+        {
+            cudaFree(d_partials);
+            throw;
+        }
+        check(cudaFree(d_partials), "cudaFree");
+        return partials;
+    }
+
+    /// Fold each segment's partials (blocks_per_segment consecutive ones) in
+    /// block order.
+    template <class Stats>
+    std::vector<Stats> merge_segments(const std::vector<Stats> &partials, uint64_t n_segments,
+                                      uint64_t blocks_per_segment)
+    {
+        std::vector<Stats> out(static_cast<size_t>(n_segments));
+        for (uint64_t sg = 0; sg < n_segments && blocks_per_segment > 0; ++sg)
+        {
+            const auto b = partials.begin() + static_cast<std::ptrdiff_t>(sg * blocks_per_segment);
+            out[static_cast<size_t>(sg)] =
+                mc::merge_in_order(std::vector<Stats>(b, b + static_cast<std::ptrdiff_t>(blocks_per_segment)));
+        }
+        return out;
+    }
+
+    /**
      * @brief Run `n_segments` segments of n_units units each on `device`, as
      *        few launches as free memory allows; fold each segment's
      *        partials in block order. The functor is fn(segment, u) or fn(u).
@@ -160,55 +229,10 @@ namespace quantModeling::gpu::detail
                                                   const UnitFn &fn, uint64_t max_blocks_per_launch,
                                                   const AfterLaunch &after_launch = {})
     {
-        require_device(device);
-        check(cudaSetDevice(device), "cudaSetDevice");
-
         const uint64_t per_segment = mc::LogicalBlocks::count(n_units);
-        const uint64_t n_blocks = per_segment * n_segments;
-        std::vector<Stats> out(static_cast<size_t>(n_segments));
-        if (n_blocks == 0)
-            return out;
-
-        // Only the partials live on the device; take at most half of what is
-        // free (the assistant's LLM shares the card) and cap one launch so a
-        // single kernel stays short.
-        uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / sizeof(Stats));
-        per_launch = std::min<uint64_t>(per_launch, uint64_t{1} << 20);
-        if (max_blocks_per_launch > 0)
-            per_launch = std::min(per_launch, max_blocks_per_launch);
-        per_launch = std::min(per_launch, n_blocks);
-
-        Stats *d_partials = nullptr;
-        check(cudaMalloc(&d_partials, per_launch * sizeof(Stats)), "cudaMalloc");
-        std::vector<Stats> partials(static_cast<size_t>(n_blocks));
-        try
-        {
-            for (uint64_t first = 0; first < n_blocks; first += per_launch)
-            {
-                const uint64_t count = std::min(per_launch, n_blocks - first);
-                logical_block_kernel<Stats, UnitFn><<<static_cast<unsigned>(count), mc::LogicalBlocks::kThreadsPerBlock>>>(
-                    first, per_segment, n_units, fn, d_partials);
-                check(cudaGetLastError(), "kernel launch");
-                check(cudaMemcpy(&partials[static_cast<size_t>(first)], d_partials, count * sizeof(Stats),
-                                 cudaMemcpyDeviceToHost),
-                      "cudaMemcpy");
-                if (after_launch)
-                    after_launch(first, count);
-            }
-        }
-        catch (...)
-        {
-            cudaFree(d_partials);
-            throw;
-        }
-        check(cudaFree(d_partials), "cudaFree");
-        for (uint64_t sg = 0; sg < n_segments; ++sg)
-        {
-            const auto b = partials.begin() + static_cast<std::ptrdiff_t>(sg * per_segment);
-            out[static_cast<size_t>(sg)] =
-                mc::merge_in_order(std::vector<Stats>(b, b + static_cast<std::ptrdiff_t>(per_segment)));
-        }
-        return out;
+        return merge_segments(run_block_range<Stats>(device, 0, per_segment * n_segments, per_segment, n_units, fn,
+                                                     max_blocks_per_launch, after_launch),
+                              n_segments, per_segment);
     }
 
     /**
@@ -221,6 +245,53 @@ namespace quantModeling::gpu::detail
     {
         return run_logical_block_segments<Stats>(device, 1, n_units, fn, max_blocks_per_launch, after_launch)
             .front();
+    }
+
+    /**
+     * @brief Share n_blocks logical blocks between `devices` (blueprint §7,
+     *        lot G4): device k gets the k-th contiguous range, runs it on its
+     *        own host thread (job(device, first, last) returns its partials
+     *        in block order), and the ranges are concatenated in block order.
+     *
+     * Every block is reduced by the same tree whichever card runs it, and the
+     * host folds the partials in block order: the result does not depend on
+     * the number of devices -- bit for bit (ADR-G5).
+     */
+    template <class Stats, class Job>
+    std::vector<Stats> run_on_devices(const std::vector<int> &devices, uint64_t n_blocks, const Job &job)
+    {
+        const std::size_t n = devices_used(devices.size(), n_blocks);
+        if (n == 1)
+            return job(devices.front(), 0, n_blocks);
+        std::vector<std::vector<Stats>> parts(n);
+        std::vector<std::exception_ptr> errors(n);
+        std::vector<std::thread> threads;
+        for (std::size_t k = 0; k < n; ++k)
+        {
+            const uint64_t first = n_blocks * k / n, last = n_blocks * (k + 1) / n;
+            threads.emplace_back(
+                [&, k, first, last]()
+                {
+                    try
+                    {
+                        parts[k] = job(devices[k], first, last);
+                    }
+                    catch (...)
+                    {
+                        errors[k] = std::current_exception();
+                    }
+                });
+        }
+        for (std::thread &t : threads)
+            t.join();
+        for (const std::exception_ptr &e : errors)
+            if (e)
+                std::rethrow_exception(e);
+        std::vector<Stats> all;
+        all.reserve(static_cast<size_t>(n_blocks));
+        for (auto &p : parts)
+            all.insert(all.end(), p.begin(), p.end());
+        return all;
     }
 
 } // namespace quantModeling::gpu::detail

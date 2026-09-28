@@ -2,6 +2,7 @@
 #define GPU_VANILLA_BS_HPP
 
 #include <cstdint>
+#include <vector>
 
 #include "quantModeling/engines/mc/kernels/vanilla_bs.hpp"
 #include "quantModeling/gpu/device.hpp"
@@ -29,6 +30,8 @@ namespace quantModeling::gpu
         uint64_t n_units = 0;
         uint64_t seed = 0;
         int device = 0;
+        /// Devices sharing the logical blocks (lot G4); empty: `device` alone.
+        std::vector<int> devices;
         /// Upper bound on logical blocks per kernel launch; 0 = computed from
         /// free device memory. Tests set it to force several launches.
         uint64_t max_blocks_per_launch = 0;
@@ -49,6 +52,7 @@ namespace quantModeling::gpu
         uint32_t shift = 0;
         uint64_t n_points = 0;
         int device = 0;
+        std::vector<int> devices; ///< as VanillaGpuRequest::devices
         uint64_t max_blocks_per_launch = 0;
     };
 

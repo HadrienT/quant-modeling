@@ -103,6 +103,10 @@ namespace quantModeling
         /// lowers the variance. Generic engine and GPU scripts; distinct from
         /// mc_importance_sampling, the dedicated vanilla engine's shift.
         bool mc_importance_drift = false;
+        /// GPUs a run may share its logical blocks between (lot G4): 0 for
+        /// every usable one. The result is the same bits for any count
+        /// (blueprint/wp/19-gpu.md §7), so the default only makes it faster.
+        int mc_gpus = 0;
     };
 
     struct MarketView

@@ -41,6 +41,7 @@ namespace quantModeling
         std::vector<Real> risk_std_errors; ///< blueprint §7.4 — one per risk, like every other MC number the project reports
         long long n_paths = 0;
         std::string diagnostics;
+        int gpus = 0; ///< GPUs that computed the risks (0: the CPU tape)
     };
 
     /// Default aggregator: the product's first (and, for every product in
@@ -406,6 +407,7 @@ namespace quantModeling
         out.mc_std_error = r.price_std_error;
         out.diagnostics = r.diagnostics;
         out.risks = RiskReport{r.risk_labels, r.risks, r.risk_std_errors};
+        out.gpus = r.gpus;
 
         for (std::size_t i = 0; i < r.risk_labels.size(); ++i)
         {
