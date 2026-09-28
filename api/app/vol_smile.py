@@ -79,6 +79,21 @@ class Smile:
         h = 1e-3 * K
         return (self.implied_vol(K + h, T) - self.implied_vol(K - h, T)) / (2 * h)
 
+    def market(self) -> "market_snapshot.LocalVolMarket":
+        """The surface as market_snapshot built it: what
+        stochastic_vol.calibrate fits Heston and the SLV leverage to."""
+        return market_snapshot.LocalVolMarket(
+            ticker=self.ticker,
+            valuation_date=self.snapshot,
+            spot=self.spot,
+            dividend=self.dividend,
+            K_grid=list(self.K_grid),
+            T_grid=list(self.T_grid),
+            sigma_loc_flat=list(self.sigma_loc_flat),
+            svi_slices=[dict(s) for s in self.slices],
+            rate=self.rate,
+        )
+
     def fit_quality(self) -> Dict[str, float]:
         rmses = [s.get("rmse", float("nan")) for s in self.slices]
         return {

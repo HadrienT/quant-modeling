@@ -4,7 +4,7 @@ test_portfolio_valuation, with a synthetic smile where one is wanted.
 Properties, not numbers: the SVI surface returns each slice's own vol at its
 maturity; a digital marked on the smile is the strike derivative of the
 calls priced on that smile; a local-vol Monte-Carlo on a flat surface is
-Black-Scholes; a knocked-out barrier is worth nothing and a knocked-in one
+Black-Scholes, and so is SLV on a vanilla-like barrier; a knocked-out barrier is worth nothing and a knocked-in one
 is the vanilla; an Asian carries the average already fixed; every mark says
 which model priced it."""
 
@@ -17,7 +17,7 @@ import pytest
 
 from api.app import portfolio_models as models
 from api.app import portfolio_valuation as pv
-from api.app import valuation, vol_smile
+from api.app import stochastic_vol, valuation, vol_smile
 from api.app.portfolio_schemas import (
     DerivativeSpec,
     Instrument,
@@ -172,13 +172,29 @@ def _scripted(product: str, **params):
     )
 
 
+@pytest.fixture(autouse=True)
+def _fewer_particles(monkeypatch):
+    # The SLV leverage of the synthetic smile: a test, not a price.
+    monkeypatch.setattr(stochastic_vol, "SLV_PARTICLES", 10_000)
+
+
+def _no_heston(monkeypatch):
+    def refuse(market):
+        raise stochastic_vol.CalibrationUnavailable("not enough maturities")
+
+    monkeypatch.setattr(stochastic_vol, "calibrate", refuse)
+
+
 def test_local_vol_on_a_flat_surface_is_black_scholes(monkeypatch):
-    """Dupire local vol with σ_loc ≡ 20 % is Black-Scholes at 20 %: the same
-    script priced both ways agrees within Monte-Carlo error."""
+    """Where Heston cannot be fitted, Dupire local vol marks it; with
+    σ_loc ≡ 20 % it is Black-Scholes at 20 %: the same script priced both
+    ways agrees within Monte-Carlo error."""
     flat = _smile(flat_lv=0.2)
     spec = _scripted("asian", average_type="arithmetic")
     monkeypatch.setattr(vol_smile, "smile_for", lambda t, d, rate_at: flat)
+    _no_heston(monkeypatch)
     lv = _mark(spec)
+    assert "could not be here: not enough maturities" in lv.model.why
     monkeypatch.setattr(vol_smile, "smile_for", lambda t, d, rate_at: None)
     monkeypatch.setattr(pv.MarketData, "realised_vol", lambda self, t, d: (d, 0.2))
     monkeypatch.setattr(pv, "_STORE", pv.MarkStore())
@@ -187,6 +203,59 @@ def test_local_vol_on_a_flat_surface_is_black_scholes(monkeypatch):
     assert bs.model.model == "Black-Scholes, flat volatility"
     se = math.hypot(lv.model.std_error, bs.model.std_error)
     assert lv.value == pytest.approx(bs.value, abs=4 * se)
+
+
+def test_path_dependent_marks_are_stochastic_local_vol(smile, monkeypatch):
+    """Barriers, Asians and lookbacks are marked under SLV (#83), with the
+    Heston parameters and fit error in the model details, and one
+    calibration per snapshot however many positions and days use it."""
+    fits = []
+    real = stochastic_vol._calibrate
+    monkeypatch.setattr(
+        stochastic_vol, "_calibrate", lambda m: fits.append(m.ticker) or real(m)
+    )
+    for product, extra in (
+        ("barrier", dict(barrier_level=50.0, barrier_kind="down-and-out", rebate=0.0)),
+        ("asian", dict(average_type="arithmetic")),
+    ):
+        m = _mark(_scripted(product, **extra))
+        assert m.model.model == "Stochastic-local volatility (Heston × leverage)"
+        params = {p.name: p for p in m.model.params}
+        for name in ("initial vol √v0", "mean reversion κ", "spot-vol correlation ρ"):
+            assert params[name].status == "calibrated"
+        assert 0.0 < params["Heston fit error, implied vol RMSE"].value < 0.05
+        assert "particles" in params["leverage L(K, T)"].source
+    assert fits == ["AAA"]
+
+
+def test_slv_on_a_flat_surface_reprices_the_vanilla(monkeypatch):
+    """The leverage makes SLV reproduce the surface's marginals: with
+    σ_loc ≡ 20 %, a barrier too far to be touched is the Black-Scholes call
+    at 20 %, whatever Heston's own smile."""
+    monkeypatch.setattr(stochastic_vol, "SLV_PARTICLES", 50_000)
+    flat = _smile(flat_lv=0.2)
+    monkeypatch.setattr(vol_smile, "smile_for", lambda t, d, rate_at: flat)
+    m = _mark(
+        _scripted("barrier", barrier_level=1.0, barrier_kind="down-and-out", rebate=0.0)
+    )
+    assert m.model.model.startswith("Stochastic-local volatility")
+    S = CLOSES["AAA"][END]
+    T = (date(2027, 3, 19) - END).days / 365.25
+    r = next(p.value for p in m.model.params if p.name == "rate")
+    req = valuation.PRODUCTS["vanilla"].request.model_validate(
+        {
+            "spot": S,
+            "strike": 105.0,
+            "maturity": T,
+            "rate": r,
+            "dividend": 0.0,
+            "vol": 0.2,
+            "is_call": True,
+            "engine": "analytic",
+        }
+    )
+    bs = valuation.price("vanilla", req).response.npv
+    assert m.value == pytest.approx(bs, abs=4 * m.model.std_error + 0.01 * bs)
 
 
 def test_an_asian_carries_the_average_already_fixed():
