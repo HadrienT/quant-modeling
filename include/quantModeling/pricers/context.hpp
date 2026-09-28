@@ -107,6 +107,9 @@ namespace quantModeling
         /// every usable one. The result is the same bits for any count
         /// (blueprint/wp/19-gpu.md §7), so the default only makes it faster.
         int mc_gpus = 0;
+        /// Sobol only: randomise each replicate by Owen's nested scrambling
+        /// (hash-based, utils/sobol.hpp) instead of the digital shift.
+        bool mc_sobol_owen = false;
     };
 
     struct MarketView

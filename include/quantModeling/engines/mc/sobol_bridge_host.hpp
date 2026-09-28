@@ -19,10 +19,11 @@ namespace quantModeling::mc
      *        (BridgedGaussians' own tables).
      */
     inline SobolTables sobol_tables(std::size_t dimension, uint64_t seed, int replicates,
-                                    const BrownianLayout &layout, bool bridge)
+                                    const BrownianLayout &layout, bool bridge, bool owen = false)
     {
         SobolTables t;
         t.dim = static_cast<int>(dimension);
+        t.owen = owen;
         t.replicates = replicates;
         for (int b = 0; b < replicates; ++b)
         {

@@ -114,7 +114,7 @@ namespace quantModeling
                 << what << " " << gpu.diagnostics;
         }
 
-        void expect_sobol_gpu_equals_cpu(Dyn dyn)
+        void expect_sobol_gpu_equals_cpu(Dyn dyn, bool owen = false)
         {
             for (const auto &s : library())
             {
@@ -125,6 +125,7 @@ namespace quantModeling
                 set.mc_paths = 8192;
                 set.mc_seed = 9;
                 set.mc_sampler = SamplerKind::Sobol;
+                set.mc_sobol_owen = owen;
                 auto cpu_model = model(dyn);
                 auto gpu_model = model(dyn);
                 set.mc_device = ComputeDevice::Cpu;
@@ -152,6 +153,16 @@ namespace quantModeling
     TEST_F(GpuSobolIsTest, SobolLibraryUnderSlv)
     {
         expect_sobol_gpu_equals_cpu(Dyn::SLV);
+    }
+    // Owen's scrambling: the same points on both sides (owen_scramble is
+    // integer arithmetic, host and device).
+    TEST_F(GpuSobolIsTest, OwenSobolLibraryUnderLocalVol)
+    {
+        expect_sobol_gpu_equals_cpu(Dyn::LocalVol, true);
+    }
+    TEST_F(GpuSobolIsTest, OwenSobolLibraryUnderHeston)
+    {
+        expect_sobol_gpu_equals_cpu(Dyn::Heston, true);
     }
 
     TEST_F(GpuSobolIsTest, ImportanceSamplingTakesTheCpusDecisionAndNumbers)

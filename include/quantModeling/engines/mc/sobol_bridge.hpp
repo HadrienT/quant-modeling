@@ -36,8 +36,9 @@ namespace quantModeling::mc
     struct SobolBridgeView
     {
         const uint32_t *V = nullptr;     ///< dim x 32 direction integers, dimension-major
-        const uint32_t *shift = nullptr; ///< replicates x dim digital shifts
+        const uint32_t *shift = nullptr; ///< replicates x dim digital shifts (Owen: the seeds)
         int dim = 0;
+        bool owen = false; ///< Owen's scrambling instead of the digital shift
 
         // Bridge (n == 0: the point is already in the model's time order).
         int n = 0, factors = 0, stride = 0;
@@ -54,7 +55,10 @@ namespace quantModeling::mc
     {
         const uint32_t *sh = v.shift + rep * static_cast<uint64_t>(v.dim);
         auto coord = [&](int j)
-        { return inverse_normal_cdf(sobol_to_uniform(sobol_point_bits(v.V + 32L * j, p), sh[j])); };
+        {
+            const uint32_t bits = sobol_randomise(sobol_point_bits(v.V + 32L * j, p), sh[j], v.owen);
+            return inverse_normal_cdf(sobol_to_uniform(bits, 0u));
+        };
         if (v.n == 0)
         {
             for (int j = 0; j < v.dim; ++j)
@@ -102,6 +106,7 @@ namespace quantModeling::mc
         std::vector<double> left_weight, right_weight, std_dev, inv_sqrt_dt;
         int dim = 0, n = 0, factors = 0, stride = 0;
         int replicates = 0;
+        bool owen = false;
 
         bool bridged() const { return n > 0; }
 
@@ -112,6 +117,7 @@ namespace quantModeling::mc
             v.V = V.data();
             v.shift = shift.data();
             v.dim = dim;
+            v.owen = owen;
             v.n = n;
             v.factors = factors;
             v.stride = stride;

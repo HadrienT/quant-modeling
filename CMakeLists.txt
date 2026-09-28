@@ -305,6 +305,7 @@ if(QM_BUILD_TESTS)
     tests/testVarianceReduction.cpp
     tests/testScriptAdjoint.cpp
     tests/testSobolAndImportance.cpp
+    tests/testSobolOwen.cpp
   )
 
   target_link_libraries(quantModeling_tests
@@ -387,6 +388,11 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   add_executable(qm_gpu_table_bench benchmarks/gpu_table.cpp)
   target_link_libraries(qm_gpu_table_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_table_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
+  # Owen scrambling vs the digital shift on every library script.
+  add_executable(qm_gpu_owen_bench benchmarks/sobol_owen.cpp)
+  target_link_libraries(qm_gpu_owen_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_gpu_owen_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
 endif()
 
