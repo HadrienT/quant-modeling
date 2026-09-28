@@ -7,7 +7,7 @@ export const SITE = {
 	name: "Quant Modeling",
 	url: "https://tramonihadrien.com",
 	publisher: "Hadrien Tramoni",
-	contact: "support@tramonihadrien.com",
+	contact: "contact@tramonihadrien.com",
 	repository: "https://github.com/HadrienT/quant-modeling",
 	/** Last substantive change to the legal pages (ISO date). */
 	legalUpdated: "2026-09-28",
