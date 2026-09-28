@@ -5482,7 +5482,7 @@
                 "type": "null"
               }
             ],
-            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).",
+            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced with each asset on the Dupire surface of its stored option chain when every ticker has one (local vol, drivers correlated), else under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).",
             "title": "Underlyings"
           },
           "valuation_date": {
@@ -5840,7 +5840,7 @@
                 "type": "null"
               }
             ],
-            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).",
+            "description": "For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced with each asset on the Dupire surface of its stored option chain when every ticker has one (local vol, drivers correlated), else under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).",
             "title": "Underlyings"
           },
           "valuation_date": {

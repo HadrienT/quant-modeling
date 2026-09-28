@@ -61,14 +61,15 @@ namespace quantModeling::scripting
 
         if (multi_asset)
         {
-            if (smile_sensitive)
+            if (smile_sensitive && model == ModelKind::BlackScholesFlatVol)
                 out.push_back(
                     {"flat_vol_smile", "warning",
                      "The script reads several underlyings, each simulated "
                      "with one flat volatility: the skew of each asset is not "
                      "captured, and worst-of or barrier payoffs are the most "
-                     "sensitive to it. Multi-asset local vol is not available "
-                     "for scripts yet."});
+                     "sensitive to it. Multi-asset local vol, one Dupire "
+                     "surface per asset, needs a stored option chain for "
+                     "every underlying."});
             out.push_back(
                 {"correlation", "info",
                  "The price depends on the joint law of the underlyings: the "
@@ -111,13 +112,21 @@ namespace quantModeling::scripting
             switch (model)
             {
                 case ModelKind::LocalVolSurface:
-                    msg = "The payoff depends on spot at several dates jointly "
-                          "(a running quantity or a trigger carried across "
-                          "events). Local vol reproduces today's vanilla smile "
-                          "exactly, but the forward smile it implies is flatter "
-                          "than what markets typically show: treat forward-skew "
-                          "risk as approximate. model='slv' adds calibrated "
-                          "stochastic-vol dynamics.";
+                    msg = multi_asset
+                              ? "The payoff depends on spot at several dates jointly "
+                                "(a running quantity or a trigger carried across "
+                                "events). Local vol reproduces each asset's vanilla "
+                                "smile exactly, but the forward smiles it implies are "
+                                "flatter than what markets typically show: treat "
+                                "forward-skew risk as approximate. Stochastic-local "
+                                "vol is single-asset only."
+                              : "The payoff depends on spot at several dates jointly "
+                                "(a running quantity or a trigger carried across "
+                                "events). Local vol reproduces today's vanilla smile "
+                                "exactly, but the forward smile it implies is flatter "
+                                "than what markets typically show: treat forward-skew "
+                                "risk as approximate. model='slv' adds calibrated "
+                                "stochastic-vol dynamics.";
                     break;
                 case ModelKind::Heston:
                     msg = "The payoff depends on spot at several dates jointly, "
@@ -200,12 +209,21 @@ namespace quantModeling::scripting
      */
     inline Recommendation recommend(const ScriptAnalysis &a, const ModelAvailability &avail)
     {
+        if (a.n_underlyings > 1 && avail.market_surface)
+            return {ModelKind::LocalVolSurface, "multi_asset_local_vol",
+                    "The script reads several underlyings, so they are "
+                    "simulated jointly: each asset on the Dupire surface of its "
+                    "own stored option chain, which reprices its vanillas and "
+                    "keeps its skew, their drivers correlated by the matrix "
+                    "given (historical: no correlation product is stored to "
+                    "imply it from)."};
         if (a.n_underlyings > 1)
             return {ModelKind::BlackScholesFlatVol, "multi_asset",
                     "The script reads several underlyings, so they are "
                     "simulated jointly: correlated Black-Scholes, each asset at "
-                    "its own volatility, with the correlation matrix given. It "
-                    "is the only multi-asset model available for scripts."};
+                    "its own volatility, with the correlation matrix given. "
+                    "Multi-asset local vol needs a stored option chain for "
+                    "every underlying."};
 
         if (!avail.market_surface)
             return {ModelKind::BlackScholesFlatVol, "no_market_data",

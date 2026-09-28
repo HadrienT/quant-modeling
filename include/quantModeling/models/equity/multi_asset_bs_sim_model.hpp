@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/device_model.hpp"
+#include "quantModeling/models/equity/correlation_factor.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
 #include <Eigen/Cholesky>
@@ -249,23 +250,7 @@ namespace quantModeling
 
         void factor_correlation(const Eigen::MatrixXd &corr)
         {
-            const Eigen::LLT<Eigen::MatrixXd> llt(corr);
-            if (llt.info() == Eigen::Success)
-            {
-                chol_ = llt.matrixL();
-                return;
-            }
-            // Positive *semi*-definite (e.g. a rho = 1 block) has no strict
-            // Cholesky factor; any A with A A^T = C works as a mixing
-            // matrix, so fall back to the spectral square root.
-            const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(corr);
-            if (es.info() != Eigen::Success ||
-                es.eigenvalues().minCoeff() < -1e-10 * corr.rows())
-                throw InvalidInput(
-                    "MultiAssetBSSimModel: correlation matrix is not "
-                    "positive semi-definite");
-            chol_ = es.eigenvectors() *
-                    es.eigenvalues().cwiseMax(0.0).cwiseSqrt().asDiagonal();
+            chol_ = correlation_factor(corr, "MultiAssetBSSimModel");
         }
 
         void set_param_pointers()

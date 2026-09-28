@@ -224,6 +224,7 @@ if(QM_BUILD_TESTS)
     tests/testAADMulti.cpp
     tests/testAADExpression.cpp
     tests/testMultiAssetBSSimModel.cpp
+    tests/testMultiAssetLocalVolSimModel.cpp
     tests/testLocalVolSimModel.cpp
     tests/testMertonJumpDiffusionSimModel.cpp
     tests/testKouJumpDiffusionSimModel.cpp

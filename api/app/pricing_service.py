@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
@@ -233,9 +233,40 @@ def _calibration_of(market, sv, model: str) -> Dict:
     return out
 
 
+def _local_vol_markets(req: ScriptRequest, m) -> Tuple[Optional[list], str]:
+    """One Dupire surface per underlying, or (None, why not): every
+    underlying a ticker with a stored chain, in the payment currency (the
+    quanto drift of a local vol would depend on the path), all on one
+    snapshot."""
+    from . import market_snapshot
+
+    if any(a.fx is not None or a.drift_adjustment for a in m.assets):
+        return None, (
+            "an underlying is an exchange rate or is listed in another currency: "
+            "its drift is the quanto one, which a local vol would make path-dependent"
+        )
+    markets = []
+    for a in m.assets:
+        try:
+            markets.append(
+                market_snapshot.local_vol_market(a.ticker, req.rate, req.valuation_date)
+            )
+        except market_snapshot.MarketDataUnavailable as exc:
+            return None, f"{a.ticker} has no usable stored option chain ({exc})"
+    snaps = {lv.valuation_date for lv in markets}
+    if len(snaps) > 1:
+        return None, (
+            "the stored option chains are from different dates "
+            f"({', '.join(sorted(d.isoformat() for d in snaps))})"
+        )
+    return markets, ""
+
+
 def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
-    """A script reading spot(0), spot(1)...: correlated Black-Scholes, inputs
-    from the database (tickers) or typed."""
+    """A script reading spot(0), spot(1)...: each asset on the Dupire surface
+    of its stored chain when every one has one (local vol, drivers
+    correlated), else correlated Black-Scholes; inputs from the database
+    (tickers) or typed."""
     from . import multi_asset_market
 
     parsed = qm.validate_script(
@@ -247,8 +278,15 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             f"the script reads {n} underlying(s) (spot(0) to spot({n - 1})) "
             f"but {given} are given"
         )
+    if n == 1 and req.model == "local_vol":
+        raise ValueError(
+            "model='local_vol' on one underlying takes `ticker`; `underlyings` "
+            "with one entry is a quanto, priced under Black-Scholes"
+        )
     horizon = parsed["events"][-1]["t"] if parsed["events"] else 0.0
     warnings: List[Dict] = []
+    surfaces, no_surface = None, "the underlyings are typed"
+    valuation_date = req.valuation_date
     if req.underlyings[0].spot is None:
         m = multi_asset_market.multi_asset_market(
             [
@@ -260,6 +298,8 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             horizon,
             req.currency,
         )
+        if req.model in ("auto", "local_vol") and n > 1:
+            surfaces, no_surface = _local_vol_markets(req, m)
         used = [
             UnderlyingUsed(
                 ticker=a.ticker,
@@ -283,24 +323,56 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             for u in req.underlyings
         ]
         corr, corr_source = req.correlation, "typed"
+    if req.model == "local_vol" and surfaces is None:
+        raise ValueError(f"model='local_vol' on several underlyings: {no_surface}")
 
     rec = qm.recommend_script_model(
         req.script,
         req.valuation_date.isoformat(),
         req.day_count,
-        market_surface=False,
+        market_surface=surfaces is not None,
         stochastic=False,
     )
     choice = (
-        {"requested": "auto", **rec}
-        if req.model == "auto"
-        else _user_choice("black_scholes")
+        {"requested": "auto", **rec} if req.model == "auto" else _user_choice(req.model)
     )
+    model = choice["model"]
+    if choice["code"] == "multi_asset" and n > 1 and no_surface:
+        choice["reason"] += f" Here: {no_surface}."
+    grids: Dict[str, list] = {}
+    if model == "local_vol":
+        # Each asset on its own surface, priced on the chains' market date
+        # with the closes the surfaces were calibrated on.
+        valuation_date = surfaces[0].valuation_date
+        if valuation_date != req.valuation_date:
+            warnings.append(
+                {
+                    "code": "market_date_shifted",
+                    "severity": "info",
+                    "message": f"Priced on the stored market date "
+                    f"{valuation_date.isoformat()} (requested "
+                    f"{req.valuation_date.isoformat()}): the latest option-chain "
+                    "snapshot on or before it.",
+                }
+            )
+        for u, lv in zip(used, surfaces):
+            u.spot, u.dividend = lv.spot, lv.dividend
+            u.vol_source = (
+                f"local vol: Dupire surface of the {lv.valuation_date.isoformat()} "
+                f"chain ({len(lv.K_grid)}x{len(lv.T_grid)}); the vol shown is the "
+                "at-the-money implied vol"
+            )
+            warnings.extend(lv.warnings)
+        grids = dict(
+            K_grids=[lv.K_grid for lv in surfaces],
+            T_grids=[lv.T_grid for lv in surfaces],
+            sigma_loc_flats=[lv.sigma_loc_flat for lv in surfaces],
+        )
     with tracer.start_as_current_span(
         "engine.price",
         attributes={
             "qm.product": "script",
-            "qm.model": "black_scholes",
+            "qm.model": model,
             "qm.engine": "mc",
         },
     ):
@@ -310,7 +382,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             req.rate,
             used[0].dividend + used[0].drift_adjustment,
             used[0].vol,
-            req.valuation_date.isoformat(),
+            valuation_date.isoformat(),
             req.day_count,
             req.fuzzy,
             req.default_eps,
@@ -318,7 +390,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             req.seed,
             req.sampler,
             req.greeks_method,
-            "black_scholes",
+            model if n > 1 else "black_scholes",
             [],
             [],
             [],
@@ -332,6 +404,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             control_variate=req.control_variate,
             antithetic=req.antithetic,
             importance_sampling=req.importance_sampling,
+            **grids,
         )
     result["warnings"] = warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)
