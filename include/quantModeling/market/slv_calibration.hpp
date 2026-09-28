@@ -24,6 +24,12 @@ namespace quantModeling
         std::vector<Real> K_grid;
         std::vector<Real> T_grid;
         std::vector<Real> leverage;
+        /// Share of the particles, over every column, that sat in a bucket
+        /// whose leverage was held at the floor or cap: how much of the
+        /// distribution the surface is not matched on. The share of grid
+        /// points says little, since most clamped points are in the tails no
+        /// particle reaches (issue #113).
+        Real clamped_mass = 0.0;
     };
 
     struct SLVCalibrationSettings

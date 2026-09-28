@@ -59,7 +59,7 @@ SLV_SEED = 1
 _CACHE_SIZE = 16
 #: Bumped whenever the calibration changes (targets, fit, leverage), so a
 #: stored result of the previous method is never served.
-METHOD = 1
+METHOD = 2  # 2: E[v|S] of the floored variance (issue #113)
 PREFIX = "calibrations/stochastic-vol"
 RATES_PREFIX = "calibrations/stochastic-vol-rates"
 #: The most recent rates remembered per ticker for the warm-up.
@@ -91,6 +91,9 @@ class StochasticVol:
     #: E[v | S] could not be estimated (too few particles in the bucket), the
     #: marginals there are not the Dupire surface's.
     leverage_clamped_share: float
+    #: The share of the particles in those points, over every column: how
+    #: much of the distribution the surface is not matched on.
+    leverage_clamped_mass: float
     n_particles: int
     seconds: float
 
@@ -175,6 +178,7 @@ def _calibrate(market: LocalVolMarket) -> StochasticVol:
         leverage_min=min(L),
         leverage_max=max(L),
         leverage_clamped_share=clamped / len(L),
+        leverage_clamped_mass=float(lev["clamped_mass"]),
         n_particles=int(lev["n_particles"]),
         seconds=time.perf_counter() - start,
     )

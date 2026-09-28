@@ -622,6 +622,11 @@ class LeverageFit(BaseModel):
         description="Share of grid points held at the calibration's floor or "
         "cap, where the marginals are not the surface's.",
     )
+    clamped_mass: Optional[float] = Field(
+        None,
+        description="Share of the calibration's particles, over every column, "
+        "in those points: how much of the distribution is not matched.",
+    )
     n_particles: int
 
 

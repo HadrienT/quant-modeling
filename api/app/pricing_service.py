@@ -228,6 +228,7 @@ def _calibration_of(market, sv, model: str) -> Dict:
             "min": sv.leverage_min,
             "max": sv.leverage_max,
             "clamped_share": sv.leverage_clamped_share,
+            "clamped_mass": sv.leverage_clamped_mass,
             "n_particles": sv.n_particles,
         }
     return out
