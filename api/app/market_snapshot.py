@@ -16,6 +16,8 @@ date of a priced script is that snapshot date, and the caller must use it.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Dict, List, Optional
@@ -24,6 +26,7 @@ import quantmodeling as qm
 
 from . import db
 from .audit.payloads import MarketInputStatus
+from .keyed_cache import KeyedCache
 from .telemetry import tracer
 from .valuation import record_market_input
 
@@ -47,6 +50,11 @@ MAX_DIVIDEND_GAP_DAYS = 30
 #: pipeline to what every slice observed) and its size.
 K_MIN, K_MAX = -0.6, 0.6
 N_STRIKES, N_MATURITIES = 100, 50
+
+
+#: Calibrated surfaces (SVI slices + Dupire grid, about a second each), by a
+#: digest of their inputs.
+_surfaces: KeyedCache[dict] = KeyedCache(32)
 
 
 class MarketDataUnavailable(RuntimeError):
@@ -215,16 +223,28 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         [_chain_row_key(r) for r in rows],
     )
 
-    result = qm.calibrate_vol_surface(
-        quotes,
-        spot,
-        rate,
-        dividend,
-        K_MIN,
-        K_MAX,
-        N_STRIKES,
-        N_MATURITIES,
-        cleaning_params=qm.CleaningParams(),
+    # The calibration is a function of what was just read: cached on a
+    # digest of it (the reads and their audit records above still happen on
+    # every call, so a revised chain is a new key, not a stale hit).
+    surface_key = hashlib.sha256(
+        json.dumps(
+            [ticker, snap.isoformat(), spot, rate, dividend]
+            + [_chain_row_key(r) for r in rows]
+        ).encode()
+    ).hexdigest()
+    result = _surfaces.get(
+        surface_key,
+        lambda: qm.calibrate_vol_surface(
+            quotes,
+            spot,
+            rate,
+            dividend,
+            K_MIN,
+            K_MAX,
+            N_STRIKES,
+            N_MATURITIES,
+            cleaning_params=qm.CleaningParams(),
+        ),
     )
 
     warnings: List[Dict[str, str]] = []
@@ -259,9 +279,9 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         valuation_date=snap,
         spot=spot,
         dividend=dividend,
-        K_grid=result["K_grid"],
-        T_grid=result["T_grid"],
-        sigma_loc_flat=result["sigma_loc_flat"],
+        K_grid=list(result["K_grid"]),
+        T_grid=list(result["T_grid"]),
+        sigma_loc_flat=list(result["sigma_loc_flat"]),
         warnings=warnings,
         svi_slices=[dict(sl) for sl in result.get("slices", [])],
         rate=rate,

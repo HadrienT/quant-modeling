@@ -63,6 +63,12 @@ travail C++ séparé qui devra être rebasé sur `main`.)
   faire une fois installé.
 - **Auto-guérison** : `restart: unless-stopped` sur les conteneurs — si l'app
   ou le tunnel plante, Docker les relance.
+- **Calibrations Heston/SLV** : un fil de l'API calibre chaque nouveau
+  snapshot de chaîne d'options avant la première requête
+  (`QM_CALIBRATION_WARMUP=1`, `api/app/calibration_warmup.py`) et les range
+  dans le volume `qm_data` (`calibrations/`). Les logs `calibration warm-up`
+  disent ce qui est prêt. Rien à faire ; supprimer `calibrations/` ne fait
+  que recalibrer.
 
 ### Le seul fichier non versionné : `.env`
 

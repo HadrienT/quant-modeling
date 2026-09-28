@@ -145,6 +145,22 @@ def _warm_up_gpu() -> None:
         logging.getLogger(LOGGER_NAME).exception("gpu warm-up failed")
 
 
+@app.on_event("startup")
+def _start_calibration_warmup() -> None:
+    # Heston and SLV calibrated for each new snapshot before the first
+    # request needs them (issue #90); off unless QM_CALIBRATION_WARMUP=1.
+    from . import calibration_warmup
+
+    calibration_warmup.start()
+
+
+@app.on_event("shutdown")
+def _stop_calibration_warmup() -> None:
+    from . import calibration_warmup
+
+    calibration_warmup.stop()
+
+
 @app.on_event("shutdown")
 def _flush_audit_and_telemetry() -> None:
     # Queued audit events are flushed to Kafka, or spooled (blueprint WP 18b).
