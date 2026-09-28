@@ -360,6 +360,7 @@ static py::dict pricing_result_to_dict(const quantModeling::PricingResult &res)
     out["diagnostics"] = res.diagnostics;
     out["mc_std_error"] = static_cast<double>(res.mc_std_error);
     out["device"] = res.device;
+    out["gpus"] = res.gpus;
 
     // Bond analytics (optional fields — only populated for bond instruments)
     py::dict bond_analytics;
@@ -1152,6 +1153,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.diagnostics = mc->diagnostics + " | scripted, " + std::to_string(n_events) +
                       " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note;
     res.device = mc->device;
+    res.gpus = mc->gpus;
     py::dict out = pricing_result_to_dict(res);
     out["warnings"] = advice_to_py(advice);
     return out;

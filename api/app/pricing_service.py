@@ -55,6 +55,7 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
         diagnostics=result.get("diagnostics", ""),
         mc_std_error=result.get("mc_std_error", 0.0),
         device=result.get("device", "cpu"),
+        gpus=result.get("gpus", 0),
         # Only price_script(greeks_method="aad") populates this today
         # (blueprint/wp/17-aad.md §13.1); every other pricer's dict carries
         # risks=None, same as before this field existed.

@@ -96,6 +96,9 @@ class EngineSpec(BaseModel):
     scheme: str | None = None
     #: Monte-Carlo only: where the paths ran, "cpu" or "gpu" (WP 19 §8).
     device: str | None = None
+    #: GPUs the paths were shared between (WP 19 lot G4); None off the GPU.
+    #: Optional with a default: a BACKWARD-compatible addition (contract §5).
+    gpus: int | None = None
 
 
 class ValuationResult(BaseModel):

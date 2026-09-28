@@ -71,6 +71,9 @@ namespace quantModeling
         /// Where the engine ran: "cpu" or "gpu" (blueprint/wp/19-gpu.md §8).
         /// With ComputeDevice::Auto, this is the answer to "which one?".
         std::string device = "cpu";
+        /// GPUs the Monte-Carlo shared its logical blocks between (lot G4);
+        /// 0 on the CPU.
+        int gpus = 0;
     };
 } // namespace quantModeling
 

@@ -4492,6 +4492,12 @@
             "title": "Diagnostics",
             "type": "string"
           },
+          "gpus": {
+            "default": 0,
+            "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
+            "title": "Gpus",
+            "type": "integer"
+          },
           "greeks": {
             "$ref": "#/components/schemas/Greeks"
           },

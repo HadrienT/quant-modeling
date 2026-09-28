@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/engines/mc/logical_blocks.hpp"
 #include "quantModeling/engines/mc/script_path.hpp"
 #include "quantModeling/engines/mc/sobol_bridge.hpp"
 #include "quantModeling/gpu/device.hpp"
@@ -73,6 +74,9 @@ namespace quantModeling::gpu
         uint64_t seed = 1;
         bool antithetic = true;
         int device = 0;
+        /// Devices sharing the logical blocks (lot G4); empty: `device` alone.
+        /// The result does not depend on how many -- bit for bit.
+        std::vector<int> devices;
         uint64_t max_blocks_per_launch = 0;
 
         /// Spot control variates (n > 0): each unit reports (payoff,
@@ -104,6 +108,18 @@ namespace quantModeling::gpu
     /// Throws GpuUnavailable without a device, InvalidInput when
     /// script_gpu_unsupported() is not empty.
     ScriptGpuStats simulate_script(const ScriptGpuRequest &req);
+
+    /// The devices of `req` its logical blocks actually go to (lot G4): a
+    /// card joins only with kMinBlocksPerDevice blocks to do.
+    inline int gpus_used(const ScriptGpuRequest &req)
+    {
+        const unsigned long long reps =
+            req.sobol        ? static_cast<unsigned long long>(req.sobol->replicates > 0 ? req.sobol->replicates : 1)
+            : req.stratified ? static_cast<unsigned long long>(req.replicates > 0 ? req.replicates : 1)
+                             : 1ull;
+        const std::size_t available = req.devices.empty() ? 1 : req.devices.size();
+        return static_cast<int>(devices_used(available, mc::LogicalBlocks::count(req.n_units) * reps));
+    }
 
     /// Forward-mode risks (Black-Scholes, one or two assets, and Heston): per
     /// replicate (one without Sobol), the price's Welford, then one per

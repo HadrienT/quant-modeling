@@ -133,6 +133,14 @@ namespace quantModeling
         const bool use_gpu = gpu_capable && (settings.mc_device == ComputeDevice::Gpu ||
                                              (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0));
         const uint64_t seed = static_cast<uint64_t>(static_cast<uint32_t>(settings.mc_seed));
+        // Every usable card by default (lot G4): the result is the same bits.
+        const std::vector<int> devices = use_gpu ? gpu::devices_for(settings.mc_gpus) : std::vector<int>{};
+        int gpus_used = 0; // the cards the blocks actually went to
+        auto used_label = [&](uint64_t units)
+        {
+            gpus_used = static_cast<int>(gpu::devices_used(devices.size(), mc::LogicalBlocks::count(units)));
+            return gpu::devices_label(std::vector<int>(devices.begin(), devices.begin() + gpus_used));
+        };
 
         if (pseudo && (use_gpu || settings.mc_rng == RngKind::Philox))
         {
@@ -146,8 +154,9 @@ namespace quantModeling
                 req.is_shift = is_shift;
                 req.n_units = n_units;
                 req.seed = seed;
+                req.devices = devices;
                 stats = gpu::simulate_vanilla_terminal(req);
-                diag = "BS MC European vanilla (flat r,q,sigma) on GPU (" + gpu::device_name(req.device) +
+                diag = "BS MC European vanilla (flat r,q,sigma) on GPU (" + used_label(n_units) +
                        ") + Philox";
             }
             else
@@ -186,6 +195,7 @@ namespace quantModeling
                     std::copy_n(seq.directions().begin(), 32, req.directions);
                     req.shift = seq.shifts()[0];
                     req.n_points = static_cast<uint64_t>(per_batch);
+                    req.devices = devices;
                     batch = gpu::simulate_vanilla_sobol(req);
                 }
                 else if (sobol)
@@ -210,7 +220,7 @@ namespace quantModeling
             diag = std::string("BS MC European vanilla (flat r,q,sigma) + ") +
                    (sobol ? "Sobol RQMC" : "stratified sampling") + " (" +
                    std::to_string(B) + " batches)" +
-                   (use_gpu ? " on GPU (" + gpu::device_name(0) + ")" : "");
+                   (use_gpu ? " on GPU (" + used_label(static_cast<uint64_t>(per_batch)) + ")" : "");
         }
         else
         {
@@ -241,6 +251,7 @@ namespace quantModeling
         PricingResult out;
         out.diagnostics = diag;
         out.device = use_gpu ? "gpu" : "cpu";
+        out.gpus = use_gpu ? gpus_used : 0;
         out.npv = N * disc * stats.payoff.mean;
         out.mc_std_error = N * disc * stats.payoff.std_error();
 

@@ -25,6 +25,12 @@ export type PricingResult = PricingResponse & { round_trip_ms: number };
 /** Where a Monte-Carlo pricing can run (blueprint WP 19 §8). */
 export type ComputeDevice = "cpu" | "gpu" | "auto";
 
+/** Where a pricing ran: "CPU", "GPU" or "2 GPUs" (blueprint WP 19, lot G4). */
+export function deviceLabel(r: { device?: string; gpus?: number }): string {
+	if (r.device !== "gpu") return "CPU";
+	return (r.gpus ?? 1) > 1 ? `${r.gpus} GPUs` : "GPU";
+}
+
 /** The server's CPU model and usable GPUs; fixed for the process's life. */
 export function useComputeDevices() {
 	return useQuery({

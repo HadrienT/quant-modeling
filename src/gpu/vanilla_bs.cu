@@ -7,12 +7,30 @@ namespace quantModeling::gpu
 
     namespace
     {
+        /// The units' logical blocks shared between the devices, folded in
+        /// block order (lot G4): the same bits on one card or two. The unit
+        /// holds no device pointer, so every device runs the same functor.
+        template <class UnitFn>
+        mc::VanillaStats run_everywhere(const std::vector<int> &devices, int device, uint64_t n_units,
+                                        const UnitFn &unit, uint64_t max_blocks_per_launch)
+        {
+            const std::vector<int> devs = devices.empty() ? std::vector<int>{device} : devices;
+            const uint64_t n_blocks = mc::LogicalBlocks::count(n_units);
+            auto job = [&](int d, uint64_t first, uint64_t last)
+            {
+                return detail::run_block_range<mc::VanillaStats>(d, first, last, n_blocks, n_units, unit,
+                                                                 max_blocks_per_launch);
+            };
+            if (n_blocks == 0)
+                return mc::VanillaStats{};
+            return mc::merge_in_order(detail::run_on_devices<mc::VanillaStats>(devs, n_blocks, job));
+        }
+
         template <OptionType CP, bool Antithetic, bool IS>
         mc::VanillaStats run(const VanillaGpuRequest &req)
         {
             const mc::VanillaPhiloxUnit<CP, Antithetic, IS> unit{req.spec, req.seed, req.is_shift};
-            return detail::run_logical_blocks<mc::VanillaStats>(req.device, req.n_units, unit,
-                                                                req.max_blocks_per_launch);
+            return run_everywhere(req.devices, req.device, req.n_units, unit, req.max_blocks_per_launch);
         }
 
         template <OptionType CP>
@@ -42,8 +60,7 @@ namespace quantModeling::gpu
                 unit.V[k] = req.directions[k];
             unit.shift = req.shift;
             unit.is_shift = req.is_shift;
-            return detail::run_logical_blocks<mc::VanillaStats>(req.device, req.n_points, unit,
-                                                                req.max_blocks_per_launch);
+            return run_everywhere(req.devices, req.device, req.n_points, unit, req.max_blocks_per_launch);
         }
     } // namespace
 

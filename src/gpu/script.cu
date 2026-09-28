@@ -48,7 +48,7 @@ namespace quantModeling::gpu
 
         /// Check the request, select the device and copy the script and
         /// model: the view every kernel below runs.
-        mc::ScriptPathView device_view(const ScriptGpuRequest &req, DeviceArrays &mem)
+        mc::ScriptPathView device_view(const ScriptGpuRequest &req, DeviceArrays &mem, int device)
         {
             if (!req.program || !req.model)
                 throw InvalidInput("simulate_script: program and model are required");
@@ -59,8 +59,8 @@ namespace quantModeling::gpu
                 throw InvalidInput("GPU: " + why);
             if (req.discount_mats.size() != p.n_events())
                 throw InvalidInput("simulate_script: one discount list per event");
-            detail::require_device(req.device);
-            detail::check(cudaSetDevice(req.device), "cudaSetDevice");
+            detail::require_device(device);
+            detail::check(cudaSetDevice(device), "cudaSetDevice");
 
             std::vector<int> disc_begin{0};
             std::vector<Time> disc_mats;
@@ -140,7 +140,7 @@ namespace quantModeling::gpu
             uint64_t blocks_per_launch = 0;
         };
 
-        DrawSetup draw_setup(const ScriptGpuRequest &req, const mc::ScriptPathView &v, DeviceArrays &mem,
+        DrawSetup draw_setup(const ScriptGpuRequest &req, const mc::ScriptPathView &v, DeviceArrays &mem, int device,
                              std::size_t other_bytes_per_block = 0)
         {
             DrawSetup s;
@@ -191,7 +191,7 @@ namespace quantModeling::gpu
                 // Launch size from the memory a thread needs, never a default:
                 // at most half of what is free (the cards are shared).
                 const uint64_t n_blocks = LB::count(req.n_units) * s.replicates;
-                uint64_t per_launch = std::max<uint64_t>(1, free_memory(req.device) / 2 / per_block);
+                uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / per_block);
                 if (s.blocks_per_launch > 0)
                     per_launch = std::min(per_launch, s.blocks_per_launch);
                 s.blocks_per_launch = std::min<uint64_t>(per_launch, std::max<uint64_t>(n_blocks, 1));
@@ -293,21 +293,6 @@ namespace quantModeling::gpu
             }
         };
 
-        template <int N>
-        std::vector<std::vector<WelfordAccumulator>> run_duals(const ScriptGpuRequest &req,
-                                                               const mc::ScriptPathView &v, int dirs,
-                                                               DeviceArrays &mem)
-        {
-            const DrawSetup s = draw_setup(req, v, mem);
-            const DualUnit<N> unit{v, s.draws, req.n_units};
-            const std::vector<DualStats<N>> st = detail::run_logical_block_segments<DualStats<N>>(
-                req.device, s.replicates, req.n_units, unit, s.blocks_per_launch);
-            std::vector<std::vector<WelfordAccumulator>> out;
-            for (const DualStats<N> &r : st)
-                out.emplace_back(r.w, r.w + 1 + dirs);
-            return out;
-        }
-
         // ── per-path adjoint, local vol ─────────────────────────────────────
 
         /// Thread `row` of a launch keeps its trail and its gradient row in
@@ -362,128 +347,198 @@ namespace quantModeling::gpu
                         ++n;
             return n;
         }
+
+        /// The devices a request runs on (lot G4): req.devices, or req.device.
+        std::vector<int> devices_of(const ScriptGpuRequest &req)
+        {
+            return req.devices.empty() ? std::vector<int>{req.device} : req.devices;
+        }
+
+        /// Independent replicates of n_units units the request runs.
+        uint64_t replicates_of(const ScriptGpuRequest &req)
+        {
+            if (req.sobol)
+                return static_cast<uint64_t>(std::max(1, req.sobol->replicates));
+            if (req.stratified)
+                return static_cast<uint64_t>(std::max(1, req.replicates));
+            return 1;
+        }
+
+        /// The request's logical blocks on its devices, each with its own
+        /// copy of the script and model; per replicate, the blocks folded in
+        /// block order -- whatever the number of devices.
+        template <class Stats, class MakeUnit>
+        std::vector<Stats> run_script_blocks(const ScriptGpuRequest &req, const MakeUnit &make_unit)
+        {
+            const uint64_t reps = replicates_of(req);
+            const uint64_t bps = LB::count(req.n_units);
+            auto job = [&](int device, uint64_t first, uint64_t last)
+            {
+                DeviceArrays mem;
+                const mc::ScriptPathView v = device_view(req, mem, device);
+                const detail::StackLimitRestore release_stack;
+                const DrawSetup s = draw_setup(req, v, mem, device);
+                const auto unit = make_unit(v, s);
+                return detail::run_block_range<Stats>(device, first, last, bps, req.n_units, unit,
+                                                      s.blocks_per_launch);
+            };
+            return detail::merge_segments(detail::run_on_devices<Stats>(devices_of(req), bps * reps, job), reps, bps);
+        }
+
+        template <int N>
+        std::vector<std::vector<WelfordAccumulator>> run_duals(const ScriptGpuRequest &req, int dirs)
+        {
+            const auto st = run_script_blocks<DualStats<N>>(
+                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
+                { return DualUnit<N>{v, s.draws, req.n_units}; });
+            std::vector<std::vector<WelfordAccumulator>> out;
+            for (const DualStats<N> &r : st)
+                out.emplace_back(r.w, r.w + 1 + dirs);
+            return out;
+        }
+
+        /// One logical block of the adjoint: its price statistics, and the
+        /// gradient sums of its 8 warps (8 x n_params, warp-major).
+        struct AdjointBlock
+        {
+            WelfordAccumulator price;
+            std::vector<double> warp_sums;
+        };
     } // namespace
 
     ScriptGpuStats simulate_script(const ScriptGpuRequest &req)
     {
-        DeviceArrays mem;
-        const mc::ScriptPathView v = device_view(req, mem);
-        const detail::StackLimitRestore release_stack;
-        const DrawSetup s = draw_setup(req, v, mem);
-
-        // All replicates in one grid: each is reduced by its own tree, and
-        // together they fill the device (one replicate of a 10^5-path run
-        // is a single logical block).
         ScriptGpuStats out;
-        if (v.controls.n > 0 && req.stratified)
-        {
-            const ScriptUnit<true> unit{v, s.draws, req.antithetic, req.n_units};
-            out.stratified_controlled = detail::run_logical_block_segments<StratifiedControlAccumulator>(
-                req.device, s.replicates, req.n_units, unit, s.blocks_per_launch);
-        }
-        else if (v.controls.n > 0)
-        {
-            const ScriptUnit<true> unit{v, s.draws, req.antithetic, req.n_units};
-            out.controlled = detail::run_logical_block_segments<MultiControlAccumulator>(
-                req.device, s.replicates, req.n_units, unit, s.blocks_per_launch);
-        }
+        if (req.controls.n > 0 && req.stratified)
+            out.stratified_controlled = run_script_blocks<StratifiedControlAccumulator>(
+                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
+                { return ScriptUnit<true>{v, s.draws, req.antithetic, req.n_units}; });
+        else if (req.controls.n > 0)
+            out.controlled = run_script_blocks<MultiControlAccumulator>(
+                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
+                { return ScriptUnit<true>{v, s.draws, req.antithetic, req.n_units}; });
         else
-        {
-            const ScriptUnit<false> unit{v, s.draws, req.antithetic, req.n_units};
-            out.plain = detail::run_logical_block_segments<WelfordAccumulator>(req.device, s.replicates, req.n_units,
-                                                                               unit, s.blocks_per_launch);
-        }
+            out.plain = run_script_blocks<WelfordAccumulator>(
+                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
+                { return ScriptUnit<false>{v, s.draws, req.antithetic, req.n_units}; });
         return out;
     }
 
     std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req)
     {
-        DeviceArrays mem;
-        const mc::ScriptPathView v = device_view(req, mem);
-        const detail::StackLimitRestore release_stack;
-        const int dirs = mc::dual_directions(v.kind, v.n_assets);
+        if (!req.model)
+            throw InvalidInput("simulate_script: program and model are required");
+        const int dirs = mc::dual_directions(req.model->kind, req.model->n_assets);
         if (dirs <= 0 || dirs > 8)
             throw InvalidInput("GPU: forward-mode risks cover Black-Scholes (one or two assets) and Heston");
-        return dirs <= 4 ? run_duals<4>(req, v, dirs, mem) : run_duals<8>(req, v, dirs, mem);
+        return dirs <= 4 ? run_duals<4>(req, dirs) : run_duals<8>(req, dirs);
     }
 
     ScriptAdjointGpuResult simulate_script_adjoint(const ScriptGpuRequest &req)
     {
-        DeviceArrays mem;
-        const mc::ScriptPathView v = device_view(req, mem);
-        const detail::StackLimitRestore release_stack;
-        if (v.kind != DeviceModel::Kind::LocalVol)
+        if (!req.model || !req.program)
+            throw InvalidInput("simulate_script: program and model are required");
+        if (req.model->kind != DeviceModel::Kind::LocalVol)
             throw InvalidInput("GPU: the per-path adjoint covers local vol");
         if (req.stratified || !req.is_theta.empty())
             throw InvalidInput("GPU: the per-path adjoint runs pseudo-random or Sobol paths");
 
-        const int n_params = 3 + v.grid.nK * v.grid.nT;
-        const long trail_len = mc::lv_trail_bound(*req.program, v.n_steps);
-
-        // Launch size from the memory a thread needs (its trail, its gradient
-        // row, a Sobol point), never a default; the warp partials on top.
-        const std::size_t per_block =
-            static_cast<std::size_t>(LB::kThreadsPerBlock) * static_cast<std::size_t>(trail_len + n_params) *
-                sizeof(double) +
-            static_cast<std::size_t>(LB::kWarpsPerBlock) * static_cast<std::size_t>(n_params) * sizeof(double);
-        const DrawSetup s = draw_setup(req, v, mem, per_block);
-        const uint64_t per_launch = s.blocks_per_launch;
-        const long rows = static_cast<long>(per_launch) * LB::kThreadsPerBlock;
-        const long max_warps = static_cast<long>(per_launch) * LB::kWarpsPerBlock;
-
-        double *d_trail = mem.alloc<double>(static_cast<std::size_t>(rows) * static_cast<std::size_t>(trail_len));
-        double *d_grad = mem.alloc<double>(static_cast<std::size_t>(rows) * static_cast<std::size_t>(n_params));
-        double *d_warps = mem.alloc<double>(static_cast<std::size_t>(max_warps) * static_cast<std::size_t>(n_params));
-        detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * n_params * sizeof(double)), "cudaMemset");
-
-        const AdjointUnit unit{v, s.draws, d_trail, d_grad, rows, req.n_units};
-        const uint64_t blocks_per_rep = LB::count(req.n_units);
-        const bool rqmc = s.replicates > 1;
-
-        // Pseudo-random: batches of one warp (512 paths); the risks' mean is
-        // the total over the paths, their error the spread of the batch means
-        // (ratio estimator: batches at the tail may be shorter), sums shifted
-        // by the first batch's mean against cancellation. RQMC: one sum per
-        // replicate, the error from the replicates' spread.
+        const int n_params = 3 + static_cast<int>(req.model->K.size() * req.model->T_grid.size());
         const auto np = static_cast<std::size_t>(n_params);
-        std::vector<double> host(static_cast<std::size_t>(max_warps) * np);
+        const uint64_t reps = replicates_of(req);
+        const uint64_t bps = LB::count(req.n_units);
+
+        // Each device: its blocks' price statistics and warp gradient sums.
+        auto job = [&](int device, uint64_t first, uint64_t last)
+        {
+            DeviceArrays mem;
+            const mc::ScriptPathView v = device_view(req, mem, device);
+            const detail::StackLimitRestore release_stack;
+            const long trail_len = mc::lv_trail_bound(*req.program, v.n_steps);
+
+            // Launch size from the memory a thread needs (its trail, its
+            // gradient row, a Sobol point), never a default; the warp
+            // partials on top.
+            const std::size_t per_block =
+                static_cast<std::size_t>(LB::kThreadsPerBlock) * static_cast<std::size_t>(trail_len + n_params) *
+                    sizeof(double) +
+                static_cast<std::size_t>(LB::kWarpsPerBlock) * np * sizeof(double);
+            const DrawSetup s = draw_setup(req, v, mem, device, per_block);
+            const uint64_t per_launch = std::min<uint64_t>(s.blocks_per_launch, std::max<uint64_t>(last - first, 1));
+            const long rows = static_cast<long>(per_launch) * LB::kThreadsPerBlock;
+            const long max_warps = static_cast<long>(per_launch) * LB::kWarpsPerBlock;
+            double *d_trail = mem.alloc<double>(static_cast<std::size_t>(rows) * static_cast<std::size_t>(trail_len));
+            double *d_grad = mem.alloc<double>(static_cast<std::size_t>(rows) * np);
+            double *d_warps = mem.alloc<double>(static_cast<std::size_t>(max_warps) * np);
+            detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * np * sizeof(double)), "cudaMemset");
+            const AdjointUnit unit{v, s.draws, d_trail, d_grad, rows, req.n_units};
+
+            std::vector<AdjointBlock> blocks(static_cast<std::size_t>(last - first));
+            std::vector<double> host(static_cast<std::size_t>(max_warps) * np);
+            auto after = [&](uint64_t b0, uint64_t count)
+            {
+                const long n_warps = static_cast<long>(count) * LB::kWarpsPerBlock;
+                const long total = n_warps * n_params;
+                fold_warps<<<static_cast<unsigned>((total + 255) / 256), 256>>>(d_grad, rows, n_params, n_warps,
+                                                                                d_warps);
+                detail::check(cudaGetLastError(), "fold_warps launch");
+                detail::check(cudaMemcpy(host.data(), d_warps, static_cast<std::size_t>(total) * sizeof(double),
+                                         cudaMemcpyDeviceToHost),
+                              "cudaMemcpy");
+                detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * np * sizeof(double)),
+                              "cudaMemset");
+                for (uint64_t c = 0; c < count; ++c)
+                {
+                    std::vector<double> &ws = blocks[static_cast<std::size_t>(b0 + c - first)].warp_sums;
+                    ws.resize(static_cast<std::size_t>(LB::kWarpsPerBlock) * np);
+                    for (int w = 0; w < LB::kWarpsPerBlock; ++w)
+                        for (std::size_t p = 0; p < np; ++p)
+                            ws[static_cast<std::size_t>(w) * np + p] =
+                                host[p * static_cast<std::size_t>(n_warps) +
+                                     static_cast<std::size_t>(c) * LB::kWarpsPerBlock + static_cast<std::size_t>(w)];
+                }
+            };
+            const std::vector<WelfordAccumulator> price =
+                detail::run_block_range<WelfordAccumulator>(device, first, last, bps, req.n_units, unit, per_launch,
+                                                            after);
+            for (std::size_t b = 0; b < blocks.size(); ++b)
+                blocks[b].price = price[b];
+            return blocks;
+        };
+        const std::vector<AdjointBlock> blocks = detail::run_on_devices<AdjointBlock>(devices_of(req), bps * reps, job);
+
+        // The host folds in global block order -- the same sums whatever the
+        // number of devices. Pseudo-random: batches of one warp (512 paths),
+        // the risks' mean the total over the paths, their error the spread
+        // of the batch means (ratio estimator: tail batches may be shorter),
+        // sums shifted by the first batch's mean against cancellation.
+        // RQMC: one sum per replicate, the error the replicates' spread.
+        const bool rqmc = reps > 1;
         std::vector<double> shift(np, 0.0), s1(shift), s2(shift), s1n(shift);
-        std::vector<double> rep_sum(static_cast<std::size_t>(s.replicates) * np, 0.0);
+        std::vector<double> rep_sum(static_cast<std::size_t>(reps) * np, 0.0);
         double total_units = 0.0, sum_n2 = 0.0;
         long long batches = 0;
-        auto after = [&](uint64_t first, uint64_t count)
-        {
-            const long n_warps = static_cast<long>(count) * LB::kWarpsPerBlock;
-            const long total = n_warps * n_params;
-            fold_warps<<<static_cast<unsigned>((total + 255) / 256), 256>>>(d_grad, rows, n_params, n_warps, d_warps);
-            detail::check(cudaGetLastError(), "fold_warps launch");
-            detail::check(cudaMemcpy(host.data(), d_warps, static_cast<std::size_t>(total) * sizeof(double),
-                                     cudaMemcpyDeviceToHost),
-                          "cudaMemcpy");
-            detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * n_params * sizeof(double)),
-                          "cudaMemset");
-            for (long w = 0; w < n_warps; ++w)
+        for (uint64_t g = 0; g < blocks.size(); ++g)
+            for (int w = 0; w < LB::kWarpsPerBlock; ++w)
             {
-                const uint64_t g = first + static_cast<uint64_t>(w / LB::kWarpsPerBlock);
-                const long long nb =
-                    warp_units(g % blocks_per_rep, static_cast<int>(w % LB::kWarpsPerBlock), req.n_units);
+                const long long nb = warp_units(g % bps, w, req.n_units);
                 if (nb == 0)
                     continue;
+                const double *sum = &blocks[static_cast<std::size_t>(g)].warp_sums[static_cast<std::size_t>(w) * np];
                 if (rqmc)
                 {
-                    double *r = &rep_sum[static_cast<std::size_t>(g / blocks_per_rep) * np];
+                    double *r = &rep_sum[static_cast<std::size_t>(g / bps) * np];
                     for (std::size_t p = 0; p < np; ++p)
-                        r[p] += host[p * static_cast<std::size_t>(n_warps) + static_cast<std::size_t>(w)];
+                        r[p] += sum[p];
                     continue;
                 }
                 const double n = static_cast<double>(nb);
                 if (batches == 0)
                     for (std::size_t p = 0; p < np; ++p)
-                        shift[p] = host[p * static_cast<std::size_t>(n_warps) + static_cast<std::size_t>(w)] / n;
+                        shift[p] = sum[p] / n;
                 for (std::size_t p = 0; p < np; ++p)
                 {
-                    const double y =
-                        host[p * static_cast<std::size_t>(n_warps) + static_cast<std::size_t>(w)] / n - shift[p];
+                    const double y = sum[p] / n - shift[p];
                     s1[p] += n * y;
                     s1n[p] += n * n * y;
                     s2[p] += n * n * y * y;
@@ -492,12 +547,14 @@ namespace quantModeling::gpu
                 sum_n2 += n * n;
                 ++batches;
             }
-        };
+
         ScriptAdjointGpuResult res;
-        const std::vector<WelfordAccumulator> price = detail::run_logical_block_segments<WelfordAccumulator>(
-            req.device, s.replicates, req.n_units, unit, per_launch, after);
         res.risks.assign(np, 0.0);
         res.risk_std_errors.assign(np, 0.0);
+        std::vector<WelfordAccumulator> block_price;
+        for (const AdjointBlock &b : blocks)
+            block_price.push_back(b.price);
+        const std::vector<WelfordAccumulator> price = detail::merge_segments(block_price, reps, bps);
         if (rqmc)
         {
             for (const WelfordAccumulator &p : price)
@@ -505,12 +562,12 @@ namespace quantModeling::gpu
             for (std::size_t p = 0; p < np; ++p)
             {
                 WelfordAccumulator acc;
-                for (uint64_t b = 0; b < s.replicates; ++b)
+                for (uint64_t b = 0; b < reps; ++b)
                     acc.add(rep_sum[static_cast<std::size_t>(b) * np + p] / static_cast<double>(req.n_units));
                 res.risks[p] = acc.mean;
                 res.risk_std_errors[p] = acc.std_error();
             }
-            res.batches = static_cast<long long>(s.replicates);
+            res.batches = static_cast<long long>(reps);
             return res;
         }
         res.price = price.front();

@@ -40,12 +40,13 @@ namespace quantModeling
      * its oracle -- Philox, or Sobol RQMC with the Brownian bridge
      * (kAadRqmcReplicates replicates). nullopt, with `why` in words a user
      * can read, when the GPU cannot take the request (no device, SLV, jumps,
-     * a script too large).
+     * a script too large). max_gpus: as PricingSettings::mc_gpus.
      */
     std::optional<AADSimulResults> simulate_script_aad_gpu(const ScriptedProduct<Real> &product,
                                                            ISimulationModel<Real> &model, std::size_t n_paths,
                                                            std::uint64_t seed, std::string &why,
-                                                           SamplerKind sampler = SamplerKind::PseudoRandom);
+                                                           SamplerKind sampler = SamplerKind::PseudoRandom,
+                                                           int max_gpus = 0);
 
 } // namespace quantModeling
 

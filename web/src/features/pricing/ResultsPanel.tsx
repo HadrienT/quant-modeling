@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { ProductDescriptor } from "@/shared/products";
-import { type ComputeDevice, usePricing } from "@/shared/api";
+import { type ComputeDevice, deviceLabel, usePricing } from "@/shared/api";
 import {
 	ComputeTime,
 	EngineTag,
@@ -98,7 +98,7 @@ export function ResultsPanel({
 					<div className="flex flex-col items-end gap-1">
 						<EngineTag engine={engine} />
 						{isMc && descriptor.gpu && (
-							<EngineTag engine={r.device === "gpu" ? "on GPU" : "on CPU"} />
+							<EngineTag engine={`on ${deviceLabel(r)}`} />
 						)}
 						<Provenance source="manual" />
 						<Freshness at={Date.now()} />

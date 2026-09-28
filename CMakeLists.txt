@@ -335,6 +335,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuScripts.cpp
       tests/gpu/testGpuRisks.cpp
       tests/gpu/testGpuSobolIs.cpp
+      tests/gpu/testGpuTwoCards.cpp
     )
     target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)
     target_compile_definitions(quantModeling_gpu_tests PRIVATE
@@ -381,6 +382,11 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   add_executable(qm_gpu_risk_bench benchmarks/gpu_risks.cpp)
   target_link_libraries(qm_gpu_risk_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_risk_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
+  # Lot G4: the table of blueprint §9 -- 1 and n CPU threads, 1 and 2 V100.
+  add_executable(qm_gpu_table_bench benchmarks/gpu_table.cpp)
+  target_link_libraries(qm_gpu_table_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_gpu_table_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
 endif()
 

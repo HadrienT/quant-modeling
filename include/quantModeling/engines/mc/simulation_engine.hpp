@@ -37,6 +37,7 @@ namespace quantModeling
         long long n_paths = 0;
         std::string diagnostics;
         std::string device = "cpu"; ///< where the paths ran: "cpu" or "gpu"
+        int gpus = 0;               ///< GPUs the paths were shared between
 
         Real npv() const { return values.empty() ? Real(0) : values.front(); }
         Real std_error() const
