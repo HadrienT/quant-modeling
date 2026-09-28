@@ -143,6 +143,94 @@ namespace quantModeling
             EXPECT_LT(sigma_loc, 3.0); // no wing blow-up from extrapolating past the short slice's data
     }
 
+    // A few-day slice quoted near the money, next to two wide ones: it no
+    // longer narrows the grid, and stays out of the surface.
+    TEST(VolSurfacePipeline, ShortSlicesNeitherNarrowTheRangeNorEnterTheSurface)
+    {
+        const Real spot = 100.0;
+        std::vector<RawOptionQuote> raw;
+        for (const RawOptionQuote &q : synthetic_slice(spot, 0.02, smile(0.005)))
+            if (q.strike >= 92.5 && q.strike <= 107.5)
+                raw.push_back(q);
+        for (const Real ttm : {0.25, 1.0})
+        {
+            const std::vector<RawOptionQuote> slice = synthetic_slice(spot, ttm, smile(ttm == 1.0 ? 0.10 : 0.02));
+            raw.insert(raw.end(), slice.begin(), slice.end());
+        }
+
+        const auto result = calibrate_vol_surface(raw, spot, 0.0, 0.0, -0.6, 0.6, 30, 15);
+
+        ASSERT_EQ(result.slices.size(), 3u);
+        EXPECT_FALSE(result.slices[0].in_surface);
+        EXPECT_TRUE(result.slices[1].in_surface);
+        EXPECT_TRUE(result.slices[2].in_surface);
+        EXPECT_LT(result.k_min, std::log(90.0 / spot)); // wider than the short slice's 92.5..107.5
+        EXPECT_GT(result.k_max, std::log(110.0 / spot));
+        // Columns on (0, 1]: 15 split 5 / 10 between [0, 0.25] and [0.25, 1],
+        // with a column on each side of the 0.25 slice.
+        ASSERT_EQ(result.T_grid.size(), 15u);
+        EXPECT_NEAR(result.T_grid.front(), 0.05, 1e-12);
+        EXPECT_EQ(result.T_grid[4], 0.25);
+        EXPECT_EQ(result.T_grid[5], 0.25 * (1.0 + 1e-9));
+        EXPECT_EQ(result.T_grid.back(), 1.0);
+        for (const Real sigma_loc : result.sigma_loc)
+        {
+            EXPECT_GT(sigma_loc, 0.05);
+            EXPECT_LT(sigma_loc, 3.0);
+        }
+    }
+
+    namespace
+    {
+        SVISliceCalibration slice_at(Real ttm, Real a)
+        {
+            SVISliceCalibration s;
+            s.ttm = ttm;
+            s.params = smile(a);
+            return s;
+        }
+
+        std::vector<Real> ttms_of(const std::vector<SVISliceCalibration> &slices, const std::vector<std::size_t> &idx)
+        {
+            std::vector<Real> out;
+            for (const std::size_t i : idx)
+                out.push_back(slices[i].ttm);
+            return out;
+        }
+    } // namespace
+
+    // Two slices closer than min_relative_gap are never consecutive; between
+    // equally long chains, the one with more quotes wins.
+    TEST(SurfaceSliceSelection, SpacesThePillarsAndBreaksTiesOnQuotes)
+    {
+        const std::vector<SVISliceCalibration> slices{slice_at(0.02, 0.001), slice_at(0.25, 0.02), slice_at(0.30, 0.025),
+                                                      slice_at(0.5, 0.05), slice_at(1.0, 0.10)};
+        EXPECT_EQ(ttms_of(slices, select_surface_slices(slices, {10, 10, 50, 10, 10}, -0.4, 0.4)),
+                  (std::vector<Real>{0.30, 0.5, 1.0}));
+        EXPECT_EQ(ttms_of(slices, select_surface_slices(slices, {10, 50, 10, 10, 10}, -0.4, 0.4)),
+                  (std::vector<Real>{0.25, 0.5, 1.0}));
+    }
+
+    // A slice above its neighbours' variance (calendar arbitrage against the
+    // ones after it) is the one left out: keeping it would end the chain.
+    TEST(SurfaceSliceSelection, LeavesOutTheSliceThatContradictsTheOthers)
+    {
+        const std::vector<SVISliceCalibration> slices{slice_at(0.25, 0.02), slice_at(0.5, 0.20), slice_at(0.75, 0.07),
+                                                      slice_at(1.0, 0.10), slice_at(1.5, 0.14)};
+        const std::vector<std::size_t> kept = select_surface_slices(slices, {10, 500, 10, 10, 10}, -0.4, 0.4);
+        EXPECT_EQ(ttms_of(slices, kept), (std::vector<Real>{0.25, 0.75, 1.0, 1.5}));
+        for (std::size_t i = 0; i + 1 < kept.size(); ++i)
+            EXPECT_TRUE(svi_slices_are_calendar_arbitrage_free(slices[kept[i]], slices[kept[i + 1]], -0.4, 0.4));
+    }
+
+    // Fewer than two slices reach min_ttm: every slice is a candidate, as
+    // before the selection existed.
+    TEST(SurfaceSliceSelection, FallsBackToEverySliceWhenTooFewAreLongEnough)
+    {
+        const std::vector<SVISliceCalibration> slices{slice_at(0.01, 0.001), slice_at(0.02, 0.002), slice_at(1.0, 0.1)};
+        EXPECT_EQ(select_surface_slices(slices, {10, 10, 10}, -0.4, 0.4), (std::vector<std::size_t>{0, 1, 2}));
+    }
+
     TEST(VolSurfacePipeline, RecoversAFlatVolatilityGridEndToEnd)
     {
         constexpr Real sigma = 0.22;
