@@ -67,6 +67,18 @@ def test_healthy_store_prices_on_the_snapshot_date(fake):
     assert fake["calls"] == [(2, 500.0, 0.03, 0.01)]
 
 
+def test_the_surface_is_calibrated_once_per_distinct_input(fake):
+    # Cached on a digest of what was read (issue #90): the same chain again
+    # is not recalibrated, a revised quote or another rate is.
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    assert len(fake["calls"]) == 1
+    ms.local_vol_market("SPY", 0.04, SNAP)
+    fake["rows"][0].bid = 1.05
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    assert len(fake["calls"]) == 3
+
+
 def test_a_later_valuation_date_is_priced_on_the_stored_market_date(fake):
     m = ms.local_vol_market("SPY", 0.03, date(2026, 9, 14))  # Monday
     assert m.valuation_date == SNAP

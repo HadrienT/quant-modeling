@@ -412,6 +412,18 @@ def latest_options_snapshot_date(ticker: str) -> Optional[date]:
         return row[0] if row and row[0] is not None else None
 
 
+def options_chain_tickers(since: date) -> List[str]:
+    """The tickers with an option-chain snapshot on or after `since`: the
+    universe data-ingest currently tracks (OPTIONS_CHAIN_TICKERS)."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT ticker FROM options.chain_snapshot WHERE date >= %s "
+            "ORDER BY ticker",
+            (since,),
+        )
+        return [r[0] for r in cur.fetchall()]
+
+
 def options_chain_snapshot(
     ticker: str, as_of: Optional[date] = None
 ) -> List[OptionChainRow]:

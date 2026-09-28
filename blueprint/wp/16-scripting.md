@@ -538,7 +538,18 @@ L'événement d'audit `pricing.valuation` enregistre le modèle **retenu** et se
 paramètres (`ModelSpec.params`, `calibration_id = ticker:snapshot`).
 
 **Calibration** ([`stochastic_vol.py`](../../api/app/stochastic_vol.py)), une fois
-par (ticker, snapshot, taux), en cache :
+par (ticker, snapshot, taux) : en cache dans le process, et **stockée**
+(`storage.py`, volume `qm_data`) sous un condensé de tout ce qu'elle lit
+(tranches SVI, grille de Dupire, taux, `METHOD`) — un redémarrage ne
+recalibre pas, une surface révisée ou une méthode changée ne sert jamais
+l'ancien résultat. La surface SVI/Dupire elle-même est en cache sur un
+condensé de la chaîne lue. Un fil de fond
+([`calibration_warmup.py`](../../api/app/calibration_warmup.py),
+`QM_CALIBRATION_WARMUP=1` en prod) calibre au démarrage puis toutes les
+30 minutes le dernier snapshot de chaque ticker suivi, aux taux auxquels il a
+été demandé en dernier (issue #90) ; un ticker jamais pricé en Heston ou SLV
+n'a pas de taux et n'est pas préchauffé. Sur SPY, barrière up-and-out en SLV :
+2,9 s à froid, 0,7 s une fois préchauffé.
 
 1. **Heston** ([`heston_calibration.hpp`](../../include/quantModeling/market/heston_calibration.hpp))
    sur la surface SVI déjà nettoyée, lue à k = z·σ_ATM·√T pour

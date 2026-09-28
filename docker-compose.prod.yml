@@ -35,6 +35,9 @@ services:
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-https://tramonihadrien.com,https://www.tramonihadrien.com}
       - QM_STORAGE=local
       - QM_DATA_DIR=/app/data
+      # Heston/SLV calibrated for each new chain snapshot before the first
+      # request (api/app/calibration_warmup.py).
+      - QM_CALIBRATION_WARMUP=${QM_CALIBRATION_WARMUP:-1}
       # Scripting assistant: the llama-server of ~/AgenticEnv, reached through
       # the llama-bridge socket on the Docker gateway (127.0.0.1 is the
       # container itself). Login is required to use it.
