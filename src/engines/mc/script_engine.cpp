@@ -79,7 +79,7 @@ namespace quantModeling
                 B = rqmc_replicates(settings);
                 req.n_units = static_cast<uint64_t>(std::max(1, requested / B));
                 tables = mc::sobol_tables(model.sim_dim(), req.seed, B, model.brownian_layout(),
-                                          settings.mc_brownian_bridge);
+                                          settings.mc_brownian_bridge, settings.mc_sobol_owen);
                 req.sobol = &*tables;
             }
             const gpu::ScriptGpuStats st = gpu::simulate_script(req);
@@ -132,7 +132,8 @@ namespace quantModeling
                 else
                     note += " + Sobol RQMC (" + std::to_string(B) + " batches, dim=" +
                             std::to_string(model.sim_dim()) + ")" +
-                            (tables->bridged() ? " + Brownian bridge" : "");
+                            (tables->bridged() ? " + Brownian bridge" : "") +
+                            (tables->owen ? " + Owen scrambling" : "");
             }
             res.diagnostics = note + (req.antithetic ? " + antithetic" : "") + cv_note + cv_off;
             res.device = "gpu";

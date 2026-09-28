@@ -42,6 +42,46 @@ namespace quantModeling
         return (static_cast<double>(bits ^ shift) + 0.5) * inv;
     }
 
+    /// The 32 bits of x in reverse order.
+    QM_HOST_DEVICE inline uint32_t reverse_bits32(uint32_t x)
+    {
+        x = ((x >> 1) & 0x55555555u) | ((x & 0x55555555u) << 1);
+        x = ((x >> 2) & 0x33333333u) | ((x & 0x33333333u) << 2);
+        x = ((x >> 4) & 0x0F0F0F0Fu) | ((x & 0x0F0F0F0Fu) << 4);
+        x = ((x >> 8) & 0x00FF00FFu) | ((x & 0x00FF00FFu) << 8);
+        return (x >> 16) | (x << 16);
+    }
+
+    /**
+     * @brief Owen's nested uniform scrambling of one coordinate, by hashing
+     *        (Burley, "Practical Hash-based Owen Scrambling", JCGT 9(4),
+     *        2020, with Laine & Karras's permutation).
+     *
+     * On the bit-reversed integer, adding the seed and XORing with products
+     * by even constants only carry a bit's influence towards more significant
+     * positions: output bit k (from the top) depends only on the seed and on
+     * the input's top k bits -- a random permutation of each elementary
+     * interval's halves, nested, which is Owen's scrambling (a hash in place
+     * of independent coin flips). Stateless: host and device, the same bits.
+     */
+    QM_HOST_DEVICE inline uint32_t owen_scramble(uint32_t x, uint32_t seed)
+    {
+        x = reverse_bits32(x);
+        x += seed;
+        x ^= x * 0x6c50b47cu;
+        x ^= x * 0xb82f1e52u;
+        x ^= x * 0xc7afe638u;
+        x ^= x * 0x8d22f6e6u;
+        return reverse_bits32(x);
+    }
+
+    /// A coordinate's randomised bits: the digital shift (XOR) or Owen's
+    /// scrambling seeded by the same per-dimension word.
+    QM_HOST_DEVICE inline uint32_t sobol_randomise(uint32_t bits, uint32_t word, bool owen)
+    {
+        return owen ? owen_scramble(bits, word) : bits ^ word;
+    }
+
     /**
      * @brief Scrambled Sobol low-discrepancy sequence (up to 21 201 dimensions).
      *
@@ -61,9 +101,11 @@ namespace quantModeling
          * @param dimension  coordinates per point (1..kMaxDimension)
          * @param scramble_seed seed of the digital-shift masks. Two sequences
          *        with different seeds are independent RQMC replicates.
+         * @param owen randomise by Owen's scrambling (owen_scramble), seeded by
+         *        the same per-dimension words, instead of the digital shift.
          */
-        explicit SobolSequence(int dimension, uint64_t scramble_seed = 0)
-            : dim_(dimension), v_(static_cast<size_t>(dimension) * kBits), x_(static_cast<size_t>(dimension), 0u), shift_(static_cast<size_t>(dimension), 0u)
+        explicit SobolSequence(int dimension, uint64_t scramble_seed = 0, bool owen = false)
+            : owen_(owen), dim_(dimension), v_(static_cast<size_t>(dimension) * kBits), x_(static_cast<size_t>(dimension), 0u), shift_(static_cast<size_t>(dimension), 0u)
         {
             if (dimension < 1 || dimension > sobol_detail::kMaxDimension)
                 throw InvalidInput("SobolSequence: dimension out of range [1, " +
@@ -105,7 +147,7 @@ namespace quantModeling
             ++index_;
             for (int d = 0; d < dim_; ++d)
             {
-                const uint32_t u = x_[static_cast<size_t>(d)] ^ shift_[static_cast<size_t>(d)];
+                const uint32_t u = sobol_randomise(x_[static_cast<size_t>(d)], shift_[static_cast<size_t>(d)], owen_);
                 out[static_cast<size_t>(d)] = (static_cast<double>(u) + 0.5) * inv;
             }
         }
@@ -185,6 +227,7 @@ namespace quantModeling
             }
         }
 
+        bool owen_ = false;
         int dim_;
         std::vector<uint32_t> v_;     // direction integers, v_[d * 32 + k]
         std::vector<uint32_t> x_;     // current Gray-code state per dimension

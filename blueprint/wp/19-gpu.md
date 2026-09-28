@@ -677,24 +677,31 @@ passante ou calcul, mesuré au profileur `nsys` / `ncu`).
 ## 12. Hors périmètre
 
 - Brouillage d'Owen (meilleur que le décalage digital sur intégrandes lisses) :
-  après G4, si le benchmark le justifie. **Évalué, écarté** : brouillage imbriqué
-  par hachage (Burley, « Practical Hash-based Owen Scrambling », JCGT 9(4),
-  2020 — sans état, idéal pour le GPU) contre le décalage digital, même pont,
-  vol locale, 16 répliques, dispersion vraie sur 20 graines (chaque rapport
-  incertain de ±45 %) :
+  après G4, si le benchmark le justifie. **Évalué, pas activé.** Brouillage
+  imbriqué par hachage (Burley, « Practical Hash-based Owen Scrambling »,
+  JCGT 9(4), 2020 — sans état, idéal pour le GPU ; `owen_scramble`,
+  `utils/sobol.hpp`), testé (permutation imbriquée, propriété de (0, m, 1)-réseau,
+  CPU = GPU au bit près) et disponible comme réglage interne
+  `PricingSettings::mc_sobol_owen`, désactivé et non exposé. Mesure
+  (`build-cuda/qm_gpu_owen_bench`) : les 42 scripts, dur et flou, Sobol + pont,
+  16 répliques, 6,6·10⁴ et 5,2·10⁵ points, dispersion vraie sur **200 graines**
+  (intervalle à 95 % du rapport de variance : ×/÷1,32). En dur, 84 comparaisons :
 
-  | Rapport de variance, décalage / Owen | 6,6·10⁴ points | 1,05·10⁶ points |
-  |---|---|---|
-  | Call à départ différé | 1,40 | 1,61 |
-  | Asiatique | 0,77 | 1,88 |
-  | Phoenix autocall | 0,31 | 0,41 |
-  | Up-and-out quotidien | 0,80 | 1,16 |
-  | Variance swap | 1,23 | 2,25 |
+  | | Owen meilleur | Indistinguable | Owen pire |
+  |---|---|---|---|
+  | Scripts sans test de seuil sur un spot (44) | 15 | 21 | 8 |
+  | Scripts avec test de seuil (40) | 5 | 33 | 2 |
 
-  Gains modestes sur les intégrandes lisses, **pertes nettes sur l'autocall**
-  (coupons digitaux, barrière) : nos payoffs sont rarement lisses. Le code n'a
-  pas été gardé ; la mesure se refait en rajoutant `owen_scramble` au calcul
-  des coordonnées de `mc::sobol_bridged_gaussians`.
+  Meilleurs gains ÷2,17 (outperformance), ÷1,99 (basket), ÷1,66 (call) ; pires
+  pertes ×2,3 (reverse cliquet), ×2,9 (capital-protected note à 5,2·10⁵
+  points). Surtout, **le verdict change de sens avec le nombre de points pour un
+  même produit** (capital-protected note : ÷2,05 puis ×2,9 ; forward-start :
+  ÷1,97 puis ×1,45 ; double no-touch : ÷1,38 puis ×1,33). Il n'y a donc pas de
+  règle a priori — le test de seuil (`ScriptAnalysis::spot_threshold_test`) ne
+  sépare pas gains et pertes — ni de pilote utile (un petit nombre de points ne
+  prédit pas le grand). Décision : décalage digital partout. Piste si l'on y
+  revient : un vrai brouillage d'Owen (des bits aléatoires par nœud de l'arbre,
+  pas un hachage), dont le hachage de Burley n'est qu'une approximation.
 - ~~Échantillonnage préférentiel générique (drift optimal par payoff).~~ Fait
   après G3 ([§2.6](#26-sobol-sur-gpu-et-léchantillonnage-préférentiel-issues-102-103)),
   sous la forme d'un drift constant par facteur ; un drift dépendant du temps
