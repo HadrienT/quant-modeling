@@ -89,6 +89,7 @@ namespace quantModeling
         Pcg32 rng = RngFactory(settings.seed).make(0);
         NormalBoxMuller bm_spot, bm_vol;
 
+        std::size_t clamped_particles = 0;
         Time t_prev = 0.0;
         for (std::size_t j = 0; j < nT; ++j)
         {
@@ -122,13 +123,19 @@ namespace quantModeling
             t_prev = t_target;
 
             // Bucket the particles now at T_grid[j] by nearest strike, and
-            // read off each bucket's mean variance as the E[v|S] estimate.
+            // read off each bucket's mean variance as the E[v|S] estimate --
+            // of the variance the spot actually diffuses with, max(v, floor).
+            // Full-truncation Euler lets v itself go negative, and averaging
+            // the raw v understated E[v|S] wherever the Feller condition
+            // fails, so the leverage came out too large and SLV carried more
+            // variance than the surface (issue #113: on SPY, xi = 0.74, a
+            // 3-month 105 % call at 6.17 against local vol's 4.92).
             std::vector<Real> v_sum(nK, 0.0);
             std::vector<std::size_t> count(nK, 0);
             for (std::size_t p = 0; p < N; ++p)
             {
                 const std::size_t b = nearest_bucket(K_grid, S[p]);
-                v_sum[b] += v[p];
+                v_sum[b] += std::max(v[p], settings.variance_floor);
                 ++count[b];
             }
 
@@ -151,6 +158,8 @@ namespace quantModeling
                 }
                 const Real sigma_ij = sigma_loc[i * nT + j];
                 Real L = sigma_ij / std::sqrt(std::max(mean_v, settings.variance_floor));
+                if (L <= settings.leverage_floor || L >= settings.leverage_cap)
+                    clamped_particles += count[i];
                 L = std::clamp(L, settings.leverage_floor, settings.leverage_cap);
                 column[i] = L;
                 leverage[i * nT + j] = L;
@@ -158,7 +167,8 @@ namespace quantModeling
             prev_column = column;
         }
 
-        return SLVLeverageGrid{K_grid, T_grid, leverage};
+        return SLVLeverageGrid{K_grid, T_grid, leverage,
+                               static_cast<Real>(clamped_particles) / static_cast<Real>(N * nT)};
     }
 
 } // namespace quantModeling

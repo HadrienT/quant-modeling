@@ -171,7 +171,7 @@ function SurfaceMetrics({ c }: { c: SimulationCalibrateResponse }) {
 				<Metric
 					label="SLV leverage"
 					value={`${l.min.toFixed(2)} – ${l.max.toFixed(2)}`}
-					footnote={`${pct(l.clamped_share)} of the grid at its floor or cap; ${l.n_particles.toLocaleString("en-US")} particles`}
+					footnote={`${pct(l.clamped_share)} of the grid${l.clamped_mass != null ? `, ${pct(l.clamped_mass)} of the particles,` : ""} at its floor or cap; ${l.n_particles.toLocaleString("en-US")} particles`}
 				/>
 			)}
 		</MetricRow>

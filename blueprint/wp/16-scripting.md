@@ -598,11 +598,22 @@ issue #82). Trois règles, mesurées sur la chaîne SPY stockée :
 Effet sur les prix (SPY, 2026-09-25, 50 000 chemins) : variance swap de
 strike 20 % en vol locale −179,4 → −102,0 (Heston −115,7, Black-Scholes ATM
 −172,8) — l'aile put, que la grille laissait dehors, est entrée ; put
-down-and-in barrière 85 % 23,6 → 25,2. Reste ouvert : la SLV ne retrouve pas
-les marginales de la vol locale sur le variance swap (−73,8 contre −102,0,
-écart déjà présent avant), et la part de levier borné (4 % de la grille,
-presque toute dans des cellules où aucune particule ne passe) n'est pas
-pondérée par les chemins.
+down-and-in barrière 85 % 23,6 → 25,2.
+
+**Levier SLV** (issue #113). La calibration moyennait la variance brute v par
+case de strike ; le schéma d'Euler à troncature complète la laisse devenir
+négative, et le spot diffuse avec max(v, plancher). Là où la condition de
+Feller échoue (SPY : 2κθ = 0,13 contre ξ² = 0,54), E[v|S] était sous-estimé,
+le levier trop grand, et la SLV portait plus de variance que la surface : call
+3 mois 105 % à 6,17 contre 4,92 en vol locale, variance swap −73,8 contre
+−102,0. Avec la variance plancher : 4,91 et −98,1. Ce qui reste est l'ordre
+un du levier tenu à la colonne j−1 sur (T_{j−1}, T_j] : sur une surface plate
+avec ξ = 0,9, l'erreur d'un call 115 % passe de −11,5 % à des colonnes de
+0,05 an à −2,1 % à 0,0125 an (test de convergence) ; sur la grille SPY
+(≈ 0,044 an), quelques pourcents dans les ailes. La part de levier borné est
+aussi donnée **en masse de particules** (`clamped_mass`) et non plus
+seulement en points de grille, dont la plupart sont dans des queues qu'aucune
+particule n'atteint : SPY, 2,7 % de la grille, 2,2 % des particules.
 
 ---
 

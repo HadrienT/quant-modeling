@@ -729,6 +729,7 @@ static py::dict calibrate_slv_leverage_impl(double spot, double rate, double div
     out["T_grid"] = grid.T_grid;
     out["leverage_flat"] = grid.leverage;
     out["n_particles"] = settings.n_particles;
+    out["clamped_mass"] = grid.clamped_mass;
     // The clamp a bucket's estimate is held to where E[v|S] is unreliable:
     // a caller can count how much of the grid sits on it.
     out["leverage_floor"] = settings.leverage_floor;

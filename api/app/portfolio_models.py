@@ -378,8 +378,9 @@ def _slv_params(sv: "stochastic_vol.StochasticVol", smile) -> List[ModelParam]:
             status="calibrated",
             source=(
                 f"particle method, {sv.n_particles:,} particles; "
-                f"{sv.leverage_clamped_share:.1%} of the grid at its floor or cap, "
-                "where the surface is not matched"
+                f"{sv.leverage_clamped_share:.1%} of the grid and "
+                f"{sv.leverage_clamped_mass:.2%} of the particles at its floor or "
+                "cap, where the surface is not matched"
             ),
         ),
     ]

@@ -48,8 +48,10 @@ function LeverageRows({ l }: { l: NonNullable<Calibration["leverage"]> }) {
 				{formatNumber(l.min, "plain")} to {formatNumber(l.max, "plain")}
 			</Row>
 			<Row label="Held at its floor or cap">
-				{formatNumber(l.clamped_share, "rate")} of the grid (surface not matched
-				there)
+				{formatNumber(l.clamped_share, "rate")} of the grid
+				{l.clamped_mass != null &&
+					`, ${formatNumber(l.clamped_mass, "rate")} of the particles`}{" "}
+				(surface not matched there)
 			</Row>
 			<Row label="Particles">{formatNumber(l.n_particles, "integer")}</Row>
 		</>

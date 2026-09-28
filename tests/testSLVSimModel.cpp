@@ -137,6 +137,10 @@ namespace quantModeling
         settings.max_dt = 1.0 / 100;
         const SLVLeverageGrid grid =
             calibrate_slv_leverage(s0, r, q, heston, K_grid, T_grid, sigma_loc, settings);
+        // A flat 20 % surface is within reach of this Heston almost
+        // everywhere the particles go.
+        EXPECT_GE(grid.clamped_mass, 0.0);
+        EXPECT_LT(grid.clamped_mass, 0.01);
 
         SLVSimModel<Real> model(s0, r, q, heston.v0, heston.kappa, heston.theta,
                                 heston.xi, heston.rho, grid.K_grid, grid.T_grid,
@@ -156,6 +160,49 @@ namespace quantModeling
             const Real expected = bs_call(s0, K, r, q, flat_vol, Tm);
             EXPECT_NEAR(res.npv(), expected, 4.0 * res.std_error() + 0.15) << "strike " << K;
         }
+    }
+
+    // The same promise where the Feller condition fails badly (2 kappa
+    // theta = 0.12 against xi^2 = 0.81): full-truncation Euler then drives
+    // v below zero on many paths, and E[v|S] must be the mean of the
+    // variance the spot diffuses with, max(v, floor), not of v itself --
+    // averaging the raw v left the leverage too large and the calls too
+    // dear (issue #113). What error remains is the leverage held at column
+    // j-1 over (T_{j-1}, T_j], first order in the column spacing: it must
+    // shrink as the columns get closer.
+    TEST(SLVSimModel, CalibratedToFlatVolConvergesToBlackScholesWhenFellerFails)
+    {
+        const Real s0 = 100.0, r = 0.03, q = 0.01, flat_vol = 0.2, Tm = 0.5;
+        const HestonParams heston{/*v0=*/0.02, /*kappa=*/1.5, /*theta=*/0.04,
+                                  /*xi=*/0.9, /*rho=*/-0.7};
+        std::vector<Real> K_grid;
+        for (int i = 0; i < 41; ++i)
+            K_grid.push_back(50.0 + static_cast<Real>(i) * (200.0 - 50.0) / 40.0);
+
+        std::vector<double> errors;
+        for (const Real dT : {0.05, 0.0125})
+        {
+            std::vector<Real> T_grid;
+            for (Real t = dT; t < Tm + 1e-9; t += dT)
+                T_grid.push_back(t);
+            const std::vector<Real> sigma_loc(K_grid.size() * T_grid.size(), flat_vol);
+            SLVCalibrationSettings settings;
+            settings.n_particles = 150000;
+            settings.seed = 7;
+            settings.max_dt = std::min(dT, 1.0 / 100);
+            const SLVLeverageGrid grid = calibrate_slv_leverage(s0, r, q, heston, K_grid, T_grid, sigma_loc, settings);
+            SLVSimModel<Real> model(s0, r, q, heston.v0, heston.kappa, heston.theta, heston.xi, heston.rho,
+                                    grid.K_grid, grid.T_grid, grid.leverage, settings.max_dt);
+            EuroCallT<Real> product(115.0, Tm);
+            PricingSettings ps;
+            ps.mc_paths = 150000;
+            ps.mc_seed = 11;
+            const SimulationMCResult res = simulate<Real>(product, model, ps);
+            const Real expected = bs_call(s0, 115.0, r, q, flat_vol, Tm);
+            errors.push_back(std::abs(res.npv() - expected) / expected);
+        }
+        EXPECT_LT(errors[1], 0.6 * errors[0]);
+        EXPECT_LT(errors[1], 0.05);
     }
 
     // ── the general oracle, independent of the calibration entirely:

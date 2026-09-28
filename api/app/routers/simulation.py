@@ -131,6 +131,7 @@ def _calibrate_surface_model(
                 min=sv.leverage_min,
                 max=sv.leverage_max,
                 clamped_share=sv.leverage_clamped_share,
+                clamped_mass=sv.leverage_clamped_mass,
                 n_particles=sv.n_particles,
             )
     return SimulationCalibrateResponse(**out)

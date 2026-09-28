@@ -2497,6 +2497,11 @@ export interface components {
          */
         LeverageFit: {
             /**
+             * Clamped Mass
+             * @description Share of the calibration's particles, over every column, in those points: how much of the distribution is not matched.
+             */
+            clamped_mass?: number | null;
+            /**
              * Clamped Share
              * @description Share of grid points held at the calibration's floor or cap, where the marginals are not the surface's.
              */
