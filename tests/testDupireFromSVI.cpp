@@ -3,6 +3,7 @@
 #include "quantModeling/market/dupire_from_svi.hpp"
 
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace quantModeling
@@ -62,6 +63,39 @@ namespace quantModeling
     }
 
     // ── Calendar arbitrage is caught, not silently priced through ──────────
+
+    // A term structure of flat smiles: the local vol is the forward vol of
+    // each segment, 0 -> T_1 included, and jumps at every slice. The grid's
+    // columns sit on both sides of each slice, so the variance it delivers
+    // up to any slice is that slice's total variance -- equal steps would
+    // blend two forward vols over the column that straddles it.
+    TEST(DupireFromSVI, GridDeliversEachSlicesTotalVariance)
+    {
+        const std::vector<std::pair<Real, Real>> term{{0.1, 0.20}, {0.25, 0.18}, {0.6, 0.24}, {1.5, 0.20}};
+        std::vector<SVISliceCalibration> slices;
+        for (const auto &[T, vol] : term)
+            slices.push_back(flat_vol_slice(T, vol));
+        const SVISurface surface(slices);
+        const GridLocalVol grid = build_local_vol_grid(surface, 100.0, 0.0, 0.0, -0.5, 0.5, 11, 40);
+
+        const std::size_t n = 150000;
+        const Real dt = 1.5 / static_cast<Real>(n);
+        Real integrated = 0.0;
+        std::size_t next = 0;
+        for (std::size_t step = 0; step < n; ++step)
+        {
+            const Real sigma = grid.value(100.0, (static_cast<Real>(step) + 0.5) * dt);
+            integrated += sigma * sigma * dt;
+            const Real t_end = static_cast<Real>(step + 1) * dt;
+            if (next < term.size() && std::abs(t_end - term[next].first) < 0.5 * dt)
+            {
+                const Real w = term[next].second * term[next].second * term[next].first;
+                EXPECT_NEAR(integrated, w, 1e-9 + 1e-5 * w) << "T = " << term[next].first;
+                ++next;
+            }
+        }
+        EXPECT_EQ(next, term.size());
+    }
 
     TEST(DupireFromSVI, ReturnsNaNWhereTotalVarianceDecreasesInMaturity)
     {

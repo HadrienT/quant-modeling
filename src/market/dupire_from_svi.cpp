@@ -93,17 +93,65 @@ namespace quantModeling
         return source;
     }
 
+    std::vector<Real> local_vol_maturities(const SVISurface &surface, std::size_t n_maturities)
+    {
+        // Segments [0, T_1], [T_1, T_2], ... of the surface; dw/dT jumps at
+        // each T_i, and a column straddling one would blend two segments.
+        std::vector<Real> ends;
+        for (const auto &s : surface.slices())
+            ends.push_back(s.ttm);
+        const std::size_t n_seg = ends.size();
+        std::vector<Real> T_grid;
+        if (n_maturities < 2 * n_seg)
+        {
+            // Too few columns to give every segment its two edges: equal steps.
+            for (std::size_t j = 0; j < n_maturities; ++j)
+                T_grid.push_back(surface.ttm_max() * static_cast<Real>(j + 1) / static_cast<Real>(n_maturities));
+            return T_grid;
+        }
+
+        // Two columns per segment, the rest by length (largest remainder).
+        const std::size_t spare = n_maturities - 2 * n_seg;
+        std::vector<std::size_t> count(n_seg, 2);
+        std::vector<std::pair<Real, std::size_t>> remainder;
+        std::size_t given = 0;
+        for (std::size_t s = 0; s < n_seg; ++s)
+        {
+            const Real share = static_cast<Real>(spare) * (ends[s] - (s ? ends[s - 1] : 0.0)) / surface.ttm_max();
+            const auto whole = static_cast<std::size_t>(share);
+            count[s] += whole;
+            given += whole;
+            remainder.push_back({share - static_cast<Real>(whole), s});
+        }
+        std::stable_sort(remainder.begin(), remainder.end(),
+                         [](const auto &x, const auto &y)
+                         { return x.first > y.first; });
+        for (std::size_t r = 0; given < spare; ++r, ++given)
+            ++count[remainder[r].second];
+
+        for (std::size_t s = 0; s < n_seg; ++s)
+        {
+            const Real a = s ? ends[s - 1] : 0.0, b = ends[s];
+            const auto c = static_cast<Real>(count[s]);
+            for (std::size_t j = 0; j < count[s]; ++j)
+            {
+                if (s == 0) // (0, T_1]: T = 0 has no variance to read
+                    T_grid.push_back(b * static_cast<Real>(j + 1) / c);
+                else if (j == 0) // just past T_{s-1}: the right limit, this segment's dw/dT
+                    T_grid.push_back(a * (1.0 + 1e-9));
+                else
+                    T_grid.push_back(a + (b - a) * static_cast<Real>(j) / (c - 1.0));
+            }
+        }
+        return T_grid;
+    }
+
     GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend,
                                       Real k_min, Real k_max,
                                       std::size_t n_strikes, std::size_t n_maturities,
                                       const DupireFromSVIParams &params)
     {
-        std::vector<Real> T_grid(n_maturities);
-        for (std::size_t j = 0; j < n_maturities; ++j)
-        {
-            const Real t = (n_maturities > 1) ? static_cast<Real>(j) / static_cast<Real>(n_maturities - 1) : 0.0;
-            T_grid[j] = surface.ttm_min() + t * (surface.ttm_max() - surface.ttm_min());
-        }
+        const std::vector<Real> T_grid = local_vol_maturities(surface, n_maturities);
 
         // Strike grid: fixed log-moneyness band, converted to strikes at the
         // mid-maturity forward -- same convention as
