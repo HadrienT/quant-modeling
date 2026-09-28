@@ -9,7 +9,7 @@ export type VarianceReduction = {
 };
 
 export const DEFAULT_VARIANCE_REDUCTION: VarianceReduction = {
-	sampler: "pseudo",
+	sampler: "sobol",
 	controlVariate: false,
 	antithetic: true,
 	importance: false,

@@ -237,8 +237,9 @@ def test_script_risks_on_the_gpu_are_the_cpu_tapes(client):
 
 def test_antithetic_pairs_can_be_turned_off(client):
     c, _ = client
-    on = price_script(c, rng="philox").json()
-    off = price_script(c, rng="philox", antithetic=False).json()
+    # Antithetic pairs are the pseudo-random sampler's (Sobol is the default).
+    on = price_script(c, rng="philox", sampler="pseudo").json()
+    off = price_script(c, rng="philox", sampler="pseudo", antithetic=False).json()
     assert "antithetic" in on["diagnostics"]
     assert "antithetic" not in off["diagnostics"]
     se = (on["mc_std_error"] ** 2 + off["mc_std_error"] ** 2) ** 0.5
