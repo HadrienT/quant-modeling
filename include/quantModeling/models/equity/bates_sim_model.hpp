@@ -218,6 +218,7 @@ namespace quantModeling
                 d.q = q_;
                 d.s0 = {s0_};
                 d.heston = {v0_, kappa_, theta_, xi_, rho_};
+                d.jump_k = std::exp(jump_mean_ + 0.5 * jump_vol_ * jump_vol_) - 1.0;
                 d.factors = 2;
                 d.stride = 4; // spot, variance, then the (unused) jump count and size
                 d.t = sim_timeline_;
@@ -227,6 +228,16 @@ namespace quantModeling
                     d.event.push_back(static_cast<int>(e));
                 return true;
             }
+        }
+
+        /// The spot's log-return carries the jump compensator -lambda k, so
+        /// S(t) / N(t) is a martingale on the grid: E = S0 e^{-q t}.
+        bool deflated_spot_mean(std::size_t asset, Time t, Real &mean) const override
+        {
+            if (asset != 0)
+                return false;
+            mean = to_double(s0_) * std::exp(-to_double(q_) * t);
+            return true;
         }
 
         const std::vector<T *> &parameters() const override { return params_; }

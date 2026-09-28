@@ -28,7 +28,10 @@ namespace quantModeling
     /// (randomized QMC — paths are split into mc_rqmc_batches independent
     /// digital shifts; the reported std error is the spread of batch means).
     /// Stratified: jittered equiprobable strata of the first uniform — same
-    /// batching scheme as Sobol for the error bars.
+    /// batching scheme as Sobol for the error bars. In the generic engine
+    /// (and on the GPU): the first Brownian factor's terminal value W(T) is
+    /// stratified and the path filled in by the conditional Brownian bridge
+    /// (blueprint/wp/19-gpu.md §2.5), with Philox draws.
     enum class SamplerKind
     {
         PseudoRandom,
@@ -89,6 +92,11 @@ namespace quantModeling
         /// models that describe their increments (BrownianLayout) --
         /// blueprint/wp/19-gpu.md §2.4. No effect on pseudo-random draws.
         bool mc_brownian_bridge = true;
+        /// Generic control variates (blueprint/wp/19-gpu.md §2.5): the
+        /// deflated spot at up to 8 event dates, whose mean the model knows,
+        /// regressed out of the payoff. Generic engine and GPU scripts; off
+        /// by default so that no existing number moves.
+        bool mc_spot_control = false;
     };
 
     struct MarketView
@@ -107,4 +115,4 @@ namespace quantModeling
 
 } // namespace quantModeling
 
-#endif
+#endif

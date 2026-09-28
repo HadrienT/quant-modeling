@@ -1,10 +1,15 @@
 import { useMemo, useState } from "react";
 import { type ComputeDevice, usePricing } from "@/shared/api";
-import { Button, Field } from "@/shared/ui";
+import { Button } from "@/shared/ui";
 import { MetricRowSkeleton } from "@/shared/ui/states";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
-import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
+import {
+	ScriptingMarketFields,
+	type DayCount,
+	type Sampler,
+} from "./ScriptingMarketFields";
 import { alignToValuationDate } from "./scripting/alignDates";
+import { FuzzyFields } from "./scripting/FuzzyFields";
 import { DEFAULT_PRODUCT } from "./scripting/library";
 import { LibraryPicker } from "./scripting/LibraryPicker";
 import { ScriptEditor } from "./scripting/ScriptEditor";
@@ -49,7 +54,9 @@ export default function ScriptingPreview() {
 	const [dayCount, setDayCount] = useState<DayCount>("ACT/365F");
 	const [fuzzy, setFuzzy] = useState(false);
 	const [defaultEps, setDefaultEps] = useState("1");
-	const [sampler, setSampler] = useState<"pseudo" | "sobol">("pseudo");
+	const [sampler, setSampler] = useState<Sampler>("pseudo");
+	const [controlVariate, setControlVariate] = useState(false);
+	const [antithetic, setAntithetic] = useState(true);
 	const [nPaths, setNPaths] = useState("200000");
 	const [seed, setSeed] = useState("1");
 	const [device, setDevice] = useState<ComputeDevice>("cpu");
@@ -107,6 +114,8 @@ export default function ScriptingPreview() {
 							fuzzy,
 							default_eps: Number(defaultEps),
 							sampler,
+							control_variate: controlVariate,
+							antithetic,
 							n_paths: Number(nPaths),
 							seed: Number(seed),
 							device,
@@ -155,6 +164,10 @@ export default function ScriptingPreview() {
 						onDayCount={setDayCount}
 						sampler={sampler}
 						onSampler={setSampler}
+						controlVariate={controlVariate}
+						onControlVariate={setControlVariate}
+						antithetic={antithetic}
+						onAntithetic={setAntithetic}
 						nPaths={nPaths}
 						onNPaths={setNPaths}
 						seed={seed}
@@ -163,24 +176,12 @@ export default function ScriptingPreview() {
 
 					<ComputeDevicePicker device={device} onChange={setDevice} />
 
-					<div className="flex flex-wrap items-center gap-4">
-						<label className="flex items-center gap-2 text-sm">
-							<input
-								type="checkbox"
-								checked={fuzzy}
-								onChange={(e) => setFuzzy(e.target.checked)}
-							/>
-							Fuzzy (smoothed comparisons, for digitals and barriers)
-						</label>
-						{fuzzy && (
-							<Field
-								label="Default eps"
-								inputMode="decimal"
-								value={defaultEps}
-								onChange={(e) => setDefaultEps(e.target.value)}
-							/>
-						)}
-					</div>
+					<FuzzyFields
+						fuzzy={fuzzy}
+						onFuzzy={setFuzzy}
+						eps={defaultEps}
+						onEps={setDefaultEps}
+					/>
 
 					<div className="flex gap-2">
 						<Button

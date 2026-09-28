@@ -41,7 +41,14 @@ namespace quantModeling
         Real q = 0.0;           ///< single-asset diffusions
         std::vector<Real> s0;   ///< n_assets
         std::vector<Real> chol; ///< n_assets² row-major, Black-Scholes with n_assets > 1
+        /// Black-Scholes, per asset: the parameters behind drift and
+        /// vol_sqrt_dt, which a dual run differentiates (lot G3).
+        std::vector<Real> divs, vols;
         mc::HestonParamsT<Real> heston{0.0, 0.0, 0.0, 0.0, 0.0};
+        /// Bates's jump compensator k = E[Y - 1] (lambda = 0 on the device):
+        /// dV/dlambda = -k (...) is not zero when k is, which the duals do not
+        /// carry -- the risks then stay on the CPU.
+        Real jump_k = 0.0;
         std::vector<Real> K, T_grid, grid; ///< local vol σ(K, T) or SLV leverage, K-major
 
         /// The simulation grid: one entry per step of the CPU model's

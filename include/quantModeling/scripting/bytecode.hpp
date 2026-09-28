@@ -206,16 +206,26 @@ namespace quantModeling::scripting
         };
     } // namespace bytecode_detail
 
+    /// run_event's recorder when nothing is recorded (compiles to nothing).
+    struct NoRecord
+    {
+        static constexpr bool kRecords = false;
+        QM_HOST_DEVICE void push(double) {}
+    };
+
     /**
      * @brief Interpret code[begin, end) -- one event's statements -- on one
      *        path, against that event's spots, discount factors and numeraire.
      *
      * Every number goes through unqualified calls after `using std::…`, as in
      * the tree evaluators, so T = aad::Number records the same tape.
+     *
+     * `rec` (run_event_recorded) additionally receives, per executed
+     * instruction, the operand values its adjoint needs and then its pc.
      */
-    template <class T>
-    QM_HOST_DEVICE void run_event(const ProgramView &p, int begin, int end, Machine<T> &m, const T *spots,
-                                  const T *discounts, const T &numeraire)
+    template <class T, class Rec>
+    QM_HOST_DEVICE void run_event_impl(const ProgramView &p, int begin, int end, Machine<T> &m, const T *spots,
+                                       const T *discounts, const T &numeraire, Rec &rec)
     {
         using namespace bytecode_detail;
         int sp = 0; // value stack
@@ -223,8 +233,24 @@ namespace quantModeling::scripting
         T *S = m.stack;
         T *D = m.degrees;
         int pc = begin;
+        // What the adjoint needs (scripting/bytecode_adjoint.hpp): an
+        // instruction's operands, then its pc -- read back last-in first-out.
+        auto rec2 = [&](const T &a, const T &b)
+        {
+            if constexpr (Rec::kRecords)
+            {
+                rec.push(dbl(a));
+                rec.push(dbl(b));
+            }
+        };
+        auto rec1 = [&](double a)
+        {
+            if constexpr (Rec::kRecords)
+                rec.push(a);
+        };
         while (pc < end)
         {
+            const int at = pc;
             const Instr &in = p.code[pc++];
             switch (in.op)
             {
@@ -259,6 +285,7 @@ namespace quantModeling::scripting
                 {
                     const T b = S[--sp];
                     const T a = S[--sp];
+                    rec2(a, b);
                     S[sp++] = a * b;
                     break;
                 }
@@ -266,6 +293,7 @@ namespace quantModeling::scripting
                 {
                     const T b = S[--sp];
                     const T a = S[--sp];
+                    rec2(a, b);
                     S[sp++] = a / b;
                     break;
                 }
@@ -274,6 +302,7 @@ namespace quantModeling::scripting
                     using std::pow;
                     const T b = S[--sp];
                     const T a = S[--sp];
+                    rec2(a, b);
                     S[sp++] = pow(a, b);
                     break;
                 }
@@ -290,6 +319,7 @@ namespace quantModeling::scripting
                     using std::min;
                     const T b = S[--sp];
                     const T a = S[--sp];
+                    rec2(a, b);
                     S[sp++] = min(a, b);
                     break;
                 }
@@ -298,6 +328,7 @@ namespace quantModeling::scripting
                     using std::max;
                     const T b = S[--sp];
                     const T a = S[--sp];
+                    rec2(a, b);
                     S[sp++] = max(a, b);
                     break;
                 }
@@ -305,6 +336,7 @@ namespace quantModeling::scripting
                 {
                     using std::log;
                     const T a = S[--sp];
+                    rec1(dbl(a));
                     S[sp++] = log(a);
                     break;
                 }
@@ -313,6 +345,7 @@ namespace quantModeling::scripting
                     using std::exp;
                     const T a = S[--sp];
                     S[sp++] = exp(a);
+                    rec1(dbl(S[sp - 1]));
                     break;
                 }
                 case Op::Sqrt:
@@ -320,12 +353,14 @@ namespace quantModeling::scripting
                     using std::sqrt;
                     const T a = S[--sp];
                     S[sp++] = sqrt(a);
+                    rec1(dbl(S[sp - 1]));
                     break;
                 }
                 case Op::Abs:
                 {
                     using std::fabs;
                     const T a = S[--sp];
+                    rec1(dbl(a));
                     S[sp++] = fabs(a);
                     break;
                 }
@@ -333,6 +368,7 @@ namespace quantModeling::scripting
                 {
                     const T h = S[--sp];
                     const T x = S[--sp];
+                    rec2(x, h);
                     const double hd = dbl(h);
                     if (hd <= 0.0)
                     {
@@ -415,6 +451,7 @@ namespace quantModeling::scripting
                     const T rhs = S[--sp];
                     const T lhs = S[--sp];
                     const T x = lhs - rhs; // condition is x ⋈ 0
+                    rec1(dbl(x));
                     if (in.a != 0)
                         D[dp++] = hard(dbl(x), in.op) ? T(1) : T(0);
                     else
@@ -429,6 +466,7 @@ namespace quantModeling::scripting
                     using std::min;
                     const T b = D[--dp];
                     const T a = D[--dp];
+                    rec2(a, b);
                     D[dp++] = min(a, b);
                     break;
                 }
@@ -437,6 +475,7 @@ namespace quantModeling::scripting
                     using std::max;
                     const T b = D[--dp];
                     const T a = D[--dp];
+                    rec2(a, b);
                     D[dp++] = max(a, b);
                     break;
                 }
@@ -453,6 +492,7 @@ namespace quantModeling::scripting
                 case Op::Pays:
                 {
                     const T value = S[--sp];
+                    rec2(value, numeraire);
                     m.payoff += value / numeraire;
                     break;
                 }
@@ -476,15 +516,18 @@ namespace quantModeling::scripting
                     if (dt <= 0.0)
                     {
                         m.if_mode[f.mode] = kElseOnly;
+                        rec1(kElseOnly);
                         pc = in.b;
                         break;
                     }
                     if (dt >= 1.0)
                     {
                         m.if_mode[f.mode] = kThenOnly;
+                        rec1(kThenOnly);
                         break;
                     }
                     m.if_mode[f.mode] = kBlend;
+                    rec1(kBlend);
                     slots[0] = degree;
                     slots[1] = m.payoff;
                     for (int i = 0; i < f.n; ++i)
@@ -494,6 +537,7 @@ namespace quantModeling::scripting
                 case Op::FIfMid:
                 {
                     const FuzzyIf &f = p.ifs[in.a];
+                    rec1(m.if_mode[f.mode]);
                     if (m.if_mode[f.mode] == kThenOnly)
                     {
                         pc = in.b;
@@ -512,12 +556,25 @@ namespace quantModeling::scripting
                 {
                     const FuzzyIf &f = p.ifs[in.a];
                     if (m.if_mode[f.mode] != kBlend)
+                    {
+                        rec1(m.if_mode[f.mode]);
                         break;
+                    }
                     T *slots = m.if_slots + f.slot;
                     const T &degree = slots[0];
                     const T &payoff0 = slots[1];
                     const T payoff_else = m.payoff;
                     const T w1 = T(1) - degree;
+                    if constexpr (Rec::kRecords)
+                    {
+                        for (int i = 0; i < f.n; ++i)
+                            rec1(dbl(slots[3 + f.n + i]));
+                        for (int i = 0; i < f.n; ++i)
+                            rec1(dbl(m.vars[p.aff[f.first + i]]));
+                        rec2(degree, payoff0);
+                        rec2(slots[2], payoff_else);
+                        rec1(kBlend);
+                    }
                     for (int i = 0; i < f.n; ++i)
                     {
                         const int slot = p.aff[f.first + i];
@@ -527,7 +584,16 @@ namespace quantModeling::scripting
                     break;
                 }
             }
+            rec1(static_cast<double>(at));
         }
+    }
+
+    template <class T>
+    QM_HOST_DEVICE void run_event(const ProgramView &p, int begin, int end, Machine<T> &m, const T *spots,
+                                  const T *discounts, const T &numeraire)
+    {
+        NoRecord none;
+        run_event_impl(p, begin, end, m, spots, discounts, numeraire, none);
     }
 
     /// A compiled script (host memory).

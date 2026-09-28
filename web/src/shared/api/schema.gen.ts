@@ -2629,6 +2629,13 @@ export interface components {
          *     vol of the stored chain: the Dupire superbucket (lot 17h).
          */
         MarketVegaResponse: {
+            /**
+             * Device
+             * @description Where the adjoint Monte-Carlo ran: the CPU tape, or the GPU's per-path adjoint (blueprint WP 19 §6).
+             * @default cpu
+             * @enum {string}
+             */
+            device: "cpu" | "gpu";
             /** Maturities */
             maturities: components["schemas"]["MaturityVega"][];
             /** Mc Std Error */
@@ -3655,6 +3662,18 @@ export interface components {
          */
         ScriptRequest: {
             /**
+             * Antithetic
+             * @description Pair each path with its mirror (-z). Price only: the adjoint engines run plain paths.
+             * @default true
+             */
+            antithetic: boolean;
+            /**
+             * Control Variate
+             * @description Regress the deflated spots at up to 8 event dates -- martingales of known mean -- out of the payoff (blueprint WP 19 §2.5). The diagnostics give the variance removed. Most useful without antithetic pairs, which already cancel the part linear in the spot.
+             * @default false
+             */
+            control_variate: boolean;
+            /**
              * Correlation
              * @description n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).
              */
@@ -3671,7 +3690,7 @@ export interface components {
              */
             default_eps: number;
             /**
-             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random only; 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. Ignored with greeks_method='aad'.
+             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random or stratified; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
              * @default cpu
              */
             device: components["schemas"]["ComputeDevice"];
@@ -3687,7 +3706,7 @@ export interface components {
             fuzzy: boolean;
             /**
              * Greeks Method
-             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol': the adjoint engine does not have Sobol support yet (lot 17d) and falls back to pseudo-random, noted in the response's diagnostics.
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol' or 'stratified': the adjoint engines run pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same Philox paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
              * @default none
              * @enum {string}
              */
@@ -3713,10 +3732,11 @@ export interface components {
             rng: components["schemas"]["McRng"];
             /**
              * Sampler
+             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU only) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
              * @default pseudo
              * @enum {string}
              */
-            sampler: "pseudo" | "sobol";
+            sampler: "pseudo" | "sobol" | "stratified";
             /**
              * Script
              * @description The script source text.
@@ -3823,6 +3843,18 @@ export interface components {
          */
         ScriptedProductRequest: {
             /**
+             * Antithetic
+             * @description Pair each path with its mirror (-z). Price only: the adjoint engines run plain paths.
+             * @default true
+             */
+            antithetic: boolean;
+            /**
+             * Control Variate
+             * @description Regress the deflated spots at up to 8 event dates -- martingales of known mean -- out of the payoff (blueprint WP 19 §2.5). The diagnostics give the variance removed. Most useful without antithetic pairs, which already cancel the part linear in the spot.
+             * @default false
+             */
+            control_variate: boolean;
+            /**
              * Correlation
              * @description n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).
              */
@@ -3839,7 +3871,7 @@ export interface components {
              */
             default_eps: number;
             /**
-             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random only; 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. Ignored with greeks_method='aad'.
+             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random or stratified; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
              * @default cpu
              */
             device: components["schemas"]["ComputeDevice"];
@@ -3855,7 +3887,7 @@ export interface components {
             fuzzy: boolean;
             /**
              * Greeks Method
-             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol': the adjoint engine does not have Sobol support yet (lot 17d) and falls back to pseudo-random, noted in the response's diagnostics.
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. Ignored together with sampler='sobol' or 'stratified': the adjoint engines run pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same Philox paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
              * @default none
              * @enum {string}
              */
@@ -3886,10 +3918,11 @@ export interface components {
             rng: components["schemas"]["McRng"];
             /**
              * Sampler
+             * @description 'pseudo' (antithetic pairs), 'sobol' (randomised QMC with a Brownian bridge, CPU only) or 'stratified': the terminal value of the first Brownian factor in equiprobable strata, the path filled in by the conditional Brownian bridge, the error from 16 independent replicates (blueprint WP 19 §2.5).
              * @default pseudo
              * @enum {string}
              */
-            sampler: "pseudo" | "sobol";
+            sampler: "pseudo" | "sobol" | "stratified";
             /**
              * Seed
              * @default 1

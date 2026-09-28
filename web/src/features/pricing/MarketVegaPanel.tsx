@@ -10,7 +10,9 @@ const pm = (v: number, se: number) =>
 /**
  * Vega by listed option (lot 17h): the product's sensitivity to each quoted
  * implied vol of the stored chain, through the local-vol AAD, the Dupire
- * formula and each SVI fit. On request: a few seconds of computation.
+ * formula and each SVI fit. On request: a few seconds of computation on
+ * the CPU, a fraction of a second on the GPU (the per-path adjoint of
+ * blueprint WP 19 §6), which the Compute picker chooses.
  */
 export function MarketVegaPanel({ body }: { body: unknown }) {
 	const q = useMarketVega();
@@ -42,7 +44,8 @@ function Result({ v }: { v: MarketVega }) {
 		<div className="flex flex-col gap-3 rounded-md border border-hairline bg-surface p-4">
 			<div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
 				<span className="text-2xs text-ink-muted uppercase">
-					{v.ticker} chain of {v.snapshot}
+					{v.ticker} chain of {v.snapshot} · on{" "}
+					{v.device === "gpu" ? "GPU" : "CPU"}
 				</span>
 				<span className="text-sm text-ink">
 					Parallel vega{" "}

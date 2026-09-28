@@ -964,7 +964,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &dividends,
                              const std::vector<double> &vols,
                              const std::vector<double> &correlation,
-                             const std::string &device, const std::string &rng)
+                             const std::string &device, const std::string &rng,
+                             bool control_variate, bool antithetic)
 {
     using namespace quantModeling;
 
@@ -1045,28 +1046,59 @@ static py::dict price_script(const std::string &script, double spot, double rate
         // The tape is thread_local (aad::Number::tape), so the adjoint
         // simulation releases the GIL like the plain one: independent AAD
         // runs (the superbucket's batches) go in parallel on Python threads.
+        //
+        // On the GPU (blueprint/wp/19-gpu.md §6, lot G3) there is no tape:
+        // duals under Black-Scholes and Heston, the per-path adjoint under
+        // local vol -- same labels, same Philox paths as the CPU tape with
+        // rng = philox. 'auto' falls back to the tape and says why.
         std::optional<AADSimulResults> aad_res;
         std::vector<scripting::Advice> aad_advice;
         std::size_t aad_events = 0;
+        std::string aad_device = "cpu", gpu_note;
         {
             py::gil_scoped_release release;
-            ScriptedProduct<aad::Number> product(
-                script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
-            auto sim_model = scripting::make_script_model<aad::Number>(spec);
-            check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
-            aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
-                                   seed_value);
-            aad_events = product.timeline().size();
-            aad_advice = scripting::advise(product.analysis(), kind,
-                                           product.timeline().back(), surface_T);
+            if (device == "gpu" || device == "auto")
+            {
+                ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                auto sim_model = scripting::make_script_model<Real>(spec);
+                check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+                std::string why;
+                aad_res = simulate_script_aad_gpu(product, *sim_model, static_cast<std::size_t>(paths),
+                                                  seed_value, why);
+                if (aad_res)
+                {
+                    aad_device = "gpu";
+                    aad_events = product.timeline().size();
+                    aad_advice = scripting::advise(product.analysis(), kind,
+                                                   product.timeline().back(), surface_T);
+                }
+                else if (device == "gpu")
+                    throw InvalidInput("GPU: " + why);
+                else
+                    gpu_note = " (on the CPU: " + why + ")";
+            }
+            if (!aad_res)
+            {
+                ScriptedProduct<aad::Number> product(
+                    script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                auto sim_model = scripting::make_script_model<aad::Number>(spec);
+                check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+                aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
+                                       seed_value, first_aad_payoff,
+                                       rng == "philox" ? RngKind::Philox : RngKind::Pcg32);
+                aad_events = product.timeline().size();
+                aad_advice = scripting::advise(product.analysis(), kind,
+                                               product.timeline().back(), surface_T);
+            }
         }
 
         PricingResult res = to_pricing_result(*aad_res);
-        res.diagnostics += " | scripted, " + std::to_string(aad_events) + " events" +
+        res.diagnostics += gpu_note + " | scripted, " + std::to_string(aad_events) + " events" +
                            (fuzzy ? ", fuzzy" : ", hard") + model_note;
-        if (sampler == "sobol")
-            res.diagnostics += " | sobol requested but not available under AAD "
-                               "yet (lot 17d) -- used pseudo-random instead";
+        res.device = aad_device;
+        if (sampler == "sobol" || sampler == "stratified")
+            res.diagnostics += " | " + sampler + " requested but not available under AAD "
+                                                 "yet -- used pseudo-random instead";
         py::dict out = pricing_result_to_dict(res);
         out["warnings"] = advice_to_py(aad_advice);
         return out;
@@ -1089,9 +1121,12 @@ static py::dict price_script(const std::string &script, double spot, double rate
         PricingSettings settings;
         settings.mc_paths = paths;
         settings.mc_seed = static_cast<int>(seed_value);
-        settings.mc_antithetic = true;
-        settings.mc_sampler =
-            (sampler == "sobol") ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
+        settings.mc_antithetic = antithetic;
+        settings.mc_sampler = sampler == "sobol"        ? SamplerKind::Sobol
+                              : sampler == "stratified" ? SamplerKind::Stratified
+                                                        : SamplerKind::PseudoRandom;
+        // blueprint/wp/19-gpu.md §2.5: the deflated spots as control variates.
+        settings.mc_spot_control = control_variate;
         // blueprint/wp/19-gpu.md §8: CPU, GPU, or GPU when present.
         settings.mc_device = device == "gpu"    ? ComputeDevice::Gpu
                              : device == "auto" ? ComputeDevice::Auto
@@ -1409,13 +1444,19 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("vols") = std::vector<double>{},
           py::arg("correlation") = std::vector<double>{},
           py::arg("device") = "cpu", py::arg("rng") = "pcg32",
+          py::arg("control_variate") = false, py::arg("antithetic") = true,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
           "'none' (default) or 'aad' -- every model parameter's sensitivity "
           "(blueprint/wp/17-aad.md), at roughly 3-5x one price's cost "
-          "regardless of how many. 'bump' is not offered for scripted "
-          "payoffs.");
+          "regardless of how many; on the GPU (device 'gpu' or 'auto') by "
+          "forward-mode duals or the per-path adjoint (blueprint/wp/19-gpu.md "
+          "§6). 'bump' is not offered for scripted payoffs. sampler: "
+          "'pseudo', 'sobol' or 'stratified' (terminal value stratified, "
+          "path by Brownian bridge); control_variate: regress the deflated "
+          "spots out of the payoff (blueprint/wp/19-gpu.md §2.5); antithetic: "
+          "pair each path with its mirror (price only; the default).");
     m.def(
         "recommend_script_model",
         [](const std::string &script, const std::string &valuation_date,

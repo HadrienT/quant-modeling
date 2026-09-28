@@ -320,6 +320,8 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             correlation=[x for row in corr for x in row],
             device=req.device.value,
             rng=req.rng.value,
+            control_variate=req.control_variate,
+            antithetic=req.antithetic,
         )
     result["warnings"] = warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)
@@ -439,6 +441,8 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             leverage_flat=leverage,
             device=req.device.value,
             rng=req.rng.value,
+            control_variate=req.control_variate,
+            antithetic=req.antithetic,
         )
     result["warnings"] = market_warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)

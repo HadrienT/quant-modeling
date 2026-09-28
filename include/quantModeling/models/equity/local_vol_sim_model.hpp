@@ -171,6 +171,16 @@ namespace quantModeling
             }
         }
 
+        /// The log-Euler step is exact in mean: S(t) / N(t) is a martingale
+        /// on the grid, E = S0 e^{-q t}.
+        bool deflated_spot_mean(std::size_t asset, Time t, Real &mean) const override
+        {
+            if (asset != 0)
+                return false;
+            mean = to_double(s0_) * std::exp(-to_double(q_) * t);
+            return true;
+        }
+
         const std::vector<T *> &parameters() const override { return params_; }
         const std::vector<std::string> &parameter_labels() const override
         {

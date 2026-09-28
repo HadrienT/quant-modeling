@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <functional>
+#include <type_traits>
 #include <string>
 #include <vector>
 
@@ -37,6 +39,31 @@ namespace quantModeling::gpu::detail
             throw GpuUnavailable(std::string("CUDA error in ") + what + ": " + cudaGetErrorString(err));
     }
 
+    /**
+     * @brief Gives back, on scope exit, the local memory a kernel's stack
+     *        made the driver reserve.
+     *
+     * The driver sizes a launch's local memory as the kernel's stack frame
+     * times every thread the device can hold (2 048 per SM x 80 SMs on a
+     * V100) and keeps it after the launch: 13 KB of dual numbers per thread
+     * holds ~2 GB of a card the scripting assistant's LLM shares. Setting the
+     * stack limit back to its value before the run releases it (measured:
+     * 1 952 MB back); the next launch grows it again as needed.
+     */
+    struct StackLimitRestore
+    {
+        std::size_t before = 0;
+        bool ok = false;
+        StackLimitRestore() { ok = cudaDeviceGetLimit(&before, cudaLimitStackSize) == cudaSuccess; }
+        ~StackLimitRestore()
+        {
+            if (ok)
+                cudaDeviceSetLimit(cudaLimitStackSize, before);
+        }
+        StackLimitRestore(const StackLimitRestore &) = delete;
+        StackLimitRestore &operator=(const StackLimitRestore &) = delete;
+    };
+
     /// __shfl_down_sync of a trivially copyable struct, word by word.
     template <class T>
     __device__ T shfl_down(const T &x, unsigned offset)
@@ -53,12 +80,32 @@ namespace quantModeling::gpu::detail
         return r;
     }
 
+    /// fn(segment, u) when the functor takes a segment, fn(u) otherwise.
+    template <class UnitFn>
+    __device__ auto call_unit(const UnitFn &fn, uint64_t segment, uint64_t u)
+    {
+        if constexpr (std::is_invocable_v<const UnitFn &, uint64_t, uint64_t>)
+            return fn(segment, u);
+        else
+            return fn(u);
+    }
+
+    /**
+     * One CUDA block per logical block. With several segments (independent
+     * replicates of n_units units each, lot G3), grid block g is logical
+     * block g % blocks_per_segment of segment g / blocks_per_segment: every
+     * segment is reduced by exactly the tree of a launch of its own, and all
+     * of them fill the device at once.
+     */
     template <class Stats, class UnitFn>
     __global__ void __launch_bounds__(mc::LogicalBlocks::kThreadsPerBlock)
-        logical_block_kernel(uint64_t first_block, uint64_t n_units, UnitFn fn, Stats *partials)
+        logical_block_kernel(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, UnitFn fn,
+                             Stats *partials)
     {
         using L = mc::LogicalBlocks;
-        const uint64_t base = (first_block + blockIdx.x) * L::kUnitsPerBlock;
+        const uint64_t g = first_block + blockIdx.x;
+        const uint64_t segment = g / blocks_per_segment;
+        const uint64_t base = (g % blocks_per_segment) * L::kUnitsPerBlock;
         const unsigned t = threadIdx.x;
 
         Stats acc;
@@ -66,7 +113,7 @@ namespace quantModeling::gpu::detail
         {
             const uint64_t u = base + t + static_cast<uint64_t>(k) * L::kThreadsPerBlock;
             if (u < n_units)
-                acc.add(fn(u));
+                acc.add(call_unit(fn, segment, u));
         }
 
         // Warp: lane i merges lane i + offset, offsets 16..1.
@@ -99,19 +146,28 @@ namespace quantModeling::gpu::detail
         }
     }
 
+    /// Called after each launch with its first logical block and block count,
+    /// before the next launch reuses any per-thread scratch.
+    using AfterLaunch = std::function<void(uint64_t first_block, uint64_t count)>;
+
     /**
-     * @brief Run all logical blocks of n_units on `device`, as few launches as
-     *        free memory allows, and fold the partials in block order.
+     * @brief Run `n_segments` segments of n_units units each on `device`, as
+     *        few launches as free memory allows; fold each segment's
+     *        partials in block order. The functor is fn(segment, u) or fn(u).
      */
     template <class Stats, class UnitFn>
-    Stats run_logical_blocks(int device, uint64_t n_units, const UnitFn &fn, uint64_t max_blocks_per_launch)
+    std::vector<Stats> run_logical_block_segments(int device, uint64_t n_segments, uint64_t n_units,
+                                                  const UnitFn &fn, uint64_t max_blocks_per_launch,
+                                                  const AfterLaunch &after_launch = {})
     {
         require_device(device);
         check(cudaSetDevice(device), "cudaSetDevice");
 
-        const uint64_t n_blocks = mc::LogicalBlocks::count(n_units);
+        const uint64_t per_segment = mc::LogicalBlocks::count(n_units);
+        const uint64_t n_blocks = per_segment * n_segments;
+        std::vector<Stats> out(static_cast<size_t>(n_segments));
         if (n_blocks == 0)
-            return Stats{};
+            return out;
 
         // Only the partials live on the device; take at most half of what is
         // free (the assistant's LLM shares the card) and cap one launch so a
@@ -130,12 +186,14 @@ namespace quantModeling::gpu::detail
             for (uint64_t first = 0; first < n_blocks; first += per_launch)
             {
                 const uint64_t count = std::min(per_launch, n_blocks - first);
-                logical_block_kernel<Stats, UnitFn>
-                    <<<static_cast<unsigned>(count), mc::LogicalBlocks::kThreadsPerBlock>>>(first, n_units, fn, d_partials);
+                logical_block_kernel<Stats, UnitFn><<<static_cast<unsigned>(count), mc::LogicalBlocks::kThreadsPerBlock>>>(
+                    first, per_segment, n_units, fn, d_partials);
                 check(cudaGetLastError(), "kernel launch");
                 check(cudaMemcpy(&partials[static_cast<size_t>(first)], d_partials, count * sizeof(Stats),
                                  cudaMemcpyDeviceToHost),
                       "cudaMemcpy");
+                if (after_launch)
+                    after_launch(first, count);
             }
         }
         catch (...)
@@ -144,7 +202,25 @@ namespace quantModeling::gpu::detail
             throw;
         }
         check(cudaFree(d_partials), "cudaFree");
-        return mc::merge_in_order(partials);
+        for (uint64_t sg = 0; sg < n_segments; ++sg)
+        {
+            const auto b = partials.begin() + static_cast<std::ptrdiff_t>(sg * per_segment);
+            out[static_cast<size_t>(sg)] =
+                mc::merge_in_order(std::vector<Stats>(b, b + static_cast<std::ptrdiff_t>(per_segment)));
+        }
+        return out;
+    }
+
+    /**
+     * @brief Run all logical blocks of n_units on `device`, as few launches as
+     *        free memory allows, and fold the partials in block order.
+     */
+    template <class Stats, class UnitFn>
+    Stats run_logical_blocks(int device, uint64_t n_units, const UnitFn &fn, uint64_t max_blocks_per_launch,
+                             const AfterLaunch &after_launch = {})
+    {
+        return run_logical_block_segments<Stats>(device, 1, n_units, fn, max_blocks_per_launch, after_launch)
+            .front();
     }
 
 } // namespace quantModeling::gpu::detail
