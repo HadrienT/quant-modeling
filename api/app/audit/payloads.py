@@ -40,6 +40,7 @@ class AuthOutcome(str, Enum):
     REGISTER = "register"
     RATE_LIMITED = "rate_limited"
     TOKEN_INVALID = "token_invalid"
+    ACCOUNT_DELETED = "account_deleted"
 
 
 class AuthEventPayload(BaseModel):

@@ -7,10 +7,13 @@ import {
 	createRouter,
 } from "@tanstack/react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeQueryClient } from "@/shared/api";
 import { SessionProvider, __TOKEN_KEY } from "@/shared/session";
+import { server } from "@/shared/test/msw-server";
 import { TooltipProvider } from "@/shared/ui";
 import ProfilePage from "./ProfilePage";
 import { SessionMenu } from "./SessionMenu";
@@ -71,5 +74,32 @@ describe("account", () => {
 		).toBeInTheDocument();
 		expect(screen.getByText("Google account")).toBeInTheDocument();
 		expect(screen.queryByText("google:1234567890")).not.toBeInTheDocument();
+	});
+
+	it("deleting the account needs the word typed, then signs out", async () => {
+		let deleted = false;
+		server.use(
+			http.delete("*/api/auth/me", () => {
+				deleted = true;
+				return new HttpResponse(null, { status: 204 });
+			}),
+		);
+		const user = userEvent.setup();
+		renderAt("/profile");
+		await user.click(
+			await screen.findByRole("button", { name: /delete account/i }),
+		);
+		const inDialog = within(await screen.findByRole("dialog")).getByRole(
+			"button",
+			{ name: /delete account/i },
+		);
+		expect(inDialog).toBeDisabled();
+
+		await user.type(screen.getByLabelText(/to confirm/i), "delete");
+		expect(inDialog).toBeEnabled();
+		await user.click(inDialog);
+
+		await waitFor(() => expect(deleted).toBe(true));
+		await waitFor(() => expect(localStorage.getItem(__TOKEN_KEY)).toBeNull());
 	});
 });

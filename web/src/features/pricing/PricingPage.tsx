@@ -7,7 +7,7 @@ import {
 	ProductInfo,
 	ProductPicker,
 } from "@/shared/products";
-import { Button, cn, copyText, toast } from "@/shared/ui";
+import { Button, Disclaimer, cn, copyText, toast } from "@/shared/ui";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
 import { DeviceRace } from "./DeviceRace";
 import { ResultsPanel } from "./ResultsPanel";
@@ -177,6 +177,7 @@ export default function PricingPage() {
 						</div>
 					)}
 				</div>
+				<Disclaimer />
 			</section>
 		</div>
 	);

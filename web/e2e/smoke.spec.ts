@@ -19,6 +19,9 @@ test("no horizontal scroll at 390 px", async ({ page }) => {
 		"/portfolio",
 		"/backtest",
 		"/about",
+		"/legal",
+		"/privacy",
+		"/terms",
 	]) {
 		await page.goto(path);
 		await page.waitForLoadState("networkidle");

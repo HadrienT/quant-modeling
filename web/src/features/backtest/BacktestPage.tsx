@@ -6,7 +6,7 @@ import {
 	useTickers,
 	type BacktestResponse,
 } from "@/shared/api";
-import { Badge, Button, Combobox, Field, Label } from "@/shared/ui";
+import { Badge, Button, Combobox, Disclaimer, Field, Label } from "@/shared/ui";
 import { ErrorState } from "@/shared/ui/states";
 import { Results } from "./BacktestResults";
 
@@ -92,7 +92,10 @@ export default function BacktestPage() {
 
 	return (
 		<div className="mx-auto flex max-w-5xl flex-col gap-5">
-			<h1 className="text-lg font-semibold text-ink">Backtest</h1>
+			<div>
+				<h1 className="text-lg font-semibold text-ink">Backtest</h1>
+				<Disclaimer className="mt-1" />
+			</div>
 
 			<div className="grid grid-cols-1 gap-3 rounded-md border border-hairline bg-surface p-4 sm:grid-cols-2">
 				<div className="sm:col-span-2">

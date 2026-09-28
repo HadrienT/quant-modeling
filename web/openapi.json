@@ -1,6 +1,39 @@
 {
   "components": {
     "schemas": {
+      "AccountExport": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/UserInfo"
+          },
+          "exported_at": {
+            "title": "Exported At",
+            "type": "string"
+          },
+          "not_included": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Included",
+            "type": "array"
+          },
+          "portfolios": {
+            "items": {
+              "$ref": "#/components/schemas/Portfolio-Output"
+            },
+            "title": "Portfolios",
+            "type": "array"
+          }
+        },
+        "required": [
+          "exported_at",
+          "account",
+          "portfolios",
+          "not_included"
+        ],
+        "title": "AccountExport",
+        "type": "object"
+      },
       "AllocationRow": {
         "properties": {
           "end_price": {
@@ -7072,6 +7105,47 @@
       }
     },
     "/api/auth/me": {
+      "delete": {
+        "description": "Delete the account and its portfolios. Its tokens stop working at once.",
+        "operationId": "api_delete_account",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Delete Account",
+        "tags": [
+          "auth"
+        ]
+      },
       "get": {
         "operationId": "api_me",
         "parameters": [
@@ -7115,6 +7189,56 @@
           }
         },
         "summary": "Api Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me/export": {
+      "get": {
+        "description": "Everything the server holds for this account, as one JSON document.",
+        "operationId": "api_export_account",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Export Account",
         "tags": [
           "auth"
         ]

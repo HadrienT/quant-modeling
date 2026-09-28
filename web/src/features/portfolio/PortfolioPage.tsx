@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePortfolioDemos } from "@/shared/api";
 import type { Ledger } from "@/shared/portfolio";
-import { Button, toast } from "@/shared/ui";
+import { Button, Disclaimer, toast } from "@/shared/ui";
 import { EmptyState, ErrorState, TableSkeleton } from "@/shared/ui/states";
 import { useMe } from "@/shared/session";
 import { DemoBanner } from "./DemoBanner";
@@ -123,6 +123,7 @@ export default function PortfolioPage() {
 						onSave={demoId ? undefined : (l) => void save(l)}
 					/>
 				)}
+				<Disclaimer />
 			</div>
 		</div>
 	);

@@ -149,6 +149,26 @@ const aboutRoute = createRoute({
 	component: AboutPage,
 });
 
+// ── Legal pages (from the footer, not in the nav) ────────────────────────
+const LegalNoticePage = lazy(() => import("@/features/legal/LegalNoticePage"));
+const PrivacyPage = lazy(() => import("@/features/legal/PrivacyPage"));
+const TermsPage = lazy(() => import("@/features/legal/TermsPage"));
+const legalRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/legal",
+	component: LegalNoticePage,
+});
+const privacyRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/privacy",
+	component: PrivacyPage,
+});
+const termsRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/terms",
+	component: TermsPage,
+});
+
 // ── Profile (from the avatar menu, not in the nav) ───────────────────────
 const ProfilePage = lazy(() => import("@/features/auth/ProfilePage"));
 const profileRoute = createRoute({
@@ -169,6 +189,9 @@ const routeTree = rootRoute.addChildren([
 	portfolioRoute,
 	backtestRoute,
 	aboutRoute,
+	legalRoute,
+	privacyRoute,
+	termsRoute,
 	profileRoute,
 ]);
 

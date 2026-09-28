@@ -68,3 +68,8 @@ def save_portfolio(portfolio: Portfolio) -> None:
 
 def delete_portfolio(portfolio_id: str, owner: str) -> bool:
     return get_storage().delete(_key(portfolio_id, owner))
+
+
+def delete_all_portfolios(owner: str) -> int:
+    store = get_storage()
+    return sum(store.delete(key) for key in store.list_keys(_prefix_for(owner)))

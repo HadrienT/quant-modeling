@@ -11,3 +11,4 @@ export { Field } from "./field";
 export { Toaster, toast } from "./toast";
 export { copyText } from "./clipboard";
 export * from "./density";
+export { Disclaimer } from "./disclaimer";
