@@ -26,9 +26,32 @@ export function useUnderlyings() {
 		})),
 	);
 	const [corrPct, setCorrPct] = useState("50");
+	/** Payment currency; "" = the listing currency of the first ticker. */
+	const [currency, setCurrency] = useState("");
 	const setAsset = (i: number, patch: Partial<TypedAsset>) =>
 		setAssets((xs) => xs.map((a, j) => (j === i ? { ...a, ...patch } : a)));
-	return { tickers, setTickers, assets, setAsset, corrPct, setCorrPct };
+	return {
+		tickers,
+		setTickers,
+		assets,
+		setAsset,
+		corrPct,
+		setCorrPct,
+		currency,
+		setCurrency,
+	};
+}
+
+/** Payment currencies with a stored curve and ECB fixings. */
+export const PAYMENT_CURRENCIES = ["USD", "EUR", "JPY"] as const;
+
+/** One entry of the tickers field: a ticker, or FX:EUR for an exchange
+ * rate (one euro in the payment currency). */
+export function underlyingEntry(
+	token: string,
+): { ticker: string } | { fx: string } {
+	const m = /^FX:([A-Z]{3})$/.exec(token);
+	return m?.[1] ? { fx: m[1] } : { ticker: token };
 }
 
 export type Underlyings = ReturnType<typeof useUnderlyings>;
@@ -49,9 +72,8 @@ export function underlyingsRequest(
 ): Record<string, unknown> {
 	if (market)
 		return {
-			underlyings: tickerList(u.tickers)
-				.slice(0, n)
-				.map((ticker) => ({ ticker })),
+			underlyings: tickerList(u.tickers).slice(0, n).map(underlyingEntry),
+			...(u.currency ? { currency: u.currency } : {}),
 		};
 	const rho = Number(u.corrPct) / 100;
 	return {

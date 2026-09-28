@@ -249,20 +249,28 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
         )
     horizon = parsed["events"][-1]["t"] if parsed["events"] else 0.0
     warnings: List[Dict] = []
-    if req.underlyings[0].ticker is not None:
+    if req.underlyings[0].spot is None:
         m = multi_asset_market.multi_asset_market(
-            [u.ticker for u in req.underlyings],
+            [
+                u.ticker if u.ticker is not None else multi_asset_market.FxRate(u.fx)
+                for u in req.underlyings
+            ],
             req.rate,
             req.valuation_date,
             horizon,
+            req.currency,
         )
         used = [
             UnderlyingUsed(
                 ticker=a.ticker,
+                fx=a.fx,
+                currency=a.currency or None,
                 spot=a.spot,
                 dividend=a.dividend,
                 vol=a.vol,
                 vol_source=a.vol_source,
+                drift_adjustment=a.drift_adjustment,
+                drift_source=a.drift_source or None,
             )
             for a in m.assets
         ]
@@ -300,7 +308,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             req.script,
             used[0].spot,
             req.rate,
-            used[0].dividend,
+            used[0].dividend + used[0].drift_adjustment,
             used[0].vol,
             req.valuation_date.isoformat(),
             req.day_count,
@@ -316,7 +324,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             [],
             req.steps_per_year,
             spots=[u.spot for u in used],
-            dividends=[u.dividend for u in used],
+            dividends=[u.dividend + u.drift_adjustment for u in used],
             vols=[u.vol for u in used],
             correlation=[x for row in corr for x in row],
             device=req.device.value,
@@ -494,8 +502,8 @@ def _recommend(req: ScriptRequest, valuation_date, market, stochastic: bool) -> 
 
 
 _BARRIER_KIND_MAP = {
-    BarrierKind.up_and_in:   qm.BarrierType.UpAndIn,
-    BarrierKind.up_and_out:  qm.BarrierType.UpAndOut,
+    BarrierKind.up_and_in: qm.BarrierType.UpAndIn,
+    BarrierKind.up_and_out: qm.BarrierType.UpAndOut,
     BarrierKind.down_and_in: qm.BarrierType.DownAndIn,
     BarrierKind.down_and_out: qm.BarrierType.DownAndOut,
 }
@@ -523,7 +531,7 @@ def price_barrier(req: BarrierRequest) -> PricingResponse:
 
 
 _DIGITAL_PAYOFF_MAP = {
-    DigitalPayoffKind.cash_or_nothing:  qm.DigitalPayoffType.CashOrNothing,
+    DigitalPayoffKind.cash_or_nothing: qm.DigitalPayoffType.CashOrNothing,
     DigitalPayoffKind.asset_or_nothing: qm.DigitalPayoffType.AssetOrNothing,
 }
 
@@ -544,7 +552,7 @@ def price_digital(req: DigitalRequest) -> PricingResponse:
 
 
 _LOOKBACK_STYLE_MAP = {
-    LookbackStyle.fixed_strike:    qm.LookbackStyle.FixedStrike,
+    LookbackStyle.fixed_strike: qm.LookbackStyle.FixedStrike,
     LookbackStyle.floating_strike: qm.LookbackStyle.FloatingStrike,
 }
 
@@ -582,23 +590,20 @@ def price_basket(req: BasketRequest) -> PricingResponse:
     weights = list(req.weights) if len(req.weights) == n else [1.0 / n] * n
     # Build full n×n correlation matrix from pairwise scalar
     rho = req.pairwise_correlation
-    correlations = [
-        [1.0 if i == j else rho for j in range(n)]
-        for i in range(n)
-    ]
+    correlations = [[1.0 if i == j else rho for j in range(n)] for i in range(n)]
 
     input_data = qm.BasketBSInput()
-    input_data.spots        = req.spots
-    input_data.vols         = req.vols
-    input_data.dividends    = dividends
-    input_data.weights      = weights
+    input_data.spots = req.spots
+    input_data.vols = req.vols
+    input_data.dividends = dividends
+    input_data.weights = weights
     input_data.correlations = correlations
-    input_data.strike       = req.strike
-    input_data.maturity     = req.maturity
-    input_data.rate         = req.rate
-    input_data.is_call      = req.is_call
-    input_data.n_paths      = req.n_paths
-    input_data.seed         = req.seed
+    input_data.strike = req.strike
+    input_data.maturity = req.maturity
+    input_data.rate = req.rate
+    input_data.is_call = req.is_call
+    input_data.n_paths = req.n_paths
+    input_data.seed = req.seed
     input_data.mc_antithetic = req.mc_antithetic
 
     result = qm.price_basket_bs_mc(input_data)
@@ -648,6 +653,7 @@ def price_fixed_rate_bond(req: FixedRateBondRequest) -> PricingResponse:
 # Autocall
 # ---------------------------------------------------------------------------
 
+
 def price_autocall(req: AutocallRequest) -> PricingResponse:
     input_data = qm.AutocallBSInput()
     input_data.spot = req.spot
@@ -671,6 +677,7 @@ def price_autocall(req: AutocallRequest) -> PricingResponse:
 # ---------------------------------------------------------------------------
 # Mountain (Himalaya)
 # ---------------------------------------------------------------------------
+
 
 def _build_corr_matrix(n: int, corrs: List[List[float]]) -> List[List[float]]:
     """Return provided correlation matrix or identity if empty."""
@@ -701,6 +708,7 @@ def price_mountain(req: MountainRequest) -> PricingResponse:
 # Variance Swap
 # ---------------------------------------------------------------------------
 
+
 def price_variance_swap(req: VarianceSwapRequest) -> PricingResponse:
     input_data = qm.VarianceSwapBSInput()
     input_data.spot = req.spot
@@ -724,6 +732,7 @@ def price_variance_swap(req: VarianceSwapRequest) -> PricingResponse:
 # Volatility Swap
 # ---------------------------------------------------------------------------
 
+
 def price_volatility_swap(req: VolatilitySwapRequest) -> PricingResponse:
     input_data = qm.VolatilitySwapBSInput()
     input_data.spot = req.spot
@@ -743,6 +752,7 @@ def price_volatility_swap(req: VolatilitySwapRequest) -> PricingResponse:
 # ---------------------------------------------------------------------------
 # Dispersion Swap
 # ---------------------------------------------------------------------------
+
 
 def price_dispersion_swap(req: DispersionSwapRequest) -> PricingResponse:
     n = len(req.spots)
@@ -772,6 +782,7 @@ def price_dispersion_swap(req: DispersionSwapRequest) -> PricingResponse:
 # FX Forward
 # ---------------------------------------------------------------------------
 
+
 def price_fx_forward(req: FXForwardRequest) -> PricingResponse:
     input_data = qm.FXForwardInput()
     input_data.spot = req.spot
@@ -788,6 +799,7 @@ def price_fx_forward(req: FXForwardRequest) -> PricingResponse:
 # ---------------------------------------------------------------------------
 # FX Option
 # ---------------------------------------------------------------------------
+
 
 def price_quanto(req: QuantoRequest) -> PricingResponse:
     input_data = qm.QuantoBSInput()
@@ -821,6 +833,7 @@ def price_fx_option(req: FXOptionRequest) -> PricingResponse:
 # Commodity Forward
 # ---------------------------------------------------------------------------
 
+
 def price_commodity_forward(req: CommodityForwardRequest) -> PricingResponse:
     input_data = qm.CommodityForwardInput()
     input_data.spot = req.spot
@@ -838,6 +851,7 @@ def price_commodity_forward(req: CommodityForwardRequest) -> PricingResponse:
 # ---------------------------------------------------------------------------
 # Commodity Option
 # ---------------------------------------------------------------------------
+
 
 def price_commodity_option(req: CommodityOptionRequest) -> PricingResponse:
     input_data = qm.CommodityOptionInput()
@@ -857,6 +871,7 @@ def price_commodity_option(req: CommodityOptionRequest) -> PricingResponse:
 # ---------------------------------------------------------------------------
 # Rainbow (worst-of / best-of)
 # ---------------------------------------------------------------------------
+
 
 def price_rainbow(req: RainbowRequest) -> PricingResponse:
     n = len(req.spots)
@@ -899,7 +914,7 @@ if __name__ == "__main__":
     vanilla.seed = 42
     vanilla.mc_epsilon = 0.0
     print("vanilla_analytic:", qm.price_vanilla_bs_analytic(vanilla))
-    
+
     american = qm.AmericanVanillaBSInput()
     american.spot = 100.0
     american.strike = 100.0

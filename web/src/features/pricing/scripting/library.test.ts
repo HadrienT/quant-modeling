@@ -84,4 +84,17 @@ describe("underlyings", () => {
 			underlyings: [{ ticker: "AAPL" }, { ticker: "MSFT" }],
 		});
 	});
+
+	it("reads FX:EUR as an exchange rate and sends the payment currency", () => {
+		const u = {
+			tickers: "SAP.DE, FX:EUR",
+			assets: [],
+			corrPct: "0",
+			currency: "USD",
+		} as unknown as Parameters<typeof underlyingsRequest>[2];
+		expect(underlyingsRequest(2, true, u)).toEqual({
+			underlyings: [{ ticker: "SAP.DE" }, { fx: "EUR" }],
+			currency: "USD",
+		});
+	});
 });

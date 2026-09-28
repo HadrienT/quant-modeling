@@ -3685,6 +3685,11 @@ export interface components {
              */
             correlation?: number[][] | null;
             /**
+             * Currency
+             * @description Payment currency of a script on `underlyings` read from the database; `rate` is its rate. An asset listed in another currency is simulated under this currency's measure: its drift is lowered by r_d - r_f + rho sigma_S sigma_X (the quanto adjustment). Defaults to the first ticker's listing currency.
+             */
+            currency?: string | null;
+            /**
              * Day Count
              * @default ACT/365F
              * @enum {string}
@@ -3777,7 +3782,7 @@ export interface components {
             ticker?: string | null;
             /**
              * Underlyings
-             * @description For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend.
+             * @description For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).
              */
             underlyings?: components["schemas"]["ScriptUnderlying"][] | null;
             /**
@@ -3795,7 +3800,8 @@ export interface components {
         /**
          * ScriptUnderlying
          * @description One underlying of a multi-asset script (spot(i) is the i-th): a ticker
-         *     whose inputs come from the database, or typed flat Black-Scholes inputs.
+         *     whose inputs come from the database, an exchange rate (`fx`), or typed
+         *     flat Black-Scholes inputs.
          */
         ScriptUnderlying: {
             /**
@@ -3803,6 +3809,11 @@ export interface components {
              * @default 0
              */
             dividend: number;
+            /**
+             * Fx
+             * @description An exchange rate as underlying: the price of one unit of this currency in the payment currency (ECB fixings), drifting at r_d - r_f. With a ticker listed in that currency, spot(i) * spot(j) is the asset in the payment currency: a composite.
+             */
+            fx?: string | null;
             /** Spot */
             spot?: number | null;
             /** Ticker */
@@ -3871,6 +3882,11 @@ export interface components {
              * @description n x n correlation matrix of the typed underlyings (ignored with tickers, whose correlation is historical).
              */
             correlation?: number[][] | null;
+            /**
+             * Currency
+             * @description Payment currency of a script on `underlyings` read from the database; `rate` is its rate. An asset listed in another currency is simulated under this currency's measure: its drift is lowered by r_d - r_f + rho sigma_S sigma_X (the quanto adjustment). Defaults to the first ticker's listing currency.
+             */
+            currency?: string | null;
             /**
              * Day Count
              * @default ACT/365F
@@ -3971,7 +3987,7 @@ export interface components {
             ticker?: string | null;
             /**
              * Underlyings
-             * @description For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend.
+             * @description For a script that reads spot(1), spot(2)...: one entry per underlying, in spot(i) order. Either every entry has a ticker or an `fx` currency (spot, dividend, at-the-money implied vol and historical correlation from the database) or every entry has spot and vol (then `correlation` is required). Priced under correlated Black-Scholes; replaces ticker/spot/vol/dividend. A single entry prices a one-asset script in another `currency` (a quanto).
              */
             underlyings?: components["schemas"]["ScriptUnderlying"][] | null;
             /**
@@ -4233,8 +4249,26 @@ export interface components {
          * @description What one underlying of a multi-asset script was priced with.
          */
         UnderlyingUsed: {
+            /**
+             * Currency
+             * @description The currency the spot is in.
+             */
+            currency?: string | null;
             /** Dividend */
             dividend: number;
+            /**
+             * Drift Adjustment
+             * @description Added to the dividend yield in the simulation: r_f for an exchange rate, r_d - r_f + rho sigma_S sigma_X for an asset listed in another currency than the payment one (quanto), 0 otherwise.
+             * @default 0
+             */
+            drift_adjustment: number;
+            /** Drift Source */
+            drift_source?: string | null;
+            /**
+             * Fx
+             * @description An exchange-rate underlying's currency.
+             */
+            fx?: string | null;
             /** Spot */
             spot: number;
             /** Ticker */

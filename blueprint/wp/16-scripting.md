@@ -610,6 +610,32 @@ corrélation historique des rendements entre clôtures communes sur un an
 `correlation_sparse_history` quand l'historique stocké a des trous de plus de
 5 jours. Ou bien spot, vol, dividende et corrélation saisis.
 
+**Quantos et composites** (issue #86, [`multi_asset_market.py`](../../api/app/multi_asset_market.py)).
+Un sous-jacent peut être un **taux de change** (`{"fx": "EUR"}`, `FX:EUR` sur la
+page : une unité de la devise dans la devise de paiement, fixings BCE), et la
+requête peut fixer la **devise de paiement** (`currency`, par défaut celle du
+premier ticker ; `rate` est son taux). Tout est simulé sous la mesure de la
+devise de paiement (Reiner 1992 ; Hull, « Quantos ») : un change dérive à
+r_d − r_f, un actif coté dans la devise f à r_f − q − ρσ_Sσ_X. Aucun modèle
+nouveau : `MultiAssetBSSimModel` reçoit r_d et, par actif, q + ajustement
+(r_f pour un change, r_d − r_f + ρσ_Sσ_X pour un actif étranger), affiché à
+part (`drift_adjustment`) pour que la colonne « dividende » reste le vrai
+rendement. Le script dit le produit : f(spot(i)) payé tel quel est un
+**quanto**, f(spot(i) × spot(j)) avec spot(j) le change un **composite**.
+r_f : zéro-coupon de la courbe stockée de f à l'horizon du script ; σ_X : vol
+réalisée 63 jours des fixings (aucune option de change stockée,
+`fx_vol_proxied`) ; ρ : corrélation historique. Des séries de places
+différentes ne sont pas observées au même instant, et corréler leurs
+rendements quotidiens biaise l'estimation vers zéro (effet Epps, `fx.py`) :
+une matrice qui mêle des devises prend les rendements **hebdomadaires sur
+trois ans**. Vérifié contre les formules fermées (`test_script_quanto.py`) :
+un call composite est Black-Scholes sur S·X à la vol combinée, un forward
+quanto croît à r_f − q − ρσ_Sσ_X. Sur la base réelle, forward SPY payé en EUR
+783,99 ± 0,38 (784,1 attendu), call composite SPY × USD/EUR 53,62 ± 0,16
+(53,7 attendu). Limite de données, pas de code : `prices.dividend_yields` ne
+couvre que dix tickers américains, donc une action européenne ou japonaise
+est refusée faute de dividende (à ingérer dans `~/data-ingest`).
+
 **Bibliothèque.** Les produits structurés de Bouzoubaa & Osseiran (*Exotic
 Options and Hybrids*, Wiley 2010) sont écrits **en scripts**, sans une ligne de
 payoff C++ — c'est ce qui les rend compatibles avec la règle de la roadmap
@@ -630,8 +656,7 @@ valorisation. [`test_script_library.py`](../../api/tests/test_script_library.py)
 parse et price chaque fichier et vérifie des relations d'ordre (worst-of <
 basket < best-of, barrière < vanille, variance swap ≈ écart de variance).
 
-**Hors d'atteinte des scripts, et pourquoi** : les quantos et composites (pas
-de modèle actions + change dans les scripts), les hybrides actions-taux (pas de
+**Hors d'atteinte des scripts, et pourquoi** : les hybrides actions-taux (pas de
 modèle de taux stochastique branché), les produits rappelables par l'émetteur
 et les choosers (il faut une espérance conditionnelle — régression de type
 Longstaff-Schwartz — que le langage n'a pas), la vol locale multi-actifs.
