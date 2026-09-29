@@ -2,6 +2,7 @@
 #define QM_SCRIPTING_SCRIPT_MODEL_FACTORY_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/rough_bergomi_sim_model.hpp"
 #include "quantModeling/models/hybrid/hull_white_equity_sim_model.hpp"
 #include "quantModeling/models/equity/bates_sim_model.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
@@ -53,6 +54,13 @@ namespace quantModeling::scripting
         std::vector<std::vector<double>> T_grids;
         std::vector<std::vector<double>> sigma_loc_flats;
         double max_dt = 1.0 / 52.0; ///< Euler step bound (every model but black_scholes)
+        /// rough_bergomi: (H, eta, rho) and the forward variance curve
+        /// xi0(t), piecewise constant on (xi_times[i-1], xi_times[i]].
+        double rb_H = 0.1;
+        double rb_eta = 1.5;
+        double rb_rho = -0.7;
+        std::vector<double> xi_times;
+        std::vector<double> xi_values;
         /// hull_white: the short rate (curve-fitted Hull-White) and its
         /// correlation with the equity; the discount curve as pillars
         /// (times, discount factors), or the flat `rate` when empty.
@@ -79,6 +87,9 @@ namespace quantModeling::scripting
      *                   parameters (market/heston_calibration.hpp): the
      *                   Bates simulation model with no jumps, full-truncation
      *                   Euler.
+     *  "rough_bergomi": rough Bergomi (H, eta, rho) on the market's forward
+     *                   variance curve, hybrid scheme on a daily grid
+     *                   (market/rough_bergomi_calibration.hpp).
      *  "hull_white":    the equity at a flat vol under stochastic Hull-White
      *                   rates fitted to a discount curve, correlated
      *                   (models/hybrid/hull_white_equity_sim_model.hpp);
@@ -161,6 +172,16 @@ namespace quantModeling::scripting
             return std::make_unique<BatesSimModel<T>>(
                 T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
                 T(h.theta), T(h.xi), T(h.rho), T(0.0), T(0.0), T(0.0), s.max_dt);
+        if (s.model == "rough_bergomi")
+        {
+            if (s.xi_times.empty() || s.xi_times.size() != s.xi_values.size())
+                throw InvalidInput("price_script: rough_bergomi needs a forward variance curve (xi_times, xi_values)");
+            // The hybrid scheme's uniform grid: at least daily, whatever max_dt.
+            const int spy = std::max(365, static_cast<int>(std::lround(1.0 / s.max_dt)));
+            return std::make_unique<RoughBergomiSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend),
+                                                             ForwardVarianceCurve{s.xi_times, s.xi_values},
+                                                             T(s.rb_eta), T(s.rb_rho), s.rb_H, spy);
+        }
         if (s.model == "hull_white")
         {
             if (!(s.vol >= 0.0))
@@ -181,7 +202,7 @@ namespace quantModeling::scripting
                 to_T(s.leverage_flat), s.max_dt);
         throw std::invalid_argument(
             "price_script: unknown model '" + s.model +
-            "' (expected 'black_scholes', 'local_vol', 'heston', 'slv' or 'hull_white')");
+            "' (expected 'black_scholes', 'local_vol', 'heston', 'slv', 'rough_bergomi' or 'hull_white')");
     }
 
 } // namespace quantModeling::scripting

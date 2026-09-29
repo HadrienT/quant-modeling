@@ -23,7 +23,10 @@ namespace quantModeling
 
         const Date kToday = Date::from_iso("2024-06-03");
 
-        ValuationContext ctx() { return ValuationContext{kToday}; }
+        ValuationContext ctx()
+        {
+            return ValuationContext{kToday};
+        }
 
         ScriptModelSpec black_scholes(double spot, double rate, double vol, double dividend = 0.0)
         {
@@ -188,7 +191,7 @@ namespace quantModeling
             std::string s = "2025-06-03 2026-06-03 2027-06-03\n    if done = 0 then\n        pays 5\n";
             if (!right.empty())
                 s += "        if " + right + "(spot()) then\n            pays 100\n            done = 1\n"
-                     "        endIf\n";
+                                             "        endIf\n";
             return s + "    endIf\n2028-06-05\n    if done = 0 then\n"
                        "        pays 105 * min(1, spot() / 100)\n    endIf\n";
         };

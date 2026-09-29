@@ -49,8 +49,8 @@ namespace quantModeling
     /// Settings of the Bermudan lattice.
     struct HullWhiteLatticeSettings
     {
-        int grid_points = 401;      ///< odd: the grid includes x = 0
-        Real grid_std_devs = 8.0;   ///< half-width, in sd of x at the last exercise
+        int grid_points = 401;    ///< odd: the grid includes x = 0
+        Real grid_std_devs = 8.0; ///< half-width, in sd of x at the last exercise
     };
 
     /**

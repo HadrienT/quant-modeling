@@ -95,12 +95,13 @@ namespace quantModeling
     {
         try
         {
-            make_script_model<Real>(spec("rough_bergomi", Grid{}));
+            make_script_model<Real>(spec("sabr", Grid{}));
             FAIL() << "expected an exception";
         }
         catch (const std::invalid_argument &e)
         {
             const std::string msg = e.what();
+            EXPECT_NE(msg.find("sabr"), std::string::npos);
             EXPECT_NE(msg.find("rough_bergomi"), std::string::npos);
             EXPECT_NE(msg.find("local_vol"), std::string::npos);
             EXPECT_NE(msg.find("slv"), std::string::npos);

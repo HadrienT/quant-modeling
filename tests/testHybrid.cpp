@@ -21,10 +21,16 @@ namespace quantModeling
         using scripting::ScriptModelSpec;
 
         const Date kToday = Date::from_iso("2024-06-03");
-        ValuationContext ctx() { return ValuationContext{kToday}; }
+        ValuationContext ctx()
+        {
+            return ValuationContext{kToday};
+        }
 
         /// An upward-sloping curve (continuously compounded zero rates 3 % to 4.5 %).
-        std::vector<double> curve_times() { return {0.5, 1, 2, 3, 5, 7, 10, 15, 20}; }
+        std::vector<double> curve_times()
+        {
+            return {0.5, 1, 2, 3, 5, 7, 10, 15, 20};
+        }
         std::vector<double> curve_dfs()
         {
             std::vector<double> out;
@@ -61,7 +67,10 @@ namespace quantModeling
             return simulate<Real>(product, *model, s);
         }
 
-        double years(const Date &d) { return (d - kToday) / 365.0; }
+        double years(const Date &d)
+        {
+            return (d - kToday) / 365.0;
+        }
     } // namespace
 
     TEST(HullWhiteHybrid, ReproducesTheCurveAndTheSimulatedDiscountFactorsAreConsistent)

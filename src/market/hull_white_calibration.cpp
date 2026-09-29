@@ -42,8 +42,7 @@ namespace quantModeling
             HullWhiteObjective(const DiscountCurve &discount, const DiscountCurve &projection,
                                std::vector<AtmSwaption> atms, std::vector<SwaptionVolQuote> quotes,
                                std::optional<Real> fixed_a)
-                : discount_(discount), projection_(projection), atms_(std::move(atms)), quotes_(std::move(quotes)),
-                  fixed_a_(fixed_a)
+                : discount_(discount), projection_(projection), atms_(std::move(atms)), quotes_(std::move(quotes)), fixed_a_(fixed_a)
             {
             }
 

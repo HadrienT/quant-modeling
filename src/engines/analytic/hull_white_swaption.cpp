@@ -32,7 +32,8 @@ namespace quantModeling
             // ∫_l^u (α + β x) dN(m, s²) = (α + β m)[Φ(zu) − Φ(zl)] + β s [φ(zl) − φ(zu)].
             const auto piece = [m, s](Real alpha, Real beta, Real Pl, Real Pu, Real pl, Real pu)
             { return (alpha + beta * m) * (Pu - Pl) + beta * s * (pl - pu); };
-            const auto z = [m, s](Real x) { return (x - m) / s; };
+            const auto z = [m, s](Real x)
+            { return (x - m) / s; };
 
             // Only cells within ±10 sd of the mean carry weight; the tails beyond
             // them go to the extrapolated end segments.
@@ -120,7 +121,8 @@ namespace quantModeling
             A[k] = model.discount().discount(cfs[k].time) / P0T;
             G[k] = model.G(T, cfs[k].time);
         }
-        const auto g = [&](Real x) { return bonds_value(cfs, T, x, model); };
+        const auto g = [&](Real x)
+        { return bonds_value(cfs, T, x, model); };
         const auto mass = [&](Real l, Real u)
         {
             Real s = 0.0;
