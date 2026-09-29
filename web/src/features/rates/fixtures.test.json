@@ -1,0 +1,671 @@
+{
+	"example": {
+		"currency": "EUR",
+		"label": "Illustrative EUR quotes (\u20acSTR OIS, EURIBOR 6M, ATM swaption normal vols) \u2014 not market data: no free source publishes them. Replace them with your own.",
+		"request": {
+			"fixed_frequency": 1,
+			"float_frequency": 2,
+			"deposits": [
+				{
+					"tenor": 0.25,
+					"rate": 0.0192
+				},
+				{
+					"tenor": 0.5,
+					"rate": 0.0194
+				}
+			],
+			"ois": [
+				{
+					"tenor": 1.0,
+					"rate": 0.0197
+				},
+				{
+					"tenor": 2.0,
+					"rate": 0.0203
+				},
+				{
+					"tenor": 3.0,
+					"rate": 0.0211
+				},
+				{
+					"tenor": 5.0,
+					"rate": 0.0226
+				},
+				{
+					"tenor": 7.0,
+					"rate": 0.024
+				},
+				{
+					"tenor": 10.0,
+					"rate": 0.0256
+				},
+				{
+					"tenor": 15.0,
+					"rate": 0.027
+				},
+				{
+					"tenor": 20.0,
+					"rate": 0.0272
+				},
+				{
+					"tenor": 30.0,
+					"rate": 0.0262
+				}
+			],
+			"fras": [
+				{
+					"start": 0.0,
+					"end": 0.5,
+					"rate": 0.0213
+				},
+				{
+					"start": 0.5,
+					"end": 1.0,
+					"rate": 0.0212
+				}
+			],
+			"swaps": [
+				{
+					"tenor": 2.0,
+					"rate": 0.0224
+				},
+				{
+					"tenor": 3.0,
+					"rate": 0.0231
+				},
+				{
+					"tenor": 5.0,
+					"rate": 0.0245
+				},
+				{
+					"tenor": 7.0,
+					"rate": 0.0258
+				},
+				{
+					"tenor": 10.0,
+					"rate": 0.0273
+				},
+				{
+					"tenor": 15.0,
+					"rate": 0.0287
+				},
+				{
+					"tenor": 20.0,
+					"rate": 0.0289
+				},
+				{
+					"tenor": 30.0,
+					"rate": 0.0279
+				}
+			],
+			"swaption_vols": [
+				{
+					"expiry": 1.0,
+					"tenor": 2.0,
+					"normal_vol": 0.0072
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 5.0,
+					"normal_vol": 0.0074
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 10.0,
+					"normal_vol": 0.0073
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 5.0,
+					"normal_vol": 0.0075
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 10.0,
+					"normal_vol": 0.0073
+				},
+				{
+					"expiry": 5.0,
+					"tenor": 5.0,
+					"normal_vol": 0.0072
+				},
+				{
+					"expiry": 5.0,
+					"tenor": 10.0,
+					"normal_vol": 0.0069
+				},
+				{
+					"expiry": 10.0,
+					"tenor": 10.0,
+					"normal_vol": 0.0063
+				}
+			],
+			"hull_white_mean_reversion": null,
+			"swap": {
+				"start": 0.0,
+				"tenor": 10.0,
+				"fixed_rate": 0.0273,
+				"notional": 10000000.0,
+				"payer": true
+			},
+			"swaption": {
+				"expiry": 2.0,
+				"tenor": 10.0,
+				"strike": null,
+				"payer": true,
+				"notional": 10000000.0,
+				"normal_vol": null,
+				"lognormal_vol": 0.185,
+				"shift": 0.01,
+				"sabr": {
+					"alpha": 0.037,
+					"beta": 0.5,
+					"rho": -0.2,
+					"nu": 0.3
+				}
+			}
+		}
+	},
+	"analysis": {
+		"curves": {
+			"ois_pillars": [
+				0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0, 30.0
+			],
+			"index_pillars": [0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0, 30.0],
+			"points": [
+				{
+					"tenor": 0.25,
+					"ois_zero": 0.019154066927188483,
+					"ois_forward": 0.019680893736518712,
+					"index_forward": 0.02124999938157135,
+					"basis_bp": 15.691056450526375
+				},
+				{
+					"tenor": 2.25,
+					"ois_zero": 0.02036887873027764,
+					"ois_forward": 0.022625537593497835,
+					"index_forward": 0.024408761452463068,
+					"basis_bp": 17.832238589652327
+				},
+				{
+					"tenor": 4.25,
+					"ois_zero": 0.022012577675886023,
+					"ois_forward": 0.024832572657127905,
+					"index_forward": 0.0265627158920112,
+					"basis_bp": 17.301432348832968
+				},
+				{
+					"tenor": 6.25,
+					"ois_zero": 0.023419477535701807,
+					"ois_forward": 0.02763601635059132,
+					"index_forward": 0.029152187283664865,
+					"basis_bp": 15.161709330735462
+				},
+				{
+					"tenor": 8.25,
+					"ois_zero": 0.024698372520518614,
+					"ois_forward": 0.029661580559555478,
+					"index_forward": 0.031083441095602904,
+					"basis_bp": 14.218605360474257
+				},
+				{
+					"tenor": 10.25,
+					"ois_zero": 0.025638419206462114,
+					"ois_forward": 0.0302489096291354,
+					"index_forward": 0.03193615033125452,
+					"basis_bp": 16.872407021191194
+				},
+				{
+					"tenor": 12.25,
+					"ois_zero": 0.026354177885547347,
+					"ois_forward": 0.030248909629134957,
+					"index_forward": 0.031936150331254964,
+					"basis_bp": 16.872407021200075
+				},
+				{
+					"tenor": 14.25,
+					"ois_zero": 0.02686902184769637,
+					"ois_forward": 0.0302489096291354,
+					"index_forward": 0.03193615033125452,
+					"basis_bp": 16.872407021191194
+				},
+				{
+					"tenor": 16.25,
+					"ois_zero": 0.027072256460213873,
+					"ois_forward": 0.027810603694780944,
+					"index_forward": 0.029498865797711105,
+					"basis_bp": 16.882621029301603
+				},
+				{
+					"tenor": 18.25,
+					"ois_zero": 0.027132175779590564,
+					"ois_forward": 0.027810603694780944,
+					"index_forward": 0.029498865797711105,
+					"basis_bp": 16.882621029301603
+				},
+				{
+					"tenor": 20.25,
+					"ois_zero": 0.02712237413438868,
+					"ois_forward": 0.023062285059912035,
+					"index_forward": 0.02475253977589098,
+					"basis_bp": 16.90254715978945
+				},
+				{
+					"tenor": 22.25,
+					"ois_zero": 0.02674556128893241,
+					"ois_forward": 0.023062285059912035,
+					"index_forward": 0.024752539775891425,
+					"basis_bp": 16.90254715979389
+				},
+				{
+					"tenor": 24.25,
+					"ois_zero": 0.026430903139633873,
+					"ois_forward": 0.023062285059912035,
+					"index_forward": 0.024752539775891425,
+					"basis_bp": 16.90254715979389
+				},
+				{
+					"tenor": 26.25,
+					"ois_zero": 0.026164192898799874,
+					"ois_forward": 0.023062285059912035,
+					"index_forward": 0.024752539775891425,
+					"basis_bp": 16.90254715979389
+				},
+				{
+					"tenor": 28.25,
+					"ois_zero": 0.025935246939853877,
+					"ois_forward": 0.023062285059912035,
+					"index_forward": 0.02475253977589098,
+					"basis_bp": 16.90254715978945
+				}
+			],
+			"max_repricing_error_bp": 3.885780586188048e-12
+		},
+		"swap": {
+			"npv": -2.1886080503463745e-8,
+			"par_rate": 0.027299999999999755,
+			"annuity": 8.801046500155698,
+			"pv01": 8801.046500155699,
+			"fixed_leg": 2402685.694542506,
+			"floating_leg": 2402685.694542484,
+			"fixed_periods": [
+				{
+					"start": 0.0,
+					"end": 1.0,
+					"payment": 1.0,
+					"accrual": 1.0,
+					"discount": 0.980680592331078,
+					"forward": null
+				},
+				{
+					"start": 1.0,
+					"end": 2.0,
+					"payment": 2.0,
+					"accrual": 1.0,
+					"discount": 0.9605921630654506,
+					"forward": null
+				},
+				{
+					"start": 2.0,
+					"end": 3.0,
+					"payment": 3.0,
+					"accrual": 1.0,
+					"discount": 0.9392215697396271,
+					"forward": null
+				},
+				{
+					"start": 3.0,
+					"end": 4.0,
+					"payment": 4.0,
+					"accrual": 1.0,
+					"discount": 0.9163255835392559,
+					"forward": null
+				},
+				{
+					"start": 4.0,
+					"end": 5.0,
+					"payment": 5.0,
+					"accrual": 1.0,
+					"discount": 0.8939877469821396,
+					"forward": null
+				},
+				{
+					"start": 5.0,
+					"end": 6.0,
+					"payment": 6.0,
+					"accrual": 1.0,
+					"discount": 0.869784299549143,
+					"forward": null
+				},
+				{
+					"start": 6.0,
+					"end": 7.0,
+					"payment": 7.0,
+					"accrual": 1.0,
+					"discount": 0.8462361260498433,
+					"forward": null
+				},
+				{
+					"start": 7.0,
+					"end": 8.0,
+					"payment": 8.0,
+					"accrual": 1.0,
+					"discount": 0.8216829790772759,
+					"forward": null
+				},
+				{
+					"start": 8.0,
+					"end": 9.0,
+					"payment": 9.0,
+					"accrual": 1.0,
+					"discount": 0.7978422302258695,
+					"forward": null
+				},
+				{
+					"start": 9.0,
+					"end": 10.0,
+					"payment": 10.0,
+					"accrual": 1.0,
+					"discount": 0.7746932095960142,
+					"forward": null
+				}
+			],
+			"floating_periods": [
+				{
+					"start": 0.0,
+					"end": 0.5,
+					"payment": 0.5,
+					"accrual": 0.5,
+					"discount": 0.9903931860948796,
+					"forward": 0.021300000000000097
+				},
+				{
+					"start": 0.5,
+					"end": 1.0,
+					"payment": 1.0,
+					"accrual": 0.5,
+					"discount": 0.980680592331078,
+					"forward": 0.021200000000000774
+				},
+				{
+					"start": 1.0,
+					"end": 1.5,
+					"payment": 1.5,
+					"accrual": 0.5,
+					"discount": 0.9705844071813732,
+					"forward": 0.023344947694121654
+				},
+				{
+					"start": 1.5,
+					"end": 2.0,
+					"payment": 2.0,
+					"accrual": 0.5,
+					"discount": 0.9605921630654506,
+					"forward": 0.023344947694121654
+				},
+				{
+					"start": 2.0,
+					"end": 2.5,
+					"payment": 2.5,
+					"accrual": 0.5,
+					"discount": 0.949846766207011,
+					"forward": 0.024408761452463068
+				},
+				{
+					"start": 2.5,
+					"end": 3.0,
+					"payment": 3.0,
+					"accrual": 0.5,
+					"discount": 0.9392215697396271,
+					"forward": 0.024408761452463068
+				},
+				{
+					"start": 3.0,
+					"end": 3.5,
+					"payment": 3.5,
+					"accrual": 0.5,
+					"discount": 0.9277029443546677,
+					"forward": 0.0265627158920112
+				},
+				{
+					"start": 3.5,
+					"end": 4.0,
+					"payment": 4.0,
+					"accrual": 0.5,
+					"discount": 0.9163255835392559,
+					"forward": 0.0265627158920112
+				},
+				{
+					"start": 4.0,
+					"end": 4.5,
+					"payment": 4.5,
+					"accrual": 0.5,
+					"discount": 0.9050877548228976,
+					"forward": 0.0265627158920112
+				},
+				{
+					"start": 4.5,
+					"end": 5.0,
+					"payment": 5.0,
+					"accrual": 0.5,
+					"discount": 0.8939877469821396,
+					"forward": 0.0265627158920112
+				},
+				{
+					"start": 5.0,
+					"end": 5.5,
+					"payment": 5.5,
+					"accrual": 0.5,
+					"discount": 0.8818029861110569,
+					"forward": 0.02915218728366531
+				},
+				{
+					"start": 5.5,
+					"end": 6.0,
+					"payment": 6.0,
+					"accrual": 0.5,
+					"discount": 0.869784299549143,
+					"forward": 0.02915218728366531
+				},
+				{
+					"start": 6.0,
+					"end": 6.5,
+					"payment": 6.5,
+					"accrual": 0.5,
+					"discount": 0.8579294237578305,
+					"forward": 0.02915218728366531
+				},
+				{
+					"start": 6.5,
+					"end": 7.0,
+					"payment": 7.0,
+					"accrual": 0.5,
+					"discount": 0.8462361260498433,
+					"forward": 0.02915218728366531
+				},
+				{
+					"start": 7.0,
+					"end": 7.5,
+					"payment": 7.5,
+					"accrual": 0.5,
+					"discount": 0.8338691870164339,
+					"forward": 0.03108344109560246
+				},
+				{
+					"start": 7.5,
+					"end": 8.0,
+					"payment": 8.0,
+					"accrual": 0.5,
+					"discount": 0.8216829790772759,
+					"forward": 0.031083441095602904
+				},
+				{
+					"start": 8.0,
+					"end": 8.5,
+					"payment": 8.5,
+					"accrual": 0.5,
+					"discount": 0.8096748610186995,
+					"forward": 0.031083441095602904
+				},
+				{
+					"start": 8.5,
+					"end": 9.0,
+					"payment": 9.0,
+					"accrual": 0.5,
+					"discount": 0.7978422302258695,
+					"forward": 0.03108344109560246
+				},
+				{
+					"start": 9.0,
+					"end": 9.5,
+					"payment": 9.5,
+					"accrual": 0.5,
+					"discount": 0.7861825221187004,
+					"forward": 0.031083441095602904
+				},
+				{
+					"start": 9.5,
+					"end": 10.0,
+					"payment": 10.0,
+					"accrual": 0.5,
+					"discount": 0.7746932095960142,
+					"forward": 0.03108344109560246
+				}
+			]
+		},
+		"hull_white": {
+			"mean_reversion": 0.01763492676863534,
+			"sigma": 0.007605468972451009,
+			"mean_reversion_fixed": false,
+			"rmse_bp": 2.260908987150529,
+			"worst_bp": 3.799124320514914,
+			"iterations": 6,
+			"converged": true,
+			"seconds": 0.495202792,
+			"points": [
+				{
+					"expiry": 1.0,
+					"tenor": 2.0,
+					"strike": 0.02400051984712248,
+					"market_vol": 0.0072,
+					"model_vol": 0.007579912432051491
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 5.0,
+					"strike": 0.026095087149367563,
+					"market_vol": 0.0074,
+					"model_vol": 0.00738680920793584
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 10.0,
+					"strike": 0.028407844813121714,
+					"market_vol": 0.0073,
+					"model_vol": 0.007074388399387656
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 5.0,
+					"strike": 0.027278052982599162,
+					"market_vol": 0.0075,
+					"model_vol": 0.007333673659566204
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 10.0,
+					"strike": 0.02930664676183119,
+					"market_vol": 0.0073,
+					"model_vol": 0.007027055216716338
+				},
+				{
+					"expiry": 5.0,
+					"tenor": 5.0,
+					"strike": 0.030495498347600517,
+					"market_vol": 0.0072,
+					"model_vol": 0.00717752141452192
+				},
+				{
+					"expiry": 5.0,
+					"tenor": 10.0,
+					"strike": 0.03127424387896047,
+					"market_vol": 0.0069,
+					"model_vol": 0.006887087585374016
+				},
+				{
+					"expiry": 10.0,
+					"tenor": 10.0,
+					"strike": 0.03102911911210435,
+					"market_vol": 0.0063,
+					"model_vol": 0.00663270615413663
+				}
+			]
+		},
+		"swaption": {
+			"forward": 0.02930664676183119,
+			"annuity": 8.341100283720625,
+			"strike": 0.02930664676183119,
+			"prices": [
+				{
+					"model": "Bachelier (normal)",
+					"price": 343535.218364376,
+					"implied_normal_vol": 0.007299999999999999,
+					"detail": "\u03c3_N = 73.0bp (nearest quoted ATM vol)"
+				},
+				{
+					"model": "Black (shifted lognormal)",
+					"price": 341231.3299938208,
+					"implied_normal_vol": 0.007251043199631386,
+					"detail": "\u03c3 = 18.5%, shift 1.00%"
+				},
+				{
+					"model": "SABR (shifted, Hagan 2002)",
+					"price": 348325.63536997983,
+					"implied_normal_vol": 0.007401794640757374,
+					"detail": "implied lognormal vol 18.9%"
+				},
+				{
+					"model": "Hull-White (calibrated)",
+					"price": 330690.54086756054,
+					"implied_normal_vol": 0.007027055216716388,
+					"detail": "a = 0.0176, \u03c3 = 76.1bp"
+				}
+			],
+			"bermudan_price": 539342.4037571151,
+			"bermudan_exercises": [
+				2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0
+			],
+			"switch_premium": 208651.86288955458
+		},
+		"methodology": [
+			{
+				"title": "Where the quotes come from",
+				"paragraphs": [
+					"Nothing on this page is market data. No free source publishes OIS swap rates, the swap curve of a floating index or swaption volatilities, so the page starts from illustrative EUR quotes and prices whatever quotes you enter. The government curves of the Market page are bond yields: a different curve, not an input here."
+				]
+			},
+			{
+				"title": "Two curves, not one",
+				"paragraphs": [
+					"A collateralised swap is discounted at the collateral rate, the overnight rate (\u20acSTR, SOFR): the OIS curve. Since 2008 a 6-month index fixes above the compounded overnight rate by a basis that one curve cannot hold, so the index gets its own projection curve, bootstrapped from FRAs and par swaps priced with OIS discounting (Ametrano & Bianchetti, 2013).",
+					"The OIS curve bootstraps like par bonds: the compounded overnight leg of a spot OIS is worth 1 \u2212 P(T) on its own curve. Each projection pillar is then solved so that its quote reprices exactly, with every earlier pillar fixed; the maximum repricing error of the input swaps is shown with the curves. Discount factors are interpolated log-linearly (piecewise-flat forwards, always positive discount factors) and the forward is held flat outside the pillars."
+				]
+			},
+			{
+				"title": "Swap",
+				"paragraphs": [
+					"Fixed leg: rate \u00d7 accrual \u00d7 notional, discounted on OIS. Floating leg: the index forward over each period, from the projection curve, discounted on OIS. The par rate is the fixed rate worth zero; the PV01 is the annuity \u00d7 notional \u00d7 1bp. Accruals are period lengths in years on a regular schedule (no calendar or day-count adjustment)."
+				]
+			},
+			{
+				"title": "Swaption models",
+				"paragraphs": [
+					"Bachelier: the forward swap rate is Gaussian, the quote convention of swaption desks since rates went to zero and below. Black: the rate plus a shift is lognormal. SABR: Hagan et al. (2002)'s implied-vol expansion on the shifted rate. All three price on the same multi-curve forward and annuity.",
+					"Hull-White: dr = (\u03b8(t) \u2212 a r)dt + \u03c3 dW, fitted exactly to the OIS curve, the index curve kept at a deterministic spread (Andersen & Piterbarg 2010, ch. 10). The European price integrates the exercise value in closed form over the region where the swap is worth something (Jamshidian's decomposition generalised to multi-curve cash flows). (a, \u03c3) are calibrated by Levenberg-Marquardt to the ATM normal vols above; the residuals are in bp of normal vol. A one-factor, two-parameter model cannot match a whole grid: the fit error is the model's, not noise.",
+					"Bermudan: the right to enter the swap on each annual date from the expiry, priced by backward induction on a grid of the Hull-White state under the terminal measure, with exact Gaussian transitions between exercise dates. The switch premium is the Bermudan minus the European on the same swap."
+				]
+			}
+		]
+	}
+}

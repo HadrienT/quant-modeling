@@ -63,6 +63,12 @@ target_sources(quantModeling
         src/market/credit_curve.cpp
         src/market/credit_bootstrap.cpp
         src/engines/analytic/cds.cpp
+        src/instruments/rates/swap.cpp
+        src/market/multi_curve_bootstrap.cpp
+        src/engines/analytic/swap.cpp
+        src/models/rates/hull_white_curve.cpp
+        src/engines/analytic/hull_white_swaption.cpp
+        src/market/hull_white_calibration.cpp
         src/models/credit/merton_structural.cpp
         src/market/raw_vol_surface.cpp
         src/market/svi.cpp
@@ -274,6 +280,7 @@ if(QM_BUILD_TESTS)
     tests/testCurveBootstrap.cpp
     tests/testCredit.cpp
     tests/testMertonStructural.cpp
+    tests/testRates.cpp
     tests/testCurveAwareBSSimModel.cpp
     tests/testRawVolSurface.cpp
     tests/testSVI.cpp

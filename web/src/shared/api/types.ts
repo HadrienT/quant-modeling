@@ -26,6 +26,10 @@ export type MarketId = MarketInfo["id"];
 export type TickerInfo = Schemas["TickerInfo"];
 
 export type CreditSpreadsResponse = Schemas["CreditSpreadsResponse"];
+
+export type RatesAnalysisRequest = Schemas["RatesAnalysisRequest-Input"];
+export type RatesAnalysisResponse = Schemas["RatesAnalysisResponse"];
+export type RatesExampleResponse = Schemas["RatesExampleResponse"];
 export type SpreadHistoryResponse = Schemas["SpreadHistoryResponse"];
 export type CompanySummary = Schemas["CompanySummary"];
 export type FundamentalsResponse = Schemas["FundamentalsResponse"];

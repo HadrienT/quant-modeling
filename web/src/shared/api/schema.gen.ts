@@ -595,6 +595,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rates/analyse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rates Analyse */
+        post: operations["rates_analyse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rates/example": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rates Example */
+        get: operations["rates_example"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/simulation/calibrate": {
         parameters: {
             query?: never;
@@ -1763,6 +1797,19 @@ export interface components {
             /** Modified Duration */
             modified_duration?: number | null;
         };
+        /** CalibrationPoint */
+        CalibrationPoint: {
+            /** Expiry */
+            expiry: number;
+            /** Market Vol */
+            market_vol: number;
+            /** Model Vol */
+            model_vol: number | null;
+            /** Strike */
+            strike: number;
+            /** Tenor */
+            tenor: number;
+        };
         /** ChatMessage */
         ChatMessage: {
             /** Content */
@@ -1961,6 +2008,42 @@ export interface components {
             term_structure: components["schemas"]["QuotedSpreadPoint"][];
             /** Warnings */
             warnings: string[];
+        };
+        /** CurvePoint */
+        CurvePoint: {
+            /** Basis Bp */
+            basis_bp: number;
+            /**
+             * Index Forward
+             * @description Simple, over one index period
+             */
+            index_forward: number;
+            /**
+             * Ois Forward
+             * @description Simple, over one index period
+             */
+            ois_forward: number;
+            /**
+             * Ois Zero
+             * @description Continuously compounded
+             */
+            ois_zero: number;
+            /** Tenor */
+            tenor: number;
+        };
+        /** CurvesResult */
+        CurvesResult: {
+            /** Index Pillars */
+            index_pillars: number[];
+            /**
+             * Max Repricing Error Bp
+             * @description Worst |par rate − quote| over the input swaps
+             */
+            max_repricing_error_bp: number;
+            /** Ois Pillars */
+            ois_pillars: number[];
+            /** Points */
+            points: components["schemas"]["CurvePoint"][];
         };
         /**
          * DatedAsianRequest
@@ -2327,6 +2410,15 @@ export interface components {
             /** Rate */
             rate: number;
         };
+        /** FraInput */
+        FraInput: {
+            /** End */
+            end: number;
+            /** Rate */
+            rate: number;
+            /** Start */
+            start: number;
+        };
         /** FundamentalsResponse */
         FundamentalsResponse: {
             company: components["schemas"]["CompanySummary"];
@@ -2681,6 +2773,27 @@ export interface components {
             points: components["schemas"]["HistoryPointView"][];
             /** Warnings */
             warnings: string[];
+        };
+        /** HullWhiteCalibrationResult */
+        HullWhiteCalibrationResult: {
+            /** Converged */
+            converged: boolean;
+            /** Iterations */
+            iterations: number;
+            /** Mean Reversion */
+            mean_reversion: number;
+            /** Mean Reversion Fixed */
+            mean_reversion_fixed: boolean;
+            /** Points */
+            points: components["schemas"]["CalibrationPoint"][];
+            /** Rmse Bp */
+            rmse_bp: number;
+            /** Seconds */
+            seconds: number;
+            /** Sigma */
+            sigma: number;
+            /** Worst Bp */
+            worst_bp: number;
         };
         /** InputView */
         InputView: {
@@ -3740,6 +3853,83 @@ export interface components {
              */
             tenor: number;
         };
+        /** RatesAnalysisRequest */
+        "RatesAnalysisRequest-Input": {
+            /** Deposits */
+            deposits?: components["schemas"]["TenorRate"][];
+            /**
+             * Fixed Frequency
+             * @default 1
+             */
+            fixed_frequency: number;
+            /**
+             * Float Frequency
+             * @default 2
+             */
+            float_frequency: number;
+            /** Fras */
+            fras?: components["schemas"]["FraInput"][];
+            /**
+             * Hull White Mean Reversion
+             * @description Fix a and fit σ only; None fits both
+             */
+            hull_white_mean_reversion?: number | null;
+            /** Ois */
+            ois: components["schemas"]["TenorRate"][];
+            swap: components["schemas"]["SwapInput"];
+            /** Swaps */
+            swaps: components["schemas"]["TenorRate"][];
+            swaption: components["schemas"]["SwaptionInput"];
+            /** Swaption Vols */
+            swaption_vols: components["schemas"]["SwaptionVolInput"][];
+        };
+        /** RatesAnalysisRequest */
+        "RatesAnalysisRequest-Output": {
+            /** Deposits */
+            deposits?: components["schemas"]["TenorRate"][];
+            /**
+             * Fixed Frequency
+             * @default 1
+             */
+            fixed_frequency: number;
+            /**
+             * Float Frequency
+             * @default 2
+             */
+            float_frequency: number;
+            /** Fras */
+            fras?: components["schemas"]["FraInput"][];
+            /**
+             * Hull White Mean Reversion
+             * @description Fix a and fit σ only; None fits both
+             */
+            hull_white_mean_reversion?: number | null;
+            /** Ois */
+            ois: components["schemas"]["TenorRate"][];
+            swap: components["schemas"]["SwapInput"];
+            /** Swaps */
+            swaps: components["schemas"]["TenorRate"][];
+            swaption: components["schemas"]["SwaptionInput"];
+            /** Swaption Vols */
+            swaption_vols: components["schemas"]["SwaptionVolInput"][];
+        };
+        /** RatesAnalysisResponse */
+        RatesAnalysisResponse: {
+            curves: components["schemas"]["CurvesResult"];
+            hull_white: components["schemas"]["HullWhiteCalibrationResult"];
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            swap: components["schemas"]["SwapResult"];
+            swaption: components["schemas"]["SwaptionResult"];
+        };
+        /** RatesExampleResponse */
+        RatesExampleResponse: {
+            /** Currency */
+            currency: string;
+            /** Label */
+            label: string;
+            request: components["schemas"]["RatesAnalysisRequest-Output"];
+        };
         /** RatesHistoryResponse */
         RatesHistoryResponse: {
             /** Currency */
@@ -3923,6 +4113,17 @@ export interface components {
             seed: number;
             /** Ttm */
             ttm: number;
+        };
+        /** SabrInput */
+        SabrInput: {
+            /** Alpha */
+            alpha: number;
+            /** Beta */
+            beta: number;
+            /** Nu */
+            nu: number;
+            /** Rho */
+            rho: number;
         };
         /**
          * ScriptAnalysis
@@ -4598,6 +4799,138 @@ export interface components {
             unavailable: string | null;
             /** Warnings */
             warnings: string[];
+        };
+        /** SwapInput */
+        SwapInput: {
+            /** Fixed Rate */
+            fixed_rate: number;
+            /** Notional */
+            notional: number;
+            /**
+             * Payer
+             * @default true
+             */
+            payer: boolean;
+            /** Start */
+            start: number;
+            /** Tenor */
+            tenor: number;
+        };
+        /** SwapPeriod */
+        SwapPeriod: {
+            /** Accrual */
+            accrual: number;
+            /** Discount */
+            discount: number;
+            /** End */
+            end: number;
+            /** Forward */
+            forward?: number | null;
+            /** Payment */
+            payment: number;
+            /** Start */
+            start: number;
+        };
+        /** SwapResult */
+        SwapResult: {
+            /** Annuity */
+            annuity: number;
+            /** Fixed Leg */
+            fixed_leg: number;
+            /** Fixed Periods */
+            fixed_periods: components["schemas"]["SwapPeriod"][];
+            /** Floating Leg */
+            floating_leg: number;
+            /** Floating Periods */
+            floating_periods: components["schemas"]["SwapPeriod"][];
+            /** Npv */
+            npv: number;
+            /** Par Rate */
+            par_rate: number;
+            /** Pv01 */
+            pv01: number;
+        };
+        /** SwaptionInput */
+        SwaptionInput: {
+            /** Expiry */
+            expiry: number;
+            /** Lognormal Vol */
+            lognormal_vol?: number | null;
+            /**
+             * Normal Vol
+             * @description Bachelier vol; None takes the nearest quoted ATM vol
+             */
+            normal_vol?: number | null;
+            /** Notional */
+            notional: number;
+            /**
+             * Payer
+             * @default true
+             */
+            payer: boolean;
+            sabr?: components["schemas"]["SabrInput"] | null;
+            /**
+             * Shift
+             * @default 0
+             */
+            shift: number;
+            /**
+             * Strike
+             * @description None for at the money
+             */
+            strike?: number | null;
+            /**
+             * Tenor
+             * @description Whole years: annual exercise dates
+             */
+            tenor: number;
+        };
+        /** SwaptionModelPrice */
+        SwaptionModelPrice: {
+            /** Detail */
+            detail: string;
+            /** Implied Normal Vol */
+            implied_normal_vol: number | null;
+            /** Model */
+            model: string;
+            /** Price */
+            price: number;
+        };
+        /** SwaptionResult */
+        SwaptionResult: {
+            /** Annuity */
+            annuity: number;
+            /** Bermudan Exercises */
+            bermudan_exercises: number[];
+            /** Bermudan Price */
+            bermudan_price: number | null;
+            /** Forward */
+            forward: number;
+            /** Prices */
+            prices: components["schemas"]["SwaptionModelPrice"][];
+            /** Strike */
+            strike: number;
+            /** Switch Premium */
+            switch_premium: number | null;
+        };
+        /** SwaptionVolInput */
+        SwaptionVolInput: {
+            /** Expiry */
+            expiry: number;
+            /**
+             * Normal Vol
+             * @description ATM normal vol, rate units
+             */
+            normal_vol: number;
+            /** Tenor */
+            tenor: number;
+        };
+        /** TenorRate */
+        TenorRate: {
+            /** Rate */
+            rate: number;
+            /** Tenor */
+            tenor: number;
         };
         /** TickerInfo */
         TickerInfo: {
@@ -6111,6 +6444,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rates_analyse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatesAnalysisRequest-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatesAnalysisResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rates_example: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatesExampleResponse"];
                 };
             };
         };

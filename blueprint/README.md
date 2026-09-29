@@ -94,6 +94,7 @@ est à remplacer, pas à déplacer : c'est le préalable du
 | [18](wp/18-observability.md) | Observabilité & piste d'audit *(transverse, Kafka)* | Événements métier dans Kafka, base d'audit append-only, replis tracés (`record_fallback`), télémétrie OpenTelemetry + Grafana, reproductibilité et replay des valorisations. Infra dans un dépôt séparé [`quant-platform`](https://github.com/HadrienT/quant-platform) |
 | [19](wp/19-gpu.md) | Monte-Carlo GPU *(cœur C++, CUDA)* | Les deux V100 : Sobol et Philox adressables, pont brownien dans le moteur générique, réduction de variance à la Glasserman, scripts en bytecode, AAD par duaux et adjoint par chemin, reproductibilité bit à bit sur 1 ou 2 GPU, benchmark en temps pour une erreur donnée |
 | [20](wp/20-credit.md) | Crédit *(cœur C++, données, page)* | Courbe de hazard, CDS ISDA, bootstrap depuis des spreads, Merton calibré ; spreads ICE BofA et 10-K / 10-Q SEC ; page `/credit` |
+| [21](wp/21-rates.md) | Taux *(cœur C++, page)* | Multi-courbe OIS / projection, swaps, swaptions (Bachelier, Black, SABR), Hull-White calibré, bermudan, page `/rates` |
 | [99](wp/99-recovered-work.md) | Travail perdu à refaire | Fiches produit disparues avec la VM |
 
 ## 5. Graphe de dépendances
