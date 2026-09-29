@@ -49,6 +49,11 @@ export const queryKeys = {
 		structural: (ticker: string) => ["credit", "structural", ticker] as const,
 	},
 
+	rates: {
+		example: () => ["rates", "example"] as const,
+		analysis: (request: unknown) => ["rates", "analysis", request] as const,
+	},
+
 	pricing: {
 		all: () => ["pricing"] as const,
 		option: (endpoint: string, params: unknown) =>

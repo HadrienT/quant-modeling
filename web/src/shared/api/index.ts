@@ -7,4 +7,5 @@ export * from "./pricing";
 export * from "./portfolioValuation";
 export * from "./assistant";
 export * from "./credit";
+export * from "./rates";
 export type * from "./types";
