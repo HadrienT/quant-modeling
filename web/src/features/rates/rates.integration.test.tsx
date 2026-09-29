@@ -15,7 +15,7 @@ import RatesPage from "./RatesPage";
  * "Recompute".
  */
 
-function renderPage() {
+function mountPage() {
 	const bodies: unknown[] = [];
 	server.use(
 		http.get("*/api/rates/example", () => HttpResponse.json(fixtures.example)),
@@ -36,7 +36,7 @@ function renderPage() {
 
 describe("RatesPage", () => {
 	it("says the quotes are not market data and prices every model", async () => {
-		renderPage();
+		mountPage();
 		expect(await screen.findByText("Manual input")).toBeInTheDocument();
 		expect(screen.getByText(/not market data/)).toBeInTheDocument();
 		for (const model of [
@@ -50,7 +50,7 @@ describe("RatesPage", () => {
 	});
 
 	it("sends an edited quote only when asked to recompute", async () => {
-		const bodies = renderPage();
+		const bodies = mountPage();
 		await screen.findByText("Hull-White (calibrated)");
 		expect(bodies).toHaveLength(1);
 		const recompute = screen.getByRole("button", { name: "Recompute" });
