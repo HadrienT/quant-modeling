@@ -25,6 +25,10 @@ import {
 } from "./scripting/underlyings";
 import { UnderlyingsFields } from "./scripting/UnderlyingsFields";
 import {
+	DEFAULT_HULL_WHITE,
+	HullWhiteFields,
+} from "./scripting/HullWhiteFields";
+import {
 	DEFAULT_VARIANCE_REDUCTION,
 	varianceReductionRequest,
 } from "./scripting/VarianceReductionFields";
@@ -60,10 +64,11 @@ export default function ScriptingPreview() {
 	const [device, setDevice] = useState<ComputeDevice>("cpu");
 	const [model, setModel] = useState<ScriptModel>("auto");
 	const [ticker, setTicker] = useState("SPY");
+	const [hw, setHw] = useState(DEFAULT_HULL_WHITE);
 	const [request, setRequest] = useState<Record<string, unknown> | null>(null);
 	const underlyings = useUnderlyings();
 	const n = useMemo(() => countUnderlyings(script), [script]);
-	const market = model !== "black_scholes";
+	const market = model !== "black_scholes" && model !== "hull_white";
 
 	const price = usePricing({
 		endpoint: request ? "/price/scripted" : null,
@@ -116,6 +121,7 @@ export default function ScriptingPreview() {
 							seed: Number(seed),
 							device,
 							...(device === "cpu" ? {} : { rng: "philox" }),
+							...(model === "hull_white" ? { hull_white: hw } : {}),
 						});
 					}}
 				>
@@ -142,6 +148,9 @@ export default function ScriptingPreview() {
 						multi={n > 1}
 					/>
 
+					{model === "hull_white" && (
+						<HullWhiteFields value={hw} onChange={setHw} />
+					)}
 					{n > 1 && <UnderlyingsFields n={n} market={market} u={underlyings} />}
 
 					<ScriptingMarketFields

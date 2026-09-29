@@ -2795,6 +2795,37 @@ export interface components {
             /** Worst Bp */
             worst_bp: number;
         };
+        /**
+         * HullWhiteInputs
+         * @description The short rate of model='hull_white': Hull-White fitted to the
+         *     `currency`'s government discount curve from the database, the equity
+         *     correlated with it.
+         */
+        HullWhiteInputs: {
+            /**
+             * Currency
+             * @default USD
+             * @enum {string}
+             */
+            currency: "USD" | "EUR" | "GBP" | "CHF" | "JPY";
+            /**
+             * Mean Reversion
+             * @default 0.03
+             */
+            mean_reversion: number;
+            /**
+             * Rho
+             * @description Equity-rates correlation.
+             * @default 0
+             */
+            rho: number;
+            /**
+             * Sigma
+             * @description Short-rate vol, rate units (0.01 = 100bp).
+             * @default 0.01
+             */
+            sigma: number;
+        };
         /** InputView */
         InputView: {
             /** As Of */
@@ -3080,6 +3111,11 @@ export interface components {
             heston?: components["schemas"]["HestonFit"] | null;
             leverage?: components["schemas"]["LeverageFit"] | null;
             /**
+             * Rates Curve
+             * @description model='hull_white': the discount curve the short rate is fitted to, and its date.
+             */
+            rates_curve?: string | null;
+            /**
              * Seconds
              * @description Wall time of the calibration (cached per snapshot).
              */
@@ -3112,14 +3148,14 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "black_scholes" | "local_vol" | "heston" | "slv";
+            model: "black_scholes" | "local_vol" | "heston" | "slv" | "hull_white";
             /** Reason */
             reason: string;
             /**
              * Requested
              * @enum {string}
              */
-            requested: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            requested: "auto" | "black_scholes" | "local_vol" | "heston" | "slv" | "hull_white";
             /**
              * Underlyings
              * @description Multi-asset scripts: each underlying, in spot(i) order.
@@ -4213,6 +4249,8 @@ export interface components {
              * @enum {string}
              */
             greeks_method: "none" | "aad";
+            /** @description Parameters of model='hull_white' (defaults when omitted). */
+            hull_white?: components["schemas"]["HullWhiteInputs"] | null;
             /**
              * Importance Sampling
              * @description Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.
@@ -4221,11 +4259,11 @@ export interface components {
             importance_sampling: boolean;
             /**
              * Model
-             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
+             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).
              * @default auto
              * @enum {string}
              */
-            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv" | "hull_white";
             /**
              * N Paths
              * @default 200000
@@ -4411,6 +4449,8 @@ export interface components {
              * @enum {string}
              */
             greeks_method: "none" | "aad";
+            /** @description Parameters of model='hull_white' (defaults when omitted). */
+            hull_white?: components["schemas"]["HullWhiteInputs"] | null;
             /**
              * Importance Sampling
              * @description Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.
@@ -4419,11 +4459,11 @@ export interface components {
             importance_sampling: boolean;
             /**
              * Model
-             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
+             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).
              * @default auto
              * @enum {string}
              */
-            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv" | "hull_white";
             /**
              * N Paths
              * @default 50000

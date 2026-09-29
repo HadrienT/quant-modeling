@@ -75,6 +75,23 @@ l'utilisateur saisit. Rien ne lit la base, donc pas de repli Yahoo possible.
 L'analyse n'est pas un `pricing.valuation` : c'est une page d'analyse comme
 `/credit`, sans produit unique à rejouer.
 
+## 6. Hybrides action-taux (issue #86)
+
+`models/hybrid/hull_white_equity_sim_model.hpp` : l'action à vol plate sous
+des taux Hull-White ajustés à la courbe, corrélés (ρ). Numéraire = compte
+bancaire ; entre deux dates, (x, ∫x, incrément de W_S) est gaussien sachant
+x, simulé exactement (covariance 3 × 3, moments par Gauss-Legendre) : pas de
+biais de discrétisation, pas de pas intermédiaire. `df(T)` d'un script lit
+P(t, T | x). Modèle `hull_white` de `price_script` et de l'API
+(`hull_white = {mean_reversion, sigma, rho, currency}`) ; la courbe est la
+courbe d'État de la devise dans la base (la seule gratuite), jamais un taux
+plat de remplacement.
+
+Tests (`tests/testHybrid.cpp`) : zéro-coupon = courbe quelle que soit la vol
+des taux, forward de l'action exact pour tout ρ, un call long gagne avec ρ > 0,
+et **une swaption bermudane écrite en script** (`df()` + `exercise()`) priceée
+par LSMC retombe sur le réseau Hull-White du §3.
+
 ## 5. Ce qui manque
 
 - Sources de marché : swaps OIS / IBOR et vols de swaptions, à ingérer dans

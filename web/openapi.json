@@ -3308,6 +3308,48 @@
         "title": "HullWhiteCalibrationResult",
         "type": "object"
       },
+      "HullWhiteInputs": {
+        "description": "The short rate of model='hull_white': Hull-White fitted to the\n`currency`'s government discount curve from the database, the equity\ncorrelated with it.",
+        "properties": {
+          "currency": {
+            "default": "USD",
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "CHF",
+              "JPY"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "mean_reversion": {
+            "default": 0.03,
+            "maximum": 1.0,
+            "minimum": 0.0001,
+            "title": "Mean Reversion",
+            "type": "number"
+          },
+          "rho": {
+            "default": 0.0,
+            "description": "Equity-rates correlation.",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Rho",
+            "type": "number"
+          },
+          "sigma": {
+            "default": 0.01,
+            "description": "Short-rate vol, rate units (0.01 = 100bp).",
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.1,
+            "title": "Sigma",
+            "type": "number"
+          }
+        },
+        "title": "HullWhiteInputs",
+        "type": "object"
+      },
       "InputView": {
         "properties": {
           "as_of": {
@@ -4001,6 +4043,18 @@
               }
             ]
           },
+          "rates_curve": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "model='hull_white': the discount curve the short rate is fitted to, and its date.",
+            "title": "Rates Curve"
+          },
           "seconds": {
             "description": "Wall time of the calibration (cached per snapshot).",
             "title": "Seconds",
@@ -4075,7 +4129,8 @@
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "hull_white"
             ],
             "title": "Model",
             "type": "string"
@@ -4090,7 +4145,8 @@
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "hull_white"
             ],
             "title": "Requested",
             "type": "string"
@@ -6387,6 +6443,17 @@
             "title": "Greeks Method",
             "type": "string"
           },
+          "hull_white": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HullWhiteInputs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Parameters of model='hull_white' (defaults when omitted)."
+          },
           "importance_sampling": {
             "default": false,
             "description": "Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.",
@@ -6395,13 +6462,14 @@
           },
           "model": {
             "default": "auto",
-            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.",
+            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).",
             "enum": [
               "auto",
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "hull_white"
             ],
             "title": "Model",
             "type": "string"
@@ -6737,6 +6805,17 @@
             "title": "Greeks Method",
             "type": "string"
           },
+          "hull_white": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HullWhiteInputs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Parameters of model='hull_white' (defaults when omitted)."
+          },
           "importance_sampling": {
             "default": false,
             "description": "Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.",
@@ -6745,13 +6824,14 @@
           },
           "model": {
             "default": "auto",
-            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.",
+            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).",
             "enum": [
               "auto",
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "hull_white"
             ],
             "title": "Model",
             "type": "string"

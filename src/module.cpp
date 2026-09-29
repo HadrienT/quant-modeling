@@ -1253,7 +1253,10 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              bool control_variate, bool antithetic, bool importance_sampling,
                              const std::vector<std::vector<double>> &K_grids,
                              const std::vector<std::vector<double>> &T_grids,
-                             const std::vector<std::vector<double>> &sigma_loc_flats)
+                             const std::vector<std::vector<double>> &sigma_loc_flats,
+                             const std::map<std::string, double> &hull_white,
+                             const std::vector<double> &curve_times,
+                             const std::vector<double> &curve_dfs)
 {
     using namespace quantModeling;
 
@@ -1290,6 +1293,19 @@ static py::dict price_script(const std::string &script, double spot, double rate
     spec.T_grids = T_grids;
     spec.sigma_loc_flats = sigma_loc_flats;
     spec.max_dt = max_dt;
+    if (model == "hull_white")
+    {
+        const auto get = [&](const char *k, double fallback)
+        {
+            const auto it = hull_white.find(k);
+            return it == hull_white.end() ? fallback : it->second;
+        };
+        spec.hw_mean_reversion = get("mean_reversion", spec.hw_mean_reversion);
+        spec.hw_sigma = get("sigma", spec.hw_sigma);
+        spec.hw_rho = get("rho", spec.hw_rho);
+        spec.curve_times = curve_times;
+        spec.curve_dfs = curve_dfs;
+    }
 
     scripting::ModelKind kind = scripting::ModelKind::BlackScholesFlatVol;
     std::string model_note =
@@ -1316,6 +1332,13 @@ static py::dict price_script(const std::string &script, double spot, double rate
     {
         kind = scripting::ModelKind::LocalVolSurface;
         model_note = " | model local_vol (" + grid + " surface, " + steps + ")";
+    }
+    else if (model == "hull_white")
+    {
+        model_note = " | model hull_white (flat equity vol, Hull-White rates a=" +
+                     std::to_string(spec.hw_mean_reversion) + " sigma=" + std::to_string(spec.hw_sigma) +
+                     " rho=" + std::to_string(spec.hw_rho) +
+                     (curve_times.empty() ? ", flat curve)" : ", fitted to the discount curve)");
     }
     else if (model == "heston" || model == "slv")
     {
@@ -1782,6 +1805,9 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("K_grids") = std::vector<std::vector<double>>{},
           py::arg("T_grids") = std::vector<std::vector<double>>{},
           py::arg("sigma_loc_flats") = std::vector<std::vector<double>>{},
+          py::arg("hull_white") = std::map<std::string, double>{},
+          py::arg("curve_times") = std::vector<double>{},
+          py::arg("curve_dfs") = std::vector<double>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
@@ -1796,7 +1822,10 @@ PYBIND11_MODULE(quantmodeling, m)
           "pair each path with its mirror (price only; the default); "
           "importance_sampling: a Glasserman-Heidelberger-Shahabuddin drift, "
           "kept only when a pilot shows it lowers the variance (price only). "
-          "Sobol runs on the GPU and under AAD too.");
+          "Sobol runs on the GPU and under AAD too. model 'hull_white': the "
+          "equity under stochastic Hull-White rates, hull_white = {mean_reversion, "
+          "sigma, rho}, fitted to the discount curve (curve_times, curve_dfs) or "
+          "to the flat `rate` when they are empty; df() reads the simulated curve.");
     m.def(
         "recommend_script_model",
         [](const std::string &script, const std::string &valuation_date,

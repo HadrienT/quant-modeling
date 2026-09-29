@@ -7,4 +7,5 @@ export const MODEL_LABELS: Record<ScriptModel, string> = {
 	local_vol: "Local vol (market surface)",
 	heston: "Heston (calibrated)",
 	slv: "Stochastic-local vol (calibrated)",
+	hull_white: "Hull-White rates + flat equity vol",
 };
