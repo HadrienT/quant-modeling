@@ -12,7 +12,7 @@ namespace quantModeling::aad
     /**
      * @brief A forward-mode tangent over any scalar S: a value and its
      *        derivative in one direction, both of type S (blueprint/wp/17-aad.md
-     *        §18, second order).
+     *        §12.2, second order; ADR-A10).
      *
      * With S = double it is the textbook dual number. With S = Number it is
      * the tangent-linear model *recorded on the tape*: the pathwise first
@@ -30,8 +30,9 @@ namespace quantModeling::aad
      *
      * At a kink the derivative is the one the tape takes (max picks the
      * larger side, fabs takes +1 at 0), so the second derivative of a hard
-     * payoff is zero almost everywhere: gammas of digitals and barriers need
-     * the fuzzy evaluator's smoothing, as their first-order AAD deltas do.
+     * payoff is zero almost everywhere. The fuzzy evaluator's call spread
+     * does not cure it: it makes the payoff continuous, not its derivative
+     * (see simulate_aad_second_order).
      */
     template <class S>
     struct Tangent

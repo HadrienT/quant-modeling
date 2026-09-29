@@ -10,6 +10,7 @@
 #include "quantModeling/utils/inverse_normal.hpp"
 #include "quantModeling/utils/philox.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -37,7 +38,7 @@ namespace quantModeling
 
     /**
      * @brief Second-order Monte-Carlo sensitivities by adjoint over tangent
-     *        (blueprint/wp/17-aad.md §18): the price, its pathwise derivative
+     *        (blueprint/wp/17-aad.md §12.2, ADR-A10): the price, its pathwise derivative
      *        in the direction of parameter `direction`, and the gradient of
      *        that derivative with respect to every parameter -- the Hessian
      *        row (gamma and vanna for direction = spot, volga for the vol).
@@ -51,9 +52,13 @@ namespace quantModeling
      * once, a mark, per path rewind / generate / propagate to the mark, the
      * mark propagated once per batch of 64 for the standard errors (ADR-A6).
      *
-     * The second derivative of a payoff with a hard kink is zero almost
-     * everywhere: price digitals, barriers and vanillas with the fuzzy
-     * evaluator for a meaningful gamma (the smoothing of lot 16c).
+     * Exact only when the payoff is C¹ in the parameters along every path.
+     * A hard kink has a zero second derivative almost everywhere, and so
+     * does the fuzzy evaluator's call spread (lot 16c): it smooths the
+     * payoff but not its derivative, whose jumps at ±eps are Dirac masses
+     * the pathwise derivative never sees. A fuzzy call's pathwise gamma
+     * tends to twice the true gamma. Digitals, barriers and vanillas take
+     * simulate_aad_bumped_second_order, the book's method (§12.1).
      */
     inline AADSecondOrderResults simulate_aad_second_order(const ISimulatableProduct<SecondOrderNumber> &product,
                                                            ISimulationModel<SecondOrderNumber> &model,
@@ -134,6 +139,81 @@ namespace quantModeling
         res.n_paths = static_cast<long long>(n_paths);
         res.diagnostics = "simulate_aad_second_order (adjoint over tangent, d/d" + res.direction +
                           ", batches of " + std::to_string(BATCH) + ") + Philox";
+        return res;
+    }
+
+    /**
+     * @brief The book's second order (blueprint/wp/17-aad.md §12.1): a
+     *        Hessian row by central differences on adjoint risks.
+     *
+     * Bumps parameter `direction` by ±h, h = rel_bump · |θ| (rel_bump when
+     * θ = 0), and runs simulate_aad on each side with the same Philox seed:
+     * second[j] = (∂V/∂θ_j(θ + h) − ∂V/∂θ_j(θ − h)) / 2h, a whole row for two
+     * adjoint runs. A third, unbumped run gives the price and the first
+     * derivative. The random numbers are common and the batches aligned, so
+     * each second derivative's standard error is that of the batch-wise
+     * differences -- the correlation between the two sides included.
+     *
+     * The delta of a fuzzy (call-spread) payoff is continuous in the
+     * parameters, so the difference converges to the smoothed product's
+     * gamma, with an O(h²) bias; where adjoint over tangent is exact (C¹
+     * payoffs) the two agree.
+     */
+    inline AADSecondOrderResults simulate_aad_bumped_second_order(const ISimulatableProduct<aad::Number> &product,
+                                                                  ISimulationModel<aad::Number> &model,
+                                                                  std::size_t direction, std::size_t n_paths,
+                                                                  std::uint64_t seed = 1, double rel_bump = 1e-2)
+    {
+        const std::vector<aad::Number *> &params = model.parameters();
+        if (direction >= params.size())
+            throw InvalidInput("simulate_aad_bumped_second_order: the direction is not a parameter of the model");
+        if (!(rel_bump > 0.0))
+            throw InvalidInput("simulate_aad_bumped_second_order: rel_bump must be > 0");
+
+        double &theta = params[direction]->value();
+        const double theta0 = theta;
+        const double h = theta0 != 0.0 ? rel_bump * std::abs(theta0) : rel_bump;
+        const auto run = [&](double value, std::vector<std::vector<Real>> *batches)
+        {
+            theta = value;
+            return simulate_aad(product, model, n_paths, seed, first_aad_payoff, RngKind::Philox,
+                                SamplerKind::PseudoRandom, batches);
+        };
+
+        std::vector<std::vector<Real>> up_batches, down_batches;
+        AADSimulResults up, down, centre;
+        try
+        {
+            up = run(theta0 + h, &up_batches);
+            down = run(theta0 - h, &down_batches);
+            centre = run(theta0, nullptr);
+        }
+        catch (...)
+        {
+            theta = theta0;
+            throw;
+        }
+        theta = theta0;
+
+        AADSecondOrderResults res;
+        res.price = centre.price;
+        res.price_std_error = centre.price_std_error;
+        res.risk_labels = centre.risk_labels;
+        res.direction = res.risk_labels.at(direction);
+        res.first = centre.risks[direction];
+        res.first_std_error = centre.risk_std_errors[direction];
+        std::vector<WelfordAccumulator> second_acc(params.size());
+        for (std::size_t b = 0; b < up_batches.size(); ++b)
+            for (std::size_t j = 0; j < params.size(); ++j)
+                second_acc[j].add((up_batches[b][j] - down_batches[b][j]) / (2.0 * h));
+        for (const WelfordAccumulator &a : second_acc)
+        {
+            res.second.push_back(a.mean);
+            res.second_std_errors.push_back(a.std_error());
+        }
+        res.n_paths = centre.n_paths;
+        res.diagnostics = "simulate_aad_bumped_second_order (central difference of adjoint risks, d/d" +
+                          res.direction + ", h = " + std::to_string(h) + ") + Philox";
         return res;
     }
 

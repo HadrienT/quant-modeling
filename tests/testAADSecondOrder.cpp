@@ -72,19 +72,87 @@ namespace quantModeling
         EXPECT_NEAR(a.second[kVol], b.second[kSpot], 1e-10 * std::abs(a.second[kVol]));
     }
 
-    TEST(AADSecondOrder, SmoothedCallGammaIsBlackScholesGamma)
+    namespace
     {
-        // A hard max has no pathwise gamma; the fuzzy evaluator's call-spread
-        // smoothing (half-width 1 on a strike of 100) has, biased by O(eps²).
-        const std::string script = kOneYear + "\n    if spot() > 100 then\n        pays spot() - 100\n    endIf\n";
-        ScriptSettings fuzzy;
-        fuzzy.fuzzy = true;
-        fuzzy.default_eps = 1.0;
-        const auto r = run(script, kSpot, 100000, fuzzy);
-        const double d1 = (std::log(S0 / 100.0) + (R - Q + 0.5 * VOL * VOL)) / VOL;
-        const double gamma = std::exp(-Q) * norm_pdf(d1) / (S0 * VOL);
-        EXPECT_NEAR(r.second[kSpot], gamma, 4.0 * r.second_std_errors[kSpot] + 0.01 * gamma);
-        EXPECT_NEAR(r.first, std::exp(-Q) * norm_cdf(d1), 4.0 * r.first_std_error + 0.005);
+        // A call written as a fuzzy `if`: the call spread of half-width 1 around
+        // the strike 100 (lot 16c) smooths the payoff (S - K) H_eps(S - K).
+        const std::string kFuzzyCall = kOneYear + "\n    if spot() > 100 then\n        pays spot() - 100\n    endIf\n";
+        constexpr double K = 100.0, EPS = 1.0;
+
+        ScriptSettings fuzzy_settings()
+        {
+            ScriptSettings fuzzy;
+            fuzzy.fuzzy = true;
+            fuzzy.default_eps = EPS;
+            return fuzzy;
+        }
+
+        double bs_gamma()
+        {
+            const double d1 = (std::log(S0 / K) + (R - Q + 0.5 * VOL * VOL)) / VOL;
+            return std::exp(-Q) * norm_pdf(d1) / (S0 * VOL);
+        }
+
+        AADSecondOrderResults run_bumped(const std::string &script, std::size_t direction, std::size_t paths,
+                                         ScriptSettings settings = {})
+        {
+            ScriptedProduct<aad::Number> product(script, kCtx, settings);
+            BlackScholesSimModel<aad::Number> model{aad::Number(S0), aad::Number(R), aad::Number(Q),
+                                                    aad::Number(VOL)};
+            const auto r = simulate_aad_bumped_second_order(product, model, direction, paths, 11);
+            EXPECT_EQ(model.parameters()[direction]->value(), direction == kSpot ? S0 : VOL); // restored
+            return r;
+        }
+    } // namespace
+
+    TEST(AADSecondOrder, AFuzzyCallsPathwiseGammaMissesTheKinksOfItsDerivative)
+    {
+        // P(x) = x H_eps(x), x = S_T - K, is continuous but P' jumps by
+        // -1/2 at x = ±eps: Dirac masses in P''. Adjoint over tangent sees
+        // only P'' = 1/eps inside the band, so it estimates
+        //   e^{-rT} / (eps S0²) E[S_T² 1{K - eps < S_T < K + eps}]
+        // (dS_T/dS0 = S_T/S0), which tends to twice the Black-Scholes gamma.
+        // E[S_T² 1{S_T > a}] = S0² e^{(2(r - q) + σ²)T} N(d(a)),
+        // d(a) = (ln(S0/a) + (r - q + 3σ²/2)T) / σ√T, with T = 1.
+        const auto upper_tail = [](double a)
+        { return norm_cdf((std::log(S0 / a) + (R - Q + 1.5 * VOL * VOL)) / VOL); };
+        const double pathwise = std::exp(-R) / EPS * std::exp(2.0 * (R - Q) + VOL * VOL) *
+                                (upper_tail(K - EPS) - upper_tail(K + EPS));
+        const auto r = run(kFuzzyCall, kSpot, 100000, fuzzy_settings());
+        EXPECT_NEAR(r.second[kSpot], pathwise, 4.0 * r.second_std_errors[kSpot]);
+        EXPECT_NEAR(pathwise / bs_gamma(), 2.0, 0.01);
+        const double d1 = (std::log(S0 / K) + (R - Q + 0.5 * VOL * VOL)) / VOL;
+        EXPECT_NEAR(r.first, std::exp(-Q) * norm_cdf(d1), 4.0 * r.first_std_error + 0.005); // delta is fine
+    }
+
+    TEST(AADSecondOrder, TheBooksBumpedAdjointGammaOfAFuzzyCallIsBlackScholesGamma)
+    {
+        // §12.1: the delta of the smoothed call is continuous, so its central
+        // difference converges -- to Black-Scholes up to O(eps²) and O(h²).
+        const auto r = run_bumped(kFuzzyCall, kSpot, 100000, fuzzy_settings());
+        EXPECT_NEAR(r.second[kSpot], bs_gamma(), 4.0 * r.second_std_errors[kSpot] + 0.01 * bs_gamma());
+        EXPECT_LT(r.second_std_errors[kSpot], 0.05 * bs_gamma()); // common random numbers: a usable error
+        // The same two runs give the whole row: vanna = -e^{-qT} n(d1) d2 / σ.
+        const double d1 = (std::log(S0 / K) + (R - Q + 0.5 * VOL * VOL)) / VOL, d2 = d1 - VOL;
+        const double vanna = -std::exp(-Q) * norm_pdf(d1) * d2 / VOL;
+        EXPECT_NEAR(r.second[kVol], vanna, 4.0 * r.second_std_errors[kVol] + 0.02 * vanna);
+    }
+
+    TEST(AADSecondOrder, BothMethodsAgreeWhereThePayoffIsSmooth)
+    {
+        // S_T^1.5 is C¹ (C^∞) in every parameter: adjoint over tangent is exact
+        // and the bumped rows converge to it on the same paths.
+        const std::string script = kOneYear + "\n    pays spot() * sqrt(spot())\n";
+        for (const std::size_t direction : {kSpot, kVol})
+        {
+            const auto tangent = run(script, direction, 20000);
+            const auto bumped = run_bumped(script, direction, 20000);
+            EXPECT_NEAR(bumped.price, tangent.price, 1e-9 * tangent.price);
+            EXPECT_NEAR(bumped.first, tangent.first, 1e-9 * std::abs(tangent.first));
+            for (const std::size_t j : {kSpot, kVol})
+                EXPECT_NEAR(bumped.second[j], tangent.second[j],
+                            2e-3 * std::abs(tangent.second[j]) + 2.0 * tangent.second_std_errors[j]);
+        }
     }
 
 } // namespace quantModeling
