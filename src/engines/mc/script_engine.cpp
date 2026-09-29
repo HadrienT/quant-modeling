@@ -155,7 +155,9 @@ namespace quantModeling
         DeviceModel dm;
         std::vector<std::vector<Time>> mats;
         model.init(product.timeline(), product.defline());
-        if (!model.describe_device(dm))
+        if (product.has_exercise())
+            why = "early exercise (exercise() / call()) runs on the CPU only";
+        else if (!model.describe_device(dm))
             why = "this model runs on the CPU only (the GPU simulates Black-Scholes with a flat rate, "
                   "local vol, Heston and SLV)";
         else if (settings.mc_sampler == SamplerKind::Sobol &&

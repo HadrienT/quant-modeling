@@ -44,6 +44,8 @@ namespace quantModeling::scripting
         Spot,
         Df,       ///< df(DATE) -- future discount factor lookup (WP 16e)
         Schedule, ///< schedule(start, end, tenor, calendar, convention) -- WP 16e
+        Exercise, ///< exercise(regressors...) -- the holder's early exercise (LSMC)
+        Call,     ///< call(regressors...) -- the issuer's call (LSMC)
 
         // ── operators and punctuation ─────────────────────────────────────
         Plus,

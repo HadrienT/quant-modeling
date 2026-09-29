@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/scripting/exercise.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/visitor.hpp"
 
@@ -57,9 +58,64 @@ namespace quantModeling::scripting
         /// discipline (the amount is still popped, just discarded).
         void set_suppress_payoff(bool suppress) { suppress_payoff_ = suppress; }
 
+        /// One exercise() / call() the path reached before exercising: the
+        /// event and the regressors there (LSMC pilot, see ExerciseMode).
+        struct ExerciseObservation
+        {
+            std::size_t event;
+            std::vector<double> regressors;
+        };
+
+        /// How exercise() / call() decides (blueprint/wp/16-scripting.md §14):
+        /// Refuse -- no rule yet, evaluating one is an error (a price without
+        /// a fitted exercise rule would be silently wrong); Never / AtEvent --
+        /// the pilot's branches (never exercise; exercise at `event` if the
+        /// path reaches it); Policy -- the fitted regressions.
+        enum class ExerciseMode
+        {
+            Refuse,
+            Never,
+            AtEvent,
+            Policy
+        };
+
+        void set_exercise_never() { exercise_mode_ = ExerciseMode::Never; }
+        void set_exercise_at(std::size_t event)
+        {
+            exercise_mode_ = ExerciseMode::AtEvent;
+            exercise_event_ = event;
+        }
+        void set_exercise_policy(const ExercisePolicy *policy)
+        {
+            exercise_mode_ = policy ? ExerciseMode::Policy : ExerciseMode::Refuse;
+            policy_ = policy;
+        }
+        /// Where the observations of the next path go (nullptr: nowhere).
+        void record_exercises(std::vector<ExerciseObservation> *out) { observations_ = out; }
+
+        /// The variables and the payoff so far: what a path's run carries
+        /// from one event to the next (the LSMC pilot restarts branches here).
+        struct State
+        {
+            std::vector<T> variables;
+            T payoff;
+        };
+        State state() const { return {variables_, payoff_}; }
+        /// Resume from `s`, at an event boundary, with the right unexercised.
+        void restore(const State &s)
+        {
+            variables_ = s.variables;
+            payoff_ = s.payoff;
+            stack_.clear();
+            exercised_ = false;
+            last_exercise_event_ = static_cast<std::size_t>(-1);
+        }
+
         /// Reset for a new path. Call once, then run every event in order.
         virtual void initialize()
         {
+            exercised_ = false;
+            last_exercise_event_ = static_cast<std::size_t>(-1);
             if (has_baseline_)
                 variables_ = baseline_;
             else
@@ -247,6 +303,7 @@ namespace quantModeling::scripting
             n.arguments[0]->accept(*this);
             push(truthy(pop()) ? T(0) : T(1));
         }
+        void visit(const NodeExercise &n) override { push_condition(exercise(n)); }
 
         // ── statements ──────────────────────────────────────────────────────
         void visit(const NodeAssign &n) override
@@ -288,6 +345,50 @@ namespace quantModeling::scripting
         }
 
       protected:
+        /// A condition's value: 1 / 0 on the value stack here, a degree in
+        /// the FuzzyEvaluator.
+        virtual void push_condition(bool b) { push(b ? T(1) : T(0)); }
+
+        /// The decision of one exercise() / call(). A right is exercised once:
+        /// after that, every exercise() on the path is false.
+        bool exercise(const NodeExercise &n)
+        {
+            std::vector<double> regressors;
+            if (n.arguments.empty())
+                for (const T &s : (*scenario_)[event_index_].spots)
+                    regressors.push_back(static_cast<double>(s));
+            else
+                for (const ExprTree &arg : n.arguments)
+                {
+                    arg->accept(*this);
+                    regressors.push_back(static_cast<double>(pop()));
+                }
+            if (last_exercise_event_ == event_index_)
+                throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
+            last_exercise_event_ = event_index_;
+            if (exercised_)
+                return false;
+            if (observations_)
+                observations_->push_back({event_index_, regressors});
+            bool now = false;
+            switch (exercise_mode_)
+            {
+                case ExerciseMode::Refuse:
+                    throw InvalidInput("exercise() / call(): the exercise rule has not been fitted -- price "
+                                       "the script through fit_exercise_policy (engines/mc/lsm.hpp)");
+                case ExerciseMode::Never:
+                    break;
+                case ExerciseMode::AtEvent:
+                    now = event_index_ == exercise_event_;
+                    break;
+                case ExerciseMode::Policy:
+                    now = policy_->decide(event_index_, regressors);
+                    break;
+            }
+            exercised_ = now;
+            return now;
+        }
+
         void push(T value) { stack_.push_back(std::move(value)); }
         T pop()
         {
@@ -331,6 +432,13 @@ namespace quantModeling::scripting
         std::vector<T> baseline_;
         bool has_baseline_ = false;
         bool suppress_payoff_ = false;
+
+        ExerciseMode exercise_mode_ = ExerciseMode::Refuse;
+        std::size_t exercise_event_ = 0;
+        const ExercisePolicy *policy_ = nullptr;
+        std::vector<ExerciseObservation> *observations_ = nullptr;
+        bool exercised_ = false;
+        std::size_t last_exercise_event_ = static_cast<std::size_t>(-1);
     };
 
 } // namespace quantModeling::scripting

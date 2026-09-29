@@ -400,6 +400,22 @@ namespace quantModeling::scripting
         if (match(TokenKind::Not))
             return make_unary_node<NodeNot>(parse_cond_elem());
 
+        if (check(TokenKind::Exercise) || check(TokenKind::Call))
+        {
+            // A condition in its own right: `if exercise(spot()) then`.
+            auto node = std::make_unique<NodeExercise>();
+            node->issuer = advance().kind == TokenKind::Call;
+            expect(TokenKind::LParen, node->issuer ? "'(' after 'call'" : "'(' after 'exercise'");
+            if (!check(TokenKind::RParen))
+            {
+                node->arguments.push_back(parse_expr());
+                while (match(TokenKind::Comma))
+                    node->arguments.push_back(parse_expr());
+            }
+            expect(TokenKind::RParen, "')' to close the regressors");
+            return node;
+        }
+
         if (check(TokenKind::LParen) && lparen_starts_condition())
         {
             advance(); // '('
