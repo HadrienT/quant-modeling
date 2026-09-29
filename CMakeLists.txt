@@ -98,6 +98,8 @@ target_sources(quantModeling
         src/engines/analytic/heston_cos.cpp
         src/engines/mc/heston_qe.cpp
         src/engines/mc/rough_bergomi_hybrid.cpp
+        src/engines/mc/rough_bergomi_surface.cpp
+        src/market/rough_bergomi_calibration.cpp
         src/engines/mc/path_simulation.cpp
         src/engines/mc/script_engine.cpp
         src/models/rates/flat_rate.cpp
@@ -292,6 +294,8 @@ if(QM_BUILD_TESTS)
     tests/testHestonQE.cpp
     tests/testRoughBergomi.cpp
     tests/testRoughBergomiHybrid.cpp
+    tests/testRoughBergomiCalibration.cpp
+    tests/testAADSecondOrder.cpp
     tests/testPathSimulation.cpp
     tests/testLocalVol.cpp
     tests/testUtils.cpp

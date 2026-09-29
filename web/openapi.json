@@ -3802,6 +3802,16 @@
               }
             ]
           },
+          "rough_bergomi": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoughBergomiFit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "seconds": {
             "description": "Wall time of the calibration (cached per snapshot).",
             "title": "Seconds",
@@ -3876,7 +3886,8 @@
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "rough_bergomi"
             ],
             "title": "Model",
             "type": "string"
@@ -3891,7 +3902,8 @@
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "rough_bergomi"
             ],
             "title": "Requested",
             "type": "string"
@@ -5716,6 +5728,78 @@
         "title": "RiskProfileRow",
         "type": "object"
       },
+      "RoughBergomiFit": {
+        "description": "Rough Bergomi calibrated to the short end of the stored surface\n(market/rough_bergomi_calibration.hpp). iv_rmse / iv_worst in vol;\nmc_vol_error: the largest Monte-Carlo error of a model vol, the\nresolution below which the fit cannot tell parameters apart.",
+        "properties": {
+          "H": {
+            "title": "H",
+            "type": "number"
+          },
+          "eta": {
+            "title": "Eta",
+            "type": "number"
+          },
+          "iv_rmse": {
+            "title": "Iv Rmse",
+            "type": "number"
+          },
+          "iv_worst": {
+            "title": "Iv Worst",
+            "type": "number"
+          },
+          "mc_vol_error": {
+            "title": "Mc Vol Error",
+            "type": "number"
+          },
+          "n_maturities": {
+            "title": "N Maturities",
+            "type": "integer"
+          },
+          "n_quotes": {
+            "title": "N Quotes",
+            "type": "integer"
+          },
+          "rho": {
+            "title": "Rho",
+            "type": "number"
+          },
+          "xi_floored": {
+            "description": "Forward variances floored (calendar arbitrage).",
+            "title": "Xi Floored",
+            "type": "integer"
+          },
+          "xi_times": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Xi Times",
+            "type": "array"
+          },
+          "xi_values": {
+            "description": "Forward variance xi0(t) from the variance-swap curve.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Xi Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "H",
+          "eta",
+          "rho",
+          "xi_times",
+          "xi_values",
+          "xi_floored",
+          "iv_rmse",
+          "iv_worst",
+          "n_quotes",
+          "n_maturities",
+          "mc_vol_error"
+        ],
+        "title": "RoughBergomiFit",
+        "type": "object"
+      },
       "SABRPathRequest": {
         "properties": {
           "alpha": {
@@ -5926,13 +6010,14 @@
           },
           "model": {
             "default": "auto",
-            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.",
+            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database.",
             "enum": [
               "auto",
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "rough_bergomi"
             ],
             "title": "Model",
             "type": "string"
@@ -6276,13 +6361,14 @@
           },
           "model": {
             "default": "auto",
-            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.",
+            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database.",
             "enum": [
               "auto",
               "black_scholes",
               "local_vol",
               "heston",
-              "slv"
+              "slv",
+              "rough_bergomi"
             ],
             "title": "Model",
             "type": "string"

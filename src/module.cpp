@@ -27,6 +27,7 @@
 #include "quantModeling/market/vol_surface_pipeline.hpp"
 #include "quantModeling/engines/analytic/cds.hpp"
 #include "quantModeling/market/credit_bootstrap.hpp"
+#include "quantModeling/market/rough_bergomi_calibration.hpp"
 #include "quantModeling/models/credit/merton_structural.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
@@ -670,6 +671,45 @@ static py::dict merton_term_structure_impl(quantModeling::Real asset_value,
     return out;
 }
 
+// ── Rough Bergomi (market/rough_bergomi_calibration.hpp) ─────────────────────
+
+static py::dict calibrate_rough_bergomi_impl(const std::vector<std::tuple<double, double, double>> &targets,
+                                             const std::vector<double> &ttm,
+                                             const std::vector<double> &total_variance, int n_paths,
+                                             int steps_per_year, std::uint64_t seed)
+{
+    using namespace quantModeling;
+    std::vector<RoughBergomiTarget> t;
+    for (const auto &[T, k, v] : targets)
+        t.push_back({T, k, v});
+    RoughBergomiSurfaceSettings mc;
+    mc.n_paths = n_paths;
+    mc.steps_per_year = steps_per_year;
+    mc.seed = seed;
+    RoughBergomiCalibration c;
+    {
+        py::gil_scoped_release release;
+        c = calibrate_rough_bergomi(t, ttm, total_variance, mc);
+    }
+    py::dict out;
+    out["H"] = c.params.H;
+    out["eta"] = c.params.eta;
+    out["rho"] = c.params.rho;
+    out["xi_times"] = c.xi.times;
+    out["xi_values"] = c.xi.xi;
+    out["xi_floored"] = c.xi_floored;
+    out["iv_rmse"] = c.iv_rmse;
+    out["iv_worst"] = c.iv_worst;
+    out["n_quotes"] = c.n_quotes;
+    out["n_unpriced"] = c.n_unpriced;
+    out["iterations"] = c.report.iterations;
+    out["converged"] = c.report.converged;
+    out["seconds"] = c.report.wall_time_seconds;
+    out["model_vols"] = c.model_vols;
+    out["model_vol_errors"] = c.model_vol_errors;
+    return out;
+}
+
 // ── Vol surface calibration: raw quotes -> SVI per maturity -> Dupire grid ──
 //
 // Replaces api/app/local_vol/{fetcher,cleaner,iv_surface,dupire,cpp_bridge}.py
@@ -1085,7 +1125,10 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              bool control_variate, bool antithetic, bool importance_sampling,
                              const std::vector<std::vector<double>> &K_grids,
                              const std::vector<std::vector<double>> &T_grids,
-                             const std::vector<std::vector<double>> &sigma_loc_flats)
+                             const std::vector<std::vector<double>> &sigma_loc_flats,
+                             const std::map<std::string, double> &rough_bergomi,
+                             const std::vector<double> &xi_times,
+                             const std::vector<double> &xi_values)
 {
     using namespace quantModeling;
 
@@ -1122,6 +1165,19 @@ static py::dict price_script(const std::string &script, double spot, double rate
     spec.T_grids = T_grids;
     spec.sigma_loc_flats = sigma_loc_flats;
     spec.max_dt = max_dt;
+    if (model == "rough_bergomi")
+    {
+        const auto get = [&](const char *k, double fallback)
+        {
+            const auto it = rough_bergomi.find(k);
+            return it == rough_bergomi.end() ? fallback : it->second;
+        };
+        spec.rb_H = get("H", spec.rb_H);
+        spec.rb_eta = get("eta", spec.rb_eta);
+        spec.rb_rho = get("rho", spec.rb_rho);
+        spec.xi_times = xi_times;
+        spec.xi_values = xi_values;
+    }
 
     scripting::ModelKind kind = scripting::ModelKind::BlackScholesFlatVol;
     std::string model_note =
@@ -1148,6 +1204,13 @@ static py::dict price_script(const std::string &script, double spot, double rate
     {
         kind = scripting::ModelKind::LocalVolSurface;
         model_note = " | model local_vol (" + grid + " surface, " + steps + ")";
+    }
+    else if (model == "rough_bergomi")
+    {
+        kind = scripting::ModelKind::Heston; // a stochastic vol: its own forward smile
+        model_note = " | model rough_bergomi (H=" + std::to_string(spec.rb_H) + " eta=" +
+                     std::to_string(spec.rb_eta) + " rho=" + std::to_string(spec.rb_rho) +
+                     ", forward variance curve, hybrid scheme on a daily grid)";
     }
     else if (model == "heston" || model == "slv")
     {
@@ -1591,6 +1654,9 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("K_grids") = std::vector<std::vector<double>>{},
           py::arg("T_grids") = std::vector<std::vector<double>>{},
           py::arg("sigma_loc_flats") = std::vector<std::vector<double>>{},
+          py::arg("rough_bergomi") = std::map<std::string, double>{},
+          py::arg("xi_times") = std::vector<double>{},
+          py::arg("xi_values") = std::vector<double>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
@@ -1747,6 +1813,12 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("asset_vol"), py::arg("debt_face"), py::arg("rate"), py::arg("maturities"),
           "Risk-neutral Merton credit spread, default probability, distance to default and "
           "expected recovery at each maturity.");
+    m.def("calibrate_rough_bergomi", &calibrate_rough_bergomi_impl, py::arg("targets"), py::arg("ttm"),
+          py::arg("total_variance"), py::arg("n_paths") = 20000, py::arg("steps_per_year") = 400,
+          py::arg("seed") = 1,
+          "Calibrate rough Bergomi (H, eta, rho) to implied vols [(ttm, k = ln K/F, vol)] on the "
+          "forward variance curve of the variance-swap total variances w_VS(T) at `ttm`; Monte-Carlo on "
+          "common random numbers.");
     m.def("calibrate_vol_surface", &calibrate_vol_surface_impl,
           py::arg("quotes"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
           py::arg("k_min") = -0.6, py::arg("k_max") = 0.6,

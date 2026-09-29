@@ -4,9 +4,11 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/engines/mc/rough_bergomi_surface.hpp"
 #include "quantModeling/models/equity/rough_bergomi.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <memory>
@@ -101,9 +103,33 @@ namespace quantModeling
             set_param_pointers();
         }
 
+        /**
+         * @brief The calibrated form (etc/roadmap.md §1c): a forward variance
+         *        curve ξ0(t) instead of a flat ξ0, and any number of event
+         *        dates. The hybrid scheme runs on a uniform grid of
+         *        1/steps_per_year up to the last event, and each event reads
+         *        the path at its nearest grid date (at most half a step
+         *        away) -- the uniform grid the scheme's weights need, kept
+         *        for multi-date products (scripts: barriers, autocalls).
+         *        ξ0(t) is market data here, not a differentiable parameter.
+         */
+        RoughBergomiSimModel(T s0, T r, T q, ForwardVarianceCurve xi, T eta, T rho, Real H, int steps_per_year)
+            : s0_(s0), r_(r), q_(q), xi0_(T(xi(0.0))), eta_(eta), rho_(rho), H_(H), n_steps_(1), xi_curve_(std::move(xi)), steps_per_year_(steps_per_year)
+        {
+            if (to_double(eta_) < 0.0)
+                throw InvalidInput("RoughBergomiSimModel: eta must be >= 0");
+            if (to_double(rho_) < -1.0 || to_double(rho_) > 1.0)
+                throw InvalidInput("RoughBergomiSimModel: rho must be in [-1, 1]");
+            if (H_ <= 0.0 || H_ >= 0.5)
+                throw InvalidInput("RoughBergomiSimModel: H must be in (0, 1/2)");
+            if (steps_per_year_ < 1 || xi_curve_.xi.empty())
+                throw InvalidInput("RoughBergomiSimModel: need steps_per_year >= 1 and a forward variance curve");
+            set_param_pointers();
+        }
+
         /// See models/equity/bs_sim_model.hpp for why this exists.
         RoughBergomiSimModel(const RoughBergomiSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), xi0_(other.xi0_), eta_(other.eta_), rho_(other.rho_), H_(other.H_), n_steps_(other.n_steps_), timeline_(other.timeline_), defline_(other.defline_), dt_(other.dt_), alpha_(other.alpha_), l11_(other.l11_), l21_(other.l21_), l22_(other.l22_), dt_pow_alpha_(other.dt_pow_alpha_), sqrt_2alpha_plus_1_(other.sqrt_2alpha_plus_1_), b_pow_alpha_(other.b_pow_alpha_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), xi0_(other.xi0_), eta_(other.eta_), rho_(other.rho_), H_(other.H_), n_steps_(other.n_steps_), xi_curve_(other.xi_curve_), steps_per_year_(other.steps_per_year_), event_step_(other.event_step_), xi_at_(other.xi_at_), timeline_(other.timeline_), defline_(other.defline_), dt_(other.dt_), alpha_(other.alpha_), l11_(other.l11_), l21_(other.l21_), l22_(other.l22_), dt_pow_alpha_(other.dt_pow_alpha_), sqrt_2alpha_plus_1_(other.sqrt_2alpha_plus_1_), b_pow_alpha_(other.b_pow_alpha_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -114,15 +140,27 @@ namespace quantModeling
                   const std::vector<SampleDef> &defline) override
         {
             timeline_ = canonical_timeline(product_timeline);
-            if (timeline_.size() != 1)
+            if (timeline_.empty())
+                throw InvalidInput("RoughBergomiSimModel: the product has no event date");
+            if (steps_per_year_ == 0 && timeline_.size() != 1)
                 throw InvalidInput(
-                    "RoughBergomiSimModel: only single-maturity products are "
-                    "supported -- the hybrid scheme's weights assume a uniform "
-                    "grid over one horizon (see the class doc comment)");
+                    "RoughBergomiSimModel: the flat-xi0 form prices single-maturity "
+                    "products only -- use the forward-variance-curve constructor, "
+                    "which reads several dates off one uniform grid");
             defline_ = defline;
 
-            const Real Tm = timeline_.front();
+            const Real Tm = timeline_.back();
+            if (steps_per_year_ > 0)
+                n_steps_ = static_cast<std::size_t>(
+                    std::max(1.0, std::ceil(Tm * static_cast<Real>(steps_per_year_) - 1e-9)));
             dt_ = Tm / static_cast<Real>(n_steps_);
+            event_step_.clear();
+            for (const Time t : timeline_)
+                event_step_.push_back(static_cast<std::size_t>(
+                    std::clamp<double>(std::round(t / dt_), 1.0, static_cast<double>(n_steps_))));
+            xi_at_.assign(n_steps_ + 1, 0.0);
+            for (std::size_t i = 0; i <= n_steps_; ++i)
+                xi_at_[i] = xi_curve_.xi.empty() ? 1.0 : xi_curve_(static_cast<Real>(i) * dt_);
             alpha_ = H_ - 0.5;
 
             const Real sigma11 = dt_;
@@ -161,7 +199,9 @@ namespace quantModeling
             using std::sqrt;
 
             T S = s0_;
-            T v_prev = xi0_; // V_0
+            // V_0: ξ0 flat, or the curve's first value.
+            T v_prev = xi_curve_.xi.empty() ? xi0_ : T(xi_at_[0]);
+            std::size_t next_event = 0;
             std::vector<Real> dW1(n_steps_ + 1, 0.0);
             std::size_t g = 0;
 
@@ -195,24 +235,12 @@ namespace quantModeling
 
                 // The one place eta enters: rescaling an already-computed
                 // real Volterra value into the next step's variance level.
-                v_prev = xi0_ * exp(eta_ * w_tilde_i -
+                const T xi_i = xi_curve_.xi.empty() ? xi0_ : T(xi_at_[i]);
+                v_prev = xi_i * exp(eta_ * w_tilde_i -
                                     0.5 * eta_ * eta_ * std::pow(t_i, 2.0 * alpha_ + 1.0));
-            }
 
-            Sample<T> &smp = path[0];
-            smp.spots.assign(1, S);
-            smp.numeraire = exp(r_ * timeline_.front());
-
-            const SampleDef &def = defline_[0];
-            smp.discounts.resize(def.discount_mats.size());
-            for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
-                smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - timeline_.front()));
-
-            smp.forwards.resize(def.forward_mats.size());
-            for (std::size_t m = 0; m < def.forward_mats.size(); ++m)
-            {
-                const Time mat = def.forward_mats[m];
-                smp.forwards[m] = S * exp((r_ - q_) * (mat - timeline_.front()));
+                while (next_event < event_step_.size() && event_step_[next_event] == i)
+                    write_sample(path, next_event++, S);
             }
         }
 
@@ -231,11 +259,33 @@ namespace quantModeling
         Real H() const { return H_; }
 
       private:
+        /// Event e reads the path at its grid date; rates and forwards at the
+        /// event's own date.
+        void write_sample(Scenario<T> &path, std::size_t e, const T &S) const
+        {
+            using std::exp;
+            const Time t = timeline_[e];
+            Sample<T> &smp = path[e];
+            smp.spots.assign(1, S);
+            smp.numeraire = exp(r_ * t);
+            const SampleDef &def = defline_[e];
+            smp.discounts.resize(def.discount_mats.size());
+            for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
+                smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));
+            smp.forwards.resize(def.forward_mats.size());
+            for (std::size_t m = 0; m < def.forward_mats.size(); ++m)
+                smp.forwards[m] = S * exp((r_ - q_) * (def.forward_mats[m] - t));
+        }
+
         void set_param_pointers() { params_ = {&s0_, &r_, &q_, &xi0_, &eta_, &rho_}; }
 
         T s0_{}, r_{}, q_{}, xi0_{}, eta_{}, rho_{};
         Real H_;
         std::size_t n_steps_;
+        ForwardVarianceCurve xi_curve_; ///< empty: the flat xi0_ form
+        int steps_per_year_ = 0;        ///< 0: n_steps_ over one maturity
+        std::vector<std::size_t> event_step_;
+        std::vector<Real> xi_at_;
 
         TimeLine timeline_;
         std::vector<SampleDef> defline_;

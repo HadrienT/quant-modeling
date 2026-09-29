@@ -482,8 +482,33 @@ def price_script(req: ScriptRequest) -> PricingResponse:
                 }
             )
     model = choice["model"]
+    rv = None
+    if model == "rough_bergomi":
+        from . import rough_vol
+
+        try:
+            rv = rough_vol.calibrate(market)
+        except rough_vol.RoughCalibrationUnavailable as exc:
+            raise ValueError(
+                f"model='rough_bergomi' cannot be calibrated: {exc}"
+            ) from exc
     if market is not None:
         choice["calibration"] = _calibration_of(market, sv, model)
+        if rv is not None:
+            choice["calibration"]["seconds"] = rv.seconds
+            choice["calibration"]["rough_bergomi"] = {
+                "H": rv.H,
+                "eta": rv.eta,
+                "rho": rv.rho,
+                "xi_times": list(rv.xi_times),
+                "xi_values": list(rv.xi_values),
+                "xi_floored": rv.xi_floored,
+                "iv_rmse": rv.iv_rmse,
+                "iv_worst": rv.iv_worst,
+                "n_quotes": rv.n_quotes,
+                "n_maturities": rv.n_maturities,
+                "mc_vol_error": rv.mc_vol_error,
+            }
 
     if market is not None:
         spot, dividend, vol = market.spot, market.dividend, 0.0
@@ -528,6 +553,11 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             control_variate=req.control_variate,
             antithetic=req.antithetic,
             importance_sampling=req.importance_sampling,
+            rough_bergomi=(
+                {"H": rv.H, "eta": rv.eta, "rho": rv.rho} if rv is not None else {}
+            ),
+            xi_times=list(rv.xi_times) if rv is not None else [],
+            xi_values=list(rv.xi_values) if rv is not None else [],
         )
     result["warnings"] = market_warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)

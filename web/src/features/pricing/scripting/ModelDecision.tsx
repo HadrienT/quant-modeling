@@ -58,6 +58,27 @@ function LeverageRows({ l }: { l: NonNullable<Calibration["leverage"]> }) {
 	);
 }
 
+function RoughRows({ r }: { r: NonNullable<Calibration["rough_bergomi"]> }) {
+	return (
+		<>
+			<Row label="H Hurst exponent">{formatNumber(r.H, "greek")}</Row>
+			<Row label="η vol of vol">{formatNumber(r.eta, "greek")}</Row>
+			<Row label="ρ spot / vol correlation">{formatNumber(r.rho, "plain")}</Row>
+			<Row label="ξ₀(t) forward variance">
+				{r.xi_values.map((v) => formatNumber(Math.sqrt(v), "vol")).join(" → ")}{" "}
+				(variance-swap curve, as vols
+				{r.xi_floored > 0 ? `; ${r.xi_floored} floored` : ""})
+			</Row>
+			<Row label="Fit to the surface">
+				RMSE {formatNumber(r.iv_rmse, "vol")}, worst{" "}
+				{formatNumber(r.iv_worst, "vol")} of implied vol, over {r.n_quotes}{" "}
+				points on {r.n_maturities} maturities up to six months; Monte-Carlo
+				resolution {formatNumber(r.mc_vol_error, "vol")}
+			</Row>
+		</>
+	);
+}
+
 /** Which model priced the script, why, and what was calibrated for it —
  * every number here is a reported calibration output, not an estimate. */
 export function ModelDecision({ choice }: { choice: ModelChoice }) {
@@ -80,13 +101,20 @@ export function ModelDecision({ choice }: { choice: ModelChoice }) {
 			{auto && <p className="text-sm text-ink-secondary">{choice.reason}</p>}
 			{choice.underlyings && <UnderlyingsUsed choice={choice} />}
 			{cal && (
-				<details className="text-2xs" open={Boolean(cal.heston)}>
+				<details
+					className="text-2xs"
+					open={Boolean(cal.heston || cal.rough_bergomi)}
+				>
 					<summary className="cursor-pointer text-ink-muted">
 						Calibrated on the {cal.ticker} option chain of {cal.snapshot}
-						{cal.heston &&
+						{(cal.heston || cal.rough_bergomi) &&
 							` — ${formatDuration(cal.seconds * 1000)}, once per snapshot`}
 					</summary>
-					{cal.heston ? (
+					{cal.rough_bergomi ? (
+						<dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+							<RoughRows r={cal.rough_bergomi} />
+						</dl>
+					) : cal.heston ? (
 						<dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
 							<HestonRows h={cal.heston} />
 							{cal.leverage && <LeverageRows l={cal.leverage} />}

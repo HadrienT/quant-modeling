@@ -2966,6 +2966,7 @@ export interface components {
             flat_vol?: number | null;
             heston?: components["schemas"]["HestonFit"] | null;
             leverage?: components["schemas"]["LeverageFit"] | null;
+            rough_bergomi?: components["schemas"]["RoughBergomiFit"] | null;
             /**
              * Seconds
              * @description Wall time of the calibration (cached per snapshot).
@@ -2999,14 +3000,14 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "black_scholes" | "local_vol" | "heston" | "slv";
+            model: "black_scholes" | "local_vol" | "heston" | "slv" | "rough_bergomi";
             /** Reason */
             reason: string;
             /**
              * Requested
              * @enum {string}
              */
-            requested: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            requested: "auto" | "black_scholes" | "local_vol" | "heston" | "slv" | "rough_bergomi";
             /**
              * Underlyings
              * @description Multi-asset scripts: each underlying, in spot(i) order.
@@ -3891,6 +3892,43 @@ export interface components {
              */
             std_error: number;
         };
+        /**
+         * RoughBergomiFit
+         * @description Rough Bergomi calibrated to the short end of the stored surface
+         *     (market/rough_bergomi_calibration.hpp). iv_rmse / iv_worst in vol;
+         *     mc_vol_error: the largest Monte-Carlo error of a model vol, the
+         *     resolution below which the fit cannot tell parameters apart.
+         */
+        RoughBergomiFit: {
+            /** H */
+            H: number;
+            /** Eta */
+            eta: number;
+            /** Iv Rmse */
+            iv_rmse: number;
+            /** Iv Worst */
+            iv_worst: number;
+            /** Mc Vol Error */
+            mc_vol_error: number;
+            /** N Maturities */
+            n_maturities: number;
+            /** N Quotes */
+            n_quotes: number;
+            /** Rho */
+            rho: number;
+            /**
+             * Xi Floored
+             * @description Forward variances floored (calendar arbitrage).
+             */
+            xi_floored: number;
+            /** Xi Times */
+            xi_times: number[];
+            /**
+             * Xi Values
+             * @description Forward variance xi0(t) from the variance-swap curve.
+             */
+            xi_values: number[];
+        };
         /** SABRPathRequest */
         SABRPathRequest: {
             /** Alpha */
@@ -4020,11 +4058,11 @@ export interface components {
             importance_sampling: boolean;
             /**
              * Model
-             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
+             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database.
              * @default auto
              * @enum {string}
              */
-            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv" | "rough_bergomi";
             /**
              * N Paths
              * @default 200000
@@ -4218,11 +4256,11 @@ export interface components {
             importance_sampling: boolean;
             /**
              * Model
-             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. The market models need a ticker; spot and dividend then come from the database.
+             * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database.
              * @default auto
              * @enum {string}
              */
-            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv";
+            model: "auto" | "black_scholes" | "local_vol" | "heston" | "slv" | "rough_bergomi";
             /**
              * N Paths
              * @default 50000
