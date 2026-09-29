@@ -613,14 +613,76 @@ Lecture :
 - **Sobol + pont** divise le nombre de chemins par 4,6 (barrière quotidienne) à
   ~1 000 (vanille) : sur les petits problèmes, ce sont alors les coûts fixes
   (copies, lancement) qui dominent, d'où des colonnes GPU de quelques ms.
-- **Ce qui limite chaque kernel** (bande passante ou calcul) reste à mesurer :
-  `ncu` n'a pas accès aux compteurs matériels sans droit administrateur
-  (`ERR_NVGPUCTRPERM` ; il faut `NVreg_RestrictProfilingToAdminUsers=0` au
-  module `nvidia`, ou lancer `ncu` en root). Ce que l'on sait par
-  construction : les kernels de prix ne lisent que des tables de quelques Ko
-  (en cache) et sont limités par le calcul FP64 (Φ⁻¹, `exp`), comme mesuré au
-  lot G0 ; l'adjoint et Sobol + pont écrivent et relisent leur mémoire de
-  travail par thread en mémoire globale, coalescée.
+- **Ce qui limite chaque kernel** : mesuré, voir ci-dessous. Aucun n'est limité
+  par le débit FP64 ni par la bande passante mémoire ; tous sont limités par
+  la **latence**, à une occupation plafonnée à 25 % par les registres.
+
+### 9.1 Ce qui limite chaque kernel (Nsight Compute, issue #105)
+
+Mesuré le 29/09/2026 avec `ncu` 2024.1 sur une V100, sur les lancements de
+la mesure finale de chaque case « 1 V100 » (pas les sondages de `budgeted`),
+isolés par une plage NVTX « *ligne* - *échantillonneur* » :
+
+```
+ncu --nvtx --nvtx-include "regex:.* - (pseudo|sobol)/" \
+    --section SpeedOfLight --section ComputeWorkloadAnalysis \
+    --section MemoryWorkloadAnalysis --section Occupancy --section LaunchStats \
+    --section WarpStateStats --section InstructionStats \
+    -o cells build-cuda/qm_gpu_table_bench 8 8
+```
+
+« SM » et « Mémoire » sont les *Speed of Light* : le débit atteint en % du
+pic de l'unité la plus chargée, côté calcul et côté mémoire. Un kernel est
+limité par le calcul ou la bande passante quand l'un des deux approche 60 à
+80 %. « Arrêt dominant » : la raison pour laquelle un warp prêt n'émet pas,
+en cycles par instruction émise.
+
+| Case | Blocs (vagues) | SM | Mémoire | Pipe FP64 | Occupation | Arrêt dominant | Limité par |
+|---|---|---|---|---|---|---|---|
+| Vanille, pseudo | 15 215 (95) | 46 % | 6 % | 46 % | 22 % / 25 % | `no_instruction` 3,7, `wait` 2,8 | latence des chaînes FP64 |
+| Vanille, Sobol | 2 (0,01) | 1 % | 0,2 % | 39 % | 12 % / 25 % | `wait` 2,8 | taille : 2 blocs pour 80 SM, coûts fixes |
+| Up-and-out vol locale, pseudo | 2 364 (15) | 23 % | 11 % | 24 % | 25 % / 25 % | `no_instruction` 12,0 | chargement d'instructions (interpréteur) |
+| Up-and-out vol locale, Sobol | 3 870 (24) | 37 % | 21 % | 32 % | 25 % / 25 % | `wait` 3,2, `no_instruction` 2,5, `long_scoreboard` 2,0 | latence, calcul et mémoire de travail |
+| Worst-of autocall, pseudo | 459 (2,9) | 16 % | 13 % | 16 % | 24 % / 25 % | `no_instruction` 14,9 | chargement d'instructions (interpréteur) |
+| Worst-of autocall, Sobol | 256 (1,6) | 31 % | 29 % | 29 % | 25 % / 25 % | `long_scoreboard` 3,6, `wait` 3,4 | latence mémoire (pont, mémoire de travail) |
+| Superbucket, pseudo | 209 (1,3) | 16 % | 22 % | 20 % | 25 % / 25 % | `long_scoreboard` 16,1 | latence mémoire (lignes adjointes par thread) |
+| — son repli `fold_warps` | 2 371 (3,7) | 1 % | **94 %** | 1 % | 91 % / 100 % | `lg_throttle` | **bande passante** (0,6 ms sur 234) |
+| Superbucket, Sobol | 16 (0,1) | 5 % | 5 % | 27 % | 12 % / 25 % | `wait` 3,0 | taille : 16 blocs pour 80 SM |
+
+Lecture :
+
+- **L'occupation est plafonnée par les registres**, pour tous les kernels de
+  calcul : 128 registres par thread (100 pour l'adjoint) × 256 threads par
+  bloc, 64 Ki registres par SM, donc 2 blocs, 16 warps sur 64 — 25 %
+  d'occupation théorique, atteinte. Avec si peu de warps, la latence d'une
+  instruction FP64 dépendante (`wait`) ou d'une lecture en mémoire globale
+  (`long_scoreboard`) n'est pas masquée.
+- **La vanille est la plus proche du régime prévu** — le pipe FP64 occupé à
+  46 %, la mémoire à 6 % — mais n'y est pas : c'est la latence des chaînes
+  Φ⁻¹ / `exp`, pas leur débit, qui la limite. L'hypothèse « limité par le
+  calcul FP64 » du lot G0 est donc à nuancer : c'est le bon côté du roofline,
+  pas le plafond.
+- **L'interpréteur de bytecode attend ses instructions** (`no_instruction`,
+  12 à 15 cycles par instruction émise en pseudo-aléatoire). C'est la
+  mesure ; l'explication la plus probable, non vérifiée instruction par
+  instruction, est la boucle de dispatch du bytecode : un gros `switch` qui
+  déborde du cache d'instructions, et des warps qui n'exécutent pas les
+  mêmes opcodes au même moment. En Sobol, la mémoire de travail du pont brownien
+  ajoute des lectures globales (`long_scoreboard`), et le calcul reprend la
+  main.
+- **L'adjoint attend la mémoire, sans la saturer** : ses lignes de gradient
+  par thread (ADR-G6) vivent en mémoire globale, 22 % de la bande passante
+  seulement, mais chaque lecture coûte sa latence (`long_scoreboard` 16). Son
+  repli `fold_warps` est, lui, limité par la bande passante (94 %) — le
+  régime attendu d'une réduction, et négligeable en temps.
+- **Les petites cases Sobol sont limitées par leur taille** : 2 ou 16 blocs
+  pour 80 SM. Le temps y est celui des lancements et des copies, ce que
+  disait déjà la lecture du tableau.
+
+Les leviers qui en découlent — plus d'occupation (`__launch_bounds__` avec un
+minimum de blocs par SM, au risque de déborder en mémoire locale), un
+interpréteur plus compact, les lignes adjointes en mémoire partagée — sont
+suivis en issue, pas faits ici.
 
 Premier point (lot G0, `build-cuda/qm_gpu_bench`) — call ATM, S = K = 100,
 T = 1, σ = 20 %, antithétique, Philox, les six estimateurs du kernel (prix,
@@ -632,8 +694,10 @@ nombres communs) ; 6,2·10⁷ paires pour 1e-4 relatif :
 | Vanille BS (pseudo, Philox) | 8,92 s | 1,30 s | 0,032 s |
 
 Même prix aux trois colonnes (9,226547, erreur 9,2·10⁻⁴). Le kernel ne lit
-rien en mémoire : il est limité par le **calcul FP64** (Φ⁻¹, trois `exp` par
-chemin), ce qui est le régime où les V100 (FP64 à 1:2) ont leur avantage.
+rien en mémoire : il est du côté **calcul FP64** du roofline (Φ⁻¹, trois
+`exp` par chemin), le régime où les V100 (FP64 à 1:2) ont leur avantage —
+mesuré au §9.1, limité par la latence de ces chaînes plutôt que par leur
+débit (pipe FP64 à 46 %).
 
 Ligne « Superbucket » (lot G3, [§6](#6-aad-sur-gpu)) : contre la **tape** CPU
 (et non le code du kernel sur l'hôte comme dans le tableau ci-dessus), dV/dσ_loc
@@ -644,7 +708,7 @@ sur une grille Dupire 30×12 en pas quotidien, 102 400 chemins — tape un threa
 Métrique : **temps pour atteindre une erreur standard de 1e-4** (en relatif),
 par échantillonneur (pseudo / Sobol + pont) — un speedup sans erreur standard
 ne vaut rien. Chaque ligne indique aussi ce qui limite le kernel (bande
-passante ou calcul, mesuré au profileur `nsys` / `ncu`).
+passante ou calcul, mesuré au profileur `ncu` : §9.1).
 
 ## 10. Tests
 

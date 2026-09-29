@@ -27,6 +27,13 @@
 // budget, so fixed costs are negligible) and scaled linearly: marked "*".
 // Pseudo-random rows are sized by the pilot for the target error; their
 // "Rel. error" column is that target.
+//
+// Profiling (blueprint/wp/19-gpu.md §9.1, "limited by"): the timed run of
+// every 1-V100 cell -- not its probes -- is an NVTX range "<row> - <sampler>"
+// (no "/": ncu reads it as nesting), so Nsight Compute can pick its full-size
+// launches:
+//
+//   ncu --nvtx --nvtx-include "regex:.* - (pseudo|sobol)/" ... qm_gpu_table_bench 8 8
 
 #include <algorithm>
 #include <chrono>
@@ -42,6 +49,7 @@
 #include <vector>
 
 #include <Eigen/Core>
+#include <nvtx3/nvToolsExt.h>
 
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/kernels/vanilla_bs.hpp"
@@ -72,6 +80,15 @@ namespace
         return std::chrono::duration<double>(Clock::now() - t0).count();
     }
 
+    /// An NVTX range for the scope (no-op without a profiler attached).
+    struct NvtxRange
+    {
+        explicit NvtxRange(const std::string &name) { nvtxRangePushA(name.c_str()); }
+        ~NvtxRange() { nvtxRangePop(); }
+        NvtxRange(const NvtxRange &) = delete;
+        NvtxRange &operator=(const NvtxRange &) = delete;
+    };
+
     struct Cell
     {
         double s = 0.0;
@@ -93,9 +110,20 @@ namespace
     }
 
     /// Time `run(fraction)` -- which does `fraction` of the work -- in full
-    /// when a small probe says it fits the budget, else on a fraction.
-    Cell budgeted(double budget, const std::function<void(double)> &run)
+    /// when a small probe says it fits the budget, else on a fraction. With a
+    /// `profile` name, the timed run is that NVTX range (a probe that already
+    /// did the whole work is run once more inside it, untimed).
+    Cell budgeted(double budget, const std::function<void(double)> &run, const std::string &profile = {})
     {
+        const auto timed = [&](double f)
+        {
+            if (profile.empty())
+                return seconds([&]
+                               { run(f); });
+            const NvtxRange range(profile);
+            return seconds([&]
+                           { run(f); });
+        };
         // Probe on growing fractions until one takes half a second.
         double fraction = 1.0 / 4096.0, probe = 0.0;
         for (;; fraction = std::min(1.0, fraction * 8.0))
@@ -106,17 +134,16 @@ namespace
                 break;
         }
         if (fraction >= 1.0)
+        {
+            if (!profile.empty())
+                timed(1.0);
             return {probe, false};
+        }
         const double predicted = probe / fraction;
         if (predicted <= budget)
-            return {seconds([&]
-                            { run(1.0); }),
-                    false};
+            return {timed(1.0), false};
         const double f = std::max(fraction, std::min(1.0, budget / 4.0 / predicted));
-        return {seconds([&]
-                        { run(f); }) /
-                    f,
-                true};
+        return {timed(f) / f, true};
     }
 
     /// run(b) for b < n: in parallel on the pool (a task per replicate --
@@ -323,8 +350,15 @@ int main(int argc, char **argv)
         for (int k : {1, 2})
         {
             req.devices = k == 1 ? std::vector<int>{0} : std::vector<int>{0, 1};
-            (k == 1 ? row.gpu1 : row.gpu2).s = seconds([&]
-                                                       { g = qm::gpu::simulate_vanilla_terminal(req); });
+            const auto once = [&]
+            { g = qm::gpu::simulate_vanilla_terminal(req); };
+            if (k == 1)
+            {
+                const NvtxRange range("Vanilla BS - pseudo");
+                row.gpu1.s = seconds(once);
+            }
+            else
+                row.gpu2.s = seconds(once);
         }
         row.rel_se = g.payoff.std_error() / g.payoff.mean;
         pseudo.push_back(row);
@@ -374,8 +408,11 @@ int main(int argc, char **argv)
                              { cpu_sobol(f, nullptr); });
         srow.cpuN = budgeted(budget, [&](double f)
                              { cpu_sobol(f, &pool); });
-        srow.gpu1.s = seconds([&]
-                              { run_gpu(m, {0}); });
+        {
+            const NvtxRange range("Vanilla BS - sobol");
+            srow.gpu1.s = seconds([&]
+                                  { run_gpu(m, {0}); });
+        }
         srow.gpu2.s = seconds([&]
                               { run_gpu(m, {0, 1}); });
         sobol.push_back(srow);
@@ -435,8 +472,9 @@ int main(int argc, char **argv)
                             { cpu_script(h, seed, static_cast<uint64_t>(f * n), nullptr, &pool); });
         auto paths_of = [&](double f)
         { return static_cast<int>(std::max(2.0, 2.0 * std::floor(f * n))); };
-        row.gpu1 = budgeted(budget, [&](double f)
-                            { gpu(qm::SamplerKind::PseudoRandom, paths_of(f), 1); });
+        row.gpu1 = budgeted(
+            budget, [&](double f)
+            { gpu(qm::SamplerKind::PseudoRandom, paths_of(f), 1); }, sr.label + " - pseudo");
         row.gpu2 = budgeted(budget, [&](double f)
                             { gpu(qm::SamplerKind::PseudoRandom, paths_of(f), 2); });
         row.rel_se = target; // n was sized for it (pilot)
@@ -461,8 +499,9 @@ int main(int argc, char **argv)
                              { cpu_script(h, seed, static_cast<uint64_t>(f * m), &tables, nullptr); });
         srow.cpuN = budgeted(budget, [&](double f)
                              { cpu_script(h, seed, static_cast<uint64_t>(f * m), &tables, &pool); });
-        srow.gpu1 = budgeted(budget, [&](double f)
-                             { gpu(qm::SamplerKind::Sobol, static_cast<int>(std::max(16.0, f * paths)), 1); });
+        srow.gpu1 = budgeted(
+            budget, [&](double f)
+            { gpu(qm::SamplerKind::Sobol, static_cast<int>(std::max(16.0, f * paths)), 1); }, sr.label + " - sobol");
         srow.gpu2 = budgeted(budget, [&](double f)
                              { gpu(qm::SamplerKind::Sobol, static_cast<int>(std::max(16.0, f * paths)), 2); });
         sobol.push_back(srow);
@@ -556,8 +595,9 @@ int main(int argc, char **argv)
                             { cpu(static_cast<uint64_t>(f * n), nullptr, &pool); });
         auto npaths = [&](double f)
         { return static_cast<std::size_t>(std::max(4096.0, f * n)); };
-        row.gpu1 = budgeted(budget, [&](double f)
-                            { gpu(qm::SamplerKind::PseudoRandom, npaths(f), 1); });
+        row.gpu1 = budgeted(
+            budget, [&](double f)
+            { gpu(qm::SamplerKind::PseudoRandom, npaths(f), 1); }, "Superbucket - pseudo");
         row.gpu2 = budgeted(budget, [&](double f)
                             { gpu(qm::SamplerKind::PseudoRandom, npaths(f), 2); });
         row.rel_se = target_risk; // n was sized for it (pilot)
@@ -580,8 +620,10 @@ int main(int argc, char **argv)
                              { cpu(static_cast<uint64_t>(f * paths / 16), &tables, nullptr); });
         srow.cpuN = budgeted(budget, [&](double f)
                              { cpu(static_cast<uint64_t>(f * paths / 16), &tables, &pool); });
-        srow.gpu1 = budgeted(budget, [&](double f)
-                             { gpu(qm::SamplerKind::Sobol, static_cast<std::size_t>(std::max(16.0 * 256, f * paths)), 1); });
+        srow.gpu1 = budgeted(
+            budget, [&](double f)
+            { gpu(qm::SamplerKind::Sobol, static_cast<std::size_t>(std::max(16.0 * 256, f * paths)), 1); },
+            "Superbucket - sobol");
         srow.gpu2 = budgeted(budget, [&](double f)
                              { gpu(qm::SamplerKind::Sobol, static_cast<std::size_t>(std::max(16.0 * 256, f * paths)), 2); });
         sobol.push_back(srow);
