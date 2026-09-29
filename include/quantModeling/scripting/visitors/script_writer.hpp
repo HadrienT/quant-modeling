@@ -119,6 +119,7 @@ namespace quantModeling::scripting
             void visit(const NodeSupEqual &n) override { infix(n, ">="); }
             void visit(const NodeInferior &n) override { infix(n, "<"); }
             void visit(const NodeInfEqual &n) override { infix(n, "<="); }
+            void visit(const NodeExercise &n) override { call(n, n.issuer ? "call" : "exercise"); }
             void visit(const NodeAnd &n) override { infix(n, "and"); }
             void visit(const NodeOr &n) override { infix(n, "or"); }
             void visit(const NodeNot &n) override { prefix(n, "not "); }

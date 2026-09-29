@@ -37,13 +37,15 @@ export function ModelChoice(props: {
 						))}
 					</select>
 				</label>
-				{props.model !== "black_scholes" && !props.multi && (
-					<Field
-						label="Ticker"
-						value={props.ticker}
-						onChange={(e) => props.onTicker(e.target.value.toUpperCase())}
-					/>
-				)}
+				{props.model !== "black_scholes" &&
+					props.model !== "hull_white" &&
+					!props.multi && (
+						<Field
+							label="Ticker"
+							value={props.ticker}
+							onChange={(e) => props.onTicker(e.target.value.toUpperCase())}
+						/>
+					)}
 			</div>
 			{rec && (
 				<p className="text-2xs text-ink-secondary">

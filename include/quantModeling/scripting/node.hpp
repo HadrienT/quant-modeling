@@ -227,6 +227,16 @@ namespace quantModeling::scripting
     {
     };
 
+    /// `exercise(r1, ..., rn)` / `call(r1, ..., rn)`: a condition, true on
+    /// the path and event where the right is exercised (LSMC, blueprint/wp/
+    /// 16-scripting.md §14). `arguments` are the regressors of the exercise
+    /// decision (none: every spot of the event). `issuer` is set for call():
+    /// the issuer exercises against the holder, minimising the holder's value.
+    struct NodeExercise final : NodeT<NodeExercise>
+    {
+        bool issuer = false;
+    };
+
     struct NodeAnd final : NodeT<NodeAnd>
     {
     };

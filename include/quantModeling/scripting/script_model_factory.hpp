@@ -2,6 +2,7 @@
 #define QM_SCRIPTING_SCRIPT_MODEL_FACTORY_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/hybrid/hull_white_equity_sim_model.hpp"
 #include "quantModeling/models/equity/bates_sim_model.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/heston.hpp"
@@ -52,6 +53,14 @@ namespace quantModeling::scripting
         std::vector<std::vector<double>> T_grids;
         std::vector<std::vector<double>> sigma_loc_flats;
         double max_dt = 1.0 / 52.0; ///< Euler step bound (every model but black_scholes)
+        /// hull_white: the short rate (curve-fitted Hull-White) and its
+        /// correlation with the equity; the discount curve as pillars
+        /// (times, discount factors), or the flat `rate` when empty.
+        double hw_mean_reversion = 0.03;
+        double hw_sigma = 0.01;
+        double hw_rho = 0.0;
+        std::vector<double> curve_times;
+        std::vector<double> curve_dfs;
     };
 
     /**
@@ -70,6 +79,10 @@ namespace quantModeling::scripting
      *                   parameters (market/heston_calibration.hpp): the
      *                   Bates simulation model with no jumps, full-truncation
      *                   Euler.
+     *  "hull_white":    the equity at a flat vol under stochastic Hull-White
+     *                   rates fitted to a discount curve, correlated
+     *                   (models/hybrid/hull_white_equity_sim_model.hpp);
+     *                   df(T) reads the simulated curve.
      *  "slv":           stochastic-local volatility -- the calibrated Heston
      *                   dynamics times a leverage L(S, t) calibrated so that
      *                   the marginals are the Dupire surface's
@@ -148,6 +161,19 @@ namespace quantModeling::scripting
             return std::make_unique<BatesSimModel<T>>(
                 T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
                 T(h.theta), T(h.xi), T(h.rho), T(0.0), T(0.0), T(0.0), s.max_dt);
+        if (s.model == "hull_white")
+        {
+            if (!(s.vol >= 0.0))
+                throw InvalidInput("price_script: hull_white needs an equity vol >= 0");
+            if (s.curve_times.size() != s.curve_dfs.size())
+                throw InvalidInput("price_script: hull_white needs as many curve times as discount factors");
+            DiscountCurve curve = s.curve_times.empty()
+                                      ? DiscountCurve(s.rate)
+                                      : DiscountCurve(s.curve_times, s.curve_dfs, CurveExtrapolation::FlatForward);
+            return std::make_unique<HullWhiteEquitySimModel<T>>(
+                T(s.spot), T(s.dividend), T(s.vol), HullWhiteCurveModel(s.hw_mean_reversion, s.hw_sigma, curve),
+                s.hw_rho);
+        }
         if (s.model == "slv")
             return std::make_unique<SLVSimModel<T>>(
                 T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
@@ -155,7 +181,7 @@ namespace quantModeling::scripting
                 to_T(s.leverage_flat), s.max_dt);
         throw std::invalid_argument(
             "price_script: unknown model '" + s.model +
-            "' (expected 'black_scholes', 'local_vol', 'heston' or 'slv')");
+            "' (expected 'black_scholes', 'local_vol', 'heston', 'slv' or 'hull_white')");
     }
 
 } // namespace quantModeling::scripting

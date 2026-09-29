@@ -59,6 +59,7 @@ namespace quantModeling::scripting
         virtual void visit(Ref<NodeSupEqual> n) { visit_children(n); }
         virtual void visit(Ref<NodeInferior> n) { visit_children(n); }
         virtual void visit(Ref<NodeInfEqual> n) { visit_children(n); }
+        virtual void visit(Ref<NodeExercise> n) { visit_children(n); }
         virtual void visit(Ref<NodeAnd> n) { visit_children(n); }
         virtual void visit(Ref<NodeOr> n) { visit_children(n); }
         virtual void visit(Ref<NodeNot> n) { visit_children(n); }
