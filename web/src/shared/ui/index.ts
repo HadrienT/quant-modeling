@@ -12,3 +12,5 @@ export { Toaster, toast } from "./toast";
 export { copyText } from "./clipboard";
 export * from "./density";
 export { Disclaimer } from "./disclaimer";
+export { Segmented } from "./segmented";
+export { Methodology, WarningList } from "./methodology";

@@ -16,6 +16,10 @@ namespace quantModeling
 
         Real discount(Time t) const;
 
+        /// The pillars between which discount() interpolates log-linearly
+        /// (empty for a flat-rate curve) — where the forward rate may jump.
+        const std::vector<Time> &pillar_times() const { return times_; }
+
       private:
         std::vector<Time> times_;
         std::vector<Real> dfs_;

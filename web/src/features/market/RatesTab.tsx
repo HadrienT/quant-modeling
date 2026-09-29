@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
 import { type RateCurrency, useRatesOverview } from "@/shared/api";
+import { Segmented as Toggle, WarningList } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import { GovernmentCurvePanel } from "./GovernmentCurvePanel";
 import { RatesMethodology } from "./RatesMethodology";
@@ -12,39 +12,6 @@ const FORWARD_PERIODS = [
 	{ years: 0.5, label: "6M" },
 	{ years: 1, label: "1Y" },
 ];
-
-function Toggle<T extends string | number>({
-	options,
-	value,
-	onChange,
-	label,
-}: {
-	options: { value: T; label: string }[];
-	value: T;
-	onChange: (v: T) => void;
-	label: string;
-}) {
-	return (
-		<div role="group" aria-label={label} className="flex gap-1">
-			{options.map((o) => (
-				<button
-					key={String(o.value)}
-					type="button"
-					aria-pressed={o.value === value}
-					onClick={() => onChange(o.value)}
-					className={
-						"rounded-sm border px-2 py-1 text-xs " +
-						(o.value === value
-							? "border-accent text-ink"
-							: "border-hairline text-ink-secondary")
-					}
-				>
-					{o.label}
-				</button>
-			))}
-		</div>
-	);
-}
 
 /**
  * Rates tab: per currency, the government curve (the only free full term
@@ -95,16 +62,7 @@ export function RatesTab({
 				<ChartSkeleton />
 			) : (
 				<>
-					{data.warnings.length > 0 && (
-						<ul className="flex flex-col gap-1 rounded-sm border border-warning/40 bg-surface p-3 text-xs text-warning">
-							{data.warnings.map((w) => (
-								<li key={w} className="flex gap-2">
-									<AlertTriangle className="size-3.5 shrink-0" aria-hidden />
-									{w}
-								</li>
-							))}
-						</ul>
-					)}
+					<WarningList warnings={data.warnings} />
 					<GovernmentCurvePanel
 						curve={data.government}
 						unavailable={data.government_unavailable}

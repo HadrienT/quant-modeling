@@ -25,6 +25,15 @@ export type MarketInfo = Schemas["MarketInfo"];
 export type MarketId = MarketInfo["id"];
 export type TickerInfo = Schemas["TickerInfo"];
 
+export type CreditSpreadsResponse = Schemas["CreditSpreadsResponse"];
+export type SpreadHistoryResponse = Schemas["SpreadHistoryResponse"];
+export type CompanySummary = Schemas["CompanySummary"];
+export type FundamentalsResponse = Schemas["FundamentalsResponse"];
+export type StatementRow = Schemas["StatementRow"];
+export type FigureCell = Schemas["FigureCell"];
+export type StructuralResponse = Schemas["StructuralResponse"];
+export type MethodologySection = Schemas["MethodologySection"];
+
 // FastAPI splits models used for both request and response bodies.
 export type Portfolio = Schemas["Portfolio-Output"];
 export type PortfolioInput = Schemas["Portfolio-Input"];
