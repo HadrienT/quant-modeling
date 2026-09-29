@@ -96,6 +96,11 @@ namespace quantModeling::scripting
         void visit(const NodeSupEqual &n) override { comparison(n, Op::Ge, Op::FCmpGe); }
         void visit(const NodeInferior &n) override { comparison(n, Op::Lt, Op::FCmpLt); }
         void visit(const NodeInfEqual &n) override { comparison(n, Op::Le, Op::FCmpLe); }
+        void visit(const NodeExercise &) override
+        {
+            throw InvalidInput("script compiler: exercise() and call() run on the tree evaluator only "
+                               "(the bytecode and the GPU have no early exercise)");
+        }
         void visit(const NodeAnd &n) override { connective(n, Op::And, Op::FAnd); }
         void visit(const NodeOr &n) override { connective(n, Op::Or, Op::FOr); }
         void visit(const NodeNot &n) override

@@ -10,6 +10,7 @@
 #include "quantModeling/scripting/compiler.hpp"
 #include "quantModeling/scripting/evaluator.hpp"
 #include "quantModeling/scripting/event.hpp"
+#include "quantModeling/scripting/exercise.hpp"
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/parser.hpp"
@@ -50,7 +51,33 @@ namespace quantModeling
                     m = std::max(m, max_spot_index(*child));
             return m;
         }
+
+        /// The exercise() / call() nodes of a subtree, in evaluation order.
+        inline void collect_exercises(const scripting::Node &node,
+                                      std::vector<const scripting::NodeExercise *> &out)
+        {
+            if (const auto *e = dynamic_cast<const scripting::NodeExercise *>(&node))
+                out.push_back(e);
+            for (const scripting::ExprTree &child : node.arguments)
+                if (child)
+                    collect_exercises(*child, out);
+        }
     } // namespace detail
+
+    /// One pilot path of an early-exercise script, in deflated currency: its
+    /// value if never exercised, and for each exercise date it reached, the
+    /// regressors there and its value if exercised there (LSMC, lsm.hpp).
+    struct ExercisePilotPath
+    {
+        double never = 0.0;
+        struct Opportunity
+        {
+            std::size_t event;
+            std::vector<double> regressors;
+            double exercised;
+        };
+        std::vector<Opportunity> opportunities;
+    };
 
     struct ScriptSettings
     {
@@ -131,6 +158,32 @@ namespace quantModeling
 
             analysis_.n_underlyings = n_underlyings_;
 
+            std::vector<const scripting::NodeExercise *> exercises;
+            for (const scripting::Event &event : events_)
+                for (const scripting::ExprTree &statement : event.statements)
+                    if (statement)
+                        detail::collect_exercises(*statement, exercises);
+            for (const scripting::Event &event : historical_events_)
+                for (const scripting::ExprTree &statement : event.statements)
+                    if (statement)
+                    {
+                        std::vector<const scripting::NodeExercise *> past;
+                        detail::collect_exercises(*statement, past);
+                        if (!past.empty())
+                            throw InvalidInput("exercise() / call() on a past date (" + event.date.to_iso() +
+                                               "): the decision was already taken; script its outcome instead");
+                    }
+            has_exercise_ = !exercises.empty();
+            for (const scripting::NodeExercise *e : exercises)
+            {
+                if (e->issuer != exercises.front()->issuer)
+                    throw InvalidInput("a script has either exercise() (the holder's right) or call() (the "
+                                       "issuer's), not both");
+                if (e->arguments.size() != exercises.front()->arguments.size())
+                    throw InvalidInput("every exercise() / call() of a script takes the same number of regressors");
+            }
+            policy_.issuer = has_exercise_ && exercises.front()->issuer;
+
             const std::vector<std::vector<Time>> discount_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(events_);
             defline_ = scripting::build_defline(events_, discount_mats);
@@ -156,7 +209,9 @@ namespace quantModeling
                 evaluator_->set_baseline(baseline_);
             }
 
-            if (settings.bytecode)
+            // Early exercise runs on the tree evaluator only: the bytecode (and
+            // with it the GPU) has no exercise instruction.
+            if (settings.bytecode && !has_exercise_)
             {
                 program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy);
                 vars_.assign(static_cast<std::size_t>(program_.n_vars), T(0));
@@ -166,6 +221,57 @@ namespace quantModeling
                 if_mode_.assign(static_cast<std::size_t>(program_.n_if_modes), 0);
                 compiled_ = true;
             }
+        }
+
+        /// The script has exercise() or call(): it prices only once an
+        /// exercise rule is set (fit_exercise_policy, engines/mc/lsm.hpp).
+        bool has_exercise() const { return has_exercise_; }
+        bool issuer_exercise() const { return policy_.issuer; }
+
+        /// The exercise rule payoffs() applies from now on.
+        void set_exercise_policy(scripting::ExercisePolicy policy)
+        {
+            policy_ = std::move(policy);
+            evaluator_->set_exercise_policy(&policy_);
+        }
+        const scripting::ExercisePolicy &exercise_policy() const { return policy_; }
+
+        /**
+         * @brief The pilot's view of one path: the script run once without
+         *        exercising, then once per exercise date it reached with the
+         *        right exercised there. Leaves the product under its rule.
+         */
+        ExercisePilotPath exercise_pilot(const Scenario<T> &path) const
+        {
+            using Eval = scripting::Evaluator<T>;
+            ExercisePilotPath out;
+            std::vector<typename Eval::ExerciseObservation> seen;
+            // The never-exercised run, keeping the state at the start of
+            // every event: a branch exercised at event e is the same path up
+            // to e, so it restarts there instead of from the first event.
+            std::vector<typename Eval::State> at_start;
+            at_start.reserve(events_.size());
+            evaluator_->set_exercise_never();
+            evaluator_->record_exercises(&seen);
+            evaluator_->initialize();
+            for (std::size_t i = 0; i < events_.size(); ++i)
+            {
+                at_start.push_back(evaluator_->state());
+                run_event(path, i);
+            }
+            out.never = static_cast<double>(evaluator_->payoff());
+            evaluator_->record_exercises(nullptr);
+            for (auto &obs : seen)
+            {
+                evaluator_->set_exercise_at(obs.event);
+                evaluator_->restore(at_start[obs.event]);
+                for (std::size_t i = obs.event; i < events_.size(); ++i)
+                    run_event(path, i);
+                out.opportunities.push_back(
+                    {obs.event, std::move(obs.regressors), static_cast<double>(evaluator_->payoff())});
+            }
+            evaluator_->set_exercise_policy(policy_.empty() ? nullptr : &policy_);
+            return out;
         }
 
         /// The compiled script (empty when ScriptSettings::bytecode is off).
@@ -213,17 +319,25 @@ namespace quantModeling
         {
             if (compiled_)
                 return payoffs_compiled(path, out);
-            evaluator_->initialize();
-            for (std::size_t i = 0; i < events_.size(); ++i)
-            {
-                evaluator_->set_event(path, i);
-                for (const scripting::ExprTree &statement : events_[i].statements)
-                    evaluator_->run(*statement);
-            }
-            out.assign(1, evaluator_->payoff());
+            out.assign(1, run_tree(path));
         }
 
       private:
+        T run_tree(const Scenario<T> &path) const
+        {
+            evaluator_->initialize();
+            for (std::size_t i = 0; i < events_.size(); ++i)
+                run_event(path, i);
+            return evaluator_->payoff();
+        }
+
+        void run_event(const Scenario<T> &path, std::size_t i) const
+        {
+            evaluator_->set_event(path, i);
+            for (const scripting::ExprTree &statement : events_[i].statements)
+                evaluator_->run(*statement);
+        }
+
         /// The bytecode path: the tree evaluator's semantics, including its
         /// run-time checks on what the model supplies.
         void payoffs_compiled(const Scenario<T> &path, std::vector<T> &out) const
@@ -331,6 +445,8 @@ namespace quantModeling
         // The machine's per-path buffers (one product per thread, like evaluator_).
         mutable std::vector<T> vars_, stack_, degrees_, if_slots_;
         mutable std::vector<int> if_mode_;
+        bool has_exercise_ = false;
+        scripting::ExercisePolicy policy_;
     };
 
 } // namespace quantModeling

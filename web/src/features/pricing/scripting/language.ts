@@ -33,6 +33,8 @@ const FUNCTIONS = new Set([
 	"abs",
 	"smooth",
 	"spot",
+	"exercise",
+	"call",
 ]);
 
 /** Legacy CodeMirror token names -> Lezer highlight tags, used by both the
@@ -144,6 +146,17 @@ const FUNCTION_COMPLETIONS: Completion[] = [
 	{ label: "sqrt(", type: "function", detail: "sqrt(x)" },
 	{ label: "abs(", type: "function", detail: "abs(x)" },
 	{ label: "smooth(", type: "function", detail: "smooth(x, half-width)" },
+	{
+		label: "exercise(",
+		type: "function",
+		detail:
+			"if exercise(regressors…) then — the holder's early exercise (LSMC)",
+	},
+	{
+		label: "call(",
+		type: "function",
+		detail: "if call(regressors…) then — the issuer's call (LSMC)",
+	},
 ];
 
 /** Keyword / function completion — a static list is enough for a language

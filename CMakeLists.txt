@@ -41,6 +41,7 @@ target_sources(quantModeling
         src/scripting/lexer.cpp
         src/scripting/parser.cpp
         src/scripting/domain.cpp
+        src/scripting/exercise.cpp
         src/market/conventions.cpp
         src/market/calendars.cpp
         src/market/schedule.cpp
@@ -281,6 +282,7 @@ if(QM_BUILD_TESTS)
     tests/testCredit.cpp
     tests/testMertonStructural.cpp
     tests/testRates.cpp
+    tests/testLsm.cpp
     tests/testCurveAwareBSSimModel.cpp
     tests/testRawVolSurface.cpp
     tests/testSVI.cpp

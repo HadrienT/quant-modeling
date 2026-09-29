@@ -690,9 +690,10 @@ parse et price chaque fichier et vérifie des relations d'ordre (worst-of <
 basket < best-of, barrière < vanille, variance swap ≈ écart de variance).
 
 **Hors d'atteinte des scripts, et pourquoi** : les hybrides actions-taux (pas de
-modèle de taux stochastique branché), les produits rappelables par l'émetteur
-et les choosers (il faut une espérance conditionnelle — régression de type
-Longstaff-Schwartz — que le langage n'a pas).
+modèle de taux stochastique branché). Les produits rappelables par l'émetteur,
+les bermudéens et les choosers s'écrivent depuis le §14 (`exercise()`,
+`call()`, LSMC) ; la bibliothèque reste gelée, ils sont dans les exemples de
+l'assistant.
 
 ### 8.8 Du term sheet au script : le catalogue, la comparaison de modèles, le profil de risque
 
@@ -783,9 +784,7 @@ n'importe quel script — validé contre mes engines dédiés. »
 
 ## 11. Hors périmètre v1
 
-- **Exercice optimal / LSMC.** Un script décrit des flux conditionnels, pas une
-  décision optimale. Le bermudéen demande une régression et viendra avec le LSMC
-  ([`etc/roadmap.md`](../../etc/roadmap.md) §4c).
+- **Exercice optimal / LSMC.** Hors de la v1 ; fait depuis, voir le §14.
 - **Taux et crédit.** `libor()`, `df()` et les courbes multiples attendent le
   chantier taux. La `SampleDef` a déjà les champs, ils resteront vides.
 - **AAD.** Le lot livre `Evaluator<T>` templé et instancié en `Real` seulement.
@@ -921,3 +920,69 @@ modèle par produit — se lit sur l'arbre, sans estimation numérique.
 | Heston | Heston, « A Closed-Form Solution for Options with Stochastic Volatility », *RFS* 6(2), 1993 |
 | Pricing COS | Fang & Oosterlee, « A Novel Pricing Method for European Options Based on Fourier-Cosine Series Expansions », *SIAM J. Sci. Comput.* 31, 2008 |
 | Calibration SLV | Guyon & Henry-Labordère, « Being Particular About Calibration », *Risk*, janvier 2012 |
+
+---
+
+## 14. Exercice anticipé : `exercise()` et `call()` (LSMC)
+
+**Syntaxe.** Deux conditions : `exercise(r1, …, rn)` (droit du porteur :
+bermudéen, américain discrétisé, note putable, chooser) et `call(r1, …, rn)`
+(droit de l'émetteur : note rappelable). Elles ne s'écrivent qu'en condition
+(`if exercise(max(100 - spot(), 0), spot()) then … endIf`) ; le bloc `then`
+décrit ce qui se passe à l'exercice, et le script pose lui-même un drapeau
+pour ne plus rien payer ensuite. Les arguments sont les **régresseurs** de la
+décision ; sans argument, les spots de la date. Un droit s'exerce une fois par
+chemin (ensuite `exercise()` vaut faux), une décision au plus par date, un seul
+côté par script, le même nombre de régresseurs partout.
+
+**Algorithme** (`engines/mc/lsm.hpp`, `scripting/exercise.hpp`) — Longstaff &
+Schwartz (2001) en deux passes :
+
+1. *Pilote* sur des chemins indépendants de ceux du prix (Philox, graine
+   complémentaire). Par chemin : le script sans exercice, puis une branche par
+   date d'exercice atteinte, exercée à cette date. Chaque branche repart de
+   l'état de l'évaluateur au début de sa date (instantané pris pendant la
+   passe sans exercice), pas du début du chemin.
+2. *Induction arrière* : `Y` part de la valeur sans exercice ; à chaque date,
+   de la dernière à la première, régression du gain `V_ex − Y` sur un
+   polynôme de degré total 3 (1 ou 2 régresseurs) ou 2 (au-delà) des
+   régresseurs standardisés, QR à pivot ; là où la règle exerce (gain > 0 pour
+   le porteur, < 0 pour l'émetteur), `Y = V_ex`.
+3. *Prix* : le moteur générique inchangé, sur ses propres chemins, avec la
+   règle figée. Tous les échantillonneurs et contrôles s'appliquent. Borne
+   basse pour le porteur, sans biais d'anticipation.
+
+Les valeurs portent tout ce que le script paie sur le chemin ; les flux
+antérieurs à la date sont communs aux branches et s'annulent dans le gain.
+
+**Mesures** (`tests/testLsm.cpp`) : put bermudéen de Longstaff-Schwartz
+(S = 36, K = 40, 26 dates) à 0,8 cent sous l'arbre binomial avec le payoff en
+régresseur — 5 cents avec `spot()` seul, d'où le conseil (celui de l'article)
+de donner la valeur d'exercice comme régresseur ; chooser égal à la formule
+de Rubinstein ; call américain sans dividende égal à l'européen ; note
+rappelable < note simple < note putable.
+
+**AAD.** La règle est ajustée une fois en double, puis la passe adjointe
+différentie le prix à décision figée (argument d'enveloppe : à la frontière
+optimale, la sensibilité de la décision s'annule).
+
+**Limites.** Arbre d'évaluation seulement : le bytecode et donc le GPU n'ont
+pas d'instruction d'exercice (refus explicite en `device = gpu`, CPU en
+`auto`). Pas de borne haute (Andersen-Broadie). Le pilote coûte
+O(chemins × dates²) évaluations d'événements.
+
+### ADR-S7 — Exercice anticipé comme condition du langage
+
+- **Choix** : deux conditions `exercise()` / `call()` évaluées par une règle
+  ajustée hors du script, régresseurs donnés par le script.
+- **Rejeté** : un mot-clé de bloc (`callable … endCallable`) — il aurait fallu
+  une seconde forme de contrôle dans l'AST pour la même sémantique qu'un `if` ;
+  la régression sur les seuls spots imposée — mesurée 6 fois moins précise
+  sur le put de référence ; la restriction de Longstaff-Schwartz aux chemins
+  dans la monnaie — elle suppose de connaître la valeur d'exercice immédiate
+  au moment de décider, ce qu'un script générique ne dit pas (d'où le
+  régresseur recommandé à la place).
+- **Écart au livre** : la v1 du langage (§1.2) n'a pas d'exercice ; c'est une
+  extension propre au dépôt, qui ne touche ni l'AST existant ni les visiteurs
+  hors du nouveau nœud `NodeExercise`.
+

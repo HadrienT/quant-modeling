@@ -31,6 +31,7 @@
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/market/hull_white_calibration.hpp"
 #include "quantModeling/market/multi_curve_bootstrap.hpp"
+#include "quantModeling/engines/mc/lsm.hpp"
 #include "quantModeling/models/credit/merton_structural.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
@@ -1355,13 +1356,31 @@ static py::dict price_script(const std::string &script, double spot, double rate
         std::optional<AADSimulResults> aad_res;
         std::vector<scripting::Advice> aad_advice;
         std::size_t aad_events = 0;
-        std::string aad_device = "cpu", gpu_note;
+        std::string aad_device = "cpu", gpu_note, lsm_note;
         // Both adjoint engines take Sobol RQMC with the Brownian bridge
         // (blueprint/wp/19-gpu.md §2.2); stratification stays pseudo-random.
         const SamplerKind aad_sampler = sampler == "sobol" ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
         {
             py::gil_scoped_release release;
-            if (device == "gpu" || device == "auto")
+            // Early exercise: the rule is fitted once, on doubles, and the
+            // adjoint pass differentiates the price under it (the decision is
+            // held fixed: at the optimal boundary its own sensitivity
+            // vanishes, the envelope argument).
+            std::optional<scripting::ExercisePolicy> policy;
+            {
+                ScriptedProduct<Real> probe(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                if (probe.has_exercise())
+                {
+                    auto m = scripting::make_script_model<Real>(spec);
+                    check_underlyings(probe.n_underlyings(), m->n_underlyings());
+                    lsm_note = " | " + fit_exercise_policy(probe, *m, paths, seed_value).note();
+                    policy = probe.exercise_policy();
+                    if (device == "gpu")
+                        throw InvalidInput("GPU: early exercise (exercise() / call()) runs on the CPU only");
+                    gpu_note = " (on the CPU: early exercise)";
+                }
+            }
+            if (!policy && (device == "gpu" || device == "auto"))
             {
                 ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
                 auto sim_model = scripting::make_script_model<Real>(spec);
@@ -1385,6 +1404,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
             {
                 ScriptedProduct<aad::Number> product(
                     script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                if (policy)
+                    product.set_exercise_policy(*policy);
                 auto sim_model = scripting::make_script_model<aad::Number>(spec);
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                 aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
@@ -1398,7 +1419,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
 
         PricingResult res = to_pricing_result(*aad_res);
         res.diagnostics += gpu_note + " | scripted, " + std::to_string(aad_events) + " events" +
-                           (fuzzy ? ", fuzzy" : ", hard") + model_note;
+                           (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
         res.device = aad_device;
         if (sampler == "stratified")
             res.diagnostics += " | stratified sampling is not available under AAD -- used "
@@ -1417,6 +1438,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     std::optional<SimulationMCResult> mc;
     std::vector<scripting::Advice> advice;
     std::size_t n_events = 0;
+    std::string lsm_note;
     {
         py::gil_scoped_release release;
         ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps},
@@ -1441,6 +1463,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                                                 : ComputeDevice::Cpu;
         settings.mc_rng = (rng == "philox") ? RngKind::Philox : RngKind::Pcg32;
 
+        if (product.has_exercise())
+            lsm_note = " | " + fit_exercise_policy(product, *sim_model, paths, seed_value).note();
         mc = simulate_script(product, *sim_model, settings);
         n_events = product.timeline().size();
         advice = scripting::advise(product.analysis(), kind, product.timeline().back(),
@@ -1451,7 +1475,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.npv = mc->npv();
     res.mc_std_error = mc->std_error();
     res.diagnostics = mc->diagnostics + " | scripted, " + std::to_string(n_events) +
-                      " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note;
+                      " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
     res.device = mc->device;
     res.gpus = mc->gpus;
     py::dict out = pricing_result_to_dict(res);

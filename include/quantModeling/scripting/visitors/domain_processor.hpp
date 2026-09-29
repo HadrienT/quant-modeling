@@ -127,6 +127,8 @@ namespace quantModeling::scripting
                 return domain_sqrt(d(0));
             if (dynamic_cast<const NodeSmooth *>(&n))
                 return Domain::closed(0.0, 1.0);
+            if (dynamic_cast<const NodeExercise *>(&n))
+                return domain_union(Domain::singleton(0.0), Domain::singleton(1.0));
 
             return Domain::real_line(); // NodePow and anything unmodelled
         }
