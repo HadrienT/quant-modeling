@@ -239,8 +239,9 @@ describe("companies", () => {
 			"https://www.sec.gov/Archives/acme-10k.htm",
 		);
 		expect(revenue.getAttribute("title")).toContain("Revenues");
-		const gross = screen.getByText("Gross profit").closest("tr")!;
-		expect(gross).toHaveTextContent("—");
+		expect(screen.getByRole("row", { name: /Gross profit/ })).toHaveTextContent(
+			"—",
+		);
 	});
 
 	it("explains why the structural model is not applied", async () => {
