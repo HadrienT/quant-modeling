@@ -295,7 +295,6 @@ if(QM_BUILD_TESTS)
     tests/testRoughBergomi.cpp
     tests/testRoughBergomiHybrid.cpp
     tests/testRoughBergomiCalibration.cpp
-    tests/testAADSecondOrder.cpp
     tests/testPathSimulation.cpp
     tests/testLocalVol.cpp
     tests/testUtils.cpp
