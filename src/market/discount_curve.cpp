@@ -14,8 +14,7 @@ namespace quantModeling
 
     DiscountCurve::DiscountCurve(std::vector<Time> times, std::vector<Real> discount_factors,
                                  CurveExtrapolation extrapolation)
-        : times_(std::move(times)), dfs_(std::move(discount_factors)), use_flat_rate_(false),
-          extrapolation_(extrapolation)
+        : times_(std::move(times)), dfs_(std::move(discount_factors)), use_flat_rate_(false), extrapolation_(extrapolation)
     {
         validate_curve();
     }

@@ -206,7 +206,13 @@ class ScriptPricingInputs(BaseModel):
     on that the chosen model cannot capture."""
 
     model: Literal[
-        "auto", "black_scholes", "local_vol", "heston", "slv", "hull_white"
+        "auto",
+        "black_scholes",
+        "local_vol",
+        "heston",
+        "slv",
+        "rough_bergomi",
+        "hull_white",
     ] = Field(
         "auto",
         description=(
@@ -219,7 +225,9 @@ class ScriptPricingInputs(BaseModel):
             "Dupire surface calibrated from the ticker's stored option-chain "
             "snapshot. 'heston': Heston calibrated to that surface. 'slv': "
             "stochastic-local vol, the calibrated Heston times a leverage that "
-            "reprices the surface. The market models need a ticker; spot and "
+            "reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) "
+            "calibrated to the short end of that surface, on its variance-swap "
+            "forward variance curve. The market models need a ticker; spot and "
             "dividend then come from the database. 'hull_white': the equity at a "
             "flat vol (as black_scholes) under stochastic Hull-White rates fitted "
             "to the government curve of `hull_white.currency`; df() in the script "
@@ -652,11 +660,35 @@ class LeverageFit(BaseModel):
     n_particles: int
 
 
+class RoughBergomiFit(BaseModel):
+    """Rough Bergomi calibrated to the short end of the stored surface
+    (market/rough_bergomi_calibration.hpp). iv_rmse / iv_worst in vol;
+    mc_vol_error: the largest Monte-Carlo error of a model vol, the
+    resolution below which the fit cannot tell parameters apart."""
+
+    H: float
+    eta: float
+    rho: float
+    xi_times: List[float]
+    xi_values: List[float] = Field(
+        ..., description="Forward variance xi0(t) from the variance-swap curve."
+    )
+    xi_floored: int = Field(
+        ..., description="Forward variances floored (calendar arbitrage)."
+    )
+    iv_rmse: float
+    iv_worst: float
+    n_quotes: int
+    n_maturities: int
+    mc_vol_error: float
+
+
 class ModelCalibration(BaseModel):
     ticker: str
     snapshot: date
     heston: Optional[HestonFit] = None
     leverage: Optional[LeverageFit] = None
+    rough_bergomi: Optional[RoughBergomiFit] = None
     flat_vol: Optional[float] = Field(
         None,
         description="Flat Black-Scholes on a ticker: the at-the-money implied "
@@ -698,9 +730,17 @@ class ModelChoice(BaseModel):
     and what was calibrated for it."""
 
     requested: Literal[
-        "auto", "black_scholes", "local_vol", "heston", "slv", "hull_white"
+        "auto",
+        "black_scholes",
+        "local_vol",
+        "heston",
+        "slv",
+        "rough_bergomi",
+        "hull_white",
     ]
-    model: Literal["black_scholes", "local_vol", "heston", "slv", "hull_white"]
+    model: Literal[
+        "black_scholes", "local_vol", "heston", "slv", "rough_bergomi", "hull_white"
+    ]
     code: str = Field(
         ..., description="Stable key of the reason ('user' when chosen by hand)."
     )

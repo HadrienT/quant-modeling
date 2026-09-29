@@ -52,7 +52,8 @@ namespace quantModeling
     {
         constexpr Real eps = 1e-10;
         InterestRateSwap tail = *this;
-        const auto before = [t](const CouponPeriod &c) { return c.start < t - eps; };
+        const auto before = [t](const CouponPeriod &c)
+        { return c.start < t - eps; };
         tail.fixed_leg.erase(std::remove_if(tail.fixed_leg.begin(), tail.fixed_leg.end(), before),
                              tail.fixed_leg.end());
         tail.floating_leg.erase(std::remove_if(tail.floating_leg.begin(), tail.floating_leg.end(), before),

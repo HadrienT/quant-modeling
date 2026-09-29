@@ -22,24 +22,21 @@ namespace quantModeling
         {
             std::vector<ParRateQuote> q;
             for (const auto &[T, r] : std::vector<std::pair<Time, Real>>{
-                     {1.0, 0.0400}, {2.0, 0.0385}, {3.0, 0.0378}, {5.0, 0.0375},
-                     {7.0, 0.0380}, {10.0, 0.0390}, {15.0, 0.0400}, {20.0, 0.0402}, {30.0, 0.0395}})
+                     {1.0, 0.0400}, {2.0, 0.0385}, {3.0, 0.0378}, {5.0, 0.0375}, {7.0, 0.0380}, {10.0, 0.0390}, {15.0, 0.0400}, {20.0, 0.0402}, {30.0, 0.0395}})
                 q.push_back(make_ois_quote(T, r));
             return bootstrap_curve({{0.25, 0.0410}, {0.5, 0.0405}}, q);
         }
 
         std::vector<FraQuote> three_month_fras()
         {
-            return {{0.0, 0.25, 0.0440, 0.25}, {0.25, 0.5, 0.0432, 0.25}, {0.5, 0.75, 0.0425, 0.25},
-                    {0.75, 1.0, 0.0420, 0.25}};
+            return {{0.0, 0.25, 0.0440, 0.25}, {0.25, 0.5, 0.0432, 0.25}, {0.5, 0.75, 0.0425, 0.25}, {0.75, 1.0, 0.0420, 0.25}};
         }
 
         std::vector<ProjectionSwapQuote> three_month_swaps()
         {
             std::vector<ProjectionSwapQuote> q;
             for (const auto &[T, r] : std::vector<std::pair<Time, Real>>{
-                     {2.0, 0.0412}, {3.0, 0.0405}, {5.0, 0.0402}, {7.0, 0.0406},
-                     {10.0, 0.0415}, {15.0, 0.0424}, {20.0, 0.0426}, {30.0, 0.0420}})
+                     {2.0, 0.0412}, {3.0, 0.0405}, {5.0, 0.0402}, {7.0, 0.0406}, {10.0, 0.0415}, {15.0, 0.0424}, {20.0, 0.0426}, {30.0, 0.0420}})
                 q.push_back(make_projection_swap_quote(T, r));
             return q;
         }
@@ -310,7 +307,8 @@ namespace quantModeling
         const DiscountCurve ois = ois_curve();
         const HullWhiteCurveModel m(0.05, 0.012, ois);
         const BermudanSwaption b{make_swap(1.0, 10.0, 0.04, 1, 4), {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0}};
-        const auto at = [&](int n) { return hull_white_bermudan_swaption(b, m, {n, 8.0}); };
+        const auto at = [&](int n)
+        { return hull_white_bermudan_swaption(b, m, {n, 8.0}); };
         const Real v1 = at(101), v2 = at(201), v3 = at(401);
         const Real ratio = (v1 - v2) / (v2 - v3);
         EXPECT_GT(ratio, 3.0);

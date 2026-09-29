@@ -7,8 +7,7 @@ namespace quantModeling
 
     HullWhiteCurveModel::HullWhiteCurveModel(Real mean_reversion, Real sigma, DiscountCurve discount,
                                              DiscountCurve projection)
-        : a_(mean_reversion), sigma_(sigma), discount_(std::move(discount)),
-          projection_(std::move(projection))
+        : a_(mean_reversion), sigma_(sigma), discount_(std::move(discount)), projection_(std::move(projection))
     {
         if (!(sigma_ > 0.0))
             throw InvalidInput("HullWhiteCurveModel: sigma must be > 0");

@@ -104,7 +104,8 @@ namespace quantModeling
         if (quotes.empty())
             throw InvalidInput("bootstrap_projection_curve: need at least one quote");
         std::sort(quotes.begin(), quotes.end(),
-                  [](const PillarQuote &a, const PillarQuote &b) { return a.maturity < b.maturity; });
+                  [](const PillarQuote &a, const PillarQuote &b)
+                  { return a.maturity < b.maturity; });
 
         std::vector<Time> times;
         std::vector<Real> dfs;
