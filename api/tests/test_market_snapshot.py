@@ -33,7 +33,10 @@ def fake(monkeypatch):
         snap=SNAP,
         price=(SNAP, 500.0),
         div=(SNAP, 0.01),
-        rows=[Row(date(2027, 1, 15), 500.0, "call"), Row(date(2027, 1, 15), 500.0, "put")],
+        rows=[
+            Row(date(2027, 1, 15), 500.0, "call"),
+            Row(date(2027, 1, 15), 500.0, "put"),
+        ],
         down=False,
         calls=[],
     )
@@ -43,20 +46,32 @@ def fake(monkeypatch):
             raise db.StoreUnavailable("connection refused")
         return v
 
-    monkeypatch.setattr(db, "options_snapshot_date_on_or_before",
-                        lambda t, d: guard(state["snap"]))
+    monkeypatch.setattr(
+        db, "options_snapshot_date_on_or_before", lambda t, d: guard(state["snap"])
+    )
     monkeypatch.setattr(db, "price_on_or_before", lambda t, d: guard(state["price"]))
-    monkeypatch.setattr(db, "dividend_yield_on_or_before", lambda t, d: guard(state["div"]))
+    monkeypatch.setattr(
+        db, "dividend_yield_on_or_before", lambda t, d: guard(state["div"])
+    )
     monkeypatch.setattr(db, "options_chain_snapshot", lambda t, d: guard(state["rows"]))
 
     def calibrate(quotes, spot, rate, dividend, *a, **k):
         state["calls"].append((len(quotes), spot, rate, dividend))
-        return {"K_grid": [90.0, 110.0], "T_grid": [0.1, 1.0],
-                "sigma_loc_flat": [0.2, 0.2, 0.2, 0.2]}
+        return {
+            "K_grid": [90.0, 110.0],
+            "T_grid": [0.1, 1.0],
+            "sigma_loc_flat": [0.2, 0.2, 0.2, 0.2],
+        }
 
-    monkeypatch.setattr(ms, "qm", types.SimpleNamespace(
-        RawOptionQuote=FakeQuote, CleaningParams=lambda: None,
-        calibrate_vol_surface=calibrate))
+    monkeypatch.setattr(
+        ms,
+        "qm",
+        types.SimpleNamespace(
+            RawOptionQuote=FakeQuote,
+            CleaningParams=lambda: None,
+            calibrate_vol_surface=calibrate,
+        ),
+    )
     return state
 
 
@@ -139,15 +154,21 @@ def test_the_module_never_loads_yfinance():
     """Structural, not conventional: importing the market-data path must not
     even import yfinance, so no code path here can reach Yahoo."""
     out = subprocess.run(
-        [sys.executable, "-c",
-         "import sys; sys.path.insert(0, 'api'); import app.market_snapshot; "
-         "print('yfinance' in sys.modules)"],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, 'api'); import app.market_snapshot; "
+            "print('yfinance' in sys.modules)",
+        ],
+        capture_output=True,
+        text=True,
     )
     assert out.stdout.strip() == "False", out.stderr
 
 
-def test_the_service_prices_on_the_snapshot_date_and_merges_the_warnings(fake, monkeypatch):
+def test_the_service_prices_on_the_snapshot_date_and_merges_the_warnings(
+    fake, monkeypatch
+):
     from app import pricing_service
     from app.schemas import ScriptRequest
 
@@ -155,18 +176,35 @@ def test_the_service_prices_on_the_snapshot_date_and_merges_the_warnings(fake, m
 
     def fake_price_script(*args, **kwargs):
         seen["args"] = args
-        return {"npv": 1.0, "greeks": {}, "diagnostics": "d", "mc_std_error": 0.0,
-                "warnings": [{"code": "forward_smile", "severity": "info", "message": "m"}]}
+        return {
+            "npv": 1.0,
+            "greeks": {},
+            "diagnostics": "d",
+            "mc_std_error": 0.0,
+            "warnings": [{"code": "forward_smile", "severity": "info", "message": "m"}],
+        }
 
-    monkeypatch.setattr(pricing_service.qm, "price_script", fake_price_script, raising=False)
+    monkeypatch.setattr(
+        pricing_service.qm, "price_script", fake_price_script, raising=False
+    )
     fake["price"] = (date(2026, 9, 7), 500.0)
 
-    resp = pricing_service.price_script(ScriptRequest(
-        script="x", rate=0.03, model="local_vol", ticker="SPY",
-        valuation_date=date(2026, 9, 14)))
+    resp = pricing_service.price_script(
+        ScriptRequest(
+            script="x",
+            rate=0.03,
+            model="local_vol",
+            ticker="SPY",
+            valuation_date=date(2026, 9, 14),
+        )
+    )
 
     assert seen["args"][5] == "2026-09-12"  # valuation date handed to the engine
-    assert [w.code for w in resp.warnings] == ["market_date_shifted", "stale_spot", "forward_smile"]
+    assert [w.code for w in resp.warnings] == [
+        "market_date_shifted",
+        "stale_spot",
+        "forward_smile",
+    ]
 
 
 def _collected(run):

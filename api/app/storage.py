@@ -31,7 +31,11 @@ class LocalJsonStorage:
 
     def _path(self, key: str) -> Path:
         safe = key.replace("..", "_").lstrip("/")
-        p = (self._root / safe).with_suffix(".json") if not safe.endswith(".json") else self._root / safe
+        p = (
+            (self._root / safe).with_suffix(".json")
+            if not safe.endswith(".json")
+            else self._root / safe
+        )
         p.parent.mkdir(parents=True, exist_ok=True)
         return p
 
@@ -64,7 +68,11 @@ class LocalJsonStorage:
         return True
 
     def list_keys(self, prefix: str) -> List[str]:
-        base = self._path(prefix).parent if not prefix.endswith("/") else self._root / prefix.strip("/")
+        base = (
+            self._path(prefix).parent
+            if not prefix.endswith("/")
+            else self._root / prefix.strip("/")
+        )
         if not base.exists():
             return []
         out: List[str] = []
