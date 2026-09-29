@@ -227,6 +227,7 @@ if(QM_BUILD_TESTS)
     tests/testAADSimulation.cpp
     tests/testAADMulti.cpp
     tests/testAADExpression.cpp
+    tests/testAADSecondOrder.cpp
     tests/testMultiAssetBSSimModel.cpp
     tests/testMultiAssetLocalVolSimModel.cpp
     tests/testLocalVolSimModel.cpp
