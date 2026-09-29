@@ -84,6 +84,26 @@ class LocalVolMarket:
     n_strikes: int = 100
     n_maturities: int = 50
 
+    def surface_slices(self) -> List[Dict[str, float]]:
+        """The SVI slices every mark reads: see surface_slices()."""
+        return surface_slices(self.svi_slices)
+
+
+def surface_slices(slices: List[Dict[str, float]]) -> List[Dict[str, float]]:
+    """The slices the Dupire grid is built from (`in_surface`, chosen by
+    select_surface_slices in vol_surface_pipeline.hpp), sorted by maturity.
+
+    Vanilla marks, the flat Black-Scholes vol of scripts and the Heston fit
+    read these and only these, so a vanilla and a path-dependent product on
+    the same underlying are marked on one surface (#119). A slice left out
+    contradicts its neighbours (calendar arbitrage) or does not span the
+    grid's strikes; reading it for vanillas alone made a 1y 115 % call 15.4
+    vol on the smile against 4.4 on the local vol. Slices carrying no flag
+    (built before the selection existed) are all kept.
+    """
+    kept = [s for s in slices if s.get("in_surface", True)]
+    return sorted(kept, key=lambda s: s["ttm"])
+
 
 def _ttm(expiry: date, as_of: date) -> float:
     return max((expiry - as_of).days, 0) / 365.0

@@ -5,7 +5,7 @@ One calibration per (ticker, option-chain snapshot): market_snapshot.py
 cleans the stored quotes and fits one SVI slice per maturity (Gatheral's raw
 SVI, total variance w(k) = a + b(ρ(k − m) + √((k − m)² + σ²)) at log-
 moneyness k = ln(K / F_T)), then builds the Dupire local-vol grid from them.
-Both are kept:
+Both are kept, on the same slices (market_snapshot.surface_slices, #119):
 
 - `implied_vol(K, T)` reads the SVI surface the way the C++ SVISurface does
   (market/svi_surface.hpp): total variance linear in T at fixed k between the
@@ -109,7 +109,7 @@ def _calibrated(ticker: str, snapshot: date, rate: float) -> Optional[Smile]:
         m = market_snapshot.local_vol_market(ticker, rate, snapshot)
     except market_snapshot.MarketDataUnavailable:
         return None
-    slices = sorted(m.svi_slices, key=lambda s: s["ttm"])
+    slices = m.surface_slices()
     if not slices:
         return None
     return Smile(
