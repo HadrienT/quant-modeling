@@ -549,7 +549,7 @@ def _atm_implied_vol(req, market, valuation_date) -> float:
         spot=market.spot,
         rate=market.rate,
         dividend=market.dividend,
-        slices=tuple(sorted(market.svi_slices, key=lambda s: s["ttm"])),
+        slices=tuple(market.surface_slices()),
         K_grid=(),
         T_grid=(),
         sigma_loc_flat=(),
