@@ -25,6 +25,9 @@
 #include "quantModeling/market/conventions.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/market/vol_surface_pipeline.hpp"
+#include "quantModeling/engines/analytic/cds.hpp"
+#include "quantModeling/market/credit_bootstrap.hpp"
+#include "quantModeling/models/credit/merton_structural.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/scripting/model_advice.hpp"
@@ -558,6 +561,112 @@ static std::vector<quantModeling::Real> discount_factors_impl(
     out.reserve(query_times.size());
     for (const quantModeling::Time t : query_times)
         out.push_back(curve.discount(t));
+    return out;
+}
+
+// ── Credit (market/credit_curve.hpp, credit_bootstrap.hpp, engines/analytic/cds.hpp,
+//    models/credit/merton_structural.hpp) ─────────────────────────────────────
+//
+// For the credit page. A discount curve crosses the boundary as its pillars
+// (times, discount factors) — what bootstrap_discount_curve returns — and a
+// credit curve as (times, hazards). Spreads and rates are decimals.
+
+namespace
+{
+    quantModeling::DiscountCurve discount_from(std::vector<quantModeling::Time> times,
+                                               std::vector<quantModeling::Real> dfs)
+    {
+        if (times.empty())
+            return quantModeling::DiscountCurve(0.0);
+        return quantModeling::DiscountCurve(std::move(times), std::move(dfs));
+    }
+} // namespace
+
+static py::dict bootstrap_credit_curve_impl(
+    const std::vector<std::pair<quantModeling::Time, quantModeling::Real>> &spreads,
+    std::vector<quantModeling::Time> discount_times, std::vector<quantModeling::Real> discount_dfs,
+    quantModeling::Real recovery, int frequency)
+{
+    std::vector<quantModeling::CdsQuote> quotes;
+    for (const auto &[t, s] : spreads)
+        quotes.push_back({t, s});
+    const auto curve = quantModeling::bootstrap_credit_curve(
+        quotes, discount_from(std::move(discount_times), std::move(discount_dfs)), recovery,
+        frequency);
+    py::dict out;
+    out["times"] = curve.times();
+    out["hazards"] = curve.hazards();
+    return out;
+}
+
+static std::vector<quantModeling::Real> survival_probabilities_impl(
+    std::vector<quantModeling::Time> times, std::vector<quantModeling::Real> hazards,
+    const std::vector<quantModeling::Time> &query_times)
+{
+    const quantModeling::CreditCurve curve(std::move(times), std::move(hazards));
+    std::vector<quantModeling::Real> out;
+    out.reserve(query_times.size());
+    for (const quantModeling::Time t : query_times)
+        out.push_back(curve.survival(t));
+    return out;
+}
+
+static py::dict cds_legs_impl(quantModeling::Time maturity, quantModeling::Real spread,
+                              std::vector<quantModeling::Time> hazard_times,
+                              std::vector<quantModeling::Real> hazards,
+                              std::vector<quantModeling::Time> discount_times,
+                              std::vector<quantModeling::Real> discount_dfs,
+                              quantModeling::Real recovery, int frequency)
+{
+    const auto cds = quantModeling::make_cds(maturity, spread, frequency);
+    const auto legs = quantModeling::cds_legs(
+        cds, discount_from(std::move(discount_times), std::move(discount_dfs)),
+        quantModeling::CreditCurve(std::move(hazard_times), std::move(hazards)), recovery);
+    py::dict out;
+    out["risky_annuity"] = legs.risky_annuity;
+    out["accrued_on_default"] = legs.accrued_on_default;
+    out["protection"] = legs.protection;
+    out["par_spread"] = legs.par_spread();
+    out["npv"] = quantModeling::cds_npv(cds, legs);
+    return out;
+}
+
+static py::dict merton_calibrate_impl(quantModeling::Real equity_value,
+                                      quantModeling::Real equity_vol,
+                                      quantModeling::Real debt_face, quantModeling::Real rate,
+                                      quantModeling::Time horizon)
+{
+    const auto c =
+        quantModeling::calibrate_merton(equity_value, equity_vol, debt_face, rate, horizon);
+    py::dict out;
+    out["asset_value"] = c.firm.asset_value;
+    out["asset_vol"] = c.firm.asset_vol;
+    out["iterations"] = c.iterations;
+    out["converged"] = c.converged;
+    out["relative_residual"] = c.relative_residual;
+    return out;
+}
+
+static py::dict merton_term_structure_impl(quantModeling::Real asset_value,
+                                           quantModeling::Real asset_vol,
+                                           quantModeling::Real debt_face, quantModeling::Real rate,
+                                           const std::vector<quantModeling::Time> &maturities)
+{
+    const quantModeling::MertonFirm firm{asset_value, asset_vol, debt_face, rate};
+    std::vector<quantModeling::Real> spread, pd, dd, recovery;
+    for (const quantModeling::Time T : maturities)
+    {
+        spread.push_back(firm.credit_spread(T));
+        pd.push_back(firm.default_probability(T));
+        dd.push_back(firm.distance_to_default(T));
+        recovery.push_back(firm.expected_recovery(T));
+    }
+    py::dict out;
+    out["maturities"] = maturities;
+    out["credit_spread"] = spread;
+    out["default_probability"] = pd;
+    out["distance_to_default"] = dd;
+    out["expected_recovery"] = recovery;
     return out;
 }
 
@@ -1612,6 +1721,32 @@ PYBIND11_MODULE(quantmodeling, m)
           "Discount factors at query_times on the curve (times, discount_factors), with "
           "DiscountCurve's log-linear interpolation (flat before the first pillar and "
           "after the last).");
+    m.def("bootstrap_credit_curve", &bootstrap_credit_curve_impl, py::arg("spreads"),
+          py::arg("discount_times"), py::arg("discount_factors"), py::arg("recovery") = 0.4,
+          py::arg("frequency") = 4,
+          "Bootstrap a piecewise-constant hazard curve from par CDS spreads [(maturity, spread)] "
+          "on the discount curve (discount_times, discount_factors) — empty lists mean a zero "
+          "rate. Returns {'times', 'hazards'}. Raises RuntimeError (InvalidInput) when a spread "
+          "curve falls too steeply to be reached by a non-negative hazard.");
+    m.def("survival_probabilities", &survival_probabilities_impl, py::arg("times"),
+          py::arg("hazards"), py::arg("query_times"),
+          "Survival probabilities at query_times on the piecewise-constant hazard curve "
+          "(times, hazards).");
+    m.def("cds_legs", &cds_legs_impl, py::arg("maturity"), py::arg("spread"),
+          py::arg("hazard_times"), py::arg("hazards"), py::arg("discount_times"),
+          py::arg("discount_factors"), py::arg("recovery") = 0.4, py::arg("frequency") = 4,
+          "Both legs of a protection buyer's CDS per unit notional: risky_annuity (incl. "
+          "accrued_on_default), protection, par_spread and npv.");
+    m.def("merton_calibrate", &merton_calibrate_impl, py::arg("equity_value"),
+          py::arg("equity_vol"), py::arg("debt_face"), py::arg("rate"),
+          py::arg("horizon") = 1.0,
+          "Merton (1974) structural model: the asset value and asset volatility that reproduce "
+          "the observed equity value and equity volatility for a zero-coupon debt of face "
+          "debt_face at `horizon`.");
+    m.def("merton_term_structure", &merton_term_structure_impl, py::arg("asset_value"),
+          py::arg("asset_vol"), py::arg("debt_face"), py::arg("rate"), py::arg("maturities"),
+          "Risk-neutral Merton credit spread, default probability, distance to default and "
+          "expected recovery at each maturity.");
     m.def("calibrate_vol_surface", &calibrate_vol_surface_impl,
           py::arg("quotes"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
           py::arg("k_min") = -0.6, py::arg("k_max") = 0.6,

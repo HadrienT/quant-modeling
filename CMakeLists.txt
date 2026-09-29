@@ -60,6 +60,10 @@ target_sources(quantModeling
         src/engines/pde/european_vanilla.cpp
         src/market/discount_curve.cpp
         src/market/curve_bootstrap.cpp
+        src/market/credit_curve.cpp
+        src/market/credit_bootstrap.cpp
+        src/engines/analytic/cds.cpp
+        src/models/credit/merton_structural.cpp
         src/market/raw_vol_surface.cpp
         src/market/svi.cpp
         src/market/svi_calibration.cpp
@@ -268,6 +272,8 @@ if(QM_BUILD_TESTS)
     tests/testPDE.cpp
     tests/testDiscountCurve.cpp
     tests/testCurveBootstrap.cpp
+    tests/testCredit.cpp
+    tests/testMertonStructural.cpp
     tests/testCurveAwareBSSimModel.cpp
     tests/testRawVolSurface.cpp
     tests/testSVI.cpp

@@ -6,4 +6,5 @@ export * from "./hooks";
 export * from "./pricing";
 export * from "./portfolioValuation";
 export * from "./assistant";
+export * from "./credit";
 export type * from "./types";

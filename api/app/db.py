@@ -16,6 +16,11 @@ Tables it reads:
   options.chain_snapshot      (date, ticker, expiry, option_type, strike,
                                 bid, ask, last_price, volume, open_interest,
                                 implied_volatility)
+  fundamentals.sec_facts      (cik, tickers, taxonomy, concept, unit, period_start,
+                                period_end, duration_days, value, fiscal_year,
+                                fiscal_period, form, filed, accession, frame)
+  fundamentals.sec_filings    (cik, tickers, accession, form, filed, report_date,
+                                url, entity_name, sic, sic_description)
 
 If PGHOST is unset or the store is unreachable, callers get a clear 503 rather
 than a silent fallback to a different data source.
@@ -328,6 +333,107 @@ def rates_curve_history(
         by_date.setdefault(d, {})[sid] = float(v)
     n = len(set(ids))
     return [(d, vals) for d, vals in sorted(by_date.items()) if len(vals) == n]
+
+
+# ── fundamentals.sec_* (SEC EDGAR 10-K / 10-Q, S&P 500) ──────────────────────
+#
+# `tickers` holds every ticker of a company, space-separated ("GOOG GOOGL"):
+# a company is looked up by ticker once, in the small filings table, and
+# everything else is read by CIK.
+
+
+@dataclass(frozen=True, slots=True)
+class SecCompany:
+    cik: int
+    tickers: Tuple[str, ...]
+    name: Optional[str]
+    sic: Optional[str]
+    sic_description: Optional[str]
+    last_filed: date
+
+
+def sec_companies() -> List[SecCompany]:
+    """Every company with a report in the store, as its latest filing names it."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT ON (cik) cik, tickers, entity_name, sic, sic_description, filed "
+            "FROM fundamentals.sec_filings ORDER BY cik, filed DESC"
+        )
+        rows = cur.fetchall()
+    return [
+        SecCompany(int(c), tuple(t.split()), n, s, sd, f) for c, t, n, s, sd, f in rows
+    ]
+
+
+def sec_company(ticker: str) -> Optional[SecCompany]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT cik, tickers, entity_name, sic, sic_description, filed "
+            "FROM fundamentals.sec_filings WHERE %s = ANY(string_to_array(tickers, ' ')) "
+            "ORDER BY filed DESC LIMIT 1",
+            (ticker.upper(),),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    c, t, n, s, sd, f = row
+    return SecCompany(int(c), tuple(t.split()), n, s, sd, f)
+
+
+@dataclass(frozen=True, slots=True)
+class SecFact:
+    concept: str
+    unit: str
+    period_start: Optional[date]
+    period_end: date
+    duration_days: int
+    value: float
+    form: str
+    filed: date
+    accession: str
+
+
+def sec_facts(cik: int, concepts: Sequence[str]) -> List[SecFact]:
+    """Every stored fact of these concepts for one company, every filing's
+    figure kept (a later 10-K restating a period is its own row)."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT concept, unit, period_start, period_end, duration_days, value, form, "
+            "filed, accession FROM fundamentals.sec_facts "
+            "WHERE cik = %s AND concept = ANY(%s) AND value IS NOT NULL",
+            (cik, list(concepts)),
+        )
+        return [SecFact(*r[:5], float(r[5]), *r[6:]) for r in cur.fetchall()]
+
+
+@dataclass(frozen=True, slots=True)
+class SecFiling:
+    accession: str
+    form: str
+    filed: date
+    report_date: Optional[date]
+    url: Optional[str]
+
+
+def sec_filings(cik: int, limit: int = 12) -> List[SecFiling]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT accession, form, filed, report_date, url FROM fundamentals.sec_filings "
+            "WHERE cik = %s ORDER BY filed DESC LIMIT %s",
+            (cik, limit),
+        )
+        return [SecFiling(*r) for r in cur.fetchall()]
+
+
+def sec_filing_urls(cik: int, accessions: Sequence[str]) -> dict:
+    """{accession: document URL} — the source link of each figure shown."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT accession, url FROM fundamentals.sec_filings "
+            "WHERE cik = %s AND accession = ANY(%s)",
+            (cik, list(accessions)),
+        )
+        return {a: u for a, u in cur.fetchall()}
 
 
 def dividend_yield_history(ticker: str, since: date) -> List[Tuple[date, float]]:

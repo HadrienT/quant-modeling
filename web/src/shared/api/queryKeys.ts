@@ -38,6 +38,17 @@ export const queryKeys = {
 			["market", "rates", "history", currency, seriesId, years] as const,
 	},
 
+	credit: {
+		all: () => ["credit"] as const,
+		spreads: (recovery: number) => ["credit", "spreads", recovery] as const,
+		spreadHistory: (seriesId: string, years: number) =>
+			["credit", "spread-history", seriesId, years] as const,
+		companies: () => ["credit", "companies"] as const,
+		fundamentals: (ticker: string, frequency: string) =>
+			["credit", "fundamentals", ticker, frequency] as const,
+		structural: (ticker: string) => ["credit", "structural", ticker] as const,
+	},
+
 	pricing: {
 		all: () => ["pricing"] as const,
 		option: (endpoint: string, params: unknown) =>

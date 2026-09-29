@@ -160,6 +160,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/credit/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credit Companies */
+        get: operations["credit_companies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credit/companies/{ticker}/fundamentals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credit Company Fundamentals */
+        get: operations["credit_company_fundamentals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credit/companies/{ticker}/structural": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credit Company Structural */
+        get: operations["credit_company_structural"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credit/spreads/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credit Spread History */
+        get: operations["credit_spread_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/credit/spreads/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Credit Spreads Overview */
+        get: operations["credit_spreads_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local-vol/delta-surface": {
         parameters: {
             query?: never;
@@ -1793,6 +1878,29 @@ export interface components {
             /** Vol */
             vol: number;
         };
+        /** CompaniesResponse */
+        CompaniesResponse: {
+            /** Companies */
+            companies: components["schemas"]["CompanySummary"][];
+        };
+        /** CompanySummary */
+        CompanySummary: {
+            /** Cik */
+            cik: number;
+            /**
+             * Last Filed
+             * Format: date
+             */
+            last_filed: string;
+            /** Name */
+            name: string | null;
+            /** Sic */
+            sic: string | null;
+            /** Sic Description */
+            sic_description: string | null;
+            /** Tickers */
+            tickers: string[];
+        };
         /**
          * ComputeDevice
          * @description Where a Monte-Carlo pricing runs (blueprint/wp/19-gpu.md §8). `auto`
@@ -1821,6 +1929,38 @@ export interface components {
              * @description Names of the usable CUDA devices; empty when the server has none or the native module was built without the CUDA backend.
              */
             gpus?: string[];
+        };
+        /** CreditSpreadsResponse */
+        CreditSpreadsResponse: {
+            /** Aggregates */
+            aggregates: components["schemas"]["SeriesValue"][];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Discount Curve As Of
+             * Format: date
+             */
+            discount_curve_as_of: string;
+            hazard: components["schemas"]["HazardCurveResponse"] | null;
+            /** Hazard Unavailable */
+            hazard_unavailable: string | null;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /** Ratings */
+            ratings: components["schemas"]["RatingSpread"][];
+            /** Ratings As Of */
+            ratings_as_of: string | null;
+            /** Recovery */
+            recovery: number;
+            /** Reference Yields */
+            reference_yields: components["schemas"]["SeriesValue"][];
+            /** Term Structure */
+            term_structure: components["schemas"]["QuotedSpreadPoint"][];
+            /** Warnings */
+            warnings: string[];
         };
         /**
          * DatedAsianRequest
@@ -2125,6 +2265,45 @@ export interface components {
             /** Vol */
             vol: number;
         };
+        /** FigureCell */
+        FigureCell: {
+            /** Formula */
+            formula?: string | null;
+            /** Sources */
+            sources: components["schemas"]["FigureSource"][];
+            /** Value */
+            value: number;
+        };
+        /** FigureSource */
+        FigureSource: {
+            /** Accession */
+            accession: string;
+            /** Concept */
+            concept: string;
+            /**
+             * Filed
+             * Format: date
+             */
+            filed: string;
+            /** Url */
+            url: string | null;
+        };
+        /** FilingLink */
+        FilingLink: {
+            /** Accession */
+            accession: string;
+            /**
+             * Filed
+             * Format: date
+             */
+            filed: string;
+            /** Form */
+            form: string;
+            /** Report Date */
+            report_date: string | null;
+            /** Url */
+            url: string | null;
+        };
         /** FixedRateBondRequest */
         FixedRateBondRequest: {
             /**
@@ -2147,6 +2326,28 @@ export interface components {
             notional: number;
             /** Rate */
             rate: number;
+        };
+        /** FundamentalsResponse */
+        FundamentalsResponse: {
+            company: components["schemas"]["CompanySummary"];
+            /** Filings */
+            filings: components["schemas"]["FilingLink"][];
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "annual" | "quarterly";
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /**
+             * Periods
+             * @description Period ends, most recent first
+             */
+            periods: string[];
+            /** Ratios */
+            ratios: components["schemas"]["StatementRow"][];
+            /** Rows */
+            rows: components["schemas"]["StatementRow"][];
         };
         /** FutureRequest */
         FutureRequest: {
@@ -2378,6 +2579,22 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HazardCurveResponse */
+        HazardCurveResponse: {
+            /** Grid */
+            grid: number[];
+            /** Hazards */
+            hazards: number[];
+            /** Max Repricing Error Bp */
+            max_repricing_error_bp: number;
+            /** Survival */
+            survival: number[];
+            /**
+             * Times
+             * @description Right ends of the constant-hazard segments
+             */
+            times: number[];
         };
         /** HealthResponse */
         HealthResponse: {
@@ -3432,6 +3649,20 @@ export interface components {
             /** Tenor */
             tenor: number;
         };
+        /** QuotedSpreadPoint */
+        QuotedSpreadPoint: {
+            /** Label */
+            label: string;
+            /** Series Id */
+            series_id: string;
+            /** Spread */
+            spread: number;
+            /**
+             * Tenor
+             * @description Where the bucket is placed on the maturity axis, years
+             */
+            tenor: number;
+        };
         /**
          * RainbowKind
          * @enum {string}
@@ -3542,6 +3773,26 @@ export interface components {
             unit: "decimal";
             /** Warnings */
             warnings: string[];
+        };
+        /** RatingSpread */
+        RatingSpread: {
+            /** Default Probabilities */
+            default_probabilities: number[];
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "IG" | "HY";
+            /** Hazard */
+            hazard: number;
+            /** Label */
+            label: string;
+            /** Pd Horizons */
+            pd_horizons: number[];
+            /** Series Id */
+            series_id: string;
+            /** Spread */
+            spread: number;
         };
         /**
          * ReplayOutcome
@@ -4069,6 +4320,17 @@ export interface components {
              */
             valuation_date?: string;
         };
+        /** SeriesValue */
+        SeriesValue: {
+            /** As Of */
+            as_of: string | null;
+            /** Label */
+            label: string;
+            /** Series Id */
+            series_id: string;
+            /** Value */
+            value: number | null;
+        };
         /** SimulationCalibrateRequest */
         SimulationCalibrateRequest: {
             /**
@@ -4187,6 +4449,50 @@ export interface components {
             /** Warnings */
             warnings: string[];
         };
+        /** SpreadHistoryPoint */
+        SpreadHistoryPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Value */
+            value: number;
+        };
+        /** SpreadHistoryResponse */
+        SpreadHistoryResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "spread" | "yield";
+            /** Label */
+            label: string;
+            /** Points */
+            points: components["schemas"]["SpreadHistoryPoint"][];
+            /** Series Id */
+            series_id: string;
+        };
+        /** StatementRow */
+        StatementRow: {
+            /** Derived */
+            derived: boolean;
+            /** Formula */
+            formula: string | null;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Statement
+             * @enum {string}
+             */
+            statement: "income" | "balance" | "cash_flow" | "ratio";
+            /** Unit */
+            unit: string;
+            /** Values */
+            values: (components["schemas"]["FigureCell"] | null)[];
+        };
         /**
          * StressBump
          * @description A single scenario bump.
@@ -4226,6 +4532,72 @@ export interface components {
             position_pnls: {
                 [key: string]: number;
             };
+        };
+        /** StructuralInputsResponse */
+        StructuralInputsResponse: {
+            /**
+             * Balance Sheet Date
+             * Format: date
+             */
+            balance_sheet_date: string;
+            /** Default Point */
+            default_point: number;
+            /** Equity Value */
+            equity_value: number;
+            /** Equity Vol */
+            equity_vol: number;
+            long_term_debt: components["schemas"]["FigureCell"] | null;
+            /** Price */
+            price: number;
+            /**
+             * Price Date
+             * Format: date
+             */
+            price_date: string;
+            /** Rate */
+            rate: number;
+            /**
+             * Shares As Of
+             * Format: date
+             */
+            shares_as_of: string;
+            /** Shares Outstanding */
+            shares_outstanding: number;
+            shares_source: components["schemas"]["FigureSource"];
+            short_term_debt: components["schemas"]["FigureCell"] | null;
+            /** Vol Observations */
+            vol_observations: number;
+        };
+        /** StructuralResponse */
+        StructuralResponse: {
+            /** Asset Value */
+            asset_value?: number | null;
+            /** Asset Vol */
+            asset_vol?: number | null;
+            company: components["schemas"]["CompanySummary"];
+            /** Default Probabilities */
+            default_probabilities?: number[] | null;
+            /** Distances To Default */
+            distances_to_default?: number[] | null;
+            /** Expected Recoveries */
+            expected_recoveries?: number[] | null;
+            inputs: components["schemas"]["StructuralInputsResponse"] | null;
+            /** Iterations */
+            iterations?: number | null;
+            /** Leverage */
+            leverage?: number | null;
+            /** Maturities */
+            maturities?: number[] | null;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /** Spreads */
+            spreads?: number[] | null;
+            /** Ticker */
+            ticker: string;
+            /** Unavailable */
+            unavailable: string | null;
+            /** Warnings */
+            warnings: string[];
         };
         /** TickerInfo */
         TickerInfo: {
@@ -4846,6 +5218,156 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BacktestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credit_companies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompaniesResponse"];
+                };
+            };
+        };
+    };
+    credit_company_fundamentals: {
+        parameters: {
+            query?: {
+                frequency?: "annual" | "quarterly";
+                periods?: number;
+            };
+            header?: never;
+            path: {
+                ticker: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundamentalsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credit_company_structural: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticker: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructuralResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credit_spread_history: {
+        parameters: {
+            query: {
+                /** @description A spread or reference-yield series id. */
+                series_id: string;
+                years?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpreadHistoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credit_spreads_overview: {
+        parameters: {
+            query?: {
+                /** @description Recovery rate assumption. */
+                recovery?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditSpreadsResponse"];
                 };
             };
             /** @description Validation Error */
