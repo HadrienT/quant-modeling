@@ -122,6 +122,11 @@ namespace quantModeling
      * simulate()) -- at the cost of one extra propagation of the
      * precomputation section per batch, negligible next to 64 path
      * propagations.
+     *
+     * `batch_risks`, when given, receives each batch's risks (one row per
+     * batch): two runs on the same seed and path count have the same
+     * batches, so a difference of their risks gets its standard error from
+     * the batch-wise differences (simulate_aad_bumped_second_order, §12).
      */
     inline AADSimulResults simulate_aad(
         const ISimulatableProduct<aad::Number> &product,
@@ -129,13 +134,16 @@ namespace quantModeling
         std::uint64_t seed = 1,
         const std::function<aad::Number(const std::vector<aad::Number> &)> &agg =
             first_aad_payoff,
-        RngKind rng_kind = RngKind::Pcg32, SamplerKind sampler = SamplerKind::PseudoRandom)
+        RngKind rng_kind = RngKind::Pcg32, SamplerKind sampler = SamplerKind::PseudoRandom,
+        std::vector<std::vector<Real>> *batch_risks = nullptr)
     {
         using aad::Number;
         using aad::Tape;
 
         if (n_paths == 0)
             throw InvalidInput("simulate_aad: need at least one path");
+        if (batch_risks)
+            batch_risks->clear();
         // Philox: path p's draw j is Phi^-1(Philox(seed, p, j)), as on the GPU
         // (blueprint/wp/19-gpu.md §6) -- the oracle of its dual and adjoint runs.
         const bool philox = rng_kind == RngKind::Philox;
@@ -223,9 +231,15 @@ namespace quantModeling
             if (n_params > 0)
             {
                 Number::propagate_mark_to_start(); // 7. mark -> parameters, once per batch
+                if (batch_risks)
+                    batch_risks->emplace_back(n_params);
                 for (std::size_t j = 0; j < n_params; ++j)
-                    risk_acc[j].add(model.parameters()[j]->adjoint() /
-                                    static_cast<Real>(batch_size));
+                {
+                    const Real risk = model.parameters()[j]->adjoint() / static_cast<Real>(batch_size);
+                    risk_acc[j].add(risk);
+                    if (batch_risks)
+                        batch_risks->back()[j] = risk;
+                }
                 tape.reset_adjoints_before_mark(); // next batch starts from zero
             }
 
@@ -398,7 +412,7 @@ namespace quantModeling
      * today), the matching Greeks fields are filled too, so front-end code
      * built against Greeks keeps working unchanged. Theta and gamma are
      * left unset: time is not a model parameter (theta stays bump), and
-     * exact second order is out of scope for this lot (§12).
+     * second order is a separate run (simulate_aad_bumped_second_order, §12).
      */
     inline PricingResult to_pricing_result(const AADSimulResults &r)
     {

@@ -795,14 +795,60 @@ et deux tests comparent AAD et repricing sur une surface pentue.
 
 ## 12. Ordre 2
 
-L'AAD du livre est d'ordre 1. Le gamma s'obtient par **différences finies sur
-l'AAD** : bumper le spot de ±*h*, relancer deux AAD, `(Δ⁺ − Δ⁻) / 2h`. Chaque
-paire de relances donne **toute une ligne** de la hessienne (gamma, mais aussi
-∂²V/∂S∂σ, ∂²V/∂S∂r…) — contre O(*n*²) pricings en bump pur.
+**Fait (lot 17i).** Deux méthodes, dans `engines/mc/simulation_engine_aad2.hpp`,
+qui rendent la même chose : une **ligne de la hessienne** avec ses erreurs
+standard (`AADSecondOrderResults` : prix, dérivée première dans la direction
+choisie, ∂²V/∂θ_dir ∂θ_j pour tous les *j*).
 
-Mise en garde : le delta d'un payoff à coin est discontinu, la différence finie
-dessus est bruitée. Le lissage de [§5.3](#53-comparaisons-et-flot-de-contrôle)
-aide ici aussi. L'AAD d'ordre 2 (tangent sur adjoint) est hors périmètre.
+### 12.1 La méthode du livre : différences finies sur l'AAD
+
+`simulate_aad_bumped_second_order`. Bumper le paramètre de ±*h*
+(*h* = 1 % de sa valeur par défaut), relancer deux AAD, `(Δ⁺ − Δ⁻) / 2h`.
+Chaque paire de relances donne **toute une ligne** de la hessienne (gamma, mais
+aussi ∂²V/∂S∂σ, ∂²V/∂S∂r…) — contre O(*n*²) pricings en bump pur. Une
+troisième relance, sans bump, donne le prix et la dérivée première.
+
+Les deux côtés tournent sur la **même graine Philox** et les **mêmes lots de
+64 chemins** : `simulate_aad` rend, sur demande, les risques de chaque lot, et
+l'erreur standard de la différence est celle des différences lot à lot —
+la corrélation apportée par les nombres aléatoires communs comprise. Sans
+elle, l'erreur serait surestimée d'un ordre de grandeur.
+
+C'est **la méthode par défaut pour tout payoff scripté** : le delta d'un
+payoff lissé par la logique floue ([§5.3](#53-comparaisons-et-flot-de-contrôle))
+est continu, sa différence finie converge. Sur un call flou (K = 100,
+ε = 1, S = 100, σ = 25 %, 10⁵ chemins) : gamma 0,01543 ± 0,00029 pour
+0,01547 en Black-Scholes, vanna 0,0698 pour 0,0696.
+
+### 12.2 L'extension : adjoint sur tangent
+
+`simulate_aad_second_order`, sur `aad::Tangent<Number>`
+(`aad/tangent.hpp`) : un nombre dual dont la valeur **et** la dérivée
+directionnelle sont des `Number`. La dérivée première de chaque chemin est
+alors elle-même enregistrée sur la tape, et une propagation adjointe *depuis
+elle* rend sa gradient : la ligne de la hessienne, **sans bump**, exacte
+chemin par chemin (Griewank & Walther 2008, ch. 5 ; Naumann 2012, ch. 3).
+Modèles et produits, templés sur leur type de nombre, s'instancient sur
+`Tangent<Number>` sans modification. Hors du livre : voir
+[ADR-A10](#adr-a10--ladjoint-sur-tangent-en-extension-pas-en-remplacement).
+
+**Sa limite, mesurée.** La dérivée seconde *pathwise* n'est juste que si le
+payoff est **C¹** dans les paramètres, chemin par chemin. Le lissage en
+call-spread de la logique floue ne l'est pas : un call écrit
+`if spot() > K then pays spot() − K endIf` devient P(x) = x·H_ε(x),
+x = S_T − K, continu, mais dont la dérivée **saute de −½ en x = ±ε**. Ces
+sauts sont des masses de Dirac dans P″ que la dérivation chemin par chemin ne
+voit pas ; elle ne garde que P″ = 1/ε dans la bande, dont l'espérance tend vers
+**deux fois** le gamma. Mesuré : 0,03073 ± 0,00055 pour 0,03093 prédit par la
+forme fermée de cette partie régulière, et 0,01547 en Black-Scholes. Le test
+`AFuzzyCallsPathwiseGammaMissesTheKinksOfItsDerivative` fixe cette limite.
+
+L'adjoint sur tangent est donc réservé aux **payoffs réguliers** (puissances,
+log-contrats, fonctions lisses des sous-jacents) et aux vérifications ; sur
+ceux-là, les deux méthodes s'accordent sur les mêmes chemins
+(`BothMethodsAgreeWhereThePayoffIsSmooth`). Un lissage C¹ de la logique floue
+le rendrait juste partout, au prix d'un écart au livre de scripting : pas
+fait.
 
 ---
 
@@ -867,6 +913,7 @@ entre blocs, c'est là que les erreurs se cachent.
 | Multi | `testAADMulti.cpp` | matrice multi-adjoints = *m* AAD mono-adjoint |
 | ET | `testAADExpression.cpp` | mêmes risques avec et sans expression templates, à la précision machine |
 | Limite | `testAADSimulation.cpp` | delta adjoint d'une digitale **dure** = 0 ; non nul et correct **lissée** — la limite est documentée par un test |
+| Ordre 2 | `testAADSecondOrder.cpp` | hessienne de S_T² = forme fermée ; symétrie chemin par chemin ; gamma et vanna bumpés d'un call flou = Black-Scholes ; gamma pathwise du même call = 2 × gamma (la limite de §12.2) ; les deux méthodes égales sur S_T^1,5 |
 | Coût | `benchmarks/bench_aad.cpp` | ratio (coût AAD / coût pricing) **plat** en fonction du nombre de paramètres ; celui du bump **linéaire** — la courbe du lot 15 |
 
 Le benchmark va dans [`benchmarks/`](../../benchmarks/) avec google-benchmark,
@@ -889,6 +936,7 @@ chose à montrer.
 | **17f** | Multi-adjoints | matrice = *m* runs mono |
 | **17g** | Expression templates | mêmes risques, tape plus petite, gain de temps mesuré au benchmark |
 | **17h** | Calibration : Dupire C++ templé, superbucket ; théorème des fonctions implicites | ∂V/∂σ_impl — **fait** : vega par cotation, somme = choc parallèle recalibré |
+| **17i** | Ordre 2 (§12) : différences finies sur l'AAD (livre), adjoint sur tangent (ADR-A10) | gamma et vanna d'un call flou = Black-Scholes ; les deux méthodes égales sur un payoff lisse — **fait** |
 
 **17a + 17b + 17c est le livrable défendable minimal** : « j'ai écrit une tape
 AAD, un `Number` à surcharge d'opérateurs, et un Monte-Carlo adjoint avec
@@ -906,7 +954,7 @@ payoff scripté**.
 - **AAD sur GPU.** Le chantier 3 de la roadmap porte le Monte-Carlo en CUDA ;
   l'AAD sur GPU est un sujet de recherche à part (tape en mémoire partagée,
   propagation par warp). Le livre ne le traite pas.
-- **Ordre 2 exact** (tangent sur adjoint) — voir §12.
+- **Ordre 2 exposé dans l'API** — les deux méthodes du §12 restent en C++, sans binding ni route ; à ouvrir en issue le jour où le front en a besoin.
 - **Transformation de source** (Tapenade, Enzyme) — écarté en ADR-A1.
 - **AAD à travers une régression LSMC** — viendra avec le LSMC et l'xVA.
 
@@ -1029,6 +1077,28 @@ dans les résidus sinon (quelques dixièmes de point de vol sur une vraie chaîn
 Le hessien exact demanderait des dérivées secondes du résidu, hors du périmètre
 d'ordre 1 de l'AAD du lot ([§12](#12-ordre-2)).
 
+### ADR-A10 — L'adjoint sur tangent en extension, pas en remplacement
+
+**Décision.** L'ordre 2 du livre, différences finies sur l'AAD, est
+implémenté et reste la méthode par défaut (§12.1). L'adjoint sur tangent
+(`aad::Tangent<Number>`, `simulate_aad_second_order`) est ajouté à côté, pour
+les payoffs C¹ (§12.2).
+
+**Pourquoi.** Le livre s'arrête à l'ordre 1 et obtient l'ordre 2 par bump sur
+l'AAD. L'adjoint sur tangent est le mode d'ordre 2 standard de la
+différentiation algorithmique (Griewank & Walther, Naumann) : une ligne de la
+hessienne exacte chemin par chemin, sans choix de *h* ni biais O(*h*²), et il
+ne demande rien de plus aux modèles templés. Mais sur les produits scriptés,
+le lissage en call-spread du livre de scripting laisse la dérivée première
+discontinue, et le gamma pathwise y vaut deux fois le vrai (mesuré, §12.2).
+Le remplacer aurait imposé de changer ce lissage, donc de s'écarter de
+l'autre livre. On garde donc la méthode du livre pour le cas général, et
+l'extension là où elle est exacte.
+
+**Écart au code du livre, second.** `simulate_aad` rend en option les risques
+de chaque lot (ADR-A6), pour que l'erreur standard de (Δ⁺ − Δ⁻)/2h tienne
+compte des nombres aléatoires communs.
+
 ---
 
 ## 18. Correspondance livre → repo
@@ -1052,6 +1122,8 @@ d'ordre 1 de l'AAD du lot ([§12](#12-ordre-2)).
 | `mcSimul` | `simulate` | [`engines/mc/simulation_engine.hpp`](../../include/quantModeling/engines/mc/simulation_engine.hpp) — **déjà là** |
 | `mcSimulAAD`, `mcParallelSimulAAD` | `simulate_aad`, `simulate_parallel_aad` | `engines/mc/simulation_engine_aad.hpp` |
 | `AADSimulResults` | `AADSimulResults` | idem |
+| gamma par différences finies sur l'AAD (§12) | `simulate_aad_bumped_second_order` | `engines/mc/simulation_engine_aad2.hpp` |
+| — (hors livre, ADR-A10) | `aad::Tangent<S>`, `simulate_aad_second_order` | `aad/tangent.hpp`, `engines/mc/simulation_engine_aad2.hpp` |
 | `ThreadPool`, `spawnTask`, `activeWait`, `threadNum` | `ThreadPool`, `spawn_task`, `active_wait`, `thread_num` | `utils/thread_pool.hpp` |
 | `ConcurrentQueue` | `ConcurrentQueue` | `utils/concurrent_queue.hpp` |
 
