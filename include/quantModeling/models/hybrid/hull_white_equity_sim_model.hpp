@@ -76,8 +76,7 @@ namespace quantModeling
         }
 
         HullWhiteEquitySimModel(const HullWhiteEquitySimModel &o)
-            : s0_(o.s0_), q_(o.q_), sigma_s_(o.sigma_s_), rates_(o.rates_), rho_(o.rho_), timeline_(o.timeline_),
-              defline_(o.defline_), steps_(o.steps_), sim_dim_(o.sim_dim_)
+            : s0_(o.s0_), q_(o.q_), sigma_s_(o.sigma_s_), rates_(o.rates_), rho_(o.rho_), timeline_(o.timeline_), defline_(o.defline_), steps_(o.steps_), sim_dim_(o.sim_dim_)
         {
             set_param_pointers();
         }
@@ -101,17 +100,24 @@ namespace quantModeling
                 st.draws = t > TIMELINE_EPS;
                 if (st.draws)
                 {
-                    const auto G = [&](double v) { return rates_.G(v, t); };
-                    const auto E = [&](double v) { return std::exp(-a * (t - v)); };
+                    const auto G = [&](double v)
+                    { return rates_.G(v, t); };
+                    const auto E = [&](double v)
+                    { return std::exp(-a * (t - v)); };
                     st.decay = E(s);
                     st.G_step = rates_.G(s, t);
-                    st.mean_x = detail::gauss_legendre([&](double v) { return E(v) * rates_.y(v); }, s, t);
-                    st.mean_I = detail::gauss_legendre([&](double v) { return rates_.y(v) * G(v); }, s, t);
+                    st.mean_x = detail::gauss_legendre([&](double v)
+                                                       { return E(v) * rates_.y(v); }, s, t);
+                    st.mean_I = detail::gauss_legendre([&](double v)
+                                                       { return rates_.y(v) * G(v); }, s, t);
                     // Covariance of (x(t) − E, ∫x − E, W_S(t) − W_S(s)).
                     double C[3][3];
-                    C[0][0] = sr * sr * detail::gauss_legendre([&](double v) { return E(v) * E(v); }, s, t);
-                    C[1][1] = sr * sr * detail::gauss_legendre([&](double v) { return G(v) * G(v); }, s, t);
-                    C[0][1] = C[1][0] = sr * sr * detail::gauss_legendre([&](double v) { return E(v) * G(v); }, s, t);
+                    C[0][0] = sr * sr * detail::gauss_legendre([&](double v)
+                                                               { return E(v) * E(v); }, s, t);
+                    C[1][1] = sr * sr * detail::gauss_legendre([&](double v)
+                                                               { return G(v) * G(v); }, s, t);
+                    C[0][1] = C[1][0] = sr * sr * detail::gauss_legendre([&](double v)
+                                                                         { return E(v) * G(v); }, s, t);
                     C[0][2] = C[2][0] = rho_ * sr * st.G_step;
                     C[1][2] = C[2][1] = rho_ * sr * detail::gauss_legendre(G, s, t);
                     C[2][2] = t - s;

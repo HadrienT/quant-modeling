@@ -22,7 +22,7 @@ namespace quantModeling::scripting
         std::vector<double> scale; ///< per regressor (1 when it did not vary)
         int degree = 2;
         std::vector<std::vector<int>> terms; ///< the monomials, monomials(n, degree)
-        std::vector<double> beta;             ///< one per monomial
+        std::vector<double> beta;            ///< one per monomial
 
         /// β · φ(z): the estimated gain of exercising now over continuing,
         /// in deflated currency, from the holder's side.

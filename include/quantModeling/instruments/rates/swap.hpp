@@ -78,7 +78,8 @@ namespace quantModeling
         InterestRateSwap swap;
         Time expiry;
 
-        Swaption(InterestRateSwap swap_, Time expiry_) : swap(std::move(swap_)), expiry(expiry_) {}
+        Swaption(InterestRateSwap swap_, Time expiry_)
+            : swap(std::move(swap_)), expiry(expiry_) {}
 
         void accept(IInstrumentVisitor &v) const override { v.visit(*this); }
     };
