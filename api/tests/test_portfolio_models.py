@@ -17,7 +17,7 @@ import pytest
 
 from api.app import portfolio_models as models
 from api.app import portfolio_valuation as pv
-from api.app import stochastic_vol, valuation, vol_smile
+from api.app import market_snapshot, stochastic_vol, valuation, vol_smile
 from api.app.portfolio_schemas import (
     DerivativeSpec,
     Instrument,
@@ -110,6 +110,29 @@ def test_beyond_the_slices_the_implied_vol_is_held_flat_in_maturity():
     K = s.spot
     assert s.implied_vol(K, 5.0) == pytest.approx(s.implied_vol(K, TTMS[-1]))
     assert s.implied_vol(K, 0.01) == pytest.approx(s.implied_vol(K, TTMS[0]))
+
+
+def test_the_smile_reads_only_the_dupire_grids_slices(monkeypatch):
+    """#119: a slice select_surface_slices left out of the local-vol grid is
+    left out of the vanilla smile too, so both marks read one surface."""
+    vol_smile._calibrated.cache_clear()
+    kept = [dict(_slice(t), in_surface=True) for t in TTMS]
+    rogue = dict(_slice(0.75), in_surface=False, a=0.5)
+    lv_market = market_snapshot.LocalVolMarket(
+        ticker="AAA",
+        valuation_date=END,
+        spot=100.0,
+        dividend=0.0,
+        K_grid=[],
+        T_grid=[],
+        sigma_loc_flat=[],
+        svi_slices=[rogue, *reversed(kept)],
+    )
+    monkeypatch.setattr(market_snapshot, "local_vol_market", lambda *a: lv_market)
+    s = vol_smile._calibrated("AAA", END, 0.02)
+    vol_smile._calibrated.cache_clear()
+    assert s.ttms == sorted(TTMS)
+    assert all(sl["in_surface"] for sl in s.slices)
 
 
 # ── Vanillas and digitals ────────────────────────────────────────────────────

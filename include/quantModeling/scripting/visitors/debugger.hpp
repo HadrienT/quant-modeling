@@ -70,6 +70,7 @@ namespace quantModeling::scripting
         void visit(const NodeSupEqual &n) override { node("SupEqual", n); }
         void visit(const NodeInferior &n) override { node("Inferior", n); }
         void visit(const NodeInfEqual &n) override { node("InfEqual", n); }
+        void visit(const NodeExercise &n) override { node(n.issuer ? "Call" : "Exercise", n); }
         void visit(const NodeAnd &n) override { node("And", n); }
         void visit(const NodeOr &n) override { node("Or", n); }
         void visit(const NodeNot &n) override { node("Not", n); }

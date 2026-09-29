@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/equity/rough_bergomi_sim_model.hpp"
+#include "quantModeling/models/hybrid/hull_white_equity_sim_model.hpp"
 #include "quantModeling/models/equity/bates_sim_model.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/heston.hpp"
@@ -60,6 +61,14 @@ namespace quantModeling::scripting
         double rb_rho = -0.7;
         std::vector<double> xi_times;
         std::vector<double> xi_values;
+        /// hull_white: the short rate (curve-fitted Hull-White) and its
+        /// correlation with the equity; the discount curve as pillars
+        /// (times, discount factors), or the flat `rate` when empty.
+        double hw_mean_reversion = 0.03;
+        double hw_sigma = 0.01;
+        double hw_rho = 0.0;
+        std::vector<double> curve_times;
+        std::vector<double> curve_dfs;
     };
 
     /**
@@ -81,6 +90,10 @@ namespace quantModeling::scripting
      *  "rough_bergomi": rough Bergomi (H, eta, rho) on the market's forward
      *                   variance curve, hybrid scheme on a daily grid
      *                   (market/rough_bergomi_calibration.hpp).
+     *  "hull_white":    the equity at a flat vol under stochastic Hull-White
+     *                   rates fitted to a discount curve, correlated
+     *                   (models/hybrid/hull_white_equity_sim_model.hpp);
+     *                   df(T) reads the simulated curve.
      *  "slv":           stochastic-local volatility -- the calibrated Heston
      *                   dynamics times a leverage L(S, t) calibrated so that
      *                   the marginals are the Dupire surface's
@@ -169,6 +182,19 @@ namespace quantModeling::scripting
                                                              ForwardVarianceCurve{s.xi_times, s.xi_values},
                                                              T(s.rb_eta), T(s.rb_rho), s.rb_H, spy);
         }
+        if (s.model == "hull_white")
+        {
+            if (!(s.vol >= 0.0))
+                throw InvalidInput("price_script: hull_white needs an equity vol >= 0");
+            if (s.curve_times.size() != s.curve_dfs.size())
+                throw InvalidInput("price_script: hull_white needs as many curve times as discount factors");
+            DiscountCurve curve = s.curve_times.empty()
+                                      ? DiscountCurve(s.rate)
+                                      : DiscountCurve(s.curve_times, s.curve_dfs, CurveExtrapolation::FlatForward);
+            return std::make_unique<HullWhiteEquitySimModel<T>>(
+                T(s.spot), T(s.dividend), T(s.vol), HullWhiteCurveModel(s.hw_mean_reversion, s.hw_sigma, curve),
+                s.hw_rho);
+        }
         if (s.model == "slv")
             return std::make_unique<SLVSimModel<T>>(
                 T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
@@ -176,7 +202,7 @@ namespace quantModeling::scripting
                 to_T(s.leverage_flat), s.max_dt);
         throw std::invalid_argument(
             "price_script: unknown model '" + s.model +
-            "' (expected 'black_scholes', 'local_vol', 'heston', 'slv' or 'rough_bergomi')");
+            "' (expected 'black_scholes', 'local_vol', 'heston', 'slv', 'rough_bergomi' or 'hull_white')");
     }
 
 } // namespace quantModeling::scripting

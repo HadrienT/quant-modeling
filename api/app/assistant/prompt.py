@@ -116,6 +116,50 @@ EXAMPLES: dict[str, str] = {
         "    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n"
         "    pays 1000 * max(worst - 1, 0)\n"
     ),
+    "Bermudan put, strike 100, monthly exercise": (
+        "schedule(2026-11-19, 2027-10-19, 1M, TARGET, MF)\n"
+        "    if exercise(max(100 - spot(), 0), spot()) then\n"
+        "        pays max(100 - spot(), 0)\n"
+        "    endIf\n"
+    ),
+    "Issuer-callable note, 6% annual coupon, capital at risk below 70%": (
+        "2026-10-19\n"
+        "    s0 = spot()\n"
+        "    called = 0\n"
+        "\n"
+        "2027-10-19  2028-10-19\n"
+        "    if called = 0 then\n"
+        "        pays 60\n"
+        "        if call(spot() / s0) then\n"
+        "            pays 1000\n"
+        "            called = 1\n"
+        "        endIf\n"
+        "    endIf\n"
+        "\n"
+        "2029-10-19\n"
+        "    if called = 0 then\n"
+        "        pays 60\n"
+        "        if spot() < 0.70 * s0 then\n"
+        "            pays 1000 * spot() / s0\n"
+        "        else\n"
+        "            pays 1000\n"
+        "        endIf\n"
+        "    endIf\n"
+    ),
+    "Chooser: at 2027-04-19 choose a call or a put, strike 100, expiry 2027-10-19": (
+        "2027-04-19\n"
+        "    is_call = 0\n"
+        "    if exercise(spot()) then\n"
+        "        is_call = 1\n"
+        "    endIf\n"
+        "\n"
+        "2027-10-19\n"
+        "    if is_call = 1 then\n"
+        "        pays max(spot() - 100, 0)\n"
+        "    else\n"
+        "        pays max(100 - spot(), 0)\n"
+        "    endIf\n"
+    ),
 }
 
 _LANGUAGE = """\
@@ -163,6 +207,21 @@ maturity, and put the last observation (and the payment) in the maturity event,
 written on a business day (see the Asian example). When the user wants dates to
 stay exactly as given, use convention U.
 
+Early exercise: exercise(r1, ..., rn) and call(r1, ..., rn) are CONDITIONS
+(only after `if` or inside and / or / not), true on the path and date where
+the right is used. exercise() is the holder's right (a Bermudan or American
+option, a putable note, a chooser); call() is the issuer's (an issuer-callable
+note), who calls when it costs the holder. Write what happens on exercise in
+the `then` block and set a flag so that nothing more is paid afterwards. A
+right is used at most once per path: after that, every exercise() is false.
+The decision is a Longstaff-Schwartz regression on the arguments (the
+"regressors"): give the exercise value and the variables the decision depends
+on, e.g. exercise(max(100 - spot(), 0), spot()) for a put, call(spot() / s0)
+for a note on one stock. With no argument, the spots are used. A script has
+either exercise() or call(), not both, with the same number of regressors
+everywhere, and at most one per date. The price is a lower bound for the
+holder (an estimated rule) and runs on the CPU only.
+
 df(DATE) is the discount factor from the CURRENT event date to DATE (a literal
 ISO date on or after the event date). It is how a payoff refers to a later
 payment date's discounting.
@@ -186,7 +245,8 @@ Semantics you must respect:
   ratios to their own initial levels (s0 = spot(0), s1 = spot(1) at the first
   event); min and max take two arguments, so nest them for three or more.
 - No rates or forward accessors (no libor, no fwd), no loops, no `elseif`, no
-  functions beyond the list above (no pow, no normcdf: use ^). Nest an if
+  functions beyond the list above and exercise() / call() (no pow, no
+  normcdf: use ^). Nest an if
   inside an else instead of `elseif`.
 - Division by zero and log/sqrt of a negative number silently produce NaN: guard
   divisors that can be zero.

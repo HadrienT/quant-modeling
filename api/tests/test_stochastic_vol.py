@@ -48,3 +48,21 @@ def test_short_maturities_are_left_out():
     )
     _, ttms, _ = sv.heston_targets(market)
     assert set(ttms) == {1.0}
+
+
+def test_only_the_dupire_grids_slices_are_targets():
+    """#119: Heston (and SLV on top of it) sees the local vol's surface, not
+    the slices select_surface_slices left out for calendar arbitrage."""
+    dropped = dict(_slice(1.0, -0.5, 0.5), in_surface=False, a=0.2)
+    market = SimpleNamespace(
+        spot=100.0,
+        rate=0.0,
+        dividend=0.0,
+        svi_slices=[
+            dict(_slice(0.5, -0.5, 0.5), in_surface=True),
+            dropped,
+            dict(_slice(2.0, -0.5, 0.5), in_surface=True),
+        ],
+    )
+    _, ttms, _ = sv.heston_targets(market)
+    assert set(ttms) == {0.5, 2.0}

@@ -8,4 +8,5 @@ export const MODEL_LABELS: Record<ScriptModel, string> = {
 	heston: "Heston (calibrated)",
 	slv: "Stochastic-local vol (calibrated)",
 	rough_bergomi: "Rough Bergomi (calibrated)",
+	hull_white: "Hull-White rates + flat equity vol",
 };

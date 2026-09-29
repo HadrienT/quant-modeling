@@ -13,6 +13,7 @@ from .schemas import (
     BarrierRequest,
     BasketRequest,
     ComputeDevice,
+    HullWhiteInputs,
     CommodityForwardRequest,
     CommodityOptionRequest,
     DatedAsianRequest,
@@ -443,7 +444,9 @@ def price_script(req: ScriptRequest) -> PricingResponse:
     market_warnings: List[Dict] = []
     valuation_date = req.valuation_date
     market = None
-    if req.ticker and (req.model != "black_scholes" or req.spot is None):
+    if req.ticker and (
+        req.model not in ("black_scholes", "hull_white") or req.spot is None
+    ):
         # Market data comes from the database data-ingest fills, never from a
         # live source. A stored snapshot is a market date, and that date is
         # the valuation date the script is priced on.
@@ -513,7 +516,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
     if market is not None:
         spot, dividend, vol = market.spot, market.dividend, 0.0
         k_grid, t_grid = market.K_grid, market.T_grid
-        if model == "black_scholes":
+        if model in ("black_scholes", "hull_white"):
             vol = _atm_implied_vol(req, market, valuation_date)
             choice["calibration"]["flat_vol"] = vol
     else:
@@ -521,6 +524,18 @@ def price_script(req: ScriptRequest) -> PricingResponse:
         k_grid, t_grid = [], []
     sigma = market.sigma_loc_flat if model == "local_vol" else []
     heston = sv.heston if sv is not None else {}
+    hw_params, curve_times, curve_dfs = {}, [], []
+    if model == "hull_white":
+        hw_params, curve_times, curve_dfs, label = _hull_white_inputs(req)
+        choice["reason"] = (
+            f"Chosen by hand. Short rate: Hull-White (a = {hw_params['mean_reversion']:g}, "
+            f"sigma = {hw_params['sigma']:g}, equity correlation {hw_params['rho']:g}) "
+            f"fitted to the {label}."
+        )
+        if market is None:
+            choice["calibration"] = None
+        else:
+            choice["calibration"]["rates_curve"] = label
     leverage = list(sv.leverage_flat) if (sv is not None and model == "slv") else []
 
     with tracer.start_as_current_span(
@@ -558,10 +573,41 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             ),
             xi_times=list(rv.xi_times) if rv is not None else [],
             xi_values=list(rv.xi_values) if rv is not None else [],
+            hull_white=hw_params,
+            curve_times=curve_times,
+            curve_dfs=curve_dfs,
         )
     result["warnings"] = market_warnings + list(result.get("warnings", []))
     response = _pricing_response_from_dict(result)
     return response.model_copy(update={"model_choice": ModelChoice(**choice)})
+
+
+def _hull_white_inputs(req) -> tuple:
+    """model='hull_white': the parameters, and the discount curve the short
+    rate is fitted to -- the currency's government curve from the database
+    (the only free full term structure; rates.py). Missing curve: an error
+    naming why, never a flat-rate stand-in."""
+    from . import rates
+    from .audit.payloads import MarketInputStatus
+    from .valuation import record_market_input
+
+    hw = req.hull_white or HullWhiteInputs()
+    try:
+        curve = rates.currency_discount_curve(hw.currency)
+    except rates.RatesUnavailable as exc:
+        raise ValueError(
+            f"model='hull_white' needs the {hw.currency} discount curve: {exc}"
+        ) from exc
+    record_market_input(
+        f"curve:{hw.currency}",
+        "db:macro.government_curve",
+        curve.as_of.isoformat(),
+        MarketInputStatus.OBSERVED,
+        list(zip(curve.times, curve.dfs)),
+    )
+    params = {"mean_reversion": hw.mean_reversion, "sigma": hw.sigma, "rho": hw.rho}
+    label = f"{hw.currency} government curve of {curve.as_of.isoformat()}"
+    return params, list(curve.times), list(curve.dfs), label
 
 
 def _atm_implied_vol(req, market, valuation_date) -> float:
@@ -579,7 +625,7 @@ def _atm_implied_vol(req, market, valuation_date) -> float:
         spot=market.spot,
         rate=market.rate,
         dividend=market.dividend,
-        slices=tuple(sorted(market.svi_slices, key=lambda s: s["ttm"])),
+        slices=tuple(market.surface_slices()),
         K_grid=(),
         T_grid=(),
         sigma_loc_flat=(),

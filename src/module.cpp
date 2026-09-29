@@ -28,6 +28,11 @@
 #include "quantModeling/engines/analytic/cds.hpp"
 #include "quantModeling/market/credit_bootstrap.hpp"
 #include "quantModeling/market/rough_bergomi_calibration.hpp"
+#include "quantModeling/engines/analytic/hull_white_swaption.hpp"
+#include "quantModeling/engines/analytic/swap.hpp"
+#include "quantModeling/market/hull_white_calibration.hpp"
+#include "quantModeling/market/multi_curve_bootstrap.hpp"
+#include "quantModeling/engines/mc/lsm.hpp"
 #include "quantModeling/models/credit/merton_structural.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
@@ -710,6 +715,169 @@ static py::dict calibrate_rough_bergomi_impl(const std::vector<std::tuple<double
     return out;
 }
 
+// ── Rates (market/multi_curve_bootstrap.hpp, engines/analytic/swap.hpp,
+//    hull_white_swaption.hpp, market/hull_white_calibration.hpp) ──────────────
+//
+// For the rates page (blueprint/wp/21-rates.md). Curves cross the boundary as
+// their pillars (times, discount factors) and are rebuilt here with a flat
+// forward outside them (CurveExtrapolation::FlatForward); inside, the
+// interpolation is the bootstrap's own. Rates and vols are decimals.
+
+namespace
+{
+    namespace qm_ = quantModeling;
+
+    qm_::DiscountCurve rate_curve(std::vector<qm_::Time> times, std::vector<qm_::Real> dfs)
+    {
+        return qm_::DiscountCurve(std::move(times), std::move(dfs), qm_::CurveExtrapolation::FlatForward);
+    }
+
+    py::dict curve_dict(const qm_::DiscountCurve &c)
+    {
+        py::dict out;
+        out["times"] = c.pillar_times();
+        out["discount_factors"] = c.pillar_discount_factors();
+        return out;
+    }
+} // namespace
+
+static py::dict bootstrap_ois_curve_impl(const std::vector<std::pair<qm_::Time, qm_::Real>> &deposits,
+                                         const std::vector<std::pair<qm_::Time, qm_::Real>> &ois)
+{
+    std::vector<qm_::DepositQuote> dep;
+    std::vector<qm_::ParRateQuote> par;
+    for (const auto &[t, r] : deposits)
+        dep.push_back({t, r});
+    for (const auto &[t, r] : ois)
+        par.push_back(qm_::make_ois_quote(t, r));
+    return curve_dict(qm_::bootstrap_curve(dep, par));
+}
+
+static py::dict bootstrap_projection_curve_impl(
+    std::vector<qm_::Time> discount_times, std::vector<qm_::Real> discount_dfs,
+    const std::vector<std::tuple<qm_::Time, qm_::Time, qm_::Real>> &fras,
+    const std::vector<std::pair<qm_::Time, qm_::Real>> &swaps, int fixed_frequency, int float_frequency)
+{
+    const qm_::DiscountCurve disc = rate_curve(std::move(discount_times), std::move(discount_dfs));
+    std::vector<qm_::FraQuote> f;
+    for (const auto &[s, e, r] : fras)
+        f.push_back({s, e, r, e - s});
+    std::vector<qm_::ProjectionSwapQuote> q;
+    for (const auto &[t, r] : swaps)
+        q.push_back(qm_::make_projection_swap_quote(t, r, fixed_frequency, float_frequency));
+    return curve_dict(qm_::bootstrap_projection_curve(disc, f, q));
+}
+
+static std::vector<qm_::Real> rate_curve_discount_factors_impl(std::vector<qm_::Time> times,
+                                                               std::vector<qm_::Real> dfs,
+                                                               const std::vector<qm_::Time> &query_times)
+{
+    const qm_::DiscountCurve c = rate_curve(std::move(times), std::move(dfs));
+    std::vector<qm_::Real> out;
+    for (const qm_::Time t : query_times)
+        out.push_back(c.discount(t));
+    return out;
+}
+
+static py::dict price_swap_impl(std::vector<qm_::Time> dt, std::vector<qm_::Real> dd, std::vector<qm_::Time> pt,
+                                std::vector<qm_::Real> pd, qm_::Time start, qm_::Time tenor, qm_::Real fixed_rate,
+                                int fixed_frequency, int float_frequency, qm_::Real notional, bool payer,
+                                qm_::Real spread)
+{
+    const qm_::DiscountCurve disc = rate_curve(std::move(dt), std::move(dd));
+    const qm_::DiscountCurve proj = rate_curve(std::move(pt), std::move(pd));
+    const auto swap =
+        qm_::make_swap(start, tenor, fixed_rate, fixed_frequency, float_frequency, notional, payer, spread);
+    const auto v = qm_::value_swap(swap, qm_::MultiCurve{disc, proj});
+    py::dict out;
+    out["npv"] = v.npv;
+    out["fixed_leg"] = v.fixed_leg;
+    out["floating_leg"] = v.floating_leg;
+    out["annuity"] = v.annuity;
+    out["par_rate"] = v.par_rate;
+    // PV01: the value of 1bp on the fixed rate, per the notional.
+    out["pv01"] = v.annuity * notional * 1e-4;
+    py::list fixed, floating;
+    for (const auto &c : swap.fixed_leg)
+        fixed.append(py::make_tuple(c.start, c.end, c.payment, c.accrual, disc.discount(c.payment)));
+    for (const auto &c : swap.floating_leg)
+        floating.append(py::make_tuple(c.start, c.end, c.payment, c.accrual, disc.discount(c.payment),
+                                       qm_::forward_rate(proj, c.start, c.end, c.accrual)));
+    out["fixed_periods"] = fixed;
+    out["floating_periods"] = floating;
+    return out;
+}
+
+static py::dict price_swaption_impl(std::vector<qm_::Time> dt, std::vector<qm_::Real> dd, std::vector<qm_::Time> pt,
+                                    std::vector<qm_::Real> pd, qm_::Time expiry, qm_::Time tenor,
+                                    std::optional<qm_::Real> strike, bool payer, int fixed_frequency,
+                                    int float_frequency, qm_::Real notional, std::optional<qm_::Real> normal_vol,
+                                    std::optional<qm_::Real> lognormal_vol, qm_::Real shift,
+                                    std::optional<std::tuple<qm_::Real, qm_::Real, qm_::Real, qm_::Real>> sabr,
+                                    std::optional<std::pair<qm_::Real, qm_::Real>> hull_white,
+                                    const std::vector<qm_::Time> &bermudan_exercises)
+{
+    const qm_::DiscountCurve disc = rate_curve(std::move(dt), std::move(dd));
+    const qm_::DiscountCurve proj = rate_curve(std::move(pt), std::move(pd));
+    qm_::Swaption swpt(qm_::make_swap(expiry, tenor, 0.0, fixed_frequency, float_frequency, notional, payer), expiry);
+    const auto f = qm_::swaption_forward(swpt, qm_::MultiCurve{disc, proj});
+    const qm_::Real K = strike.value_or(f.forward);
+    swpt.swap.fixed_rate = K;
+    const qm_::Real A = f.annuity * notional;
+    py::dict out;
+    out["forward"] = f.forward;
+    out["annuity"] = f.annuity;
+    out["strike"] = K;
+    if (normal_vol)
+        out["bachelier"] = qm_::bachelier_swaption(payer, f.forward, K, expiry, *normal_vol, A);
+    if (lognormal_vol)
+        out["black"] = qm_::black_swaption(payer, f.forward, K, expiry, *lognormal_vol, A, shift);
+    if (sabr)
+    {
+        const auto &[alpha, beta, rho, nu] = *sabr;
+        const qm_::SABRParams p{alpha, beta, rho, nu};
+        out["sabr"] = qm_::sabr_swaption(payer, f.forward, K, expiry, p, A, shift);
+        out["sabr_lognormal_vol"] = qm_::sabr_implied_vol(f.forward + shift, K + shift, expiry, p);
+    }
+    if (hull_white)
+    {
+        const qm_::HullWhiteCurveModel m(hull_white->first, hull_white->second, disc, proj);
+        const qm_::Real price = qm_::hull_white_european_swaption(swpt, m);
+        out["hull_white"] = price;
+        out["hull_white_normal_vol"] = qm_::bachelier_implied_vol(payer, price, f.forward, K, expiry, A);
+        if (!bermudan_exercises.empty())
+            out["hull_white_bermudan"] =
+                qm_::hull_white_bermudan_swaption(qm_::BermudanSwaption(swpt.swap, bermudan_exercises), m);
+    }
+    return out;
+}
+
+static py::dict calibrate_hull_white_impl(std::vector<qm_::Time> dt, std::vector<qm_::Real> dd,
+                                          std::vector<qm_::Time> pt, std::vector<qm_::Real> pd,
+                                          const std::vector<std::tuple<qm_::Time, qm_::Time, qm_::Real>> &quotes,
+                                          int fixed_frequency, int float_frequency,
+                                          std::optional<qm_::Real> fixed_mean_reversion)
+{
+    const qm_::DiscountCurve disc = rate_curve(std::move(dt), std::move(dd));
+    const qm_::DiscountCurve proj = rate_curve(std::move(pt), std::move(pd));
+    std::vector<qm_::SwaptionVolQuote> q;
+    for (const auto &[e, t, v] : quotes)
+        q.push_back({e, t, v});
+    const auto c = qm_::calibrate_hull_white(disc, proj, q, fixed_frequency, float_frequency, fixed_mean_reversion);
+    py::dict out;
+    out["mean_reversion"] = c.mean_reversion;
+    out["sigma"] = c.sigma;
+    out["rmse_bp"] = c.report.rmse;
+    out["worst_bp"] = c.report.worst_residual;
+    out["iterations"] = c.report.iterations;
+    out["converged"] = c.report.converged;
+    out["seconds"] = c.report.wall_time_seconds;
+    out["strikes"] = c.strikes;
+    out["market_vols"] = c.market_vols;
+    out["model_vols"] = c.model_vols;
+    return out;
+}
+
 // ── Vol surface calibration: raw quotes -> SVI per maturity -> Dupire grid ──
 //
 // Replaces api/app/local_vol/{fetcher,cleaner,iv_surface,dupire,cpp_bridge}.py
@@ -1128,7 +1296,10 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<std::vector<double>> &sigma_loc_flats,
                              const std::map<std::string, double> &rough_bergomi,
                              const std::vector<double> &xi_times,
-                             const std::vector<double> &xi_values)
+                             const std::vector<double> &xi_values,
+                             const std::map<std::string, double> &hull_white,
+                             const std::vector<double> &curve_times,
+                             const std::vector<double> &curve_dfs)
 {
     using namespace quantModeling;
 
@@ -1178,6 +1349,19 @@ static py::dict price_script(const std::string &script, double spot, double rate
         spec.xi_times = xi_times;
         spec.xi_values = xi_values;
     }
+    if (model == "hull_white")
+    {
+        const auto get = [&](const char *k, double fallback)
+        {
+            const auto it = hull_white.find(k);
+            return it == hull_white.end() ? fallback : it->second;
+        };
+        spec.hw_mean_reversion = get("mean_reversion", spec.hw_mean_reversion);
+        spec.hw_sigma = get("sigma", spec.hw_sigma);
+        spec.hw_rho = get("rho", spec.hw_rho);
+        spec.curve_times = curve_times;
+        spec.curve_dfs = curve_dfs;
+    }
 
     scripting::ModelKind kind = scripting::ModelKind::BlackScholesFlatVol;
     std::string model_note =
@@ -1211,6 +1395,13 @@ static py::dict price_script(const std::string &script, double spot, double rate
         model_note = " | model rough_bergomi (H=" + std::to_string(spec.rb_H) + " eta=" +
                      std::to_string(spec.rb_eta) + " rho=" + std::to_string(spec.rb_rho) +
                      ", forward variance curve, hybrid scheme on a daily grid)";
+    }
+    else if (model == "hull_white")
+    {
+        model_note = " | model hull_white (flat equity vol, Hull-White rates a=" +
+                     std::to_string(spec.hw_mean_reversion) + " sigma=" + std::to_string(spec.hw_sigma) +
+                     " rho=" + std::to_string(spec.hw_rho) +
+                     (curve_times.empty() ? ", flat curve)" : ", fitted to the discount curve)");
     }
     else if (model == "heston" || model == "slv")
     {
@@ -1251,13 +1442,31 @@ static py::dict price_script(const std::string &script, double spot, double rate
         std::optional<AADSimulResults> aad_res;
         std::vector<scripting::Advice> aad_advice;
         std::size_t aad_events = 0;
-        std::string aad_device = "cpu", gpu_note;
+        std::string aad_device = "cpu", gpu_note, lsm_note;
         // Both adjoint engines take Sobol RQMC with the Brownian bridge
         // (blueprint/wp/19-gpu.md §2.2); stratification stays pseudo-random.
         const SamplerKind aad_sampler = sampler == "sobol" ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
         {
             py::gil_scoped_release release;
-            if (device == "gpu" || device == "auto")
+            // Early exercise: the rule is fitted once, on doubles, and the
+            // adjoint pass differentiates the price under it (the decision is
+            // held fixed: at the optimal boundary its own sensitivity
+            // vanishes, the envelope argument).
+            std::optional<scripting::ExercisePolicy> policy;
+            {
+                ScriptedProduct<Real> probe(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                if (probe.has_exercise())
+                {
+                    auto m = scripting::make_script_model<Real>(spec);
+                    check_underlyings(probe.n_underlyings(), m->n_underlyings());
+                    lsm_note = " | " + fit_exercise_policy(probe, *m, paths, seed_value).note();
+                    policy = probe.exercise_policy();
+                    if (device == "gpu")
+                        throw InvalidInput("GPU: early exercise (exercise() / call()) runs on the CPU only");
+                    gpu_note = " (on the CPU: early exercise)";
+                }
+            }
+            if (!policy && (device == "gpu" || device == "auto"))
             {
                 ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
                 auto sim_model = scripting::make_script_model<Real>(spec);
@@ -1281,6 +1490,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
             {
                 ScriptedProduct<aad::Number> product(
                     script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                if (policy)
+                    product.set_exercise_policy(*policy);
                 auto sim_model = scripting::make_script_model<aad::Number>(spec);
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                 aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
@@ -1294,7 +1505,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
 
         PricingResult res = to_pricing_result(*aad_res);
         res.diagnostics += gpu_note + " | scripted, " + std::to_string(aad_events) + " events" +
-                           (fuzzy ? ", fuzzy" : ", hard") + model_note;
+                           (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
         res.device = aad_device;
         if (sampler == "stratified")
             res.diagnostics += " | stratified sampling is not available under AAD -- used "
@@ -1313,6 +1524,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     std::optional<SimulationMCResult> mc;
     std::vector<scripting::Advice> advice;
     std::size_t n_events = 0;
+    std::string lsm_note;
     {
         py::gil_scoped_release release;
         ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps},
@@ -1337,6 +1549,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                                                 : ComputeDevice::Cpu;
         settings.mc_rng = (rng == "philox") ? RngKind::Philox : RngKind::Pcg32;
 
+        if (product.has_exercise())
+            lsm_note = " | " + fit_exercise_policy(product, *sim_model, paths, seed_value).note();
         mc = simulate_script(product, *sim_model, settings);
         n_events = product.timeline().size();
         advice = scripting::advise(product.analysis(), kind, product.timeline().back(),
@@ -1347,7 +1561,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.npv = mc->npv();
     res.mc_std_error = mc->std_error();
     res.diagnostics = mc->diagnostics + " | scripted, " + std::to_string(n_events) +
-                      " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note;
+                      " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
     res.device = mc->device;
     res.gpus = mc->gpus;
     py::dict out = pricing_result_to_dict(res);
@@ -1657,6 +1871,9 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("rough_bergomi") = std::map<std::string, double>{},
           py::arg("xi_times") = std::vector<double>{},
           py::arg("xi_values") = std::vector<double>{},
+          py::arg("hull_white") = std::map<std::string, double>{},
+          py::arg("curve_times") = std::vector<double>{},
+          py::arg("curve_dfs") = std::vector<double>{},
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
@@ -1671,7 +1888,10 @@ PYBIND11_MODULE(quantmodeling, m)
           "pair each path with its mirror (price only; the default); "
           "importance_sampling: a Glasserman-Heidelberger-Shahabuddin drift, "
           "kept only when a pilot shows it lowers the variance (price only). "
-          "Sobol runs on the GPU and under AAD too.");
+          "Sobol runs on the GPU and under AAD too. model 'hull_white': the "
+          "equity under stochastic Hull-White rates, hull_white = {mean_reversion, "
+          "sigma, rho}, fitted to the discount curve (curve_times, curve_dfs) or "
+          "to the flat `rate` when they are empty; df() reads the simulated curve.");
     m.def(
         "recommend_script_model",
         [](const std::string &script, const std::string &valuation_date,
@@ -1819,6 +2039,42 @@ PYBIND11_MODULE(quantmodeling, m)
           "Calibrate rough Bergomi (H, eta, rho) to implied vols [(ttm, k = ln K/F, vol)] on the "
           "forward variance curve of the variance-swap total variances w_VS(T) at `ttm`; Monte-Carlo on "
           "common random numbers.");
+    m.def("bootstrap_ois_curve", &bootstrap_ois_curve_impl, py::arg("deposits"), py::arg("ois"),
+          "Bootstrap the OIS discount curve from deposits [(maturity, simple rate)] and par OIS "
+          "swaps [(maturity, rate)] (annual coupons). Returns {'times', 'discount_factors'}.");
+    m.def("bootstrap_projection_curve", &bootstrap_projection_curve_impl, py::arg("discount_times"),
+          py::arg("discount_factors"), py::arg("fras"), py::arg("swaps"), py::arg("fixed_frequency") = 1,
+          py::arg("float_frequency") = 4,
+          "Bootstrap a floating index's projection curve from FRAs [(start, end, rate)] and par swaps "
+          "[(tenor, rate)] discounted on the given OIS curve (multi-curve). Returns {'times', "
+          "'discount_factors'} of the pseudo-discount curve.");
+    m.def("rate_curve_discount_factors", &rate_curve_discount_factors_impl, py::arg("times"),
+          py::arg("discount_factors"), py::arg("query_times"),
+          "Discount factors on a rates curve: log-linear between pillars, flat forward outside.");
+    m.def("price_swap", &price_swap_impl, py::arg("discount_times"), py::arg("discount_factors"),
+          py::arg("projection_times"), py::arg("projection_factors"), py::arg("start"), py::arg("tenor"),
+          py::arg("fixed_rate"), py::arg("fixed_frequency") = 1, py::arg("float_frequency") = 4,
+          py::arg("notional") = 1.0, py::arg("payer") = true, py::arg("spread") = 0.0,
+          "Multi-curve value of a vanilla swap: npv, legs, annuity, par rate, PV01 and the periods.");
+    m.def("price_swaption", &price_swaption_impl, py::arg("discount_times"), py::arg("discount_factors"),
+          py::arg("projection_times"), py::arg("projection_factors"), py::arg("expiry"), py::arg("tenor"),
+          py::arg("strike") = py::none(), py::arg("payer") = true, py::arg("fixed_frequency") = 1,
+          py::arg("float_frequency") = 4, py::arg("notional") = 1.0, py::arg("normal_vol") = py::none(),
+          py::arg("lognormal_vol") = py::none(), py::arg("shift") = 0.0, py::arg("sabr") = py::none(),
+          py::arg("hull_white") = py::none(), py::arg("bermudan_exercises") = std::vector<qm_::Time>{},
+          "A European swaption on the multi-curve forward (strike None = ATM): Bachelier, (shifted) "
+          "Black, shifted SABR (alpha, beta, rho, nu) and Hull-White (a, sigma) prices, whichever are "
+          "given; with Hull-White and bermudan_exercises, also the Bermudan on the same swap.");
+    m.def("bachelier_implied_vol", &quantModeling::bachelier_implied_vol, py::arg("payer"), py::arg("price"),
+          py::arg("forward"), py::arg("strike"), py::arg("expiry"), py::arg("annuity"),
+          "Normal (Bachelier) implied vol of a swaption price on (forward, annuity); NaN when "
+          "the price is at or below intrinsic.");
+    m.def("calibrate_hull_white", &calibrate_hull_white_impl, py::arg("discount_times"),
+          py::arg("discount_factors"), py::arg("projection_times"), py::arg("projection_factors"),
+          py::arg("quotes"), py::arg("fixed_frequency") = 1, py::arg("float_frequency") = 4,
+          py::arg("fixed_mean_reversion") = py::none(),
+          "Calibrate Hull-White (a, sigma) to ATM swaption normal vols [(expiry, tenor, vol)]; the "
+          "report reads in bp of normal vol.");
     m.def("calibrate_vol_surface", &calibrate_vol_surface_impl,
           py::arg("quotes"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
           py::arg("k_min") = -0.6, py::arg("k_max") = 0.6,

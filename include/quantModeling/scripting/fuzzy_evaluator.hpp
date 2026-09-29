@@ -117,6 +117,11 @@ namespace quantModeling::scripting
                             w1 * (payoff_else - payoff0);
         }
 
+      protected:
+        /// exercise() / call(): a crisp decision, as a degree of 0 or 1 --
+        /// the exercise boundary is a regression, not smoothed.
+        void push_condition(bool b) override { push_degree(b ? T(1) : T(0)); }
+
       private:
         enum class Cmp
         {

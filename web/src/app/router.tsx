@@ -62,6 +62,15 @@ const marketRoute = createRoute({
 	component: MarketPage,
 });
 
+// ── Rates derivatives ─────────────────────────────────────────────────────
+// Page at /rates; its API lives under /api/rates/*.
+const RatesPage = lazy(() => import("@/features/rates/RatesPage"));
+const ratesRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/rates",
+	component: RatesPage,
+});
+
 // ── Credit ───────────────────────────────────────────────────────────────
 // Page at /credit; its API lives under /api/credit/*, so the dev proxy and
 // nginx need no new prefix and never shadow the page.
@@ -196,6 +205,7 @@ const routeTree = rootRoute.addChildren([
 	indexRoute,
 	visualizeRoute,
 	marketRoute,
+	ratesRoute,
 	creditRoute,
 	priceRoute,
 	datedAsianRoute,
@@ -227,6 +237,7 @@ declare module "@tanstack/react-router" {
 export const ROUTES = [
 	{ path: "/visualize", label: "Strategies" },
 	{ path: "/market", label: "Market" },
+	{ path: "/rates", label: "Rates" },
 	{ path: "/credit", label: "Credit" },
 	{ path: "/price", label: "Pricing" },
 	{ path: "/simulation", label: "Simulation" },

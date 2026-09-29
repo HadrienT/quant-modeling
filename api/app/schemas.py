@@ -168,6 +168,19 @@ class ScriptUnderlying(BaseModel):
     dividend: float = 0.0
 
 
+class HullWhiteInputs(BaseModel):
+    """The short rate of model='hull_white': Hull-White fitted to the
+    `currency`'s government discount curve from the database, the equity
+    correlated with it."""
+
+    mean_reversion: float = Field(0.03, ge=1e-4, le=1.0)
+    sigma: float = Field(
+        0.01, gt=0.0, le=0.1, description="Short-rate vol, rate units (0.01 = 100bp)."
+    )
+    rho: float = Field(0.0, ge=-1.0, le=1.0, description="Equity-rates correlation.")
+    currency: Literal["USD", "EUR", "GBP", "CHF", "JPY"] = "USD"
+
+
 class ScriptPricingInputs(BaseModel):
     """How a payoff script is priced (blueprint/wp/16-scripting.md), whatever
     the script: model, market, underlyings, Monte-Carlo settings. The script
@@ -193,7 +206,13 @@ class ScriptPricingInputs(BaseModel):
     on that the chosen model cannot capture."""
 
     model: Literal[
-        "auto", "black_scholes", "local_vol", "heston", "slv", "rough_bergomi"
+        "auto",
+        "black_scholes",
+        "local_vol",
+        "heston",
+        "slv",
+        "rough_bergomi",
+        "hull_white",
     ] = Field(
         "auto",
         description=(
@@ -209,8 +228,14 @@ class ScriptPricingInputs(BaseModel):
             "reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) "
             "calibrated to the short end of that surface, on its variance-swap "
             "forward variance curve. The market models need a ticker; spot and "
-            "dividend then come from the database."
+            "dividend then come from the database. 'hull_white': the equity at a "
+            "flat vol (as black_scholes) under stochastic Hull-White rates fitted "
+            "to the government curve of `hull_white.currency`; df() in the script "
+            "reads the simulated curve (equity-rates hybrids, rates products)."
         ),
+    )
+    hull_white: Optional[HullWhiteInputs] = Field(
+        None, description="Parameters of model='hull_white' (defaults when omitted)."
     )
     ticker: Optional[str] = Field(
         None,
@@ -339,10 +364,10 @@ class ScriptPricingInputs(BaseModel):
         if self.underlyings is not None:
             return self._multi_asset_inputs()
         flat_inputs = self.spot is not None and self.vol is not None
-        if self.model == "black_scholes":
+        if self.model in ("black_scholes", "hull_white"):
             if not flat_inputs and self.ticker is None:
                 raise ValueError(
-                    "model='black_scholes' requires spot and vol, or a ticker "
+                    f"model='{self.model}' requires spot and vol, or a ticker "
                     "(then the at-the-money implied vol of its stored smile)"
                 )
         elif self.model == "auto":
@@ -669,6 +694,11 @@ class ModelCalibration(BaseModel):
         description="Flat Black-Scholes on a ticker: the at-the-money implied "
         "vol of the stored smile at the script's last date.",
     )
+    rates_curve: Optional[str] = Field(
+        None,
+        description="model='hull_white': the discount curve the short rate is "
+        "fitted to, and its date.",
+    )
     seconds: float = Field(
         ..., description="Wall time of the calibration (cached per snapshot)."
     )
@@ -700,9 +730,17 @@ class ModelChoice(BaseModel):
     and what was calibrated for it."""
 
     requested: Literal[
-        "auto", "black_scholes", "local_vol", "heston", "slv", "rough_bergomi"
+        "auto",
+        "black_scholes",
+        "local_vol",
+        "heston",
+        "slv",
+        "rough_bergomi",
+        "hull_white",
     ]
-    model: Literal["black_scholes", "local_vol", "heston", "slv", "rough_bergomi"]
+    model: Literal[
+        "black_scholes", "local_vol", "heston", "slv", "rough_bergomi", "hull_white"
+    ]
     code: str = Field(
         ..., description="Stable key of the reason ('user' when chosen by hand)."
     )

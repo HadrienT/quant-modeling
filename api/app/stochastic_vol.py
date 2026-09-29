@@ -42,7 +42,7 @@ import quantmodeling as qm
 
 from .keyed_cache import KeyedCache
 from .logging_utils import LOGGER_NAME
-from .market_snapshot import LocalVolMarket
+from .market_snapshot import LocalVolMarket, surface_slices
 from .storage import get_storage
 from .telemetry import tracer
 
@@ -112,7 +112,9 @@ def heston_targets(
     strikes: List[float] = []
     ttms: List[float] = []
     vols: List[float] = []
-    for sl in market.svi_slices:
+    # The Dupire grid's slices only (#119): SLV's leverage is fitted on top
+    # of this Heston, so both must see the same surface.
+    for sl in surface_slices(market.svi_slices):
         T = float(sl["ttm"])
         if T < MIN_TTM:
             continue

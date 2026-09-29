@@ -51,6 +51,10 @@ namespace quantModeling::scripting
                 return "'df'";
             case TokenKind::Schedule:
                 return "'schedule'";
+            case TokenKind::Exercise:
+                return "'exercise'";
+            case TokenKind::Call:
+                return "'call'";
             case TokenKind::Plus:
                 return "'+'";
             case TokenKind::Minus:

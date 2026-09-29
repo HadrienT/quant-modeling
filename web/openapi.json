@@ -893,6 +893,46 @@
         "title": "BondAnalytics",
         "type": "object"
       },
+      "CalibrationPoint": {
+        "properties": {
+          "expiry": {
+            "title": "Expiry",
+            "type": "number"
+          },
+          "market_vol": {
+            "title": "Market Vol",
+            "type": "number"
+          },
+          "model_vol": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Vol"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "expiry",
+          "tenor",
+          "strike",
+          "market_vol",
+          "model_vol"
+        ],
+        "title": "CalibrationPoint",
+        "type": "object"
+      },
       "ChatMessage": {
         "properties": {
           "content": {
@@ -1361,6 +1401,80 @@
           "warnings"
         ],
         "title": "CreditSpreadsResponse",
+        "type": "object"
+      },
+      "CurvePoint": {
+        "properties": {
+          "basis_bp": {
+            "title": "Basis Bp",
+            "type": "number"
+          },
+          "index_forward": {
+            "description": "Simple, over one index period",
+            "title": "Index Forward",
+            "type": "number"
+          },
+          "ois_forward": {
+            "description": "Simple, over one index period",
+            "title": "Ois Forward",
+            "type": "number"
+          },
+          "ois_zero": {
+            "description": "Continuously compounded",
+            "title": "Ois Zero",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "tenor",
+          "ois_zero",
+          "ois_forward",
+          "index_forward",
+          "basis_bp"
+        ],
+        "title": "CurvePoint",
+        "type": "object"
+      },
+      "CurvesResult": {
+        "properties": {
+          "index_pillars": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Index Pillars",
+            "type": "array"
+          },
+          "max_repricing_error_bp": {
+            "description": "Worst |par rate \u2212 quote| over the input swaps",
+            "title": "Max Repricing Error Bp",
+            "type": "number"
+          },
+          "ois_pillars": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Ois Pillars",
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CurvePoint"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ois_pillars",
+          "index_pillars",
+          "points",
+          "max_repricing_error_bp"
+        ],
+        "title": "CurvesResult",
         "type": "object"
       },
       "DatedAsianRequest": {
@@ -2191,6 +2305,35 @@
           "coupon_rate"
         ],
         "title": "FixedRateBondRequest",
+        "type": "object"
+      },
+      "FraInput": {
+        "properties": {
+          "end": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 31.0,
+            "title": "End",
+            "type": "number"
+          },
+          "rate": {
+            "maximum": 0.5,
+            "minimum": -0.05,
+            "title": "Rate",
+            "type": "number"
+          },
+          "start": {
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "rate"
+        ],
+        "title": "FraInput",
         "type": "object"
       },
       "FundamentalsResponse": {
@@ -3109,6 +3252,104 @@
         "title": "HistoryResponse",
         "type": "object"
       },
+      "HullWhiteCalibrationResult": {
+        "properties": {
+          "converged": {
+            "title": "Converged",
+            "type": "boolean"
+          },
+          "iterations": {
+            "title": "Iterations",
+            "type": "integer"
+          },
+          "mean_reversion": {
+            "title": "Mean Reversion",
+            "type": "number"
+          },
+          "mean_reversion_fixed": {
+            "title": "Mean Reversion Fixed",
+            "type": "boolean"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "rmse_bp": {
+            "title": "Rmse Bp",
+            "type": "number"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "number"
+          },
+          "sigma": {
+            "title": "Sigma",
+            "type": "number"
+          },
+          "worst_bp": {
+            "title": "Worst Bp",
+            "type": "number"
+          }
+        },
+        "required": [
+          "mean_reversion",
+          "sigma",
+          "mean_reversion_fixed",
+          "rmse_bp",
+          "worst_bp",
+          "iterations",
+          "converged",
+          "seconds",
+          "points"
+        ],
+        "title": "HullWhiteCalibrationResult",
+        "type": "object"
+      },
+      "HullWhiteInputs": {
+        "description": "The short rate of model='hull_white': Hull-White fitted to the\n`currency`'s government discount curve from the database, the equity\ncorrelated with it.",
+        "properties": {
+          "currency": {
+            "default": "USD",
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "CHF",
+              "JPY"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "mean_reversion": {
+            "default": 0.03,
+            "maximum": 1.0,
+            "minimum": 0.0001,
+            "title": "Mean Reversion",
+            "type": "number"
+          },
+          "rho": {
+            "default": 0.0,
+            "description": "Equity-rates correlation.",
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Rho",
+            "type": "number"
+          },
+          "sigma": {
+            "default": 0.01,
+            "description": "Short-rate vol, rate units (0.01 = 100bp).",
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.1,
+            "title": "Sigma",
+            "type": "number"
+          }
+        },
+        "title": "HullWhiteInputs",
+        "type": "object"
+      },
       "InputView": {
         "properties": {
           "as_of": {
@@ -3802,6 +4043,18 @@
               }
             ]
           },
+          "rates_curve": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "model='hull_white': the discount curve the short rate is fitted to, and its date.",
+            "title": "Rates Curve"
+          },
           "rough_bergomi": {
             "anyOf": [
               {
@@ -3887,7 +4140,8 @@
               "local_vol",
               "heston",
               "slv",
-              "rough_bergomi"
+              "rough_bergomi",
+              "hull_white"
             ],
             "title": "Model",
             "type": "string"
@@ -3903,7 +4157,8 @@
               "local_vol",
               "heston",
               "slv",
-              "rough_bergomi"
+              "rough_bergomi",
+              "hull_white"
             ],
             "title": "Requested",
             "type": "string"
@@ -5375,6 +5630,240 @@
         "title": "RatePoint",
         "type": "object"
       },
+      "RatesAnalysisRequest-Input": {
+        "properties": {
+          "deposits": {
+            "items": {
+              "$ref": "#/components/schemas/TenorRate"
+            },
+            "maxItems": 10,
+            "title": "Deposits",
+            "type": "array"
+          },
+          "fixed_frequency": {
+            "default": 1,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Fixed Frequency",
+            "type": "integer"
+          },
+          "float_frequency": {
+            "default": 2,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Float Frequency",
+            "type": "integer"
+          },
+          "fras": {
+            "items": {
+              "$ref": "#/components/schemas/FraInput"
+            },
+            "maxItems": 20,
+            "title": "Fras",
+            "type": "array"
+          },
+          "hull_white_mean_reversion": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0001,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fix a and fit \u03c3 only; None fits both",
+            "title": "Hull White Mean Reversion"
+          },
+          "ois": {
+            "items": {
+              "$ref": "#/components/schemas/TenorRate"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Ois",
+            "type": "array"
+          },
+          "swap": {
+            "$ref": "#/components/schemas/SwapInput"
+          },
+          "swaps": {
+            "items": {
+              "$ref": "#/components/schemas/TenorRate"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Swaps",
+            "type": "array"
+          },
+          "swaption": {
+            "$ref": "#/components/schemas/SwaptionInput"
+          },
+          "swaption_vols": {
+            "items": {
+              "$ref": "#/components/schemas/SwaptionVolInput"
+            },
+            "maxItems": 60,
+            "minItems": 1,
+            "title": "Swaption Vols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ois",
+          "swaps",
+          "swaption_vols",
+          "swap",
+          "swaption"
+        ],
+        "title": "RatesAnalysisRequest",
+        "type": "object"
+      },
+      "RatesAnalysisRequest-Output": {
+        "properties": {
+          "deposits": {
+            "items": {
+              "$ref": "#/components/schemas/TenorRate"
+            },
+            "maxItems": 10,
+            "title": "Deposits",
+            "type": "array"
+          },
+          "fixed_frequency": {
+            "default": 1,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Fixed Frequency",
+            "type": "integer"
+          },
+          "float_frequency": {
+            "default": 2,
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Float Frequency",
+            "type": "integer"
+          },
+          "fras": {
+            "items": {
+              "$ref": "#/components/schemas/FraInput"
+            },
+            "maxItems": 20,
+            "title": "Fras",
+            "type": "array"
+          },
+          "hull_white_mean_reversion": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0001,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fix a and fit \u03c3 only; None fits both",
+            "title": "Hull White Mean Reversion"
+          },
+          "ois": {
+            "items": {
+              "$ref": "#/components/schemas/TenorRate"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Ois",
+            "type": "array"
+          },
+          "swap": {
+            "$ref": "#/components/schemas/SwapInput"
+          },
+          "swaps": {
+            "items": {
+              "$ref": "#/components/schemas/TenorRate"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Swaps",
+            "type": "array"
+          },
+          "swaption": {
+            "$ref": "#/components/schemas/SwaptionInput"
+          },
+          "swaption_vols": {
+            "items": {
+              "$ref": "#/components/schemas/SwaptionVolInput"
+            },
+            "maxItems": 60,
+            "minItems": 1,
+            "title": "Swaption Vols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ois",
+          "swaps",
+          "swaption_vols",
+          "swap",
+          "swaption"
+        ],
+        "title": "RatesAnalysisRequest",
+        "type": "object"
+      },
+      "RatesAnalysisResponse": {
+        "properties": {
+          "curves": {
+            "$ref": "#/components/schemas/CurvesResult"
+          },
+          "hull_white": {
+            "$ref": "#/components/schemas/HullWhiteCalibrationResult"
+          },
+          "methodology": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologySection"
+            },
+            "title": "Methodology",
+            "type": "array"
+          },
+          "swap": {
+            "$ref": "#/components/schemas/SwapResult"
+          },
+          "swaption": {
+            "$ref": "#/components/schemas/SwaptionResult"
+          }
+        },
+        "required": [
+          "curves",
+          "swap",
+          "hull_white",
+          "swaption",
+          "methodology"
+        ],
+        "title": "RatesAnalysisResponse",
+        "type": "object"
+      },
+      "RatesExampleResponse": {
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "request": {
+            "$ref": "#/components/schemas/RatesAnalysisRequest-Output"
+          }
+        },
+        "required": [
+          "currency",
+          "label",
+          "request"
+        ],
+        "title": "RatesExampleResponse",
+        "type": "object"
+      },
       "RatesHistoryResponse": {
         "properties": {
           "currency": {
@@ -5865,6 +6354,42 @@
         "title": "SABRPathRequest",
         "type": "object"
       },
+      "SabrInput": {
+        "properties": {
+          "alpha": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 5.0,
+            "title": "Alpha",
+            "type": "number"
+          },
+          "beta": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Beta",
+            "type": "number"
+          },
+          "nu": {
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Nu",
+            "type": "number"
+          },
+          "rho": {
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": -1.0,
+            "title": "Rho",
+            "type": "number"
+          }
+        },
+        "required": [
+          "alpha",
+          "beta",
+          "rho",
+          "nu"
+        ],
+        "title": "SabrInput",
+        "type": "object"
+      },
       "ScriptAnalysis": {
         "description": "Structural facts read off the script that decide which model dynamics\nits price depends on -- never a numerical estimate.",
         "properties": {
@@ -6002,6 +6527,17 @@
             "title": "Greeks Method",
             "type": "string"
           },
+          "hull_white": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HullWhiteInputs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Parameters of model='hull_white' (defaults when omitted)."
+          },
           "importance_sampling": {
             "default": false,
             "description": "Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.",
@@ -6010,14 +6546,15 @@
           },
           "model": {
             "default": "auto",
-            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database.",
+            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).",
             "enum": [
               "auto",
               "black_scholes",
               "local_vol",
               "heston",
               "slv",
-              "rough_bergomi"
+              "rough_bergomi",
+              "hull_white"
             ],
             "title": "Model",
             "type": "string"
@@ -6353,6 +6890,17 @@
             "title": "Greeks Method",
             "type": "string"
           },
+          "hull_white": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HullWhiteInputs"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Parameters of model='hull_white' (defaults when omitted)."
+          },
           "importance_sampling": {
             "default": false,
             "description": "Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.",
@@ -6361,14 +6909,15 @@
           },
           "model": {
             "default": "auto",
-            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database.",
+            "description": "'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).",
             "enum": [
               "auto",
               "black_scholes",
               "local_vol",
               "heston",
               "slv",
-              "rough_bergomi"
+              "rough_bergomi",
+              "hull_white"
             ],
             "title": "Model",
             "type": "string"
@@ -7405,6 +7954,388 @@
           "warnings"
         ],
         "title": "StructuralResponse",
+        "type": "object"
+      },
+      "SwapInput": {
+        "properties": {
+          "fixed_rate": {
+            "maximum": 0.5,
+            "minimum": -0.05,
+            "title": "Fixed Rate",
+            "type": "number"
+          },
+          "notional": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10000000000.0,
+            "title": "Notional",
+            "type": "number"
+          },
+          "payer": {
+            "default": true,
+            "title": "Payer",
+            "type": "boolean"
+          },
+          "start": {
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          },
+          "tenor": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 40.0,
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "tenor",
+          "fixed_rate",
+          "notional"
+        ],
+        "title": "SwapInput",
+        "type": "object"
+      },
+      "SwapPeriod": {
+        "properties": {
+          "accrual": {
+            "title": "Accrual",
+            "type": "number"
+          },
+          "discount": {
+            "title": "Discount",
+            "type": "number"
+          },
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "forward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forward"
+          },
+          "payment": {
+            "title": "Payment",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "payment",
+          "accrual",
+          "discount"
+        ],
+        "title": "SwapPeriod",
+        "type": "object"
+      },
+      "SwapResult": {
+        "properties": {
+          "annuity": {
+            "title": "Annuity",
+            "type": "number"
+          },
+          "fixed_leg": {
+            "title": "Fixed Leg",
+            "type": "number"
+          },
+          "fixed_periods": {
+            "items": {
+              "$ref": "#/components/schemas/SwapPeriod"
+            },
+            "title": "Fixed Periods",
+            "type": "array"
+          },
+          "floating_leg": {
+            "title": "Floating Leg",
+            "type": "number"
+          },
+          "floating_periods": {
+            "items": {
+              "$ref": "#/components/schemas/SwapPeriod"
+            },
+            "title": "Floating Periods",
+            "type": "array"
+          },
+          "npv": {
+            "title": "Npv",
+            "type": "number"
+          },
+          "par_rate": {
+            "title": "Par Rate",
+            "type": "number"
+          },
+          "pv01": {
+            "title": "Pv01",
+            "type": "number"
+          }
+        },
+        "required": [
+          "npv",
+          "par_rate",
+          "annuity",
+          "pv01",
+          "fixed_leg",
+          "floating_leg",
+          "fixed_periods",
+          "floating_periods"
+        ],
+        "title": "SwapResult",
+        "type": "object"
+      },
+      "SwaptionInput": {
+        "properties": {
+          "expiry": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 20.0,
+            "title": "Expiry",
+            "type": "number"
+          },
+          "lognormal_vol": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 3.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lognormal Vol"
+          },
+          "normal_vol": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 0.05,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Bachelier vol; None takes the nearest quoted ATM vol",
+            "title": "Normal Vol"
+          },
+          "notional": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10000000000.0,
+            "title": "Notional",
+            "type": "number"
+          },
+          "payer": {
+            "default": true,
+            "title": "Payer",
+            "type": "boolean"
+          },
+          "sabr": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SabrInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shift": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Shift",
+            "type": "number"
+          },
+          "strike": {
+            "anyOf": [
+              {
+                "maximum": 0.5,
+                "minimum": -0.05,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None for at the money",
+            "title": "Strike"
+          },
+          "tenor": {
+            "description": "Whole years: annual exercise dates",
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "expiry",
+          "tenor",
+          "notional"
+        ],
+        "title": "SwaptionInput",
+        "type": "object"
+      },
+      "SwaptionModelPrice": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "implied_normal_vol": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implied Normal Vol"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          }
+        },
+        "required": [
+          "model",
+          "price",
+          "implied_normal_vol",
+          "detail"
+        ],
+        "title": "SwaptionModelPrice",
+        "type": "object"
+      },
+      "SwaptionResult": {
+        "properties": {
+          "annuity": {
+            "title": "Annuity",
+            "type": "number"
+          },
+          "bermudan_exercises": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Bermudan Exercises",
+            "type": "array"
+          },
+          "bermudan_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bermudan Price"
+          },
+          "forward": {
+            "title": "Forward",
+            "type": "number"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/SwaptionModelPrice"
+            },
+            "title": "Prices",
+            "type": "array"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "switch_premium": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Switch Premium"
+          }
+        },
+        "required": [
+          "forward",
+          "annuity",
+          "strike",
+          "prices",
+          "bermudan_price",
+          "bermudan_exercises",
+          "switch_premium"
+        ],
+        "title": "SwaptionResult",
+        "type": "object"
+      },
+      "SwaptionVolInput": {
+        "properties": {
+          "expiry": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 30.0,
+            "title": "Expiry",
+            "type": "number"
+          },
+          "normal_vol": {
+            "description": "ATM normal vol, rate units",
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.05,
+            "title": "Normal Vol",
+            "type": "number"
+          },
+          "tenor": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 30.0,
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "expiry",
+          "tenor",
+          "normal_vol"
+        ],
+        "title": "SwaptionVolInput",
+        "type": "object"
+      },
+      "TenorRate": {
+        "properties": {
+          "rate": {
+            "maximum": 0.5,
+            "minimum": -0.05,
+            "title": "Rate",
+            "type": "number"
+          },
+          "tenor": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 50.0,
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "tenor",
+          "rate"
+        ],
+        "title": "TenorRate",
         "type": "object"
       },
       "TickerInfo": {
@@ -10147,6 +11078,62 @@
         "tags": [
           "portfolios"
         ]
+      }
+    },
+    "/api/rates/analyse": {
+      "post": {
+        "operationId": "rates_analyse",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatesAnalysisRequest-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesAnalysisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rates Analyse"
+      }
+    },
+    "/api/rates/example": {
+      "get": {
+        "operationId": "rates_example",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesExampleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rates Example"
       }
     },
     "/api/simulation/calibrate": {

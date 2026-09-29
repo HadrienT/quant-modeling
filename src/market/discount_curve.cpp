@@ -12,8 +12,10 @@ namespace quantModeling
     {
     }
 
-    DiscountCurve::DiscountCurve(std::vector<Time> times, std::vector<Real> discount_factors)
-        : times_(std::move(times)), dfs_(std::move(discount_factors)), use_flat_rate_(false)
+    DiscountCurve::DiscountCurve(std::vector<Time> times, std::vector<Real> discount_factors,
+                                 CurveExtrapolation extrapolation)
+        : times_(std::move(times)), dfs_(std::move(discount_factors)), use_flat_rate_(false),
+          extrapolation_(extrapolation)
     {
         validate_curve();
     }
@@ -26,6 +28,18 @@ namespace quantModeling
         if (use_flat_rate_ || times_.empty())
             return std::exp(-flat_rate_ * t);
 
+        if (extrapolation_ == CurveExtrapolation::FlatForward)
+        {
+            if (t <= times_.front())
+                return std::exp(std::log(dfs_.front()) * t / times_.front());
+            if (t >= times_.back())
+            {
+                const std::size_t n = times_.size();
+                const Real f = n == 1 ? -std::log(dfs_[0]) / times_[0]
+                                      : -(std::log(dfs_[n - 1]) - std::log(dfs_[n - 2])) / (times_[n - 1] - times_[n - 2]);
+                return dfs_.back() * std::exp(-f * (t - times_.back()));
+            }
+        }
         if (t <= times_.front())
             return dfs_.front();
         if (t >= times_.back())

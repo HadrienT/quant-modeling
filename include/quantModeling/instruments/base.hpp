@@ -30,6 +30,9 @@ namespace quantModeling
     struct WorstOfOption;
     struct BestOfOption;
     struct CreditDefaultSwap;
+    struct InterestRateSwap;
+    struct Swaption;
+    struct BermudanSwaption;
 
     enum class ExerciseType
     {
@@ -88,6 +91,9 @@ namespace quantModeling
         virtual void visit(const WorstOfOption &) { throw UnsupportedInstrument("Worst-of option is not supported by this engine."); }
         virtual void visit(const BestOfOption &) { throw UnsupportedInstrument("Best-of option is not supported by this engine."); }
         virtual void visit(const CreditDefaultSwap &) { throw UnsupportedInstrument("Credit default swap is not supported by this engine."); }
+        virtual void visit(const InterestRateSwap &) { throw UnsupportedInstrument("Interest-rate swap is not supported by this engine."); }
+        virtual void visit(const Swaption &) { throw UnsupportedInstrument("Swaption is not supported by this engine."); }
+        virtual void visit(const BermudanSwaption &) { throw UnsupportedInstrument("Bermudan swaption is not supported by this engine."); }
         virtual void visit(const EquityFuture &) = 0;
         virtual void visit(const ZeroCouponBond &) = 0;
         virtual void visit(const FixedRateBond &) = 0;

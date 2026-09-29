@@ -98,7 +98,9 @@ export function ModelDecision({ choice }: { choice: ModelChoice }) {
 					{auto ? "chosen automatically" : "chosen by hand"}
 				</Badge>
 			</div>
-			{auto && <p className="text-sm text-ink-secondary">{choice.reason}</p>}
+			{(auto || choice.model === "hull_white") && (
+				<p className="text-sm text-ink-secondary">{choice.reason}</p>
+			)}
 			{choice.underlyings && <UnderlyingsUsed choice={choice} />}
 			{cal && (
 				<details
