@@ -275,6 +275,7 @@ Reprise exacte des `references` de `web/src/shared/products/docs.ts`.
 | Cornish & Fisher, « Moments and Cumulants in the Specification of Distributions », *Revue de l'Institut International de Statistique* 5(4), 307–320, 1938 | VaR delta-gamma de `api/app/routers/portfolio.py` |
 | ➕ Jorion, *Value at Risk*, 3ᵉ éd., McGraw-Hill, 2006 | Cadre général VaR / ES |
 | ★ Gregory, *The xVA Challenge: Counterparty Risk, Funding, Collateral, Capital and Initial Margin*, 4ᵉ éd., Wiley, 2020 | Métriques d'exposition et intégrales CVA / DVA / FVA / MVA / KVA, avec sa convention de signe : `risk/exposure_metrics.hpp`, `risk/xva.hpp` (`blueprint/wp/23-xva.md`) |
+| Pykhtin & Zhu, « A Guide to Modelling Counterparty Credit Risk », *GARP Risk Review*, 2007 | Algorithme du moteur d'exposition : `engines/xva/exposure_engine.hpp` |
 | Comité de Bâle, *The standardised approach for measuring counterparty credit risk exposures* (BCBS 279), 2014 ; cadre de Bâle CRE52, exemples en CRE99 | SA-CCR : `risk/regulatory/sa_ccr.hpp`, exemples chiffrés dans `tests/testSaCcr.cpp` |
 | Cadre de Bâle, CRE31 (fonction de pondération IRB) et CRE53 (IMM : Effective EE, EEPE) | `risk/regulatory/irb.hpp`, `risk/exposure_metrics.hpp` |
 | Comité de Bâle, *Targeted revisions to the credit valuation adjustment risk framework* (d507), 2020 ; cadre de Bâle MAR50 | BA-CVA : `risk/regulatory/ba_cva.hpp` |

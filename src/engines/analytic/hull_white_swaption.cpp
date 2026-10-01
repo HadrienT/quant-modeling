@@ -100,44 +100,39 @@ namespace quantModeling
         return cfs;
     }
 
-    Real hull_white_european_swaption(const Swaption &swaption, const HullWhiteCurveModel &model)
+    HullWhiteExerciseRegion hull_white_exercise_region(const Swaption &swaption,
+                                                       const HullWhiteCurveModel &model)
     {
         const Time T = swaption.expiry;
         if (swaption.swap.start() < T - kTimeEps)
             throw InvalidInput("Hull-White swaption: the swap must start on or after the expiry");
-        const std::vector<BondCashflow> cfs = swap_as_bonds(swaption.swap, T, model);
+        HullWhiteExerciseRegion region;
+        region.expiry = T;
+        region.bonds = swap_as_bonds(swaption.swap, T, model);
+        const std::vector<BondCashflow> &cfs = region.bonds;
         if (cfs.empty())
-            return 0.0;
-        if (!(T > kTimeEps))
-            return std::max(bonds_value(cfs, 0.0, 0.0, model), 0.0);
+            return region;
 
-        const Real v = model.y(T), sd = std::sqrt(v);
         const Real P0T = model.discount().discount(T);
-        // Under the T-forward measure x(T) ~ N(0, y(T)) and
-        // E[P(T, t_k) 1{x ∈ (l, u)}] = A_k [Φ((u + G_k v)/sd) − Φ((l + G_k v)/sd)].
-        std::vector<Real> A(cfs.size()), G(cfs.size());
-        for (std::size_t k = 0; k < cfs.size(); ++k)
+        for (const BondCashflow &c : cfs)
         {
-            A[k] = model.discount().discount(cfs[k].time) / P0T;
-            G[k] = model.G(T, cfs[k].time);
+            region.forward_bond.push_back(model.discount().discount(c.time) / P0T);
+            region.G.push_back(model.G(T, c.time));
         }
+        if (!(T > kTimeEps))
+        {
+            // Expiring today: exercised or not, whatever x.
+            if (bonds_value(cfs, 0.0, 0.0, model) > 0.0)
+                region.intervals.push_back({-INFINITY, INFINITY});
+            return region;
+        }
+
+        const Real sd = std::sqrt(model.y(T));
         const auto g = [&](Real x)
         { return bonds_value(cfs, T, x, model); };
-        const auto mass = [&](Real l, Real u)
-        {
-            Real s = 0.0;
-            for (std::size_t k = 0; k < cfs.size(); ++k)
-            {
-                const Real Fu = std::isinf(u) ? 1.0 : norm_cdf((u + G[k] * v) / sd);
-                const Real Fl = std::isinf(l) ? 0.0 : norm_cdf((l + G[k] * v) / sd);
-                s += cfs[k].amount * A[k] * (Fu - Fl);
-            }
-            return s;
-        };
 
         constexpr int n = 480;
         const Real lo = -12.0 * sd, hi = 12.0 * sd, h = (hi - lo) / n;
-        Real value = 0.0;
         Real x_prev = lo, g_prev = g(lo);
         Real region_start = g_prev > 0.0 ? -INFINITY : NAN;
         for (int i = 1; i <= n; ++i)
@@ -159,14 +154,57 @@ namespace quantModeling
                 if (rising)
                     region_start = root;
                 else
-                    value += mass(region_start, root);
+                    region.intervals.push_back({region_start, root});
             }
             x_prev = x;
             g_prev = gx;
         }
         if (g_prev > 0.0)
-            value += mass(region_start, INFINITY);
-        return P0T * value;
+            region.intervals.push_back({region_start, INFINITY});
+        return region;
+    }
+
+    Real hull_white_european_swaption(const HullWhiteExerciseRegion &region,
+                                      const HullWhiteCurveModel &model, Time t, Real x)
+    {
+        const std::vector<BondCashflow> &cfs = region.bonds;
+        if (cfs.empty())
+            return 0.0;
+        const Time T = region.expiry;
+        if (t > T + kTimeEps)
+            throw InvalidInput("Hull-White swaption: valuation date past the expiry");
+        if (!(T - t > kTimeEps))
+            return std::max(bonds_value(cfs, T, x, model), 0.0);
+
+        // Under the T-forward measure x(T) | x(t) ~ N(m, v) -- N(0, y(T)) seen
+        // from today -- and for each bond
+        //   E[P(T, t_k) 1{x(T) in (l, u)}]
+        //     = A_k e^{-G_k m + G_k² (v - y(T)) / 2}
+        //       [Φ((u - m + G_k v)/sd) - Φ((l - m + G_k v)/sd)].
+        const auto tr = model.transition(t, T, T);
+        const Real m = tr.decay * x + tr.drift, v = tr.variance, sd = std::sqrt(v);
+        const Real convexity = 0.5 * (v - model.y(T));
+        Real value = 0.0;
+        for (const auto &[l, u] : region.intervals)
+        {
+            for (std::size_t k = 0; k < cfs.size(); ++k)
+            {
+                const Real G = region.G[k];
+                const Real Fu = std::isinf(u) ? 1.0 : norm_cdf((u - m + G * v) / sd);
+                const Real Fl = std::isinf(l) ? 0.0 : norm_cdf((l - m + G * v) / sd);
+                value += cfs[k].amount * region.forward_bond[k] *
+                         std::exp(-G * m + G * G * convexity) * (Fu - Fl);
+            }
+        }
+        // Deep out of the money the terms cancel down to rounding noise,
+        // which may come out as -1e-18: an option is not worth less than zero.
+        return std::max(model.zcb(t, T, x) * value, 0.0);
+    }
+
+    Real hull_white_european_swaption(const Swaption &swaption, const HullWhiteCurveModel &model)
+    {
+        return hull_white_european_swaption(hull_white_exercise_region(swaption, model), model,
+                                            0.0, 0.0);
     }
 
     Real hull_white_bermudan_swaption(const BermudanSwaption &bermudan, const HullWhiteCurveModel &model,
