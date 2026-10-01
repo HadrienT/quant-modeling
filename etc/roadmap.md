@@ -15,26 +15,31 @@ ses « trous » sont comblés. État par chantier :
 | Chantier | Fait | Reste |
 |---|---|---|
 | **0. Fondations** | Framework de calibration C++ (`ObjectiveFunction`, Levenberg-Marquardt, rapport en points de vol) ; `DayCounter`, calendriers, `Schedule` ; bootstrap de courbe ; **multi-courbe OIS / projection (WP 21)** | Interpolation monotone convexe ; cotations OIS réelles (pas de source gratuite) |
-| **1. Vol stochastique** | Heston (COS « Little Heston Trap », QE d'Andersen) ; SABR + calibration ; SVI + Dupire en C++ ; rough Bergomi (schéma hybride) ; **Heston calibré sur la chaîne stockée, SLV (levier par particules)** ; le modèle est choisi pour chaque script et les dynamiques se comparent sur la page pricing | Rough Bergomi non calibré ; grille de Dupire étroite et bruitée en T (issue #82) |
-| **2. AAD** | Lots 17a–17g (tape, check-pointing, parallèle bit-à-bit, multi-adjoints, expression templates) ; **17h : superbucket Dupire, vega par cotation d'option** ; **sur GPU** : duaux (Black-Scholes, Heston) et adjoint par chemin en vol locale, égaux à la tape à l'arrondi, ×130 à ×440 | Ordre 2 hors dérivées finies sur AAD ; risques SLV sur GPU |
-| **3. GPU** | **Fait (WP 19, lots G0–G4).** Philox et Sobol maison (bit à bit CPU = GPU), pont brownien, scripts compilés en bytecode et exécutés sur GPU, réduction de variance générique (contrôles, stratification, importance sampling), Sobol + pont sur GPU, **deux V100 au bit près**, benchmark publié (README, `blueprint/wp/19-gpu.md` §9) : une barrière quotidienne sous vol locale passe de 169 min sur un cœur à 12,7 s sur deux V100, 2,3 s en Sobol | Profilage des kernels (compteurs matériels, issue #105) |
-| **4. Taux, crédit, xVA** | Hull-White / Vasicek / CIR ; **4a (WP 21) : swaps, swaptions (Bachelier, Black décalé, SABR), Hull-White ajusté à la courbe et calibré sur swaptions, bermudan par réseau validé contre QuantLib, page `/rates`** ; **4b crédit (WP 20)** : courbe de hazard, CDS ISDA, bootstrap, Merton calibré, page `/credit` (spreads ICE BofA, 10-K / 10-Q SEC) | LSMC, moteur d'exposition, CVA ; cotations CDS single-name (pas de source gratuite) |
+| **1. Vol stochastique** | Heston (COS « Little Heston Trap », QE d'Andersen) ; SABR + calibration ; SVI + Dupire en C++ ; **grille de Dupire élargie et lissée en T (#82)** ; **Heston calibré sur la chaîne stockée, rapide et non dégénéré (#97)**, SLV (levier par particules) ; **rough Bergomi calibré (WP 22)** : ξ0 répliqué sur le variance swap, (H, η, ρ) par Levenberg-Marquardt, modèle de script `rough_bergomi` ; le modèle est choisi pour chaque script et les dynamiques se comparent sur la page pricing | Noyau GPU du schéma hybride ; AAD sur ξ0 et H ; calibration neuronale (chantier 5, option A) |
+| **2. AAD** | Lots 17a–17g (tape, check-pointing, parallèle bit-à-bit, multi-adjoints, expression templates) ; 17h : superbucket Dupire, vega par cotation d'option ; **17i : ordre 2 (adjoint bumpé du livre, adjoint sur tangent)** ; **sur GPU** : duaux (Black-Scholes, Heston) et adjoint par chemin en vol locale, égaux à la tape à l'arrondi, ×130 à ×440 | Risques SLV sur GPU |
+| **3. GPU** | **Fait (WP 19, lots G0–G4).** Philox et Sobol maison (bit à bit CPU = GPU), pont brownien, scripts compilés en bytecode et exécutés sur GPU, réduction de variance générique (contrôles, stratification, importance sampling), Sobol + pont sur GPU, **deux V100 au bit près**, benchmark publié (README, `blueprint/wp/19-gpu.md` §9) : une barrière quotidienne sous vol locale passe de 169 min sur un cœur à 12,7 s sur deux V100, 2,3 s en Sobol. **Profilage Nsight Compute fait (#105, §9.1)** : kernels limités par la latence, à 25 % d'occupation (registres) | Les trois leviers mesurés au §9.1 : occupation, dispatch de l'interpréteur, gradients de l'adjoint en mémoire partagée (issue #130) |
+| **4. Taux, crédit, xVA** | Hull-White / Vasicek / CIR ; **4a (WP 21) : swaps, swaptions (Bachelier, Black décalé, SABR), Hull-White ajusté à la courbe et calibré sur swaptions, bermudan par réseau validé contre QuantLib, page `/rates`** ; **4b crédit (WP 20)** : courbe de hazard, CDS ISDA, bootstrap, Merton calibré, page `/credit` (spreads ICE BofA, 10-K / 10-Q SEC) ; **LSMC** : exercice anticipé dans les scripts par Longstaff-Schwartz (`exercise()`, `call()`) ; **hybride equity-taux** : modèle de script `hull_white` | **4c–4d, le capstone : moteur d'exposition, collatéral et marge initiale, CVA / DVA / FVA / MVA / KVA, capital réglementaire, wrong-way risk, sensibilités CVA par AAD sur GPU** — spécifiés lot par lot dans [`blueprint/wp/23-xva.md`](../blueprint/wp/23-xva.md). Cotations CDS single-name (pas de source gratuite : courbes proxy par notation) |
 | **5. ML** | — | Tout |
 
 **Sur « arrêter d'ajouter des produits ».** La bibliothèque de scripts (42
 produits de Bouzoubaa & Osseiran, `api/app/product_library/`) n'ajoute aucun
 payoff C++ : elle sert la profondeur (choix et comparaison des modèles, profils
 de risque calculés, superbucket). Elle est **gelée** : un 43ᵉ script n'aurait
-pas plus de valeur qu'un 25ᵉ payoff.
+pas plus de valeur qu'un 25ᵉ payoff. Ce que le langage ne sait pas encore
+exprimer (quanto / composite, vol locale multi-actifs) est suivi dans
+l'issue #86.
 
-**Suite, dans l'ordre** : les chantiers 2 et 3 sont faits, ce qui lève le
-prérequis du §5 (« le xVA sans GPU ni AAD reste un jouet »). D'abord la qualité
-des modèles calibrés — calibration Heston (issue #97), grille de Dupire
-(issue #82) — dont dépend tout ce qui suit ; puis LSMC, qui débloque aussi les
-scripts rappelables et les choosers (issue #86) ; puis le chantier 4, dont le
-moteur d'exposition tournera sur les deux V100 et dont les sensibilités CVA
-viendront de l'AAD. Alternative plus courte : le chantier 1c (rough Bergomi
-calibré, sur GPU) et le 5 option A (sa calibration neuronale).
+**Suite, dans l'ordre** : tous les prérequis du capstone sont levés — GPU
+(chantier 3), AAD (chantier 2), LSMC, taux (WP 21), crédit (WP 20), et la
+qualité des modèles calibrés (#82, #97). Le chantier suivant est donc le
+**4c–4d, xVA**, découpé en lots dans [`blueprint/wp/23-xva.md`](../blueprint/wp/23-xva.md) :
+métriques et formules réglementaires d'abord (sans simulation), puis le moteur
+d'exposition sur un portefeuille de taux USD, le collatéral, le CVA, l'AMC par
+régression, FVA / MVA / KVA, le wrong-way risk, le portage sur les deux V100 et,
+pour finir, les sensibilités du CVA par AAD. Alternative plus courte : le
+chantier 1c sur GPU (noyau du schéma hybride) et le 5 option A (calibration
+neuronale du rough Bergomi, déjà calibré en C++ et donc prêt à fournir la
+vérité terrain). Les leviers GPU de l'issue #130 se glissent entre deux lots.
 
 ---
 

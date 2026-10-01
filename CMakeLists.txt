@@ -71,6 +71,12 @@ target_sources(quantModeling
         src/engines/analytic/hull_white_swaption.cpp
         src/market/hull_white_calibration.cpp
         src/models/credit/merton_structural.cpp
+        src/risk/exposure_metrics.cpp
+        src/risk/xva.cpp
+        src/risk/regulatory/sa_ccr.cpp
+        src/risk/regulatory/irb.cpp
+        src/risk/regulatory/ba_cva.cpp
+        src/risk/regulatory/im_schedule.cpp
         src/market/raw_vol_surface.cpp
         src/market/svi.cpp
         src/market/svi_calibration.cpp
@@ -284,6 +290,10 @@ if(QM_BUILD_TESTS)
     tests/testCurveBootstrap.cpp
     tests/testCredit.cpp
     tests/testMertonStructural.cpp
+    tests/testExposureMetrics.cpp
+    tests/testXvaIntegrals.cpp
+    tests/testSaCcr.cpp
+    tests/testRegulatoryCapital.cpp
     tests/testRates.cpp
     tests/testLsm.cpp
     tests/testHybrid.cpp
