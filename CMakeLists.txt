@@ -73,6 +73,9 @@ target_sources(quantModeling
         src/models/credit/merton_structural.cpp
         src/risk/exposure_metrics.cpp
         src/risk/xva.cpp
+        src/risk/exposure_paths.cpp
+        src/engines/xva/hull_white_future_value.cpp
+        src/engines/xva/exposure_engine.cpp
         src/risk/regulatory/sa_ccr.cpp
         src/risk/regulatory/irb.cpp
         src/risk/regulatory/ba_cva.cpp
@@ -292,6 +295,7 @@ if(QM_BUILD_TESTS)
     tests/testMertonStructural.cpp
     tests/testExposureMetrics.cpp
     tests/testXvaIntegrals.cpp
+    tests/testExposureEngine.cpp
     tests/testSaCcr.cpp
     tests/testRegulatoryCapital.cpp
     tests/testRates.cpp

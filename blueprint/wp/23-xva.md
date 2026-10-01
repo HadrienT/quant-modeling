@@ -1253,6 +1253,56 @@ code. Choix à connaître pour les lots suivants :
   pris égal à 1, le choix prudent ; les bornes 2 ans et 5 ans tombent dans la
   tranche inférieure. Le texte ne tranche ni l'un ni l'autre.
 
+### 14.2 Lot X1 : ce qui est fait, et les choix d'implémentation
+
+Livré : `engines/xva/future_value.hpp` (l'interface « valeur future »),
+`engines/xva/hull_white_future_value.hpp` (swap et swaption européenne, exacts
+sous Hull-White), `engines/xva/exposure_engine.hpp` (grille + simulation),
+`risk/exposure_paths.hpp` (le cube et les métriques par netting set), tests
+dans `tests/testExposureEngine.cpp`.
+
+- **Aucun branchement sur le produit** : le moteur ne voit que `FutureValue`
+  (`value(i, état)`, `cashflow(i, état)`, `event_times()`), construit par un
+  visiteur d'instrument, comme les engines de pricing. Une transaction vendue
+  est une quantité négative.
+- **Valeur après paiement** : $V(t_i)$ est la valeur des flux strictement
+  postérieurs à $t_i$ ; le flux de la date est rendu à part par `cashflow`.
+  Le coupon flottant en cours est repricé avec son fixing lu sur le chemin
+  (l'exactitude en dépend : la propriété « valeur + flux payés = martingale »
+  est testée).
+- **Mesure** : état $x$ de Hull-White simulé par ses transitions gaussiennes
+  exactes sous la mesure $T^*$-forward, $T^*$ = dernière date de la grille ;
+  le cube porte le poids d'actualisation $w = P(0,T^*)/P(t,T^*)$, de moyenne
+  $P(0,t)$ (testé).
+- **Deux familles de profils** : actualisés ($EE^*$, pour les xVA) et non
+  actualisés, définis comme $EE(t) = EE^*(t)/P(0,t)$, c'est-à-dire
+  l'espérance sous la mesure $t$-forward. La PFE est le quantile sous cette
+  même mesure (chemins pondérés par $w$). EPE et EEPE sont calculées sur le
+  profil non actualisé.
+- **Le cube garde les transactions séparées** (`ExposurePaths`), le netting
+  est un post-traitement (`exposure_statistics(paths, transactions)`) : un
+  seul jeu de chemins répond pour n'importe quel netting set, pour
+  l'incrémental et pour l'allocation d'Euler. Mémoire : transactions × chemins
+  × dates × 8 octets, avec une limite explicite (4 Gio par défaut) au-delà de
+  laquelle la simulation refuse de partir.
+- **Reproductibilité** : Philox par (graine, chemin, date) ; chaque chemin
+  écrit sa ligne ; les réductions se font en ordre de chemin sur un thread.
+  Mêmes bits sur 1 ou 8 threads (testé).
+- **Grille** : hebdomadaire le premier mois, mensuelle jusqu'à 2 ans,
+  trimestrielle ensuite, plus toutes les dates d'événement.
+- **Swaption** : à règlement physique ; après l'expiry c'est le swap sur les
+  chemins exercés (donc une exposition négative possible). Le prix fermé a
+  été généralisé à toute date future (`HullWhiteExerciseRegion` : la région
+  d'exercice est calculée une fois).
+- **Non couverts** : swap déjà commencé (il faudrait son fixing historique),
+  bermudans et scripts (lot X4), réduction de variance, EE non actualisée sous
+  la mesure risque-neutre proprement dite (elle demanderait de simuler le
+  compte bancaire) et calibration historique pour la PFE (§3.1).
+- **Constat utile** : la valeur d'un swap est presque gaussienne (EE à 2 %
+  de la formule normale) mais la PFE à 95 % est quelques pourcents sous le
+  quantile normal — la convexité des obligations borne la valeur d'un swap
+  payeur.
+
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
 forwards, options actions, CDS (WP 20), scripts.

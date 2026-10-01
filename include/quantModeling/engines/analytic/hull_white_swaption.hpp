@@ -5,6 +5,7 @@
 #include "quantModeling/instruments/rates/swap.hpp"
 #include "quantModeling/models/rates/hull_white_curve.hpp"
 
+#include <utility>
 #include <vector>
 
 namespace quantModeling
@@ -45,6 +46,38 @@ namespace quantModeling
      * signs need not alternate once.
      */
     Real hull_white_european_swaption(const Swaption &swaption, const HullWhiteCurveModel &model);
+
+    /**
+     * @brief Where a European swaption is exercised, as a set of intervals of
+     *        x(expiry). It depends on the contract and on the model, not on
+     *        the valuation date: computed once, it prices the swaption at any
+     *        earlier date and state (the exposure engine of
+     *        blueprint/wp/23-xva.md §13.3 does so on every path).
+     */
+    struct HullWhiteExerciseRegion
+    {
+        Time expiry = 0.0;
+        /// Exercise value = Σ amount_k P(expiry, time_k | x).
+        std::vector<BondCashflow> bonds;
+        /// P(0, time_k) / P(0, expiry) and G(expiry, time_k), per bond.
+        std::vector<Real> forward_bond;
+        std::vector<Real> G;
+        /// Where the exercise value is > 0; the outer bounds may be ±infinity.
+        std::vector<std::pair<Real, Real>> intervals;
+    };
+
+    HullWhiteExerciseRegion hull_white_exercise_region(const Swaption &swaption,
+                                                       const HullWhiteCurveModel &model);
+
+    /**
+     * @brief Value at `t <= expiry` of the swaption, given the state x(t).
+     *
+     * Under the expiry-forward measure x(expiry) given x(t) is Gaussian
+     * (HullWhiteCurveModel::transition), so each bond integrates in closed
+     * form over the exercise region, as at t = 0.
+     */
+    Real hull_white_european_swaption(const HullWhiteExerciseRegion &region,
+                                      const HullWhiteCurveModel &model, Time t, Real x);
 
     /// Settings of the Bermudan lattice.
     struct HullWhiteLatticeSettings
