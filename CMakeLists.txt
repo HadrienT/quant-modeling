@@ -75,6 +75,7 @@ target_sources(quantModeling
         src/risk/xva.cpp
         src/risk/exposure_paths.cpp
         src/risk/collateral.cpp
+        src/risk/xva_report.cpp
         src/market/historical_rate_dynamics.cpp
         src/engines/xva/hull_white_future_value.cpp
         src/engines/xva/exposure_engine.cpp
@@ -299,6 +300,7 @@ if(QM_BUILD_TESTS)
     tests/testXvaIntegrals.cpp
     tests/testExposureEngine.cpp
     tests/testCollateral.cpp
+    tests/testXvaReport.cpp
     tests/testHistoricalMeasure.cpp
     tests/testSaCcr.cpp
     tests/testRegulatoryCapital.cpp

@@ -727,6 +727,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/xva/netting-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Xva Netting Set */
+        post: operations["xva_netting_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xva/portfolios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Xva Portfolios */
+        get: operations["xva_portfolios"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1407,6 +1441,22 @@ export interface components {
             /** Portfolios */
             portfolios: components["schemas"]["Portfolio-Output"][];
         };
+        /** Adjustments */
+        Adjustments: {
+            cva: components["schemas"]["Estimate"];
+            /**
+             * Cva Rule Of Thumb
+             * @description −spread × EPE × T
+             */
+            cva_rule_of_thumb: number;
+            /** Cva Unilateral */
+            cva_unilateral: number;
+            dva: components["schemas"]["Estimate"];
+            /** Fba */
+            fba: number;
+            /** Fca */
+            fca: number;
+        };
         /** AllocationRow */
         AllocationRow: {
             /** End Price */
@@ -1994,6 +2044,20 @@ export interface components {
              */
             gpus?: string[];
         };
+        /** CreditInput */
+        CreditInput: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Hazard */
+            hazard: number;
+            /** Rating */
+            rating: string;
+            /** Spread */
+            spread: number;
+        };
         /** CreditSpreadsResponse */
         CreditSpreadsResponse: {
             /** Aggregates */
@@ -2025,6 +2089,40 @@ export interface components {
             term_structure: components["schemas"]["QuotedSpreadPoint"][];
             /** Warnings */
             warnings: string[];
+        };
+        /**
+         * CsaInput
+         * @description Terms of the collateral agreement. Thresholds and the minimum transfer
+         *     amount are in currency units.
+         */
+        CsaInput: {
+            /**
+             * Cashflows
+             * @default paid
+             * @enum {string}
+             */
+            cashflows: "paid" | "withheld" | "only_bank_pays";
+            /**
+             * Margin Period Of Risk Days
+             * @description Business days
+             * @default 10
+             */
+            margin_period_of_risk_days: number;
+            /**
+             * Minimum Transfer Amount
+             * @default 0
+             */
+            minimum_transfer_amount: number;
+            /**
+             * Threshold Bank
+             * @default 0
+             */
+            threshold_bank: number;
+            /**
+             * Threshold Counterparty
+             * @default 0
+             */
+            threshold_counterparty: number;
         };
         /** CurvePoint */
         CurvePoint: {
@@ -2313,6 +2411,31 @@ export interface components {
             kind: "equity";
             /** Ticker */
             ticker: string;
+        };
+        /** Estimate */
+        Estimate: {
+            /**
+             * Error
+             * @description Monte-Carlo standard error
+             */
+            error: number;
+            /** Value */
+            value: number;
+        };
+        /** ExposureProfileOut */
+        ExposureProfileOut: {
+            /** Ee */
+            ee: number[];
+            /** Eepe */
+            eepe: number;
+            /** Ene */
+            ene: number[];
+            /** Epe */
+            epe: number;
+            /** Pfe */
+            pfe: number[];
+            /** Times */
+            times: number[];
         };
         /** FXForwardRequest */
         FXForwardRequest: {
@@ -2756,6 +2879,49 @@ export interface components {
             /** Xi */
             xi: number;
         };
+        /** HistoricalDynamics */
+        HistoricalDynamics: {
+            /** Estimated Long Run Rate */
+            estimated_long_run_rate: number | null;
+            /** Estimated Mean Reversion */
+            estimated_mean_reversion: number | null;
+            /** Estimated Sigma */
+            estimated_sigma: number;
+            /** Long Run Rate */
+            long_run_rate: number;
+            /** Long Run Rate Std Error */
+            long_run_rate_std_error: number | null;
+            /** Mean Reversion */
+            mean_reversion: number;
+            /** Mean Reversion Std Error */
+            mean_reversion_std_error: number | null;
+            /** Observations */
+            observations: number;
+            /** Overridden */
+            overridden: string[];
+            /** Series */
+            series: string;
+            /** Sigma */
+            sigma: number;
+            /**
+             * Since
+             * Format: date
+             */
+            since: string;
+        };
+        /**
+         * HistoricalInput
+         * @description The real-world dynamics of the short rate, dr = a (θ − r) dt + σ dW.
+         *     Any field left out takes the value estimated on the stored history.
+         */
+        HistoricalInput: {
+            /** Long Run Rate */
+            long_run_rate?: number | null;
+            /** Mean Reversion */
+            mean_reversion?: number | null;
+            /** Sigma */
+            sigma?: number | null;
+        };
         /** HistoryPointView */
         HistoryPointView: {
             /** Cumulative Pnl */
@@ -2811,6 +2977,19 @@ export interface components {
             sigma: number;
             /** Worst Bp */
             worst_bp: number;
+        };
+        /** HullWhiteInput */
+        HullWhiteInput: {
+            /** Mean Reversion */
+            mean_reversion: number;
+            /** Rmse Bp */
+            rmse_bp: number;
+            /** Sigma */
+            sigma: number;
+            /** Swaption Trades */
+            swaption_trades: number;
+            /** Vol Points */
+            vol_points: number;
         };
         /**
          * HullWhiteInputs
@@ -3689,6 +3868,30 @@ export interface components {
              * @default 0
              */
             unit_price: number;
+        };
+        /**
+         * PricingExposure
+         * @description Risk-neutral scenarios: what the adjustments integrate.
+         */
+        PricingExposure: {
+            /** Discounted Ee */
+            discounted_ee: number[];
+            /** Discounted Ee Error */
+            discounted_ee_error: number[];
+            /** Discounted Ene */
+            discounted_ene: number[];
+            /** Ee */
+            ee: number[];
+            /** Eepe */
+            eepe: number;
+            /** Ene */
+            ene: number[];
+            /** Epe */
+            epe: number;
+            /** Pfe */
+            pfe: number[];
+            /** Times */
+            times: number[];
         };
         /** PricingResponse */
         PricingResponse: {
@@ -5396,6 +5599,165 @@ export interface components {
             /** Vol */
             vol: number;
         };
+        /** XvaMarket */
+        XvaMarket: {
+            counterparty: components["schemas"]["CreditInput"];
+            /** Currency */
+            currency: string;
+            /**
+             * Curve As Of
+             * Format: date
+             */
+            curve_as_of: string;
+            /** Curve Label */
+            curve_label: string;
+            historical: components["schemas"]["HistoricalDynamics"];
+            hull_white: components["schemas"]["HullWhiteInput"];
+            own: components["schemas"]["CreditInput"];
+            /** Recovery */
+            recovery: number;
+        };
+        /** XvaPortfolioInfo */
+        XvaPortfolioInfo: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced";
+            /** Label */
+            label: string;
+            /** Lesson */
+            lesson: string;
+        };
+        /** XvaPortfoliosResponse */
+        XvaPortfoliosResponse: {
+            /** Portfolios */
+            portfolios: components["schemas"]["XvaPortfolioInfo"][];
+            /** Ratings */
+            ratings: string[];
+        };
+        /** XvaRequest */
+        XvaRequest: {
+            /**
+             * Borrowing Spread
+             * @default 0
+             */
+            borrowing_spread: number;
+            /**
+             * Counterparty Rating
+             * @default BBB
+             * @enum {string}
+             */
+            counterparty_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /** @description None for an uncollateralised netting set */
+            csa?: components["schemas"]["CsaInput"] | null;
+            historical?: components["schemas"]["HistoricalInput"];
+            /**
+             * Lending Spread
+             * @default 0
+             */
+            lending_spread: number;
+            /**
+             * Own Rating
+             * @default A
+             * @enum {string}
+             */
+            own_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Paths
+             * @default 10000
+             */
+            paths: number;
+            /**
+             * Pfe Confidence
+             * @default 0.95
+             */
+            pfe_confidence: number;
+            /**
+             * Portfolio
+             * @default single_swap
+             * @enum {string}
+             */
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced";
+            /**
+             * Recovery
+             * @default 0.4
+             */
+            recovery: number;
+            /**
+             * Seed
+             * @default 42
+             */
+            seed: number;
+        };
+        /** XvaResponse */
+        XvaResponse: {
+            adjustments: components["schemas"]["Adjustments"];
+            adjustments_uncollateralised: components["schemas"]["Adjustments"] | null;
+            /** Compute Ms */
+            compute_ms: number;
+            exposure: components["schemas"]["PricingExposure"];
+            exposure_uncollateralised: components["schemas"]["PricingExposure"] | null;
+            /** Lesson */
+            lesson: string;
+            market: components["schemas"]["XvaMarket"];
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /** Paths */
+            paths: number;
+            /**
+             * Portfolio
+             * @enum {string}
+             */
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced";
+            /** Portfolio Label */
+            portfolio_label: string;
+            risk: components["schemas"]["ExposureProfileOut"];
+            /** Seed */
+            seed: number;
+            /** Trades */
+            trades: components["schemas"]["XvaTrade"][];
+            /** Value Today */
+            value_today: number;
+            /** Warnings */
+            warnings: string[];
+        };
+        /** XvaTrade */
+        XvaTrade: {
+            /** Description */
+            description: string;
+            /** Fixed Rate */
+            fixed_rate: number;
+            /** Incremental Cva */
+            incremental_cva: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "swap" | "swaption";
+            /**
+             * Marginal Cva
+             * @description Euler share of the CVA; none under a CSA
+             */
+            marginal_cva: number | null;
+            /** Notional */
+            notional: number;
+            /** Payer */
+            payer: boolean;
+            /**
+             * Quantity
+             * @description -1 for a sold option
+             */
+            quantity: number;
+            /** Standalone Cva */
+            standalone_cva: number;
+            /** Start */
+            start: number;
+            /** Tenor */
+            tenor: number;
+            /** Value Today */
+            value_today: number;
+        };
         /** ZeroCouponBondRequest */
         ZeroCouponBondRequest: {
             /** Discount Factors */
@@ -6817,6 +7179,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    xva_netting_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XvaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XvaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    xva_portfolios: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XvaPortfoliosResponse"];
                 };
             };
         };

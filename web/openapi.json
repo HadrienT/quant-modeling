@@ -34,6 +34,43 @@
         "title": "AccountExport",
         "type": "object"
       },
+      "Adjustments": {
+        "properties": {
+          "cva": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "cva_rule_of_thumb": {
+            "description": "\u2212spread \u00d7 EPE \u00d7 T",
+            "title": "Cva Rule Of Thumb",
+            "type": "number"
+          },
+          "cva_unilateral": {
+            "title": "Cva Unilateral",
+            "type": "number"
+          },
+          "dva": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "fba": {
+            "title": "Fba",
+            "type": "number"
+          },
+          "fca": {
+            "title": "Fca",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cva",
+          "dva",
+          "cva_unilateral",
+          "fca",
+          "fba",
+          "cva_rule_of_thumb"
+        ],
+        "title": "Adjustments",
+        "type": "object"
+      },
       "AllocationRow": {
         "properties": {
           "end_price": {
@@ -1294,6 +1331,35 @@
         "title": "ComputeDevicesResponse",
         "type": "object"
       },
+      "CreditInput": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "hazard": {
+            "title": "Hazard",
+            "type": "number"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "string"
+          },
+          "spread": {
+            "title": "Spread",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rating",
+          "spread",
+          "hazard",
+          "as_of"
+        ],
+        "title": "CreditInput",
+        "type": "object"
+      },
       "CreditSpreadsResponse": {
         "properties": {
           "aggregates": {
@@ -1401,6 +1467,49 @@
           "warnings"
         ],
         "title": "CreditSpreadsResponse",
+        "type": "object"
+      },
+      "CsaInput": {
+        "description": "Terms of the collateral agreement. Thresholds and the minimum transfer\namount are in currency units.",
+        "properties": {
+          "cashflows": {
+            "default": "paid",
+            "enum": [
+              "paid",
+              "withheld",
+              "only_bank_pays"
+            ],
+            "title": "Cashflows",
+            "type": "string"
+          },
+          "margin_period_of_risk_days": {
+            "default": 10,
+            "description": "Business days",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Margin Period Of Risk Days",
+            "type": "integer"
+          },
+          "minimum_transfer_amount": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Minimum Transfer Amount",
+            "type": "number"
+          },
+          "threshold_bank": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Threshold Bank",
+            "type": "number"
+          },
+          "threshold_counterparty": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Threshold Counterparty",
+            "type": "number"
+          }
+        },
+        "title": "CsaInput",
         "type": "object"
       },
       "CurvePoint": {
@@ -2038,6 +2147,75 @@
           "ticker"
         ],
         "title": "EquitySpec",
+        "type": "object"
+      },
+      "Estimate": {
+        "properties": {
+          "error": {
+            "description": "Monte-Carlo standard error",
+            "title": "Error",
+            "type": "number"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value",
+          "error"
+        ],
+        "title": "Estimate",
+        "type": "object"
+      },
+      "ExposureProfileOut": {
+        "properties": {
+          "ee": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Ee",
+            "type": "array"
+          },
+          "eepe": {
+            "title": "Eepe",
+            "type": "number"
+          },
+          "ene": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Ene",
+            "type": "array"
+          },
+          "epe": {
+            "title": "Epe",
+            "type": "number"
+          },
+          "pfe": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Pfe",
+            "type": "array"
+          },
+          "times": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Times",
+            "type": "array"
+          }
+        },
+        "required": [
+          "times",
+          "ee",
+          "ene",
+          "pfe",
+          "epe",
+          "eepe"
+        ],
+        "title": "ExposureProfileOut",
         "type": "object"
       },
       "FXForwardRequest": {
@@ -3137,6 +3315,152 @@
         "title": "HestonParams",
         "type": "object"
       },
+      "HistoricalDynamics": {
+        "properties": {
+          "estimated_long_run_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Long Run Rate"
+          },
+          "estimated_mean_reversion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Mean Reversion"
+          },
+          "estimated_sigma": {
+            "title": "Estimated Sigma",
+            "type": "number"
+          },
+          "long_run_rate": {
+            "title": "Long Run Rate",
+            "type": "number"
+          },
+          "long_run_rate_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Run Rate Std Error"
+          },
+          "mean_reversion": {
+            "title": "Mean Reversion",
+            "type": "number"
+          },
+          "mean_reversion_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Reversion Std Error"
+          },
+          "observations": {
+            "title": "Observations",
+            "type": "integer"
+          },
+          "overridden": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overridden",
+            "type": "array"
+          },
+          "series": {
+            "title": "Series",
+            "type": "string"
+          },
+          "sigma": {
+            "title": "Sigma",
+            "type": "number"
+          },
+          "since": {
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mean_reversion",
+          "long_run_rate",
+          "sigma",
+          "estimated_mean_reversion",
+          "estimated_long_run_rate",
+          "estimated_sigma",
+          "mean_reversion_std_error",
+          "long_run_rate_std_error",
+          "series",
+          "since",
+          "observations",
+          "overridden"
+        ],
+        "title": "HistoricalDynamics",
+        "type": "object"
+      },
+      "HistoricalInput": {
+        "description": "The real-world dynamics of the short rate, dr = a (\u03b8 \u2212 r) dt + \u03c3 dW.\nAny field left out takes the value estimated on the stored history.",
+        "properties": {
+          "long_run_rate": {
+            "anyOf": [
+              {
+                "maximum": 0.2,
+                "minimum": -0.02,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Run Rate"
+          },
+          "mean_reversion": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 5.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Reversion"
+          },
+          "sigma": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 0.05,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sigma"
+          }
+        },
+        "title": "HistoricalInput",
+        "type": "object"
+      },
       "HistoryPointView": {
         "properties": {
           "cumulative_pnl": {
@@ -3306,6 +3630,39 @@
           "points"
         ],
         "title": "HullWhiteCalibrationResult",
+        "type": "object"
+      },
+      "HullWhiteInput": {
+        "properties": {
+          "mean_reversion": {
+            "title": "Mean Reversion",
+            "type": "number"
+          },
+          "rmse_bp": {
+            "title": "Rmse Bp",
+            "type": "number"
+          },
+          "sigma": {
+            "title": "Sigma",
+            "type": "number"
+          },
+          "swaption_trades": {
+            "title": "Swaption Trades",
+            "type": "integer"
+          },
+          "vol_points": {
+            "title": "Vol Points",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mean_reversion",
+          "sigma",
+          "rmse_bp",
+          "vol_points",
+          "swaption_trades"
+        ],
+        "title": "HullWhiteInput",
         "type": "object"
       },
       "HullWhiteInputs": {
@@ -5243,6 +5600,81 @@
           }
         },
         "title": "PositionResult",
+        "type": "object"
+      },
+      "PricingExposure": {
+        "description": "Risk-neutral scenarios: what the adjustments integrate.",
+        "properties": {
+          "discounted_ee": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Discounted Ee",
+            "type": "array"
+          },
+          "discounted_ee_error": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Discounted Ee Error",
+            "type": "array"
+          },
+          "discounted_ene": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Discounted Ene",
+            "type": "array"
+          },
+          "ee": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Ee",
+            "type": "array"
+          },
+          "eepe": {
+            "title": "Eepe",
+            "type": "number"
+          },
+          "ene": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Ene",
+            "type": "array"
+          },
+          "epe": {
+            "title": "Epe",
+            "type": "number"
+          },
+          "pfe": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Pfe",
+            "type": "array"
+          },
+          "times": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Times",
+            "type": "array"
+          }
+        },
+        "required": [
+          "times",
+          "ee",
+          "ene",
+          "pfe",
+          "epe",
+          "eepe",
+          "discounted_ee",
+          "discounted_ene",
+          "discounted_ee_error"
+        ],
+        "title": "PricingExposure",
         "type": "object"
       },
       "PricingResponse": {
@@ -9063,6 +9495,400 @@
         "title": "VolatilitySwapRequest",
         "type": "object"
       },
+      "XvaMarket": {
+        "properties": {
+          "counterparty": {
+            "$ref": "#/components/schemas/CreditInput"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "curve_as_of": {
+            "format": "date",
+            "title": "Curve As Of",
+            "type": "string"
+          },
+          "curve_label": {
+            "title": "Curve Label",
+            "type": "string"
+          },
+          "historical": {
+            "$ref": "#/components/schemas/HistoricalDynamics"
+          },
+          "hull_white": {
+            "$ref": "#/components/schemas/HullWhiteInput"
+          },
+          "own": {
+            "$ref": "#/components/schemas/CreditInput"
+          },
+          "recovery": {
+            "title": "Recovery",
+            "type": "number"
+          }
+        },
+        "required": [
+          "currency",
+          "curve_as_of",
+          "curve_label",
+          "hull_white",
+          "counterparty",
+          "own",
+          "recovery",
+          "historical"
+        ],
+        "title": "XvaMarket",
+        "type": "object"
+      },
+      "XvaPortfolioInfo": {
+        "properties": {
+          "id": {
+            "enum": [
+              "single_swap",
+              "bought_swaption",
+              "sold_swaption",
+              "directional",
+              "balanced"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "lesson": {
+            "title": "Lesson",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "lesson"
+        ],
+        "title": "XvaPortfolioInfo",
+        "type": "object"
+      },
+      "XvaPortfoliosResponse": {
+        "properties": {
+          "portfolios": {
+            "items": {
+              "$ref": "#/components/schemas/XvaPortfolioInfo"
+            },
+            "title": "Portfolios",
+            "type": "array"
+          },
+          "ratings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ratings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "portfolios",
+          "ratings"
+        ],
+        "title": "XvaPortfoliosResponse",
+        "type": "object"
+      },
+      "XvaRequest": {
+        "properties": {
+          "borrowing_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Borrowing Spread",
+            "type": "number"
+          },
+          "counterparty_rating": {
+            "default": "BBB",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Counterparty Rating",
+            "type": "string"
+          },
+          "csa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CsaInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None for an uncollateralised netting set"
+          },
+          "historical": {
+            "$ref": "#/components/schemas/HistoricalInput"
+          },
+          "lending_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Lending Spread",
+            "type": "number"
+          },
+          "own_rating": {
+            "default": "A",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Own Rating",
+            "type": "string"
+          },
+          "paths": {
+            "default": 10000,
+            "maximum": 50000.0,
+            "minimum": 1000.0,
+            "title": "Paths",
+            "type": "integer"
+          },
+          "pfe_confidence": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.5,
+            "title": "Pfe Confidence",
+            "type": "number"
+          },
+          "portfolio": {
+            "default": "single_swap",
+            "enum": [
+              "single_swap",
+              "bought_swaption",
+              "sold_swaption",
+              "directional",
+              "balanced"
+            ],
+            "title": "Portfolio",
+            "type": "string"
+          },
+          "recovery": {
+            "default": 0.4,
+            "maximum": 0.9,
+            "minimum": 0.0,
+            "title": "Recovery",
+            "type": "number"
+          },
+          "seed": {
+            "default": 42,
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "title": "XvaRequest",
+        "type": "object"
+      },
+      "XvaResponse": {
+        "properties": {
+          "adjustments": {
+            "$ref": "#/components/schemas/Adjustments"
+          },
+          "adjustments_uncollateralised": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Adjustments"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "compute_ms": {
+            "title": "Compute Ms",
+            "type": "number"
+          },
+          "exposure": {
+            "$ref": "#/components/schemas/PricingExposure"
+          },
+          "exposure_uncollateralised": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PricingExposure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lesson": {
+            "title": "Lesson",
+            "type": "string"
+          },
+          "market": {
+            "$ref": "#/components/schemas/XvaMarket"
+          },
+          "methodology": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologySection"
+            },
+            "title": "Methodology",
+            "type": "array"
+          },
+          "paths": {
+            "title": "Paths",
+            "type": "integer"
+          },
+          "portfolio": {
+            "enum": [
+              "single_swap",
+              "bought_swaption",
+              "sold_swaption",
+              "directional",
+              "balanced"
+            ],
+            "title": "Portfolio",
+            "type": "string"
+          },
+          "portfolio_label": {
+            "title": "Portfolio Label",
+            "type": "string"
+          },
+          "risk": {
+            "$ref": "#/components/schemas/ExposureProfileOut"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/XvaTrade"
+            },
+            "title": "Trades",
+            "type": "array"
+          },
+          "value_today": {
+            "title": "Value Today",
+            "type": "number"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "portfolio",
+          "portfolio_label",
+          "lesson",
+          "value_today",
+          "trades",
+          "exposure",
+          "exposure_uncollateralised",
+          "risk",
+          "adjustments",
+          "adjustments_uncollateralised",
+          "market",
+          "paths",
+          "seed",
+          "compute_ms",
+          "warnings",
+          "methodology"
+        ],
+        "title": "XvaResponse",
+        "type": "object"
+      },
+      "XvaTrade": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "fixed_rate": {
+            "title": "Fixed Rate",
+            "type": "number"
+          },
+          "incremental_cva": {
+            "title": "Incremental Cva",
+            "type": "number"
+          },
+          "kind": {
+            "enum": [
+              "swap",
+              "swaption"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "marginal_cva": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Euler share of the CVA; none under a CSA",
+            "title": "Marginal Cva"
+          },
+          "notional": {
+            "title": "Notional",
+            "type": "number"
+          },
+          "payer": {
+            "title": "Payer",
+            "type": "boolean"
+          },
+          "quantity": {
+            "description": "-1 for a sold option",
+            "title": "Quantity",
+            "type": "number"
+          },
+          "standalone_cva": {
+            "title": "Standalone Cva",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          },
+          "value_today": {
+            "title": "Value Today",
+            "type": "number"
+          }
+        },
+        "required": [
+          "description",
+          "kind",
+          "payer",
+          "quantity",
+          "notional",
+          "fixed_rate",
+          "start",
+          "tenor",
+          "value_today",
+          "standalone_cva",
+          "incremental_cva",
+          "marginal_cva"
+        ],
+        "title": "XvaTrade",
+        "type": "object"
+      },
       "ZeroCouponBondRequest": {
         "properties": {
           "discount_factors": {
@@ -11465,6 +12291,62 @@
         "tags": [
           "simulation"
         ]
+      }
+    },
+    "/api/xva/netting-set": {
+      "post": {
+        "operationId": "xva_netting_set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/XvaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XvaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Xva Netting Set"
+      }
+    },
+    "/api/xva/portfolios": {
+      "get": {
+        "operationId": "xva_portfolios",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XvaPortfoliosResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Xva Portfolios"
       }
     },
     "/health": {
