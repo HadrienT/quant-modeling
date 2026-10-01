@@ -22,6 +22,10 @@ namespace quantModeling
         Time weekly_until = 1.0 / 12.0;
         /// Monthly steps up to this date, quarterly beyond.
         Time monthly_until = 2.0;
+        /// When > 0, every date t of the grid brings its lagged date
+        /// t - MPoR with it: collateralised exposure needs the value at both
+        /// (risk/collateral.hpp). Set it to the CSA's margin period of risk.
+        Time margin_period_of_risk = 0.0;
     };
 
     /**
