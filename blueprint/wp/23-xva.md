@@ -191,6 +191,12 @@ historiques). En pratique beaucoup de banques simulent tout en risque-neutre
 par économie ; le moteur doit accepter les deux calibrations sans changer de
 code.
 
+**Décision (mainteneur, 2026-10-01) : on suit Gregory.** Calibration
+risque-neutre pour ce qui est un prix ($EE^*$, CVA, DVA, FVA) ; calibration
+historique (dérive et volatilité estimées sur l'historique de taux FRED de la
+base) pour ce qui est une mesure de risque (PFE, limites, profils EPE / EEPE
+affichés). Un seul moteur, deux jeux de paramètres. À faire : lot X1b (§14).
+
 ### 3.2 Formules fermées : la loi normale
 
 Si $V(t) \sim \mathcal{N}(\mu, \sigma^2)$ (sans collatéral) :
@@ -1197,6 +1203,49 @@ chemin). Le benchmark suit la règle du dépôt : **temps pour atteindre une
 erreur donnée** sur le CVA, CPU 1 cœur / 56 cœurs / 1 V100 / 2 V100, et
 égalité bit à bit.
 
+### 13.7 Ce que l'outil doit être (décisions du mainteneur, 2026-10-01)
+
+Le mainteneur doute que l'outil soit utilisable « en vrai » (ni portefeuilles
+ni CSA réels) et en fixe donc l'objet :
+
+1. **Un outil pédagogique auto-explicatif.** Il sert à apprendre et à
+   expliquer (entretien, démonstration), mais la page doit se suffire : chaque
+   étape porte son explication, sa formule (celle de Gregory) et sa source, à
+   côté du chiffre calculé. Texte du site en anglais, sources savantes, tout
+   chiffre défendable avec son erreur Monte-Carlo (règles du dépôt).
+2. **Plusieurs portefeuilles, du simple au complexe**, avec les seuls
+   produits existants :
+
+   | # | Portefeuille | Ce qu'il enseigne |
+   |---|---|---|
+   | P1 | un swap payeur 10 ans, sans CSA | profil en cloche, EE / PFE / EPE, CVA ≈ spread × EPE |
+   | P2 | une swaption achetée, puis vendue | $EE^* = V_0$, CVA d'une option, exposition nulle du vendeur |
+   | P3 | un book directionnel (plusieurs payeurs) | le netting ne rapporte presque rien |
+   | P4 | un book équilibré (payeurs et receveurs) | facteur de netting, allocation d'Euler, CVA incrémental |
+   | P5 | P4 sous CSA, puis avec marge initiale | seuil, MTA, MPoR, pics de coupons, le CVA devient du MVA |
+   | P6 | swaps + swaptions + bermudans, wrong-way | AMC (X4), WWR (X6), capital et KVA |
+
+3. **Un pricing aussi proche du réel que possible.** Ce que cela demande,
+   entrée par entrée :
+
+   | Entrée | État | Écart au réel |
+   |---|---|---|
+   | Courbe d'actualisation | réelle (FRED, en base) | Treasury / SOFR, pas de cotations OIS |
+   | Vol de Hull-White | **manque** | aucune surface de vols de swaptions gratuite |
+   | Crédit des contreparties | réel mais proxy (OAS ICE BofA par notation) | pas de CDS single-name |
+   | Termes des CSA | réels : ceux des règles de marge (seuil nul, MTA 500 k€, 10 jours) | — |
+   | Transactions | synthétiques, calibrées sur des tailles réalistes | pas de portefeuille de banque public |
+   | Chiffres de contrôle | à ingérer : rapports Pilier 3 (EAD, capital CVA) | ordres de grandeur seulement |
+
+   Le verrou est la volatilité. Deux voies, non exclusives : (a) l'estimer sur
+   l'historique des taux — légitime pour la mesure historique, pas pour un
+   prix ; (b) l'impliciter de **vraies transactions de swaptions** publiées
+   gratuitement par le référentiel central de la DTCC (*public price
+   dissemination*, un fichier par jour et par classe d'actifs, environ un an
+   d'historique). La voie (b) est à vérifier sur un fichier réel (champs
+   disponibles, prime, notionnels plafonnés) avant de s'y engager ; c'est un
+   travail d'ingestion, donc dans `~/data-ingest`.
+
 ---
 
 ## 14. Les lots
@@ -1302,6 +1351,45 @@ dans `tests/testExposureEngine.cpp`.
   de la formule normale) mais la PFE à 95 % est quelques pourcents sous le
   quantile normal — la convexité des obligations borne la valeur d'un swap
   payeur.
+
+### 14.3 Lot X2 : ce qui est fait, et les choix d'implémentation
+
+Livré : `market/csa.hpp` (les termes du CSA, en données), `risk/collateral.hpp`
+(la mécanique), tests dans `tests/testCollateral.cpp`.
+
+- **Post-traitement du cube** (ADR-X2) : `collateralise(cube, csa)` rend un
+  cube à une seule « transaction », la valeur collatéralisée
+  $V(t) - C(t - MPoR)$, que `exposure_statistics` traite comme les autres.
+  Avec et sans CSA se comparent donc sur les mêmes chemins ; des seuils
+  infinis redonnent le cube d'origine au bit près (testé).
+- **Dates décalées sur la grille** : `ExposureGridSettings::margin_period_of_risk`
+  ajoute $t - MPoR$ pour chaque date $t$. Les dates de reporting sont celles
+  dont la date décalée existe ; avant $MPoR$, le collatéral est celui appelé
+  sur la valeur d'aujourd'hui.
+- **Récursion de la MTA** : le solde part de l'appel d'aujourd'hui et n'est
+  mis à jour qu'aux dates décalées, dans l'ordre du temps (les appels
+  quotidiens intermédiaires ne sont pas simulés). Arrondi au multiple le plus
+  proche. Le montant indépendant s'ajoute au-dessus de la VM.
+- **Flux pendant la MPoR** (Andersen, Pykhtin & Sokol) : trois traitements —
+  `Paid` (Classical−, défaut : pics aux dates où la banque paie),
+  `Withheld` (Classical+ : aucun flux échangé, pas de pic), `OnlyBankPays`
+  (le cas défavorable). Le modèle complet, avec une date d'arrêt par partie,
+  n'est pas codé.
+- **Marge initiale** : profils déterministes, reçue et versée ; la reçue ne
+  réduit que l'exposition de la banque, la versée (ségréguée) que celle de la
+  contrepartie. L'EFV du cube avec IM n'est plus un besoin de financement :
+  le FVA se calcule sur le cube sans IM.
+- **Allocation d'Euler** non reportée sous CSA (l'homogénéité est perdue).
+- **Mesuré** : l'exposition résiduelle à seuil nul suit la formule normale du
+  lot X0 à 3 % près et se multiplie par $\sqrt 2$ quand la MPoR double ; sur
+  un swap payeur 10 ans, le pic d'une date de coupon vaut le coupon net payé.
+
+### 14.4 Suite
+
+Lot **X1b — mesure historique** (décision du §3.1) : dynamique de $x$ sous
+la mesure historique, estimée sur l'historique FRED ; repricing inchangé
+(risque-neutre) ; PFE et profils de risque lus sur ces chemins. Puis X3, dont
+l'API et la page suivent le cadrage du §13.7.
 
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX

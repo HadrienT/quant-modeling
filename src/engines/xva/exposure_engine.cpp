@@ -26,6 +26,8 @@ namespace quantModeling
             throw InvalidInput("exposure grid: the horizon must be finite and > 0");
         if (!(settings.weekly_until >= 0.0) || !(settings.monthly_until >= settings.weekly_until))
             throw InvalidInput("exposure grid: need 0 <= weekly_until <= monthly_until");
+        if (!(settings.margin_period_of_risk >= 0.0))
+            throw InvalidInput("exposure grid: the margin period of risk must be >= 0");
 
         std::vector<Time> times;
         const auto add_regular = [&](Real steps_per_year, Time from, Time until)
@@ -50,11 +52,24 @@ namespace quantModeling
                 times.push_back(std::min(t, horizon));
         times.push_back(horizon);
 
-        std::sort(times.begin(), times.end());
-        std::vector<Time> grid;
-        for (const Time t : times)
-            if (grid.empty() || t - grid.back() > kTimeEps)
-                grid.push_back(t);
+        const auto sorted_unique = [](std::vector<Time> dates)
+        {
+            std::sort(dates.begin(), dates.end());
+            std::vector<Time> unique;
+            for (const Time t : dates)
+                if (unique.empty() || t - unique.back() > kTimeEps)
+                    unique.push_back(t);
+            return unique;
+        };
+        std::vector<Time> grid = sorted_unique(std::move(times));
+        if (settings.margin_period_of_risk > kTimeEps)
+        {
+            std::vector<Time> with_lags = grid;
+            for (const Time t : grid)
+                if (t - settings.margin_period_of_risk > kTimeEps)
+                    with_lags.push_back(t - settings.margin_period_of_risk);
+            grid = sorted_unique(std::move(with_lags));
+        }
         return grid;
     }
 

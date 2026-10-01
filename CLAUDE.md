@@ -15,7 +15,7 @@ de donnée de marché.
 
 | Couche | Où | Ce qu'elle contient |
 |---|---|---|
-| Cœur C++ | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc / xva : moteur d'exposition), `pricers`, `risk` (xVA, WP 23 : métriques d'exposition, netting et profils par netting set, intégrales CVA / DVA / FVA / MVA / KVA, capital réglementaire dans `risk/regulatory/`), `utils` (Sobol, pont brownien, control variates, greeks) |
+| Cœur C++ | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc / xva : moteur d'exposition), `pricers`, `risk` (xVA, WP 23 : métriques d'exposition, netting et profils par netting set, collatéral, intégrales CVA / DVA / FVA / MVA / KVA, capital réglementaire dans `risk/regulatory/`), `utils` (Sobol, pont brownien, control variates, greeks) |
 | Bindings | `bindings/python/` | pybind11 → wheel `quantmodeling` |
 | API | `api/app/` | FastAPI : `routers/` (pricing, market, credit, portfolio, backtest, auth, local-vol, assistant, admin), `credit.py` + `fundamentals.py` (spreads, hazard, Merton, états 10-K / 10-Q), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), `audit/` (événements d'audit vers le Kafka de `quant-platform`), `valuation.py` + `replay.py` (enregistrement et replay des valorisations), `telemetry.py` (OpenTelemetry), auth JWT, cache |
 | Front | `web/src/` | React 18 + Vite + TypeScript |
