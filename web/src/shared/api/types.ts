@@ -30,6 +30,7 @@ export type CreditSpreadsResponse = Schemas["CreditSpreadsResponse"];
 export type RatesAnalysisRequest = Schemas["RatesAnalysisRequest-Input"];
 export type RatesAnalysisResponse = Schemas["RatesAnalysisResponse"];
 export type RatesExampleResponse = Schemas["RatesExampleResponse"];
+export type RatesMarketResponse = Schemas["RatesMarketResponse"];
 export type SpreadHistoryResponse = Schemas["SpreadHistoryResponse"];
 export type CompanySummary = Schemas["CompanySummary"];
 export type FundamentalsResponse = Schemas["FundamentalsResponse"];

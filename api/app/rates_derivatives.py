@@ -6,11 +6,13 @@ the two curves, a Hull-White model calibrated to a grid of ATM swaption normal
 vols, and one swaption priced under Bachelier, shifted Black, shifted SABR and
 Hull-White — European and Bermudan on the same swap.
 
-**The quotes are the user's.** No free source publishes OIS swap rates, an
-IBOR/term-rate swap curve or swaption vols (the government curves of the
-market page are bond yields, a different curve), so nothing here reads the
-database: the page starts from an illustrative EUR set (€STR OIS, EURIBOR 6M)
-flagged as such, and every number is computed from whatever quotes are sent.
+**Two sets of quotes.** The page starts from an illustrative EUR set (€STR
+OIS, EURIBOR 6M) flagged as such: no free source publishes dealer quotes of
+OIS swap rates, an IBOR swap curve or swaption vols. For USD SOFR there is the
+next best thing, and it is real: the swaps and swaptions actually traded,
+published by DTCC and stored by `data-ingest` (`market_request`,
+`swaption_market.py`). Either way every number is computed from the quotes
+that are sent, which the user can edit.
 The C++ does the work (`qm.bootstrap_ois_curve`, `bootstrap_projection_curve`,
 `price_swap`, `calibrate_hull_white`, `price_swaption`); this module shapes it
 and carries the methodology the page shows.
@@ -19,10 +21,12 @@ and carries the methodology the page shows.
 from __future__ import annotations
 
 import math
+from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
+from . import db, swaption_market
 from .rates_derivatives_schemas import (
     CalibrationPoint,
     CurvePoint,
@@ -343,11 +347,29 @@ def methodology() -> List[MethodologySection]:
         (
             "Where the quotes come from",
             [
-                "Nothing on this page is market data. No free source publishes OIS "
-                "swap rates, the swap curve of a floating index or swaption "
-                "volatilities, so the page starts from illustrative EUR quotes and "
-                "prices whatever quotes you enter. The government curves of the Market "
-                "page are bond yields: a different curve, not an input here.",
+                "No free source publishes dealer quotes of OIS swap rates, the swap "
+                "curve of a floating index or swaption volatilities. The page starts "
+                "from illustrative EUR quotes, which are not market data, and prices "
+                "whatever quotes you enter. The government curves of the Market page "
+                "are bond yields: a different curve, not an input here.",
+                "The USD SOFR set is market data of another kind: not quotes but "
+                "trades. US swap dealers must report every swap to a repository, which "
+                "publishes its price and size (CFTC public dissemination; DTCC's "
+                "repository, stored daily). The swap curve is, per tenor, the median "
+                "fixed rate of the spot-starting swaps traded on the latest day. Each "
+                "swaption vol is the median, over the last days, of the normal vols "
+                "implied by the traded premiums: premium / notional = annuity × "
+                "Bachelier(forward, strike, expiry, σ), solved for σ on the swap curve "
+                "of the trade's day. The number of trades behind each point is shown.",
+                "What is left out, and why: capped notionals (the premium is published "
+                "in full, the notional is not); novations and amendments (not prices); "
+                "trades away from the money (the files do not say whether a call is a "
+                "payer or a receiver, and only at the money does it not matter); "
+                "expiries beyond two years (their premium appears to be paid at expiry "
+                "rather than up front, which the files do not say). A straddle traded "
+                "on a platform carries the premium of both legs on each leg and counts "
+                "for half. These are medians of a handful of trades, not a dealer's "
+                "surface: read the trade counts.",
             ],
         ),
         (
@@ -444,4 +466,140 @@ def example_request() -> Dict:
     }
 
 
-__all__ = ["analyse", "example_request", "methodology", "EXAMPLE"]
+# ── USD SOFR quotes from traded swaps and swaptions ──────────────────────────
+
+#: What the DTCC sources of data-ingest call a SOFR swap.
+SOFR_SWAP = "NA/Swap OIS USD"
+#: Days of trades behind the swaption vols.
+MARKET_WINDOW_DAYS = 10
+#: Older than this, the latest swap curve is not "the market" any more.
+MARKET_STALE_AFTER_DAYS = 7
+#: Fewer vol points than this cannot calibrate (a, σ).
+_MIN_VOL_POINTS = 3
+
+
+class RatesMarketUnavailable(RuntimeError):
+    """Market quotes that cannot be built from what is in the store."""
+
+
+def market_request(today: Optional[date] = None) -> Dict:
+    """USD SOFR quotes built from the trades in the store, in the shape of
+    `example_request`, with what each number rests on.
+
+    No fallback: a missing or stale curve, or too few swaption trades, is an
+    explicit RatesMarketUnavailable.
+    """
+    today = today or date.today()
+    curves = db.dtcc_swap_curves(
+        SOFR_SWAP, today - timedelta(days=MARKET_WINDOW_DAYS + MARKET_STALE_AFTER_DAYS)
+    )
+    complete = {d: rates for d, rates in curves.items() if len(rates) >= 5}
+    if not complete:
+        raise RatesMarketUnavailable(
+            "No SOFR swap curve in the store (run data-ingest's dtcc-swap-rates source)"
+        )
+    as_of = max(complete)
+    age = (today - as_of).days
+    if age > MARKET_STALE_AFTER_DAYS:
+        raise RatesMarketUnavailable(
+            f"The latest SOFR swap curve is from {as_of.isoformat()}, {age} days ago: "
+            "data-ingest has not run, or DTCC has not published since"
+        )
+    window_start = as_of - timedelta(days=MARKET_WINDOW_DAYS)
+    trades = [
+        t
+        for t in db.dtcc_swaption_trades(SOFR_SWAP, window_start)
+        if t.report_date <= as_of
+    ]
+    grid = swaption_market.atm_normal_vols(trades, complete)
+    if len(grid.points) < _MIN_VOL_POINTS:
+        raise RatesMarketUnavailable(
+            f"Only {len(grid.points)} swaption vol points could be built from the "
+            f"{len(trades)} trades reported since {window_start.isoformat()}: "
+            "not enough to calibrate a model"
+        )
+
+    swap_rates = complete[as_of]
+    quotes = [{"tenor": float(r.tenor_years), "rate": r.rate} for r in swap_rates]
+    ten_year = min(swap_rates, key=lambda r: abs(r.tenor_years - 10))
+    # The swaption shown by default: the most traded point of the grid.
+    shown = max(grid.points, key=lambda p: p.trades)
+    shift = 0.01
+    return {
+        "currency": "USD",
+        "label": (
+            f"USD SOFR, from the swaps and swaptions traded and published by DTCC: swap "
+            f"curve of {as_of.isoformat()}, swaption vols from {grid.trades_used} trades "
+            f"since {window_start.isoformat()}. Medians of trades, not dealer quotes."
+        ),
+        "as_of": as_of,
+        "window_start": window_start,
+        # SOFR swaps pay both legs annually, and one curve both discounts and
+        # projects: the "index" curve is bootstrapped on the same quotes.
+        "fixed_frequency": 1,
+        "float_frequency": 1,
+        "deposits": [],
+        "ois": quotes,
+        "fras": [],
+        "swaps": quotes,
+        "swaption_vols": [
+            {"expiry": p.expiry, "tenor": float(p.tenor), "normal_vol": p.normal_vol}
+            for p in grid.points
+        ],
+        "hull_white_mean_reversion": None,
+        "swap": {
+            "start": 0.0,
+            "tenor": float(ten_year.tenor_years),
+            "fixed_rate": round(ten_year.rate, 4),
+            "notional": 10_000_000.0,
+            "payer": True,
+        },
+        "swaption": {
+            "expiry": shown.expiry,
+            "tenor": float(shown.tenor),
+            "strike": None,
+            "payer": True,
+            "notional": 10_000_000.0,
+            "normal_vol": None,
+            # The lognormal and SABR inputs that correspond to the normal vol
+            # at the money: σ_N ≈ σ_LN (F + shift) ≈ α (F + shift)^β.
+            "lognormal_vol": round(shown.normal_vol / (ten_year.rate + shift), 4),
+            "shift": shift,
+            "sabr": {
+                "alpha": round(shown.normal_vol / math.sqrt(ten_year.rate + shift), 4),
+                "beta": 0.5,
+                "rho": -0.2,
+                "nu": 0.3,
+            },
+        },
+        "swap_rates": [
+            {"tenor": float(r.tenor_years), "rate": r.rate, "trades": r.trades}
+            for r in swap_rates
+        ],
+        "market_vols": [
+            {
+                "expiry": p.expiry,
+                "tenor": float(p.tenor),
+                "normal_vol": p.normal_vol,
+                "low": p.low,
+                "high": p.high,
+                "trades": p.trades,
+            }
+            for p in grid.points
+        ],
+        "trades_used": grid.trades_used,
+        "rejected": [
+            {"reason": reason, "trades": count}
+            for reason, count in sorted(grid.rejected.items(), key=lambda kv: -kv[1])
+        ],
+    }
+
+
+__all__ = [
+    "analyse",
+    "example_request",
+    "market_request",
+    "methodology",
+    "EXAMPLE",
+    "RatesMarketUnavailable",
+]

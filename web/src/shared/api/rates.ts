@@ -6,6 +6,7 @@ import type {
 	RatesAnalysisRequest,
 	RatesAnalysisResponse,
 	RatesExampleResponse,
+	RatesMarketResponse,
 } from "./types";
 
 /**
@@ -35,6 +36,24 @@ export function useRatesExample() {
 		queryFn: ({ signal }) =>
 			call<RatesExampleResponse>(signal, (s) =>
 				api.GET("/api/rates/example", { signal: s }),
+			),
+	});
+}
+
+/**
+ * USD SOFR quotes built from traded swaps and swaptions (DTCC, stored by
+ * data-ingest). Fetched only when the user asks for them; a 503 says what is
+ * missing from the store.
+ */
+export function useRatesMarket(enabled: boolean) {
+	return useQuery({
+		queryKey: queryKeys.rates.market(),
+		enabled,
+		staleTime: 60 * 60 * 1000,
+		retry: false,
+		queryFn: ({ signal }) =>
+			call<RatesMarketResponse>(signal, (s) =>
+				api.GET("/api/rates/market", { signal: s }),
 			),
 	});
 }

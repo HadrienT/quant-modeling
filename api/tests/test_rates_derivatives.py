@@ -95,7 +95,9 @@ def test_quotes_no_curve_can_reprice_are_a_422(example):
 
 def test_the_methodology_says_the_quotes_are_not_market_data():
     text = " ".join(p for s in rates_derivatives.methodology() for p in s.paragraphs)
-    assert "Nothing on this page is market data" in text
+    assert "illustrative EUR quotes, which are not market data" in text
+    # The USD set is trades, not quotes, and says what it leaves out.
+    assert "not quotes but trades" in text and "read the trade counts" in text
 
 
 def test_the_example_validates_as_a_request():

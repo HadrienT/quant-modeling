@@ -3,6 +3,7 @@ Rates and vols are decimals (0.0123 = 1.23 % = 123 bp); times in years."""
 
 from __future__ import annotations
 
+from datetime import date
 from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -171,6 +172,41 @@ class RatesAnalysisResponse(BaseModel):
     hull_white: HullWhiteCalibrationResult
     swaption: SwaptionResult
     methodology: List[MethodologySection]
+
+
+class MarketSwapRate(BaseModel):
+    tenor: float
+    rate: float
+    trades: int = Field(description="Swaps traded that day behind the median")
+
+
+class MarketSwaptionVol(BaseModel):
+    expiry: float
+    tenor: float
+    normal_vol: float = Field(description="Median over the window, rate units")
+    low: float = Field(description="Lower quartile")
+    high: float = Field(description="Upper quartile")
+    trades: int
+
+
+class RejectedTrades(BaseModel):
+    reason: str
+    trades: int
+
+
+class RatesMarketResponse(BaseModel):
+    """Quotes built from traded swaps and swaptions (DTCC public
+    dissemination), in the shape the page computes on."""
+
+    currency: str
+    label: str
+    as_of: date
+    window_start: date
+    request: RatesAnalysisRequest
+    swap_rates: List[MarketSwapRate]
+    swaption_vols: List[MarketSwaptionVol]
+    trades_used: int
+    rejected: List[RejectedTrades]
 
 
 class RatesExampleResponse(BaseModel):
