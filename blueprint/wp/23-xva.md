@@ -1230,21 +1230,26 @@ ni CSA réels) et en fixe donc l'objet :
 
    | Entrée | État | Écart au réel |
    |---|---|---|
-   | Courbe d'actualisation | réelle (FRED, en base) | Treasury / SOFR, pas de cotations OIS |
-   | Vol de Hull-White | **manque** | aucune surface de vols de swaptions gratuite |
+   | Courbe d'actualisation | réelle : courbe de swaps SOFR 1–30 ans tirée des swaps traités (`rates.dtcc_swap_rates`), en plus de FRED | médiane des transactions du jour, pas des cotations ; rien sous 1 an |
+   | Vol de Hull-White | **réelle depuis le 2026-10-01** : transactions de swaptions publiées par la DTCC (`data-ingest`, `rates.dtcc_swaptions`), inversées en vols normales ATM (`api/app/swaption_market.py`) | médianes de quelques transactions par point, pas une surface de dealer ; échéances ≤ 2 ans ; USD SOFR seulement |
    | Crédit des contreparties | réel mais proxy (OAS ICE BofA par notation) | pas de CDS single-name |
    | Termes des CSA | réels : ceux des règles de marge (seuil nul, MTA 500 k€, 10 jours) | — |
    | Transactions | synthétiques, calibrées sur des tailles réalistes | pas de portefeuille de banque public |
    | Chiffres de contrôle | à ingérer : rapports Pilier 3 (EAD, capital CVA) | ordres de grandeur seulement |
 
-   Le verrou est la volatilité. Deux voies, non exclusives : (a) l'estimer sur
-   l'historique des taux — légitime pour la mesure historique, pas pour un
-   prix ; (b) l'impliciter de **vraies transactions de swaptions** publiées
-   gratuitement par le référentiel central de la DTCC (*public price
-   dissemination*, un fichier par jour et par classe d'actifs, environ un an
-   d'historique). La voie (b) est à vérifier sur un fichier réel (champs
-   disponibles, prime, notionnels plafonnés) avant de s'y engager ; c'est un
-   travail d'ingestion, donc dans `~/data-ingest`.
+   Le verrou était la volatilité ; il est levé (issue #137). Les
+   **transactions de swaptions** publiées par le référentiel central de la
+   DTCC (*public price dissemination*, un fichier par jour) sont ingérées par
+   `~/data-ingest` (sources `dtcc-swaptions` et `dtcc-swap-rates`), et
+   `GET /api/rates/market` en tire un jeu de cotations USD SOFR : courbe de
+   swaps du jour et vols normales ATM, avec le nombre de transactions derrière
+   chaque point. Sur les données du 30 septembre 2026, Hull-White se cale à
+   a = 4,6 %, σ = 122 pb, avec 5 pb d'écart quadratique. Les fichiers ne
+   restent téléchargeables qu'environ deux ans : l'historique part de fin
+   septembre 2024. Reste ouvert : la convention de prime des échéances
+   longues (comptant ou à l'échéance), qui limite la grille à 2 ans
+   d'échéance. L'estimation historique sur les taux reste nécessaire pour la
+   mesure historique (lot X1b).
 
 ---
 
@@ -1431,7 +1436,7 @@ particulièrement bien ici :
 | Besoin | Ce qu'on a | Limite, à dire dans la doc et l'interface |
 |---|---|---|
 | Courbes de taux | FRED (Treasury, SOFR) dans la base `data-ingest` ; multi-courbe (WP 21) | pas de cotations OIS / swaps réelles gratuites |
-| Vols de swaptions (calibration HW) | pas de source gratuite (WP 21 §5) | calibration sur une grille de vols documentée comme hypothèse |
+| Vols de swaptions (calibration HW) | transactions de swaptions SOFR publiées par la DTCC, en base depuis le 2026-10-01 (§13.7) | médianes de transactions, échéances ≤ 2 ans, USD seulement ; pas une surface de dealer |
 | Crédit des contreparties | OAS ICE BofA par notation et maturité (WP 20) | courbes proxy ; base CDS-obligation et prime de liquidité non corrigées ; pas de CDS single-name |
 | Notre propre spread (DVA, FVA) | idem, par la notation qu'on se donne | hypothèse utilisateur |
 | Portefeuilles, CSA, contreparties | le portefeuille de l'utilisateur (`portfolio_ledger`) | CSA et contreparties saisis par l'utilisateur ; démonstration sur portefeuilles synthétiques |

@@ -17,7 +17,7 @@ de donnée de marché.
 |---|---|---|
 | Cœur C++ | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc / xva : moteur d'exposition), `pricers`, `risk` (xVA, WP 23 : métriques d'exposition, netting et profils par netting set, collatéral, intégrales CVA / DVA / FVA / MVA / KVA, capital réglementaire dans `risk/regulatory/`), `utils` (Sobol, pont brownien, control variates, greeks) |
 | Bindings | `bindings/python/` | pybind11 → wheel `quantmodeling` |
-| API | `api/app/` | FastAPI : `routers/` (pricing, market, credit, portfolio, backtest, auth, local-vol, assistant, admin), `credit.py` + `fundamentals.py` (spreads, hazard, Merton, états 10-K / 10-Q), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), `audit/` (événements d'audit vers le Kafka de `quant-platform`), `valuation.py` + `replay.py` (enregistrement et replay des valorisations), `telemetry.py` (OpenTelemetry), auth JWT, cache |
+| API | `api/app/` | FastAPI : `routers/` (pricing, market, credit, portfolio, backtest, auth, local-vol, assistant, admin), `credit.py` + `fundamentals.py` (spreads, hazard, Merton, états 10-K / 10-Q), `swaption_market.py` (vols normales ATM tirées des transactions de swaptions DTCC, pour caler Hull-White sur le marché), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), `audit/` (événements d'audit vers le Kafka de `quant-platform`), `valuation.py` + `replay.py` (enregistrement et replay des valorisations), `telemetry.py` (OpenTelemetry), auth JWT, cache |
 | Front | `web/src/` | React 18 + Vite + TypeScript |
 | CLI | `main.cpp` | binaire de démo |
 
@@ -52,7 +52,7 @@ sait rejouer. Tout nouveau log ou événement métier passe par `api/app/audit/`
 
 Les données de marché viennent de **la base Postgres alimentée par
 `~/data-ingest`** (cours, chaînes d'options, rendements de dividende, courbes
-FRED, spreads de crédit ICE BofA, faits XBRL des 10-K / 10-Q du S&P 500). **Tout nouveau chemin de données passe par la base, sans repli vers Yahoo
+FRED, spreads de crédit ICE BofA, faits XBRL des 10-K / 10-Q du S&P 500, swaps et swaptions SOFR traités publiés par la DTCC). **Tout nouveau chemin de données passe par la base, sans repli vers Yahoo
 Finance** : une donnée absente ou trop ancienne y est une erreur explicite (les
 chemins de pricing des scripts passent par `api/app/market_snapshot.py`, qui
 n'importe pas `yfinance`). Les replis en direct **déjà en place** dans les

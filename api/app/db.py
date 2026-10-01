@@ -21,6 +21,12 @@ Tables it reads:
                                 fiscal_period, form, filed, accession, frame)
   fundamentals.sec_filings    (cik, tickers, accession, form, filed, report_date,
                                 url, entity_name, sic, sic_description)
+  rates.dtcc_swap_rates       (date, product, currency, tenor_years, rate,
+                                rate_p25, rate_p75, trades)  par swap rates of the day's trades
+  rates.dtcc_swaptions        (dissemination_id, report_date, action_type, event_type,
+                                execution_timestamp, option_type, underlier, expiry,
+                                underlier_maturity, strike, notional, notional_capped,
+                                premium, platform, …)  swaption trades as published by DTCC
 
 If PGHOST is unset or the store is unreachable, callers get a clear 503 rather
 than a silent fallback to a different data source.
@@ -333,6 +339,84 @@ def rates_curve_history(
         by_date.setdefault(d, {})[sid] = float(v)
     n = len(set(ids))
     return [(d, vals) for d, vals in sorted(by_date.items()) if len(vals) == n]
+
+
+# ── rates.dtcc_* (DTCC public dissemination: traded swaps and swaptions) ─────
+#
+# data-ingest stores the swaption messages raw; which of them are prices, and
+# how a premium becomes a volatility, is decided by the reader
+# (swaption_market.py).
+
+
+@dataclass(frozen=True, slots=True)
+class SwapRate:
+    tenor_years: int
+    rate: float
+    trades: int
+
+
+def dtcc_swap_curves(product: str, since: date) -> dict:
+    """{date: [SwapRate, ...]} — the par swap curve of each day since `since`,
+    tenors ascending: the median fixed rate of that day's traded swaps."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, tenor_years, rate, trades FROM rates.dtcc_swap_rates "
+            "WHERE product = %s AND date >= %s ORDER BY date, tenor_years",
+            (product, since),
+        )
+        rows = cur.fetchall()
+    curves: dict = {}
+    for d, tenor, rate, trades in rows:
+        curves.setdefault(d, []).append(SwapRate(int(tenor), float(rate), int(trades)))
+    return curves
+
+
+@dataclass(frozen=True, slots=True)
+class SwaptionTrade:
+    report_date: date
+    trade_date: date
+    option_type: str  # "call" | "put" | "other"
+    expiry: date
+    underlier_maturity: date
+    strike: float
+    notional: float
+    premium: float
+    platform: Optional[str]
+
+
+def dtcc_swaption_trades(underlier: str, since: date) -> List[SwaptionTrade]:
+    """New swaption trades on `underlier` reported since `since` that carry a
+    price: a premium, a strike, a full (uncapped) notional and both dates.
+
+    Novations, amendments, terminations and exercises are messages about an
+    older trade, not prices; a capped notional makes premium / notional
+    meaningless (the premium is published in full, the notional is not)."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT report_date, COALESCE((execution_timestamp AT TIME ZONE 'UTC')::date, "
+            "report_date), option_type, expiry, underlier_maturity, strike, notional, "
+            "premium, platform FROM rates.dtcc_swaptions "
+            "WHERE underlier = %s AND report_date >= %s "
+            "AND action_type = 'NEWT' AND event_type = 'TRAD' AND NOT notional_capped "
+            "AND premium > 0 AND notional > 0 AND strike IS NOT NULL "
+            "AND expiry IS NOT NULL AND underlier_maturity IS NOT NULL "
+            "ORDER BY report_date, dissemination_id",
+            (underlier, since),
+        )
+        return [
+            SwaptionTrade(
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                float(r[5]),
+                float(r[6]),
+                float(r[7]),
+                r[8],
+            )
+            for r in cur.fetchall()
+        ]
 
 
 # ── fundamentals.sec_* (SEC EDGAR 10-K / 10-Q, S&P 500) ──────────────────────

@@ -3845,6 +3845,71 @@
         "title": "MarketInfo",
         "type": "object"
       },
+      "MarketSwapRate": {
+        "properties": {
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          },
+          "trades": {
+            "description": "Swaps traded that day behind the median",
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenor",
+          "rate",
+          "trades"
+        ],
+        "title": "MarketSwapRate",
+        "type": "object"
+      },
+      "MarketSwaptionVol": {
+        "properties": {
+          "expiry": {
+            "title": "Expiry",
+            "type": "number"
+          },
+          "high": {
+            "description": "Upper quartile",
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "description": "Lower quartile",
+            "title": "Low",
+            "type": "number"
+          },
+          "normal_vol": {
+            "description": "Median over the window, rate units",
+            "title": "Normal Vol",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expiry",
+          "tenor",
+          "normal_vol",
+          "low",
+          "high",
+          "trades"
+        ],
+        "title": "MarketSwaptionVol",
+        "type": "object"
+      },
       "MarketVegaResponse": {
         "description": "dV / d(each quoted implied vol) of a library product under the local\nvol of the stored chain: the Dupire superbucket (lot 17h).",
         "properties": {
@@ -5890,6 +5955,70 @@
         "title": "RatesHistoryResponse",
         "type": "object"
       },
+      "RatesMarketResponse": {
+        "description": "Quotes built from traded swaps and swaptions (DTCC public\ndissemination), in the shape the page computes on.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedTrades"
+            },
+            "title": "Rejected",
+            "type": "array"
+          },
+          "request": {
+            "$ref": "#/components/schemas/RatesAnalysisRequest-Output"
+          },
+          "swap_rates": {
+            "items": {
+              "$ref": "#/components/schemas/MarketSwapRate"
+            },
+            "title": "Swap Rates",
+            "type": "array"
+          },
+          "swaption_vols": {
+            "items": {
+              "$ref": "#/components/schemas/MarketSwaptionVol"
+            },
+            "title": "Swaption Vols",
+            "type": "array"
+          },
+          "trades_used": {
+            "title": "Trades Used",
+            "type": "integer"
+          },
+          "window_start": {
+            "format": "date",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "label",
+          "as_of",
+          "window_start",
+          "request",
+          "swap_rates",
+          "swaption_vols",
+          "trades_used",
+          "rejected"
+        ],
+        "title": "RatesMarketResponse",
+        "type": "object"
+      },
       "RatesOverviewResponse": {
         "properties": {
           "benchmarks": {
@@ -6018,6 +6147,24 @@
           "default_probabilities"
         ],
         "title": "RatingSpread",
+        "type": "object"
+      },
+      "RejectedTrades": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reason",
+          "trades"
+        ],
+        "title": "RejectedTrades",
         "type": "object"
       },
       "ReplayOutcome": {
@@ -11134,6 +11281,24 @@
           }
         },
         "summary": "Rates Example"
+      }
+    },
+    "/api/rates/market": {
+      "get": {
+        "operationId": "rates_market",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatesMarketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rates Market"
       }
     },
     "/api/simulation/calibrate": {

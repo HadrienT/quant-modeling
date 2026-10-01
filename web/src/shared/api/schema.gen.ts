@@ -629,6 +629,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rates/market": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rates Market */
+        get: operations["rates_market"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/simulation/calibrate": {
         parameters: {
             query?: never;
@@ -3023,6 +3040,42 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** MarketSwapRate */
+        MarketSwapRate: {
+            /** Rate */
+            rate: number;
+            /** Tenor */
+            tenor: number;
+            /**
+             * Trades
+             * @description Swaps traded that day behind the median
+             */
+            trades: number;
+        };
+        /** MarketSwaptionVol */
+        MarketSwaptionVol: {
+            /** Expiry */
+            expiry: number;
+            /**
+             * High
+             * @description Upper quartile
+             */
+            high: number;
+            /**
+             * Low
+             * @description Lower quartile
+             */
+            low: number;
+            /**
+             * Normal Vol
+             * @description Median over the window, rate units
+             */
+            normal_vol: number;
+            /** Tenor */
+            tenor: number;
+            /** Trades */
+            trades: number;
+        };
         /**
          * MarketVegaResponse
          * @description dV / d(each quoted implied vol) of a library product under the local
@@ -3976,6 +4029,36 @@ export interface components {
             /** Series Id */
             series_id: string;
         };
+        /**
+         * RatesMarketResponse
+         * @description Quotes built from traded swaps and swaptions (DTCC public
+         *     dissemination), in the shape the page computes on.
+         */
+        RatesMarketResponse: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Currency */
+            currency: string;
+            /** Label */
+            label: string;
+            /** Rejected */
+            rejected: components["schemas"]["RejectedTrades"][];
+            request: components["schemas"]["RatesAnalysisRequest-Output"];
+            /** Swap Rates */
+            swap_rates: components["schemas"]["MarketSwapRate"][];
+            /** Swaption Vols */
+            swaption_vols: components["schemas"]["MarketSwaptionVol"][];
+            /** Trades Used */
+            trades_used: number;
+            /**
+             * Window Start
+             * Format: date
+             */
+            window_start: string;
+        };
         /** RatesOverviewResponse */
         RatesOverviewResponse: {
             /** Benchmarks */
@@ -4020,6 +4103,13 @@ export interface components {
             series_id: string;
             /** Spread */
             spread: number;
+        };
+        /** RejectedTrades */
+        RejectedTrades: {
+            /** Reason */
+            reason: string;
+            /** Trades */
+            trades: number;
         };
         /**
          * ReplayOutcome
@@ -6575,6 +6665,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RatesExampleResponse"];
+                };
+            };
+        };
+    };
+    rates_market: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatesMarketResponse"];
                 };
             };
         };

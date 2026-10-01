@@ -667,5 +667,408 @@
 				]
 			}
 		]
+	},
+	"market": {
+		"currency": "USD",
+		"label": "USD SOFR, from the swaps and swaptions traded and published by DTCC: swap curve of 2026-09-30, swaption vols from 168 trades since 2026-09-20. Medians of trades, not dealer quotes.",
+		"as_of": "2026-09-30",
+		"window_start": "2026-09-20",
+		"request": {
+			"fixed_frequency": 1,
+			"float_frequency": 1,
+			"deposits": [],
+			"ois": [
+				{
+					"tenor": 1.0,
+					"rate": 0.045493
+				},
+				{
+					"tenor": 2.0,
+					"rate": 0.0473
+				},
+				{
+					"tenor": 3.0,
+					"rate": 0.0477325
+				},
+				{
+					"tenor": 4.0,
+					"rate": 0.0479214
+				},
+				{
+					"tenor": 5.0,
+					"rate": 0.047797
+				},
+				{
+					"tenor": 6.0,
+					"rate": 0.0479683
+				},
+				{
+					"tenor": 7.0,
+					"rate": 0.0481458
+				},
+				{
+					"tenor": 8.0,
+					"rate": 0.048129
+				},
+				{
+					"tenor": 9.0,
+					"rate": 0.048391
+				},
+				{
+					"tenor": 10.0,
+					"rate": 0.04859
+				},
+				{
+					"tenor": 12.0,
+					"rate": 0.0492998
+				},
+				{
+					"tenor": 15.0,
+					"rate": 0.049999249999999995
+				},
+				{
+					"tenor": 20.0,
+					"rate": 0.0503486
+				},
+				{
+					"tenor": 25.0,
+					"rate": 0.04998695
+				},
+				{
+					"tenor": 30.0,
+					"rate": 0.04944
+				}
+			],
+			"fras": [],
+			"swaps": [
+				{
+					"tenor": 1.0,
+					"rate": 0.045493
+				},
+				{
+					"tenor": 2.0,
+					"rate": 0.0473
+				},
+				{
+					"tenor": 3.0,
+					"rate": 0.0477325
+				},
+				{
+					"tenor": 4.0,
+					"rate": 0.0479214
+				},
+				{
+					"tenor": 5.0,
+					"rate": 0.047797
+				},
+				{
+					"tenor": 6.0,
+					"rate": 0.0479683
+				},
+				{
+					"tenor": 7.0,
+					"rate": 0.0481458
+				},
+				{
+					"tenor": 8.0,
+					"rate": 0.048129
+				},
+				{
+					"tenor": 9.0,
+					"rate": 0.048391
+				},
+				{
+					"tenor": 10.0,
+					"rate": 0.04859
+				},
+				{
+					"tenor": 12.0,
+					"rate": 0.0492998
+				},
+				{
+					"tenor": 15.0,
+					"rate": 0.049999249999999995
+				},
+				{
+					"tenor": 20.0,
+					"rate": 0.0503486
+				},
+				{
+					"tenor": 25.0,
+					"rate": 0.04998695
+				},
+				{
+					"tenor": 30.0,
+					"rate": 0.04944
+				}
+			],
+			"swaption_vols": [
+				{
+					"expiry": 0.25,
+					"tenor": 5.0,
+					"normal_vol": 0.01048179410712658
+				},
+				{
+					"expiry": 0.25,
+					"tenor": 10.0,
+					"normal_vol": 0.009725847280664607
+				},
+				{
+					"expiry": 0.5,
+					"tenor": 10.0,
+					"normal_vol": 0.00996270922818433
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 1.0,
+					"normal_vol": 0.012347319976546381
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 2.0,
+					"normal_vol": 0.011723659310896702
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 5.0,
+					"normal_vol": 0.011086408416988217
+				},
+				{
+					"expiry": 1.0,
+					"tenor": 10.0,
+					"normal_vol": 0.010266589630799055
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 1.0,
+					"normal_vol": 0.01244783781789089
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 2.0,
+					"normal_vol": 0.012142790736894744
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 5.0,
+					"normal_vol": 0.011433334969139397
+				},
+				{
+					"expiry": 2.0,
+					"tenor": 10.0,
+					"normal_vol": 0.01071159635144589
+				}
+			],
+			"hull_white_mean_reversion": null,
+			"swap": {
+				"start": 0.0,
+				"tenor": 10.0,
+				"fixed_rate": 0.0486,
+				"notional": 10000000.0,
+				"payer": true
+			},
+			"swaption": {
+				"expiry": 0.5,
+				"tenor": 10.0,
+				"strike": null,
+				"payer": true,
+				"notional": 10000000.0,
+				"normal_vol": null,
+				"lognormal_vol": 0.17,
+				"shift": 0.01,
+				"sabr": {
+					"alpha": 0.0412,
+					"beta": 0.5,
+					"rho": -0.2,
+					"nu": 0.3
+				}
+			}
+		},
+		"swap_rates": [
+			{
+				"tenor": 1.0,
+				"rate": 0.045493,
+				"trades": 106
+			},
+			{
+				"tenor": 2.0,
+				"rate": 0.0473,
+				"trades": 191
+			},
+			{
+				"tenor": 3.0,
+				"rate": 0.0477325,
+				"trades": 100
+			},
+			{
+				"tenor": 4.0,
+				"rate": 0.0479214,
+				"trades": 49
+			},
+			{
+				"tenor": 5.0,
+				"rate": 0.047797,
+				"trades": 365
+			},
+			{
+				"tenor": 6.0,
+				"rate": 0.0479683,
+				"trades": 43
+			},
+			{
+				"tenor": 7.0,
+				"rate": 0.0481458,
+				"trades": 93
+			},
+			{
+				"tenor": 8.0,
+				"rate": 0.048129,
+				"trades": 24
+			},
+			{
+				"tenor": 9.0,
+				"rate": 0.048391,
+				"trades": 24
+			},
+			{
+				"tenor": 10.0,
+				"rate": 0.04859,
+				"trades": 425
+			},
+			{
+				"tenor": 12.0,
+				"rate": 0.0492998,
+				"trades": 33
+			},
+			{
+				"tenor": 15.0,
+				"rate": 0.049999249999999995,
+				"trades": 38
+			},
+			{
+				"tenor": 20.0,
+				"rate": 0.0503486,
+				"trades": 61
+			},
+			{
+				"tenor": 25.0,
+				"rate": 0.04998695,
+				"trades": 22
+			},
+			{
+				"tenor": 30.0,
+				"rate": 0.04944,
+				"trades": 263
+			}
+		],
+		"swaption_vols": [
+			{
+				"expiry": 0.25,
+				"tenor": 5.0,
+				"normal_vol": 0.01048179410712658,
+				"low": 0.010453806657597181,
+				"high": 0.013103760760035919,
+				"trades": 4
+			},
+			{
+				"expiry": 0.25,
+				"tenor": 10.0,
+				"normal_vol": 0.009725847280664607,
+				"low": 0.008146895963211628,
+				"high": 0.009931095531709972,
+				"trades": 12
+			},
+			{
+				"expiry": 0.5,
+				"tenor": 10.0,
+				"normal_vol": 0.00996270922818433,
+				"low": 0.009961809289242823,
+				"high": 0.010138039908675416,
+				"trades": 36
+			},
+			{
+				"expiry": 1.0,
+				"tenor": 1.0,
+				"normal_vol": 0.012347319976546381,
+				"low": 0.012172266978699577,
+				"high": 0.012521743078651924,
+				"trades": 15
+			},
+			{
+				"expiry": 1.0,
+				"tenor": 2.0,
+				"normal_vol": 0.011723659310896702,
+				"low": 0.011667624423285538,
+				"high": 0.011779590842976542,
+				"trades": 8
+			},
+			{
+				"expiry": 1.0,
+				"tenor": 5.0,
+				"normal_vol": 0.011086408416988217,
+				"low": 0.011086408416988217,
+				"high": 0.01653063028206953,
+				"trades": 19
+			},
+			{
+				"expiry": 1.0,
+				"tenor": 10.0,
+				"normal_vol": 0.010266589630799055,
+				"low": 0.010027397612348193,
+				"high": 0.01039565765936533,
+				"trades": 28
+			},
+			{
+				"expiry": 2.0,
+				"tenor": 1.0,
+				"normal_vol": 0.01244783781789089,
+				"low": 0.012367510259860133,
+				"high": 0.01267056632563419,
+				"trades": 6
+			},
+			{
+				"expiry": 2.0,
+				"tenor": 2.0,
+				"normal_vol": 0.012142790736894744,
+				"low": 0.012142790736894744,
+				"high": 0.012233056229986022,
+				"trades": 6
+			},
+			{
+				"expiry": 2.0,
+				"tenor": 5.0,
+				"normal_vol": 0.011433334969139397,
+				"low": 0.011418820198033159,
+				"high": 0.011447849740245637,
+				"trades": 4
+			},
+			{
+				"expiry": 2.0,
+				"tenor": 10.0,
+				"normal_vol": 0.01071159635144589,
+				"low": 0.006550412446070604,
+				"high": 0.010870118175736222,
+				"trades": 30
+			}
+		],
+		"trades_used": 168,
+		"rejected": [
+			{
+				"reason": "off the grid (expiry beyond two years, odd tenor)",
+				"trades": 867
+			},
+			{
+				"reason": "away from the money",
+				"trades": 428
+			},
+			{
+				"reason": "no swap curve that day",
+				"trades": 4
+			},
+			{
+				"reason": "bucket with too few trades",
+				"trades": 2
+			}
+		]
 	}
 }
