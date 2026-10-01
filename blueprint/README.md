@@ -95,6 +95,8 @@ est à remplacer, pas à déplacer : c'est le préalable du
 | [19](wp/19-gpu.md) | Monte-Carlo GPU *(cœur C++, CUDA)* | Les deux V100 : Sobol et Philox adressables, pont brownien dans le moteur générique, réduction de variance à la Glasserman, scripts en bytecode, AAD par duaux et adjoint par chemin, reproductibilité bit à bit sur 1 ou 2 GPU, benchmark en temps pour une erreur donnée |
 | [20](wp/20-credit.md) | Crédit *(cœur C++, données, page)* | Courbe de hazard, CDS ISDA, bootstrap depuis des spreads, Merton calibré ; spreads ICE BofA et 10-K / 10-Q SEC ; page `/credit` |
 | [21](wp/21-rates.md) | Taux *(cœur C++, page)* | Multi-courbe OIS / projection, swaps, swaptions (Bachelier, Black, SABR), Hull-White calibré, bermudan, page `/rates` |
+| [22](wp/22-rough-bergomi.md) | Rough Bergomi calibré *(cœur C++)* | ξ0 répliqué sur le variance swap, (H, η, ρ) par Levenberg-Marquardt, pricer de surface sur chemins communs, modèle de script `rough_bergomi` |
+| [23](wp/23-xva.md) | xVA *(cœur C++, capstone)* | Exposition (EE, PFE, EEPE), netting, collatéral et MPoR, marge initiale (grille, SIMM, DIM), CVA / DVA / FVA / MVA / KVA, SA-CCR, IRB, BA-CVA / SA-CVA, wrong-way risk, moteur sur GPU, sensibilités CVA par AAD — compagnon de lecture de Gregory |
 | [99](wp/99-recovered-work.md) | Travail perdu à refaire | Fiches produit disparues avec la VM |
 
 ## 5. Graphe de dépendances
