@@ -137,6 +137,34 @@ class ValuationPayload(BaseModel):
     ip_hash: str | None = None
 
 
+# ── xva.valuation (blueprint/wp/23-xva.md, lot X3) ──────────────────────────
+
+
+class XvaResult(BaseModel):
+    cva: float
+    cva_std_error: float
+    dva: float
+    dva_std_error: float
+    epe: float
+    peak_pfe: float
+
+
+class XvaValuationPayload(BaseModel):
+    """The xVA of a netting set, with what it takes to run it again: the
+    request (portfolio, ratings, CSA, seed and paths — no credential), the
+    model the store calibrated, and the hashes of the market inputs."""
+
+    request: dict[str, Any]
+    request_hash: str
+    model: ModelSpec
+    engine: EngineSpec
+    market_inputs: list[MarketInput]
+    result: XvaResult
+    timing: ValuationTiming
+    code: CodeVersion
+    ip_hash: str | None = None
+
+
 # ── assistant.chat ───────────────────────────────────────────────────────────
 
 

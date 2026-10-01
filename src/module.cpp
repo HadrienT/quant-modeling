@@ -31,6 +31,10 @@
 #include "quantModeling/engines/analytic/hull_white_swaption.hpp"
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/market/hull_white_calibration.hpp"
+#include "quantModeling/engines/xva/exposure_engine.hpp"
+#include "quantModeling/market/historical_rate_dynamics.hpp"
+#include "quantModeling/risk/xva_report.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 #include "quantModeling/market/multi_curve_bootstrap.hpp"
 #include "quantModeling/engines/mc/lsm.hpp"
 #include "quantModeling/models/credit/merton_structural.hpp"
@@ -875,6 +879,203 @@ static py::dict calibrate_hull_white_impl(std::vector<qm_::Time> dt, std::vector
     out["strikes"] = c.strikes;
     out["market_vols"] = c.market_vols;
     out["model_vols"] = c.model_vols;
+    return out;
+}
+
+// ── xVA: exposure, collateral, CVA / DVA of a netting set (blueprint/wp/23-xva.md) ──
+//
+// One call runs the whole chain on common paths: Hull-White exposure cube,
+// collateral, exposure statistics, adjustments and each trade's share; and,
+// when historical dynamics are given, a second cube for the risk measures.
+
+namespace
+{
+    template <class T>
+    T item_or(const py::dict &d, const char *key, T fallback)
+    {
+        return d.contains(key) && !d[key].is_none() ? d[key].cast<T>() : fallback;
+    }
+
+    qm_::CreditCurve credit_curve(const std::pair<std::vector<qm_::Time>, std::vector<qm_::Real>> &pillars)
+    {
+        return qm_::CreditCurve(pillars.first, pillars.second);
+    }
+
+    py::dict exposure_dict(const qm_::ExposureStatistics &s)
+    {
+        py::dict out;
+        out["times"] = s.times;
+        out["ee"] = s.ee;
+        out["ene"] = s.ene;
+        out["efv"] = s.efv;
+        out["pfe"] = s.pfe;
+        out["pfe_confidence"] = s.pfe_confidence;
+        out["discounted_ee"] = s.discounted_ee;
+        out["discounted_ene"] = s.discounted_ene;
+        out["discounted_ee_error"] = s.discounted_ee_error;
+        out["discounted_ene_error"] = s.discounted_ene_error;
+        out["epe"] = s.epe;
+        out["eepe"] = s.eepe;
+        out["value_today"] = s.value_today;
+        return out;
+    }
+
+    py::dict estimate_dict(const qm_::Estimate &e)
+    {
+        py::dict out;
+        out["value"] = e.value;
+        out["error"] = e.error;
+        return out;
+    }
+
+    py::dict report_dict(const qm_::XvaReport &r)
+    {
+        py::dict out;
+        out["exposure"] = exposure_dict(r.exposure);
+        out["cva"] = estimate_dict(r.cva);
+        out["dva"] = estimate_dict(r.dva);
+        out["cva_unilateral"] = r.cva_unilateral;
+        out["fca"] = r.fca;
+        out["fba"] = r.fba;
+        out["cva_rule_of_thumb"] = r.cva_rule_of_thumb;
+        py::list contributions;
+        for (const qm_::TradeContribution &c : r.contributions)
+        {
+            py::dict row;
+            row["trade"] = c.trade;
+            row["standalone_cva"] = c.standalone_cva;
+            row["incremental_cva"] = c.incremental_cva;
+            // NaN under a CSA: no exact allocation exists.
+            row["marginal_cva"] = std::isnan(c.marginal_cva) ? py::object(py::none()) : py::cast(c.marginal_cva);
+            contributions.append(row);
+        }
+        out["contributions"] = contributions;
+        return out;
+    }
+} // namespace
+
+static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_::Real> dd,
+                                     std::pair<qm_::Real, qm_::Real> hull_white, const py::list &trades,
+                                     const std::pair<std::vector<qm_::Time>, std::vector<qm_::Real>> &counterparty_hazard,
+                                     const std::pair<std::vector<qm_::Time>, std::vector<qm_::Real>> &own_hazard,
+                                     qm_::Real lgd_counterparty, qm_::Real lgd_own, const py::object &csa,
+                                     qm_::Real borrowing_spread, qm_::Real lending_spread,
+                                     std::optional<std::tuple<qm_::Real, qm_::Real, qm_::Real>> historical,
+                                     std::size_t paths, std::uint64_t seed, qm_::Real pfe_confidence,
+                                     std::size_t threads)
+{
+    const qm_::DiscountCurve curve = rate_curve(std::move(dt), std::move(dd));
+    const qm_::HullWhiteCurveModel model(hull_white.first, hull_white.second, curve);
+
+    // Instruments are parsed while the GIL is held; the engine copies them.
+    qm_::HullWhiteExposureEngine engine(model);
+    for (const py::handle &h : trades)
+    {
+        const py::dict t = h.cast<py::dict>();
+        const auto kind = t["kind"].cast<std::string>();
+        const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
+        const qm_::Time expiry = item_or<qm_::Time>(t, "expiry", 0.0);
+        const bool is_swaption = kind == "swaption";
+        if (!is_swaption && kind != "swap")
+            throw qm_::InvalidInput("xva: unknown trade kind '" + kind + "' (swap, swaption)");
+        const qm_::InterestRateSwap swap = qm_::make_swap(
+            is_swaption ? expiry : item_or<qm_::Time>(t, "start", 0.0), t["tenor"].cast<qm_::Time>(),
+            t["fixed_rate"].cast<qm_::Real>(), item_or<int>(t, "fixed_frequency", 1),
+            item_or<int>(t, "float_frequency", 1), item_or<qm_::Real>(t, "notional", 1.0),
+            item_or<bool>(t, "payer", true));
+        if (is_swaption)
+            engine.add(qm_::Swaption(swap, expiry), quantity);
+        else
+            engine.add(swap, quantity);
+    }
+
+    qm_::XvaInputs inputs;
+    inputs.counterparty = credit_curve(counterparty_hazard);
+    inputs.own = credit_curve(own_hazard);
+    inputs.lgd_counterparty = lgd_counterparty;
+    inputs.lgd_own = lgd_own;
+    inputs.borrowing_spread = borrowing_spread;
+    inputs.lending_spread = lending_spread;
+    inputs.pfe_confidence = pfe_confidence;
+
+    qm_::ExposureSimulationSettings settings;
+    settings.paths = paths;
+    settings.seed = seed;
+    if (!csa.is_none())
+    {
+        const py::dict c = csa.cast<py::dict>();
+        qm_::Csa terms;
+        terms.threshold_counterparty = item_or<qm_::Real>(c, "threshold_counterparty", 0.0);
+        terms.threshold_bank = item_or<qm_::Real>(c, "threshold_bank", 0.0);
+        terms.minimum_transfer_amount = item_or<qm_::Real>(c, "minimum_transfer_amount", 0.0);
+        terms.rounding = item_or<qm_::Real>(c, "rounding", 0.0);
+        terms.independent_amount = item_or<qm_::Real>(c, "independent_amount", 0.0);
+        terms.margin_period_of_risk = item_or<qm_::Time>(c, "margin_period_of_risk", 10.0 / 250.0);
+        const auto flows = item_or<std::string>(c, "cashflows", "paid");
+        if (flows == "withheld")
+            inputs.collateral.cashflows = qm_::MarginPeriodCashflows::Withheld;
+        else if (flows == "only_bank_pays")
+            inputs.collateral.cashflows = qm_::MarginPeriodCashflows::OnlyBankPays;
+        else if (flows != "paid")
+            throw qm_::InvalidInput("xva: unknown cash-flow treatment '" + flows + "'");
+        inputs.csa = terms;
+        settings.grid.margin_period_of_risk = terms.margin_period_of_risk;
+        settings.keep_cashflows = inputs.collateral.cashflows != qm_::MarginPeriodCashflows::Paid;
+    }
+
+    std::optional<qm_::XvaReport> report, uncollateralised;
+    std::optional<qm_::ExposureStatistics> risk;
+    std::vector<qm_::Real> values_today;
+    {
+        py::gil_scoped_release release;
+        // The cube is shared and each path writes its own row: the worker
+        // count changes the wall time, never the numbers.
+        qm_::ThreadPool pool;
+        const std::size_t workers =
+            threads > 0 ? threads - 1 : std::min<std::size_t>(qm_::available_cpus(), 16) - 1;
+        if (workers > 0)
+            pool.start(workers);
+        const qm_::ExposurePaths cube = engine.simulate(settings, workers > 0 ? &pool : nullptr);
+        values_today = cube.trade_values_today;
+        report = qm_::xva_report(cube, inputs);
+        if (inputs.csa)
+        {
+            // The same paths without the CSA: what the collateral is worth.
+            qm_::XvaInputs open = inputs;
+            open.csa.reset();
+            uncollateralised = qm_::xva_report(cube, open);
+        }
+        if (historical)
+        {
+            settings.historical =
+                qm_::HistoricalRateDynamics{std::get<0>(*historical), std::get<1>(*historical), std::get<2>(*historical)};
+            const qm_::ExposurePaths real_world = engine.simulate(settings, workers > 0 ? &pool : nullptr);
+            risk = inputs.csa ? qm_::exposure_statistics(
+                                    qm_::collateralise(real_world, *inputs.csa, {}, inputs.collateral), {},
+                                    pfe_confidence)
+                              : qm_::exposure_statistics(real_world, {}, pfe_confidence);
+        }
+    }
+
+    py::dict out = report_dict(*report);
+    out["trade_values_today"] = values_today;
+    out["uncollateralised"] = uncollateralised ? py::object(report_dict(*uncollateralised)) : py::object(py::none());
+    out["risk"] = risk ? py::object(exposure_dict(*risk)) : py::object(py::none());
+    return out;
+}
+
+static py::dict estimate_historical_rate_dynamics_impl(const std::vector<qm_::Real> &rates, qm_::Time dt)
+{
+    const qm_::HistoricalRateEstimate e = qm_::estimate_historical_rate_dynamics(rates, dt);
+    py::dict out;
+    out["mean_reversion"] = e.dynamics.mean_reversion;
+    out["long_run_rate"] = e.dynamics.long_run_rate;
+    out["sigma"] = e.dynamics.sigma;
+    out["half_life"] = e.dynamics.half_life();
+    out["mean_reversion_std_error"] = e.mean_reversion_std_error;
+    out["long_run_rate_std_error"] = e.long_run_rate_std_error;
+    out["sigma_std_error"] = e.sigma_std_error;
+    out["observations"] = e.observations;
     return out;
 }
 
@@ -2075,6 +2276,22 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("fixed_mean_reversion") = py::none(),
           "Calibrate Hull-White (a, sigma) to ATM swaption normal vols [(expiry, tenor, vol)]; the "
           "report reads in bp of normal vol.");
+    m.def("xva_netting_set", &xva_netting_set_impl, py::arg("discount_times"), py::arg("discount_factors"),
+          py::arg("hull_white"), py::arg("trades"), py::arg("counterparty_hazard"), py::arg("own_hazard"),
+          py::arg("lgd_counterparty") = 0.6, py::arg("lgd_own") = 0.6, py::arg("csa") = py::none(),
+          py::arg("borrowing_spread") = 0.0, py::arg("lending_spread") = 0.0,
+          py::arg("historical") = py::none(), py::arg("paths") = 10000, py::arg("seed") = 42,
+          py::arg("pfe_confidence") = 0.95, py::arg("threads") = 0,
+          "Exposure and CVA / DVA of a netting set of swaps and European swaptions under Hull-White "
+          "(a, sigma): trades are dicts (kind 'swap' | 'swaption', tenor, fixed_rate, notional, payer, "
+          "quantity, start | expiry, frequencies); hazard curves are (times, hazards); csa a dict of its "
+          "terms or None; historical (a, theta, sigma) adds the risk-measure profiles. A cost is negative.");
+    m.def("estimate_historical_rate_dynamics", &estimate_historical_rate_dynamics_impl, py::arg("rates"),
+          py::arg("dt"),
+          "Maximum-likelihood (a, theta, sigma) of a mean-reverting Gaussian short rate from a series "
+          "observed every dt years, with standard errors. Raises when no mean reversion is measurable.");
+    m.def("estimate_historical_volatility", &quantModeling::estimate_historical_volatility, py::arg("rates"),
+          py::arg("dt"), "Absolute volatility of a rate series, sd of its changes per sqrt(year).");
     m.def("calibrate_vol_surface", &calibrate_vol_surface_impl,
           py::arg("quotes"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
           py::arg("k_min") = -0.6, py::arg("k_max") = 0.6,

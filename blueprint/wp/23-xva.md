@@ -1426,11 +1426,43 @@ drapeau `ExposureMeasure` sur le cube ; tests dans
   plate avant son premier pilier) n'a pas de taux court de départ ; le moteur
   le refuse au lieu de simuler depuis des milliers de pourcents.
 
-### 14.5 Suite
+### 14.5 Lot X3 : CVA / DVA de bout en bout
 
-Lot X3 : CVA / DVA de bout en bout sur le Hull-White calé sur le marché
-(§13.7), courbes de crédit proxy par notation, API et événement d'audit,
-pour les portefeuilles pédagogiques P1 à P6.
+Livré : `risk/xva_report.hpp` (le rapport d'un netting set), les bindings
+`qm.xva_netting_set` et `qm.estimate_historical_rate_dynamics`,
+`api/app/xva.py` avec `GET /api/xva/portfolios` et
+`POST /api/xva/netting-set`, l'événement d'audit `xva.valuation` ; tests dans
+`tests/testXvaReport.cpp` et `api/tests/test_xva.py`.
+
+- **Rapport** : exposition (après collatéral s'il y a un CSA), CVA et DVA au
+  premier défaut **avec leur erreur Monte-Carlo** (dispersion de la perte
+  chemin par chemin, corrélations entre dates comprises), CVA unilatéral, FCA
+  / FBA, la règle de pouce $-s \times EPE \times T$ en regard, et par
+  transaction : CVA seule, **incrémental** (avec et sans la transaction, sous
+  le même CSA) et **marginal** (Euler ; indéfini sous CSA). Il est rangé dans
+  `risk/` et non dans `pricers/adapters/` comme le prévoyait le §13.2 : il ne
+  dépend d'aucun produit.
+- **Entrées, toutes lues en base, sans repli** : courbe SOFR et Hull-White
+  calé sur les transactions DTCC (§13.7) ; crédit de la contrepartie et de la
+  banque par notation (OAS ICE BofA, hazard constant qui reprice un CDS 5 ans,
+  comme la page crédit) ; dynamique historique estimée sur le taux à 3 mois
+  depuis 1990, dont chaque paramètre peut être remplacé par l'utilisateur.
+- **Portefeuilles** P1 à P4 du §13.7 (`single_swap`, `bought_swaption`,
+  `sold_swaption`, `directional`, `balanced`), transactions au pair sur la
+  courbe du jour, notionnel de référence 10 M$ ; P5 est n'importe lequel avec
+  un CSA ; P6 attend les lots X4 et X6.
+- **Sur les données du 30 septembre 2026** (contrepartie BBB à 102 pb, banque
+  A, 20 000 chemins) : swap payeur 10 ans, CVA −24 100 $ ± 200 (règle de
+  pouce −27 200), DVA +15 600 ; book équilibré, CVA −15 700 pour −67 500 de
+  CVA des transactions prises une à une ; le même sous CSA à seuil nul et MTA de 250 k$,
+  CVA −3 900.
+- **Constat** : avec un fixe annuel et un flottant trimestriel, un swap
+  receveur porte une exposition systématique entre deux dates de coupon ; les
+  portefeuilles de l'API utilisent des jambes annuelles des deux côtés
+  (convention SOFR) pour ne pas mêler cet effet aux leçons.
+- **Reste** : le rejeu par `POST /api/admin/replay/{id}` n'est pas branché
+  (l'événement porte ce qu'il faut : requête, graine, modèle, empreintes des
+  entrées) ; la page `/xva` (lot X9).
 
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
