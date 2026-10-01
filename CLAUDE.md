@@ -136,14 +136,19 @@ adjoints, GPU) bat la largeur.
   les messages par `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 - **C++** : `clang-format --style=file`, **version 18** (celle de la CI, job
   `format-check` ; le pre-commit est épinglé sur la même). Un fichier mal
-  formaté fait échouer la CI. `clang-format` n'est pas installé sur la machine :
-  `uvx --from clang-format==18.1.3 clang-format -i $(git ls-files '*.cpp' '*.hpp')`.
+  formaté fait échouer la CI ; le hook pre-commit (ci-dessous) l'empêche. Pour
+  tout reformater à la main : `pre-commit run --all-files`.
   **Python** : `black`.
-- `.pre-commit-config.yaml` (clang-format, black, et `cmake + ctest` en
-  pre-push) **n'est pas installé par défaut** : `.git/hooks` est vide tant qu'on
-  n'a pas lancé `pre-commit install -t pre-commit -t pre-push`. Sans lui, rien
-  n'arrête un push avec des tests rouges hormis la CI : lancer `scripts/make.sh`
-  avant de pousser du C++.
+- **Le hook pre-commit est installé sur le serveur** (`.git/hooks/pre-commit`,
+  partagé par les deux worktrees) : à chaque `git commit`, clang-format 18 et
+  black reformatent les fichiers indexés. S'il a modifié quelque chose, le
+  commit **s'arrête** (« files were modified by this hook ») : refaire
+  `git add` des mêmes fichiers puis `git commit`, c'est tout. Ne jamais le
+  contourner par `--no-verify`. Sur un autre clone :
+  `uv tool install pre-commit && pre-commit install -t pre-commit`.
+- L'étape pre-push de `.pre-commit-config.yaml` (`cmake + ctest`) **n'est pas
+  installée** : rien n'arrête un push avec des tests rouges hormis la CI.
+  Lancer `scripts/make.sh` avant de pousser du C++.
 - Tout nouvel engine ou instrument arrive avec son test dans `tests/`, et de
   préférence un test de *propriété* (parité call-put, `in + out = vanille`,
   bornes de monotonie, ordre de convergence mesuré en log-log) plutôt qu'une

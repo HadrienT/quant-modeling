@@ -80,36 +80,36 @@ logger = get_logger()
 
 # Default engine per product type (when no explicit engine param)
 _DEFAULT_ENGINE: Dict[ProductType, str] = {
-    ProductType.european_call:     "BS Analytic",
-    ProductType.european_put:      "BS Analytic",
-    ProductType.american_call:     "BS Binomial",
-    ProductType.american_put:      "BS Binomial",
-    ProductType.asian:             "BS Analytic (Geometric)",
-    ProductType.barrier:           "BS MC",
-    ProductType.digital:           "BS Analytic",
-    ProductType.lookback:          "BS MC",
-    ProductType.basket:            "BS MC",
-    ProductType.zero_coupon_bond:  "Discount Curve",
-    ProductType.fixed_rate_bond:   "Discount Curve",
-    ProductType.future:            "Cost of Carry",
-    ProductType.autocall:          "BS MC",
-    ProductType.mountain:          "BS MC",
-    ProductType.variance_swap:     "BS MC",
-    ProductType.volatility_swap:   "BS MC",
-    ProductType.dispersion_swap:   "BS MC",
-    ProductType.fx_forward:        "Garman-Kohlhagen",
-    ProductType.fx_option:         "Garman-Kohlhagen",
+    ProductType.european_call: "BS Analytic",
+    ProductType.european_put: "BS Analytic",
+    ProductType.american_call: "BS Binomial",
+    ProductType.american_put: "BS Binomial",
+    ProductType.asian: "BS Analytic (Geometric)",
+    ProductType.barrier: "BS MC",
+    ProductType.digital: "BS Analytic",
+    ProductType.lookback: "BS MC",
+    ProductType.basket: "BS MC",
+    ProductType.zero_coupon_bond: "Discount Curve",
+    ProductType.fixed_rate_bond: "Discount Curve",
+    ProductType.future: "Cost of Carry",
+    ProductType.autocall: "BS MC",
+    ProductType.mountain: "BS MC",
+    ProductType.variance_swap: "BS MC",
+    ProductType.volatility_swap: "BS MC",
+    ProductType.dispersion_swap: "BS MC",
+    ProductType.fx_forward: "Garman-Kohlhagen",
+    ProductType.fx_option: "Garman-Kohlhagen",
     ProductType.commodity_forward: "Cost of Carry",
-    ProductType.commodity_option:  "BS Analytic",
-    ProductType.rainbow:           "BS MC",
+    ProductType.commodity_option: "BS Analytic",
+    ProductType.rainbow: "BS MC",
 }
 
 _ENGINE_LABELS = {
-    "analytic":   "BS Analytic",
-    "mc":         "BS Monte Carlo",
-    "binomial":   "BS Binomial",
-    "trinomial":  "BS Trinomial",
-    "pde":        "BS PDE (Crank-Nicolson)",
+    "analytic": "BS Analytic",
+    "mc": "BS Monte Carlo",
+    "binomial": "BS Binomial",
+    "trinomial": "BS Trinomial",
+    "pde": "BS PDE (Crank-Nicolson)",
 }
 
 
@@ -124,28 +124,28 @@ def _resolve_engine_label(pos: Position, params: dict) -> str:
 # ── Product-type → (schema, pricer) mapping ─────────────────────────────────
 
 _PRICER_MAP: Dict[ProductType, tuple] = {
-    ProductType.european_call:     (VanillaRequest,          price_vanilla),
-    ProductType.european_put:      (VanillaRequest,          price_vanilla),
-    ProductType.american_call:     (VanillaRequest,          price_vanilla),
-    ProductType.american_put:      (VanillaRequest,          price_vanilla),
-    ProductType.asian:             (AsianRequest,            price_asian),
-    ProductType.barrier:           (BarrierRequest,          price_barrier),
-    ProductType.digital:           (DigitalRequest,          price_digital),
-    ProductType.lookback:          (LookbackRequest,         price_lookback),
-    ProductType.basket:            (BasketRequest,           price_basket),
-    ProductType.zero_coupon_bond:  (ZeroCouponBondRequest,   price_zero_coupon_bond),
-    ProductType.fixed_rate_bond:   (FixedRateBondRequest,    price_fixed_rate_bond),
-    ProductType.future:            (FutureRequest,           price_future),
-    ProductType.autocall:          (AutocallRequest,         price_autocall),
-    ProductType.mountain:          (MountainRequest,         price_mountain),
-    ProductType.variance_swap:     (VarianceSwapRequest,     price_variance_swap),
-    ProductType.volatility_swap:   (VolatilitySwapRequest,   price_volatility_swap),
-    ProductType.dispersion_swap:   (DispersionSwapRequest,   price_dispersion_swap),
-    ProductType.fx_forward:        (FXForwardRequest,        price_fx_forward),
-    ProductType.fx_option:         (FXOptionRequest,         price_fx_option),
+    ProductType.european_call: (VanillaRequest, price_vanilla),
+    ProductType.european_put: (VanillaRequest, price_vanilla),
+    ProductType.american_call: (VanillaRequest, price_vanilla),
+    ProductType.american_put: (VanillaRequest, price_vanilla),
+    ProductType.asian: (AsianRequest, price_asian),
+    ProductType.barrier: (BarrierRequest, price_barrier),
+    ProductType.digital: (DigitalRequest, price_digital),
+    ProductType.lookback: (LookbackRequest, price_lookback),
+    ProductType.basket: (BasketRequest, price_basket),
+    ProductType.zero_coupon_bond: (ZeroCouponBondRequest, price_zero_coupon_bond),
+    ProductType.fixed_rate_bond: (FixedRateBondRequest, price_fixed_rate_bond),
+    ProductType.future: (FutureRequest, price_future),
+    ProductType.autocall: (AutocallRequest, price_autocall),
+    ProductType.mountain: (MountainRequest, price_mountain),
+    ProductType.variance_swap: (VarianceSwapRequest, price_variance_swap),
+    ProductType.volatility_swap: (VolatilitySwapRequest, price_volatility_swap),
+    ProductType.dispersion_swap: (DispersionSwapRequest, price_dispersion_swap),
+    ProductType.fx_forward: (FXForwardRequest, price_fx_forward),
+    ProductType.fx_option: (FXOptionRequest, price_fx_option),
     ProductType.commodity_forward: (CommodityForwardRequest, price_commodity_forward),
-    ProductType.commodity_option:  (CommodityOptionRequest,  price_commodity_option),
-    ProductType.rainbow:           (RainbowRequest,          price_rainbow),
+    ProductType.commodity_option: (CommodityOptionRequest, price_commodity_option),
+    ProductType.rainbow: (RainbowRequest, price_rainbow),
 }
 
 
@@ -233,13 +233,16 @@ def _aggregate_risk(portfolio: Portfolio) -> PortfolioRiskSummary:
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
 
+
 @router.get("", response_model=List[PortfolioSummary])
 async def api_list_portfolios(user: str = Depends(require_user)):
     return await run_in_threadpool(list_portfolios, user)
 
 
 @router.post("", response_model=Portfolio, status_code=201)
-async def api_create_portfolio(name: str = "Untitled Portfolio", user: str = Depends(require_user)):
+async def api_create_portfolio(
+    name: str = "Untitled Portfolio", user: str = Depends(require_user)
+):
     pf = Portfolio(id=str(uuid.uuid4()), name=name, owner=user, version=2)
     await run_in_threadpool(save_portfolio, pf)
     return pf
@@ -254,7 +257,9 @@ async def api_get_portfolio(portfolio_id: str, user: str = Depends(require_user)
 
 
 @router.put("/{portfolio_id}", response_model=Portfolio)
-async def api_update_portfolio(portfolio_id: str, body: Portfolio, user: str = Depends(require_user)):
+async def api_update_portfolio(
+    portfolio_id: str, body: Portfolio, user: str = Depends(require_user)
+):
     existing = await run_in_threadpool(get_portfolio, portfolio_id, user)
     if existing is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -279,8 +284,11 @@ async def api_delete_portfolio(portfolio_id: str, user: str = Depends(require_us
 
 # ── Position management ─────────────────────────────────────────────────────
 
+
 @router.post("/{portfolio_id}/positions", response_model=Portfolio, status_code=201)
-async def api_add_position(portfolio_id: str, position: Position, user: str = Depends(require_user)):
+async def api_add_position(
+    portfolio_id: str, position: Position, user: str = Depends(require_user)
+):
     pf = await run_in_threadpool(get_portfolio, portfolio_id, user)
     if pf is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -294,7 +302,12 @@ async def api_add_position(portfolio_id: str, position: Position, user: str = De
 
 
 @router.put("/{portfolio_id}/positions/{position_id}", response_model=Portfolio)
-async def api_update_position(portfolio_id: str, position_id: str, position: Position, user: str = Depends(require_user)):
+async def api_update_position(
+    portfolio_id: str,
+    position_id: str,
+    position: Position,
+    user: str = Depends(require_user),
+):
     pf = await run_in_threadpool(get_portfolio, portfolio_id, user)
     if pf is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -309,7 +322,9 @@ async def api_update_position(portfolio_id: str, position_id: str, position: Pos
 
 
 @router.delete("/{portfolio_id}/positions/{position_id}", response_model=Portfolio)
-async def api_remove_position(portfolio_id: str, position_id: str, user: str = Depends(require_user)):
+async def api_remove_position(
+    portfolio_id: str, position_id: str, user: str = Depends(require_user)
+):
     pf = await run_in_threadpool(get_portfolio, portfolio_id, user)
     if pf is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -323,6 +338,7 @@ async def api_remove_position(portfolio_id: str, position_id: str, user: str = D
 
 
 # ── Batch pricing ────────────────────────────────────────────────────────────
+
 
 @router.post("/{portfolio_id}/price", response_model=BatchPriceResponse)
 async def api_price_portfolio(portfolio_id: str, user: str = Depends(require_user)):
@@ -341,6 +357,7 @@ async def api_price_portfolio(portfolio_id: str, user: str = Depends(require_use
 
 
 # ── Stress testing ───────────────────────────────────────────────────────────
+
 
 def _stress_position(pos: Position, bump: StressBump) -> float:
     """Re-price a position with bumped parameters and return PnL vs current."""
@@ -369,7 +386,9 @@ def _stress_position(pos: Position, bump: StressBump) -> float:
 
 
 @router.post("/{portfolio_id}/stress", response_model=List[StressResult])
-async def api_stress_test(portfolio_id: str, bumps: List[StressBump], user: str = Depends(require_user)):
+async def api_stress_test(
+    portfolio_id: str, bumps: List[StressBump], user: str = Depends(require_user)
+):
     pf = await run_in_threadpool(get_portfolio, portfolio_id, user)
     if pf is None:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -382,11 +401,13 @@ async def api_stress_test(portfolio_id: str, bumps: List[StressBump], user: str 
             pnl = await run_in_threadpool(_stress_position, pos, bump)
             position_pnls[pos.id] = round(pnl, 6)
             portfolio_pnl += pnl
-        results.append(StressResult(
-            name=bump.name,
-            portfolio_pnl=round(portfolio_pnl, 6),
-            position_pnls=position_pnls,
-        ))
+        results.append(
+            StressResult(
+                name=bump.name,
+                portfolio_pnl=round(portfolio_pnl, 6),
+                position_pnls=position_pnls,
+            )
+        )
     return results
 
 
@@ -407,7 +428,9 @@ def _extract_spot_vol(pos: Position) -> tuple:
 
 
 @router.post("/{portfolio_id}/var", response_model=VaRResult)
-async def api_compute_var(portfolio_id: str, req: VaRRequest, user: str = Depends(require_user)):
+async def api_compute_var(
+    portfolio_id: str, req: VaRRequest, user: str = Depends(require_user)
+):
     """Delta-gamma VaR with Cornish-Fisher skewness adjustment.
 
     For each position i with underlying spot S_i, implied vol σ_i:
@@ -437,9 +460,9 @@ async def api_compute_var(portfolio_id: str, req: VaRRequest, user: str = Depend
 
     # Accumulate per-position contributions to portfolio P&L moments
     # assuming independent underlyings (conservative for diversified books)
-    mu1 = 0.0     # E[ΔP]
-    var_pnl = 0.0 # Var[ΔP]
-    m3 = 0.0      # third central moment contribution
+    mu1 = 0.0  # E[ΔP]
+    var_pnl = 0.0  # Var[ΔP]
+    m3 = 0.0  # third central moment contribution
 
     for pos in pf.positions:
         if pos.result is None:
@@ -455,28 +478,28 @@ async def api_compute_var(portfolio_id: str, req: VaRRequest, user: str = Depend
         # Dollar move standard deviation over the horizon
         daily_sigma = vol_i / math.sqrt(252)
         horizon_sigma = daily_sigma * math.sqrt(req.horizon_days)
-        sigma_dollar = spot_i * horizon_sigma          # std(ΔS)
-        sigma2 = sigma_dollar ** 2                     # Var(ΔS)
-        sigma4 = sigma2 ** 2                           # (Var(ΔS))²
+        sigma_dollar = spot_i * horizon_sigma  # std(ΔS)
+        sigma2 = sigma_dollar**2  # Var(ΔS)
+        sigma4 = sigma2**2  # (Var(ΔS))²
 
         # E[ΔP_i] = ½·Γ·Var(ΔS)
         mu1 += 0.5 * gamma_i * sigma2
 
         # Var[ΔP_i] = δ²·σ²_$ + ½·Γ²·2·σ⁴_$  (from E[(ΔS)⁴]=3σ⁴)
-        var_pnl += delta_i ** 2 * sigma2 + 0.5 * gamma_i ** 2 * sigma4
+        var_pnl += delta_i**2 * sigma2 + 0.5 * gamma_i**2 * sigma4
 
         # Third moment: E[(ΔP_i - E[ΔP_i])³]
         # dominated by 3·δ²·Γ·σ⁴  (cross term)
-        m3 += 3.0 * delta_i ** 2 * gamma_i * sigma4
+        m3 += 3.0 * delta_i**2 * gamma_i * sigma4
 
     sigma_pnl = math.sqrt(var_pnl) if var_pnl > 0 else 1e-12
 
     # Skewness
-    skew = m3 / (sigma_pnl ** 3) if sigma_pnl > 1e-12 else 0.0
+    skew = m3 / (sigma_pnl**3) if sigma_pnl > 1e-12 else 0.0
 
     # Cornish-Fisher adjusted quantile:
     #   z_cf = z + (z² - 1)·S/6
-    z_cf = z_alpha + (z_alpha ** 2 - 1) * skew / 6.0
+    z_cf = z_alpha + (z_alpha**2 - 1) * skew / 6.0
 
     # VaR = -(μ₁ + z_cf · σ_P)  (loss, so negate)
     var_value = -(mu1 + z_cf * sigma_pnl)
