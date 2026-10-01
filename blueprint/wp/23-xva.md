@@ -195,7 +195,7 @@ code.
 risque-neutre pour ce qui est un prix ($EE^*$, CVA, DVA, FVA) ; calibration
 historique (dérive et volatilité estimées sur l'historique de taux FRED de la
 base) pour ce qui est une mesure de risque (PFE, limites, profils EPE / EEPE
-affichés). Un seul moteur, deux jeux de paramètres. À faire : lot X1b (§14).
+affichés). Un seul moteur, deux jeux de paramètres. Fait : lot X1b (§14.4).
 
 ### 3.2 Formules fermées : la loi normale
 
@@ -1389,12 +1389,48 @@ Livré : `market/csa.hpp` (les termes du CSA, en données), `risk/collateral.hpp
   lot X0 à 3 % près et se multiplie par $\sqrt 2$ quand la MPoR double ; sur
   un swap payeur 10 ans, le pic d'une date de coupon vaut le coupon net payé.
 
-### 14.4 Suite
+### 14.4 Lot X1b : mesure historique
 
-Lot **X1b — mesure historique** (décision du §3.1) : dynamique de $x$ sous
-la mesure historique, estimée sur l'historique FRED ; repricing inchangé
-(risque-neutre) ; PFE et profils de risque lus sur ces chemins. Puis X3, dont
-l'API et la page suivent le cadrage du §13.7.
+Livré : `market/historical_rate_dynamics.hpp` (la dynamique et son
+estimation), `ExposureSimulationSettings::historical` dans le moteur, le
+drapeau `ExposureMeasure` sur le cube ; tests dans
+`tests/testHistoricalMeasure.cpp`.
+
+- **Simuler sous P, pricer sous Q.** Le taux court suit
+  $dr = a(\theta - r)\,dt + \sigma\,dW$ sous la mesure historique, depuis le
+  taux court d'aujourd'hui ; l'état du modèle est $x(t) = r(t) - f(0,t)$ et
+  chaque transaction est toujours valorisée, sur chaque chemin, par le
+  Hull-White risque-neutre. Seule la probabilité des scénarios change.
+- **Rien n'est actualisé** : poids et facteurs d'actualisation valent 1, les
+  profils sont des espérances et des quantiles simples. `profile()` refuse de
+  donner un cube historique aux intégrales xVA (le CVA est un prix).
+- **Estimation** par maximum de vraisemblance exact (le processus
+  échantillonné est un AR(1)), avec les erreurs standard.
+- **Ce que disent les vraies données** (bons du Trésor à 3 mois, FRED) :
+
+  | Fenêtre | $a$ | $\theta$ | $\sigma$ |
+  |---|---|---|---|
+  | depuis 1990 | 0,11 ± 0,05 | 1,95 % ± 1,06 | 73 pb ± 1 |
+  | depuis 2010 | pas de retour à la moyenne mesurable | — | 40 pb |
+  | depuis oct. 2016 | 0,06 ± 0,08 | 9,4 % ± 2,7 | 49 pb ± 1 |
+  | depuis oct. 2021 | 0,63 ± 0,16 | 5,3 % ± 0,4 | 58 pb ± 1 |
+
+  **La volatilité s'estime, le niveau de long terme et la vitesse de rappel
+  non** : ils changent du tout au tout selon la fenêtre. Or c'est $\theta$
+  qui fait le résultat : sur un swap payeur 10 ans au pair (courbe SOFR du
+  30 septembre 2026), le pic de PFE à 95 % passe de 18,5 (risque-neutre,
+  vol implicite 122 pb) à 5,3 (historique depuis 1990 : les taux sont
+  supposés redescendre vers 2 %). À l'affichage, $\theta$ et $a$ doivent être
+  des choix visibles de l'utilisateur, pas un chiffre présenté comme mesuré.
+- **Garde-fou** : une courbe dont le facteur d'actualisation saute (tenue
+  plate avant son premier pilier) n'a pas de taux court de départ ; le moteur
+  le refuse au lieu de simuler depuis des milliers de pourcents.
+
+### 14.5 Suite
+
+Lot X3 : CVA / DVA de bout en bout sur le Hull-White calé sur le marché
+(§13.7), courbes de crédit proxy par notation, API et événement d'audit,
+pour les portefeuilles pédagogiques P1 à P6.
 
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX

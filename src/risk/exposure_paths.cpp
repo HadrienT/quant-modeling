@@ -26,6 +26,9 @@ namespace quantModeling
 
     ExposureProfile ExposureStatistics::profile() const
     {
+        if (measure != ExposureMeasure::RiskNeutral)
+            throw InvalidInput("exposure profile: xVA is a price and integrates the risk-neutral "
+                               "exposure; this simulation ran under the historical measure");
         return {times, discounted_ee, discounted_ene};
     }
 
@@ -45,6 +48,7 @@ namespace quantModeling
         ExposureStatistics s;
         s.times = paths.times;
         s.pfe_confidence = pfe_confidence;
+        s.measure = paths.measure;
         s.trades = trades;
         if (s.trades.empty())
         {

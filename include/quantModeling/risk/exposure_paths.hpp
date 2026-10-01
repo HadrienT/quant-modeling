@@ -10,6 +10,18 @@
 namespace quantModeling
 {
 
+    /// What the scenarios of a simulation are scenarios of (Gregory's
+    /// distinction between pricing and risk measurement, blueprint §3.1).
+    enum class ExposureMeasure
+    {
+        /// Calibrated to market prices: for what is a price — EE*, CVA, DVA, FVA.
+        RiskNeutral,
+        /// Calibrated to how the factors have really moved: for what is a
+        /// risk measure — PFE, limits, EPE and EEPE. Nothing is discounted,
+        /// and the profiles must not be fed to the xVA integrals.
+        Historical
+    };
+
     /**
      * @brief The output of an exposure simulation: the value of every trade
      *        on every path at every date (blueprint/wp/23-xva.md §13.3).
@@ -26,9 +38,11 @@ namespace quantModeling
      */
     struct ExposurePaths
     {
+        ExposureMeasure measure = ExposureMeasure::RiskNeutral;
         /// t_1 < ... < t_n; today is not on the grid.
         std::vector<Time> times;
-        /// P(0, t_i), today's discount factors.
+        /// P(0, t_i), today's discount factors; all ones under the historical
+        /// measure, where nothing is discounted.
         std::vector<Real> discount;
         std::size_t paths = 0;
 
@@ -41,7 +55,8 @@ namespace quantModeling
          * It is the discount factor D(t_i) of the path when the simulation
          * runs under the risk-neutral measure, and P(0, T*) / P(t_i, T*) when
          * it runs under the T*-forward measure, as the Hull-White engine
-         * does. Its mean is P(0, t_i).
+         * does. Its mean is P(0, t_i). Under the historical measure it is 1:
+         * the paths are equally likely and the statistics are plain ones.
          */
         std::vector<Real> discount_weight;
 
@@ -68,9 +83,15 @@ namespace quantModeling
      *  - **undiscounted**, EE(t) = EE*(t) / P(0, t): the expectation under
      *    the t-forward measure, what limits (PFE) and regulatory capital
      *    (EEPE) are stated in.
+     *
+     * On a simulation under the **historical** measure there is one family
+     * only: plain expectations and quantiles of V(t) over the real-world
+     * scenarios. The "discounted" vectors then hold the same undiscounted
+     * numbers and profile() refuses to hand them to the xVA integrals.
      */
     struct ExposureStatistics
     {
+        ExposureMeasure measure = ExposureMeasure::RiskNeutral;
         std::vector<Time> times;
         /// The trades that were netted, as indices into ExposurePaths.
         std::vector<std::size_t> trades;
@@ -107,6 +128,8 @@ namespace quantModeling
         std::vector<std::vector<Real>> discounted_ee_contributions;
 
         /// The profile that risk/xva.hpp integrates.
+        /// @throws InvalidInput on a historical simulation: CVA is a price
+        ///         and needs the risk-neutral exposure.
         ExposureProfile profile() const;
     };
 

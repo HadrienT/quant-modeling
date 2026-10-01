@@ -3,12 +3,14 @@
 
 #include "quantModeling/engines/xva/future_value.hpp"
 #include "quantModeling/instruments/base.hpp"
+#include "quantModeling/market/historical_rate_dynamics.hpp"
 #include "quantModeling/models/rates/hull_white_curve.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace quantModeling
@@ -54,6 +56,18 @@ namespace quantModeling
         /// cash flows). Above this limit simulate() refuses to run instead of
         /// exhausting a machine whose memory is shared.
         std::size_t memory_limit_bytes = std::size_t{4} << 30;
+        /**
+         * @brief When set, the scenarios are drawn under the **historical**
+         *        measure: the short rate follows these dynamics, estimated
+         *        on its past (market/historical_rate_dynamics.hpp), from
+         *        today's short rate.
+         *
+         * Each trade is still priced on each path by the risk-neutral model
+         * — what it would be worth in that scenario is a market price. Only
+         * the probability of the scenarios changes. The cube is then for
+         * risk measures (PFE, EPE, EEPE), not for xVA.
+         */
+        std::optional<HistoricalRateDynamics> historical;
     };
 
     /**
@@ -72,6 +86,10 @@ namespace quantModeling
      *   EE*(t) = E^Q[D(t) max(V(t), 0)] = P(0, T*) E^{T*}[max(V(t), 0) / P(t, T*)]
      *
      * needs no simulated bank account and has no time-discretisation error.
+     *
+     * With `ExposureSimulationSettings::historical` the same state is driven
+     * by the real-world dynamics of the short rate instead, x(t) = r(t) -
+     * f(0, t), and nothing is discounted: scenarios for risk measures.
      *
      * **Reproducibility.** Draw j of path p is a pure function of
      * (seed, p, j) (Philox, as the GPU engines): the cube is the same, bit
