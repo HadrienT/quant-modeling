@@ -141,19 +141,63 @@ namespace quantModeling
         // discount weight P(0, T*) / P(t, T* | x) = P(0, t) exp(G x + G² y / 2),
         // G = G(t, T*).
         const Time horizon = out.times.back();
+        // f(0, t), today's instantaneous forward rate: the slope of -ln P(0, ·).
+        const auto forward = [this](Time t)
+        {
+            constexpr Time h = 1e-4;
+            const Time lo = std::max(t - h, 0.0), hi = t + h;
+            const Real f =
+                std::log(model_.discount().discount(lo) / model_.discount().discount(hi)) / (hi - lo);
+            // A curve whose discount factor jumps (held flat before its first
+            // pillar, for instance) has no forward rate there: the short rate
+            // would start from thousands of percent.
+            if (!std::isfinite(f) || std::abs(f) > 1.0)
+                throw InvalidInput(
+                    "exposure engine: the discount curve has no finite forward rate at t=" +
+                    std::to_string(t) +
+                    " (a jump in the discount factor); build it with a flat-forward extrapolation");
+            return f;
+        };
+        if (settings.historical)
+        {
+            settings.historical->validate();
+            out.measure = ExposureMeasure::Historical;
+        }
         std::vector<Real> decay(n), drift(n), sd(n), weight_scale(n), weight_G(n);
         Time previous = 0.0;
         for (std::size_t i = 0; i < n; ++i)
         {
             const Time t = out.times[i];
-            const auto tr = model_.transition(previous, t, horizon);
-            decay[i] = tr.decay;
-            drift[i] = tr.drift;
-            sd[i] = std::sqrt(tr.variance);
-            const Real G = model_.G(t, horizon);
-            out.discount.push_back(model_.discount().discount(t));
-            weight_G[i] = G;
-            weight_scale[i] = out.discount[i] * std::exp(0.5 * G * G * model_.y(t));
+            if (settings.historical)
+            {
+                // The short rate is an Ornstein-Uhlenbeck process under the
+                // historical measure, with an exact Gaussian transition:
+                //   r(t) = θ + (r(s) - θ) b + σ sqrt((1 - b²) / (2a)) Z,
+                //   b = exp(-a (t - s)).
+                // The model's state is x = r - f(0, ·), so
+                //   x(t) = b x(s) + [b f(0, s) + θ (1 - b) - f(0, t)] + ...
+                // and x(0) = 0: the rate starts from today's short rate.
+                const HistoricalRateDynamics &h = *settings.historical;
+                const Real b = std::exp(-h.mean_reversion * (t - previous));
+                decay[i] = b;
+                drift[i] = b * forward(previous) + h.long_run_rate * (1.0 - b) - forward(t);
+                sd[i] = h.sigma * std::sqrt((1.0 - b * b) / (2.0 * h.mean_reversion));
+                // Equally likely paths, nothing discounted.
+                out.discount.push_back(1.0);
+                weight_G[i] = 0.0;
+                weight_scale[i] = 1.0;
+            }
+            else
+            {
+                const auto tr = model_.transition(previous, t, horizon);
+                decay[i] = tr.decay;
+                drift[i] = tr.drift;
+                sd[i] = std::sqrt(tr.variance);
+                const Real G = model_.G(t, horizon);
+                out.discount.push_back(model_.discount().discount(t));
+                weight_G[i] = G;
+                weight_scale[i] = out.discount[i] * std::exp(0.5 * G * G * model_.y(t));
+            }
             previous = t;
         }
 

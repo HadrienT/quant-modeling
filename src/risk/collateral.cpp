@@ -149,6 +149,7 @@ namespace quantModeling
 
         ExposurePaths out;
         out.paths = N;
+        out.measure = paths.measure;
         out.times.reserve(m);
         out.discount.reserve(m);
         for (const std::size_t i : reporting)
