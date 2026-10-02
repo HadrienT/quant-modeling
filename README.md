@@ -116,6 +116,15 @@ columns running the kernels' own per-path code
 | Worst-of autocall, 3 assets | 1.0e6 | 2.8 s | 478 ms | 10 ms | 9 ms |
 | Superbucket (363 local-vol risks) | 1.6e4 | 695 ms | 119 ms | 13 ms | 14 ms |
 
+The exposure engine of the xVA runs there too: a netting set of 10 swaps and
+swaptions under a CSA, netted, collateralised and reduced on the cards, to a
+0.05 % relative standard error of its CVA (126 439 paths, 198 dates;
+`build-cuda/qm_gpu_exposure_bench`):
+
+| | CPU 1 thread | CPU 16 threads | 1 V100 | 2 V100 |
+|---|---|---|---|---|
+| CVA of a collateralised netting set | 71.5 s | 8.2 s | 206 ms | 141 ms |
+
 A card joins a run only with enough work (128 logical blocks) to pay for its
 start-up; small runs stay on one. Design, measurements and decisions:
 [`blueprint/wp/19-gpu.md`](blueprint/wp/19-gpu.md).

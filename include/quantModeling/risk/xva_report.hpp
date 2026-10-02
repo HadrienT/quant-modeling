@@ -102,13 +102,6 @@ namespace quantModeling
         Real cost_of_capital = 0.10;
     };
 
-    /// A Monte-Carlo estimate with its standard error.
-    struct Estimate
-    {
-        Real value = 0.0;
-        Real error = 0.0;
-    };
-
     struct TradeContribution
     {
         std::size_t trade = 0;
@@ -174,6 +167,17 @@ namespace quantModeling
         /// One row per netted trade.
         std::vector<TradeContribution> contributions;
     };
+
+    /**
+     * @brief Probability that `defaulter` defaults in (t_{i-1}, t_i] with
+     *        `other` still alive at t_{i-1}, per date:
+     *        S_other(t_{i-1}) (S_defaulter(t_{i-1}) - S_defaulter(t_i)).
+     *
+     * The weights of the first-to-default sums: -LGD times them, applied to
+     * the discounted positive exposure of a path, is the CVA of that path.
+     */
+    std::vector<Real> first_to_default_weights(const std::vector<Time> &times,
+                                               const CreditCurve &defaulter, const CreditCurve &other);
 
     /**
      * @brief The report of a netting set.

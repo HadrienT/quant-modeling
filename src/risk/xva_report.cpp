@@ -61,22 +61,6 @@ namespace quantModeling
             return out;
         }
 
-        /// PD weights of the first-to-default sums, per date:
-        /// S_other(t_{i-1}) (S_defaulter(t_{i-1}) - S_defaulter(t_i)).
-        std::vector<Real> default_weights(const std::vector<Time> &times, const CreditCurve &defaulter,
-                                          const CreditCurve &other)
-        {
-            std::vector<Real> weights(times.size());
-            Time previous = 0.0;
-            for (std::size_t i = 0; i < times.size(); ++i)
-            {
-                weights[i] = other.survival(previous) *
-                             (defaulter.survival(previous) - defaulter.survival(times[i]));
-                previous = times[i];
-            }
-            return weights;
-        }
-
         /// CVA and DVA of a single-trade cube, path by path: the mean of the
         /// per-path losses is the integral of the mean exposure, and their
         /// dispersion gives the Monte-Carlo error, correlations between
@@ -85,8 +69,8 @@ namespace quantModeling
                                   Estimate &dva)
         {
             const std::size_t n = cube.dates(), N = cube.paths;
-            const std::vector<Real> pd_counterparty = default_weights(cube.times, in.counterparty, in.own);
-            const std::vector<Real> pd_own = default_weights(cube.times, in.own, in.counterparty);
+            const std::vector<Real> pd_counterparty = first_to_default_weights(cube.times, in.counterparty, in.own);
+            const std::vector<Real> pd_own = first_to_default_weights(cube.times, in.own, in.counterparty);
             Real c = 0.0, c2 = 0.0, d = 0.0, d2 = 0.0;
             for (std::size_t p = 0; p < N; ++p)
             {
@@ -218,10 +202,24 @@ namespace quantModeling
                     cva, dva);
                 return cva.value;
             }
-            return cva_bilateral(exposure_statistics(cube).profile(), in.counterparty, in.own,
+            return cva_bilateral(exposure_profile(cube), in.counterparty, in.own,
                                  in.lgd_counterparty);
         }
     } // namespace
+
+    std::vector<Real> first_to_default_weights(const std::vector<Time> &times,
+                                               const CreditCurve &defaulter, const CreditCurve &other)
+    {
+        std::vector<Real> weights(times.size());
+        Time previous = 0.0;
+        for (std::size_t i = 0; i < times.size(); ++i)
+        {
+            weights[i] = other.survival(previous) *
+                         (defaulter.survival(previous) - defaulter.survival(times[i]));
+            previous = times[i];
+        }
+        return weights;
+    }
 
     XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &in)
     {
@@ -308,7 +306,7 @@ namespace quantModeling
         // Segregated initial margin funds nothing: FVA is on the cube
         // without it.
         const ExposureProfile funding =
-            margin ? exposure_statistics(variation_only).profile() : profile;
+            margin ? exposure_profile(variation_only) : profile;
         report.fca = fca(funding, in.counterparty, in.own, in.borrowing_spread);
         report.fba = fba(funding, in.counterparty, in.own, in.lending_spread);
         if (in.csa)
@@ -335,7 +333,7 @@ namespace quantModeling
         if (!in.csa && in.wrong_way_b == 0.0)
         {
             const ExposureStatistics by_trade = exposure_statistics(paths, trades, in.pfe_confidence);
-            const std::vector<Real> weights = default_weights(by_trade.times, in.counterparty, in.own);
+            const std::vector<Real> weights = first_to_default_weights(by_trade.times, in.counterparty, in.own);
             for (std::size_t j = 0; j < trades.size(); ++j)
             {
                 Real sum = 0.0;

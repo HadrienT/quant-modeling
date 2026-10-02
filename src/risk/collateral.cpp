@@ -11,9 +11,7 @@ namespace quantModeling
     {
         /// Two grid dates are the same date within this tolerance.
         constexpr Real kTimeEps = 1e-9;
-        /// The lagged date of a reporting date is today (or earlier).
         constexpr std::size_t kToday = static_cast<std::size_t>(-1);
-        /// The lagged date is not on the grid: not a reporting date.
         constexpr std::size_t kMissing = static_cast<std::size_t>(-2);
 
         /// For each date, the index of t - MPoR on the grid.
@@ -64,33 +62,53 @@ namespace quantModeling
                 if (!(im >= 0.0))
                     throw InvalidInput(std::string("collateral: ") + name + " must be >= 0");
         }
-
-        /// Value net of initial margin on both sides.
-        Real after_initial_margin(Real value, Real received, Real posted)
-        {
-            if (value > received)
-                return value - received;
-            if (value < -posted)
-                return value + posted;
-            return 0.0;
-        }
     } // namespace
 
     Real required_variation_margin(Real value, const Csa &csa)
     {
-        return std::max(value - csa.threshold_counterparty, 0.0) -
-               std::max(-value - csa.threshold_bank, 0.0);
+        return variation_margin_required(value, CollateralTerms::of(csa));
     }
 
     Real collateral_after_call(Real held, Real required, const Csa &csa)
     {
-        Real transfer = required - held;
-        // Strictly below the MTA: no transfer. A zero transfer is none either.
-        if (transfer == 0.0 || std::abs(transfer) < csa.minimum_transfer_amount)
-            return held;
-        if (csa.rounding > 0.0)
-            transfer = std::round(transfer / csa.rounding) * csa.rounding;
-        return held + transfer;
+        return balance_after_call(held, required, CollateralTerms::of(csa));
+    }
+
+    CollateralPlan collateral_plan(const std::vector<Time> &times, const Csa &csa, Real value_today,
+                                   MarginPeriodCashflows cashflows)
+    {
+        csa.validate();
+        const std::size_t n = times.size();
+        if (n == 0)
+            throw InvalidInput("collateral: the simulation is empty");
+        const std::vector<std::size_t> lagged = lagged_dates(times, csa.margin_period_of_risk);
+        // The first dates always report (their lagged date is today), so the
+        // test is on the last one: a grid built without the lagged dates
+        // would silently report the first days only.
+        if (lagged[n - 1] == kMissing)
+            throw InvalidInput(
+                "collateral: the last date of the simulation has no lagged date t - MPoR on the "
+                "grid; simulate with grid.margin_period_of_risk equal to the CSA's");
+        CollateralPlan plan;
+        plan.terms = CollateralTerms::of(csa);
+        plan.cashflows = cashflows;
+        plan.lagged.resize(n);
+        // The dates at which a margin call is observed: the lagged dates.
+        plan.is_call_date.assign(n, 0);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            plan.lagged[i] = lagged[i] == kMissing ? CollateralPlan::kMissing
+                             : lagged[i] == kToday ? CollateralPlan::kToday
+                                                   : static_cast<int>(lagged[i]);
+            if (lagged[i] == kMissing)
+                continue;
+            plan.reporting.push_back(static_cast<int>(i));
+            if (lagged[i] != kToday)
+                plan.is_call_date[lagged[i]] = 1;
+        }
+        plan.held_today =
+            balance_after_call(0.0, variation_margin_required(value_today, plan.terms), plan.terms);
+        return plan;
     }
 
     std::vector<std::size_t> collateral_reporting_dates(const ExposurePaths &paths,
@@ -131,42 +149,25 @@ namespace quantModeling
             throw InvalidInput("collateral: this treatment of the margin period needs the cash "
                                "flows; simulate with keep_cashflows = true");
 
-        const std::vector<std::size_t> lagged = lagged_dates(paths.times, csa.margin_period_of_risk);
-        std::vector<std::size_t> reporting;
-        for (std::size_t i = 0; i < n; ++i)
-            if (lagged[i] != kMissing)
-                reporting.push_back(i);
-        // The first dates always report (their lagged date is today), so the
-        // test is on the last one: a grid built without the lagged dates
-        // would silently report the first days only.
-        if (lagged[n - 1] == kMissing)
-            throw InvalidInput(
-                "collateral: the last date of the simulation has no lagged date t - MPoR on the "
-                "grid; simulate with grid.margin_period_of_risk equal to the CSA's");
+        Real value_today = 0.0;
+        for (const std::size_t k : netted_trades)
+            value_today += paths.trade_values_today[k];
+        const CollateralPlan plan = collateral_plan(paths.times, csa, value_today, settings.cashflows);
+        const CollateralPlanView dates = view(plan);
+        const std::vector<int> &reporting = plan.reporting;
         const std::size_t m = reporting.size();
+        const Real held_today = plan.held_today;
         require_margin_profile(settings.initial_margin_received, m, "initial margin received");
         require_margin_profile(settings.initial_margin_posted, m, "initial margin posted");
         require_margin_matrix(settings.initial_margin_received_paths, N * m, "initial margin received");
         require_margin_matrix(settings.initial_margin_posted_paths, N * m, "initial margin posted");
-
-        // The dates at which a margin call is observed: the lagged dates.
-        std::vector<bool> is_call_date(n, false);
-        for (const std::size_t i : reporting)
-            if (lagged[i] != kToday)
-                is_call_date[lagged[i]] = true;
-
-        Real value_today = 0.0;
-        for (const std::size_t k : netted_trades)
-            value_today += paths.trade_values_today[k];
-        const Real held_today =
-            collateral_after_call(0.0, required_variation_margin(value_today, csa), csa);
 
         ExposurePaths out;
         out.paths = N;
         out.measure = paths.measure;
         out.times.reserve(m);
         out.discount.reserve(m);
-        for (const std::size_t i : reporting)
+        for (const int i : reporting)
         {
             out.times.push_back(paths.times[i]);
             out.discount.push_back(paths.discount[i]);
@@ -182,7 +183,7 @@ namespace quantModeling
                 return matrix[p * m + r];
             return profile.empty() ? 0.0 : profile[r];
         };
-        out.trade_values_today = {after_initial_margin(
+        out.trade_values_today = {net_of_initial_margin(
             value_today - held_today - csa.independent_amount,
             margin(settings.initial_margin_received_paths, settings.initial_margin_received, 0, 0),
             margin(settings.initial_margin_posted_paths, settings.initial_margin_posted, 0, 0))};
@@ -207,34 +208,13 @@ namespace quantModeling
                 }
             }
 
-            // The balance is only updated when a call is observed; the
-            // minimum transfer amount makes it depend on the whole path.
-            Real balance = held_today;
-            for (std::size_t i = 0; i < n; ++i)
-            {
-                if (!is_call_date[i])
-                    continue;
-                balance = collateral_after_call(balance, required_variation_margin(value[i], csa), csa);
-                held[i] = balance;
-            }
-
+            collateral_balances(dates, value.data(), held.data());
             for (std::size_t r = 0; r < m; ++r)
             {
-                const std::size_t i = reporting[r];
-                const Real collateral =
-                    (lagged[i] == kToday ? held_today : held[lagged[i]]) + csa.independent_amount;
-                Real exposure = value[i] - collateral;
-                if (needs_cashflows)
-                {
-                    // Flows due in (t - MPoR, t] that were not exchanged stay
-                    // in the close-out amount.
-                    const std::size_t first = lagged[i] == kToday ? 0 : lagged[i] + 1;
-                    for (std::size_t j = first; j <= i; ++j)
-                        exposure += settings.cashflows == MarginPeriodCashflows::Withheld
-                                        ? flow[j]
-                                        : std::max(flow[j], 0.0);
-                }
-                out.trade_values[0][p * m + r] = after_initial_margin(
+                const std::size_t i = static_cast<std::size_t>(reporting[r]);
+                const Real exposure = collateralised_value(dates, static_cast<int>(r), value.data(),
+                                                           flow.data(), held.data());
+                out.trade_values[0][p * m + r] = net_of_initial_margin(
                     exposure,
                     margin(settings.initial_margin_received_paths, settings.initial_margin_received, p, r),
                     margin(settings.initial_margin_posted_paths, settings.initial_margin_posted, p, r));

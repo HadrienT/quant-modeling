@@ -6024,6 +6024,13 @@ export interface components {
             counterparty_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
             /** @description None for an uncollateralised netting set */
             csa?: components["schemas"]["CsaInput"] | null;
+            /**
+             * Device
+             * @description Where the paths are valued. auto: the GPU when the server has one and every trade has a closed form, the CPU otherwise; the response says which and why. gpu refuses to fall back
+             * @default auto
+             * @enum {string}
+             */
+            device: "auto" | "cpu" | "gpu";
             historical?: components["schemas"]["HistoricalInput"];
             /**
              * Lending Spread
@@ -6077,8 +6084,24 @@ export interface components {
             capital_uncollateralised: components["schemas"]["CapitalOut"] | null;
             /** Compute Ms */
             compute_ms: number;
+            /**
+             * Device
+             * @description Where the paths were actually valued
+             * @enum {string}
+             */
+            device: "cpu" | "gpu";
+            /**
+             * Device Reason
+             * @description Why this device, in plain terms
+             */
+            device_reason: string;
             exposure: components["schemas"]["PricingExposure"];
             exposure_uncollateralised: components["schemas"]["PricingExposure"] | null;
+            /**
+             * Gpus
+             * @description GPUs that shared the paths (0 on the CPU); the result is the same bits for any count
+             */
+            gpus: number;
             initial_margin: components["schemas"]["InitialMarginOut"] | null;
             /** Lesson */
             lesson: string;

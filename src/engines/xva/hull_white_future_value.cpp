@@ -2,6 +2,7 @@
 
 #include "quantModeling/engines/analytic/hull_white_swaption.hpp"
 #include "quantModeling/engines/analytic/swap.hpp"
+#include "quantModeling/engines/xva/exposure_program.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -168,6 +169,45 @@ namespace quantModeling
                        value_swap(swap_, MultiCurve{model_.discount(), model_.projection()}).annuity;
             }
 
+            /// The terms of value() and cashflow(), date by date, in their
+            /// order.
+            bool compile(xva::ExposureProgram &program) const override
+            {
+                if (dates_.empty())
+                    throw InvalidInput("swap future value: compile() needs the grid; call bind() first");
+                if (program.trades.empty())
+                    program.dates = dates_.size();
+                else if (program.dates != dates_.size())
+                    throw InvalidInput("exposure program: the trades are not bound to one grid");
+                xva::ProgramTrade trade;
+                trade.date_begin = static_cast<int>(program.date_records.size());
+                const int first_coupon = static_cast<int>(program.coupons.size());
+                for (const FloatingCoupon &c : floating_)
+                    program.coupons.push_back({c.B, c.g, c.constant, c.scale,
+                                               c.fixing == kFixedToday ? -1 : static_cast<int>(c.fixing)});
+                for (const Date &date : dates_)
+                {
+                    xva::ProgramDate record;
+                    record.fixed_cashflow = date.fixed_cashflow;
+                    record.exp_begin = static_cast<int>(program.exps.size());
+                    for (const Bond &b : date.bonds)
+                        program.exps.push_back({b.amount, b.G});
+                    record.exp_end = static_cast<int>(program.exps.size());
+                    record.accrued_begin = static_cast<int>(program.accrued.size());
+                    for (const InProgress &c : date.in_progress)
+                        program.accrued.push_back({c.discount.amount, c.discount.G,
+                                                   first_coupon + static_cast<int>(c.coupon)});
+                    record.accrued_end = static_cast<int>(program.accrued.size());
+                    record.paid_begin = static_cast<int>(program.paid.size());
+                    for (const std::size_t k : date.floating_paid)
+                        program.paid.push_back(first_coupon + static_cast<int>(k));
+                    record.paid_end = static_cast<int>(program.paid.size());
+                    program.date_records.push_back(record);
+                }
+                program.trades.push_back(trade);
+                return true;
+            }
+
             /// Every term of value() is a cash flow times a zero-coupon bond.
             bool sensitivities(std::size_t i, const Real *state, std::vector<BondExposure> &bonds,
                                std::vector<VolExposure> &) const override
@@ -317,6 +357,38 @@ namespace quantModeling
                 if (i <= expiry_index_ || !(underlying_.value(expiry_index_, state) > 0.0))
                     return 0.0;
                 return underlying_.cashflow(i, state);
+            }
+
+            /// The underlying's terms, gated at the expiry, and before it the
+            /// integral of hull_white_european_swaption() with everything
+            /// that does not depend on the state computed here.
+            bool compile(xva::ExposureProgram &program) const override
+            {
+                underlying_.compile(program);
+                xva::ProgramTrade &trade = program.trades.back();
+                trade.expiry = static_cast<int>(expiry_index_);
+                trade.option_date_begin = static_cast<int>(program.option_dates.size());
+                const Real y_expiry = model_.y(expiry_);
+                const DiscountCurve &d = model_.discount();
+                for (const Time t : times_)
+                {
+                    const auto tr = model_.transition(t, expiry_, expiry_);
+                    const Real G = model_.G(t, expiry_);
+                    program.option_dates.push_back(
+                        {tr.decay, tr.drift, tr.variance, std::sqrt(tr.variance),
+                         0.5 * (tr.variance - y_expiry),
+                         d.discount(expiry_) / d.discount(t) * std::exp(-0.5 * G * G * model_.y(t)), G});
+                }
+                trade.bond_begin = static_cast<int>(program.option_bonds.size());
+                for (std::size_t k = 0; k < region_.bonds.size(); ++k)
+                    program.option_bonds.push_back(
+                        {region_.bonds[k].amount * region_.forward_bond[k], region_.G[k]});
+                trade.bond_end = static_cast<int>(program.option_bonds.size());
+                trade.interval_begin = static_cast<int>(program.intervals.size());
+                for (const auto &[lower, upper] : region_.intervals)
+                    program.intervals.push_back({lower, upper});
+                trade.interval_end = static_cast<int>(program.intervals.size());
+                return true;
             }
 
             /// Before the expiry: the swaption bond by bond, and its vega to

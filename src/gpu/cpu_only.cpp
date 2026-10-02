@@ -2,6 +2,7 @@
 // GPU run is refused with GpuUnavailable (blueprint/wp/19-gpu.md §8).
 
 #include "quantModeling/gpu/device.hpp"
+#include "quantModeling/gpu/exposure.hpp"
 #include "quantModeling/gpu/paths.hpp"
 #include "quantModeling/gpu/script.hpp"
 #include "quantModeling/gpu/rng.hpp"
@@ -60,6 +61,18 @@ namespace quantModeling::gpu
     }
 
     ScriptAdjointGpuResult simulate_script_adjoint(const ScriptGpuRequest &)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
+                             "without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
+    int simulate_exposure_cube(const ExposureGpuRequest &, const ExposureCubeTarget &)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
+                             "without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
+    NettingSetGpuProfile simulate_netting_set(const ExposureGpuRequest &, const NettingSetGpuRequest &)
     {
         throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
                              "without the CUDA backend: QM_ENABLE_CUDA=ON)");

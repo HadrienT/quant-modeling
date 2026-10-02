@@ -1,16 +1,21 @@
 #ifndef QM_ENGINES_XVA_EXPOSURE_ENGINE_HPP
 #define QM_ENGINES_XVA_EXPOSURE_ENGINE_HPP
 
+#include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/engines/xva/future_value.hpp"
 #include "quantModeling/instruments/base.hpp"
 #include "quantModeling/market/historical_rate_dynamics.hpp"
 #include "quantModeling/models/rates/hull_white_curve.hpp"
+#include "quantModeling/pricers/context.hpp"
+#include "quantModeling/risk/collateral.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace quantModeling
@@ -103,6 +108,72 @@ namespace quantModeling
         /// unset is automatic: 0 under the pricing measure, what covers the
         /// scenarios under the historical one.
         std::optional<Real> pilot_dispersion;
+        /**
+         * @brief Where the paths are valued (blueprint/wp/23-xva.md §14.11,
+         *        lot X7). On the GPU every trade must have a closed form
+         *        (FutureValue::compile): a trade valued by regression, and
+         *        SIMM on every path, stay on the CPU.
+         *
+         * Auto takes the GPU when a device is present and the simulation can
+         * run there, the CPU otherwise, and says why in the result's
+         * `device_note`. Gpu refuses to fall back.
+         *
+         * The scenarios are the CPU's (the same Philox draws); the values
+         * agree to the last bits of exp and erfc, not bit for bit. The result
+         * is the same bits on one card or two.
+         */
+        ComputeDevice device = ComputeDevice::Cpu;
+        /// The cards a GPU run shares its paths between: the first
+        /// `max_gpus` usable ones, all of them for 0.
+        int max_gpus = 0;
+        /// Logical blocks (4 096 paths) per GPU launch; 0 takes what half of
+        /// the free device memory holds. The result does not depend on it.
+        std::uint64_t gpu_blocks_per_launch = 0;
+    };
+
+    /// A netting set whose exposure is wanted without its cube
+    /// (HullWhiteExposureEngine::simulate_netting_set).
+    struct NettingSetRequest
+    {
+        /// The netted trades, as indices into the engine's; empty means all.
+        std::vector<std::size_t> trades;
+        /// The CSA, or none for an uncollateralised netting set. Its margin
+        /// period of risk is put on the grid.
+        std::optional<Csa> csa;
+        /// The treatment of the flows of the margin period, and initial
+        /// margin as profiles over the reporting dates. A margin that depends
+        /// on the path needs the cube: simulate(), then collateralise().
+        CollateralSettings collateral;
+        /**
+         * @brief Optional weights a_r and b_r of the per-path sums
+         *
+         *   Σ_r a_r D max(V, 0)   and   Σ_r b_r D min(V, 0)
+         *
+         * over the reporting dates, which the function is called with:
+         * it fills `on_positive` and `on_negative`, one value per date. With
+         * a_r = -LGD × the default probability of (t_{r-1}, t_r] the first
+         * sum is the CVA of the path; its mean is CVA and its dispersion the
+         * Monte-Carlo error of CVA, correlations between dates included.
+         */
+        std::function<void(const std::vector<Time> &times, std::vector<Real> &on_positive,
+                           std::vector<Real> &on_negative)>
+            weights;
+    };
+
+    /// The exposure of a netting set, reduced over the paths.
+    struct NettingSetExposure
+    {
+        /// On the reporting dates. Reduced on a device it has no PFE and no
+        /// Euler allocation: both need the paths.
+        ExposureStatistics statistics;
+        /// The two weighted sums of NettingSetRequest::weights.
+        Estimate weighted_positive, weighted_negative;
+        std::size_t paths = 0;
+        /// "cpu" or "gpu", how many cards, and why the CPU when the request
+        /// left the choice.
+        std::string device = "cpu";
+        int gpus = 0;
+        std::string device_note;
     };
 
     /**
@@ -160,6 +231,24 @@ namespace quantModeling
         ExposurePaths simulate(const ExposureSimulationSettings &settings = {},
                                ThreadPool *pool = nullptr);
 
+        /**
+         * @brief Exposure of one netting set, collateralised or not, without
+         *        keeping the cube: the trades are netted, the CSA applied and
+         *        the profiles reduced path by path.
+         *
+         * On the GPU everything happens on the device and only the profiles
+         * come back: the number of paths is bounded by neither the host's
+         * memory nor the copy. On the CPU it is simulate(), collateralise()
+         * and exposure_statistics() in a row — the reference the device is
+         * tested against.
+         *
+         * @throws InvalidInput on an initial margin without a CSA or given
+         *         per path, on a trade index out of range or repeated.
+         */
+        NettingSetExposure simulate_netting_set(ExposureSimulationSettings settings,
+                                                const NettingSetRequest &request,
+                                                ThreadPool *pool = nullptr);
+
         /// Standard deviation of the pilot's starting state in the last
         /// simulate(): 0 unless the main simulation ran under the historical
         /// measure with a trade valued by regression.
@@ -171,6 +260,24 @@ namespace quantModeling
             std::unique_ptr<FutureValue> value;
             Real quantity;
         };
+
+        /// How the state moves on the grid: under the simulation's measure,
+        /// and under the pricing measure (the pilot's, always).
+        struct Dynamics
+        {
+            xva::StateDynamics main;
+            xva::StateDynamics pricing;
+        };
+
+        /// The grid, the trades bound to it, and the dynamics: fills the
+        /// dates, the measure and the discount factors of `out`.
+        Dynamics prepare(const ExposureSimulationSettings &settings, ExposurePaths &out);
+
+        /// True when the run goes to the device, with the trades compiled in
+        /// `program`. Otherwise `note` says why — or, for a run that insisted
+        /// on the GPU, the reason is thrown.
+        bool on_device(const ExposureSimulationSettings &settings, xva::ExposureProgram &program,
+                       std::string &note) const;
 
         const HullWhiteCurveModel &model_;
         std::vector<Trade> trades_;

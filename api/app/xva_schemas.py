@@ -139,6 +139,12 @@ class XvaRequest(BaseModel):
     paths: int = Field(default=10000, ge=1000, le=50000)
     seed: int = Field(default=42, ge=0, le=2**31 - 1)
     pfe_confidence: float = Field(default=0.95, gt=0.5, lt=1.0)
+    device: Literal["auto", "cpu", "gpu"] = Field(
+        default="auto",
+        description="Where the paths are valued. auto: the GPU when the server "
+        "has one and every trade has a closed form, the CPU otherwise; the "
+        "response says which and why. gpu refuses to fall back",
+    )
 
 
 # ── Response ─────────────────────────────────────────────────────────────────
@@ -314,6 +320,14 @@ class XvaResponse(BaseModel):
         "on; 0 when every trade has a closed form"
     )
     seed: int
+    device: Literal["cpu", "gpu"] = Field(
+        description="Where the paths were actually valued"
+    )
+    gpus: int = Field(
+        description="GPUs that shared the paths (0 on the CPU); the result is "
+        "the same bits for any count"
+    )
+    device_reason: str = Field(description="Why this device, in plain terms")
     compute_ms: float
     warnings: List[str]
     methodology: List[MethodologySection]

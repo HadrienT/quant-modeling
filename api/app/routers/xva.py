@@ -62,7 +62,7 @@ def _payload(req: XvaRequest, response: XvaResponse) -> XvaValuationPayload:
             n_paths=response.paths,
             seed=response.seed,
             scheme="exact",
-            device="cpu",
+            device=response.device,
         ),
         market_inputs=[
             MarketInput(
