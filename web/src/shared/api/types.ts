@@ -27,10 +27,18 @@ export type TickerInfo = Schemas["TickerInfo"];
 
 export type CreditSpreadsResponse = Schemas["CreditSpreadsResponse"];
 
-export type RatesAnalysisRequest = Schemas["RatesAnalysisRequest-Input"];
-export type RatesAnalysisResponse = Schemas["RatesAnalysisResponse"];
-export type RatesExampleResponse = Schemas["RatesExampleResponse"];
-export type RatesMarketResponse = Schemas["RatesMarketResponse"];
+export type RatesQuoteSet = Schemas["RatesQuoteSetResponse"];
+export type RatesQuoteSetId = RatesQuoteSet["id"];
+export type RatesCurveQuotes = Schemas["RatesCurveQuotes"];
+export type RatesCurvesResponse = Schemas["RatesCurvesResponse"];
+export type RatesTradeStats = Schemas["RatesTradeStats"];
+export type SwapInput = Schemas["SwapInput"];
+export type SwaptionInput = Schemas["SwaptionInput"];
+export type SwaptionVolInput = Schemas["SwaptionVolInput"];
+export type SwapPricingRequest = Schemas["SwapPricingRequest"];
+export type SwapPricingResponse = Schemas["SwapPricingResponse"];
+export type SwaptionPricingRequest = Schemas["SwaptionPricingRequest"];
+export type SwaptionPricingResponse = Schemas["SwaptionPricingResponse"];
 export type SpreadHistoryResponse = Schemas["SpreadHistoryResponse"];
 export type CompanySummary = Schemas["CompanySummary"];
 export type FundamentalsResponse = Schemas["FundamentalsResponse"];

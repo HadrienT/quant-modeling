@@ -10,6 +10,8 @@ import {
 import { Button, Disclaimer, cn, copyText, toast } from "@/shared/ui";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
 import { DeviceRace } from "./DeviceRace";
+import { RatesForm } from "./rates/RatesForm";
+import { RatesResults } from "./rates/RatesResults";
 import { ResultsPanel } from "./ResultsPanel";
 import { ScriptedPanel } from "./ScriptedPanel";
 import { useWorkbench } from "./useWorkbench";
@@ -18,6 +20,8 @@ import { useWorkbench } from "./useWorkbench";
 export default function PricingPage() {
 	const wb = useWorkbench();
 	const [showCompare, setShowCompare] = useState(!!wb.compare);
+	// A rates product is priced on a quote set: its own form and results.
+	const rates = wb.descriptor.rates;
 
 	return (
 		<div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-5 lg:grid-cols-[200px_minmax(320px,380px)_1fr]">
@@ -81,12 +85,16 @@ export default function PricingPage() {
 					/>
 				)}
 
-				<ParamForm
-					key={`${wb.productKey}-${wb.engine}`}
-					descriptor={wb.descriptor}
-					values={wb.values}
-					onChange={wb.setValues}
-				/>
+				{rates ? (
+					<RatesForm kind={rates} values={wb.values} onChange={wb.setValues} />
+				) : (
+					<ParamForm
+						key={`${wb.productKey}-${wb.engine}`}
+						descriptor={wb.descriptor}
+						values={wb.values}
+						onChange={wb.setValues}
+					/>
+				)}
 
 				<div className="flex gap-2">
 					<Button
@@ -144,14 +152,18 @@ export default function PricingPage() {
 					<div>
 						<h2 className="mb-2 text-xs font-semibold text-ink-muted uppercase">
 							{showCompare ? "A · live · " : ""}
-							{wb.engine}
+							{rates ? "valuation" : wb.engine}
 						</h2>
-						<ResultsPanel
-							descriptor={wb.descriptor}
-							values={wb.values}
-							engine={wb.engine}
-							device={wb.device}
-						/>
+						{rates ? (
+							<RatesResults kind={rates} values={wb.values} />
+						) : (
+							<ResultsPanel
+								descriptor={wb.descriptor}
+								values={wb.values}
+								engine={wb.engine}
+								device={wb.device}
+							/>
+						)}
 						{wb.descriptor.scripted && (
 							<div className="mt-4">
 								<ScriptedPanel
@@ -168,12 +180,18 @@ export default function PricingPage() {
 							<h2 className="mb-2 text-xs font-semibold text-ink-muted uppercase">
 								B · frozen
 							</h2>
-							<ResultsPanel
-								descriptor={CATALOG_BY_KEY.get(wb.productKey) ?? wb.descriptor}
-								values={wb.compare}
-								engine={wb.engine}
-								device={wb.device}
-							/>
+							{rates ? (
+								<RatesResults kind={rates} values={wb.compare} />
+							) : (
+								<ResultsPanel
+									descriptor={
+										CATALOG_BY_KEY.get(wb.productKey) ?? wb.descriptor
+									}
+									values={wb.compare}
+									engine={wb.engine}
+									device={wb.device}
+								/>
+							)}
 						</div>
 					)}
 				</div>
