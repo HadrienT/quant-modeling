@@ -61,3 +61,19 @@ class ScriptingChatEvent(BaseModel):
     message: str | None = None
     events: list[dict] | None = None
     variables: list[str] | None = None
+
+
+class AssistantStatusResponse(BaseModel):
+    """Whether the assistant can answer right now.
+
+    `up`: the model server answers and serves the assistant's model.
+    `wrong_model`: it answers, but another model is loaded — a chat would be
+    answered by that one. `down`: it does not answer."""
+
+    state: Literal["up", "wrong_model", "down"]
+    model: str = Field(..., description="The model the assistant is set up for.")
+    serving: list[str] = Field(
+        default_factory=list, description="What the model server reports."
+    )
+    detail: str = Field(..., description="One sentence for the page.")
+    checked_at: datetime

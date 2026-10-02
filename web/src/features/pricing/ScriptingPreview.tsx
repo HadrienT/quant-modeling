@@ -57,6 +57,7 @@ export default function ScriptingPreview() {
 	const [valuationDate, setValuationDate] = useState(today);
 	const [dayCount, setDayCount] = useState<DayCount>("ACT/365F");
 	const [fuzzy, setFuzzy] = useState(false);
+	const [greeks, setGreeks] = useState(true);
 	const [defaultEps, setDefaultEps] = useState("1");
 	const [vr, setVr] = useState(DEFAULT_VARIANCE_REDUCTION);
 	const [nPaths, setNPaths] = useState("200000");
@@ -116,6 +117,7 @@ export default function ScriptingPreview() {
 							day_count: dayCount,
 							fuzzy,
 							default_eps: Number(defaultEps),
+							greeks_method: greeks ? "aad" : "none",
 							...varianceReductionRequest(vr),
 							n_paths: Number(nPaths),
 							seed: Number(seed),
@@ -178,6 +180,8 @@ export default function ScriptingPreview() {
 					<ComputeDevicePicker device={device} onChange={setDevice} />
 
 					<FuzzyFields
+						greeks={greeks}
+						onGreeks={setGreeks}
 						fuzzy={fuzzy}
 						onFuzzy={setFuzzy}
 						eps={defaultEps}

@@ -93,6 +93,16 @@ export const handlers = [
 	http.get("*/price/devices", () =>
 		HttpResponse.json({ cpu: "Test CPU", gpus: [], gpu_compiled: false }),
 	),
+	http.get("*/api/assistant/status", () =>
+		HttpResponse.json({
+			state: "up",
+			model: "Qwen3-Coder-30B-A3B-Instruct",
+			serving: ["Qwen3-Coder-30B-A3B-Instruct"],
+			detail: "The assistant is online.",
+			checked_at: "2026-10-02T10:00:00Z",
+		}),
+	),
+
 	http.post("*/price/*", () => HttpResponse.json(fx.pricingResponse())),
 
 	http.get("*/api/portfolios", () =>

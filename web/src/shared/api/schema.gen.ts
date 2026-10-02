@@ -43,6 +43,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assistant/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Assistant Status Endpoint */
+        get: operations["assistant_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -1549,6 +1566,41 @@ export interface components {
             strike: number;
             /** Vol */
             vol: number;
+        };
+        /**
+         * AssistantStatusResponse
+         * @description Whether the assistant can answer right now.
+         *
+         *     `up`: the model server answers and serves the assistant's model.
+         *     `wrong_model`: it answers, but another model is loaded — a chat would be
+         *     answered by that one. `down`: it does not answer.
+         */
+        AssistantStatusResponse: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /**
+             * Detail
+             * @description One sentence for the page.
+             */
+            detail: string;
+            /**
+             * Model
+             * @description The model the assistant is set up for.
+             */
+            model: string;
+            /**
+             * Serving
+             * @description What the model server reports.
+             */
+            serving?: string[];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "up" | "wrong_model" | "down";
         };
         /** AuthRequest */
         AuthRequest: {
@@ -5881,6 +5933,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    assistant_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantStatusResponse"];
+                };
             };
         };
     };

@@ -1,5 +1,32 @@
+import { useQuery } from "@tanstack/react-query";
 import { api } from "./client";
+import { ApiError } from "./errors";
 import type { components } from "./schema.gen";
+
+export type AssistantStatus = components["schemas"]["AssistantStatusResponse"];
+
+/**
+ * Whether the assistant's model server answers, and with which model. Asked
+ * again every half minute while the page is open: the server is shared with
+ * other work on the same GPU and can be stopped or switched to another model
+ * at any time. A failed request is its own state — the API is unreachable,
+ * which says nothing about the model server.
+ */
+export function useAssistantStatus() {
+	return useQuery<AssistantStatus, ApiError>({
+		queryKey: ["assistant", "status"],
+		refetchInterval: 30_000,
+		staleTime: 15_000,
+		retry: false,
+		queryFn: async ({ signal }) => {
+			const { data, error } = await api.GET("/api/assistant/status", {
+				signal,
+			});
+			if (error !== undefined) throw ApiError.from(error);
+			return data;
+		},
+	});
+}
 
 export type ScriptingChatRequest =
 	components["schemas"]["ScriptingChatRequest"];
