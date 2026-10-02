@@ -322,6 +322,39 @@ namespace quantModeling
             out.assign(1, run_tree(path));
         }
 
+        /**
+         * @brief One path, event by event: after each event, the payoff
+         *        accumulated so far — each `pays` divided by the scenario's
+         *        numeraire at its event — and, on request, the variables.
+         *
+         * With a numeraire of 1 at every event the increments of
+         * `cumulative` are the cash flows themselves, date by date: what an
+         * exposure engine needs (engines/xva/script_future_value.hpp), where
+         * payoffs() only gives their deflated sum. Runs the tree evaluator,
+         * under the exercise rule that is set.
+         *
+         * @param cumulative one value per timeline() entry.
+         * @param variables  when not null: timeline().size() rows of
+         *                   variable_names().size() values, row by row — the
+         *                   state after each event.
+         */
+        void replay(const Scenario<T> &path, std::vector<T> &cumulative,
+                    std::vector<T> *variables = nullptr) const
+        {
+            cumulative.resize(events_.size());
+            if (variables != nullptr)
+                variables->clear();
+            evaluator_->initialize();
+            for (std::size_t i = 0; i < events_.size(); ++i)
+            {
+                run_event(path, i);
+                cumulative[i] = evaluator_->payoff();
+                if (variables != nullptr)
+                    variables->insert(variables->end(), evaluator_->variables().begin(),
+                                      evaluator_->variables().end());
+            }
+        }
+
       private:
         T run_tree(const Scenario<T> &path) const
         {

@@ -132,10 +132,7 @@ namespace quantModeling
                 " MiB; reduce the paths or raise memory_limit_bytes");
 
         for (Trade &trade : trades_)
-        {
             trade.value->bind(out.times);
-            out.trade_values_today.push_back(trade.quantity * trade.value->value_today());
-        }
 
         // Exact transitions of x under the T*-forward measure, and the
         // discount weight P(0, T*) / P(t, T* | x) = P(0, t) exp(G x + G² y / 2),
@@ -276,6 +273,8 @@ namespace quantModeling
                     trade.value->fit(pilot);
             out.pilot_paths = pilot.paths;
         }
+        for (const Trade &trade : trades_)
+            out.trade_values_today.push_back(trade.quantity * trade.value->value_today());
 
         out.discount_weight.resize(N * n);
         out.trade_values.assign(K, std::vector<Real>(N * n));
@@ -284,7 +283,13 @@ namespace quantModeling
 
         const auto run_chunk = [&](std::size_t first, std::size_t last)
         {
-            std::vector<Real> state(n);
+            std::vector<Real> state(n), values(n), flows(n);
+            // This task's scratch for the trades that value a path
+            // sequentially.
+            std::vector<std::unique_ptr<FutureValue::Workspace>> workspaces;
+            workspaces.reserve(K);
+            for (const Trade &trade : trades_)
+                workspaces.push_back(trade.value->make_workspace());
             PhiloxGaussianSource gaussian(settings.seed);
             for (std::size_t p = first; p < last; ++p)
             {
@@ -299,16 +304,18 @@ namespace quantModeling
                 }
                 for (std::size_t k = 0; k < K; ++k)
                 {
-                    const FutureValue &trade = *trades_[k].value;
                     const Real quantity = trades_[k].quantity;
-                    std::vector<Real> &values = out.trade_values[k];
+                    trades_[k].value->evaluate_path(state.data(), n, values.data(),
+                                                    settings.keep_cashflows ? flows.data() : nullptr,
+                                                    workspaces[k].get());
+                    std::vector<Real> &stored = out.trade_values[k];
                     for (std::size_t i = 0; i < n; ++i)
-                        values[row + i] = quantity * trade.value(i, state.data());
+                        stored[row + i] = quantity * values[i];
                     if (settings.keep_cashflows)
                     {
-                        std::vector<Real> &flows = out.trade_cashflows[k];
+                        std::vector<Real> &stored_flows = out.trade_cashflows[k];
                         for (std::size_t i = 0; i < n; ++i)
-                            flows[row + i] = quantity * trade.cashflow(i, state.data());
+                            stored_flows[row + i] = quantity * flows[i];
                     }
                 }
             }

@@ -539,3 +539,54 @@ def test_capital_and_its_cost():
     )
     assert margined["adjustments"]["kva"] > body["adjustments"]["kva"]
     assert "Capital and KVA" in [s["title"] for s in body["methodology"]]
+
+
+# ── Lot X4b: a trade written as a script ─────────────────────────────────────
+
+
+def test_a_scripted_trade_has_an_exposure_in_the_library():
+    """The binding takes a rates-only payoff script as a trade: a zero-coupon
+    bond bought is an asset worth its discount factor until it pays."""
+    import quantmodeling as qm
+
+    times = [1.0, 2.0, 5.0, 10.0]
+    dfs = [math.exp(-0.04 * t) for t in times]
+    flat = ([10.0], [0.02])
+    result = qm.xva_netting_set(
+        times,
+        dfs,
+        (0.03, 0.01),
+        [
+            {
+                "kind": "script",
+                "script": "2028-10-01\n    pays 1000000\n",
+                "valuation_date": "2026-10-02",
+            }
+        ],
+        flat,
+        flat,
+        paths=2000,
+    )
+    assert result["pilot_paths"] >= 20_000
+    assert result["trade_values_today"][0] == pytest.approx(
+        1_000_000 * math.exp(-0.04 * 2.0), rel=2e-3
+    )
+    assert result["cva"]["value"] < 0 and result["dva"]["value"] == 0.0
+    # No SA-CCR description of a script: the capital says so instead of guessing.
+    with pytest.raises(Exception, match="SA-CCR description of a scripted trade"):
+        qm.xva_netting_set(
+            times,
+            dfs,
+            (0.03, 0.01),
+            [
+                {
+                    "kind": "script",
+                    "script": "2028-10-01\n    pays 1\n",
+                    "valuation_date": "2026-10-02",
+                }
+            ],
+            flat,
+            flat,
+            paths=1000,
+            capital={"pd": 0.01},
+        )

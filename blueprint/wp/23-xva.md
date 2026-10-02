@@ -1264,7 +1264,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X1 — Moteur d'exposition, taux USD** | grille (dates de flux, piliers), Hull-White $T^*$-forward, swaps et swaptions européennes en forme fermée, netting, EE / ENE / EFV / PFE / EPE / EEE / EEPE, allocation d'Euler, CPU multi-thread | $EE+ENE = EFV$ ; $EFV^*(t)$ = valeur analytique à 3 σ MC ; option achetée : $EE^* = V_0$ ; profil de swap en cloche, pic vers $T/3$ ; mêmes bits sur 1 et 56 threads ; somme des contributions d'Euler = total |
 | **X2 — Collatéral** | CSA (seuil, MTA, arrondi, IA), MPoR classique puis avancée (flux pendant la MPoR), grille d'IM ; IM déterministe | EE collatéralisée ≈ $0{,}4\sigma_V\sqrt{MPoR}$ sur un produit gaussien ; monotonie en seuil et en MTA ; seuil infini = non collatéralisé ; pics de flux visibles |
 | **X3 — CVA / DVA** | courbes proxy ICE BofA, CVA unilatéral et bilatéral (premier défaut), CVA incrémental et marginal, API + événement d'audit | symétrie CVA$_I$ = DVA$_C$ ; hazard nul → CVA nul ; approximation $-s\,EPE\,T$ à quelques % ; rejouable par le replay |
-| **X4 — AMC** (X4a fait : §14.6 ; X4b : scripts) | exposition par régression sur toute la grille, bermudans avec état d'exercice, scripts quelconques | sur swaps et swaptions européennes, régression = forme fermée à l'erreur MC près (EE et PFE 99 %) ; bermudan : exposition cohérente avec le prix du réseau (WP 21) à $t=0$ |
+| **X4 — AMC** (fait : §14.6 et §14.8) | exposition par régression sur toute la grille, bermudans avec état d'exercice, scripts quelconques | sur swaps et swaptions européennes, régression = forme fermée à l'erreur MC près (EE et PFE 99 %) ; bermudan : exposition cohérente avec le prix du réseau (WP 21) à $t=0$ |
 | **X5 — FVA, ColVA, MVA, KVA** (fait : §14.7) | FCA / FBA (symétrique et asymétrique), ColVA, DIM par régression (Anfuso et al.) calée sur une SIMM d'aujourd'hui, MVA ; capital projeté SA-CCR + BA-CVA → KVA | FVA symétrique = $-FS\sum EFV^*\Delta t$ ; DIM backtestée sur un historique simulé ; KVA d'un netting set vide = 0 |
 | **X5b — SIMM par chemin** (ambitieux) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
 | **X6 — Wrong-way risk** | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
@@ -1472,9 +1472,7 @@ Livré : `engines/xva/regression_future_value.hpp` (la régression et le
 dans `HullWhiteExposureEngine::simulate`, le type `bermudan` dans
 `qm.xva_netting_set`, deux portefeuilles dans l'API (`bermudan`,
 `cancellable`) ; tests dans `tests/testExposureRegression.cpp` et
-`api/tests/test_xva.py`. **Reste pour X4b : les scripts quelconques** — le
-langage tourne sur ses propres modèles et ses propres chemins, il faut le
-brancher sur l'état du moteur d'exposition.
+`api/tests/test_xva.py`. Les scripts quelconques sont le lot X4b (§14.8).
 
 - **Ce qu'une transaction dit d'elle-même.** `FutureValue` gagne trois
   crochets : `needs_pilot()` / `fit(pilot)`, et la description de ce dont la
@@ -1631,6 +1629,45 @@ et `POST /api/xva/netting-set` ; tests dans `tests/testInitialMargin.cpp`,
 - **Non couverts** : DIM sous la mesure historique dans le rapport (le modèle
   s'y applique, `DynamicInitialMargin::margin`) ; régression de la dérive ;
   option du collatéral le moins cher ; FVA asymétrique récursif.
+
+### 14.8 Lot X4b : les scripts dans le moteur d'exposition
+
+Livré : `engines/xva/script_future_value.hpp` (`make_script_future_value`),
+`ScriptedProduct::replay` (le script événement par événement),
+`FutureValue::evaluate_path` et `make_workspace` (une transaction qui valorise
+un chemin d'un trait, avec son état par thread), le type `script` dans
+`qm.xva_netting_set` ; tests dans `tests/testExposureScript.cpp`.
+
+- **Le script tourne sur les chemins du moteur.** À chaque événement, l'état
+  $x(t)$ donne tous les facteurs d'actualisation que le script demande,
+  `df(T)` $= P(t, T \mid x)$. Rejoué avec un numéraire égal à 1, ses `pays`
+  **sont** les flux du chemin, date par date. Vérifié : un swap écrit en
+  script paie, chemin par chemin, ce que paie le swap natif.
+- **Valeur par régression** des flux à venir (la cible du lot X4a) sur l'état
+  **et sur les variables du script**, qui portent ce que le chemin a déjà
+  décidé. Une variable qui prend beaucoup de valeurs est un **régresseur**
+  (le coupon fixé, pas encore payé) ; une variable qui en prend peu (quatre au
+  plus sur les chemins pilotes) est un **régime**, avec sa propre régression
+  (un drapeau `done = 1` posé à l'exercice) ; une variable identique sur tous
+  les chemins est ignorée. Swap en script contre forme fermée : EE à 2 % du
+  pic, PFE à 99 % à 4 %.
+- **Exercice** : la règle vient du LSMC existant (`fit_exercise_policy`), sur
+  le modèle hybride des scripts dont l'action n'est lue par personne. **Le
+  script doit consigner l'exercice dans une variable** : vu de l'extérieur, on
+  ne sait pas qu'un chemin a exercé. C'est écrit dans l'en-tête et testé (un
+  bermudan réglé en espèces vaut exactement zéro après exercice).
+- **Valeur d'aujourd'hui** : le prix Monte-Carlo du script (50 000 chemins par
+  défaut), pas une forme fermée ; le moteur la lit désormais après la passe
+  pilote.
+- **Un état par thread.** L'évaluateur d'un script garde l'état du chemin : le
+  moteur demande à chaque transaction un espace de travail par tâche
+  (`make_workspace`) et lui passe le chemin entier (`evaluate_path`). Pour les
+  transactions en forme fermée rien ne change, bit pour bit.
+- **Taux seulement** : un script qui lit `spot()` ou `forward()` est refusé à
+  la construction. Les scripts actions demandent le modèle joint (lot X10).
+- **Capital** : SA-CCR ne décrit pas un script quelconque ; la liaison Python
+  refuse de projeter le capital d'un netting set qui en contient un plutôt que
+  de l'inventer.
 
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
