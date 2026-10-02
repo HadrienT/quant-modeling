@@ -1,5 +1,6 @@
 import { HttpResponse, http } from "msw";
 import * as fx from "./fixtures";
+import rates from "./rates.fixtures.json";
 
 /**
  * MSW handlers — serve the SAME fixtures to Vitest, Storybook and offline dev
@@ -93,6 +94,29 @@ export const handlers = [
 	http.get("*/price/devices", () =>
 		HttpResponse.json({ cpu: "Test CPU", gpus: [], gpu_compiled: false }),
 	),
+	// Rates: real responses of the API (dumped once), keyed by what the
+	// request asks for. Before the catch-all pricing handler.
+	http.get("*/api/rates/quotes/:set", ({ params }) =>
+		HttpResponse.json(rates.quotes[params.set as keyof typeof rates.quotes]),
+	),
+	http.post("*/api/rates/curves", async ({ request }) => {
+		const body = (await request.json()) as { float_frequency: number };
+		return HttpResponse.json(
+			rates.curves[
+				body.float_frequency === 1 ? "usd-sofr" : "eur-illustrative"
+			],
+		);
+	}),
+	http.post("*/price/rates/swap", () => HttpResponse.json(rates.swap)),
+	http.post("*/price/rates/swaption", async ({ request }) => {
+		const body = (await request.json()) as {
+			swaption: { exercise?: "european" | "bermudan" };
+		};
+		return HttpResponse.json(
+			rates.swaption[body.swaption.exercise ?? "european"],
+		);
+	}),
+
 	http.post("*/price/*", () => HttpResponse.json(fx.pricingResponse())),
 
 	http.get("*/api/portfolios", () =>

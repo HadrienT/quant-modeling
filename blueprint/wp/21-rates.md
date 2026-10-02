@@ -1,4 +1,4 @@
-# WP 21 — Taux : multi-courbe, swaps, swaptions, Hull-White calibré, page `/rates`
+# WP 21 — Taux : multi-courbe, swaps, swaptions, Hull-White calibré
 
 | | |
 |---|---|
@@ -61,19 +61,64 @@
   Levenberg-Marquardt sur des vols normales ATM, résidus en bp de vol ; a
   peut être fixé. Test : aller-retour exact sur des vols générées par le modèle.
 
-## 4. API et page
+## 4. API et écrans
 
-`POST /api/rates/analyse` (`api/app/rates_derivatives.py`) : courbes, swap,
-calibration, swaption sous les quatre modèles, bermudan et prime de switch.
-`GET /api/rates/example` : les cotations de départ.
+Il n'y a plus de page `/rates` (issue #143) : elle mêlait données de marché,
+construction de courbes et valorisation de deux produits, et son entrée de
+menu doublait l'onglet Rates de la page Market. Elle avait été faite d'un bloc
+quand aucune cotation de swap n'était gratuite ; depuis l'ingestion DTCC, ce
+motif ne vaut plus que pour l'exemple EUR. Son contenu est réparti par nature,
+et `/rates` redirige vers le swap du workbench.
 
-**Les cotations sont des saisies.** Aucune source gratuite ne publie de swaps
-OIS, de courbe de swaps sur un index ni de vols de swaptions (FRED n'en a pas).
-La page part de cotations EUR illustratives (€STR, EURIBOR 6M), l'écrit en
-tête (« Manual input ») et dans la méthodologie, et calcule sur ce que
-l'utilisateur saisit. Rien ne lit la base, donc pas de repli Yahoo possible.
-L'analyse n'est pas un `pricing.valuation` : c'est une page d'analyse comme
-`/credit`, sans produit unique à rejouer.
+| Quoi | Où |
+|---|---|
+| Courbe de swaps SOFR et vols de swaptions tirées des transactions, avec le nombre de transactions et ce qui est écarté | Market → Rates, devise USD (`features/market/SwapMarketPanel.tsx`) |
+| Swap, swaption européenne et bermudane | Pricing, famille « Fixed income » (`features/pricing/rates/`) |
+| Payoff, hypothèses, modèle minimal, sources | Products, fiches `swap` et `swaption` (`shared/products/docs.ts`), avec un profil de risque par bump des cotations |
+
+**API.**
+
+- `GET /api/rates/quotes/{set_id}` : un jeu de cotations (`usd-sofr` ou
+  `eur-illustrative`), les contrats sur lesquels le workbench s'ouvre, et d'où
+  viennent les chiffres.
+- `POST /api/rates/curves` : les deux courbes d'un jeu de cotations, la base
+  entre leurs forwards, l'erreur de repricing.
+- `POST /price/rates/swap` et `POST /price/rates/swaption` : passent par
+  `valuation.PRODUCTS` (`interest_rate_swap`, `swaption`), donc chaque
+  valorisation émet un `pricing.valuation` et se rejoue.
+
+**Un prix est une fonction des cotations que porte sa requête.** Le workbench
+charge un jeu, l'utilisateur peut l'éditer, et la requête de pricing emporte
+les cotations elles-mêmes : rien ne lit la base pendant le pricing. Le replay
+n'a donc besoin que de la requête enregistrée, et un jeu édité se rejoue comme
+un jeu de marché.
+
+**Deux jeux de cotations.** `usd-sofr` est le défaut : des données de marché
+(médianes de transactions DTCC, `api/app/swaption_market.py`). S'il manque ou date de plus de sept
+jours, c'est une erreur qui dit ce qui manque, jamais une bascule silencieuse
+vers l'autre jeu. `eur-illustrative` (€STR, EURIBOR 6M) reste, marqué « Manual
+input » : aucune source gratuite ne publie de courbe de swaps IBOR, et c'est
+le seul jeu où la courbe de projection diffère de la courbe d'actualisation.
+En USD l'indice est le taux au jour le jour : une seule courbe, base nulle, et
+l'écran le dit.
+
+**Choix du modèle de la swaption (ADR-S8 du WP 16, appliqué aux taux).** Par
+défaut le modèle est choisi et annoncé avec sa raison, et reste sélectionnable
+à la main :
+
+- européenne → Bachelier sur la vol normale ATM cotée la plus proche : c'est
+  la convention de cotation du marché ;
+- bermudane → Hull-White calibré : sa valeur dépend du mouvement de toute la
+  courbe entre les dates d'exercice, ce qu'un modèle d'un seul taux de swap ne
+  décrit pas. Les modèles à un taux sont refusés pour une bermudane (422).
+
+Les quatre modèles restent comparés côte à côte, chacun avec la vol normale
+qu'il implique. Deux avertissements accompagnent le prix : un strike hors de
+la monnaie valorisé à une vol ATM (les cotations n'ont pas de smile), et
+l'erreur d'ajustement de Hull-White quand c'est lui qui valorise. Le modèle
+retenu, le modèle demandé et les paramètres calibrés vont dans l'événement
+d'audit. La calibration (≈ 0,6 s) est mise en cache par ses entrées : changer
+le strike ou le sens ne recalibre pas.
 
 ## 6. Hybrides action-taux (issue #86)
 
@@ -94,7 +139,14 @@ par LSMC retombe sur le réseau Hull-White du §3.
 
 ## 5. Ce qui manque
 
-- Sources de marché : swaps OIS / IBOR et vols de swaptions, à ingérer dans
-  `~/data-ingest` si une source gratuite apparaît.
+- Sources de marché hors USD : swaps OIS / IBOR et vols de swaptions, à
+  ingérer dans `~/data-ingest` si une source gratuite apparaît (le dollar est
+  couvert par les transactions DTCC).
+- Grecques de la swaption dans la réponse (vega normal, delta par pilier) : le
+  bloc `greeks` est vide, seul le profil de risque de la fiche Products bumpe
+  les cotations.
+- Courbe de forwards en dents de scie sur le jeu USD : médianes de
+  transactions interpolées log-linéairement. Un lissage (Hagan-West) ou un
+  ajustement de la courbe aux transactions la rendrait lisible.
 - σ(t) constant par morceaux (calibration co-terminale exacte), cube de
   swaptions (smile par expiry × tenor), calendriers et bases de décompte.

@@ -33,6 +33,8 @@ from typing import Any, Callable
 from pydantic import BaseModel
 
 from . import pricing_service as ps
+from . import rates_derivatives as rd
+from . import rates_derivatives_schemas as rs
 from . import schemas as s
 from .audit.envelope import lib_build_sha
 from .audit.payloads import (
@@ -119,9 +121,29 @@ class Product:
     model: Callable[[Any], str]
     engine: Callable[[Any], str]
     scheme: Callable[[Any], str | None] = lambda _req: None
+    #: What the model was run with, when the response says more than the
+    #: request (a calibration): recorded as the model's params.
+    params: Callable[[Any, Any], dict[str, str | int | float | None]] = (
+        lambda _req, _resp: {}
+    )
     #: The pricing function opens its own `market_snapshot.load` and
     #: `engine.price` spans (it reads market data before pricing).
     own_spans: bool = False
+
+
+def _swaption_params(
+    req: rs.SwaptionPricingRequest, resp: rs.SwaptionPricingResponse
+) -> dict[str, str | int | float | None]:
+    """The model asked for and, since every swaption prices next to its
+    calibrated Hull-White, what the calibration found."""
+    hw = resp.swaption.hull_white
+    return {
+        "requested": req.swaption.model,
+        "exercise": req.swaption.exercise,
+        "hull_white_mean_reversion": hw.mean_reversion,
+        "hull_white_sigma": hw.sigma,
+        "hull_white_rmse_bp": hw.rmse_bp,
+    }
 
 
 PRODUCTS: dict[str, Product] = {
@@ -244,6 +266,18 @@ PRODUCTS: dict[str, Product] = {
     "rainbow": Product(
         s.RainbowRequest, ps.price_rainbow, _const("black_scholes"), _const("mc")
     ),
+    # Rates: a function of the quotes the request carries (the store is not
+    # read while pricing), so a replay needs nothing but the request.
+    "interest_rate_swap": Product(
+        rs.SwapPricingRequest, rd.price_swap, _const("multi_curve"), _const("analytic")
+    ),
+    "swaption": Product(
+        rs.SwaptionPricingRequest,
+        rd.price_swaption,
+        lambda r: rd.swaption_model(r.swaption),
+        lambda r: rd.swaption_engine(r.swaption),
+        params=_swaption_params,
+    ),
 }
 
 
@@ -303,7 +337,7 @@ def _model_spec(product: Product, req: BaseModel, resp: PricingResponse) -> Mode
     re-derives both from the same stored snapshot)."""
     choice = resp.model_choice
     if choice is None:
-        return ModelSpec(name=product.model(req))
+        return ModelSpec(name=product.model(req), params=product.params(req, resp))
     params: dict[str, str | int | float | None] = {"requested": choice.requested}
     calibration_id = None
     for i, u in enumerate(choice.underlyings or []):

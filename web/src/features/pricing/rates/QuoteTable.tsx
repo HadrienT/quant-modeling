@@ -1,5 +1,11 @@
 import { Button } from "@/shared/ui";
-import { SCALE, STEP, SUFFIX, type Unit } from "./format";
+
+/** How a column of a quote table is shown and edited. */
+export type Unit = "pct" | "bp" | "years";
+
+const SCALE: Record<Unit, number> = { pct: 100, bp: 1e4, years: 1 };
+const STEP: Record<Unit, string> = { pct: "0.01", bp: "0.1", years: "0.25" };
+const SUFFIX: Record<Unit, string> = { pct: "%", bp: "bp", years: "y" };
 
 export type Column<R> = { key: keyof R & string; label: string; unit: Unit };
 
@@ -10,12 +16,15 @@ export type Column<R> = { key: keyof R & string; label: string; unit: Unit };
  */
 export function QuoteTable<R extends Record<string, number>>({
 	title,
+	hint,
 	columns,
 	rows,
 	onChange,
 	minRows = 1,
 }: {
 	title: string;
+	/** What these quotes are and which curve they build, in one line. */
+	hint?: string;
 	columns: Column<R>[];
 	rows: R[];
 	onChange: (rows: R[]) => void;
@@ -33,6 +42,7 @@ export function QuoteTable<R extends Record<string, number>>({
 			<legend className="mb-1 text-xs font-semibold text-ink-secondary">
 				{title}
 			</legend>
+			{hint && <p className="text-2xs text-ink-muted">{hint}</p>}
 			<table className="w-full text-xs">
 				<thead>
 					<tr className="text-ink-muted">

@@ -519,6 +519,8 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 			notional: +v.notional!,
 		}),
 	},
+	rates("swap", "Interest rate swap", "/price/rates/swap"),
+	rates("swaption", "Swaption", "/price/rates/swaption"),
 
 	// ── unvetted categories: visible, greyed, with a reason ─────────────
 	disabled(
@@ -587,6 +589,36 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		"double-barrier",
 	),
 ];
+
+/**
+ * A rates product (see ProductDescriptor.rates). The form values only say
+ * which quote set and what was edited; the request is built from them and the
+ * set by features/pricing/rates, not by `toRequest`.
+ */
+function rates(
+	key: "swap" | "swaption",
+	label: string,
+	endpoint: ProductDescriptor["endpoint"],
+): ProductDescriptor {
+	return {
+		key,
+		category: "fixed-income",
+		label,
+		enabled: true,
+		schema: z.object({
+			quote_set: z.enum(["usd-sofr", "eur-illustrative"]),
+			quotes: z.unknown().optional(),
+			contract: z.unknown().optional(),
+		}),
+		defaults: { quote_set: "usd-sofr" },
+		engines: [ANALYTIC],
+		endpoint,
+		docKey: key,
+		greeks: [],
+		rates: key,
+		toRequest: (v) => v,
+	};
+}
 
 function docOnly(
 	key: string,
