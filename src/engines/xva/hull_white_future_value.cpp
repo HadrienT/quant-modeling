@@ -147,6 +147,18 @@ namespace quantModeling
                 return flow;
             }
 
+            /// The value depends on today's state and on the floating coupons
+            /// already fixed and not yet paid.
+            std::size_t regressors(std::size_t i, const Real *state, Real *out) const override
+            {
+                std::size_t count = 0;
+                out[count++] = state[i];
+                for (const InProgress &c : dates_[i].in_progress)
+                    if (count < kMaxRegressors)
+                        out[count++] = coupon_amount(floating_[c.coupon], state);
+                return count;
+            }
+
           private:
             /// coefficient × P(t, T | x) = amount × exp(-G x).
             struct Bond
@@ -247,6 +259,22 @@ namespace quantModeling
                 return underlying_.cashflow(i, state);
             }
 
+            /// Before the expiry an option; after it the swap, or nothing.
+            std::size_t regime(std::size_t i, const Real *state) const override
+            {
+                if (i < expiry_index_)
+                    return 0;
+                return underlying_.value(expiry_index_, state) > 0.0 ? 1 : 2;
+            }
+
+            std::size_t regressors(std::size_t i, const Real *state, Real *out) const override
+            {
+                if (i >= expiry_index_)
+                    return underlying_.regressors(i, state, out);
+                out[0] = state[i];
+                return 1;
+            }
+
           private:
             HullWhiteExerciseRegion region_;
             HullWhiteSwapValue underlying_;
@@ -273,6 +301,10 @@ namespace quantModeling
             {
                 result = make_future_value(swaption, model_);
             }
+            void visit(const BermudanSwaption &bermudan) override
+            {
+                result = make_future_value(bermudan, model_);
+            }
 
             void visit(const VanillaOption &) override { unsupported("vanilla option"); }
             void visit(const AsianOption &) override { unsupported("Asian option"); }
@@ -287,8 +319,7 @@ namespace quantModeling
           private:
             [[noreturn]] static void unsupported(const char *name)
             {
-                throw UnsupportedInstrument(std::string("No closed-form future value under "
-                                                        "Hull-White for: ") +
+                throw UnsupportedInstrument(std::string("No future value under Hull-White for: ") +
                                             name);
             }
 

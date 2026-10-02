@@ -1264,7 +1264,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X1 — Moteur d'exposition, taux USD** | grille (dates de flux, piliers), Hull-White $T^*$-forward, swaps et swaptions européennes en forme fermée, netting, EE / ENE / EFV / PFE / EPE / EEE / EEPE, allocation d'Euler, CPU multi-thread | $EE+ENE = EFV$ ; $EFV^*(t)$ = valeur analytique à 3 σ MC ; option achetée : $EE^* = V_0$ ; profil de swap en cloche, pic vers $T/3$ ; mêmes bits sur 1 et 56 threads ; somme des contributions d'Euler = total |
 | **X2 — Collatéral** | CSA (seuil, MTA, arrondi, IA), MPoR classique puis avancée (flux pendant la MPoR), grille d'IM ; IM déterministe | EE collatéralisée ≈ $0{,}4\sigma_V\sqrt{MPoR}$ sur un produit gaussien ; monotonie en seuil et en MTA ; seuil infini = non collatéralisé ; pics de flux visibles |
 | **X3 — CVA / DVA** | courbes proxy ICE BofA, CVA unilatéral et bilatéral (premier défaut), CVA incrémental et marginal, API + événement d'audit | symétrie CVA$_I$ = DVA$_C$ ; hazard nul → CVA nul ; approximation $-s\,EPE\,T$ à quelques % ; rejouable par le replay |
-| **X4 — AMC** | exposition par régression sur toute la grille, bermudans avec état d'exercice, scripts quelconques | sur swaps et swaptions européennes, régression = forme fermée à l'erreur MC près (EE et PFE 99 %) ; bermudan : exposition cohérente avec le prix du réseau (WP 21) à $t=0$ |
+| **X4 — AMC** (X4a fait : §14.6 ; X4b : scripts) | exposition par régression sur toute la grille, bermudans avec état d'exercice, scripts quelconques | sur swaps et swaptions européennes, régression = forme fermée à l'erreur MC près (EE et PFE 99 %) ; bermudan : exposition cohérente avec le prix du réseau (WP 21) à $t=0$ |
 | **X5 — FVA, ColVA, MVA, KVA** | FCA / FBA (symétrique et asymétrique), ColVA, DIM par régression (Anfuso et al.) calée sur une SIMM d'aujourd'hui, MVA ; capital projeté SA-CCR + BA-CVA → KVA | FVA symétrique = $-FS\sum EFV^*\Delta t$ ; DIM backtestée sur un historique simulé ; KVA d'un netting set vide = 0 |
 | **X5b — SIMM par chemin** (ambitieux) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
 | **X6 — Wrong-way risk** | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
@@ -1463,6 +1463,95 @@ Livré : `risk/xva_report.hpp` (le rapport d'un netting set), les bindings
 - **Reste** : le rejeu par `POST /api/admin/replay/{id}` n'est pas branché
   (l'événement porte ce qu'il faut : requête, graine, modèle, empreintes des
   entrées) ; la page `/xva` (lot X9).
+
+### 14.6 Lot X4a : exposition par régression (AMC), bermudans
+
+Livré : `engines/xva/regression_future_value.hpp` (la régression et le
+« jumeau par régression » d'une transaction),
+`src/engines/xva/hull_white_bermudan_value.cpp` (le bermudan), la passe pilote
+dans `HullWhiteExposureEngine::simulate`, le type `bermudan` dans
+`qm.xva_netting_set`, deux portefeuilles dans l'API (`bermudan`,
+`cancellable`) ; tests dans `tests/testExposureRegression.cpp` et
+`api/tests/test_xva.py`. **Reste pour X4b : les scripts quelconques** — le
+langage tourne sur ses propres modèles et ses propres chemins, il faut le
+brancher sur l'état du moteur d'exposition.
+
+- **Ce qu'une transaction dit d'elle-même.** `FutureValue` gagne trois
+  crochets : `needs_pilot()` / `fit(pilot)`, et la description de ce dont la
+  valeur dépend — un **régime** discret (option, swap après exercice, rien) et
+  des **régresseurs** continus (l'état du jour, plus ce qui a été fixé et
+  reste à payer : le coupon flottant en cours). La régression se fait régime
+  par régime : un polynôme ne suit pas « exercé ou non ». Le moteur ne sait
+  toujours pas ce qu'est un swap.
+- **Passe pilote séparée** (§13.4) : chemins indépendants (complément de la
+  graine), toujours sous la mesure de pricing, simulés et ajustés sur un seul
+  thread — les mêmes bits quel que soit le nombre de threads (testé). Par
+  défaut **quatre fois** les chemins principaux, entre 20 000 et 200 000.
+- **La cible** : $V(t_i) = \mathbb{E}[\sum_{j>i} \text{flux}_j\,N(t_i)/N(t_j) \mid \mathcal F_i]$,
+  donc on régresse la somme des flux futurs réalisés, déflatés. Seuls les
+  rapports de déflateurs d'un même chemin comptent.
+- **Régression par tranches.** Les chemins pilotes sont triés selon l'état
+  et coupés en tranches de même effectif (4 par défaut), un polynôme de degré
+  2 par tranche. Un polynôme global de degré 4 ne suit pas le coude d'une
+  option près de son échéance : sur la swaption européenne il plafonne à 2,5 %
+  d'écart sur l'EE et 3,2 % sur la PFE à 99 %, quel que soit le nombre de
+  chemins.
+- **C'est le bruit qui limite, pas la base.** On régresse dix ans de flux
+  sur un nombre : l'écart à la forme fermée décroît comme $1/\sqrt{N_{pilote}}$.
+
+  | Chemins pilotes (degré 2, 4 tranches) | EE swap | PFE 99 % swap | EE swaption | PFE 99 % swaption |
+  |---|---|---|---|---|
+  | 20 000 | 2,1 % | 3,6 % | 2,1 % | 3,3 % |
+  | 80 000 (défaut pour 20 000 chemins) | 0,9 % | 1,8 % | 0,7 % | 2,0 % |
+  | 200 000 | 0,5 % | 1,0 % | 0,5 % | 1,3 % |
+
+  (écart maximal sur le profil, en % du pic ; l'erreur Monte-Carlo de l'EE
+  exacte elle-même est d'environ 1 % du pic à 20 000 chemins.) D'où le défaut
+  à quatre fois les chemins principaux : un chemin pilote ne fait qu'évaluer
+  des flux. Une cible moins bruitée (régresser la valeur estimée à la date
+  suivante plutôt que tous les flux futurs) est l'amélioration à essayer.
+- **Bermudan** : état d'exercice chemin par chemin. Tant qu'il n'a pas
+  exercé, valeur de continuation par régression sur l'état à **chaque date
+  de la grille** ; à chaque date d'exercice le détenteur compare avec la
+  valeur du swap entré, **exacte** sous Hull-White (ADR-X1 : la forme fermée
+  dès qu'elle existe), et exerce si elle est positive et supérieure (Longstaff
+  & Schwartz). Ensuite la transaction **est** ce swap : valeur exacte, flux
+  compris, exposition négative possible. Vendu = quantité négative, la règle
+  d'exercice reste celle du détenteur.
+- **Vérifications** : un bermudan à une seule date d'exercice redonne la
+  swaption européenne (mêmes valeurs au bit près après l'échéance) ; valeur
+  simulée 4,942 pour 4,949 au réseau (la règle estimée est sous-optimale, la
+  borne est du bon côté) ; valeur actualisée + coupons payés = martingale sur
+  toute la grille, à 1,5 erreur standard ; EE* du bermudan ≥ celle de
+  l'européenne. `value_today()` est le prix du réseau.
+- **Mesure historique.** Une régression ne dit rien hors de la plage où
+  elle a été ajustée, et les scénarios historiques n'y sont pas forcément.
+  Le pilote part alors d'un **état initial dispersé**, $x(0) \sim N(0, s_0^2)$,
+  avec le plus petit $s_0$ tel qu'à chaque date trois écarts-types du pilote
+  couvrent quatre écarts-types des scénarios historiques autour de leur
+  moyenne. La loi conditionnelle du futur sachant $x(t_i)$ n'est pas touchée,
+  et c'est tout ce qu'une régression estime. Sur un swap, taux ramenés à zéro
+  en un an : erreur chemin par chemin 0,56 % avec, 0,99 % sans.
+- **API** : portefeuille `bermudan` (un bermudan acheté) et `cancellable`
+  (swap payeur 10 ans + droit d'annuler chaque année = bermudan receveur au
+  taux du swap). La réponse porte `pilot_paths`.
+- **Sur les données du 1ᵉʳ octobre 2026** (contrepartie BBB à 103 pb, banque
+  A, 20 000 chemins, 80 000 chemins pilotes, notionnel 10 M$) :
+
+  | Portefeuille | Valeur | CVA | DVA |
+  |---|---|---|---|
+  | swap payeur 10 ans | 0 | −24 900 ± 200 | +15 500 |
+  | swaption 1 an → 10 ans achetée | 302 700 | −22 600 | +4 200 |
+  | bermudan payeur, annuel de 1 à 9 ans | 523 100 | −31 900 ± 200 | +900 |
+  | swap annulable (swap + bermudan receveur) | 469 500 | −29 300 | +60 |
+
+  Le droit d'annuler supprime presque tout le DVA (la banque annule quand
+  le swap lui est défavorable) et **augmente** le CVA : l'option est un actif.
+  Temps : 4 à 5 s pour les deux simulations (prix et mesure historique) sur
+  16 threads, contre 1 s sans régression.
+- **Non couverts** : scripts (X4b) ; bermudan à règlement en espèces ;
+  régresseurs autres que l'état pour la continuation ; biais de la règle
+  d'exercice non borné par le haut (pas de dual).
 
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX

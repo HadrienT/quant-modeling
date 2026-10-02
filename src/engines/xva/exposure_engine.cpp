@@ -163,8 +163,24 @@ namespace quantModeling
             settings.historical->validate();
             out.measure = ExposureMeasure::Historical;
         }
-        std::vector<Real> decay(n), drift(n), sd(n), weight_scale(n), weight_G(n);
+        // The pricing measure's transitions: those of the main simulation
+        // unless it is historical, and always those of the pilot.
+        std::vector<Real> q_decay(n), q_drift(n), q_sd(n), q_scale(n), q_G(n);
         Time previous = 0.0;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const Time t = out.times[i];
+            const auto tr = model_.transition(previous, t, horizon);
+            q_decay[i] = tr.decay;
+            q_drift[i] = tr.drift;
+            q_sd[i] = std::sqrt(tr.variance);
+            q_G[i] = model_.G(t, horizon);
+            q_scale[i] = model_.discount().discount(t) * std::exp(0.5 * q_G[i] * q_G[i] * model_.y(t));
+            previous = t;
+        }
+        std::vector<Real> decay = q_decay, drift = q_drift, sd = q_sd, weight_scale = q_scale,
+                          weight_G = q_G;
+        previous = 0.0;
         for (std::size_t i = 0; i < n; ++i)
         {
             const Time t = out.times[i];
@@ -189,16 +205,76 @@ namespace quantModeling
             }
             else
             {
-                const auto tr = model_.transition(previous, t, horizon);
-                decay[i] = tr.decay;
-                drift[i] = tr.drift;
-                sd[i] = std::sqrt(tr.variance);
-                const Real G = model_.G(t, horizon);
                 out.discount.push_back(model_.discount().discount(t));
-                weight_G[i] = G;
-                weight_scale[i] = out.discount[i] * std::exp(0.5 * G * G * model_.y(t));
             }
             previous = t;
+        }
+
+        // ── Pilot: fit the trades valued by regression (lot X4) ──────────
+        pilot_dispersion_ = 0.0;
+        const bool regression =
+            std::any_of(trades_.begin(), trades_.end(),
+                        [](const Trade &trade)
+                        { return trade.value->needs_pilot(); });
+        if (regression)
+        {
+            PilotPaths pilot;
+            pilot.paths = settings.pilot_paths > 0
+                              ? settings.pilot_paths
+                              : std::clamp<std::size_t>(4 * N, 20000, 200000);
+            if (pilot.paths > (limit_cells / n - std::min(limit_cells / n, N * matrices)) / 2)
+                throw InvalidInput(
+                    "exposure engine: the pilot of " + std::to_string(pilot.paths) +
+                    " paths does not fit in what the cube leaves of the memory limit; reduce "
+                    "the paths or raise memory_limit_bytes");
+            pilot.times = out.times;
+            if (settings.pilot_dispersion)
+            {
+                if (!(*settings.pilot_dispersion >= 0.0) || !std::isfinite(*settings.pilot_dispersion))
+                    throw InvalidInput("exposure engine: the pilot dispersion must be finite and >= 0");
+                pilot_dispersion_ = *settings.pilot_dispersion;
+            }
+            else if (settings.historical)
+            {
+                // Where the historical scenarios go, the pricing measure's
+                // paths may not: start the pilot from a dispersed state
+                // x(0) ~ N(0, s0²), s0 the smallest for which, at every date,
+                // three standard deviations of the pilot cover four of the
+                // historical scenarios around their own mean. The conditional
+                // law of the future given x(t_i) is untouched, and it is all
+                // a regression estimates.
+                Real mean_q = 0.0, var_q = 0.0, carried = 1.0, mean_p = 0.0, var_p = 0.0, s0_sq = 0.0;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    mean_q = q_decay[i] * mean_q + q_drift[i];
+                    var_q = q_decay[i] * q_decay[i] * var_q + q_sd[i] * q_sd[i];
+                    carried *= q_decay[i];
+                    mean_p = decay[i] * mean_p + drift[i];
+                    var_p = decay[i] * decay[i] * var_p + sd[i] * sd[i];
+                    const Real needed = (std::abs(mean_p - mean_q) + 4.0 * std::sqrt(var_p)) / 3.0;
+                    s0_sq = std::max(s0_sq, (needed * needed - var_q) / (carried * carried));
+                }
+                pilot_dispersion_ = std::sqrt(std::max(s0_sq, 0.0));
+            }
+            pilot.state.resize(pilot.paths * n);
+            pilot.deflator.resize(pilot.paths * n);
+            // A stream the main simulation never draws: the seed's complement.
+            PhiloxGaussianSource gaussian(~settings.seed);
+            for (std::size_t p = 0; p < pilot.paths; ++p)
+            {
+                gaussian.set_path(p);
+                Real x = pilot_dispersion_ * gaussian.next();
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    x = q_decay[i] * x + q_drift[i] + q_sd[i] * gaussian.next();
+                    pilot.state[p * n + i] = x;
+                    pilot.deflator[p * n + i] = q_scale[i] * std::exp(q_G[i] * x);
+                }
+            }
+            for (Trade &trade : trades_)
+                if (trade.value->needs_pilot())
+                    trade.value->fit(pilot);
+            out.pilot_paths = pilot.paths;
         }
 
         out.discount_weight.resize(N * n);

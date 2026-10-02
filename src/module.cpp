@@ -975,18 +975,27 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         const auto kind = t["kind"].cast<std::string>();
         const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
         const qm_::Time expiry = item_or<qm_::Time>(t, "expiry", 0.0);
-        const bool is_swaption = kind == "swaption";
-        if (!is_swaption && kind != "swap")
-            throw qm_::InvalidInput("xva: unknown trade kind '" + kind + "' (swap, swaption)");
+        const bool is_swap = kind == "swap";
+        if (!is_swap && kind != "swaption" && kind != "bermudan")
+            throw qm_::InvalidInput("xva: unknown trade kind '" + kind + "' (swap, swaption, bermudan)");
+        const qm_::Time tenor = t["tenor"].cast<qm_::Time>();
         const qm_::InterestRateSwap swap = qm_::make_swap(
-            is_swaption ? expiry : item_or<qm_::Time>(t, "start", 0.0), t["tenor"].cast<qm_::Time>(),
-            t["fixed_rate"].cast<qm_::Real>(), item_or<int>(t, "fixed_frequency", 1),
-            item_or<int>(t, "float_frequency", 1), item_or<qm_::Real>(t, "notional", 1.0),
-            item_or<bool>(t, "payer", true));
-        if (is_swaption)
+            is_swap ? item_or<qm_::Time>(t, "start", 0.0) : expiry, tenor, t["fixed_rate"].cast<qm_::Real>(),
+            item_or<int>(t, "fixed_frequency", 1), item_or<int>(t, "float_frequency", 1),
+            item_or<qm_::Real>(t, "notional", 1.0), item_or<bool>(t, "payer", true));
+        if (is_swap)
+            engine.add(swap, quantity);
+        else if (kind == "swaption")
             engine.add(qm_::Swaption(swap, expiry), quantity);
         else
-            engine.add(swap, quantity);
+        {
+            // Exercisable on `expiry` and on each anniversary while a full
+            // year of the swap is left.
+            std::vector<qm_::Time> exercise;
+            for (qm_::Time e = expiry; e < expiry + tenor - 1e-9; e += 1.0)
+                exercise.push_back(e);
+            engine.add(qm_::BermudanSwaption(swap, exercise), quantity);
+        }
     }
 
     qm_::XvaInputs inputs;
@@ -1026,6 +1035,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     std::optional<qm_::XvaReport> report, uncollateralised;
     std::optional<qm_::ExposureStatistics> risk;
     std::vector<qm_::Real> values_today;
+    std::size_t pilot_paths = 0;
     {
         py::gil_scoped_release release;
         // The cube is shared and each path writes its own row: the worker
@@ -1037,6 +1047,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
             pool.start(workers);
         const qm_::ExposurePaths cube = engine.simulate(settings, workers > 0 ? &pool : nullptr);
         values_today = cube.trade_values_today;
+        pilot_paths = cube.pilot_paths;
         report = qm_::xva_report(cube, inputs);
         if (inputs.csa)
         {
@@ -1059,6 +1070,8 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
 
     py::dict out = report_dict(*report);
     out["trade_values_today"] = values_today;
+    // Paths of the pilot that fitted the trades valued by regression (0: none).
+    out["pilot_paths"] = pilot_paths;
     out["uncollateralised"] = uncollateralised ? py::object(report_dict(*uncollateralised)) : py::object(py::none());
     out["risk"] = risk ? py::object(exposure_dict(*risk)) : py::object(py::none());
     return out;
@@ -2282,8 +2295,9 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("borrowing_spread") = 0.0, py::arg("lending_spread") = 0.0,
           py::arg("historical") = py::none(), py::arg("paths") = 10000, py::arg("seed") = 42,
           py::arg("pfe_confidence") = 0.95, py::arg("threads") = 0,
-          "Exposure and CVA / DVA of a netting set of swaps and European swaptions under Hull-White "
-          "(a, sigma): trades are dicts (kind 'swap' | 'swaption', tenor, fixed_rate, notional, payer, "
+          "Exposure and CVA / DVA of a netting set of swaps, European and Bermudan swaptions under "
+          "Hull-White (a, sigma): trades are dicts (kind 'swap' | 'swaption' | 'bermudan', tenor, "
+          "fixed_rate, notional, payer, "
           "quantity, start | expiry, frequencies); hazard curves are (times, hazards); csa a dict of its "
           "terms or None; historical (a, theta, sigma) adds the risk-measure profiles. A cost is negative.");
     m.def("estimate_historical_rate_dynamics", &estimate_historical_rate_dynamics_impl, py::arg("rates"),

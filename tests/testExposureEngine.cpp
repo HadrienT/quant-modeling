@@ -4,6 +4,7 @@
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/engines/xva/exposure_engine.hpp"
 #include "quantModeling/engines/xva/hull_white_future_value.hpp"
+#include "quantModeling/instruments/rates/zero_coupon_bond.hpp"
 #include "quantModeling/market/credit_curve.hpp"
 #include "quantModeling/market/curve_bootstrap.hpp"
 #include "quantModeling/market/multi_curve_bootstrap.hpp"
@@ -259,12 +260,16 @@ namespace quantModeling
                     1e-12);
     }
 
-    TEST(HullWhiteFutureValue, RejectsWhatTheModelCannotRepriceInClosedForm)
+    TEST(HullWhiteFutureValue, RejectsWhatTheModelCannotReprice)
     {
         const HullWhiteCurveModel m = model();
         HullWhiteExposureEngine engine(m);
-        const BermudanSwaption bermudan{make_swap(1.0, 5.0, 0.04), {1.0, 2.0, 3.0}};
-        EXPECT_THROW(engine.add(bermudan), UnsupportedInstrument);
+        // Neither a closed form nor a regression (lot X4) for it here.
+        EXPECT_THROW(engine.add(ZeroCouponBond(5.0)), UnsupportedInstrument);
+        // A Bermudan must be able to exercise into something.
+        EXPECT_THROW(engine.add(BermudanSwaption{make_swap(1.0, 5.0, 0.04), {}}), InvalidInput);
+        EXPECT_THROW(engine.add(BermudanSwaption{make_swap(1.0, 5.0, 0.04), {2.0, 1.0}}), InvalidInput);
+        EXPECT_THROW(engine.add(BermudanSwaption{make_swap(1.0, 5.0, 0.04), {1.0, 7.0}}), InvalidInput);
         // A swap whose first floating period is under way needs a past fixing.
         InterestRateSwap seasoned = make_swap(0.0, 2.0, 0.04);
         seasoned.floating_leg.front().start = -0.1;

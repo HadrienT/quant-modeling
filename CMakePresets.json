@@ -43,6 +43,7 @@
     {
       "name": "asan",
       "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-asan",
       "cacheVariables": {
         "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",

@@ -45,6 +45,9 @@ namespace quantModeling
         /// measure, where nothing is discounted.
         std::vector<Real> discount;
         std::size_t paths = 0;
+        /// Paths of the pilot simulation that fitted the trades valued by
+        /// regression; 0 when every trade has a closed form.
+        std::size_t pilot_paths = 0;
 
         /**
          * @brief Stochastic discount weight w(p, i): for any payoff X known

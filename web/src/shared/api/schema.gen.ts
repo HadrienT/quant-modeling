@@ -5623,7 +5623,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced";
+            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable";
             /** Label */
             label: string;
             /** Lesson */
@@ -5678,7 +5678,7 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable";
             /**
              * Recovery
              * @default 0.4
@@ -5706,10 +5706,15 @@ export interface components {
             /** Paths */
             paths: number;
             /**
+             * Pilot Paths
+             * @description Independent paths the regression of a Bermudan was fitted on; 0 when every trade has a closed form
+             */
+            pilot_paths: number;
+            /**
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable";
             /** Portfolio Label */
             portfolio_label: string;
             risk: components["schemas"]["ExposureProfileOut"];
@@ -5734,7 +5739,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "swap" | "swaption";
+            kind: "swap" | "swaption" | "bermudan";
             /**
              * Marginal Cva
              * @description Euler share of the CVA; none under a CSA
@@ -5751,7 +5756,10 @@ export interface components {
             quantity: number;
             /** Standalone Cva */
             standalone_cva: number;
-            /** Start */
+            /**
+             * Start
+             * @description Start of a swap, expiry of a swaption, first exercise date of a Bermudan (then exercisable each year)
+             */
             start: number;
             /** Tenor */
             tenor: number;

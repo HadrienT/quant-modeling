@@ -78,6 +78,8 @@ target_sources(quantModeling
         src/risk/xva_report.cpp
         src/market/historical_rate_dynamics.cpp
         src/engines/xva/hull_white_future_value.cpp
+        src/engines/xva/hull_white_bermudan_value.cpp
+        src/engines/xva/regression_future_value.cpp
         src/engines/xva/exposure_engine.cpp
         src/risk/regulatory/sa_ccr.cpp
         src/risk/regulatory/irb.cpp
@@ -299,6 +301,7 @@ if(QM_BUILD_TESTS)
     tests/testExposureMetrics.cpp
     tests/testXvaIntegrals.cpp
     tests/testExposureEngine.cpp
+    tests/testExposureRegression.cpp
     tests/testCollateral.cpp
     tests/testXvaReport.cpp
     tests/testHistoricalMeasure.cpp

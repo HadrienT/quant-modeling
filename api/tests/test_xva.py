@@ -391,3 +391,56 @@ def test_every_run_leaves_an_audit_record_that_can_be_run_again(store):
     store["market"] = False
     client.post("/api/xva/netting-set", json={"paths": PATHS})
     assert store["events"] == []
+
+
+# ── Lot X4: a Bermudan, valued by regression ─────────────────────────────────
+
+
+def test_a_bermudan_is_valued_by_regression_and_is_an_asset_until_exercised():
+    body = run(portfolio="bermudan")
+    (trade,) = body["trades"]
+    assert trade["kind"] == "bermudan" and trade["start"] == 1.0
+    assert trade["value_today"] > 0  # the lattice price
+    # Fitted on independent pilot paths; a swap needs none.
+    assert body["pilot_paths"] >= 20_000
+    assert run(portfolio="single_swap")["pilot_paths"] == 0
+
+    e = body["exposure"]
+    before = [i for i, t in enumerate(e["times"]) if t < 1.0 - 1e-9]
+    assert before
+    for i in before:
+        # A bought option: nothing is owed, and its discounted expected
+        # exposure is its price — here the price under the fitted rule, a few
+        # percent at most under the lattice's.
+        assert e["discounted_ene"][i] == 0.0
+        assert e["discounted_ee"][i] == pytest.approx(trade["value_today"], rel=0.06)
+    # Once exercised it is a swap, which can turn against the bank.
+    assert min(e["discounted_ene"]) < 0.0
+    adj = body["adjustments"]
+    assert adj["cva"]["value"] < 0 < adj["dva"]["value"]
+    # The risk measures run under the historical measure, regression included.
+    assert max(body["risk"]["pfe"]) > 0
+    assert "Bermudans: value by regression" in [s["title"] for s in body["methodology"]]
+
+
+def test_the_right_to_cancel_a_swap_removes_what_the_bank_would_owe():
+    swap = run(portfolio="single_swap")
+    cancellable = run(portfolio="cancellable")
+    payer, right = cancellable["trades"]
+    assert (payer["kind"], right["kind"]) == ("swap", "bermudan")
+    # The right is struck at the swap's own fixed rate, and it is a receiver:
+    # exercising it cancels the payer swap.
+    assert right["fixed_rate"] == pytest.approx(payer["fixed_rate"])
+    assert not right["payer"]
+    assert cancellable["value_today"] == pytest.approx(right["value_today"], rel=1e-6)
+
+    # The bank cancels when the swap has turned against it: less to owe...
+    assert (
+        cancellable["adjustments"]["dva"]["value"]
+        < 0.6 * swap["adjustments"]["dva"]["value"]
+    )
+    # ...while what it is owed is still there, plus the option's own value.
+    assert (
+        cancellable["adjustments"]["cva"]["value"] < swap["adjustments"]["cva"]["value"]
+    )
+    assert max(cancellable["exposure"]["ee"]) > max(swap["exposure"]["ee"])

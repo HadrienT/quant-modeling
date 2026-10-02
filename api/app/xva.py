@@ -61,12 +61,17 @@ class XvaUnavailable(RuntimeError):
 @dataclass(frozen=True)
 class _Spec:
     description: str
-    kind: str  # "swap" | "swaption"
+    kind: str  # "swap" | "swaption" | "bermudan"
     payer: bool
     tenor: float
     notional: float
-    start: float = 0.0  # the expiry, for a swaption
+    #: The expiry of a swaption; the first exercise date of a Bermudan.
+    start: float = 0.0
     quantity: float = 1.0
+    #: (start, tenor) of the swap whose par rate is the fixed rate, when it is
+    #: not the trade's own swap: the right to cancel a swap is struck at that
+    #: swap's rate.
+    par_of: Optional[Tuple[float, float]] = None
 
 
 def _swap(tenor: float, payer: bool, notional: float = NOTIONAL) -> _Spec:
@@ -86,6 +91,26 @@ def _swaption(
         notional,
         start=expiry,
         quantity=1.0 if bought else -1.0,
+    )
+
+
+def _bermudan(
+    first: float,
+    tenor: float,
+    payer: bool,
+    notional: float = NOTIONAL,
+    par_of: Optional[Tuple[float, float]] = None,
+) -> _Spec:
+    side = "payer" if payer else "receiver"
+    return _Spec(
+        f"Bought Bermudan {side} swaption, exercisable each year from {first:g}Y "
+        f"into what is left of a swap ending at {first + tenor:g}Y",
+        "bermudan",
+        payer,
+        tenor,
+        notional,
+        start=first,
+        par_of=par_of,
     )
 
 
@@ -134,6 +159,24 @@ PORTFOLIOS: Dict[str, Tuple[str, str, List[_Spec]]] = {
             _swap(2, False),
             _swaption(2, 10, True, 0.5 * NOTIONAL),
         ],
+    ),
+    "bermudan": (
+        "One bought Bermudan swaption",
+        "A Bermudan can be exercised on several dates, so no formula gives what "
+        "it will be worth: its future value is estimated by regression on the "
+        "simulated rates (American Monte-Carlo). Until it is exercised it is an "
+        "asset, like any bought option. Each path that exercises becomes a swap, "
+        "which can turn either way.",
+        [_bermudan(1, 9, True)],
+    ),
+    "cancellable": (
+        "A cancellable swap",
+        "A 10-year payer swap with the right to cancel it on each anniversary: "
+        "that right is a Bermudan receiver swaption on what is left of the swap. "
+        "The bank cancels when the swap has turned against it, so the right "
+        "removes what the bank would owe, not what it is owed: the DVA shrinks, "
+        "and the option, an asset, adds its own exposure.",
+        [_swap(10, True), _bermudan(1, 9, False, par_of=(0.0, 10.0))],
     ),
 }
 
@@ -271,13 +314,14 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
     on today's curve (the forward par rate for a swaption)."""
     out = []
     for s in specs:
+        start, tenor = s.par_of or (s.start, s.tenor)
         par = qm.price_swap(
             rates.times,
             rates.dfs,
             rates.times,
             rates.dfs,
-            s.start,
-            s.tenor,
+            start,
+            tenor,
             0.0,
             1,
             1,
@@ -295,7 +339,7 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
             "fixed_frequency": 1,
             "float_frequency": 1,
         }
-        trade["expiry" if s.kind == "swaption" else "start"] = s.start
+        trade["start" if s.kind == "swap" else "expiry"] = s.start
         out.append(trade)
     return out
 
@@ -427,6 +471,7 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             historical=historical,
         ),
         paths=req.paths,
+        pilot_paths=result["pilot_paths"],
         seed=req.seed,
         compute_ms=(time.perf_counter() - started) * 1000.0,
         warnings=warnings,
@@ -539,6 +584,28 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
             "CVA ≈ −credit spread × EPE × maturity.",
             "The model assumes that default is independent of the level of rates (no "
             "wrong-way risk) and that the two defaults are independent of each other.",
+        ],
+    ),
+    (
+        "Bermudans: value by regression",
+        [
+            "A swap and a European swaption have an exact value on every path at "
+            "every date under the model. A Bermudan does not: what it is worth "
+            "depends on when it will be exercised. Its value is estimated by "
+            "American Monte-Carlo (Longstaff & Schwartz, 2001): on a separate, "
+            "independent set of pilot paths, the cash flows it goes on to pay are "
+            "regressed on the level of rates at each date, which gives its value "
+            "as a function of rates. The number of pilot paths is shown with the "
+            "result.",
+            "Each path carries an exercise state. On an exercise date the holder "
+            "enters the swap when it is worth more than keeping the option; from "
+            "then on the trade is that swap, valued exactly. The rule is an "
+            "estimate of the best one, so the simulated holder is slightly "
+            "sub-optimal: the value shown for today is the lattice price, and the "
+            "simulated exposure starts just below it. On swaps and European "
+            "swaptions, where the exact value is known, the same regression "
+            "reproduces the expected exposure within 1 to 2 % of its peak and the "
+            "99 % quantile within 2 to 4 %, the more pilot paths the closer.",
         ],
     ),
     (

@@ -2,6 +2,7 @@
 #define QM_ENGINES_XVA_HULL_WHITE_FUTURE_VALUE_HPP
 
 #include "quantModeling/engines/xva/future_value.hpp"
+#include "quantModeling/engines/xva/regression_future_value.hpp"
 #include "quantModeling/instruments/rates/swap.hpp"
 #include "quantModeling/models/rates/hull_white_curve.hpp"
 
@@ -54,11 +55,32 @@ namespace quantModeling
                                                    const HullWhiteCurveModel &model);
 
     /**
+     * @brief Bermudan swaption, physically settled, **bought** (a sold one is
+     *        a negative quantity in the engine): the one trade here without
+     *        a closed form, valued by regression (lot X4).
+     *
+     * Each path carries its **exercise state**. Until it exercises, the
+     * Bermudan is worth its continuation value, a regression on the state
+     * fitted on pilot paths at every date of the grid. On each exercise
+     * date the holder compares that with the value of the swap entered —
+     * exact under Hull-White — and exercises when the swap is worth more
+     * (Longstaff & Schwartz 2001). From then on the trade *is* that swap:
+     * its exact value, negative ones included, and its coupons.
+     *
+     * value_today() is the lattice price (hull_white_bermudan_swaption): the
+     * exercise rule fitted here is an estimate of the optimal one, so the
+     * simulated exposure is that of a slightly sub-optimal holder and its
+     * discounted mean starts just below that price.
+     */
+    std::unique_ptr<FutureValue> make_future_value(const BermudanSwaption &bermudan,
+                                                   const HullWhiteCurveModel &model,
+                                                   const AmcSettings &settings = {});
+
+    /**
      * @brief Dispatch on the instrument by the visitor, as the pricing
-     *        engines do.
-     * @throws UnsupportedInstrument for anything without a closed-form future
-     *         value under Hull-White (Bermudans and scripts come with the
-     *         regression of lot X4).
+     *        engines do: closed form for swaps and European swaptions,
+     *        regression for Bermudans.
+     * @throws UnsupportedInstrument for anything else.
      */
     std::unique_ptr<FutureValue> make_hull_white_future_value(const Instrument &instrument,
                                                               const HullWhiteCurveModel &model);
