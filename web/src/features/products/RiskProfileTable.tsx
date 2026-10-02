@@ -1,6 +1,7 @@
 import type { ProductDescriptor } from "@/shared/products";
 import { formatNumber } from "@/shared/format";
 import { Badge } from "@/shared/ui";
+import { useRatesRiskProfile } from "./ratesRiskProfile";
 import {
 	type RiskProfile,
 	type RiskRow,
@@ -26,6 +27,7 @@ export function RiskProfileTable({
 	descriptor: ProductDescriptor;
 }) {
 	if (descriptor.scripted) return <Scripted slug={descriptor.scripted.slug} />;
+	if (descriptor.rates) return <Rates kind={descriptor.rates} />;
 	if (!descriptor.enabled || !descriptor.endpoint)
 		return (
 			<p className="text-sm text-ink-muted">
@@ -37,6 +39,11 @@ export function RiskProfileTable({
 
 function Scripted({ slug }: { slug: string }) {
 	const q = useScriptedRiskProfile(slug);
+	return <Body data={q.data} error={q.error} loading={q.isLoading} />;
+}
+
+function Rates({ kind }: { kind: "swap" | "swaption" }) {
+	const q = useRatesRiskProfile(kind);
 	return <Body data={q.data} error={q.error} loading={q.isLoading} />;
 }
 

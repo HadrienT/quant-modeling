@@ -14,7 +14,8 @@ blocks per currency, kept apart on purpose:
    fixings, NOT points of a term structure: a "90-day average SOFR" is what
    overnight SOFR compounded to over the PAST 90 days, not a 3-month rate
    going forward. They are listed with their dates, never drawn on a tenor
-   axis. OIS swap curves, which would extend them, are not free.
+   axis. The OIS swap curve that extends them is not quoted for free; for USD
+   it is built from traded swaps (`rates_derivatives.py`), not here.
 
 Every rate returned is a decimal (0.0397 for 3.97 %). `METHODOLOGY` below is
 the text the page shows: it lives next to the code it describes, so the two
@@ -469,8 +470,11 @@ _COMMON = [
             "coming period. They are therefore listed with their dates and never drawn "
             "on a maturity axis.",
             "The forward-looking term structure of these benchmarks is the OIS swap "
-            "curve, which is not published for free in any currency; neither are daily "
-            "Euribor fixings (only their monthly average is, from the ECB).",
+            "curve. No one publishes dealer quotes of it for free, in any currency; "
+            "for USD the swaps actually traded are public, and the SOFR swap curve "
+            "built from them is shown under the reference rates. Daily Euribor "
+            "fixings are not free either (only their monthly average is, from the "
+            "ECB).",
         ],
     ),
     (

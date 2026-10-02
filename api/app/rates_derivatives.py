@@ -1,27 +1,31 @@
-"""Rates derivatives — the /rates page (blueprint/wp/21-rates.md).
+"""Rates derivatives (blueprint/wp/21-rates.md): the quote sets, the curves
+built from them, and the swap and the swaption the pricing workbench prices
+on them.
 
-From a set of quotes, in one request: the OIS discount curve, the projection
-curve of a floating index bootstrapped on it (multi-curve), a vanilla swap on
-the two curves, a Hull-White model calibrated to a grid of ATM swaption normal
-vols, and one swaption priced under Bachelier, shifted Black, shifted SABR and
-Hull-White — European and Bermudan on the same swap.
+From a set of quotes: the OIS discount curve, the projection curve of a
+floating index bootstrapped on it (multi-curve), a vanilla swap on the two
+curves, a Hull-White model calibrated to a grid of ATM swaption normal vols,
+and a swaption under Bachelier, shifted Black, shifted SABR and Hull-White —
+European, and Bermudan on the same swap.
 
-**Two sets of quotes.** The page starts from an illustrative EUR set (€STR
-OIS, EURIBOR 6M) flagged as such: no free source publishes dealer quotes of
-OIS swap rates, an IBOR swap curve or swaption vols. For USD SOFR there is the
-next best thing, and it is real: the swaps and swaptions actually traded,
-published by DTCC and stored by `data-ingest` (`market_request`,
-`swaption_market.py`). Either way every number is computed from the quotes
-that are sent, which the user can edit.
+**Two sets of quotes.** USD SOFR is market data: the swaps and swaptions
+actually traded, published by DTCC and stored by `data-ingest`
+(`market_request`, `swaption_market.py`); the Market page shows them. The EUR
+set (€STR OIS, EURIBOR 6M) is illustrative and flagged as such: no free source
+publishes an IBOR swap curve, and it is the one place where the two curves
+differ. Either way a price is a function of the quotes its request carries,
+which the user can edit: nothing is read from the store while pricing, so a
+recorded valuation replays on its own request (`valuation.py`).
 The C++ does the work (`qm.bootstrap_ois_curve`, `bootstrap_projection_curve`,
 `price_swap`, `calibrate_hull_white`, `price_swaption`); this module shapes it
-and carries the methodology the page shows.
+and carries the methodology served with the quotes and the curves.
 """
 
 from __future__ import annotations
 
 import math
 from datetime import date, timedelta
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -32,14 +36,20 @@ from .rates_derivatives_schemas import (
     CurvePoint,
     CurvesResult,
     HullWhiteCalibrationResult,
-    RatesAnalysisRequest,
-    RatesAnalysisResponse,
+    RatesCurveQuotes,
+    RatesQuoteSetResponse,
+    RatesTradeStats,
     SwapPeriod,
+    SwapPricingRequest,
+    SwapPricingResponse,
     SwapResult,
+    SwaptionInput,
     SwaptionModelPrice,
+    SwaptionPricingRequest,
+    SwaptionPricingResponse,
     SwaptionResult,
 )
-from .schemas import MethodologySection
+from .schemas import Greeks, MethodologySection, ModelWarning
 
 #: Illustrative EUR quotes: the €STR OIS curve and the EURIBOR 6M curve of a
 #: plausible market (rates as decimals, vols in rate units). NOT market data.
@@ -93,21 +103,29 @@ def _zero(df: float, t: float) -> float:
     return -math.log(df) / t
 
 
-def _curves(req: RatesAnalysisRequest) -> Tuple[dict, dict, CurvesResult]:
+def _bootstrap(q: RatesCurveQuotes) -> Tuple[dict, dict]:
+    """The OIS curve, then the index curve bootstrapped on it."""
     ois = qm.bootstrap_ois_curve(
-        [(q.tenor, q.rate) for q in req.deposits], [(q.tenor, q.rate) for q in req.ois]
+        [(d.tenor, d.rate) for d in q.deposits], [(s.tenor, s.rate) for s in q.ois]
     )
     proj = qm.bootstrap_projection_curve(
         ois["times"],
         ois["discount_factors"],
-        [(f.start, f.end, f.rate) for f in req.fras],
-        [(q.tenor, q.rate) for q in req.swaps],
-        req.fixed_frequency,
-        req.float_frequency,
+        [(f.start, f.end, f.rate) for f in q.fras],
+        [(s.tenor, s.rate) for s in q.swaps],
+        q.fixed_frequency,
+        q.float_frequency,
     )
+    return ois, proj
+
+
+def curves(q: RatesCurveQuotes) -> CurvesResult:
+    """The two curves on a quarterly grid, with the basis between their
+    forwards and how well the input swaps reprice."""
+    ois, proj = _bootstrap(q)
     last = max(ois["times"][-1], proj["times"][-1])
     grid = [t for t in _GRID if t <= last + 1e-9]
-    period = 1.0 / req.float_frequency
+    period = 1.0 / q.float_frequency
     d_ois = qm.rate_curve_discount_factors(
         ois["times"], ois["discount_factors"], grid + [t + period for t in grid]
     )
@@ -131,33 +149,42 @@ def _curves(req: RatesAnalysisRequest) -> Tuple[dict, dict, CurvesResult]:
         )
     # Repricing check: each input swap at its own quote on the built curves.
     worst = 0.0
-    for q in req.swaps:
+    for s in q.swaps:
         v = qm.price_swap(
             ois["times"],
             ois["discount_factors"],
             proj["times"],
             proj["discount_factors"],
             0.0,
-            q.tenor,
-            q.rate,
-            req.fixed_frequency,
-            req.float_frequency,
+            s.tenor,
+            s.rate,
+            q.fixed_frequency,
+            q.float_frequency,
         )
-        worst = max(worst, abs(v["par_rate"] - q.rate) * 1e4)
-    return (
-        ois,
-        proj,
-        CurvesResult(
-            ois_pillars=ois["times"],
-            index_pillars=proj["times"],
-            points=points,
-            max_repricing_error_bp=worst,
-        ),
+        worst = max(worst, abs(v["par_rate"] - s.rate) * 1e4)
+    return CurvesResult(
+        ois_pillars=ois["times"],
+        index_pillars=proj["times"],
+        points=points,
+        max_repricing_error_bp=worst,
+        single_curve=all(abs(p.basis_bp) < 1e-6 for p in points),
     )
 
 
-def _swap(req: RatesAnalysisRequest, ois: dict, proj: dict) -> SwapResult:
-    s = req.swap
+def _curve_note(q: RatesCurveQuotes, ois: dict, proj: dict) -> str:
+    return (
+        f"OIS discounting on {len(ois['times'])} pillars, index projection on "
+        f"{len(proj['times'])}; fixed leg {q.fixed_frequency}/y, floating leg "
+        f"{q.float_frequency}/y"
+    )
+
+
+# ── Swap ─────────────────────────────────────────────────────────────────────
+
+
+def price_swap(req: SwapPricingRequest) -> SwapPricingResponse:
+    q, s = req.curves, req.swap
+    ois, proj = _bootstrap(q)
     v = qm.price_swap(
         ois["times"],
         ois["discount_factors"],
@@ -166,41 +193,89 @@ def _swap(req: RatesAnalysisRequest, ois: dict, proj: dict) -> SwapResult:
         s.start,
         s.tenor,
         s.fixed_rate,
-        req.fixed_frequency,
-        req.float_frequency,
+        q.fixed_frequency,
+        q.float_frequency,
         s.notional,
         s.payer,
         0.0,
     )
-    return SwapResult(
+    # Cash-flow sign for the holder: the leg paid is negative.
+    side = 1.0 if s.payer else -1.0
+
+    def period(sign: float, rate: float, row: tuple) -> SwapPeriod:
+        start, end, payment_time, accrual, discount = row[:5]
+        return SwapPeriod(
+            start=start,
+            end=end,
+            payment_time=payment_time,
+            accrual=accrual,
+            discount=discount,
+            rate=rate,
+            present_value=sign * rate * accrual * s.notional * discount,
+        )
+
+    return SwapPricingResponse(
         npv=v["npv"],
-        par_rate=v["par_rate"],
-        annuity=v["annuity"],
-        pv01=v["pv01"],
-        fixed_leg=v["fixed_leg"],
-        floating_leg=v["floating_leg"],
-        fixed_periods=[
-            SwapPeriod(start=a, end=b, payment=c, accrual=d, discount=e, forward=None)
-            for a, b, c, d, e in v["fixed_periods"]
-        ],
-        floating_periods=[
-            SwapPeriod(start=a, end=b, payment=c, accrual=d, discount=e, forward=f)
-            for a, b, c, d, e, f in v["floating_periods"]
-        ],
+        greeks=Greeks(),
+        diagnostics="Multi-curve swap. " + _curve_note(q, ois, proj),
+        mc_std_error=0.0,
+        swap=SwapResult(
+            par_rate=v["par_rate"],
+            annuity=v["annuity"],
+            pv01=v["pv01"],
+            fixed_leg=-side * v["fixed_leg"],
+            floating_leg=side * v["floating_leg"],
+            fixed_periods=[
+                period(-side, s.fixed_rate, row) for row in v["fixed_periods"]
+            ],
+            floating_periods=[
+                period(side, row[5], row) for row in v["floating_periods"]
+            ],
+        ),
+    )
+
+
+# ── Hull-White calibration ───────────────────────────────────────────────────
+
+_Floats = Tuple[float, ...]
+
+
+@lru_cache(maxsize=32)
+def _calibrate(
+    ois_t: _Floats,
+    ois_d: _Floats,
+    proj_t: _Floats,
+    proj_d: _Floats,
+    vols: Tuple[Tuple[float, float, float], ...],
+    fixed_frequency: int,
+    float_frequency: int,
+    mean_reversion: Optional[float],
+) -> dict:
+    """About a second of C++, and the same for every strike, side or notional
+    priced on one set of quotes: kept by its inputs."""
+    return qm.calibrate_hull_white(
+        list(ois_t),
+        list(ois_d),
+        list(proj_t),
+        list(proj_d),
+        list(vols),
+        fixed_frequency,
+        float_frequency,
+        mean_reversion,
     )
 
 
 def _calibration(
-    req: RatesAnalysisRequest, ois: dict, proj: dict
+    req: SwaptionPricingRequest, ois: dict, proj: dict
 ) -> HullWhiteCalibrationResult:
-    c = qm.calibrate_hull_white(
-        ois["times"],
-        ois["discount_factors"],
-        proj["times"],
-        proj["discount_factors"],
-        [(q.expiry, q.tenor, q.normal_vol) for q in req.swaption_vols],
-        req.fixed_frequency,
-        req.float_frequency,
+    c = _calibrate(
+        tuple(ois["times"]),
+        tuple(ois["discount_factors"]),
+        tuple(proj["times"]),
+        tuple(proj["discount_factors"]),
+        tuple((v.expiry, v.tenor, v.normal_vol) for v in req.swaption_vols),
+        req.curves.fixed_frequency,
+        req.curves.float_frequency,
         req.hull_white_mean_reversion,
     )
     return HullWhiteCalibrationResult(
@@ -214,41 +289,72 @@ def _calibration(
         seconds=c["seconds"],
         points=[
             CalibrationPoint(
-                expiry=q.expiry,
-                tenor=q.tenor,
+                expiry=v.expiry,
+                tenor=v.tenor,
                 strike=k,
                 market_vol=mv,
                 model_vol=(
                     None if model is None or not math.isfinite(model) else model
                 ),
             )
-            for q, k, mv, model in zip(
+            for v, k, mv, model in zip(
                 req.swaption_vols, c["strikes"], c["market_vols"], c["model_vols"]
             )
         ],
     )
 
 
-def _nearest_vol(req: RatesAnalysisRequest) -> Optional[float]:
+# ── Swaption ─────────────────────────────────────────────────────────────────
+
+_MODEL_NAMES = {
+    "bachelier": "Bachelier",
+    "black": "shifted Black",
+    "sabr": "shifted SABR",
+    "hull_white": "Hull-White",
+}
+
+_AUTO_EUROPEAN = (
+    "A European swaption depends on one swap rate at one date, and the market "
+    "quotes it as a normal (Bachelier) vol: the model is the quote convention "
+    "itself, priced at the quoted at-the-money vol nearest to this expiry and "
+    "tenor."
+)
+_AUTO_BERMUDAN = (
+    "A Bermudan can be exercised on several dates, so its value depends on how "
+    "the whole curve moves between them, which a model of one swap rate does "
+    "not describe. Hull-White, a one-factor model of the short rate, is "
+    "calibrated to the swaption vols and prices it by backward induction."
+)
+_BY_HAND = "Chosen by hand."
+
+
+def swaption_model(sw: SwaptionInput) -> str:
+    """The model a swaption's value is under: the one asked for, or for
+    `auto` the simplest that describes what the price depends on."""
+    if sw.model != "auto":
+        return sw.model
+    return "hull_white" if sw.exercise == "bermudan" else "bachelier"
+
+
+def swaption_engine(sw: SwaptionInput) -> str:
+    return "lattice" if sw.exercise == "bermudan" else "analytic"
+
+
+def _nearest_vol(req: SwaptionPricingRequest) -> float:
     """The quoted ATM normal vol closest to the swaption's (expiry, tenor):
     the Bachelier price's vol when the request gives none."""
     sw = req.swaption
-    if not req.swaption_vols:
-        return None
     best = min(
         req.swaption_vols,
-        key=lambda q: (q.expiry - sw.expiry) ** 2 + (q.tenor - sw.tenor) ** 2,
+        key=lambda v: (v.expiry - sw.expiry) ** 2 + (v.tenor - sw.tenor) ** 2,
     )
     return best.normal_vol
 
 
-def _swaption(
-    req: RatesAnalysisRequest,
-    ois: dict,
-    proj: dict,
-    hw: HullWhiteCalibrationResult,
-) -> SwaptionResult:
-    sw = req.swaption
+def price_swaption(req: SwaptionPricingRequest) -> SwaptionPricingResponse:
+    q, sw = req.curves, req.swaption
+    ois, proj = _bootstrap(q)
+    hw = _calibration(req, ois, proj)
     normal_vol = sw.normal_vol if sw.normal_vol is not None else _nearest_vol(req)
     exercises = [sw.expiry + i for i in range(int(round(sw.tenor)))]
     out = qm.price_swaption(
@@ -260,8 +366,8 @@ def _swaption(
         sw.tenor,
         sw.strike,
         sw.payer,
-        req.fixed_frequency,
-        req.float_frequency,
+        q.fixed_frequency,
+        q.float_frequency,
         sw.notional,
         normal_vol=normal_vol,
         lognormal_vol=sw.lognormal_vol,
@@ -275,7 +381,7 @@ def _swaption(
     forward, annuity, strike = out["forward"], out["annuity"], out["strike"]
     prices: List[SwaptionModelPrice] = []
 
-    def add(model: str, key: str, detail: str) -> None:
+    def add(key: str, model: str, detail: str) -> None:
         if key not in out:
             return
         price = out[key]
@@ -285,6 +391,7 @@ def _swaption(
         )
         prices.append(
             SwaptionModelPrice(
+                key=key,
                 model=model,
                 price=price,
                 implied_normal_vol=implied if math.isfinite(implied) else None,
@@ -293,144 +400,189 @@ def _swaption(
         )
 
     add(
-        "Bachelier (normal)",
         "bachelier",
+        "Bachelier (normal)",
         f"σ_N = {normal_vol * 1e4:.1f}bp"
         + (" (nearest quoted ATM vol)" if sw.normal_vol is None else ""),
     )
     if sw.lognormal_vol is not None:
         add(
-            "Black (shifted lognormal)",
             "black",
+            "Black (shifted lognormal)",
             f"σ = {sw.lognormal_vol:.1%}, shift {sw.shift:.2%}",
         )
     if sw.sabr is not None:
         add(
-            "SABR (shifted, Hagan 2002)",
             "sabr",
+            "SABR (shifted, Hagan 2002)",
             f"implied lognormal vol {out['sabr_lognormal_vol']:.1%}",
         )
     add(
-        "Hull-White (calibrated)",
         "hull_white",
+        "Hull-White (calibrated)",
         f"a = {hw.mean_reversion:.4f}, σ = {hw.sigma * 1e4:.1f}bp",
     )
+
+    model = swaption_model(sw)
     bermudan = out.get("hull_white_bermudan")
     european_hw = out.get("hull_white")
-    return SwaptionResult(
-        forward=forward,
-        annuity=annuity,
-        strike=strike,
-        prices=prices,
-        bermudan_price=bermudan,
-        bermudan_exercises=exercises,
-        switch_premium=(
-            None if bermudan is None or european_hw is None else bermudan - european_hw
+    if sw.exercise == "bermudan":
+        if bermudan is None:
+            raise RuntimeError("the Bermudan swaption could not be priced")
+        npv = bermudan
+    else:
+        npv = next(p.price for p in prices if p.key == model)
+
+    warnings: List[ModelWarning] = []
+    off_the_money_bp = abs(strike - forward) * 1e4
+    if model == "bachelier" and sw.normal_vol is None and off_the_money_bp > 1.0:
+        warnings.append(
+            ModelWarning(
+                code="atm_vol_off_the_money",
+                severity="warning",
+                message=(
+                    f"The strike is {off_the_money_bp:.0f} bp away from the forward "
+                    "swap rate, and the vol is an at-the-money quote: the quotes "
+                    "carry no smile, so the price ignores it."
+                ),
+            )
+        )
+    if model == "hull_white":
+        warnings.append(
+            ModelWarning(
+                code="hull_white_fit",
+                severity="info" if hw.converged else "warning",
+                message=(
+                    f"Hull-White has two parameters for {len(hw.points)} swaption "
+                    f"vols: it fits them to {hw.rmse_bp:.1f} bp of normal vol on "
+                    f"average ({hw.worst_bp:.1f} bp at worst)"
+                    + ("." if hw.converged else ", and the solver did not converge.")
+                ),
+            )
+        )
+
+    return SwaptionPricingResponse(
+        npv=npv,
+        greeks=Greeks(),
+        diagnostics=(
+            f"{sw.exercise.capitalize()} swaption under {_MODEL_NAMES[model]}. "
+            + _curve_note(q, ois, proj)
+        ),
+        mc_std_error=0.0,
+        warnings=warnings,
+        swaption=SwaptionResult(
+            exercise=sw.exercise,
+            requested=sw.model,
+            model=model,
+            reason=(
+                _BY_HAND
+                if sw.model != "auto"
+                else _AUTO_BERMUDAN if sw.exercise == "bermudan" else _AUTO_EUROPEAN
+            ),
+            forward=forward,
+            annuity=annuity,
+            strike=strike,
+            prices=prices,
+            bermudan_price=bermudan,
+            bermudan_exercises=exercises,
+            switch_premium=(
+                None
+                if bermudan is None or european_hw is None
+                else bermudan - european_hw
+            ),
+            hull_white=hw,
         ),
     )
 
 
-def analyse(req: RatesAnalysisRequest) -> RatesAnalysisResponse:
-    ois, proj, curves = _curves(req)
-    hw = _calibration(req, ois, proj)
-    return RatesAnalysisResponse(
-        curves=curves,
-        swap=_swap(req, ois, proj),
-        hull_white=hw,
-        swaption=_swaption(req, ois, proj, hw),
-        methodology=methodology(),
-    )
+# ── Methodology ──────────────────────────────────────────────────────────────
 
 
-def methodology() -> List[MethodologySection]:
-    sections: List[Tuple[str, List[str]]] = [
-        (
-            "Where the quotes come from",
-            [
-                "No free source publishes dealer quotes of OIS swap rates, the swap "
-                "curve of a floating index or swaption volatilities. The page starts "
-                "from illustrative EUR quotes, which are not market data, and prices "
-                "whatever quotes you enter. The government curves of the Market page "
-                "are bond yields: a different curve, not an input here.",
-                "The USD SOFR set is market data of another kind: not quotes but "
-                "trades. US swap dealers must report every swap to a repository, which "
-                "publishes its price and size (CFTC public dissemination; DTCC's "
-                "repository, stored daily). The swap curve is, per tenor, the median "
-                "fixed rate of the spot-starting swaps traded on the latest day. Each "
-                "swaption vol is the median, over the last days, of the normal vols "
-                "implied by the traded premiums: premium / notional = annuity × "
-                "Bachelier(forward, strike, expiry, σ), solved for σ on the swap curve "
-                "of the trade's day. The number of trades behind each point is shown.",
-                "What is left out, and why: capped notionals (the premium is published "
-                "in full, the notional is not); novations and amendments (not prices); "
-                "trades away from the money (the files do not say whether a call is a "
-                "payer or a receiver, and only at the money does it not matter); "
-                "expiries beyond two years (their premium appears to be paid at expiry "
-                "rather than up front, which the files do not say). A straddle traded "
-                "on a platform carries the premium of both legs on each leg and counts "
-                "for half. These are medians of a handful of trades, not a dealer's "
-                "surface: read the trade counts.",
-            ],
-        ),
-        (
-            "Two curves, not one",
-            [
-                "A collateralised swap is discounted at the collateral rate, the "
-                "overnight rate (€STR, SOFR): the OIS curve. Since 2008 a 6-month "
-                "index fixes above the compounded overnight rate by a basis that one "
-                "curve cannot hold, so the index gets its own projection curve, "
-                "bootstrapped from FRAs and par swaps priced with OIS discounting "
-                "(Ametrano & Bianchetti, 2013).",
-                "The OIS curve bootstraps like par bonds: the compounded overnight leg "
-                "of a spot OIS is worth 1 − P(T) on its own curve. Each projection "
-                "pillar is then solved so that its quote reprices exactly, with every "
-                "earlier pillar fixed; the maximum repricing error of the input swaps "
-                "is shown with the curves. Discount factors are interpolated "
-                "log-linearly (piecewise-flat forwards, always positive discount "
-                "factors) and the forward is held flat outside the pillars.",
-            ],
-        ),
-        (
-            "Swap",
-            [
-                "Fixed leg: rate × accrual × notional, discounted on OIS. Floating "
-                "leg: the index forward over each period, from the projection curve, "
-                "discounted on OIS. The par rate is the fixed rate worth zero; the "
-                "PV01 is the annuity × notional × 1bp. Accruals are period lengths "
-                "in years on a regular schedule (no calendar or day-count "
-                "adjustment).",
-            ],
-        ),
-        (
-            "Swaption models",
-            [
-                "Bachelier: the forward swap rate is Gaussian, the quote convention "
-                "of swaption desks since rates went to zero and below. Black: the "
-                "rate plus a shift is lognormal. SABR: Hagan et al. (2002)'s "
-                "implied-vol expansion on the shifted rate. All three price on the "
-                "same multi-curve forward and annuity.",
-                "Hull-White: dr = (θ(t) − a r)dt + σ dW, fitted exactly to the OIS "
-                "curve, the index curve kept at a deterministic spread (Andersen & "
-                "Piterbarg 2010, ch. 10). The European price integrates the exercise "
-                "value in closed form over the region where the swap is worth "
-                "something (Jamshidian's decomposition generalised to multi-curve "
-                "cash flows). (a, σ) are calibrated by Levenberg-Marquardt to the ATM "
-                "normal vols above; the residuals are in bp of normal vol. A "
-                "one-factor, two-parameter model cannot match a whole grid: the fit "
-                "error is the model's, not noise.",
-                "Bermudan: the right to enter the swap on each annual date from the "
-                "expiry, priced by backward induction on a grid of the Hull-White "
-                "state under the terminal measure, with exact Gaussian transitions "
-                "between exercise dates. The switch premium is the Bermudan minus the "
-                "European on the same swap.",
-            ],
-        ),
-    ]
+def _sections(sections: List[Tuple[str, List[str]]]) -> List[MethodologySection]:
     return [MethodologySection(title=t, paragraphs=p) for t, p in sections]
 
 
+def curves_methodology() -> List[MethodologySection]:
+    """Served with the curves: how they are built."""
+    return _sections(
+        [
+            (
+                "Two curves, not one",
+                [
+                    "A collateralised swap is discounted at the collateral rate, the "
+                    "overnight rate (€STR, SOFR): the OIS curve. Since 2008 a 6-month "
+                    "index fixes above the compounded overnight rate by a basis that "
+                    "one curve cannot hold, so the index gets its own projection "
+                    "curve, bootstrapped from FRAs and par swaps priced with OIS "
+                    "discounting (Ametrano & Bianchetti, 2013). When the index is the "
+                    "overnight rate itself, as in a SOFR swap, the two curves are the "
+                    "same and the basis is zero.",
+                    "The OIS curve bootstraps like par bonds: the compounded overnight "
+                    "leg of a spot OIS is worth 1 − P(T) on its own curve. Each "
+                    "projection pillar is then solved so that its quote reprices "
+                    "exactly, with every earlier pillar fixed; the maximum repricing "
+                    "error of the input swaps is shown with the curves. Discount "
+                    "factors are interpolated log-linearly (piecewise-flat forwards, "
+                    "always positive discount factors) and the forward is held flat "
+                    "outside the pillars.",
+                ],
+            )
+        ]
+    )
+
+
+def quotes_methodology(set_id: str) -> List[MethodologySection]:
+    """Served with a quote set: where its numbers come from."""
+    if set_id == "eur-illustrative":
+        return _sections(
+            [
+                (
+                    "Where the quotes come from",
+                    [
+                        "No free source publishes dealer quotes of OIS swap rates, the "
+                        "swap curve of a term index such as EURIBOR, or swaption "
+                        "volatilities. These are illustrative EUR quotes, which are "
+                        "not market data: they are here because they are the one set "
+                        "where the index curve differs from the OIS curve. Replace "
+                        "them with your own. The government curves of the Market page "
+                        "are bond yields: a different curve, not an input here.",
+                    ],
+                )
+            ]
+        )
+    return _sections(
+        [
+            (
+                "Where the swap curve and the swaption vols come from",
+                [
+                    "This is market data of a particular kind: not quotes but trades. "
+                    "US swap dealers must report every swap to a repository, which "
+                    "publishes its price and size (CFTC public dissemination; DTCC's "
+                    "repository, stored daily). The swap curve is, per tenor, the "
+                    "median fixed rate of the spot-starting swaps traded on the latest "
+                    "day. Each swaption vol is the median, over the last days, of the "
+                    "normal vols implied by the traded premiums: premium / notional = "
+                    "annuity × Bachelier(forward, strike, expiry, σ), solved for σ on "
+                    "the swap curve of the trade's day. The number of trades behind "
+                    "each point is shown.",
+                    "What is left out, and why: capped notionals (the premium is "
+                    "published in full, the notional is not); novations and amendments "
+                    "(not prices); trades away from the money (the files do not say "
+                    "whether a call is a payer or a receiver, and only at the money "
+                    "does it not matter); expiries beyond two years (their premium "
+                    "appears to be paid at expiry rather than up front, which the "
+                    "files do not say). A straddle traded on a platform carries the "
+                    "premium of both legs on each leg and counts for half. These are "
+                    "medians of a handful of trades, not a dealer's surface: read the "
+                    "trade counts.",
+                ],
+            )
+        ]
+    )
+
+
 def example_request() -> Dict:
-    """The page's starting point, the illustrative quotes above."""
+    """The illustrative EUR set, with the contracts the workbench opens on."""
     e = EXAMPLE
     return {
         "currency": e["currency"],
@@ -595,11 +747,59 @@ def market_request(today: Optional[date] = None) -> Dict:
     }
 
 
+# ── Quote sets ───────────────────────────────────────────────────────────────
+
+
+def quote_set(set_id: str, today: Optional[date] = None) -> RatesQuoteSetResponse:
+    """A quote set in the shape the workbench prices on: the curve quotes,
+    the swaption vols, the contracts it opens on, and where it all comes
+    from. `usd-sofr` raises RatesMarketUnavailable when the store cannot
+    back it."""
+    market = set_id == "usd-sofr"
+    m = market_request(today) if market else example_request()
+    return RatesQuoteSetResponse(
+        id=set_id,
+        currency=m["currency"],
+        label=m["label"],
+        source="market" if market else "manual",
+        as_of=m.get("as_of"),
+        curves=RatesCurveQuotes(
+            fixed_frequency=m["fixed_frequency"],
+            float_frequency=m["float_frequency"],
+            deposits=m["deposits"],
+            ois=m["ois"],
+            fras=m["fras"],
+            swaps=m["swaps"],
+        ),
+        swaption_vols=m["swaption_vols"],
+        swap=m["swap"],
+        swaption=m["swaption"],
+        trades=(
+            RatesTradeStats(
+                window_start=m["window_start"],
+                swap_rates=m["swap_rates"],
+                swaption_vols=m["market_vols"],
+                trades_used=m["trades_used"],
+                rejected=m["rejected"],
+            )
+            if market
+            else None
+        ),
+        methodology=quotes_methodology(set_id),
+    )
+
+
 __all__ = [
-    "analyse",
+    "curves",
+    "curves_methodology",
     "example_request",
     "market_request",
-    "methodology",
+    "price_swap",
+    "price_swaption",
+    "quote_set",
+    "quotes_methodology",
+    "swaption_engine",
+    "swaption_model",
     "EXAMPLE",
     "RatesMarketUnavailable",
 ]

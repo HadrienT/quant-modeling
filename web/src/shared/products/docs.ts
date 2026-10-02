@@ -524,6 +524,128 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		},
 	},
 
+	swap: {
+		title: "Interest rate swap",
+		summary:
+			"An exchange of a fixed rate $K$ against a floating index (an overnight rate such as SOFR, or a term rate such as EURIBOR 6M) on a notional $N$. Linear in rates: its value is read off two curves, with no volatility.",
+		payoff: [
+			"V_{\\text{payer}}=N\\Big[\\sum_j \\tau_j\\,F_j\\,P(0,T_j)\\;-\\;K\\sum_i \\tau_i\\,P(0,T_i)\\Big]",
+			"S=\\frac{\\sum_j \\tau_j\\,F_j\\,P(0,T_j)}{\\sum_i \\tau_i\\,P(0,T_i)}\\qquad\\text{PV01}=N\\cdot 10^{-4}\\sum_i \\tau_i\\,P(0,T_i)",
+		],
+		assumptions: [
+			"The swap is collateralised, and the collateral earns the overnight rate: every flow is discounted on the OIS curve, $P(0,T)$.",
+			"The floating flows are projected on the index's own curve: $F_j$ is the forward of the index over period $j$. With an overnight index (a SOFR swap) that curve is the OIS curve itself; with a term index it is a second curve, above the first by the basis.",
+			"Regular schedules: accruals $\\tau$ are period lengths in years, with no calendar or day-count adjustment.",
+			"The quotes are an input: traded USD SOFR swaps (DTCC), or illustrative EUR quotes that can be replaced.",
+		],
+		pricingMethods: [
+			{
+				engine: "Curves",
+				detail:
+					"The OIS curve is bootstrapped from deposits and par OIS swaps (the compounded overnight leg of a spot OIS is worth $1-P(0,T)$). Each pillar of the projection curve is then solved so that its FRA or par swap reprices exactly under OIS discounting. Discount factors are interpolated log-linearly.",
+			},
+			{
+				engine: "Analytic (only engine)",
+				detail:
+					"Fixed leg: $K\\,\\tau_i\\,N$ discounted on OIS. Floating leg: $F_j\\,\\tau_j\\,N$ with the forward from the projection curve, discounted on OIS. The workbench shows the par rate $S$, the PV01 and each period's forward, discount factor and present value.",
+			},
+		],
+		notes: [
+			"At $K=S$ the swap is worth zero: that is what a par swap rate means, and the curves are built so that every quoted swap satisfies it.",
+			"Figures are signed for the holder: the leg paid is negative. A payer swap gains when rates rise.",
+			"On the USD SOFR quotes the basis is zero and one curve does everything. The illustrative EUR quotes are the two-curve case: EURIBOR 6M forwards sit above the €STR forwards.",
+			"Discounting a collateralised swap on a government curve would be wrong: a Treasury yield is not the rate the collateral earns.",
+		],
+		references: [
+			{
+				...HULL,
+				cite: "Options, Futures, and Other Derivatives, 11th ed., Pearson — ch. 7 (swaps).",
+			},
+			{
+				kind: "paper",
+				label: "Ametrano & Bianchetti (2013)",
+				cite: "Everything You Always Wanted to Know About Multiple Interest Rate Curve Bootstrapping but Were Afraid to Ask. SSRN working paper 2219548.",
+			},
+			{
+				kind: "paper",
+				label: "Piterbarg (2010)",
+				cite: "Funding beyond discounting: collateral agreements and derivatives pricing. Risk, February 2010, 97–102.",
+			},
+		],
+		modelDependency: {
+			minimum: "Two curves, no stochastic model",
+			rationale:
+				"The payoff is linear in the index fixings, so only their forwards and the discount factors enter: no volatility, no distribution. What a single curve gets wrong is the basis between a term index and the overnight rate — hence a projection curve next to the discount curve.",
+		},
+	},
+
+	swaption: {
+		title: "Swaption",
+		summary:
+			"The right to enter a swap at a fixed rate $K$: a payer swaption pays fixed, a receiver receives it. European: one exercise date. Bermudan: any of several dates, here each annual date from the expiry to the last year of the swap.",
+		payoff: [
+			"V_{\\text{payer}}=N\\,A(0)\\,\\mathbb{E}^{A}\\big[(S_T-K)^+\\big],\\qquad A(t)=\\sum_i \\tau_i\\,P(t,T_i)",
+			"\\text{Bachelier: }V=N\\,A(0)\\Big[(F-K)\\,\\Phi(d)+\\sigma_N\\sqrt{T}\\,\\varphi(d)\\Big],\\quad d=\\frac{F-K}{\\sigma_N\\sqrt{T}}",
+		],
+		assumptions: [
+			"The forward swap rate $F$ and the annuity $A$ come from the same two curves as the swap (OIS discounting, index projection).",
+			"Under the annuity measure the swap rate has no drift, so a European swaption only needs the distribution of $S_T$: Gaussian (Bachelier), shifted lognormal (Black) or SABR on the shifted rate.",
+			"Hull-White: $dr=(\\theta(t)-a\\,r)\\,dt+\\sigma\\,dW$, one factor, fitted exactly to the OIS curve, the index curve kept at a deterministic spread. $(a,\\sigma)$ are calibrated to the ATM normal vols.",
+			"The vols are at-the-money quotes: the data carries no smile.",
+		],
+		pricingMethods: [
+			{
+				engine: "Model chosen automatically",
+				detail:
+					"A European swaption is valued under Bachelier at the nearest quoted ATM normal vol — the market's own quoting convention. A Bermudan is valued under the calibrated Hull-White, because its value depends on how the whole curve moves between exercise dates. The choice and its reason are shown, and any model can be picked by hand.",
+			},
+			{
+				engine: "Bachelier, Black, SABR (closed form)",
+				detail:
+					"All three price $N\\,A(0)\\,\\mathbb{E}[(S_T-K)^+]$ on the same $F$ and $A$. SABR uses Hagan et al. (2002)'s implied-vol expansion on the shifted rate. Each price is shown with the normal vol it implies, so the models can be compared on one scale.",
+			},
+			{
+				engine: "Hull-White, European (closed form)",
+				detail:
+					"The exercise value is integrated in closed form over the region where the swap is worth something — Jamshidian's decomposition, generalised to multi-curve cash flows. $(a,\\sigma)$ come from a Levenberg-Marquardt fit of the ATM normal vols; the residuals are shown in bp of normal vol.",
+			},
+			{
+				engine: "Hull-White, Bermudan (lattice)",
+				detail:
+					"Backward induction on a grid of the Hull-White state under the terminal measure, with exact Gaussian transitions between exercise dates. The switch premium is the Bermudan minus the European on the same swap.",
+			},
+		],
+		notes: [
+			"A Bermudan is worth at least its European: it contains it. The difference, the switch premium, is the value of being able to wait.",
+			"A one-factor, two-parameter model cannot match a whole grid of vols: the fit error shown is the model's, not noise.",
+			"Away from the money, an ATM vol ignores the smile: the workbench says so next to the price rather than hiding it.",
+			"The USD vols are medians of the swaptions actually traded (DTCC), not a dealer's surface: the Market page shows the number of trades behind each.",
+		],
+		references: [
+			{
+				kind: "paper",
+				label: "Black (1976)",
+				cite: "The pricing of commodity contracts. Journal of Financial Economics 3(1–2), 167–179. (The formula swaptions are quoted with, on the forward swap rate.)",
+			},
+			{
+				kind: "paper",
+				label: "Hull & White (1990)",
+				cite: "Pricing Interest-Rate-Derivative Securities. Review of Financial Studies 3(4), 573–592.",
+			},
+			{
+				kind: "book",
+				label: "Andersen & Piterbarg (2010)",
+				cite: "Interest Rate Modeling, Atlantic Financial Press — vol. 1 ch. 5–6 (instruments, curve construction), vol. 2 ch. 10 (one-factor short-rate models), vol. 3 ch. 19 (Bermudan swaptions).",
+			},
+		],
+		modelDependency: {
+			minimum:
+				"European: one swap rate under its annuity measure. Bermudan: a model of the whole curve",
+			rationale:
+				"A European swaption is an option on a single rate at a single date, so a distribution of that rate is enough — with a smile model once the strike is away from the money. A Bermudan compares, at each date, exercising now with keeping the option on a shorter swap: that needs the joint behaviour of swap rates of different tenors, which only a term-structure model gives. One-factor Hull-White is the floor; it makes all rates perfectly correlated.",
+		},
+	},
+
 	bond: {
 		title: "Fixed-rate / zero-coupon bond",
 		summary:

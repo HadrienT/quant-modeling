@@ -1575,13 +1575,19 @@
             },
             "title": "Points",
             "type": "array"
+          },
+          "single_curve": {
+            "description": "The index curve is the OIS curve (an overnight index): no basis between them",
+            "title": "Single Curve",
+            "type": "boolean"
           }
         },
         "required": [
           "ois_pillars",
           "index_pillars",
           "points",
-          "max_repricing_error_bp"
+          "max_repricing_error_bp",
+          "single_curve"
         ],
         "title": "CurvesResult",
         "type": "object"
@@ -6127,7 +6133,8 @@
         "title": "RatePoint",
         "type": "object"
       },
-      "RatesAnalysisRequest-Input": {
+      "RatesCurveQuotes": {
+        "description": "What the two curves are bootstrapped from: the OIS curve (deposits and\npar OIS swaps) and the floating index (FRAs and par swaps against it).",
         "properties": {
           "deposits": {
             "items": {
@@ -6159,20 +6166,6 @@
             "title": "Fras",
             "type": "array"
           },
-          "hull_white_mean_reversion": {
-            "anyOf": [
-              {
-                "maximum": 1.0,
-                "minimum": 0.0001,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Fix a and fit \u03c3 only; None fits both",
-            "title": "Hull White Mean Reversion"
-          },
           "ois": {
             "items": {
               "$ref": "#/components/schemas/TenorRate"
@@ -6182,9 +6175,6 @@
             "title": "Ois",
             "type": "array"
           },
-          "swap": {
-            "$ref": "#/components/schemas/SwapInput"
-          },
           "swaps": {
             "items": {
               "$ref": "#/components/schemas/TenorRate"
@@ -6193,127 +6183,19 @@
             "minItems": 1,
             "title": "Swaps",
             "type": "array"
-          },
-          "swaption": {
-            "$ref": "#/components/schemas/SwaptionInput"
-          },
-          "swaption_vols": {
-            "items": {
-              "$ref": "#/components/schemas/SwaptionVolInput"
-            },
-            "maxItems": 60,
-            "minItems": 1,
-            "title": "Swaption Vols",
-            "type": "array"
           }
         },
         "required": [
           "ois",
-          "swaps",
-          "swaption_vols",
-          "swap",
-          "swaption"
+          "swaps"
         ],
-        "title": "RatesAnalysisRequest",
+        "title": "RatesCurveQuotes",
         "type": "object"
       },
-      "RatesAnalysisRequest-Output": {
-        "properties": {
-          "deposits": {
-            "items": {
-              "$ref": "#/components/schemas/TenorRate"
-            },
-            "maxItems": 10,
-            "title": "Deposits",
-            "type": "array"
-          },
-          "fixed_frequency": {
-            "default": 1,
-            "maximum": 12.0,
-            "minimum": 1.0,
-            "title": "Fixed Frequency",
-            "type": "integer"
-          },
-          "float_frequency": {
-            "default": 2,
-            "maximum": 12.0,
-            "minimum": 1.0,
-            "title": "Float Frequency",
-            "type": "integer"
-          },
-          "fras": {
-            "items": {
-              "$ref": "#/components/schemas/FraInput"
-            },
-            "maxItems": 20,
-            "title": "Fras",
-            "type": "array"
-          },
-          "hull_white_mean_reversion": {
-            "anyOf": [
-              {
-                "maximum": 1.0,
-                "minimum": 0.0001,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Fix a and fit \u03c3 only; None fits both",
-            "title": "Hull White Mean Reversion"
-          },
-          "ois": {
-            "items": {
-              "$ref": "#/components/schemas/TenorRate"
-            },
-            "maxItems": 40,
-            "minItems": 1,
-            "title": "Ois",
-            "type": "array"
-          },
-          "swap": {
-            "$ref": "#/components/schemas/SwapInput"
-          },
-          "swaps": {
-            "items": {
-              "$ref": "#/components/schemas/TenorRate"
-            },
-            "maxItems": 40,
-            "minItems": 1,
-            "title": "Swaps",
-            "type": "array"
-          },
-          "swaption": {
-            "$ref": "#/components/schemas/SwaptionInput"
-          },
-          "swaption_vols": {
-            "items": {
-              "$ref": "#/components/schemas/SwaptionVolInput"
-            },
-            "maxItems": 60,
-            "minItems": 1,
-            "title": "Swaption Vols",
-            "type": "array"
-          }
-        },
-        "required": [
-          "ois",
-          "swaps",
-          "swaption_vols",
-          "swap",
-          "swaption"
-        ],
-        "title": "RatesAnalysisRequest",
-        "type": "object"
-      },
-      "RatesAnalysisResponse": {
+      "RatesCurvesResponse": {
         "properties": {
           "curves": {
             "$ref": "#/components/schemas/CurvesResult"
-          },
-          "hull_white": {
-            "$ref": "#/components/schemas/HullWhiteCalibrationResult"
           },
           "methodology": {
             "items": {
@@ -6321,44 +6203,13 @@
             },
             "title": "Methodology",
             "type": "array"
-          },
-          "swap": {
-            "$ref": "#/components/schemas/SwapResult"
-          },
-          "swaption": {
-            "$ref": "#/components/schemas/SwaptionResult"
           }
         },
         "required": [
           "curves",
-          "swap",
-          "hull_white",
-          "swaption",
           "methodology"
         ],
-        "title": "RatesAnalysisResponse",
-        "type": "object"
-      },
-      "RatesExampleResponse": {
-        "properties": {
-          "currency": {
-            "title": "Currency",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "request": {
-            "$ref": "#/components/schemas/RatesAnalysisRequest-Output"
-          }
-        },
-        "required": [
-          "currency",
-          "label",
-          "request"
-        ],
-        "title": "RatesExampleResponse",
+        "title": "RatesCurvesResponse",
         "type": "object"
       },
       "RatesHistoryResponse": {
@@ -6385,70 +6236,6 @@
           "points"
         ],
         "title": "RatesHistoryResponse",
-        "type": "object"
-      },
-      "RatesMarketResponse": {
-        "description": "Quotes built from traded swaps and swaptions (DTCC public\ndissemination), in the shape the page computes on.",
-        "properties": {
-          "as_of": {
-            "format": "date",
-            "title": "As Of",
-            "type": "string"
-          },
-          "currency": {
-            "title": "Currency",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "rejected": {
-            "items": {
-              "$ref": "#/components/schemas/RejectedTrades"
-            },
-            "title": "Rejected",
-            "type": "array"
-          },
-          "request": {
-            "$ref": "#/components/schemas/RatesAnalysisRequest-Output"
-          },
-          "swap_rates": {
-            "items": {
-              "$ref": "#/components/schemas/MarketSwapRate"
-            },
-            "title": "Swap Rates",
-            "type": "array"
-          },
-          "swaption_vols": {
-            "items": {
-              "$ref": "#/components/schemas/MarketSwaptionVol"
-            },
-            "title": "Swaption Vols",
-            "type": "array"
-          },
-          "trades_used": {
-            "title": "Trades Used",
-            "type": "integer"
-          },
-          "window_start": {
-            "format": "date",
-            "title": "Window Start",
-            "type": "string"
-          }
-        },
-        "required": [
-          "currency",
-          "label",
-          "as_of",
-          "window_start",
-          "request",
-          "swap_rates",
-          "swaption_vols",
-          "trades_used",
-          "rejected"
-        ],
-        "title": "RatesMarketResponse",
         "type": "object"
       },
       "RatesOverviewResponse": {
@@ -6526,6 +6313,137 @@
           "warnings"
         ],
         "title": "RatesOverviewResponse",
+        "type": "object"
+      },
+      "RatesQuoteSetResponse": {
+        "description": "A set of quotes the rates products are priced on, with the contracts\nthe workbench opens on.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "curves": {
+            "$ref": "#/components/schemas/RatesCurveQuotes"
+          },
+          "id": {
+            "enum": [
+              "usd-sofr",
+              "eur-illustrative"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "methodology": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologySection"
+            },
+            "title": "Methodology",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "market",
+              "manual"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "swap": {
+            "$ref": "#/components/schemas/SwapInput"
+          },
+          "swaption": {
+            "$ref": "#/components/schemas/SwaptionInput"
+          },
+          "swaption_vols": {
+            "items": {
+              "$ref": "#/components/schemas/SwaptionVolInput"
+            },
+            "title": "Swaption Vols",
+            "type": "array"
+          },
+          "trades": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatesTradeStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "currency",
+          "label",
+          "source",
+          "curves",
+          "swaption_vols",
+          "swap",
+          "swaption",
+          "methodology"
+        ],
+        "title": "RatesQuoteSetResponse",
+        "type": "object"
+      },
+      "RatesTradeStats": {
+        "description": "What quotes built from traded swaps and swaptions rest on (DTCC public\ndissemination).",
+        "properties": {
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/RejectedTrades"
+            },
+            "title": "Rejected",
+            "type": "array"
+          },
+          "swap_rates": {
+            "items": {
+              "$ref": "#/components/schemas/MarketSwapRate"
+            },
+            "title": "Swap Rates",
+            "type": "array"
+          },
+          "swaption_vols": {
+            "items": {
+              "$ref": "#/components/schemas/MarketSwaptionVol"
+            },
+            "title": "Swaption Vols",
+            "type": "array"
+          },
+          "trades_used": {
+            "title": "Trades Used",
+            "type": "integer"
+          },
+          "window_start": {
+            "format": "date",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "swap_rates",
+          "swaption_vols",
+          "trades_used",
+          "rejected"
+        ],
+        "title": "RatesTradeStats",
         "type": "object"
       },
       "RatingSpread": {
@@ -8583,6 +8501,7 @@
             "type": "number"
           },
           "discount": {
+            "description": "OIS discount factor of the payment date",
             "title": "Discount",
             "type": "number"
           },
@@ -8590,19 +8509,18 @@
             "title": "End",
             "type": "number"
           },
-          "forward": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Forward"
+          "payment_time": {
+            "title": "Payment Time",
+            "type": "number"
           },
-          "payment": {
-            "title": "Payment",
+          "present_value": {
+            "description": "rate \u00d7 accrual \u00d7 notional \u00d7 discount, signed for the holder",
+            "title": "Present Value",
+            "type": "number"
+          },
+          "rate": {
+            "description": "The fixed rate, or the index forward over the period",
+            "title": "Rate",
             "type": "number"
           },
           "start": {
@@ -8613,11 +8531,142 @@
         "required": [
           "start",
           "end",
-          "payment",
+          "payment_time",
           "accrual",
-          "discount"
+          "discount",
+          "rate",
+          "present_value"
         ],
         "title": "SwapPeriod",
+        "type": "object"
+      },
+      "SwapPricingRequest": {
+        "properties": {
+          "curves": {
+            "$ref": "#/components/schemas/RatesCurveQuotes"
+          },
+          "swap": {
+            "$ref": "#/components/schemas/SwapInput"
+          }
+        },
+        "required": [
+          "curves",
+          "swap"
+        ],
+        "title": "SwapPricingRequest",
+        "type": "object"
+      },
+      "SwapPricingResponse": {
+        "properties": {
+          "bond_analytics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BondAnalytics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "compute_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.",
+            "title": "Compute Ms"
+          },
+          "device": {
+            "default": "cpu",
+            "description": "Where the pricing actually ran.",
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Device",
+            "type": "string"
+          },
+          "diagnostics": {
+            "title": "Diagnostics",
+            "type": "string"
+          },
+          "gpus": {
+            "default": 0,
+            "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
+            "title": "Gpus",
+            "type": "integer"
+          },
+          "greeks": {
+            "$ref": "#/components/schemas/Greeks"
+          },
+          "mc_std_error": {
+            "title": "Mc Std Error",
+            "type": "number"
+          },
+          "model_choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelChoice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripted payoffs only: the model used and why."
+          },
+          "npv": {
+            "title": "Npv",
+            "type": "number"
+          },
+          "risks": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RiskEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risks"
+          },
+          "script": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripted library products only: the script priced.",
+            "title": "Script"
+          },
+          "swap": {
+            "$ref": "#/components/schemas/SwapResult"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ModelWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "npv",
+          "greeks",
+          "diagnostics",
+          "mc_std_error",
+          "swap"
+        ],
+        "title": "SwapPricingResponse",
         "type": "object"
       },
       "SwapResult": {
@@ -8627,6 +8676,7 @@
             "type": "number"
           },
           "fixed_leg": {
+            "description": "Signed for the holder: paid is negative",
             "title": "Fixed Leg",
             "type": "number"
           },
@@ -8638,6 +8688,7 @@
             "type": "array"
           },
           "floating_leg": {
+            "description": "Signed for the holder: paid is negative",
             "title": "Floating Leg",
             "type": "number"
           },
@@ -8647,10 +8698,6 @@
             },
             "title": "Floating Periods",
             "type": "array"
-          },
-          "npv": {
-            "title": "Npv",
-            "type": "number"
           },
           "par_rate": {
             "title": "Par Rate",
@@ -8662,7 +8709,6 @@
           }
         },
         "required": [
-          "npv",
           "par_rate",
           "annuity",
           "pv01",
@@ -8676,6 +8722,15 @@
       },
       "SwaptionInput": {
         "properties": {
+          "exercise": {
+            "default": "european",
+            "enum": [
+              "european",
+              "bermudan"
+            ],
+            "title": "Exercise",
+            "type": "string"
+          },
           "expiry": {
             "exclusiveMinimum": 0.0,
             "maximum": 20.0,
@@ -8694,6 +8749,19 @@
               }
             ],
             "title": "Lognormal Vol"
+          },
+          "model": {
+            "default": "auto",
+            "description": "auto: Bachelier on the quoted vol for a European, Hull-White for a Bermudan",
+            "enum": [
+              "auto",
+              "bachelier",
+              "black",
+              "sabr",
+              "hull_white"
+            ],
+            "title": "Model",
+            "type": "string"
           },
           "normal_vol": {
             "anyOf": [
@@ -8784,6 +8852,16 @@
             ],
             "title": "Implied Normal Vol"
           },
+          "key": {
+            "enum": [
+              "bachelier",
+              "black",
+              "sabr",
+              "hull_white"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -8794,12 +8872,166 @@
           }
         },
         "required": [
+          "key",
           "model",
           "price",
           "implied_normal_vol",
           "detail"
         ],
         "title": "SwaptionModelPrice",
+        "type": "object"
+      },
+      "SwaptionPricingRequest": {
+        "properties": {
+          "curves": {
+            "$ref": "#/components/schemas/RatesCurveQuotes"
+          },
+          "hull_white_mean_reversion": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0001,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fix a and fit \u03c3 only; None fits both",
+            "title": "Hull White Mean Reversion"
+          },
+          "swaption": {
+            "$ref": "#/components/schemas/SwaptionInput"
+          },
+          "swaption_vols": {
+            "items": {
+              "$ref": "#/components/schemas/SwaptionVolInput"
+            },
+            "maxItems": 60,
+            "minItems": 1,
+            "title": "Swaption Vols",
+            "type": "array"
+          }
+        },
+        "required": [
+          "curves",
+          "swaption_vols",
+          "swaption"
+        ],
+        "title": "SwaptionPricingRequest",
+        "type": "object"
+      },
+      "SwaptionPricingResponse": {
+        "properties": {
+          "bond_analytics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BondAnalytics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "compute_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.",
+            "title": "Compute Ms"
+          },
+          "device": {
+            "default": "cpu",
+            "description": "Where the pricing actually ran.",
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Device",
+            "type": "string"
+          },
+          "diagnostics": {
+            "title": "Diagnostics",
+            "type": "string"
+          },
+          "gpus": {
+            "default": 0,
+            "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
+            "title": "Gpus",
+            "type": "integer"
+          },
+          "greeks": {
+            "$ref": "#/components/schemas/Greeks"
+          },
+          "mc_std_error": {
+            "title": "Mc Std Error",
+            "type": "number"
+          },
+          "model_choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelChoice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripted payoffs only: the model used and why."
+          },
+          "npv": {
+            "title": "Npv",
+            "type": "number"
+          },
+          "risks": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RiskEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risks"
+          },
+          "script": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripted library products only: the script priced.",
+            "title": "Script"
+          },
+          "swaption": {
+            "$ref": "#/components/schemas/SwaptionResult"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ModelWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "npv",
+          "greeks",
+          "diagnostics",
+          "mc_std_error",
+          "swaption"
+        ],
+        "title": "SwaptionPricingResponse",
         "type": "object"
       },
       "SwaptionResult": {
@@ -8826,16 +9058,55 @@
             ],
             "title": "Bermudan Price"
           },
+          "exercise": {
+            "enum": [
+              "european",
+              "bermudan"
+            ],
+            "title": "Exercise",
+            "type": "string"
+          },
           "forward": {
             "title": "Forward",
             "type": "number"
           },
+          "hull_white": {
+            "$ref": "#/components/schemas/HullWhiteCalibrationResult"
+          },
+          "model": {
+            "description": "The model the value is under",
+            "enum": [
+              "bachelier",
+              "black",
+              "sabr",
+              "hull_white"
+            ],
+            "title": "Model",
+            "type": "string"
+          },
           "prices": {
+            "description": "The European swaption under every model that has its inputs",
             "items": {
               "$ref": "#/components/schemas/SwaptionModelPrice"
             },
             "title": "Prices",
             "type": "array"
+          },
+          "reason": {
+            "description": "Why this model, in plain terms",
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested": {
+            "enum": [
+              "auto",
+              "bachelier",
+              "black",
+              "sabr",
+              "hull_white"
+            ],
+            "title": "Requested",
+            "type": "string"
           },
           "strike": {
             "title": "Strike",
@@ -8854,13 +9125,18 @@
           }
         },
         "required": [
+          "exercise",
+          "requested",
+          "model",
+          "reason",
           "forward",
           "annuity",
           "strike",
           "prices",
           "bermudan_price",
           "bermudan_exercises",
-          "switch_premium"
+          "switch_premium",
+          "hull_white"
         ],
         "title": "SwaptionResult",
         "type": "object"
@@ -12067,14 +12343,14 @@
         ]
       }
     },
-    "/api/rates/analyse": {
+    "/api/rates/curves": {
       "post": {
-        "operationId": "rates_analyse",
+        "operationId": "rates_curves",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RatesAnalysisRequest-Input"
+                "$ref": "#/components/schemas/RatesCurveQuotes"
               }
             }
           },
@@ -12085,7 +12361,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RatesAnalysisResponse"
+                  "$ref": "#/components/schemas/RatesCurvesResponse"
                 }
               }
             },
@@ -12102,43 +12378,50 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Rates Analyse"
+        "summary": "Rates Curves"
       }
     },
-    "/api/rates/example": {
+    "/api/rates/quotes/{set_id}": {
       "get": {
-        "operationId": "rates_example",
+        "operationId": "rates_quote_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "set_id",
+            "required": true,
+            "schema": {
+              "enum": [
+                "usd-sofr",
+                "eur-illustrative"
+              ],
+              "title": "Set Id",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RatesExampleResponse"
+                  "$ref": "#/components/schemas/RatesQuoteSetResponse"
                 }
               }
             },
             "description": "Successful Response"
-          }
-        },
-        "summary": "Rates Example"
-      }
-    },
-    "/api/rates/market": {
-      "get": {
-        "operationId": "rates_market",
-        "responses": {
-          "200": {
+          },
+          "422": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RatesMarketResponse"
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             },
-            "description": "Successful Response"
+            "description": "Validation Error"
           }
         },
-        "summary": "Rates Market"
+        "summary": "Rates Quote Set"
       }
     },
     "/api/simulation/calibrate": {
@@ -13581,6 +13864,82 @@
           }
         },
         "summary": "Price Vanilla Endpoint"
+      }
+    },
+    "/price/rates/swap": {
+      "post": {
+        "operationId": "price_interest_rate_swap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwapPricingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwapPricingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Price Interest Rate Swap Endpoint"
+      }
+    },
+    "/price/rates/swaption": {
+      "post": {
+        "operationId": "price_swaption",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwaptionPricingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwaptionPricingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Price Swaption Endpoint"
       }
     },
     "/price/risk-profile": {

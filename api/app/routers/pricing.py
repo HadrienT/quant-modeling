@@ -12,6 +12,12 @@ from starlette.concurrency import run_in_threadpool
 from .. import telemetry, valuation
 from ..audit import emit
 from ..pricing_service import validate_script
+from ..rates_derivatives_schemas import (
+    SwapPricingRequest,
+    SwapPricingResponse,
+    SwaptionPricingRequest,
+    SwaptionPricingResponse,
+)
 from ..request_context import current_ip_hash
 from ..schemas import (
     ComputeDevicesResponse,
@@ -268,6 +274,21 @@ async def price_zero_coupon_bond_endpoint(
 @router.post("/price/bond/fixed-rate", response_model=PricingResponse)
 async def price_fixed_rate_bond_endpoint(req: FixedRateBondRequest) -> PricingResponse:
     return await _price("fixed_rate_bond", req)
+
+
+# Rates: priced on the quotes the request carries. A RuntimeError is the C++
+# refusing them (quotes no curve can reprice, a swap past the curve...): the
+# user's input, not a server fault.
+@router.post("/price/rates/swap", response_model=SwapPricingResponse)
+async def price_interest_rate_swap_endpoint(
+    req: SwapPricingRequest,
+) -> PricingResponse:
+    return await _price("interest_rate_swap", req, user_errors=(RuntimeError,))
+
+
+@router.post("/price/rates/swaption", response_model=SwaptionPricingResponse)
+async def price_swaption_endpoint(req: SwaptionPricingRequest) -> PricingResponse:
+    return await _price("swaption", req, user_errors=(RuntimeError,))
 
 
 @router.post("/price/structured/autocall", response_model=PricingResponse)

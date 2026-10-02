@@ -595,7 +595,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rates/analyse": {
+    "/api/rates/curves": {
         parameters: {
             query?: never;
             header?: never;
@@ -604,40 +604,23 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rates Analyse */
-        post: operations["rates_analyse"];
+        /** Rates Curves */
+        post: operations["rates_curves"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/rates/example": {
+    "/api/rates/quotes/{set_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Rates Example */
-        get: operations["rates_example"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rates/market": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Rates Market */
-        get: operations["rates_market"];
+        /** Rates Quote Set */
+        get: operations["rates_quote_set"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1245,6 +1228,40 @@ export interface paths {
         put?: never;
         /** Price Vanilla Endpoint */
         post: operations["price_vanilla"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/rates/swap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Interest Rate Swap Endpoint */
+        post: operations["price_interest_rate_swap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/rates/swaption": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Price Swaption Endpoint */
+        post: operations["price_swaption"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2159,6 +2176,11 @@ export interface components {
             ois_pillars: number[];
             /** Points */
             points: components["schemas"]["CurvePoint"][];
+            /**
+             * Single Curve
+             * @description The index curve is the OIS curve (an overnight index): no basis between them
+             */
+            single_curve: boolean;
         };
         /**
          * DatedAsianRequest
@@ -4146,8 +4168,12 @@ export interface components {
              */
             tenor: number;
         };
-        /** RatesAnalysisRequest */
-        "RatesAnalysisRequest-Input": {
+        /**
+         * RatesCurveQuotes
+         * @description What the two curves are bootstrapped from: the OIS curve (deposits and
+         *     par OIS swaps) and the floating index (FRAs and par swaps against it).
+         */
+        RatesCurveQuotes: {
             /** Deposits */
             deposits?: components["schemas"]["TenorRate"][];
             /**
@@ -4162,66 +4188,16 @@ export interface components {
             float_frequency: number;
             /** Fras */
             fras?: components["schemas"]["FraInput"][];
-            /**
-             * Hull White Mean Reversion
-             * @description Fix a and fit σ only; None fits both
-             */
-            hull_white_mean_reversion?: number | null;
             /** Ois */
             ois: components["schemas"]["TenorRate"][];
-            swap: components["schemas"]["SwapInput"];
             /** Swaps */
             swaps: components["schemas"]["TenorRate"][];
-            swaption: components["schemas"]["SwaptionInput"];
-            /** Swaption Vols */
-            swaption_vols: components["schemas"]["SwaptionVolInput"][];
         };
-        /** RatesAnalysisRequest */
-        "RatesAnalysisRequest-Output": {
-            /** Deposits */
-            deposits?: components["schemas"]["TenorRate"][];
-            /**
-             * Fixed Frequency
-             * @default 1
-             */
-            fixed_frequency: number;
-            /**
-             * Float Frequency
-             * @default 2
-             */
-            float_frequency: number;
-            /** Fras */
-            fras?: components["schemas"]["FraInput"][];
-            /**
-             * Hull White Mean Reversion
-             * @description Fix a and fit σ only; None fits both
-             */
-            hull_white_mean_reversion?: number | null;
-            /** Ois */
-            ois: components["schemas"]["TenorRate"][];
-            swap: components["schemas"]["SwapInput"];
-            /** Swaps */
-            swaps: components["schemas"]["TenorRate"][];
-            swaption: components["schemas"]["SwaptionInput"];
-            /** Swaption Vols */
-            swaption_vols: components["schemas"]["SwaptionVolInput"][];
-        };
-        /** RatesAnalysisResponse */
-        RatesAnalysisResponse: {
+        /** RatesCurvesResponse */
+        RatesCurvesResponse: {
             curves: components["schemas"]["CurvesResult"];
-            hull_white: components["schemas"]["HullWhiteCalibrationResult"];
             /** Methodology */
             methodology: components["schemas"]["MethodologySection"][];
-            swap: components["schemas"]["SwapResult"];
-            swaption: components["schemas"]["SwaptionResult"];
-        };
-        /** RatesExampleResponse */
-        RatesExampleResponse: {
-            /** Currency */
-            currency: string;
-            /** Label */
-            label: string;
-            request: components["schemas"]["RatesAnalysisRequest-Output"];
         };
         /** RatesHistoryResponse */
         RatesHistoryResponse: {
@@ -4231,36 +4207,6 @@ export interface components {
             points: components["schemas"]["RateHistoryPoint"][];
             /** Series Id */
             series_id: string;
-        };
-        /**
-         * RatesMarketResponse
-         * @description Quotes built from traded swaps and swaptions (DTCC public
-         *     dissemination), in the shape the page computes on.
-         */
-        RatesMarketResponse: {
-            /**
-             * As Of
-             * Format: date
-             */
-            as_of: string;
-            /** Currency */
-            currency: string;
-            /** Label */
-            label: string;
-            /** Rejected */
-            rejected: components["schemas"]["RejectedTrades"][];
-            request: components["schemas"]["RatesAnalysisRequest-Output"];
-            /** Swap Rates */
-            swap_rates: components["schemas"]["MarketSwapRate"][];
-            /** Swaption Vols */
-            swaption_vols: components["schemas"]["MarketSwaptionVol"][];
-            /** Trades Used */
-            trades_used: number;
-            /**
-             * Window Start
-             * Format: date
-             */
-            window_start: string;
         };
         /** RatesOverviewResponse */
         RatesOverviewResponse: {
@@ -4286,6 +4232,57 @@ export interface components {
             unit: "decimal";
             /** Warnings */
             warnings: string[];
+        };
+        /**
+         * RatesQuoteSetResponse
+         * @description A set of quotes the rates products are priced on, with the contracts
+         *     the workbench opens on.
+         */
+        RatesQuoteSetResponse: {
+            /** As Of */
+            as_of?: string | null;
+            /** Currency */
+            currency: string;
+            curves: components["schemas"]["RatesCurveQuotes"];
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "usd-sofr" | "eur-illustrative";
+            /** Label */
+            label: string;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "market" | "manual";
+            swap: components["schemas"]["SwapInput"];
+            swaption: components["schemas"]["SwaptionInput"];
+            /** Swaption Vols */
+            swaption_vols: components["schemas"]["SwaptionVolInput"][];
+            trades?: components["schemas"]["RatesTradeStats"] | null;
+        };
+        /**
+         * RatesTradeStats
+         * @description What quotes built from traded swaps and swaptions rest on (DTCC public
+         *     dissemination).
+         */
+        RatesTradeStats: {
+            /** Rejected */
+            rejected: components["schemas"]["RejectedTrades"][];
+            /** Swap Rates */
+            swap_rates: components["schemas"]["MarketSwapRate"][];
+            /** Swaption Vols */
+            swaption_vols: components["schemas"]["MarketSwaptionVol"][];
+            /** Trades Used */
+            trades_used: number;
+            /**
+             * Window Start
+             * Format: date
+             */
+            window_start: string;
         };
         /** RatingSpread */
         RatingSpread: {
@@ -5191,31 +5188,92 @@ export interface components {
         SwapPeriod: {
             /** Accrual */
             accrual: number;
-            /** Discount */
+            /**
+             * Discount
+             * @description OIS discount factor of the payment date
+             */
             discount: number;
             /** End */
             end: number;
-            /** Forward */
-            forward?: number | null;
-            /** Payment */
-            payment: number;
+            /** Payment Time */
+            payment_time: number;
+            /**
+             * Present Value
+             * @description rate × accrual × notional × discount, signed for the holder
+             */
+            present_value: number;
+            /**
+             * Rate
+             * @description The fixed rate, or the index forward over the period
+             */
+            rate: number;
             /** Start */
             start: number;
+        };
+        /** SwapPricingRequest */
+        SwapPricingRequest: {
+            curves: components["schemas"]["RatesCurveQuotes"];
+            swap: components["schemas"]["SwapInput"];
+        };
+        /** SwapPricingResponse */
+        SwapPricingResponse: {
+            bond_analytics?: components["schemas"]["BondAnalytics"] | null;
+            /**
+             * Compute Ms
+             * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
+             */
+            compute_ms?: number | null;
+            /**
+             * Device
+             * @description Where the pricing actually ran.
+             * @default cpu
+             * @enum {string}
+             */
+            device: "cpu" | "gpu";
+            /** Diagnostics */
+            diagnostics: string;
+            /**
+             * Gpus
+             * @description GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 §7).
+             * @default 0
+             */
+            gpus: number;
+            greeks: components["schemas"]["Greeks"];
+            /** Mc Std Error */
+            mc_std_error: number;
+            /** @description Scripted payoffs only: the model used and why. */
+            model_choice?: components["schemas"]["ModelChoice"] | null;
+            /** Npv */
+            npv: number;
+            /** Risks */
+            risks?: components["schemas"]["RiskEntry"][] | null;
+            /**
+             * Script
+             * @description Scripted library products only: the script priced.
+             */
+            script?: string | null;
+            swap: components["schemas"]["SwapResult"];
+            /** Warnings */
+            warnings?: components["schemas"]["ModelWarning"][];
         };
         /** SwapResult */
         SwapResult: {
             /** Annuity */
             annuity: number;
-            /** Fixed Leg */
+            /**
+             * Fixed Leg
+             * @description Signed for the holder: paid is negative
+             */
             fixed_leg: number;
             /** Fixed Periods */
             fixed_periods: components["schemas"]["SwapPeriod"][];
-            /** Floating Leg */
+            /**
+             * Floating Leg
+             * @description Signed for the holder: paid is negative
+             */
             floating_leg: number;
             /** Floating Periods */
             floating_periods: components["schemas"]["SwapPeriod"][];
-            /** Npv */
-            npv: number;
             /** Par Rate */
             par_rate: number;
             /** Pv01 */
@@ -5223,10 +5281,23 @@ export interface components {
         };
         /** SwaptionInput */
         SwaptionInput: {
+            /**
+             * Exercise
+             * @default european
+             * @enum {string}
+             */
+            exercise: "european" | "bermudan";
             /** Expiry */
             expiry: number;
             /** Lognormal Vol */
             lognormal_vol?: number | null;
+            /**
+             * Model
+             * @description auto: Bachelier on the quoted vol for a European, Hull-White for a Bermudan
+             * @default auto
+             * @enum {string}
+             */
+            model: "auto" | "bachelier" | "black" | "sabr" | "hull_white";
             /**
              * Normal Vol
              * @description Bachelier vol; None takes the nearest quoted ATM vol
@@ -5262,10 +5333,68 @@ export interface components {
             detail: string;
             /** Implied Normal Vol */
             implied_normal_vol: number | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "bachelier" | "black" | "sabr" | "hull_white";
             /** Model */
             model: string;
             /** Price */
             price: number;
+        };
+        /** SwaptionPricingRequest */
+        SwaptionPricingRequest: {
+            curves: components["schemas"]["RatesCurveQuotes"];
+            /**
+             * Hull White Mean Reversion
+             * @description Fix a and fit σ only; None fits both
+             */
+            hull_white_mean_reversion?: number | null;
+            swaption: components["schemas"]["SwaptionInput"];
+            /** Swaption Vols */
+            swaption_vols: components["schemas"]["SwaptionVolInput"][];
+        };
+        /** SwaptionPricingResponse */
+        SwaptionPricingResponse: {
+            bond_analytics?: components["schemas"]["BondAnalytics"] | null;
+            /**
+             * Compute Ms
+             * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
+             */
+            compute_ms?: number | null;
+            /**
+             * Device
+             * @description Where the pricing actually ran.
+             * @default cpu
+             * @enum {string}
+             */
+            device: "cpu" | "gpu";
+            /** Diagnostics */
+            diagnostics: string;
+            /**
+             * Gpus
+             * @description GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 §7).
+             * @default 0
+             */
+            gpus: number;
+            greeks: components["schemas"]["Greeks"];
+            /** Mc Std Error */
+            mc_std_error: number;
+            /** @description Scripted payoffs only: the model used and why. */
+            model_choice?: components["schemas"]["ModelChoice"] | null;
+            /** Npv */
+            npv: number;
+            /** Risks */
+            risks?: components["schemas"]["RiskEntry"][] | null;
+            /**
+             * Script
+             * @description Scripted library products only: the script priced.
+             */
+            script?: string | null;
+            swaption: components["schemas"]["SwaptionResult"];
+            /** Warnings */
+            warnings?: components["schemas"]["ModelWarning"][];
         };
         /** SwaptionResult */
         SwaptionResult: {
@@ -5275,10 +5404,35 @@ export interface components {
             bermudan_exercises: number[];
             /** Bermudan Price */
             bermudan_price: number | null;
+            /**
+             * Exercise
+             * @enum {string}
+             */
+            exercise: "european" | "bermudan";
             /** Forward */
             forward: number;
-            /** Prices */
+            hull_white: components["schemas"]["HullWhiteCalibrationResult"];
+            /**
+             * Model
+             * @description The model the value is under
+             * @enum {string}
+             */
+            model: "bachelier" | "black" | "sabr" | "hull_white";
+            /**
+             * Prices
+             * @description The European swaption under every model that has its inputs
+             */
             prices: components["schemas"]["SwaptionModelPrice"][];
+            /**
+             * Reason
+             * @description Why this model, in plain terms
+             */
+            reason: string;
+            /**
+             * Requested
+             * @enum {string}
+             */
+            requested: "auto" | "bachelier" | "black" | "sabr" | "hull_white";
             /** Strike */
             strike: number;
             /** Switch Premium */
@@ -6986,7 +7140,7 @@ export interface operations {
             };
         };
     };
-    rates_analyse: {
+    rates_curves: {
         parameters: {
             query?: never;
             header?: never;
@@ -6995,7 +7149,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RatesAnalysisRequest-Input"];
+                "application/json": components["schemas"]["RatesCurveQuotes"];
             };
         };
         responses: {
@@ -7005,7 +7159,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatesAnalysisResponse"];
+                    "application/json": components["schemas"]["RatesCurvesResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7019,11 +7173,13 @@ export interface operations {
             };
         };
     };
-    rates_example: {
+    rates_quote_set: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                set_id: "usd-sofr" | "eur-illustrative";
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -7034,27 +7190,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatesExampleResponse"];
+                    "application/json": components["schemas"]["RatesQuoteSetResponse"];
                 };
             };
-        };
-    };
-    rates_market: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
+            /** @description Validation Error */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RatesMarketResponse"];
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8115,6 +8260,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_interest_rate_swap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwapPricingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapPricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    price_swaption: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwaptionPricingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwaptionPricingResponse"];
                 };
             };
             /** @description Validation Error */

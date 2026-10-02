@@ -3,6 +3,7 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
+	redirect,
 } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppLayout } from "./layout/AppLayout";
@@ -62,13 +63,16 @@ const marketRoute = createRoute({
 	component: MarketPage,
 });
 
-// ── Rates derivatives ─────────────────────────────────────────────────────
-// Page at /rates; its API lives under /api/rates/*.
-const RatesPage = lazy(() => import("@/features/rates/RatesPage"));
+// ── Rates derivatives (former page) ───────────────────────────────────────
+// The /rates page is gone: its swap and swaption are products of the pricing
+// workbench, its traded curve a section of the Market page's Rates tab. Old
+// links land on the swap.
 const ratesRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/rates",
-	component: RatesPage,
+	beforeLoad: () => {
+		throw redirect({ to: "/price", search: { product: "swap" } });
+	},
 });
 
 // ── Credit ───────────────────────────────────────────────────────────────
@@ -237,7 +241,6 @@ declare module "@tanstack/react-router" {
 export const ROUTES = [
 	{ path: "/visualize", label: "Strategies" },
 	{ path: "/market", label: "Market" },
-	{ path: "/rates", label: "Rates" },
 	{ path: "/credit", label: "Credit" },
 	{ path: "/price", label: "Pricing" },
 	{ path: "/simulation", label: "Simulation" },

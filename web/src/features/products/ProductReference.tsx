@@ -115,7 +115,7 @@ export function ProductReference({
 								</li>
 							))}
 						</ul>
-						{descriptor.engines.length > 0 && (
+						{descriptor.engines.length > 0 && !descriptor.rates && (
 							<p className="mt-2 text-2xs text-ink-muted">
 								Engines exposed on the workbench:{" "}
 								{descriptor.engines.map((e) => e.label).join(" · ")}
