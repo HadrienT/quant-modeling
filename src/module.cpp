@@ -1052,7 +1052,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
                                      std::size_t paths, std::uint64_t seed, qm_::Real pfe_confidence,
                                      std::size_t threads, const py::object &initial_margin,
                                      qm_::Real collateral_spread, const py::object &capital,
-                                     qm_::Real wrong_way_b)
+                                     qm_::Real wrong_way_b, const std::string &device)
 {
     const qm_::DiscountCurve curve = rate_curve(std::move(dt), std::move(dd));
     const qm_::HullWhiteCurveModel model(hull_white.first, hull_white.second, curve);
@@ -1119,6 +1119,13 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     qm_::ExposureSimulationSettings settings;
     settings.paths = paths;
     settings.seed = seed;
+    // blueprint/wp/23-xva.md §14.11: CPU, GPU, or GPU when the trades allow it.
+    if (device == "gpu")
+        settings.device = qm_::ComputeDevice::Gpu;
+    else if (device == "auto")
+        settings.device = qm_::ComputeDevice::Auto;
+    else if (device != "cpu")
+        throw qm_::InvalidInput("xva: unknown device '" + device + "' (cpu, gpu, auto)");
     if (!csa.is_none())
     {
         const py::dict c = csa.cast<py::dict>();
@@ -1199,6 +1206,8 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     std::vector<qm_::Real> values_today;
     std::size_t pilot_paths = 0;
     std::optional<qm_::simm::Margin> simm_today;
+    std::string ran_on, device_note;
+    int gpus = 0;
     {
         py::gil_scoped_release release;
         // The cube is shared and each path writes its own row: the worker
@@ -1211,6 +1220,9 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         const qm_::ExposurePaths cube = engine.simulate(settings, workers > 0 ? &pool : nullptr);
         values_today = cube.trade_values_today;
         pilot_paths = cube.pilot_paths;
+        ran_on = cube.device;
+        gpus = cube.gpus;
+        device_note = cube.device_note;
         if (settings.simm)
             simm_today = cube.simm_today;
         report = qm_::xva_report(cube, inputs);
@@ -1242,6 +1254,11 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     out["trade_values_today"] = values_today;
     // Paths of the pilot that fitted the trades valued by regression (0: none).
     out["pilot_paths"] = pilot_paths;
+    // Where the paths were valued, on how many cards, and why the CPU when
+    // the GPU was allowed.
+    out["device"] = ran_on;
+    out["gpus"] = gpus;
+    out["device_note"] = device_note;
     // Today's SIMM and its three parts, when the margin comes from it.
     if (simm_today)
     {
@@ -2478,7 +2495,7 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("historical") = py::none(), py::arg("paths") = 10000, py::arg("seed") = 42,
           py::arg("pfe_confidence") = 0.95, py::arg("threads") = 0,
           py::arg("initial_margin") = py::none(), py::arg("collateral_spread") = 0.0,
-          py::arg("capital") = py::none(), py::arg("wrong_way_b") = 0.0,
+          py::arg("capital") = py::none(), py::arg("wrong_way_b") = 0.0, py::arg("device") = "cpu",
           "Exposure and CVA / DVA of a netting set of swaps, European and Bermudan swaptions under "
           "Hull-White (a, sigma): trades are dicts (kind 'swap' | 'swaption' | 'bermudan', tenor, "
           "fixed_rate, notional, payer, "
@@ -2492,7 +2509,9 @@ PYBIND11_MODULE(quantmodeling, m)
           "sector, investment_grade, large_financial, cost_of_capital) the SA-CCR, IRB and BA-CVA "
           "capital and the KVA. wrong_way_b makes the counterparty's hazard exp(a(t) + b V(t)) "
           "(Hull & White 2012), per unit of currency; cva_independent is then the CVA without it. "
-          "A cost is negative.");
+          "device 'cpu' | 'gpu' | 'auto' is where the paths are valued: the GPU takes swaps and "
+          "European swaptions without SIMM per path; 'auto' falls back to the CPU and says why in "
+          "device_note. A cost is negative.");
     m.def("estimate_historical_rate_dynamics", &estimate_historical_rate_dynamics_impl, py::arg("rates"),
           py::arg("dt"),
           "Maximum-likelihood (a, theta, sigma) of a mean-reverting Gaussian short rate from a series "

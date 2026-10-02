@@ -6,10 +6,18 @@
 #include "quantModeling/risk/xva.hpp"
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
 namespace quantModeling
 {
+
+    /// A Monte-Carlo estimate with its standard error.
+    struct Estimate
+    {
+        Real value = 0.0;
+        Real error = 0.0;
+    };
 
     /// What the scenarios of a simulation are scenarios of (Gregory's
     /// distinction between pricing and risk measurement, blueprint §3.1).
@@ -86,6 +94,14 @@ namespace quantModeling
         /// The same today, with its three parts.
         simm::Margin simm_today;
 
+        /// Where the paths were valued: "cpu" or "gpu" (lot X7).
+        std::string device = "cpu";
+        /// How many cards shared them; 0 on the CPU.
+        int gpus = 0;
+        /// Why the CPU ran a simulation that was left free to use the GPU;
+        /// empty otherwise.
+        std::string device_note;
+
         std::size_t dates() const { return times.size(); }
         std::size_t trades() const { return trade_values.size(); }
     };
@@ -126,7 +142,8 @@ namespace quantModeling
         std::vector<Real> ene;
         std::vector<Real> efv;
 
-        /// PFE: max(quantile of V(t) under the t-forward measure, 0).
+        /// PFE: max(quantile of V(t) under the t-forward measure, 0). Empty
+        /// when the paths were reduced on a device, which keeps no quantile.
         std::vector<Real> pfe;
         Real pfe_confidence = 0.95;
 
@@ -168,6 +185,20 @@ namespace quantModeling
     ExposureStatistics exposure_statistics(const ExposurePaths &paths,
                                            const std::vector<std::size_t> &trades = {},
                                            Real pfe_confidence = 0.95);
+
+    /**
+     * @brief The discounted profiles EE* and ENE* of the netted trades, and
+     *        nothing else: what the xVA integrals need.
+     *
+     * The same sums as exposure_statistics(), in the same order — the same
+     * bits — without the quantile of the PFE, which sorts the paths at every
+     * date and is most of its cost, and without the allocation.
+     *
+     * @throws InvalidInput as exposure_statistics(), and on a historical
+     *         simulation.
+     */
+    ExposureProfile exposure_profile(const ExposurePaths &paths,
+                                     const std::vector<std::size_t> &trades = {});
 
 } // namespace quantModeling
 

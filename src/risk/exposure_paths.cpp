@@ -89,7 +89,7 @@ namespace quantModeling
         s.pfe.resize(n);
         s.discounted_ee_contributions.assign(s.trades.size(), std::vector<Real>(n, 0.0));
 
-        std::vector<std::size_t> order(N);
+        std::vector<std::pair<Real, Real>> order(N);
         for (std::size_t i = 0; i < n; ++i)
         {
             Real ee = 0.0, ee2 = 0.0, ene = 0.0, ene2 = 0.0, efv = 0.0, efv2 = 0.0, weights = 0.0;
@@ -126,23 +126,22 @@ namespace quantModeling
 
             // Quantile under the t_i-forward measure: each path counts for
             // its discount weight (the change of measure from the simulation
-            // measure), normalised.
-            std::iota(order.begin(), order.end(), std::size_t{0});
+            // measure), normalised. The values are sorted with their weights:
+            // paths of equal value give the same quantile in any order.
+            for (std::size_t p = 0; p < N; ++p)
+                order[p] = {netted[p * n + i], paths.discount_weight[p * n + i]};
             std::sort(order.begin(), order.end(),
-                      [&](std::size_t a, std::size_t b)
-                      {
-                          const Real va = netted[a * n + i], vb = netted[b * n + i];
-                          return va < vb || (va == vb && a < b);
-                      });
+                      [](const std::pair<Real, Real> &a, const std::pair<Real, Real> &b)
+                      { return a.first < b.first; });
             const Real target = pfe_confidence * weights;
             Real cumulative = 0.0;
-            Real quantile = netted[order.back() * n + i];
-            for (const std::size_t p : order)
+            Real quantile = order.back().first;
+            for (const auto &[value, weight] : order)
             {
-                cumulative += paths.discount_weight[p * n + i];
+                cumulative += weight;
                 if (cumulative >= target)
                 {
-                    quantile = netted[p * n + i];
+                    quantile = value;
                     break;
                 }
             }
@@ -152,6 +151,71 @@ namespace quantModeling
         s.epe = expected_positive_exposure(s.times, s.ee);
         s.eepe = effective_expected_positive_exposure(s.times, s.ee);
         return s;
+    }
+
+    ExposureProfile exposure_profile(const ExposurePaths &paths, const std::vector<std::size_t> &trades)
+    {
+        const std::size_t n = paths.dates();
+        const std::size_t N = paths.paths;
+        if (n == 0 || N == 0 || paths.trades() == 0)
+            throw InvalidInput("exposure statistics: the simulation is empty");
+        if (paths.discount_weight.size() != N * n)
+            throw InvalidInput("exposure statistics: inconsistent simulation sizes");
+        if (paths.measure != ExposureMeasure::RiskNeutral)
+            throw InvalidInput("exposure profile: xVA is a price and integrates the risk-neutral "
+                               "exposure; this simulation ran under the historical measure");
+        std::vector<std::size_t> netted_trades = trades;
+        if (netted_trades.empty())
+        {
+            netted_trades.resize(paths.trades());
+            std::iota(netted_trades.begin(), netted_trades.end(), std::size_t{0});
+        }
+        std::vector<bool> seen(paths.trades(), false);
+        for (const std::size_t k : netted_trades)
+        {
+            if (k >= paths.trades())
+                throw InvalidInput("exposure statistics: trade index out of range");
+            if (seen[k])
+                throw InvalidInput("exposure statistics: a trade is netted twice");
+            if (paths.trade_values[k].size() != N * n)
+                throw InvalidInput("exposure statistics: inconsistent simulation sizes");
+            seen[k] = true;
+        }
+
+        ExposureProfile profile;
+        profile.times = paths.times;
+        profile.discounted_ee.resize(n);
+        profile.discounted_ene.resize(n);
+        const Real count = static_cast<Real>(N);
+        // One trade is its own netting: no copy.
+        std::vector<Real> sum;
+        if (netted_trades.size() > 1)
+        {
+            sum.assign(N * n, 0.0);
+            for (const std::size_t k : netted_trades)
+            {
+                const std::vector<Real> &values = paths.trade_values[k];
+                for (std::size_t j = 0; j < N * n; ++j)
+                    sum[j] += values[j];
+            }
+        }
+        const std::vector<Real> &netted =
+            netted_trades.size() > 1 ? sum : paths.trade_values[netted_trades.front()];
+        // Row by row: the matrices are read in the order they are stored.
+        std::vector<Real> ee(n, 0.0), ene(n, 0.0);
+        for (std::size_t p = 0; p < N; ++p)
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                const Real v = paths.discount_weight[p * n + i] * netted[p * n + i];
+                ee[i] += std::max(v, 0.0);
+                ene[i] += std::min(v, 0.0);
+            }
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            profile.discounted_ee[i] = ee[i] / count;
+            profile.discounted_ene[i] = ene[i] / count;
+        }
+        return profile;
     }
 
 } // namespace quantModeling

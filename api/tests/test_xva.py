@@ -694,3 +694,48 @@ def test_a_trade_valued_by_regression_takes_the_regression_model_and_says_why():
         },
     )
     assert r.status_code == 422 and "SIMM computes today" in r.text
+
+
+# ── Lot X7: where the paths are valued ───────────────────────────────────────
+
+
+def test_the_response_says_where_the_paths_ran_and_why(store):
+    import quantmodeling as qm
+
+    cards = len(qm.gpu_devices())
+    cpu = run(device="cpu")
+    assert (cpu["device"], cpu["gpus"]) == ("cpu", 0)
+    assert cpu["device_reason"] == "The CPU was requested."
+    assert store["events"][-1][1].engine.device == "cpu"
+
+    # Left free, a swap goes to the cards when the server has some.
+    auto = run()
+    if cards:
+        assert auto["device"] == "gpu" and 1 <= auto["gpus"] <= cards
+        assert "closed form" in auto["device_reason"]
+        # The same scenarios: the numbers of the CPU, to the last digits.
+        assert auto["adjustments"]["cva"]["value"] == pytest.approx(
+            cpu["adjustments"]["cva"]["value"], rel=1e-9
+        )
+        assert auto["exposure"]["ee"] == pytest.approx(cpu["exposure"]["ee"], rel=1e-9)
+    else:
+        assert (auto["device"], auto["gpus"]) == ("cpu", 0)
+        assert auto["device_reason"].startswith("On the CPU: ")
+        assert auto["adjustments"] == cpu["adjustments"]
+    assert store["events"][-1][1].engine.device == auto["device"]
+
+    # A Bermudan is valued by regression: on the CPU, whatever the server.
+    bermudan = run(portfolio="bermudan")
+    assert bermudan["device"] == "cpu"
+    assert bermudan["device_reason"].startswith("On the CPU: ")
+    if cards:
+        assert "regression" in bermudan["device_reason"]
+
+    # Asked for by name, the GPU is not replaced by the CPU.
+    r = client.post(
+        "/api/xva/netting-set",
+        json={"paths": PATHS, "portfolio": "bermudan", "device": "gpu"},
+    )
+    assert r.status_code == 422 and "GPU requested" in r.text
+    r = client.post("/api/xva/netting-set", json={"paths": PATHS, "device": "tpu"})
+    assert r.status_code == 422

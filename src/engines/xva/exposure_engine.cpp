@@ -1,11 +1,15 @@
 #include "quantModeling/engines/xva/exposure_engine.hpp"
 
 #include "quantModeling/engines/xva/hull_white_future_value.hpp"
+#include "quantModeling/gpu/exposure.hpp"
+#include "quantModeling/risk/exposure_metrics.hpp"
+#include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/philox.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <numeric>
 #include <string>
 
 namespace quantModeling
@@ -108,29 +112,14 @@ namespace quantModeling
         return exposure_grid(horizon, events, settings);
     }
 
-    ExposurePaths HullWhiteExposureEngine::simulate(const ExposureSimulationSettings &settings,
-                                                    ThreadPool *pool)
+    HullWhiteExposureEngine::Dynamics HullWhiteExposureEngine::prepare(
+        const ExposureSimulationSettings &settings, ExposurePaths &out)
     {
         if (settings.paths == 0)
             throw InvalidInput("exposure engine: at least one path is required");
-
-        ExposurePaths out;
         out.times = grid(settings.grid);
         out.paths = settings.paths;
         const std::size_t n = out.times.size();
-        const std::size_t N = settings.paths;
-        const std::size_t K = trades_.size();
-
-        // (trades [× 2 with cash flows] + the discount weights [+ SIMM])
-        // matrices of doubles.
-        const std::size_t matrices = K * (settings.keep_cashflows ? 2 : 1) + 1 + (settings.simm ? 1 : 0);
-        const std::size_t limit_cells = settings.memory_limit_bytes / sizeof(Real);
-        if (N > limit_cells / n / matrices)
-            throw InvalidInput(
-                "exposure engine: " + std::to_string(K) + " trades x " + std::to_string(N) +
-                " paths x " + std::to_string(n) + " dates exceed the memory limit of " +
-                std::to_string(settings.memory_limit_bytes >> 20) +
-                " MiB; reduce the paths or raise memory_limit_bytes");
 
         for (Trade &trade : trades_)
             trade.value->bind(out.times);
@@ -163,7 +152,12 @@ namespace quantModeling
         }
         // The pricing measure's transitions: those of the main simulation
         // unless it is historical, and always those of the pilot.
-        std::vector<Real> q_decay(n), q_drift(n), q_sd(n), q_scale(n), q_G(n);
+        Dynamics dynamics;
+        std::vector<Real> &q_decay = dynamics.pricing.decay, &q_drift = dynamics.pricing.drift,
+                          &q_sd = dynamics.pricing.sd, &q_scale = dynamics.pricing.weight_scale,
+                          &q_G = dynamics.pricing.weight_G;
+        for (std::vector<Real> *v : {&q_decay, &q_drift, &q_sd, &q_scale, &q_G})
+            v->resize(n);
         Time previous = 0.0;
         for (std::size_t i = 0; i < n; ++i)
         {
@@ -176,8 +170,10 @@ namespace quantModeling
             q_scale[i] = model_.discount().discount(t) * std::exp(0.5 * q_G[i] * q_G[i] * model_.y(t));
             previous = t;
         }
-        std::vector<Real> decay = q_decay, drift = q_drift, sd = q_sd, weight_scale = q_scale,
-                          weight_G = q_G;
+        dynamics.main = dynamics.pricing;
+        std::vector<Real> &decay = dynamics.main.decay, &drift = dynamics.main.drift,
+                          &sd = dynamics.main.sd, &weight_scale = dynamics.main.weight_scale,
+                          &weight_G = dynamics.main.weight_G;
         previous = 0.0;
         for (std::size_t i = 0; i < n; ++i)
         {
@@ -207,6 +203,70 @@ namespace quantModeling
             }
             previous = t;
         }
+        return dynamics;
+    }
+
+    bool HullWhiteExposureEngine::on_device(const ExposureSimulationSettings &settings,
+                                            xva::ExposureProgram &program, std::string &note) const
+    {
+        if (settings.device == ComputeDevice::Cpu)
+            return false;
+        std::string why;
+        if (gpu::device_count() == 0)
+            why = gpu::compiled_with_cuda()
+                      ? "this server has no usable CUDA device"
+                      : "the pricing library was built without the CUDA backend";
+        else if (settings.simm)
+            why = "SIMM on every path is computed on the CPU";
+        else
+        {
+            program = {};
+            for (std::size_t k = 0; k < trades_.size() && why.empty(); ++k)
+            {
+                if (trades_[k].value->compile(program))
+                    program.trades.back().quantity = trades_[k].quantity;
+                else
+                    why = "trade " + std::to_string(k) +
+                          " is valued by regression, which runs on the CPU";
+            }
+        }
+        if (why.empty())
+            return true;
+        if (settings.device == ComputeDevice::Gpu)
+        {
+            if (gpu::device_count() == 0)
+                throw gpu::GpuUnavailable("exposure engine: GPU requested, but " + why);
+            throw InvalidInput("exposure engine: GPU requested, but " + why);
+        }
+        note = why;
+        return false;
+    }
+
+    ExposurePaths HullWhiteExposureEngine::simulate(const ExposureSimulationSettings &settings,
+                                                    ThreadPool *pool)
+    {
+        ExposurePaths out;
+        const Dynamics dynamics = prepare(settings, out);
+        const std::vector<Real> &q_decay = dynamics.pricing.decay, &q_drift = dynamics.pricing.drift,
+                                &q_sd = dynamics.pricing.sd, &q_scale = dynamics.pricing.weight_scale,
+                                &q_G = dynamics.pricing.weight_G;
+        const std::vector<Real> &decay = dynamics.main.decay, &drift = dynamics.main.drift,
+                                &sd = dynamics.main.sd, &weight_scale = dynamics.main.weight_scale,
+                                &weight_G = dynamics.main.weight_G;
+        const std::size_t n = out.times.size();
+        const std::size_t N = settings.paths;
+        const std::size_t K = trades_.size();
+
+        // (trades [× 2 with cash flows] + the discount weights [+ SIMM])
+        // matrices of doubles.
+        const std::size_t matrices = K * (settings.keep_cashflows ? 2 : 1) + 1 + (settings.simm ? 1 : 0);
+        const std::size_t limit_cells = settings.memory_limit_bytes / sizeof(Real);
+        if (N > limit_cells / n / matrices)
+            throw InvalidInput(
+                "exposure engine: " + std::to_string(K) + " trades x " + std::to_string(N) +
+                " paths x " + std::to_string(n) + " dates exceed the memory limit of " +
+                std::to_string(settings.memory_limit_bytes >> 20) +
+                " MiB; reduce the paths or raise memory_limit_bytes");
 
         // ── Pilot: fit the trades valued by regression (lot X4) ──────────
         pilot_dispersion_ = 0.0;
@@ -324,6 +384,40 @@ namespace quantModeling
         if (settings.keep_cashflows)
             out.trade_cashflows.assign(K, std::vector<Real>(N * n));
 
+        xva::ExposureProgram program;
+        if (on_device(settings, program, out.device_note))
+        {
+            gpu::ExposureGpuRequest request;
+            request.program = &program;
+            request.dynamics = &dynamics.main;
+            request.seed = settings.seed;
+            request.paths = N;
+            request.devices = gpu::devices_for(settings.max_gpus);
+            request.max_blocks_per_launch = settings.gpu_blocks_per_launch;
+            gpu::ExposureCubeTarget target;
+            target.discount_weight = out.discount_weight.data();
+            for (std::size_t k = 0; k < K; ++k)
+            {
+                target.values.push_back(out.trade_values[k].data());
+                if (settings.keep_cashflows)
+                    target.cashflows.push_back(out.trade_cashflows[k].data());
+            }
+            try
+            {
+                out.gpus = gpu::simulate_exposure_cube(request, target);
+                out.device = "gpu";
+                return out;
+            }
+            catch (const gpu::GpuUnavailable &e)
+            {
+                // A card that fails mid-run (its memory is shared) must not
+                // fail a simulation that was only allowed to use it.
+                if (settings.device == ComputeDevice::Gpu)
+                    throw;
+                out.device_note = e.what();
+            }
+        }
+
         const auto run_chunk = [&](std::size_t first, std::size_t last)
         {
             std::vector<Real> state(n), values(n), flows(n);
@@ -411,6 +505,215 @@ namespace quantModeling
         if (failure)
             std::rethrow_exception(failure);
         return out;
+    }
+
+    NettingSetExposure HullWhiteExposureEngine::simulate_netting_set(ExposureSimulationSettings settings,
+                                                                     const NettingSetRequest &request,
+                                                                     ThreadPool *pool)
+    {
+        if (trades_.empty())
+            throw InvalidInput("exposure engine: no trade");
+        std::vector<std::size_t> set = request.trades;
+        if (set.empty())
+        {
+            set.resize(trades_.size());
+            std::iota(set.begin(), set.end(), std::size_t{0});
+        }
+        std::vector<bool> seen(trades_.size(), false);
+        for (const std::size_t k : set)
+        {
+            if (k >= trades_.size())
+                throw InvalidInput("exposure engine: trade index out of range");
+            if (seen[k])
+                throw InvalidInput("exposure engine: a trade is netted twice");
+            seen[k] = true;
+        }
+        const CollateralSettings &collateral = request.collateral;
+        if (!collateral.initial_margin_received_paths.empty() ||
+            !collateral.initial_margin_posted_paths.empty())
+            throw InvalidInput("exposure engine: an initial margin that depends on the path needs "
+                               "the cube; use simulate(), then collateralise()");
+        const bool margined = !collateral.initial_margin_received.empty() ||
+                              !collateral.initial_margin_posted.empty();
+        if (margined && !request.csa)
+            throw InvalidInput("exposure engine: initial margin needs a CSA");
+        if (settings.simm)
+            throw InvalidInput("exposure engine: SIMM on every path needs the cube; use simulate()");
+        if (request.csa)
+        {
+            request.csa->validate();
+            settings.grid.margin_period_of_risk = request.csa->margin_period_of_risk;
+        }
+
+        NettingSetExposure result;
+        result.paths = settings.paths;
+        std::vector<Real> on_positive, on_negative;
+        const auto ask_weights = [&](const std::vector<Time> &times)
+        {
+            if (!request.weights)
+                return;
+            request.weights(times, on_positive, on_negative);
+            if (on_positive.size() != times.size() || on_negative.size() != times.size())
+                throw InvalidInput("exposure engine: the weights need one value per reporting date");
+        };
+
+        if (settings.device != ComputeDevice::Cpu)
+        {
+            ExposurePaths head;
+            const Dynamics dynamics = prepare(settings, head);
+            xva::ExposureProgram program;
+            if (on_device(settings, program, result.device_note))
+            {
+                const std::size_t n = head.times.size();
+                Real value_today = 0.0;
+                for (const std::size_t k : set)
+                    value_today += trades_[k].quantity * trades_[k].value->value_today();
+
+                gpu::NettingSetGpuRequest netting;
+                for (const std::size_t k : set)
+                    netting.trades.push_back(static_cast<int>(k));
+                netting.collateralised = request.csa.has_value();
+                if (request.csa)
+                    netting.plan =
+                        collateral_plan(head.times, *request.csa, value_today, collateral.cashflows);
+                else
+                {
+                    netting.plan.reporting.resize(n);
+                    std::iota(netting.plan.reporting.begin(), netting.plan.reporting.end(), 0);
+                }
+                const std::size_t m = netting.plan.reporting.size();
+                for (const std::vector<Real> *profile :
+                     {&collateral.initial_margin_received, &collateral.initial_margin_posted})
+                {
+                    if (!profile->empty() && profile->size() != m)
+                        throw InvalidInput("collateral: the initial margin profile needs one value "
+                                           "per reporting date");
+                    for (const Real im : *profile)
+                        if (!(im >= 0.0))
+                            throw InvalidInput("collateral: initial margin must be >= 0");
+                }
+                netting.initial_margin_received = collateral.initial_margin_received;
+                netting.initial_margin_posted = collateral.initial_margin_posted;
+
+                ExposureStatistics &s = result.statistics;
+                s.measure = head.measure;
+                s.trades = set;
+                std::vector<Real> discount;
+                for (const int i : netting.plan.reporting)
+                {
+                    s.times.push_back(head.times[static_cast<std::size_t>(i)]);
+                    discount.push_back(head.discount[static_cast<std::size_t>(i)]);
+                }
+                ask_weights(s.times);
+                netting.positive_weights = on_positive;
+                netting.negative_weights = on_negative;
+
+                gpu::ExposureGpuRequest run;
+                run.program = &program;
+                run.dynamics = &dynamics.main;
+                run.seed = settings.seed;
+                run.paths = settings.paths;
+                run.devices = gpu::devices_for(settings.max_gpus);
+                run.max_blocks_per_launch = settings.gpu_blocks_per_launch;
+                std::optional<gpu::NettingSetGpuProfile> ran;
+                try
+                {
+                    ran = gpu::simulate_netting_set(run, netting);
+                }
+                catch (const gpu::GpuUnavailable &e)
+                {
+                    if (settings.device == ComputeDevice::Gpu)
+                        throw;
+                    result.device_note = e.what();
+                }
+                if (ran)
+                {
+                    const gpu::NettingSetGpuProfile &profile = *ran;
+                    const auto margin = [](const std::vector<Real> &im)
+                    { return im.empty() ? 0.0 : im.front(); };
+                    s.value_today =
+                        request.csa ? net_of_initial_margin(value_today - netting.plan.held_today -
+                                                                request.csa->independent_amount,
+                                                            margin(collateral.initial_margin_received),
+                                                            margin(collateral.initial_margin_posted))
+                                    : value_today;
+                    for (std::size_t r = 0; r < m; ++r)
+                    {
+                        const gpu::ExposureDateStats &d = profile.dates[r];
+                        s.discounted_ee.push_back(d.positive.mean);
+                        s.discounted_ene.push_back(d.negative.mean);
+                        s.discounted_efv.push_back(d.value.mean);
+                        s.discounted_ee_error.push_back(d.positive.std_error());
+                        s.discounted_ene_error.push_back(d.negative.std_error());
+                        s.discounted_efv_error.push_back(d.value.std_error());
+                        s.ee.push_back(d.positive.mean / discount[r]);
+                        s.ene.push_back(d.negative.mean / discount[r]);
+                        s.efv.push_back(d.value.mean / discount[r]);
+                    }
+                    s.epe = expected_positive_exposure(s.times, s.ee);
+                    s.eepe = effective_expected_positive_exposure(s.times, s.ee);
+                    result.weighted_positive = {profile.weighted.positive.mean,
+                                                profile.weighted.positive.std_error()};
+                    result.weighted_negative = {profile.weighted.negative.mean,
+                                                profile.weighted.negative.std_error()};
+                    result.device = "gpu";
+                    result.gpus = profile.gpus;
+                    return result;
+                }
+                result.statistics = {};
+            }
+        }
+
+        // On the CPU: the cube, then the post-processing of risk/.
+        settings.device = ComputeDevice::Cpu;
+        settings.keep_cashflows = request.csa && collateral.cashflows != MarginPeriodCashflows::Paid;
+        const ExposurePaths cube = simulate(settings, pool);
+        ExposurePaths netted;
+        if (request.csa)
+            netted = collateralise(cube, *request.csa, set, collateral);
+        else
+        {
+            netted.paths = cube.paths;
+            netted.measure = cube.measure;
+            netted.times = cube.times;
+            netted.discount = cube.discount;
+            netted.discount_weight = cube.discount_weight;
+            netted.trade_values.assign(1, std::vector<Real>(cube.paths * cube.dates(), 0.0));
+            Real value_today = 0.0;
+            for (const std::size_t k : set)
+            {
+                value_today += cube.trade_values_today[k];
+                const std::vector<Real> &values = cube.trade_values[k];
+                for (std::size_t j = 0; j < values.size(); ++j)
+                    netted.trade_values[0][j] += values[j];
+            }
+            netted.trade_values_today = {value_today};
+        }
+        result.statistics = exposure_statistics(netted);
+        result.statistics.trades = set;
+        ask_weights(netted.times);
+        if (request.weights)
+        {
+            const std::size_t m = netted.dates();
+            WelfordAccumulator positive, negative;
+            for (std::size_t p = 0; p < netted.paths; ++p)
+            {
+                Real gain = 0.0, loss = 0.0;
+                for (std::size_t r = 0; r < m; ++r)
+                {
+                    const Real v = netted.discount_weight[p * m + r] * netted.trade_values[0][p * m + r];
+                    if (v > 0.0)
+                        gain += on_positive[r] * v;
+                    if (v < 0.0)
+                        loss += on_negative[r] * v;
+                }
+                positive.add(gain);
+                negative.add(loss);
+            }
+            result.weighted_positive = {positive.mean, positive.std_error()};
+            result.weighted_negative = {negative.mean, negative.std_error()};
+        }
+        return result;
     }
 
 } // namespace quantModeling

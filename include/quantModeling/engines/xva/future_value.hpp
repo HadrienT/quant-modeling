@@ -10,6 +10,10 @@
 
 namespace quantModeling
 {
+    namespace xva
+    {
+        struct ExposureProgram;
+    }
 
     /**
      * @brief Independent paths of the model state on which the trades valued
@@ -139,6 +143,21 @@ namespace quantModeling
                 for (std::size_t i = 0; i < dates; ++i)
                     cashflows[i] = cashflow(i, state);
         }
+
+        // ── On a device (lot X7) ────────────────────────────────────────
+
+        /**
+         * @brief Appends the trade to `program`, in the flat terms a GPU
+         *        evaluates (engines/xva/exposure_program.hpp). Called after
+         *        bind(), for one unit of the trade.
+         *
+         * The default says the trade has no such form: a value read from a
+         * regression or replayed by a script stays on the CPU.
+         *
+         * @return false, leaving the program untouched, when the trade cannot
+         *         be written that way.
+         */
+        virtual bool compile(xva::ExposureProgram & /*program*/) const { return false; }
 
         // ── Sensitivities (lot X5b) ─────────────────────────────────────
 

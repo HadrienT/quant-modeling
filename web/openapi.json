@@ -10264,6 +10264,17 @@
             ],
             "description": "None for an uncollateralised netting set"
           },
+          "device": {
+            "default": "auto",
+            "description": "Where the paths are valued. auto: the GPU when the server has one and every trade has a closed form, the CPU otherwise; the response says which and why. gpu refuses to fall back",
+            "enum": [
+              "auto",
+              "cpu",
+              "gpu"
+            ],
+            "title": "Device",
+            "type": "string"
+          },
           "historical": {
             "$ref": "#/components/schemas/HistoricalInput"
           },
@@ -10374,6 +10385,20 @@
             "title": "Compute Ms",
             "type": "number"
           },
+          "device": {
+            "description": "Where the paths were actually valued",
+            "enum": [
+              "cpu",
+              "gpu"
+            ],
+            "title": "Device",
+            "type": "string"
+          },
+          "device_reason": {
+            "description": "Why this device, in plain terms",
+            "title": "Device Reason",
+            "type": "string"
+          },
           "exposure": {
             "$ref": "#/components/schemas/PricingExposure"
           },
@@ -10386,6 +10411,11 @@
                 "type": "null"
               }
             ]
+          },
+          "gpus": {
+            "description": "GPUs that shared the paths (0 on the CPU); the result is the same bits for any count",
+            "title": "Gpus",
+            "type": "integer"
           },
           "initial_margin": {
             "anyOf": [
@@ -10481,6 +10511,9 @@
           "paths",
           "pilot_paths",
           "seed",
+          "device",
+          "gpus",
+          "device_reason",
           "compute_ms",
           "warnings",
           "methodology"

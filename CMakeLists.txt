@@ -198,6 +198,7 @@ if(QM_ENABLE_CUDA)
           src/gpu/rng.cu
           src/gpu/paths.cu
           src/gpu/script.cu
+          src/gpu/exposure.cu
   )
   target_link_libraries(quantModeling PUBLIC CUDA::cudart_static)
   target_compile_options(quantModeling PRIVATE
@@ -315,6 +316,7 @@ if(QM_BUILD_TESTS)
     tests/testWrongWayRisk.cpp
     tests/testSimm.cpp
     tests/testSimmPaths.cpp
+    tests/testExposureProgram.cpp
     tests/testXvaReport.cpp
     tests/testHistoricalMeasure.cpp
     tests/testSaCcr.cpp
@@ -393,6 +395,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuRisks.cpp
       tests/gpu/testGpuSobolIs.cpp
       tests/gpu/testGpuTwoCards.cpp
+      tests/gpu/testGpuExposure.cpp
     )
     target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)
     target_compile_definitions(quantModeling_gpu_tests PRIVATE
@@ -430,6 +433,10 @@ endif()
 if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   add_executable(qm_gpu_bench benchmarks/gpu_time_to_error.cpp)
   target_link_libraries(qm_gpu_bench PRIVATE quantModeling)
+  # Lot X7 of blueprint/wp/23-xva.md: the exposure of a netting set, time for
+  # a given error of its CVA.
+  add_executable(qm_gpu_exposure_bench benchmarks/gpu_exposure.cpp)
+  target_link_libraries(qm_gpu_exposure_bench PRIVATE quantModeling)
   # Lot G3: the generic variance reduction, measured over independent seeds.
   add_executable(qm_gpu_vr_bench benchmarks/gpu_variance_reduction.cpp)
   target_link_libraries(qm_gpu_vr_bench PRIVATE quantModeling)

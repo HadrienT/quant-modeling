@@ -1269,7 +1269,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X5 — FVA, ColVA, MVA, KVA** (fait : §14.7) | FCA / FBA (symétrique et asymétrique), ColVA, DIM par régression (Anfuso et al.) calée sur une SIMM d'aujourd'hui, MVA ; capital projeté SA-CCR + BA-CVA → KVA | FVA symétrique = $-FS\sum EFV^*\Delta t$ ; DIM backtestée sur un historique simulé ; KVA d'un netting set vide = 0 |
 | **X5b — SIMM par chemin** (fait : §14.10 ; sensibilités en forme fermée, CPU) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
 | **X6 — Wrong-way risk** (fait : §14.9 ; sans le saut FX au défaut) | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
-| **X7 — GPU** | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
+| **X7 — GPU** (fait : §14.11 ; transactions en forme fermée, bit à bit entre cartes, à 10⁻¹³ près contre le CPU) | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
 | **X8 — CVA par AAD** *(le capstone)* | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
 | **X9 — Page `/xva`** | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** *(optionnel)* | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
@@ -1787,6 +1787,114 @@ modèle dans `qm.xva_netting_set` et l'API ; tests dans `tests/testSimm.cpp`,
   taux zéro) ; parts de chaque transaction sous SIMM (régression recalée) ;
   GPU (lot X7).
 
+### 14.11 Lot X7 : le moteur d'exposition et le collatéral sur GPU
+
+Livré : `engines/xva/exposure_program.hpp` (les transactions en tableaux
+plats), `FutureValue::compile`, `risk/collateral_path.hpp` (le collatéral d'un
+chemin, écrit une fois pour l'hôte et la carte), `gpu/exposure.hpp` et
+`src/gpu/exposure.cu`, `ExposureSimulationSettings::device`,
+`HullWhiteExposureEngine::simulate_netting_set`, le paramètre `device` de
+`qm.xva_netting_set` et de l'API, `benchmarks/gpu_exposure.cpp` ; tests dans
+`tests/testExposureProgram.cpp` (lancés par la CI, sans carte) et
+`tests/gpu/testGpuExposure.cpp` (sur le serveur, `ctest -L gpu`).
+
+- **Le problème, et le programme plat.** Le moteur demande sa valeur à chaque
+  transaction par une interface virtuelle (`FutureValue`), qu'une carte ne
+  peut pas appeler. Une transaction à forme fermée sous Hull-White n'est
+  pourtant faite que de trois sortes de termes, dont aucune ne nomme un
+  produit : des **exponentielles de l'état du jour**, $c\,e^{-G x(t_i)}$ (un
+  flux fois un zéro-coupon) ; des **montants fixés plus tôt et payés plus
+  tard** (un coupon flottant en cours) ; une **intégrale gaussienne**
+  d'exponentielles sur des intervalles de l'état à une date future, avec une
+  **porte** lue à cette date (une option avant son échéance, et ce qu'elle
+  est devenue après). `FutureValue::compile` écrit la transaction dans ces
+  termes ; le kernel les évalue. Ni le moteur ni le kernel ne savent ce
+  qu'est un swap : le découpage du dépôt tient.
+- **Une seule écriture.** Les fonctions d'évaluation du programme et la
+  récurrence du collatéral sont marquées `QM_HOST_DEVICE` : le même code
+  tourne sur l'hôte et sur la carte. `collateralise()` appelle désormais ces
+  fonctions — il n'y a qu'un énoncé de ce qu'est un appel de marge — et la
+  CI, qui n'a pas de carte, vérifie sur l'hôte que le programme redonne les
+  valeurs et les flux de chaque transaction.
+- **Deux entrées, deux usages.** `simulate()` avec `device = Gpu` rapatrie le
+  **cube** : tout le post-traitement de `risk/` (collatéral, marge initiale,
+  wrong-way risk, capital, rapport) tourne dessus sans changement.
+  `simulate_netting_set()` fait le netting, applique le CSA et réduit les
+  profils **sur la carte** : seuls EE\*, ENE\*, EFV\*, leurs erreurs et deux
+  sommes pondérées par chemin reviennent (avec les probabilités de défaut
+  pour poids : le CVA et le DVA, et leur erreur Monte-Carlo corrélations
+  entre dates comprises). Le cube n'existe jamais : le nombre de chemins
+  n'est plus borné par la mémoire de l'hôte ni le temps par la copie.
+- **Reproductibilité — écart au critère du lot.** Le critère demandait
+  l'égalité bit à bit CPU / 1 GPU / 2 GPU. Elle est tenue **entre les
+  cartes** : chemins découpés en blocs logiques de 4 096, chaque bloc réduit
+  par le même arbre, partiels repliés dans l'ordre — une carte, deux cartes,
+  des lancements de n'importe quelle taille donnent les mêmes bits (testé).
+  Contre le CPU elle ne peut pas l'être, pour la raison déjà établie au WP 19
+  §7 : l'exponentielle et la fonction d'erreur de la carte ne sont pas celles
+  de la libm, et le compilateur de la carte fusionne multiplications et
+  additions. Les scénarios sont les mêmes (mêmes tirages Philox) ; les
+  valeurs s'accordent à **treize ou quatorze chiffres** : écart maximal
+  mesuré de 3,6 × 10⁻⁸ unité de devise sur des transactions de 10⁷ de
+  notionnel, et un CVA identique au quinzième chiffre.
+- **Mémoire.** Les cartes sont partagées avec le LLM de l'assistant : un
+  lancement prend au plus la moitié de la mémoire libre à cet instant, et au
+  plus 256 blocs. Une carte rejoint le calcul dès son premier bloc (un chemin
+  vaut ici des milliers d'exponentielles ; le seuil de 128 blocs du WP 19
+  est fait pour des chemins à une exponentielle).
+- **`Auto`.** L'API demande `auto` : la carte quand il y en a une et que
+  toutes les transactions ont une forme fermée, le CPU sinon, **avec la
+  raison dans la réponse** (`device`, `gpus`, `device_reason`). Une carte
+  qui échoue en cours de calcul (mémoire prise par un autre processus)
+  renvoie sur le CPU au lieu de faire échouer la requête. `gpu` refuse le
+  repli.
+
+**Temps pour une erreur donnée** (`build-cuda/qm_gpu_exposure_bench 5e-4 16
+4000000`) : netting set de 10 transactions (8 swaps de 2 à 20 ans, 2
+swaptions), CSA à seuil nul, MTA 100 000, MPoR de 10 jours, 198 dates. Erreur
+relative du CVA de 0,05 % : 126 439 chemins, CVA = −67 629 ± 34 sur chaque
+ligne.
+
+| | Temps | Rapport |
+|---|---|---|
+| CPU, 1 thread | 71,5 s | 1 |
+| CPU, 16 threads | 8,2 s | 9 |
+| CPU, 48 threads | 5,8 s | 12 |
+| 1 V100, cube rapatrié puis post-traité sur l'hôte | 2,4 s (dont 1,7 s pour le cube) | 30 |
+| 1 V100, réduit sur la carte | 0,206 s | 348 |
+| 2 V100, réduit sur les cartes | 0,141 s | 507 |
+
+À 4 millions de chemins (un cube de 65 Gio, qu'aucun hôte ne tient ici) :
+4,8 s sur une carte, 2,4 s sur deux — 1,66 million de chemins par seconde,
+et un CVA à 0,009 % près. Trois lectures :
+
+1. **Le CPU sature bien avant 48 cœurs** (× 12) : la simulation est
+   parallèle, le collatéral et les statistiques ne le sont pas.
+2. **Rapatrier le cube coûte bien plus que le calculer** : 1,7 s pour
+   2 Gio, quand tout le calcul réduit sur la carte prend 0,2 s. La carte ne
+   paie vraiment que si la réduction s'y fait.
+3. **Les lignes CPU calculent aussi la PFE** (un tri par date), que la
+   réduction sur carte ne rend pas : la comparaison porte sur le CVA et son
+   erreur.
+
+**Ce que le lot change pour l'API, et ce qu'il ne change pas.** Mesuré sur le
+portefeuille directionnel, 50 000 chemins, CSA : 23,0 s avant le lot, 7,6 s
+après (8,2 s sans carte). La carte n'y est donc que pour 0,6 s. Le reste vient de deux corrections
+de l'hôte faites en chemin : le rapport appelait `exposure_statistics` une
+vingtaine de fois (CVA autonome et incrémental de chaque transaction), et
+chaque appel triait tous les chemins à chaque date pour une PFE dont ces
+appels n'ont pas besoin — `exposure_profile()` ne calcule que les profils,
+aux mêmes bits ; et le tri de la PFE porte maintenant sur les valeurs avec
+leurs poids plutôt que sur des indices. **Le temps d'une requête est
+désormais celui du post-traitement sur l'hôte** (environ 7 s sur 7,6) : c'est
+la suite logique, notée G1 et G2 au §20.
+
+**Non couverts** : les transactions valorisées par régression (bermudans,
+scripts) et la SIMM par chemin restent sur le CPU ; la réduction sur carte ne
+donne ni PFE ni allocation d'Euler, ne prend la marge initiale que comme un
+profil (pas par chemin) et ignore le wrong-way risk — pour tout cela, le
+cube.
+
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
 forwards, options actions, CDS (WP 20), scripts.
@@ -1959,7 +2067,7 @@ bis.org/basel_framework) :
 Ce que les lots X4 à X6 ont laissé de côté ou révélé, pour ne pas le perdre.
 Chaque point dit **ce qui manque** et **pourquoi cela compterait**. La même
 liste est suivie dans l'issue GitHub #154 ; les lots
-restants (X5b, X7 à X10) sont dans le tableau du §14.
+restants (X8 à X10) sont dans le tableau du §14.
 
 ### Décisions qui attendent le mainteneur
 
@@ -2007,7 +2115,21 @@ restants (X5b, X7 à X10) sont dans le tableau du §14.
 | S4 | Parts de chaque transaction sous SIMM par chemin | aujourd'hui calculées avec la régression recalée sur la SIMM |
 | S5 | Vega : interpolation dans le cube de vols plutôt que la vol propre de chaque swaption | suffisant tant que le modèle n'a qu'une volatilité |
 | S6 | Suivre les versions de l'ISDA (recalibrage annuel) : paramètres en données plutôt qu'en constantes | la version 2.8+2512 est codée en dur |
-| S7 | SIMM par chemin sur GPU | 12 × 12 produits par chemin et par date : parallèle par nature (lot X7) |
+| S7 | SIMM par chemin sur GPU | 12 × 12 produits par chemin et par date : parallèle par nature ; non fait au lot X7 (voir G5) |
+
+### GPU (X7)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| G1 | **Le rapport xVA réduit sur la carte** : le CVA autonome et incrémental de chaque transaction comme autant de netting sets du même lancement | le temps d'une requête est celui du post-traitement sur l'hôte : environ 7 s sur 7,6 (50 000 chemins, CSA) ; la carte fait un netting set de 126 000 chemins en 0,2 s |
+| G2 | Paralléliser `xva_report` sur l'hôte : les `2K + 1` appels à `collateralise` sont indépendants | l'alternative à G1 sans carte, et ce qui sert les bermudans |
+| G3 | PFE sur la carte (histogramme, ou tri sur la carte) | la réduction ne rend pas de quantile |
+| G4 | Transactions par régression sur la carte : évaluer les polynômes par bucket dans le kernel ; puis le pilote lui-même | bermudans et scripts renvoient tout le netting set sur le CPU |
+| G5 | SIMM par chemin sur la carte (S7) | la marge SIMM renvoie aussi sur le CPU |
+| G6 | Mémoire épinglée et pas de remise à zéro du cube rapatrié | 1,7 s pour 2 Gio, contre 0,2 s pour tout le calcul réduit sur la carte |
+| G7 | Fusionner les obligations de même échéance dans `bind` (les coupons flottants se télescopent) | environ 2,5 fois moins d'exponentielles, sur CPU comme sur carte |
+| G8 | Marge initiale par chemin et wrong-way risk dans la réduction | aujourd'hui : profil de marge seulement, pas de $b$ |
+| G9 | Flux de la période de marge par sommes cumulées | la boucle relit toute la période à chaque date de reporting |
 
 ### Wrong-way risk (X6)
 
@@ -2028,4 +2150,4 @@ restants (X5b, X7 à X10) sont dans le tableau du §14.
 | T2 | Convention de prime des swaptions au-delà de deux ans (issue #142) | limite la grille de vols à 2 ans d'échéance |
 | T3 | Calage Heston / rough Bergomi dégénéré sur SPY (issue #146) | la page Scripting valorise sous un modèle qui ne redonne pas un forward |
 | T4 | Grecques de la swaption dans le workbench de pricing | le bloc `greeks` est vide |
-| T5 | Temps de réponse de l'API xVA avec régression et marge initiale (5 à 15 s) | à surveiller avant la page `/xva` |
+| T5 | Temps de réponse de l'API xVA avec régression et marge initiale (5 à 15 s) ; sans régression, 7,6 s à 50 000 chemins après le lot X7 | à surveiller avant la page `/xva` ; voir G1 et G2 |

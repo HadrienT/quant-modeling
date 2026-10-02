@@ -519,6 +519,7 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         capital=capital,
         # Per unit of currency in the library; per reference notional here.
         wrong_way_b=req.wrong_way_risk / NOTIONAL,
+        device=req.device,
     )
 
     warnings.append(
@@ -611,10 +612,27 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         paths=req.paths,
         pilot_paths=result["pilot_paths"],
         seed=req.seed,
+        device=result["device"],
+        gpus=result["gpus"],
+        device_reason=_device_reason(req.device, result),
         compute_ms=(time.perf_counter() - started) * 1000.0,
         warnings=warnings,
         methodology=methodology(),
     )
+
+
+def _device_reason(requested: str, result: dict) -> str:
+    """Why the paths ran where they did, for the reader of the response."""
+    if result["device"] == "gpu":
+        cards = result["gpus"]
+        return (
+            f"Every trade has a closed form: the paths were valued on "
+            f"{cards} GPU{'s' if cards > 1 else ''}, with the scenarios the CPU "
+            "would have drawn."
+        )
+    if requested == "cpu":
+        return "The CPU was requested."
+    return f"On the CPU: {result['device_note']}."
 
 
 def market_inputs(response: XvaResponse) -> List[Tuple[str, str, str, object]]:
@@ -890,6 +908,21 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
             "the Euler allocation, the trade's value on the paths where the netting "
             "set is positive; the shares add up to the total. There is no exact "
             "allocation under a CSA with a threshold or a minimum transfer amount.",
+        ],
+    ),
+    (
+        "Where the paths are valued",
+        [
+            "Swaps and European swaptions have a closed-form value under the model. "
+            "When the server has graphics cards, their paths are valued there: one "
+            "GPU thread per path draws the random numbers the CPU would have drawn "
+            "and applies the same formulas. The scenarios are identical and the "
+            "values agree to about fourteen digits; the last ones differ because a "
+            "graphics card does not compute an exponential exactly as a processor "
+            "does. The result is the same, bit for bit, on one card or on two.",
+            "A Bermudan or a scripted trade is valued by regression, and SIMM on "
+            "every path needs the sensitivities of each scenario: both stay on the "
+            "CPU. The response says where the paths ran and why.",
         ],
     ),
     (

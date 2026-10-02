@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/csa.hpp"
+#include "quantModeling/risk/collateral_path.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
 
 #include <cstddef>
@@ -31,27 +32,6 @@ namespace quantModeling
      * not zero: it is the move of the value over the margin period of risk,
      * about 0.4 σ_V sqrt(MPoR) for a Gaussian value.
      */
-
-    /// What happens to the trades' own cash flows during the margin period of
-    /// risk (Andersen, Pykhtin & Sokol 2017, "Rethinking the margin period of
-    /// risk").
-    enum class MarginPeriodCashflows
-    {
-        /// "Classical-": both parties keep paying the trade flows up to the
-        /// close-out. A flow the bank pays inside the period makes the value
-        /// jump up while the collateral still reflects the value before it:
-        /// exposure spikes on the bank's payment dates.
-        Paid,
-        /// "Classical+": both parties stop every payment together with the
-        /// margin calls. The flows of the period are not exchanged and stay
-        /// in the close-out amount: no spike.
-        Withheld,
-        /// The adverse case of the paper's full model: the bank keeps paying,
-        /// the counterparty does not. The bank's spikes of `Paid`, plus what
-        /// the counterparty owed and did not pay. (The full model also gives
-        /// each party its own stop date; that refinement is not coded.)
-        OnlyBankPays
-    };
 
     struct CollateralSettings
     {
@@ -91,6 +71,17 @@ namespace quantModeling
     /// ExposureGridSettings::margin_period_of_risk is set.
     std::vector<std::size_t> collateral_reporting_dates(const ExposurePaths &paths,
                                                         Time margin_period_of_risk);
+
+    /**
+     * @brief The dates of a CSA on a grid, and the balance held today: what
+     *        the per-path functions of risk/collateral_path.hpp run on.
+     *
+     * @param value_today the value today of the netted trades.
+     * @throws InvalidInput if the last date of the grid has no lagged date
+     *         t - MPoR on it: the grid was built without the lagged dates.
+     */
+    CollateralPlan collateral_plan(const std::vector<Time> &times, const Csa &csa, Real value_today,
+                                   MarginPeriodCashflows cashflows = MarginPeriodCashflows::Paid);
 
     /// A margin period of risk on the grid: a reporting date and its lagged
     /// date t - MPoR.
