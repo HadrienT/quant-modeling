@@ -200,6 +200,34 @@ def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
     return ScriptValidateResponse(**result)
 
 
+def _hard_threshold_greeks(req: ScriptRequest, valuation_date) -> List[Dict]:
+    """A warning when adjoint greeks are asked of a payoff that jumps at a
+    level of the spot (a digital, a barrier) without smoothing: path by path
+    the derivative of a step is zero, so the adjoint misses what the jump
+    contributes to delta and vega — it can read exactly zero. Only smoothing
+    (`fuzzy`) gives the adjoint something to differentiate."""
+    if req.greeks_method != "aad" or req.fuzzy:
+        return []
+    analysis = qm.validate_script(
+        req.script, valuation_date.isoformat(), req.day_count
+    )["analysis"]
+    if not analysis["spot_threshold_test"]:
+        return []
+    return [
+        {
+            "code": "greeks_hard_threshold",
+            "severity": "warning",
+            "message": (
+                "This payoff jumps when the spot crosses a level (a digital, a "
+                "barrier), and the greeks are computed path by path: without "
+                "smoothing they miss what the jump contributes, and can read "
+                "exactly zero. Turn on Fuzzy to smooth the test and get "
+                "meaningful greeks; the price itself is not affected."
+            ),
+        }
+    ]
+
+
 def _user_choice(model: str) -> Dict:
     return {
         "requested": model,
@@ -408,7 +436,11 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             importance_sampling=req.importance_sampling,
             **grids,
         )
-    result["warnings"] = warnings + list(result.get("warnings", []))
+    result["warnings"] = (
+        _hard_threshold_greeks(req, valuation_date)
+        + warnings
+        + list(result.get("warnings", []))
+    )
     response = _pricing_response_from_dict(result)
     return response.model_copy(
         update={
@@ -577,7 +609,11 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             curve_times=curve_times,
             curve_dfs=curve_dfs,
         )
-    result["warnings"] = market_warnings + list(result.get("warnings", []))
+    result["warnings"] = (
+        _hard_threshold_greeks(req, valuation_date)
+        + market_warnings
+        + list(result.get("warnings", []))
+    )
     response = _pricing_response_from_dict(result)
     return response.model_copy(update={"model_choice": ModelChoice(**choice)})
 

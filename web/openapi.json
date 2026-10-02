@@ -259,6 +259,51 @@
         "title": "AsianRequest",
         "type": "object"
       },
+      "AssistantStatusResponse": {
+        "description": "Whether the assistant can answer right now.\n\n`up`: the model server answers and serves the assistant's model.\n`wrong_model`: it answers, but another model is loaded \u2014 a chat would be\nanswered by that one. `down`: it does not answer.",
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "detail": {
+            "description": "One sentence for the page.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "model": {
+            "description": "The model the assistant is set up for.",
+            "title": "Model",
+            "type": "string"
+          },
+          "serving": {
+            "description": "What the model server reports.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Serving",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "up",
+              "wrong_model",
+              "down"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "model",
+          "detail",
+          "checked_at"
+        ],
+        "title": "AssistantStatusResponse",
+        "type": "object"
+      },
       "AuthRequest": {
         "properties": {
           "password": {
@@ -10346,6 +10391,27 @@
           }
         },
         "summary": "Scripting Chat Endpoint",
+        "tags": [
+          "assistant"
+        ]
+      }
+    },
+    "/api/assistant/status": {
+      "get": {
+        "operationId": "assistant_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assistant Status Endpoint",
         "tags": [
           "assistant"
         ]
