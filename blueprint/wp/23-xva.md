@@ -45,6 +45,7 @@ réglementaire.
 17. [Aide-mémoire : les chiffres et ratios à connaître](#17-aide-mémoire--les-chiffres-et-ratios-à-connaître)
 18. [Bibliographie](#18-bibliographie)
 19. [Questions d'entretien](#19-questions-dentretien)
+20. [Améliorations notées](#20-améliorations-notées)
 
 ---
 
@@ -1267,7 +1268,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X4 — AMC** (fait : §14.6 et §14.8) | exposition par régression sur toute la grille, bermudans avec état d'exercice, scripts quelconques | sur swaps et swaptions européennes, régression = forme fermée à l'erreur MC près (EE et PFE 99 %) ; bermudan : exposition cohérente avec le prix du réseau (WP 21) à $t=0$ |
 | **X5 — FVA, ColVA, MVA, KVA** (fait : §14.7) | FCA / FBA (symétrique et asymétrique), ColVA, DIM par régression (Anfuso et al.) calée sur une SIMM d'aujourd'hui, MVA ; capital projeté SA-CCR + BA-CVA → KVA | FVA symétrique = $-FS\sum EFV^*\Delta t$ ; DIM backtestée sur un historique simulé ; KVA d'un netting set vide = 0 |
 | **X5b — SIMM par chemin** (ambitieux) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
-| **X6 — Wrong-way risk** | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
+| **X6 — Wrong-way risk** (fait : §14.9 ; sans le saut FX au défaut) | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
 | **X7 — GPU** | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
 | **X8 — CVA par AAD** *(le capstone)* | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
 | **X9 — Page `/xva`** | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
@@ -1669,6 +1670,54 @@ un chemin d'un trait, avec son état par thread), le type `script` dans
   refuse de projeter le capital d'un netting set qui en contient un plutôt que
   de l'inventer.
 
+### 14.9 Lot X6 : wrong-way risk (Hull & White 2012)
+
+Livré : `risk/wrong_way_risk.hpp` (`wrong_way_survival`), `wrong_way_b` dans
+`XvaInputs`, CVA et DVA à survie par chemin dans `risk/xva_report.hpp`, le
+paramètre dans `qm.xva_netting_set` et `POST /api/xva/netting-set` ; tests dans
+`tests/testWrongWayRisk.cpp` et `api/tests/test_xva.py`.
+
+- **Le modèle** : $\lambda(t) = \exp(a(t) + b\,V(t))$, $V$ la valeur du netting
+  set **avant collatéral**. Sur la grille, $\lambda$ est constant sur
+  $(t_{i-1}, t_i]$ à $\exp(a_i + b\,V(t_i))$ et la survie du chemin est
+  $q_i = q_{i-1}\,e^{-\lambda_i \Delta t_i}$. Post-traitement du cube (ADR-X2).
+- **$a(t)$ comme dans l'article** : à chaque date, la valeur pour laquelle la
+  survie **moyenne sur les chemins** est celle du marché (bissection, date
+  après date ; l'exposant est décalé de son maximum pour ne jamais déborder).
+  $b$ déplace la probabilité de défaut entre scénarios sans en créer. *Écart
+  consigné* : caler sur l'obligation risquée $\mathbb{E}[D\,q] = P(0,t)\,S(t)$
+  serait plus exact (la moyenne est prise sous la mesure de simulation), mais
+  n'a pas toujours de solution sur une grille fine — la covariance entre la
+  survie et l'actualisation dépasse le hazard du pas.
+- **CVA et DVA par chemin** :
+  $-LGD_C \sum D\,V^+ S_I(t_{i-1})\,(q_{i-1} - q_i)$ et
+  $-LGD_I \sum D\,V^- q_{i-1}\,(S_I(t_{i-1}) - S_I(t_i))$. Avec $b = 0$ le
+  rapport prend le chemin du lot X3 : **mêmes bits** (testé), et le CVA
+  indépendant est toujours rendu à côté (`cva_independent`).
+- **Constats** (tests) : la survie moyenne est celle du marché pour tout $b$ ;
+  le défaut est plus fréquent là où la contrepartie doit ; le CVA croît avec
+  $b$, **le DVA aussi** (là où la banque doit, la contrepartie survit plus
+  longtemps, donc la banque fait plus souvent défaut la première) ; vu de
+  l'autre côté, $b$ change de signe et chaque chemin a la même survie.
+- **Le ratio à publier** (§8.2), sur les données du 1ᵉʳ octobre 2026, $\beta =
+  b \times 10$ M$ (le paramètre de l'API) :
+
+  | $\beta$ | −10 | −5 | 0 | +5 | +10 | +20 |
+  |---|---|---|---|---|---|---|
+  | swap payeur 10 ans | 0,27 | 0,54 | 1 | 1,63 | 2,34 | 3,61 |
+  | book équilibré | 0,62 | 0,79 | 1 | 1,28 | 1,64 | 2,53 |
+  | swaption achetée | 0,38 | 0,61 | 1 | 1,64 | 2,54 | 4,37 |
+
+  $\beta = 10$ multiplie le hazard par $e^{0,5} \approx 1{,}65$ quand le netting
+  set vaut 5 % du notionnel de plus.
+- **Sous CSA l'effet disparaît presque** (swap, $\beta = 10$ : CVA −2 900 pour
+  −3 500 sans dépendance). L'exposition collatéralisée est le mouvement de la
+  valeur sur dix jours, pas son niveau, et il n'est pas plus grand là où la
+  valeur est haute. C'est une limite du modèle, pas une bonne nouvelle : le
+  wrong-way risk d'une position collatéralisée est un **saut au défaut**.
+- **Ce que $b$ ne touche pas** : FCA, FBA, MVA, KVA gardent la courbe de
+  survie de marché ; pas d'allocation d'Euler sous wrong-way risk.
+
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
 forwards, options actions, CDS (WP 20), scripts.
@@ -1833,3 +1882,69 @@ bis.org/basel_framework) :
 > savoir si la projection est bonne ? Comment dériver un $\max(V, 0)$ par
 > AAD, et que devient la dérivée à travers une régression ? Pourquoi le
 > wrong-way risk casse-t-il la formule $\sum EE \times PD$ ?
+
+---
+
+## 20. Améliorations notées
+
+Ce que les lots X4 à X6 ont laissé de côté ou révélé, pour ne pas le perdre.
+Chaque point dit **ce qui manque** et **pourquoi cela compterait**. La même
+liste est suivie dans l'issue GitHub #154 ; les lots
+restants (X5b, X7 à X10) sont dans le tableau du §14.
+
+### Décisions qui attendent le mainteneur
+
+| # | Question | Ce qui en dépend |
+|---|---|---|
+| D1 | Coder la **SIMM taux** (delta, puis vega) ou garder la DIM par régression recalée sur un montant saisi | le niveau du MVA ; le lot X5b |
+| D2 | Ingérer des **taux de défaut historiques par notation** dans `~/data-ingest` | la PD du capital : aujourd'hui implicite du spread, donc un KVA surestimé (−110 000 contre −83 900 avec 0,2 %) |
+| D3 | Comment **présenter $b$** (wrong-way risk) : un scénario saisi, ou un paramètre estimé sur l'historique spread / valeur comme le proposent Hull & White | la page `/xva` (X9) |
+| D4 | Exposer des **transactions en script** dans les portefeuilles de l'API | demande une description SA-CCR du script, ou un capital désactivable |
+
+### Exposition par régression (X4a, X4b)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| A1 | Cible de régression moins bruitée : régresser la valeur estimée à la date suivante plutôt que tous les flux futurs, ou une variable de contrôle en forme fermée | c'est le bruit qui limite : 2 % d'écart sur l'EE à 20 000 chemins pilotes, d'où un pilote quatre fois plus gros que la simulation |
+| A2 | Borne supérieure duale de la règle d'exercice (Andersen-Broadie) | le biais du LSMC n'est borné que par le bas (4,942 pour 4,949 au réseau) |
+| A3 | État d'exercice du bermudan calculé une fois par chemin (`evaluate_path`) au lieu d'être recalculé à chaque date | 9 s pour 40 000 chemins sur un thread |
+| A4 | Bermudan réglé en espèces ; régresseurs autres que l'état (taux swap résiduel) | couverture des produits ; qualité de la continuation |
+| A5 | Scripts : rendre l'état « exercé » de l'évaluateur visible comme régime automatique | aujourd'hui le script doit poser lui-même un drapeau, sinon son exposition après exercice est fausse |
+| A6 | Scripts : erreur Monte-Carlo de la valeur d'aujourd'hui ; `forward()` ; scripts actions (modèle joint, lot X10) | la valeur d'aujourd'hui d'un script est un prix simulé, sans son erreur |
+| A7 | Scripts : mémoire de la passe pilote (chemins × événements × variables) hors de la limite du moteur | un script long à sept variables et 200 000 chemins pilotes prend plusieurs centaines de Mo que le moteur ne compte pas |
+| A8 | Pilote sous la mesure historique : la règle de couverture (3 σ du pilote pour 4 σ des scénarios) est une heuristique | à valider sur des dynamiques extrêmes |
+| A9 | Courbe de forwards en dents de scie sur les données DTCC (lissage, ou ajustement de la courbe aux transactions) | visible dans Market et dans tout profil d'exposition |
+
+### Marge, financement et capital (X5)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| B1 | DIM : régresser aussi la **dérive** du mouvement | marge dépassée 0,91 % à la hausse et 1,07 % à la baisse au lieu de 1 % des deux côtés |
+| B2 | DIM : cas dégénéré après le dernier fixing (mouvement tout en portage) | fréquences de dépassement de 13 à 40 % sur une marge infime |
+| B3 | DIM dans la mesure historique du rapport (PFE sous marge initiale) | le modèle s'y applique déjà (`DynamicInitialMargin::margin`), le rapport ne le fait pas |
+| B4 | DIM réajustée pour chaque sous-ensemble (CVA incrémental) : mise en cache ou allocation | 14 s pour le book équilibré sous CSA et marge initiale |
+| B5 | Capital : delta prudentiel à la monnaie **future**, état d'exercice par chemin | aujourd'hui figé à la monnaie d'aujourd'hui, et l'option échue est portée comme son swap |
+| B6 | Capital : risque de marché des couvertures, ratio de levier, SA-CVA sur sensibilités AAD (lot X8) | le KVA ne couvre que le défaut (IRB) et le CVA (BA-CVA réduit) |
+| B7 | FVA sur le collatéral non décalé ; FVA asymétrique récursif (Brigo et al.) ; option du collatéral le moins cher | le financement utilise l'exposition collatéralisée à la MPoR |
+| B8 | Exposition sous marge initiale avec le traitement « Paid » des flux : pics de coupons | CVA −529 contre −20 en « Withheld » ; à montrer comme tel sur la page |
+
+### Wrong-way risk (X6)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| C1 | **Saut au défaut** (devise, sous-jacent) pour les positions collatéralisées | sous CSA le modèle de Hull & White ne donne presque rien : l'exposition est un mouvement, pas un niveau |
+| C2 | Hazard fonction d'un **facteur de marché** (le niveau des taux) plutôt que de $V$ | « la contrepartie souffre quand les taux montent » serait wrong-way pour un payeur et right-way pour un receveur ; avec $V$, $b > 0$ est wrong-way pour tout le monde |
+| C3 | Caler $a(t)$ sur l'obligation risquée plutôt que sur la survie moyenne | la moyenne est prise sous la mesure de simulation ; écart du second ordre |
+| C4 | Erreur Monte-Carlo du calage de $a(t)$ dans l'erreur du CVA ; allocation d'Euler sous wrong-way risk | l'erreur affichée ignore le bruit du calage |
+| C5 | Wrong-way risk dans FCA, FBA, MVA, KVA (survie par chemin) et sur le défaut propre (DVA) | seuls le CVA et le DVA voient $b$ |
+| C6 | Estimer $b$ sur l'historique | voir D3 |
+
+### Transverse
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| T1 | Rejeu d'un événement `xva.valuation` (issue #141) | prévu au lot X3, pas branché |
+| T2 | Convention de prime des swaptions au-delà de deux ans (issue #142) | limite la grille de vols à 2 ans d'échéance |
+| T3 | Calage Heston / rough Bergomi dégénéré sur SPY (issue #146) | la page Scripting valorise sous un modèle qui ne redonne pas un forward |
+| T4 | Grecques de la swaption dans le workbench de pricing | le bloc `greeks` est vide |
+| T5 | Temps de réponse de l'API xVA avec régression et marge initiale (5 à 15 s) | à surveiller avant la page `/xva` |

@@ -1483,6 +1483,8 @@ export interface components {
              */
             colva: number;
             cva: components["schemas"]["Estimate"];
+            /** @description CVA with the counterparty's default independent of the exposure; equal to cva unless wrong_way_risk is set */
+            cva_independent: components["schemas"]["Estimate"];
             /**
              * Cva Rule Of Thumb
              * @description −spread × EPE × T
@@ -1491,6 +1493,7 @@ export interface components {
             /** Cva Unilateral */
             cva_unilateral: number;
             dva: components["schemas"]["Estimate"];
+            dva_independent: components["schemas"]["Estimate"];
             /** Fba */
             fba: number;
             /** Fca */
@@ -6020,6 +6023,12 @@ export interface components {
              * @default 42
              */
             seed: number;
+            /**
+             * Wrong Way Risk
+             * @description Wrong-way risk (Hull & White 2012): the counterparty's hazard rate is multiplied by exp(this × change of the netting set's value / 10 M). 0 is independence, > 0 wrong-way, < 0 right-way; 10 means the hazard rises by about 65 % when the value rises by 5 % of the reference notional
+             * @default 0
+             */
+            wrong_way_risk: number;
         };
         /** XvaResponse */
         XvaResponse: {

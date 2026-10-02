@@ -44,6 +44,10 @@
           "cva": {
             "$ref": "#/components/schemas/Estimate"
           },
+          "cva_independent": {
+            "$ref": "#/components/schemas/Estimate",
+            "description": "CVA with the counterparty's default independent of the exposure; equal to cva unless wrong_way_risk is set"
+          },
           "cva_rule_of_thumb": {
             "description": "\u2212spread \u00d7 EPE \u00d7 T",
             "title": "Cva Rule Of Thumb",
@@ -54,6 +58,9 @@
             "type": "number"
           },
           "dva": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "dva_independent": {
             "$ref": "#/components/schemas/Estimate"
           },
           "fba": {
@@ -78,6 +85,8 @@
         "required": [
           "cva",
           "dva",
+          "cva_independent",
+          "dva_independent",
           "cva_unilateral",
           "fca",
           "fba",
@@ -10242,6 +10251,14 @@
             "minimum": 0.0,
             "title": "Seed",
             "type": "integer"
+          },
+          "wrong_way_risk": {
+            "default": 0.0,
+            "description": "Wrong-way risk (Hull & White 2012): the counterparty's hazard rate is multiplied by exp(this \u00d7 change of the netting set's value / 10 M). 0 is independence, > 0 wrong-way, < 0 right-way; 10 means the hazard rises by about 65 % when the value rises by 5 % of the reference notional",
+            "maximum": 30.0,
+            "minimum": -30.0,
+            "title": "Wrong Way Risk",
+            "type": "number"
           }
         },
         "title": "XvaRequest",

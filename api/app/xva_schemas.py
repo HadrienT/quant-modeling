@@ -119,6 +119,15 @@ class XvaRequest(BaseModel):
     borrowing_spread: float = Field(default=0.0, ge=0, le=0.1)
     lending_spread: float = Field(default=0.0, ge=0, le=0.1)
     capital: CapitalInput = Field(default_factory=lambda: CapitalInput())
+    wrong_way_risk: float = Field(
+        default=0.0,
+        ge=-30.0,
+        le=30.0,
+        description="Wrong-way risk (Hull & White 2012): the counterparty's hazard "
+        "rate is multiplied by exp(this × change of the netting set's value / 10 M). "
+        "0 is independence, > 0 wrong-way, < 0 right-way; 10 means the hazard "
+        "rises by about 65 % when the value rises by 5 % of the reference notional",
+    )
     historical: HistoricalInput = Field(default_factory=HistoricalInput)
     paths: int = Field(default=10000, ge=1000, le=50000)
     seed: int = Field(default=42, ge=0, le=2**31 - 1)
@@ -173,6 +182,11 @@ class PricingExposure(ExposureProfileOut):
 class Adjustments(BaseModel):
     cva: Estimate
     dva: Estimate
+    cva_independent: Estimate = Field(
+        description="CVA with the counterparty's default independent of the "
+        "exposure; equal to cva unless wrong_way_risk is set"
+    )
+    dva_independent: Estimate
     cva_unilateral: float
     fca: float
     fba: float
