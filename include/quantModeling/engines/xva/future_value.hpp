@@ -5,6 +5,7 @@
 #include "quantModeling/utils/bucketed_regression.hpp"
 
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace quantModeling
@@ -89,6 +90,37 @@ namespace quantModeling
 
         /// Cash flow at grid[i]: > 0 received by the bank, < 0 paid.
         virtual Real cashflow(std::size_t i, const Real *state) const = 0;
+
+        // ── A whole path at once ────────────────────────────────────────
+
+        /// What one thread needs to value paths one after the other, for a
+        /// trade whose evaluation is sequential and keeps state (a script
+        /// replays its events in order).
+        struct Workspace
+        {
+            virtual ~Workspace() = default;
+        };
+
+        /// One per worker thread; nullptr for a trade that needs none.
+        virtual std::unique_ptr<Workspace> make_workspace() const { return nullptr; }
+
+        /**
+         * @brief The values and cash flows of one path at every grid date:
+         *        what the engine calls. The default asks value() and
+         *        cashflow() date by date.
+         * @param values    grid-size output.
+         * @param cashflows grid-size output, or nullptr when not wanted.
+         * @param workspace this thread's make_workspace(), or nullptr.
+         */
+        virtual void evaluate_path(const Real *state, std::size_t dates, Real *values,
+                                   Real *cashflows, Workspace * /*workspace*/) const
+        {
+            for (std::size_t i = 0; i < dates; ++i)
+                values[i] = value(i, state);
+            if (cashflows != nullptr)
+                for (std::size_t i = 0; i < dates; ++i)
+                    cashflows[i] = cashflow(i, state);
+        }
 
         // ── Valuation by regression (lot X4) ────────────────────────────
 

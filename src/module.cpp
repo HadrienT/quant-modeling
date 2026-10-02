@@ -33,6 +33,7 @@
 #include "quantModeling/market/hull_white_calibration.hpp"
 #include "quantModeling/engines/xva/exposure_engine.hpp"
 #include "quantModeling/market/historical_rate_dynamics.hpp"
+#include "quantModeling/engines/xva/script_future_value.hpp"
 #include "quantModeling/risk/xva_report.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
 #include "quantModeling/market/multi_curve_bootstrap.hpp"
@@ -1061,9 +1062,24 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         const auto kind = t["kind"].cast<std::string>();
         const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
         const qm_::Time expiry = item_or<qm_::Time>(t, "expiry", 0.0);
+        if (kind == "script")
+        {
+            // A trade written in the payoff language, on rates only: its
+            // exposure by regression of what it pays (lot X4b). SA-CCR has
+            // no description of an arbitrary script.
+            if (!capital.is_none())
+                throw qm_::InvalidInput("xva: the capital projection has no SA-CCR description of a "
+                                        "scripted trade; price the netting set without capital");
+            const qm_::ValuationContext ctx{
+                qm_::Date::from_iso(t["valuation_date"].cast<std::string>())};
+            engine.add(qm_::make_script_future_value(t["script"].cast<std::string>(), ctx, model),
+                       quantity);
+            continue;
+        }
         const bool is_swap = kind == "swap";
         if (!is_swap && kind != "swaption" && kind != "bermudan")
-            throw qm_::InvalidInput("xva: unknown trade kind '" + kind + "' (swap, swaption, bermudan)");
+            throw qm_::InvalidInput("xva: unknown trade kind '" + kind +
+                                    "' (swap, swaption, bermudan, script)");
         const qm_::Time tenor = t["tenor"].cast<qm_::Time>();
         const qm_::InterestRateSwap swap = qm_::make_swap(
             is_swap ? item_or<qm_::Time>(t, "start", 0.0) : expiry, tenor, t["fixed_rate"].cast<qm_::Real>(),
@@ -2433,7 +2449,8 @@ PYBIND11_MODULE(quantmodeling, m)
           "Exposure and CVA / DVA of a netting set of swaps, European and Bermudan swaptions under "
           "Hull-White (a, sigma): trades are dicts (kind 'swap' | 'swaption' | 'bermudan', tenor, "
           "fixed_rate, notional, payer, "
-          "quantity, start | expiry, frequencies); hazard curves are (times, hazards); csa a dict of its "
+          "quantity, start | expiry, frequencies; or kind 'script' with script, valuation_date, "
+          "quantity: a rates-only payoff script); hazard curves are (times, hazards); csa a dict of its "
           "terms or None; historical (a, theta, sigma) adds the risk-measure profiles. initial_margin "
           "(a dict: confidence, im_today, spread) projects the margin both parties post and gives the MVA; "
           "collateral_spread (what the CSA pays over the discount rate) the ColVA; capital (a dict: pd, lgd, "

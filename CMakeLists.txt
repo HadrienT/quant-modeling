@@ -82,6 +82,7 @@ target_sources(quantModeling
         src/engines/xva/hull_white_future_value.cpp
         src/engines/xva/hull_white_bermudan_value.cpp
         src/engines/xva/regression_future_value.cpp
+        src/engines/xva/script_future_value.cpp
         src/utils/bucketed_regression.cpp
         src/engines/xva/exposure_engine.cpp
         src/risk/regulatory/sa_ccr.cpp
@@ -305,6 +306,7 @@ if(QM_BUILD_TESTS)
     tests/testXvaIntegrals.cpp
     tests/testExposureEngine.cpp
     tests/testExposureRegression.cpp
+    tests/testExposureScript.cpp
     tests/testCollateral.cpp
     tests/testInitialMargin.cpp
     tests/testCapitalProjection.cpp
