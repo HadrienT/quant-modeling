@@ -1267,7 +1267,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X3 — CVA / DVA** | courbes proxy ICE BofA, CVA unilatéral et bilatéral (premier défaut), CVA incrémental et marginal, API + événement d'audit | symétrie CVA$_I$ = DVA$_C$ ; hazard nul → CVA nul ; approximation $-s\,EPE\,T$ à quelques % ; rejouable par le replay |
 | **X4 — AMC** (fait : §14.6 et §14.8) | exposition par régression sur toute la grille, bermudans avec état d'exercice, scripts quelconques | sur swaps et swaptions européennes, régression = forme fermée à l'erreur MC près (EE et PFE 99 %) ; bermudan : exposition cohérente avec le prix du réseau (WP 21) à $t=0$ |
 | **X5 — FVA, ColVA, MVA, KVA** (fait : §14.7) | FCA / FBA (symétrique et asymétrique), ColVA, DIM par régression (Anfuso et al.) calée sur une SIMM d'aujourd'hui, MVA ; capital projeté SA-CCR + BA-CVA → KVA | FVA symétrique = $-FS\sum EFV^*\Delta t$ ; DIM backtestée sur un historique simulé ; KVA d'un netting set vide = 0 |
-| **X5b — SIMM par chemin** (ambitieux) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
+| **X5b — SIMM par chemin** (fait : §14.10 ; sensibilités en forme fermée, CPU) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
 | **X6 — Wrong-way risk** (fait : §14.9 ; sans le saut FX au défaut) | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
 | **X7 — GPU** | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
 | **X8 — CVA par AAD** *(le capstone)* | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
@@ -1718,6 +1718,75 @@ paramètre dans `qm.xva_netting_set` et `POST /api/xva/netting-set` ; tests dans
 - **Ce que $b$ ne touche pas** : FCA, FBA, MVA, KVA gardent la courbe de
   survie de marché ; pas d'allocation d'Euler sous wrong-way risk.
 
+### 14.10 Lot X5b : la SIMM, aujourd'hui et sur chaque chemin
+
+Livré : `risk/simm.hpp` (la SIMM de la classe de risque taux, une devise),
+`FutureValue::sensitivities` (ce à quoi la valeur d'une transaction est
+sensible, dans un scénario), le calcul de la SIMM par chemin dans
+`HullWhiteExposureEngine` (`ExposureSimulationSettings::simm`),
+`simm_initial_margin` et `XvaInputs::margin_model` dans le rapport, le choix du
+modèle dans `qm.xva_netting_set` et l'API ; tests dans `tests/testSimm.cpp`,
+`tests/testSimmPaths.cpp`, `tests/testXvaReport.cpp`, `api/tests/test_xva.py`.
+**La décision D1 du §20 est prise par ce lot** : la SIMM taux est codée.
+
+- **Paramètres lus sur le document de l'ISDA**, version **2.8+2512** (calée à
+  décembre 2025, en vigueur depuis le 11 juillet 2026), extraits par script du
+  PDF public : poids de risque par vertex des trois groupes de devises (§33),
+  matrice de corrélation 12 × 12 (§36), VRW = 0,20 (§35), HVR = 0,74 (§34),
+  seuils de concentration (§74, §81). Chaque constante porte son paragraphe ;
+  un test vérifie la symétrie de la matrice et des valeurs relevées dans le
+  texte. L'ISDA recalibre chaque année : une nouvelle version est un
+  changement de tables.
+- **Ce qui est couvert** : une devise, une sous-courbe (la courbe OIS) —
+  marges delta (§7), vega (§10) et courbure (§11, avec le facteur $HVR^{-2}$
+  propre aux taux). Pas plusieurs devises ni sous-courbes, pas l'inflation ni
+  la base de change, pas les autres classes de risque.
+- **Les sensibilités sortent des formes fermées, pas de l'AAD** (écart au
+  libellé du lot, dans l'esprit de l'ADR-X1). La valeur d'un swap est une
+  somme de flux × zéro-coupons : chaque terme $c\,P(t, T)$ perd
+  $(T - t)\,c\,P \times 1$ pb quand son taux zéro monte d'un point de base,
+  réparti sur les deux vertex qui l'encadrent. Pour une swaption européenne,
+  la formule de Hull-White donne la valeur **obligation par obligation**,
+  $c_k P(t, T_k)\,Q^{T_k}(\text{exercice})$, et chaque terme est aussi la
+  sensibilité à $P(t, T_k)$ : la frontière d'exercice est là où le swap vaut
+  zéro, la déplacer ne change rien au premier ordre (Jamshidian). Vérifié
+  contre un choc de courbe suivi d'une revalorisation complète : 1 % d'écart
+  au plus, dans et hors de la monnaie.
+- **Vega** : la SIMM demande une sensibilité à une vol implicite ATM, qu'un
+  modèle de taux court n'a pas comme paramètre. On prend la vol normale que
+  le prix implique et le vega de Bachelier à cette vol, $\sigma_N\,\partial V
+  / \partial\sigma_N$. Vérifié : c'est, à 2 % près, la sensibilité du prix à
+  1 % de $\sigma$ de Hull-White.
+- **Critère du lot** : la SIMM d'aujourd'hui = celle calculée directement à
+  partir de sensibilités par choc (1 %) ; sur un chemin, à une date de coupon,
+  la SIMM du moteur = celle du même swap revalorisé de zéro sur la courbe de
+  ce scénario (0,5 %).
+- **SIMM par chemin contre régression.** Même profil, à un facteur stable
+  d'environ 1,5 : la régression lit la volatilité du modèle, la SIMM les poids
+  de l'ISDA, calés sur une période de stress. Sur les données du 1ᵉʳ octobre
+  2026 (CSA à seuil nul, financement à 50 pb) :
+
+  | Portefeuille | IM aujourd'hui, SIMM | IM, régression | MVA, SIMM | MVA, régression |
+  |---|---|---|---|---|
+  | swap payeur 10 ans | 487 000 | 322 200 | −9 600 | −7 400 |
+  | swaption achetée | 356 800 (delta 225 900, vega 60 500, courbure 70 300) | 164 900 | −5 900 | −5 400 |
+  | book équilibré | 144 900 | 47 700 | −3 800 | −2 800 |
+
+  Le book équilibré est la leçon : **trois fois** plus de marge en SIMM. Des
+  swaps de maturités différentes ne se compensent qu'à la corrélation entre
+  vertex près, alors qu'un modèle à un facteur les voit parfaitement couverts.
+- **Trois modèles de marge dans le rapport** : la régression seule, la
+  régression **recalée sur la SIMM d'aujourd'hui** (ce que prévoyait le lot
+  X5), la SIMM par chemin. L'API choisit et l'annonce : SIMM quand toutes les
+  transactions savent donner leurs sensibilités, régression sinon, avec la
+  raison ; le choix reste possible à la main.
+- **Non couverts** : sensibilités d'un bermudan ou d'un script (valorisés par
+  régression : leur valeur est une fonction de l'état, pas de chaque point de
+  la courbe) — le moteur refuse la SIMM pour un netting set qui en contient ;
+  sensibilités aux **taux de marché** (la SIMM le demande, §22 ; on prend les
+  taux zéro) ; parts de chaque transaction sous SIMM (régression recalée) ;
+  GPU (lot X7).
+
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
 forwards, options actions, CDS (WP 20), scripts.
@@ -1896,7 +1965,7 @@ restants (X5b, X7 à X10) sont dans le tableau du §14.
 
 | # | Question | Ce qui en dépend |
 |---|---|---|
-| D1 | Coder la **SIMM taux** (delta, puis vega) ou garder la DIM par régression recalée sur un montant saisi | le niveau du MVA ; le lot X5b |
+| D1 | ~~Coder la SIMM taux ou garder la DIM par régression~~ — **tranché par le lot X5b** : la SIMM taux est codée (§14.10) | — |
 | D2 | Ingérer des **taux de défaut historiques par notation** dans `~/data-ingest` | la PD du capital : aujourd'hui implicite du spread, donc un KVA surestimé (−110 000 contre −83 900 avec 0,2 %) |
 | D3 | Comment **présenter $b$** (wrong-way risk) : un scénario saisi, ou un paramètre estimé sur l'historique spread / valeur comme le proposent Hull & White | la page `/xva` (X9) |
 | D4 | Exposer des **transactions en script** dans les portefeuilles de l'API | demande une description SA-CCR du script, ou un capital désactivable |
@@ -1927,6 +1996,18 @@ restants (X5b, X7 à X10) sont dans le tableau du §14.
 | B6 | Capital : risque de marché des couvertures, ratio de levier, SA-CVA sur sensibilités AAD (lot X8) | le KVA ne couvre que le défaut (IRB) et le CVA (BA-CVA réduit) |
 | B7 | FVA sur le collatéral non décalé ; FVA asymétrique récursif (Brigo et al.) ; option du collatéral le moins cher | le financement utilise l'exposition collatéralisée à la MPoR |
 | B8 | Exposition sous marge initiale avec le traitement « Paid » des flux : pics de coupons | CVA −529 contre −20 en « Withheld » ; à montrer comme tel sur la page |
+
+### SIMM (X5b)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| S1 | Sensibilités d'un **bermudan** et d'un **script** par chemin (AAD à travers la régression, ou régression des sensibilités) | la SIMM par chemin est refusée dès qu'un netting set en contient un ; l'API retombe sur la régression |
+| S2 | Sensibilités aux **taux de marché** (jacobienne taux zéro → taux de swap) | la méthodologie le demande (§22) ; l'écart est faible sur une courbe lisse mais non nul |
+| S3 | Plusieurs devises et sous-courbes, inflation, base de change ; les autres classes de risque | la SIMM codée est celle d'un netting set de taux dans une devise |
+| S4 | Parts de chaque transaction sous SIMM par chemin | aujourd'hui calculées avec la régression recalée sur la SIMM |
+| S5 | Vega : interpolation dans le cube de vols plutôt que la vol propre de chaque swaption | suffisant tant que le modèle n'a qu'une volatilité |
+| S6 | Suivre les versions de l'ISDA (recalibrage annuel) : paramètres en données plutôt qu'en constantes | la version 2.8+2512 est codée en dur |
+| S7 | SIMM par chemin sur GPU | 12 × 12 produits par chemin et par date : parallèle par nature (lot X7) |
 
 ### Wrong-way risk (X6)
 

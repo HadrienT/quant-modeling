@@ -105,8 +105,11 @@ namespace quantModeling
                     Date &date = dates_[i];
                     for (const CouponPeriod &c : swap_.fixed_leg)
                         if (c.payment > t + kTimeEps)
+                        {
                             date.bonds.push_back(
                                 bond(t, c.payment, -side * N * swap_.fixed_rate * c.accrual));
+                            date.annuity.push_back(bond(t, c.payment, N * c.accrual));
+                        }
                     for (std::size_t k = 0; k < swap_.floating_leg.size(); ++k)
                     {
                         const CouponPeriod &c = swap_.floating_leg[k];
@@ -147,6 +150,60 @@ namespace quantModeling
                 return flow;
             }
 
+            /// Notional × annuity of the fixed coupons after grid[i]: what one
+            /// unit of fixed rate is worth.
+            Real annuity(std::size_t i, const Real *state) const
+            {
+                Real a = 0.0;
+                for (const Bond &b : dates_[i].annuity)
+                    a += b.amount * std::exp(-b.G * state[i]);
+                return a;
+            }
+
+            Real fixed_rate() const { return swap_.fixed_rate; }
+            bool payer() const { return swap_.payer; }
+            Real annuity_today() const
+            {
+                return swap_.notional *
+                       value_swap(swap_, MultiCurve{model_.discount(), model_.projection()}).annuity;
+            }
+
+            /// Every term of value() is a cash flow times a zero-coupon bond.
+            bool sensitivities(std::size_t i, const Real *state, std::vector<BondExposure> &bonds,
+                               std::vector<VolExposure> &) const override
+            {
+                const Date &date = dates_[i];
+                const Real x = state[i];
+                for (const Bond &b : date.bonds)
+                    bonds.push_back({b.maturity, b.amount * std::exp(-b.G * x)});
+                for (const InProgress &c : date.in_progress)
+                    bonds.push_back({c.discount.maturity, coupon_amount(floating_[c.coupon], state) *
+                                                              c.discount.amount *
+                                                              std::exp(-c.discount.G * x)});
+                return true;
+            }
+
+            bool sensitivities_today(std::vector<BondExposure> &bonds,
+                                     std::vector<VolExposure> &) const override
+            {
+                const Real side = swap_.payer ? 1.0 : -1.0;
+                const Real N = swap_.notional;
+                const DiscountCurve &d = model_.discount();
+                const DiscountCurve &p = model_.projection();
+                for (const CouponPeriod &c : swap_.fixed_leg)
+                    bonds.push_back(
+                        {c.payment, -side * N * swap_.fixed_rate * c.accrual * d.discount(c.payment)});
+                for (const CouponPeriod &c : swap_.floating_leg)
+                {
+                    const Real beta = (p.discount(c.start) / p.discount(c.end)) /
+                                      (d.discount(c.start) / d.discount(c.end));
+                    bonds.push_back({c.start, side * N * beta * d.discount(c.start)});
+                    bonds.push_back(
+                        {c.end, -side * N * (1.0 - swap_.spread * c.accrual) * d.discount(c.end)});
+                }
+                return true;
+            }
+
             /// The value depends on today's state and on the floating coupons
             /// already fixed and not yet paid.
             std::size_t regressors(std::size_t i, const Real *state, Real *out) const override
@@ -165,6 +222,7 @@ namespace quantModeling
             {
                 Real amount;
                 Real G;
+                Time maturity;
             };
             struct FloatingCoupon
             {
@@ -182,6 +240,8 @@ namespace quantModeling
             struct Date
             {
                 std::vector<Bond> bonds;
+                /// The fixed coupons still to pay, per unit of fixed rate.
+                std::vector<Bond> annuity;
                 std::vector<InProgress> in_progress;
                 Real fixed_cashflow = 0.0;
                 std::vector<std::size_t> floating_paid;
@@ -192,7 +252,7 @@ namespace quantModeling
                 const Real G = model_.G(t, T);
                 return {coefficient * model_.discount().discount(T) / model_.discount().discount(t) *
                             std::exp(-0.5 * G * G * model_.y(t)),
-                        G};
+                        G, T};
             }
 
             static Real coupon_amount(const FloatingCoupon &c, const Real *state)
@@ -259,6 +319,45 @@ namespace quantModeling
                 return underlying_.cashflow(i, state);
             }
 
+            /// Before the expiry: the swaption bond by bond, and its vega to
+            /// the normal volatility its own price implies. After: the swap's.
+            bool sensitivities(std::size_t i, const Real *state, std::vector<BondExposure> &bonds,
+                               std::vector<VolExposure> &vols) const override
+            {
+                if (i >= expiry_index_)
+                {
+                    if (underlying_.value(expiry_index_, state) > 0.0)
+                        underlying_.sensitivities(i, state, bonds, vols);
+                    return true;
+                }
+                std::vector<Real> terms;
+                hull_white_european_swaption_terms(region_, model_, times_[i], state[i], terms);
+                Real price = 0.0;
+                for (std::size_t k = 0; k < terms.size(); ++k)
+                {
+                    bonds.push_back({region_.bonds[k].time, terms[k]});
+                    price += terms[k];
+                }
+                add_vega(price, underlying_.annuity(i, state), underlying_.value(i, state),
+                         expiry_ - times_[i], vols);
+                return true;
+            }
+
+            bool sensitivities_today(std::vector<BondExposure> &bonds,
+                                     std::vector<VolExposure> &vols) const override
+            {
+                std::vector<Real> terms;
+                hull_white_european_swaption_terms(region_, model_, 0.0, 0.0, terms);
+                Real price = 0.0;
+                for (std::size_t k = 0; k < terms.size(); ++k)
+                {
+                    bonds.push_back({region_.bonds[k].time, terms[k]});
+                    price += terms[k];
+                }
+                add_vega(price, underlying_.annuity_today(), underlying_.value_today(), expiry_, vols);
+                return true;
+            }
+
             /// Before the expiry an option; after it the swap, or nothing.
             std::size_t regime(std::size_t i, const Real *state) const override
             {
@@ -276,6 +375,30 @@ namespace quantModeling
             }
 
           private:
+            /**
+             * σ ∂V/∂σ at the normal (Bachelier) volatility the price implies:
+             * SIMM's vega is a sensitivity to an implied at-the-money
+             * volatility, which a short-rate model does not have as a
+             * parameter. Nothing when the price is at its intrinsic value:
+             * no volatility is implied, and the vega is zero.
+             */
+            void add_vega(Real price, Real annuity, Real swap_value, Time to_expiry,
+                          std::vector<VolExposure> &vols) const
+            {
+                if (!(annuity > 0.0) || !(to_expiry > kTimeEps) || !(price > 0.0))
+                    return;
+                const Real strike = underlying_.fixed_rate();
+                // A payer swap is worth annuity × (forward - strike).
+                const Real forward =
+                    strike + (underlying_.payer() ? 1.0 : -1.0) * swap_value / annuity;
+                const Real vol = bachelier_implied_vol(underlying_.payer(), price, forward, strike,
+                                                       to_expiry, annuity);
+                if (!std::isfinite(vol) || !(vol > 0.0))
+                    return;
+                vols.push_back(
+                    {expiry_, vol * bachelier_vega(forward, strike, to_expiry, vol, annuity)});
+            }
+
             HullWhiteExerciseRegion region_;
             HullWhiteSwapValue underlying_;
             Time expiry_;

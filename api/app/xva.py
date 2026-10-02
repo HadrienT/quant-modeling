@@ -58,6 +58,10 @@ class XvaUnavailable(RuntimeError):
     """An input the computation needs is not in the store."""
 
 
+class XvaInputError(ValueError):
+    """A request the computation cannot honour as asked."""
+
+
 # ── Portfolios ───────────────────────────────────────────────────────────────
 
 
@@ -376,6 +380,46 @@ def _adjustments(r: dict) -> Adjustments:
     )
 
 
+def _margin_model(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
+    """The model of the initial margin, and why. SIMM needs the sensitivities
+    of every trade in every scenario, which the closed forms give for swaps
+    and European swaptions; a Bermudan is valued by regression and has none."""
+    asked = req.csa.initial_margin_model
+    by_regression = sorted({s.kind for s in specs} - {"swap", "swaption"})
+    if req.csa.initial_margin_today is not None:
+        if asked == "simm":
+            raise XvaInputError(
+                "An initial margin given for today goes with the regression model, "
+                "which it scales; SIMM computes today's margin itself."
+            )
+        return "regression", (
+            "The margin you gave for today is the starting point: the regression "
+            "model gives the shape of the profile, scaled to start from it."
+        )
+    if asked == "regression":
+        return "regression", "Chosen by hand."
+    if by_regression:
+        if asked == "simm":
+            raise XvaInputError(
+                "SIMM on every path needs the sensitivities of each trade in each "
+                f"scenario; a {by_regression[0]} is valued by regression and has none. "
+                "Use the regression model for this portfolio."
+            )
+        return "regression", (
+            f"This portfolio holds a {by_regression[0]}, valued by regression: it has "
+            "no sensitivity to each point of the curve in each scenario, which SIMM "
+            "needs. The margin is modelled instead: the 99 % quantile of the move of "
+            "the value over ten days, fitted on the simulated paths."
+        )
+    return "simm", (
+        "Chosen by hand."
+        if asked == "simm"
+        else "Every trade is a swap or a European swaption, whose sensitivities are "
+        "known in closed form in each scenario: the margin is ISDA SIMM itself, the "
+        "rule the industry uses, rather than a model of it."
+    )
+
+
 #: The PD floor of the IRB formula (Basel framework, CRE32.4).
 _PD_FLOOR = 0.0005
 _INVESTMENT_GRADE = {"AAA", "AA", "A", "BBB"}
@@ -443,12 +487,15 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
     lgd = 1.0 - req.recovery
     horizon = [max(s.start + s.tenor for s in specs)]
     margin = None
+    margin_model, margin_reason = "regression", ""
     if req.csa is not None and req.csa.initial_margin:
+        margin_model, margin_reason = _margin_model(req, specs)
         margin = {
             "confidence": 0.99,
             "im_today": req.csa.initial_margin_today,
             # Segregated margin is funded at the bank's borrowing spread.
             "spread": req.borrowing_spread,
+            "model": margin_model,
         }
     capital = _capital_inputs(req, counterparty)
     result = qm.xva_netting_set(
@@ -532,6 +579,10 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
                 today=result["initial_margin"]["today"],
                 times=result["exposure"]["times"],
                 expected=result["initial_margin"]["expected"],
+                requested=req.csa.initial_margin_model,
+                model=margin_model,
+                reason=margin_reason,
+                simm_today=result["simm_today"],
             )
             if result["initial_margin"]
             else None
@@ -731,6 +782,18 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
             "move. This is a model of the margin, not the industry's rule (ISDA "
             "SIMM works from sensitivities): if you give today's actual margin, the "
             "whole profile is scaled to start from it.",
+            "When every trade is a swap or a European swaption, the margin is "
+            "instead ISDA SIMM itself (methodology version 2.8+2512, interest rate "
+            "risk class), computed in every scenario at every date from the "
+            "sensitivities of that scenario: the PV01 at each of the twelve "
+            "vertices of the curve, weighted by ISDA's risk weights and aggregated "
+            "with its correlations, plus the vega and curvature of the options. The "
+            "sensitivities come from the closed forms, not from a bump: each cash "
+            "flow's sensitivity to its own zero rate, shared between the two "
+            "vertices around it; for an option, its vega at the normal volatility "
+            "its price implies. (SIMM asks for sensitivities to market rates; zero "
+            "rates are used here.) SIMM is calibrated on a period of stress and "
+            "comes out about one and a half times the regression model's margin.",
             "With that margin the exposure is what is left beyond it, on about one "
             "path in a hundred: the CVA almost disappears. What replaces it is the "
             "cost of funding the margin posted, MVA = −Σ E[D × IM](t) × survival of "
@@ -860,5 +923,6 @@ __all__ = [
     "portfolios",
     "PORTFOLIOS",
     "RATINGS",
+    "XvaInputError",
     "XvaUnavailable",
 ]

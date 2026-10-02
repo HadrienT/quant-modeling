@@ -1155,6 +1155,17 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         inputs.initial_margin = dim;
         inputs.initial_margin_spread = item_or<qm_::Real>(m, "spread", borrowing_spread);
         settings.keep_cashflows = true;
+        // Where the margin comes from: the regression's own figure, the
+        // regression started from today's SIMM, or SIMM on every path.
+        const auto margin_model = item_or<std::string>(m, "model", "regression");
+        if (margin_model == "simm")
+            inputs.margin_model = qm_::XvaInputs::MarginModel::SimmPerPath;
+        else if (margin_model == "regression_on_simm")
+            inputs.margin_model = qm_::XvaInputs::MarginModel::RegressionOnSimm;
+        else if (margin_model != "regression")
+            throw qm_::InvalidInput("xva: unknown initial margin model '" + margin_model +
+                                    "' (regression, regression_on_simm, simm)");
+        settings.simm = inputs.margin_model != qm_::XvaInputs::MarginModel::Regression;
     }
     if (!capital.is_none())
     {
@@ -1187,6 +1198,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     std::optional<qm_::ExposureStatistics> risk;
     std::vector<qm_::Real> values_today;
     std::size_t pilot_paths = 0;
+    std::optional<qm_::simm::Margin> simm_today;
     {
         py::gil_scoped_release release;
         // The cube is shared and each path writes its own row: the worker
@@ -1199,6 +1211,8 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         const qm_::ExposurePaths cube = engine.simulate(settings, workers > 0 ? &pool : nullptr);
         values_today = cube.trade_values_today;
         pilot_paths = cube.pilot_paths;
+        if (settings.simm)
+            simm_today = cube.simm_today;
         report = qm_::xva_report(cube, inputs);
         if (inputs.csa)
         {
@@ -1212,6 +1226,8 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         }
         if (historical)
         {
+            // The risk measures do not need the margin of every scenario.
+            settings.simm = false;
             settings.historical =
                 qm_::HistoricalRateDynamics{std::get<0>(*historical), std::get<1>(*historical), std::get<2>(*historical)};
             const qm_::ExposurePaths real_world = engine.simulate(settings, workers > 0 ? &pool : nullptr);
@@ -1226,6 +1242,18 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     out["trade_values_today"] = values_today;
     // Paths of the pilot that fitted the trades valued by regression (0: none).
     out["pilot_paths"] = pilot_paths;
+    // Today's SIMM and its three parts, when the margin comes from it.
+    if (simm_today)
+    {
+        py::dict margin;
+        margin["delta"] = simm_today->delta;
+        margin["vega"] = simm_today->vega;
+        margin["curvature"] = simm_today->curvature;
+        margin["total"] = simm_today->total();
+        out["simm_today"] = margin;
+    }
+    else
+        out["simm_today"] = py::none();
     out["uncollateralised"] = uncollateralised ? py::object(report_dict(*uncollateralised)) : py::object(py::none());
     out["risk"] = risk ? py::object(exposure_dict(*risk)) : py::object(py::none());
     return out;
@@ -2457,7 +2485,9 @@ PYBIND11_MODULE(quantmodeling, m)
           "quantity, start | expiry, frequencies; or kind 'script' with script, valuation_date, "
           "quantity: a rates-only payoff script); hazard curves are (times, hazards); csa a dict of its "
           "terms or None; historical (a, theta, sigma) adds the risk-measure profiles. initial_margin "
-          "(a dict: confidence, im_today, spread) projects the margin both parties post and gives the MVA; "
+          "(a dict: confidence, im_today, spread, model 'regression' | 'regression_on_simm' | 'simm') "
+          "projects the margin both parties post and gives the MVA — by regression, or as ISDA SIMM "
+          "from the sensitivities of each path (swaps and European swaptions only); "
           "collateral_spread (what the CSA pays over the discount rate) the ColVA; capital (a dict: pd, lgd, "
           "sector, investment_grade, large_financial, cost_of_capital) the SA-CCR, IRB and BA-CVA "
           "capital and the KVA. wrong_way_b makes the counterparty's hazard exp(a(t) + b V(t)) "

@@ -121,8 +121,9 @@ namespace quantModeling
         const std::size_t N = settings.paths;
         const std::size_t K = trades_.size();
 
-        // (trades [× 2 with cash flows] + the discount weights) matrices of doubles.
-        const std::size_t matrices = K * (settings.keep_cashflows ? 2 : 1) + 1;
+        // (trades [× 2 with cash flows] + the discount weights [+ SIMM])
+        // matrices of doubles.
+        const std::size_t matrices = K * (settings.keep_cashflows ? 2 : 1) + 1 + (settings.simm ? 1 : 0);
         const std::size_t limit_cells = settings.memory_limit_bytes / sizeof(Real);
         if (N > limit_cells / n / matrices)
             throw InvalidInput(
@@ -276,6 +277,48 @@ namespace quantModeling
         for (const Trade &trade : trades_)
             out.trade_values_today.push_back(trade.quantity * trade.value->value_today());
 
+        // SIMM from the exposures the trades report: a cash flow worth
+        // `amount` at tenor τ loses τ × amount × 1 bp when its zero rate
+        // rises by a basis point.
+        const auto margin_of = [&settings](const std::vector<BondExposure> &bonds,
+                                           const std::vector<VolExposure> &vols, Time t)
+        {
+            simm::Sensitivities s;
+            for (const BondExposure &b : bonds)
+                if (b.maturity > t)
+                    s.add_delta(b.maturity - t, -(b.maturity - t) * b.amount * 1e-4);
+            for (const VolExposure &v : vols)
+                if (v.expiry > t)
+                    s.add_vega(v.expiry - t, v.vega_times_vol);
+            return simm::interest_rate_margin(s, settings.simm_currency);
+        };
+        // What each trade reports is for one unit of it.
+        const auto scale = [](std::vector<BondExposure> &bonds, std::vector<VolExposure> &vols,
+                              std::size_t from_bond, std::size_t from_vol, Real quantity)
+        {
+            for (std::size_t j = from_bond; j < bonds.size(); ++j)
+                bonds[j].amount *= quantity;
+            for (std::size_t j = from_vol; j < vols.size(); ++j)
+                vols[j].vega_times_vol *= quantity;
+        };
+        if (settings.simm)
+        {
+            std::vector<BondExposure> bonds;
+            std::vector<VolExposure> vols;
+            for (std::size_t k = 0; k < K; ++k)
+            {
+                const std::size_t nb = bonds.size(), nv = vols.size();
+                if (!trades_[k].value->sensitivities_today(bonds, vols))
+                    throw InvalidInput(
+                        "exposure engine: trade " + std::to_string(k) +
+                        " is valued by regression and cannot give the sensitivities SIMM needs; "
+                        "SIMM per path covers swaps and European swaptions");
+                scale(bonds, vols, nb, nv, trades_[k].quantity);
+            }
+            out.simm_today = margin_of(bonds, vols, 0.0);
+            out.simm.resize(N * n);
+        }
+
         out.discount_weight.resize(N * n);
         out.trade_values.assign(K, std::vector<Real>(N * n));
         if (settings.keep_cashflows)
@@ -284,6 +327,8 @@ namespace quantModeling
         const auto run_chunk = [&](std::size_t first, std::size_t last)
         {
             std::vector<Real> state(n), values(n), flows(n);
+            std::vector<BondExposure> bonds;
+            std::vector<VolExposure> vols;
             // This task's scratch for the trades that value a path
             // sequentially.
             std::vector<std::unique_ptr<FutureValue::Workspace>> workspaces;
@@ -318,6 +363,19 @@ namespace quantModeling
                             stored_flows[row + i] = quantity * flows[i];
                     }
                 }
+                if (settings.simm)
+                    for (std::size_t i = 0; i < n; ++i)
+                    {
+                        bonds.clear();
+                        vols.clear();
+                        for (std::size_t k = 0; k < K; ++k)
+                        {
+                            const std::size_t nb = bonds.size(), nv = vols.size();
+                            trades_[k].value->sensitivities(i, state.data(), bonds, vols);
+                            scale(bonds, vols, nb, nv, trades_[k].quantity);
+                        }
+                        out.simm[row + i] = margin_of(bonds, vols, out.times[i]).total();
+                    }
             }
             return true;
         };

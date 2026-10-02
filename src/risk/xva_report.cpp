@@ -263,10 +263,26 @@ namespace quantModeling
         Real margin_scaling = 1.0;
         if (in.initial_margin)
         {
-            const DynamicInitialMargin model = DynamicInitialMargin::fit(
-                paths, in.csa->margin_period_of_risk, trades, *in.initial_margin);
+            DimSettings settings = *in.initial_margin;
+            const bool simm = in.margin_model != XvaInputs::MarginModel::Regression;
+            if (simm)
+            {
+                if (paths.simm.empty())
+                    throw InvalidInput("xVA report: a SIMM margin needs a simulation that computed "
+                                       "SIMM (settings.simm = true)");
+                if (trades.size() != paths.trades())
+                    throw InvalidInput("xVA report: the simulation's SIMM is that of all its "
+                                       "trades, not of a subset");
+                // Today's margin is the rule's, not the model's.
+                settings.im_today = paths.simm_today.total();
+            }
+            const DynamicInitialMargin model =
+                DynamicInitialMargin::fit(paths, in.csa->margin_period_of_risk, trades, settings);
+            // The factor the shares of each trade are computed with.
             margin_scaling = model.scaling();
-            margin = model.margin(paths);
+            margin = in.margin_model == XvaInputs::MarginModel::SimmPerPath
+                         ? simm_initial_margin(paths, in.csa->margin_period_of_risk)
+                         : model.margin(paths);
             report.initial_margin_today = margin->today;
             report.expected_initial_margin = margin->expected;
             report.mva = mva(margin->times, margin->discounted_expected, in.counterparty, in.own,

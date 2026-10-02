@@ -71,6 +71,24 @@ namespace quantModeling
         /// (risk/initial_margin.hpp). Needs a CSA. The cube should carry
         /// the cash flows (ExposureSimulationSettings::keep_cashflows).
         std::optional<DimSettings> initial_margin;
+        /**
+         * @brief Where the initial margin comes from (lot X5b). With either
+         *        SIMM choice the cube must have been simulated with
+         *        ExposureSimulationSettings::simm.
+         */
+        enum class MarginModel
+        {
+            /// The regression's own figure (or DimSettings::im_today).
+            Regression,
+            /// The regression's profile, scaled to start from today's SIMM:
+            /// what the work package calls "calibrated on a SIMM today".
+            RegressionOnSimm,
+            /// SIMM itself, from the sensitivities of each path. For the
+            /// netting set of all the cube's trades; the shares of each
+            /// trade use the scaled regression.
+            SimmPerPath
+        };
+        MarginModel margin_model = MarginModel::Regression;
         /// FS_B - s_IM: the bank's funding spread over what the segregated
         /// margin earns. MVA is zero when it is.
         Real initial_margin_spread = 0.0;

@@ -41,6 +41,24 @@ namespace quantModeling
         const Real *deflator_row(std::size_t p) const { return deflator.data() + p * dates(); }
     };
 
+    /// A dependence of a value on today's curve seen from a date t: the
+    /// value moves by `amount` times the relative move of P(t, maturity).
+    /// For a cash flow c paid at T it is c P(t, T): its present value.
+    struct BondExposure
+    {
+        Time maturity;
+        Real amount;
+    };
+
+    /// A dependence on an implied volatility: vega times that volatility
+    /// (σ ∂V/∂σ, the quantity SIMM works with), for an option expiring at
+    /// `expiry`.
+    struct VolExposure
+    {
+        Time expiry;
+        Real vega_times_vol;
+    };
+
     /**
      * @brief The "future value" of one trade: what it is worth at each date
      *        of the exposure grid on one simulated path
@@ -120,6 +138,34 @@ namespace quantModeling
             if (cashflows != nullptr)
                 for (std::size_t i = 0; i < dates; ++i)
                     cashflows[i] = cashflow(i, state);
+        }
+
+        // ── Sensitivities (lot X5b) ─────────────────────────────────────
+
+        /**
+         * @brief What the value at grid[i] is sensitive to, on this path:
+         *        its exposures to the zero-coupon bonds of the curve at that
+         *        date and to implied volatilities — the inputs of an initial
+         *        margin computed from sensitivities (risk/simm.hpp).
+         *
+         * Appends to both vectors. The default says the trade cannot give
+         * them: a value estimated by regression is a function of the model's
+         * state, not of each point of the curve.
+         *
+         * @return false when the sensitivities are not available.
+         */
+        virtual bool sensitivities(std::size_t /*i*/, const Real * /*state*/,
+                                   std::vector<BondExposure> & /*bonds*/,
+                                   std::vector<VolExposure> & /*vols*/) const
+        {
+            return false;
+        }
+
+        /// The same today.
+        virtual bool sensitivities_today(std::vector<BondExposure> & /*bonds*/,
+                                         std::vector<VolExposure> & /*vols*/) const
+        {
+            return false;
         }
 
         // ── Valuation by regression (lot X4) ────────────────────────────

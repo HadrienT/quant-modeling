@@ -79,6 +79,22 @@ namespace quantModeling
     Real hull_white_european_swaption(const HullWhiteExerciseRegion &region,
                                       const HullWhiteCurveModel &model, Time t, Real x);
 
+    /**
+     * @brief The same value, bond by bond: `terms[k]` is what the cash flow
+     *        `region.bonds[k]` contributes,
+     *
+     *   amount_k P(t, time_k) Q^{time_k}(exercise | x(t)),
+     *
+     * and they add up to the value. Each is also the sensitivity of the
+     * value to the relative move of P(t, time_k): the exercise boundary is
+     * where the swap is worth nothing, so moving it changes nothing at first
+     * order (Jamshidian's decomposition says the same: a swaption is a
+     * portfolio of bond options whose strikes cancel).
+     */
+    void hull_white_european_swaption_terms(const HullWhiteExerciseRegion &region,
+                                            const HullWhiteCurveModel &model, Time t, Real x,
+                                            std::vector<Real> &terms);
+
     /// Settings of the Bermudan lattice.
     struct HullWhiteLatticeSettings
     {

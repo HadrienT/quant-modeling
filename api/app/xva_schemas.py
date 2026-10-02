@@ -42,6 +42,13 @@ class CsaInput(BaseModel):
         "for non-cleared derivatives require: projected by regression, 99 % of "
         "the move over the margin period of risk",
     )
+    initial_margin_model: Literal["auto", "simm", "regression"] = Field(
+        default="auto",
+        description="simm: ISDA SIMM from the sensitivities of each scenario "
+        "(swaps and European swaptions only). regression: a model of the margin, "
+        "fitted on the simulated values. auto: SIMM when every trade can give "
+        "its sensitivities, the regression otherwise",
+    )
     initial_margin_today: Optional[float] = Field(
         default=None,
         gt=0,
@@ -196,12 +203,29 @@ class Adjustments(BaseModel):
     cva_rule_of_thumb: float = Field(description="−spread × EPE × T")
 
 
+class SimmToday(BaseModel):
+    """Today's ISDA SIMM of the netting set, by margin type."""
+
+    delta: float
+    vega: float
+    curvature: float
+    total: float
+
+
 class InitialMarginOut(BaseModel):
     """The initial margin each party posts, on the dates of the exposure."""
 
     today: float
     times: List[float]
     expected: List[float]
+    requested: Literal["auto", "simm", "regression"]
+    model: Literal["simm", "regression"] = Field(
+        description="What the margin of each scenario is computed with"
+    )
+    reason: str = Field(description="Why this model, in plain terms")
+    simm_today: Optional[SimmToday] = Field(
+        description="Today's SIMM, when the margin is SIMM"
+    )
 
 
 class CapitalOut(BaseModel):

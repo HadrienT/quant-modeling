@@ -86,6 +86,19 @@ namespace quantModeling
          * a regression says nothing outside the range it was fitted on.
          */
         std::size_t pilot_paths = 0;
+        /**
+         * @brief Also compute ISDA SIMM (risk/simm.hpp) of the trades taken
+         *        together, on every path at every date: each trade gives its
+         *        sensitivities in that scenario, in closed form.
+         *
+         * Swaps and European swaptions only: a trade valued by regression
+         * (a Bermudan, a script) knows its value as a function of the
+         * model's state, not its sensitivity to each point of the curve, and
+         * simulate() refuses it.
+         */
+        bool simm = false;
+        /// The currency's SIMM parameters; USD, EUR and GBP by default.
+        simm::CurrencyParameters simm_currency = simm::regular_well_traded();
         /// Standard deviation of the state the pilot paths start from;
         /// unset is automatic: 0 under the pricing measure, what covers the
         /// scenarios under the historical one.

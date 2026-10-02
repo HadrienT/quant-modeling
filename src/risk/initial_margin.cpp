@@ -198,6 +198,39 @@ namespace quantModeling
         return out;
     }
 
+    InitialMargin simm_initial_margin(const ExposurePaths &paths, Time mpor)
+    {
+        const std::size_t n = paths.dates(), N = paths.paths;
+        if (paths.simm.size() != N * n || N == 0)
+            throw InvalidInput("initial margin: this simulation did not compute SIMM; simulate "
+                               "with settings.simm = true");
+        const std::vector<MarginPeriod> pairs = periods(paths, mpor);
+        const std::size_t m = pairs.size();
+        InitialMargin out;
+        out.paths = N;
+        out.today = paths.simm_today.total();
+        out.margin.resize(N * m);
+        out.expected.assign(m, 0.0);
+        out.discounted_expected.assign(m, 0.0);
+        for (std::size_t r = 0; r < m; ++r)
+        {
+            const MarginPeriod &pair = pairs[r];
+            out.times.push_back(paths.times[pair.date]);
+            Real sum = 0.0;
+            for (std::size_t p = 0; p < N; ++p)
+            {
+                const Real im = pair.lagged == MarginPeriod::kToday
+                                    ? out.today
+                                    : paths.simm[p * n + pair.lagged];
+                out.margin[p * m + r] = im;
+                sum += paths.discount_weight[p * n + pair.date] * im;
+            }
+            out.discounted_expected[r] = sum / static_cast<Real>(N);
+            out.expected[r] = out.discounted_expected[r] / paths.discount[pair.date];
+        }
+        return out;
+    }
+
     MarginBacktest backtest_initial_margin(const ExposurePaths &paths, const InitialMargin &margin,
                                            Time mpor, const std::vector<std::size_t> &trades)
     {

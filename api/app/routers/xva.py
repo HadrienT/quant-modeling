@@ -101,6 +101,8 @@ async def xva_netting_set(req: XvaRequest) -> XvaResponse:
         ) from exc
     except xva.XvaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except xva.XvaInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         # InvalidInput from the C++: an input no curve or model accepts.
         raise HTTPException(status_code=422, detail=str(exc)) from exc

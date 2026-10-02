@@ -131,6 +131,21 @@ namespace quantModeling
         Real scaling_ = 1.0;
     };
 
+    /**
+     * @brief The initial margin when it is ISDA SIMM, computed on every path
+     *        by the simulation (ExposureSimulationSettings::simm): at each
+     *        reporting date, the SIMM of the lagged date — the margin that
+     *        was in place when the last call was honoured.
+     *
+     * The margin rule itself, from the sensitivities of each scenario, where
+     * DynamicInitialMargin is a model of it. It is the SIMM of **all** the
+     * trades of the cube.
+     *
+     * @throws InvalidInput on a cube simulated without SIMM, or a grid
+     *         without the lagged dates.
+     */
+    InitialMargin simm_initial_margin(const ExposurePaths &paths, Time margin_period_of_risk);
+
     /// How often the margin was not enough, date by date.
     struct MarginBacktest
     {

@@ -1716,6 +1716,17 @@
             "title": "Initial Margin",
             "type": "boolean"
           },
+          "initial_margin_model": {
+            "default": "auto",
+            "description": "simm: ISDA SIMM from the sensitivities of each scenario (swaps and European swaptions only). regression: a model of the margin, fitted on the simulated values. auto: SIMM when every trade can give its sensitivities, the regression otherwise",
+            "enum": [
+              "auto",
+              "simm",
+              "regression"
+            ],
+            "title": "Initial Margin Model",
+            "type": "string"
+          },
           "initial_margin_today": {
             "anyOf": [
               {
@@ -3970,6 +3981,40 @@
             "title": "Expected",
             "type": "array"
           },
+          "model": {
+            "description": "What the margin of each scenario is computed with",
+            "enum": [
+              "simm",
+              "regression"
+            ],
+            "title": "Model",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why this model, in plain terms",
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested": {
+            "enum": [
+              "auto",
+              "simm",
+              "regression"
+            ],
+            "title": "Requested",
+            "type": "string"
+          },
+          "simm_today": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimmToday"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Today's SIMM, when the margin is SIMM"
+          },
           "times": {
             "items": {
               "type": "number"
@@ -3985,7 +4030,11 @@
         "required": [
           "today",
           "times",
-          "expected"
+          "expected",
+          "requested",
+          "model",
+          "reason",
+          "simm_today"
         ],
         "title": "InitialMarginOut",
         "type": "object"
@@ -7921,6 +7970,35 @@
           "value"
         ],
         "title": "SeriesValue",
+        "type": "object"
+      },
+      "SimmToday": {
+        "description": "Today's ISDA SIMM of the netting set, by margin type.",
+        "properties": {
+          "curvature": {
+            "title": "Curvature",
+            "type": "number"
+          },
+          "delta": {
+            "title": "Delta",
+            "type": "number"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "vega": {
+            "title": "Vega",
+            "type": "number"
+          }
+        },
+        "required": [
+          "delta",
+          "vega",
+          "curvature",
+          "total"
+        ],
+        "title": "SimmToday",
         "type": "object"
       },
       "SimulationCalibrateRequest": {

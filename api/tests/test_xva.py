@@ -454,9 +454,11 @@ def test_initial_margin_turns_the_cva_into_an_mva():
     vm = run(portfolio="single_swap", csa=csa, borrowing_spread=0.005)
     im = run(
         portfolio="single_swap",
-        csa={**csa, "initial_margin": True},
+        csa={**csa, "initial_margin": True, "initial_margin_model": "regression"},
         borrowing_spread=0.005,
     )
+    assert im["initial_margin"]["model"] == "regression"
+    assert im["initial_margin"]["simm_today"] is None
     assert vm["initial_margin"] is None and vm["adjustments"]["mva"] == 0.0
     margin = im["initial_margin"]
     assert margin["today"] > 0
@@ -626,3 +628,69 @@ def test_wrong_way_risk_raises_the_cva_and_leaves_the_independent_one_alone():
         ).status_code
         == 422
     )
+
+
+# ── Lot X5b: the margin from ISDA SIMM ───────────────────────────────────────
+
+
+def test_the_margin_is_simm_when_every_trade_can_give_its_sensitivities():
+    csa = {"cashflows": "withheld", "initial_margin": True}
+    simm = run(portfolio="single_swap", csa=csa, borrowing_spread=0.005)
+    margin = simm["initial_margin"]
+    # Chosen for the user, and said.
+    assert (margin["requested"], margin["model"]) == ("auto", "simm")
+    assert "ISDA SIMM itself" in margin["reason"]
+    today = margin["simm_today"]
+    assert margin["today"] == pytest.approx(today["total"])
+    # A swap: delta margin only. 60 bp on the PV01 of 10 M over 10 years.
+    assert today["vega"] == 0.0 and today["curvature"] == 0.0
+    assert 300_000 < today["delta"] < 700_000
+
+    regression = run(
+        portfolio="single_swap",
+        csa={**csa, "initial_margin_model": "regression"},
+        borrowing_spread=0.005,
+    )
+    # ISDA's risk weights are calibrated on stress: more margin than this
+    # model's own 99 %, so a larger MVA and even less CVA.
+    assert 1.2 < margin["today"] / regression["initial_margin"]["today"] < 2.2
+    assert simm["adjustments"]["mva"] < regression["adjustments"]["mva"] < 0
+    assert abs(simm["adjustments"]["cva"]["value"]) <= abs(
+        regression["adjustments"]["cva"]["value"]
+    )
+
+    # An option adds vega and curvature.
+    option = run(portfolio="bought_swaption", csa=csa)["initial_margin"]["simm_today"]
+    assert option["delta"] > 0 and option["vega"] > 0 and option["curvature"] > 0
+
+
+def test_a_trade_valued_by_regression_takes_the_regression_model_and_says_why():
+    csa = {"cashflows": "withheld", "initial_margin": True}
+    body = run(portfolio="bermudan", csa=csa)
+    margin = body["initial_margin"]
+    assert (margin["requested"], margin["model"]) == ("auto", "regression")
+    assert "bermudan" in margin["reason"] and margin["simm_today"] is None
+    assert margin["today"] > 0
+    # Asked for by name, it is refused with the reason, not replaced.
+    r = client.post(
+        "/api/xva/netting-set",
+        json={
+            "paths": PATHS,
+            "portfolio": "bermudan",
+            "csa": {**csa, "initial_margin_model": "simm"},
+        },
+    )
+    assert r.status_code == 422 and "valued by regression" in r.text
+    # A margin given for today scales the regression; SIMM computes its own.
+    r = client.post(
+        "/api/xva/netting-set",
+        json={
+            "paths": PATHS,
+            "csa": {
+                **csa,
+                "initial_margin_model": "simm",
+                "initial_margin_today": 100_000,
+            },
+        },
+    )
+    assert r.status_code == 422 and "SIMM computes today" in r.text

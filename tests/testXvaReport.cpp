@@ -395,4 +395,60 @@ namespace quantModeling
         EXPECT_THROW(xva_report(book(m, 500), open), InvalidInput);
     }
 
+    // ── Lot X5b: the margin from SIMM ────────────────────────────────────────
+
+    TEST(XvaReport, TheInitialMarginCanBeSimmItselfOrARegressionStartedFromIt)
+    {
+        const HullWhiteCurveModel m = model();
+        const auto simulate = [&](bool with_simm)
+        {
+            HullWhiteExposureEngine engine(m);
+            const Real par =
+                value_swap(make_swap(0.0, 10.0, 0.0, 1, 1), MultiCurve{m.discount(), m.projection()})
+                    .par_rate;
+            engine.add(make_swap(0.0, 10.0, par, 1, 1, 100.0, true));
+            engine.add(make_swap(0.0, 10.0, par, 1, 1, 40.0, false));
+            ExposureSimulationSettings settings;
+            settings.paths = 5000;
+            settings.keep_cashflows = true;
+            settings.simm = with_simm;
+            settings.grid.margin_period_of_risk = kTenDays;
+            return engine.simulate(settings);
+        };
+        const ExposurePaths paths = simulate(true);
+        XvaInputs in = margined_inputs();
+        in.collateral.cashflows = MarginPeriodCashflows::Withheld;
+        in.initial_margin = DimSettings{};
+
+        const XvaReport regression = xva_report(paths, in);
+        in.margin_model = XvaInputs::MarginModel::RegressionOnSimm;
+        const XvaReport anchored = xva_report(paths, in);
+        in.margin_model = XvaInputs::MarginModel::SimmPerPath;
+        const XvaReport simm = xva_report(paths, in);
+
+        // Both start from today's SIMM, which is not the model's own figure.
+        EXPECT_DOUBLE_EQ(anchored.initial_margin_today, paths.simm_today.total());
+        EXPECT_DOUBLE_EQ(simm.initial_margin_today, paths.simm_today.total());
+        EXPECT_GT(paths.simm_today.total(), regression.initial_margin_today);
+        // The anchored regression is the regression, scaled.
+        const Real scale = paths.simm_today.total() / regression.initial_margin_today;
+        EXPECT_NEAR(anchored.mva, scale * regression.mva, 1e-9 * std::abs(regression.mva));
+        // SIMM per path and the regression started from it tell the same
+        // story: the same margin today, a close cost of funding it.
+        EXPECT_LT(simm.mva, 0.0);
+        EXPECT_NEAR(simm.mva, anchored.mva, 0.15 * std::abs(anchored.mva));
+        // A larger margin than the model's 99 %: even less exposure left.
+        EXPECT_GT(simm.cva.value, regression.cva.value);
+        EXPECT_LE(simm.cva.value, 0.0);
+        // The shares of each trade are still computed.
+        for (const TradeContribution &c : simm.contributions)
+            EXPECT_TRUE(std::isfinite(c.incremental_cva));
+
+        // SIMM is that of all the trades of a simulation that computed it.
+        XvaInputs subset = in;
+        subset.trades = {0};
+        EXPECT_THROW(xva_report(paths, subset), InvalidInput);
+        EXPECT_THROW(xva_report(simulate(false), in), InvalidInput);
+    }
+
 } // namespace quantModeling
