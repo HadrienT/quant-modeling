@@ -167,7 +167,7 @@ namespace quantModeling
                         for (std::size_t p = 0; p < N; ++p)
                         {
                             const Real *vars =
-                                e == kNone ? nullptr : &variables[(p * E + e) * variables_];
+                                e == kNone ? nullptr : variables.data() + (p * E + e) * variables_;
                             key.clear();
                             for (const std::size_t v : f.flags)
                                 key.push_back(vars[v]);
@@ -239,7 +239,8 @@ namespace quantModeling
                 {
                     const Fit &f = fits_[i];
                     const std::size_t e = last_event_[i];
-                    const Real *vars = e == kNone ? nullptr : &scratch.variables[e * variables_];
+                    const Real *vars =
+                        e == kNone ? nullptr : scratch.variables.data() + e * variables_;
                     for (std::size_t k = 0; k < f.flags.size(); ++k)
                         key[k] = vars[f.flags[k]];
                     z[0] = state[i];
