@@ -1270,7 +1270,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X5b — SIMM par chemin** (fait : §14.10 ; sensibilités en forme fermée, CPU) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
 | **X6 — Wrong-way risk** (fait : §14.9 ; sans le saut FX au défaut) | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
 | **X7 — GPU** (fait : §14.11 ; transactions en forme fermée, bit à bit entre cartes, à 10⁻¹³ près contre le CPU) | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
-| **X8 — CVA par AAD** *(le capstone)* | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
+| **X8 — CVA par AAD** *(le capstone)* (fait : §14.13 ; transactions en forme fermée, CPU ; pas à travers la régression ni sur GPU) | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
 | **X9 — Page `/xva`** | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** *(optionnel)* | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 
@@ -1989,6 +1989,136 @@ d'actif, notionnel, dates, sens) qu'un script ne porte pas.
   d'aujourd'hui par Monte-Carlo, marge initiale par le modèle de régression
   (la SIMM demande des sensibilités).
 
+### 14.13 Lot X8 : les sensibilités du CVA par différentiation adjointe
+
+Livré : `engines/xva/xva_risks.hpp` et `src/engines/xva/xva_risks.cpp`
+(`HullWhiteExposureEngine::xva_risks`, `xva_values`),
+`engines/xva/xva_market_risks.hpp` (des entrées du modèle aux cotations),
+`risk/regulatory/sa_cva.hpp` (SA-CVA, MAR50), le programme plat et le
+collatéral rendus génériques sur le type de nombre
+(`engines/xva/exposure_program.hpp`, `risk/collateral_path.hpp`),
+`qm.xva_sensitivities`, `POST /api/xva/sensitivities`,
+`benchmarks/xva_aad_cost.cpp` ; tests dans `tests/testXvaRisks.cpp`,
+`tests/testXvaMarketRisks.cpp`, `api/tests/test_xva.py`.
+
+**L'algorithme est celui du livre** (WP 17 §7), le moteur d'exposition à la
+place du modèle et du produit :
+
+1. les **entrées** sont les feuilles de la tape : le taux zéro de chaque
+   pilier de la courbe, $a$ et $\sigma$ de Hull-White, les hazards des deux
+   parties, les LGD, les spreads de financement ;
+2. **avant la marque**, une fois : tout ce avec quoi la simulation est montée
+   est enregistré comme fonction de ces entrées — transitions de l'état,
+   poids d'actualisation, **chaque coefficient de chaque transaction**,
+   probabilités de défaut. C'est le programme plat du lot X7 qui le permet :
+   chaque coefficient garde sa **source** (les dates dont il vient) et se
+   recalcule dans n'importe quel type de nombre ;
+3. **après la marque**, chemin par chemin : l'état, la valeur du netting set
+   à chaque date, le collatéral, et le CVA, le DVA, le FCA et le FBA *du
+   chemin* ; une passe arrière les porte tous jusqu'à la marque
+   (multi-adjoint, WP 17 lot 17f), et la tape est rembobinée ;
+4. par **lot de 64 chemins**, ce qui s'est accumulé à la marque descend
+   jusqu'aux entrées : les risques du lot. Leur dispersion donne l'erreur
+   Monte-Carlo de chaque sensibilité (ADR-A6).
+
+Le même code tourne en `double` (`xva_values`) : c'est contre lui que les
+sensibilités sont contrôlées, par différences finies sur les mêmes scénarios,
+et contre lui que le coût est mesuré.
+
+**Le critère du lot.**
+
+- *AAD = différences finies.* Les 17 entrées × 5 ajustements d'un book de
+  swaps, sous CSA, d'un book d'options : l'adjoint égale la différence
+  centrée du même estimateur à 2 × 10⁻⁵ près (dix chiffres à 64 chemins ; la
+  différence finie, elle, se dégrade avec le nombre de chemins, car chaque
+  chemin dont l'exposition change de signe à l'intérieur du choc la fausse).
+- *Coût.* Netting set de 10 transactions sous CSA, 21 entrées, 5 ajustements
+  (`build/qm_xva_aad_bench`) : une valorisation 0,53 s, toutes les
+  sensibilités 4,6 s, soit **8,8 valorisations** sur un thread, là où choquer
+  chaque entrée dans les deux sens en demande 42. Sur les données de marché
+  (27 entrées), le rapport mesuré par requête est de 8 à 10.
+- *SA-CVA à la main.* Un portefeuille jouet dont le capital se calcule de
+  tête (une sensibilité par classe, puis deux avec leur corrélation), et les
+  tables relues sur le texte.
+
+**Le lissage de l'exercice — le point où l'adjoint se trompe sans prévenir.**
+Une swaption à règlement physique devient un swap ou rien à son échéance.
+Chemin par chemin, l'indicatrice ne bouge pas quand la courbe bouge un peu :
+l'adjoint ignore les chemins qui changent de côté. Pour la *valeur* de
+l'option cela ne coûte rien (elle vaut zéro à la frontière) ; pour
+l'**exposition après l'échéance**, si : un swap qui vaut zéro à l'échéance a
+une exposition attendue positive ensuite. Mesuré sur une swaption achetée
+2 ans dans 8, sensibilité du CVA au taux 10 ans : −2,35 M par l'adjoint brut,
+−2,86 M par un choc large, soit **18 % d'écart**. L'indicatrice est donc
+remplacée par une rampe (la logique floue du livre de scripting), d'une
+demi-largeur de 5 % de l'écart-type de la valeur du swap à l'échéance :
+l'adjoint donne −2,856 M, et le CVA bouge de 0,002 %. Un test le garde.
+
+**Des entrées du modèle aux cotations** (WP 17 §11). Les cotations
+déterminent les entrées par trois calibrations, chacune dérivée à sa solution
+et non à travers ses itérations :
+
+- la **courbe** est le bootstrap des taux de swap : $dz/dq$ ;
+- **$a$ et $\sigma$** minimisent $\sum w\,(v - m)^2$. La condition
+  d'optimum est $F(\theta; z, m) = J^\top W (v - m) = 0$, d'où
+  $d\theta/dm = (\partial F/\partial\theta)^{-1} J^\top W$ et
+  $d\theta/dz = -(\partial F/\partial\theta)^{-1}\,\partial F/\partial z$.
+  **Écart à l'ADR-A9** : le hessien de Gauss-Newton ($J^\top W J$) néglige
+  les dérivées secondes pondérées par les résidus. Deux paramètres ne
+  reproduisent pas douze vols : les résidus valent quelques points de base,
+  et l'approximation se trompait d'un quart sur $da/dq$. On garde donc
+  $\partial F/\partial\theta$ entier ;
+- les **hazards** sont le bootstrap des spreads de crédit : $dh/ds$, et
+  $dh/dz$ — à spreads fixés, les hazards qui les reprisent bougent avec la
+  courbe, ce qui déplaçait le risque de taux de plus de 10 % sur un pilier.
+
+Un taux de swap agit donc par trois chemins : la courbe, le modèle recalé sur
+elle, les hazards. Vérifié contre le calcul direct, « choquer la cotation,
+reconstruire la courbe, recaler, repricer » à 2 %. Ces jacobiennes sont
+celles de petites fonctions déterministes à forme fermée ; elles sont prises
+par différences centrées (erreur de l'ordre de 10⁻⁹), là où le WP 17 les
+enregistre sur une tape. La carte est linéaire : elle est appliquée lot par
+lot, et chaque risque de marché garde son erreur Monte-Carlo.
+
+**SA-CVA** (MAR50.42 à 50.77, relu sur le texte, formules d'agrégation
+comprises). Capital à partir des sensibilités du CVA **réglementaire**
+(unilatéral, MAR50.3) : delta de taux aux cinq échéances 1, 2, 5, 10, 30 ans
+(pondérations 1,11 % à 0,74 %, corrélations du tableau 4), vega de taux
+(choc relatif de toutes les vols, pondération 100 %), delta du spread de la
+contrepartie à 6 mois, 1, 3, 5, 10 ans (pondération par secteur et qualité,
+tableau 7 ; corrélation de 90 % entre échéances). Le texte autorise l'AAD
+(MAR50.47, FAQ 1). Sur les données du 1ᵉʳ octobre 2026, swap payeur 10 ans,
+contrepartie BBB financière : delta de taux 14 700, vega 25 200, spread
+117 100, **157 000 au total** — le spread de la contrepartie domine, comme
+attendu. Le BA-CVA du même swap vaut 100 600.
+
+**Ce que la mesure a appris sur la tape.**
+
+- Le netting set n'a pas besoin de la valeur de chaque transaction : les flux
+  de même échéance de toutes les transactions linéaires forment un seul
+  terme. Deux fois moins d'exponentielles, en valeur comme en adjoint.
+- **L'adjoint ne passe pas à l'échelle au-delà de 8 threads sur cette
+  machine** : 20 000 chemins en 5,4 s sur 8 threads, 6,1 s sur 16, 8,5 s sur
+  32. La tape d'un chemin pèse environ deux mégaoctets ; à 16 threads elles
+  ne tiennent plus ensemble dans le cache de dernier niveau. La liaison
+  Python s'arrête à 8.
+- `Tape::multi` et `Node::num_adj` deviennent `thread_local`, comme la tape
+  (ADR-A2) : le multi-adjoint du lot 17f ne pouvait pas tourner en parallèle.
+
+**Écarts au libellé du lot**, assumés :
+
+- **pas à travers la régression** : bermudans et scripts sont refusés avec la
+  raison. Il faudrait écrire la régression évaluée (polynômes par bucket,
+  état d'exercice) dans le type de nombre générique ;
+- **pas sur GPU** : la version CPU est validée, l'adjoint par chemin sans
+  tape reste à écrire ;
+- marge initiale, wrong-way risk et capital ne sont pas dérivés ; un MTA ou
+  un arrondi font sauter le collatéral, et ces sauts sont laissés de côté
+  (l'API le dit) ;
+- une seule courbe ;
+- pas d'événement d'audit pour une requête de sensibilités : le contrat de
+  `xva.valuation` porte une EPE et une PFE que ce calcul n'a pas.
+
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
 forwards, options actions, CDS (WP 20), scripts.
@@ -2210,6 +2340,19 @@ restants (X8 à X10) sont dans le tableau du §14.
 | S5 | Vega : interpolation dans le cube de vols plutôt que la vol propre de chaque swaption | suffisant tant que le modèle n'a qu'une volatilité |
 | S6 | Suivre les versions de l'ISDA (recalibrage annuel) : paramètres en données plutôt qu'en constantes | la version 2.8+2512 est codée en dur |
 | S7 | SIMM par chemin sur GPU | 12 × 12 produits par chemin et par date : parallèle par nature ; non fait au lot X7 (voir G5) |
+
+### Sensibilités par AAD (X8)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| A1 | **À travers la régression** : bermudans et scripts dans la passe adjointe (coefficients figés, polynômes évalués dans le type générique) | le libellé du lot le demandait ; ces portefeuilles n'ont pas de sensibilités |
+| A2 | **Adjoint sur GPU**, par chemin et sans tape, comme la vol locale du WP 19 | l'adjoint sur tape plafonne à 8 threads (cache) ; la carte fait le pricing en 0,2 s |
+| A3 | Raccourcir la tape d'un chemin (un nœud par date pour les termes nettés, dérivées recalculées à la passe arrière) | deux mégaoctets par chemin : c'est ce qui empêche le passage à l'échelle |
+| A4 | Lisser aussi les sauts du collatéral (MTA, arrondi) | laissés de côté aujourd'hui, avec un avertissement |
+| A5 | Jacobiennes de calibration par AAD (formule de swaption et inversion de Bachelier génériques) | elles sont prises par différences centrées de fonctions déterministes |
+| A6 | Sensibilités du KVA, de la marge initiale, sous wrong-way risk ; deux courbes | hors périmètre de la passe adjointe |
+| A7 | Événement d'audit des sensibilités (type ou champs à ajouter au contrat de `quant-platform`) | une requête de sensibilités n'est pas tracée comme une valorisation |
+| A8 | SA-CVA : couvertures éligibles, plusieurs contreparties et devises, spreads cotés par échéance | une contrepartie, une devise, un spread par notation à toutes les échéances |
 
 ### Capital par modèle interne et scripts (D2, D4)
 

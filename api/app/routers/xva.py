@@ -32,6 +32,8 @@ from ..xva_schemas import (
     XvaPortfoliosResponse,
     XvaRequest,
     XvaResponse,
+    XvaSensitivitiesRequest,
+    XvaSensitivitiesResponse,
 )
 
 router = APIRouter()
@@ -113,3 +115,21 @@ async def xva_netting_set(req: XvaRequest) -> XvaResponse:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     emit("xva.valuation", _payload(req, response))
     return response
+
+
+@router.post("/api/xva/sensitivities", response_model=XvaSensitivitiesResponse)
+async def xva_sensitivities(req: XvaSensitivitiesRequest) -> XvaSensitivitiesResponse:
+    """The sensitivities of the adjustments to every market quote, by adjoint
+    differentiation, and SA-CVA from them."""
+    try:
+        return await run_in_threadpool(xva.compute_sensitivities, req)
+    except db.StoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+    except xva.XvaUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except xva.XvaInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

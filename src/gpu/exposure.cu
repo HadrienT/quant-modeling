@@ -195,7 +195,7 @@ namespace quantModeling::gpu
                         flow[i] += trade.quantity * xva::program_cashflow(p, trade, i, x, exercised);
             }
             if (ns.collateralised)
-                collateral_balances(ns.plan, value, held);
+                collateral_balances(ns.plan, value, held, ns.plan.held_today);
 
             const int m = ns.plan.reporting_dates;
             Real *out = discounted + static_cast<size_t>(local) * m;
@@ -203,7 +203,9 @@ namespace quantModeling::gpu
             for (int r = 0; r < m; ++r)
             {
                 const int i = ns.plan.reporting[r];
-                Real exposure = ns.collateralised ? collateralised_value(ns.plan, r, value, flow, held) : value[i];
+                Real exposure = ns.collateralised
+                                    ? collateralised_value(ns.plan, r, value, flow, held, ns.plan.held_today)
+                                    : value[i];
                 if (ns.im_received != nullptr || ns.im_posted != nullptr)
                     exposure = net_of_initial_margin(exposure, ns.im_received != nullptr ? ns.im_received[r] : 0.0,
                                                      ns.im_posted != nullptr ? ns.im_posted[r] : 0.0);

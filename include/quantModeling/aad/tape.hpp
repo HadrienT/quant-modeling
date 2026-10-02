@@ -35,7 +35,7 @@ namespace quantModeling::aad
      */
     class Tape
     {
-        static bool multi; // lot 17f: differentiating several results at once
+        static thread_local bool multi; // lot 17f: differentiating several results at once, per thread
 
         blocklist<double, ADJSIZE> adjoints_multi_;
         blocklist<double, DATASIZE> derivatives_;

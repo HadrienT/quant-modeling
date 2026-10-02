@@ -31,6 +31,7 @@ import quantmodeling as qm
 from . import credit, db, rates_derivatives
 from .schemas import MethodologySection
 from .xva_schemas import (
+    AdjustmentRisks,
     Adjustments,
     CapitalOut,
     CreditInput,
@@ -41,9 +42,13 @@ from .xva_schemas import (
     HullWhiteInput,
     InitialMarginOut,
     PricingExposure,
+    SaCvaOut,
+    SensitivityAdjustments,
     XvaMarket,
     XvaRequest,
     XvaResponse,
+    XvaSensitivitiesRequest,
+    XvaSensitivitiesResponse,
     XvaTrade,
 )
 
@@ -859,6 +864,120 @@ def _device_reason(requested: str, result: dict) -> str:
     return f"On the CPU: {result['device_note']}."
 
 
+#: The tenors at which SA-CVA asks for the sensitivity to the counterparty's
+#: credit spread (Basel framework, MAR50.65).
+_SPREAD_TENORS = (0.5, 1.0, 3.0, 5.0, 10.0)
+
+
+def compute_sensitivities(
+    req: XvaSensitivitiesRequest, today: Optional[date] = None
+) -> XvaSensitivitiesResponse:
+    """CVA, DVA and FVA of the netting set differentiated to every quote the
+    market gives, by adjoint differentiation, and the SA-CVA capital from
+    those sensitivities."""
+    started = time.perf_counter()
+    warnings: List[str] = []
+    label, _, specs = PORTFOLIOS[req.portfolio]
+    by_regression = sorted({s.kind for s in specs} - {"swap", "swaption"})
+    if not specs or by_regression:
+        raise XvaInputError(
+            "The sensitivities are computed for swaps and European swaptions, "
+            "whose value on a path is a formula that can be differentiated. "
+            + (
+                f"This portfolio holds a {by_regression[0]}, valued by regression."
+                if by_regression
+                else "This portfolio is made of scripts, valued by regression."
+            )
+        )
+    if req.csa is not None and req.csa.initial_margin:
+        raise XvaInputError(
+            "The sensitivities cover variation margin; initial margin, which is a "
+            "model of the margin fitted on the paths, is not differentiated."
+        )
+    rates = _rates_market(today)
+    counterparty = _credit(req.counterparty_rating, req.recovery, rates, warnings)
+    own = _credit(req.own_rating, req.recovery, rates, warnings)
+    trades = _trades(specs, rates)
+    csa = None
+    if req.csa is not None:
+        csa = {
+            "threshold_counterparty": req.csa.threshold_counterparty,
+            "threshold_bank": req.csa.threshold_bank,
+            "minimum_transfer_amount": req.csa.minimum_transfer_amount,
+            "margin_period_of_risk": req.csa.margin_period_of_risk_days
+            / _BUSINESS_DAYS,
+            "cashflows": req.csa.cashflows,
+        }
+    lgd = 1.0 - req.recovery
+    horizon = [max(s.start + s.tenor for s in specs)]
+    investment_grade = counterparty.rating in _INVESTMENT_GRADE
+    result = qm.xva_sensitivities(
+        rates.quotes,
+        rates.vols,
+        trades,
+        # One spread per rating: the same at every tenor.
+        [(t, counterparty.spread) for t in _SPREAD_TENORS],
+        (horizon, [own.hazard]),
+        req.recovery,
+        lgd,
+        lgd,
+        csa,
+        req.borrowing_spread,
+        req.lending_spread,
+        req.paths,
+        req.seed,
+        sector=req.sector,
+        investment_grade=investment_grade,
+    )
+
+    warnings.append(
+        "Counterparty and own credit curves are rating proxies built from bond "
+        "spreads (ICE BofA indices), not CDS quotes of a name: the same spread is "
+        "used at every tenor."
+    )
+    if req.csa is not None and req.csa.minimum_transfer_amount > 0:
+        warnings.append(
+            "A minimum transfer amount makes the collateral jump; the sensitivities "
+            "are those of the path-by-path estimator and leave these jumps out."
+        )
+
+    def risks(rows: List[dict]) -> List[AdjustmentRisks]:
+        return [AdjustmentRisks(**row) for row in rows]
+
+    sa = result["sa_cva"]
+    return XvaSensitivitiesResponse(
+        portfolio=req.portfolio,
+        portfolio_label=label,
+        adjustments=SensitivityAdjustments(**result["adjustments"]),
+        swap_rates=risks(result["swap_rates"]),
+        swaption_vols=risks(result["swaption_vols"]),
+        counterparty_spreads=risks(result["counterparty_spreads"]),
+        own_credit=risks(result["own_credit"]),
+        others=risks(result["others"]),
+        model_risks=risks([{"expiry": 0.0, **row} for row in result["model_risks"]]),
+        sa_cva=SaCvaOut(**sa, sector=req.sector, investment_grade=investment_grade),
+        hull_white=HullWhiteInput(
+            mean_reversion=result["hull_white"]["mean_reversion"],
+            sigma=result["hull_white"]["sigma"],
+            rmse_bp=rates.rmse_bp,
+            vol_points=rates.vol_points,
+            swaption_trades=rates.swaption_trades,
+        ),
+        market_as_of=rates.as_of,
+        paths=req.paths,
+        seed=req.seed,
+        threads=result["threads"],
+        inputs=result["factors"],
+        seconds_adjoint=result["seconds_adjoint"],
+        seconds_valuation=result["seconds_valuation"],
+        cost_ratio=result["seconds_adjoint"] / max(result["seconds_valuation"], 1e-9),
+        bump_valuations=2 * result["factors"],
+        compute_ms=(time.perf_counter() - started) * 1000.0,
+        warnings=warnings,
+        methodology=sensitivities_methodology(),
+    )
+
+
 def market_inputs(response: XvaResponse) -> List[Tuple[str, str, str, object]]:
     """(name, source, as_of, value) of what the computation read from the
     store, for the audit record."""
@@ -1228,6 +1347,117 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
 ]
 
 
+_SENSITIVITY_SECTIONS: List[Tuple[str, List[str]]] = [
+    (
+        "What is computed",
+        [
+            "The derivative of each adjustment — CVA, DVA, the funding cost FCA and "
+            "the funding benefit FBA — to every quote the market gives: each par "
+            "swap rate of the curve, each swaption volatility the model was "
+            "calibrated to, the credit spread of each party, the funding spreads. "
+            "It is the hedge: how much the adjustment moves when a quote moves, "
+            "per unit of the quote. A sensitivity to a rate of 1 000 000 means "
+            "100 per basis point.",
+            "Every figure comes with its Monte-Carlo error, measured as the "
+            "dispersion of the sensitivity over batches of 64 scenarios.",
+        ],
+    ),
+    (
+        "Adjoint differentiation",
+        [
+            "Bumping each input and running the simulation again costs two runs "
+            "per input. The adjoint method (Giles & Glasserman, 2006; Savine, "
+            "2018) gets all of them from one run: every operation of the "
+            "valuation is recorded on a tape, then the tape is read backwards, "
+            "carrying the derivative of the result to each operation in turn. The "
+            "cost is a small multiple of one valuation, whatever the number of "
+            "inputs; the page shows the multiple measured on this run.",
+            "The set-up — the curve, the model, the coefficients of every trade, "
+            "the default probabilities — is recorded once. Each scenario is then "
+            "recorded, read backwards and erased, so the memory is that of one "
+            "scenario: the check-pointing of Savine's book.",
+        ],
+    ),
+    (
+        "From the model to the market",
+        [
+            "The simulation is written in zero rates, in the two parameters of "
+            "Hull-White and in hazard rates; the market quotes swap rates, "
+            "swaption volatilities and credit spreads. Each quote determines the "
+            "model's inputs through a calibration — the bootstrap of the curve, "
+            "the fit of the two parameters to the volatilities, the bootstrap of "
+            "the hazard rates — and the calibration is differentiated at its "
+            "solution, by the implicit function theorem, not through its "
+            "iterations. A swap rate therefore moves the adjustment three ways: "
+            "through the curve, through the model recalibrated on that curve, and "
+            "through the hazard rates, which reprice the same credit spreads on "
+            "it.",
+            "Checked against the direct calculation: move a quote, rebuild the "
+            "curve, calibrate again, price again on the same scenarios.",
+        ],
+    ),
+    (
+        "What a path-by-path derivative misses",
+        [
+            "A swaption that is exercised becomes a swap; one that is not becomes "
+            "nothing. Scenario by scenario that choice does not move when the "
+            "curve moves a little, so a naive derivative ignores the scenarios "
+            "that change sides — more than a tenth of the sensitivity of a bought "
+            "swaption to the 10-year rate. The choice is replaced by a narrow "
+            "ramp (a twentieth of a standard deviation of the swap's value on "
+            "each side), which recovers them and changes the CVA by a few "
+            "thousandths of a percent. A minimum transfer amount makes the "
+            "collateral jump in the same way; that jump is left out, and said so.",
+        ],
+    ),
+    (
+        "SA-CVA",
+        [
+            "The standardised approach for CVA risk (Basel framework, MAR50.42 to "
+            "50.77) computes capital from sensitivities of the regulatory CVA — "
+            "the unilateral one, without the bank's own default. Three risk "
+            "classes matter for interest-rate trades in one currency: the delta "
+            "to the risk-free yield at 1, 2, 5, 10 and 30 years; the vega, to a "
+            "relative shift of every volatility; the delta to the counterparty's "
+            "credit spread at 6 months, 1, 3, 5 and 10 years. Each sensitivity is "
+            "multiplied by a supervisory risk weight, the weighted sensitivities "
+            "of a class are aggregated with supervisory correlations, and the "
+            "classes add up. The text allows the sensitivities to be computed by "
+            "adjoint differentiation (MAR50.47, FAQ 1).",
+            "The swap-rate sensitivities are spread over the five prescribed "
+            "tenors by linear interpolation. No hedge is recognised, and the "
+            "multiplier is the default of 1.",
+        ],
+    ),
+    (
+        "Not covered",
+        [
+            "Trades valued by regression (Bermudans, scripts), initial margin, "
+            "wrong-way risk and the capital adjustments are not differentiated.",
+        ],
+    ),
+    (
+        "Sources",
+        [
+            "Giles & Glasserman, Smoking adjoints: fast Monte Carlo Greeks, Risk, "
+            "2006.",
+            "Savine, Modern Computational Finance: AAD and Parallel Simulations, "
+            "Wiley, 2018.",
+            "Andreasen & Savine, Modern Computational Finance: Scripting for "
+            "Derivatives and xVA, Wiley, 2021 (smoothing of discontinuities).",
+            "Capriotti & Giles, Fast correlation Greeks by adjoint algorithmic "
+            "differentiation, Risk, 2010.",
+            "Basel Committee on Banking Supervision, Basel Framework, MAR50 "
+            "(minimum capital requirements for CVA risk).",
+        ],
+    ),
+]
+
+
+def sensitivities_methodology() -> List[MethodologySection]:
+    return [MethodologySection(title=t, paragraphs=p) for t, p in _SENSITIVITY_SECTIONS]
+
+
 def methodology() -> List[MethodologySection]:
     return [MethodologySection(title=t, paragraphs=p) for t, p in _SECTIONS]
 
@@ -1301,6 +1531,7 @@ def portfolios() -> List[Tuple[str, str, str]]:
 
 __all__ = [
     "compute",
+    "compute_sensitivities",
     "market_inputs",
     "methodology",
     "portfolios",

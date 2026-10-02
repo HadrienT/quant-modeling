@@ -33,24 +33,33 @@
  * Every sum runs in the order the trade's own value() uses, so that on the
  * host the program gives the trade's numbers, and on the device the same up
  * to the last bits of exp and erfc.
+ *
+ * The coefficients and the evaluation are written for any number type T: a
+ * double on the host and on the device, and the differentiable number of the
+ * adjoint run (lot X8, engines/xva/xva_risks.hpp), whose coefficients are
+ * recorded on the tape as functions of the curve and of the model. For that
+ * run each coefficient also keeps its **source**: the dates it was computed
+ * from, so that it can be computed again in another number type.
  */
 
 namespace quantModeling::xva
 {
 
     /// amount × exp(-G x).
-    struct ProgramExp
+    template <class T>
+    struct BasicProgramExp
     {
-        Real amount;
-        Real G;
+        T amount;
+        T G;
     };
 
     /// An amount fixed at `fixing` (a grid index, or -1 for today, where the
     /// state is 0): scale × (B exp(g x) + constant).
-    struct ProgramCoupon
+    template <class T>
+    struct BasicProgramCoupon
     {
-        Real B;
-        Real g;
+        T B;
+        T g;
         Real constant;
         Real scale;
         int fixing;
@@ -59,10 +68,11 @@ namespace quantModeling::xva
 
     /// A coupon already fixed, discounted from its payment: coupon × amount ×
     /// exp(-G x).
-    struct ProgramAccrued
+    template <class T>
+    struct BasicProgramAccrued
     {
-        Real amount;
-        Real G;
+        T amount;
+        T G;
         int coupon;
         int padding = 0;
     };
@@ -81,23 +91,25 @@ namespace quantModeling::xva
     /// An option at a grid date before its expiry T: the state at T given
     /// the state x today is N(decay x + drift, variance) under the T-forward
     /// measure, and P(t, T | x) = zcb_amount × exp(-zcb_G x).
-    struct ProgramOptionDate
+    template <class T>
+    struct BasicProgramOptionDate
     {
-        Real decay;
-        Real drift;
-        Real variance;
-        Real sd;
+        T decay;
+        T drift;
+        T variance;
+        T sd;
         /// (variance - y(T)) / 2.
-        Real convexity;
-        Real zcb_amount;
-        Real zcb_G;
+        T convexity;
+        T zcb_amount;
+        T zcb_G;
     };
 
     /// One bond of the exercise value: coefficient × exp(-G x(T) - G² y(T) / 2).
-    struct ProgramOptionBond
+    template <class T>
+    struct BasicProgramOptionBond
     {
-        Real coefficient;
-        Real G;
+        T coefficient;
+        T G;
     };
 
     /// An interval of x(T) where the option is exercised; the outer bounds
@@ -122,20 +134,81 @@ namespace quantModeling::xva
         int padding = 0;
     };
 
+    using ProgramExp = BasicProgramExp<Real>;
+    using ProgramCoupon = BasicProgramCoupon<Real>;
+    using ProgramAccrued = BasicProgramAccrued<Real>;
+    using ProgramOptionDate = BasicProgramOptionDate<Real>;
+    using ProgramOptionBond = BasicProgramOptionBond<Real>;
+
     /// The arrays, as the pointers a kernel takes by value.
-    struct ProgramView
+    template <class T>
+    struct BasicProgramView
     {
         const ProgramTrade *trades = nullptr;
         const ProgramDate *dates = nullptr;
-        const ProgramExp *exps = nullptr;
-        const ProgramCoupon *coupons = nullptr;
-        const ProgramAccrued *accrued = nullptr;
+        const BasicProgramExp<T> *exps = nullptr;
+        const BasicProgramCoupon<T> *coupons = nullptr;
+        const BasicProgramAccrued<T> *accrued = nullptr;
         const int *paid = nullptr;
-        const ProgramOptionDate *option_dates = nullptr;
-        const ProgramOptionBond *option_bonds = nullptr;
+        const BasicProgramOptionDate<T> *option_dates = nullptr;
+        const BasicProgramOptionBond<T> *option_bonds = nullptr;
         const ProgramInterval *intervals = nullptr;
         int n_trades = 0;
         int n_dates = 0;
+    };
+
+    using ProgramView = BasicProgramView<Real>;
+
+    // ── Where each coefficient comes from (lot X8) ──────────────────────────
+    //
+    // With P the discount curve, G and y the model's functions:
+
+    /// raw × P(to) / P(from) × exp(-G(from, to)² y(from) / 2), with
+    /// G(from, to): a cash flow `raw` at `to`, seen from `from`.
+    struct BondSource
+    {
+        Real raw;
+        Time from;
+        Time to;
+    };
+
+    /// B = beta × P(start) / P(end) × exp(g² y(start) / 2), g = G(start, end).
+    struct CouponSource
+    {
+        Real beta;
+        Time start;
+        Time end;
+    };
+
+    /// The transition of the state from `from` to `expiry` under the
+    /// expiry-forward measure, and P(from, expiry).
+    struct OptionDateSource
+    {
+        Time from;
+        Time expiry;
+    };
+
+    /// coefficient = raw × P(to) / P(expiry), G = G(expiry, to).
+    struct OptionBondSource
+    {
+        Real raw;
+        Time expiry;
+        Time to;
+    };
+
+    /// What a trade is worth today, for the collateral called on it: the
+    /// sum of raw × P(to) over `terms`, or, for an option, its integral seen
+    /// from today (`expiry` > 0).
+    struct TodaySource
+    {
+        int term_begin = 0, term_end = 0;
+        Time expiry = -1.0;
+    };
+
+    struct TodayTerm
+    {
+        Real raw;
+        Time to;
     };
 
     /// The trades of one simulation, on one grid.
@@ -151,6 +224,17 @@ namespace quantModeling::xva
         std::vector<ProgramOptionDate> option_dates;
         std::vector<ProgramOptionBond> option_bonds;
         std::vector<ProgramInterval> intervals;
+
+        /// The sources, index for index with the arrays above; never sent to
+        /// a device.
+        std::vector<BondSource> exp_sources;
+        std::vector<CouponSource> coupon_sources;
+        std::vector<BondSource> accrued_sources;
+        std::vector<OptionDateSource> option_date_sources;
+        std::vector<OptionBondSource> option_bond_sources;
+        /// One per trade.
+        std::vector<TodaySource> today;
+        std::vector<TodayTerm> today_terms;
 
         ProgramView view() const
         {
@@ -168,77 +252,116 @@ namespace quantModeling::xva
         }
     };
 
-    /// Φ(x), as utils/stats.hpp writes it.
-    QM_HOST_DEVICE inline Real program_norm_cdf(Real x)
+    /// Φ(x), as utils/stats.hpp writes it. A differentiable number finds its
+    /// own normal_cdf by argument-dependent lookup.
+    QM_HOST_DEVICE inline Real normal_cdf(Real x)
     {
         using std::erfc;
         return 0.5 * erfc(-x / 1.4142135623730951);
     }
 
-    QM_HOST_DEVICE inline Real program_coupon(const ProgramCoupon &c, const Real *state)
+    /// max(x, 0).
+    template <class T>
+    QM_HOST_DEVICE inline T program_positive(const T &x)
+    {
+        if (x > 0.0)
+            return x;
+        return T(0.0);
+    }
+
+    template <class T>
+    QM_HOST_DEVICE inline T program_coupon(const BasicProgramCoupon<T> &c, const T *state)
     {
         using std::exp;
-        const Real x = c.fixing < 0 ? 0.0 : state[c.fixing];
-        return c.scale * (c.B * exp(c.g * x) + c.constant);
+        if (c.fixing < 0)
+            return T(c.scale * (c.B * exp(c.g * 0.0) + c.constant));
+        return T(c.scale * (c.B * exp(c.g * state[c.fixing]) + c.constant));
     }
 
     /// The part of a trade that is a sum of bonds, at grid date i.
-    QM_HOST_DEVICE inline Real program_linear_value(const ProgramView &p, const ProgramTrade &trade,
-                                                    int i, const Real *state)
+    template <class T>
+    QM_HOST_DEVICE inline T program_linear_value(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
+                                                 const T *state)
     {
         using std::exp;
         const ProgramDate &date = p.dates[trade.date_begin + i];
-        const Real x = state[i];
-        Real v = 0.0;
-        for (int j = date.exp_begin; j < date.exp_end; ++j)
+        const T &x = state[i];
+        T v(0.0);
+        // Four terms to a statement, added in the order of one term at a
+        // time: the same double, and a quarter of the nodes on a tape.
+        int j = date.exp_begin;
+        for (; j + 4 <= date.exp_end; j += 4)
+            v = v + p.exps[j].amount * exp(-p.exps[j].G * x) + p.exps[j + 1].amount * exp(-p.exps[j + 1].G * x) +
+                p.exps[j + 2].amount * exp(-p.exps[j + 2].G * x) + p.exps[j + 3].amount * exp(-p.exps[j + 3].G * x);
+        for (; j < date.exp_end; ++j)
             v += p.exps[j].amount * exp(-p.exps[j].G * x);
-        for (int j = date.accrued_begin; j < date.accrued_end; ++j)
+        for (j = date.accrued_begin; j < date.accrued_end; ++j)
             v += program_coupon(p.coupons[p.accrued[j].coupon], state) * p.accrued[j].amount *
                  exp(-p.accrued[j].G * x);
         return v;
     }
 
-    QM_HOST_DEVICE inline Real program_linear_cashflow(const ProgramView &p, const ProgramTrade &trade,
-                                                       int i, const Real *state)
+    template <class T>
+    QM_HOST_DEVICE inline T program_linear_cashflow(const BasicProgramView<T> &p, const ProgramTrade &trade,
+                                                    int i, const T *state)
     {
         const ProgramDate &date = p.dates[trade.date_begin + i];
-        Real flow = date.fixed_cashflow;
+        T flow(date.fixed_cashflow);
         for (int j = date.paid_begin; j < date.paid_end; ++j)
             flow += program_coupon(p.coupons[p.paid[j]], state);
         return flow;
     }
 
-    /// The option at grid date i < expiry: its exercise value integrated
-    /// over the exercise region, bond by bond.
-    QM_HOST_DEVICE inline Real program_option_value(const ProgramView &p, const ProgramTrade &trade,
-                                                    int i, const Real *state)
+    /// The integral of an option's exercise value over its exercise region,
+    /// bond by bond, seen from a date where the state is x.
+    template <class T>
+    QM_HOST_DEVICE inline T program_option_integral(const BasicProgramView<T> &p, const ProgramTrade &trade,
+                                                    const BasicProgramOptionDate<T> &d, const T &x)
     {
         using std::exp;
         using std::isinf;
-        const ProgramOptionDate &d = p.option_dates[trade.option_date_begin + i];
-        const Real x = state[i];
-        const Real m = d.decay * x + d.drift, v = d.variance, sd = d.sd;
-        Real value = 0.0;
+        const T m = d.decay * x + d.drift;
+        const T &v = d.variance;
+        const T &sd = d.sd;
+        T value(0.0);
         for (int r = trade.interval_begin; r < trade.interval_end; ++r)
         {
             const Real l = p.intervals[r].lower, u = p.intervals[r].upper;
+            // One statement a bond, whichever bounds are infinite: Φ(+∞) = 1
+            // and Φ(-∞) = 0 are written in, not computed.
+            const bool above = isinf(u), below = isinf(l);
             for (int k = trade.bond_begin; k < trade.bond_end; ++k)
             {
-                const Real G = p.option_bonds[k].G;
-                const Real Fu = isinf(u) ? 1.0 : program_norm_cdf((u - m + G * v) / sd);
-                const Real Fl = isinf(l) ? 0.0 : program_norm_cdf((l - m + G * v) / sd);
-                value += p.option_bonds[k].coefficient * exp(-G * m + G * G * d.convexity) * (Fu - Fl);
+                const T &G = p.option_bonds[k].G;
+                const T &c = p.option_bonds[k].coefficient;
+                if (above && below)
+                    value += c * exp(-G * m + G * G * d.convexity) * (1.0 - 0.0);
+                else if (above)
+                    value += c * exp(-G * m + G * G * d.convexity) * (1.0 - normal_cdf((l - m + G * v) / sd));
+                else if (below)
+                    value += c * exp(-G * m + G * G * d.convexity) * (normal_cdf((u - m + G * v) / sd) - 0.0);
+                else
+                    value += c * exp(-G * m + G * G * d.convexity) *
+                             (normal_cdf((u - m + G * v) / sd) - normal_cdf((l - m + G * v) / sd));
             }
         }
-        const Real priced = d.zcb_amount * exp(-d.zcb_G * x) * value;
         // Deep out of the money the terms cancel down to rounding noise.
-        return priced > 0.0 ? priced : 0.0;
+        return program_positive(T(d.zcb_amount * exp(-d.zcb_G * x) * value));
+    }
+
+    /// The option at grid date i < expiry.
+    template <class T>
+    QM_HOST_DEVICE inline T program_option_value(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
+                                                 const T *state)
+    {
+        return program_option_integral(p, trade, p.option_dates[trade.option_date_begin + i], state[i]);
     }
 
     /// What the option became at its expiry: true when it was exercised, and
     /// for a trade that is not an option.
-    QM_HOST_DEVICE inline bool program_exercised(const ProgramView &p, const ProgramTrade &trade,
-                                                 const Real *state)
+    template <class T>
+    QM_HOST_DEVICE inline bool program_exercised(const BasicProgramView<T> &p, const ProgramTrade &trade,
+                                                 const T *state)
     {
         return trade.expiry < 0 || program_linear_value(p, trade, trade.expiry, state) > 0.0;
     }
@@ -246,20 +369,24 @@ namespace quantModeling::xva
     /// Value of one unit of the trade at grid date i, of the cash flows
     /// strictly after that date. `exercised` is program_exercised(), read
     /// once per path (it only matters from the expiry on).
-    QM_HOST_DEVICE inline Real program_value(const ProgramView &p, const ProgramTrade &trade, int i,
-                                             const Real *state, bool exercised)
+    template <class T>
+    QM_HOST_DEVICE inline T program_value(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
+                                          const T *state, bool exercised)
     {
         if (i < trade.expiry)
             return program_option_value(p, trade, i, state);
-        return exercised ? program_linear_value(p, trade, i, state) : 0.0;
+        if (exercised)
+            return program_linear_value(p, trade, i, state);
+        return T(0.0);
     }
 
     /// Cash flow of one unit of the trade at grid date i.
-    QM_HOST_DEVICE inline Real program_cashflow(const ProgramView &p, const ProgramTrade &trade, int i,
-                                                const Real *state, bool exercised)
+    template <class T>
+    QM_HOST_DEVICE inline T program_cashflow(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
+                                             const T *state, bool exercised)
     {
         if (trade.expiry >= 0 && (i <= trade.expiry || !exercised))
-            return 0.0;
+            return T(0.0);
         return program_linear_cashflow(p, trade, i, state);
     }
 
@@ -270,11 +397,14 @@ namespace quantModeling::xva
      *
      * Draw i of path p is Φ⁻¹(Philox(seed, p, i)).
      */
-    struct StateDynamics
+    template <class T>
+    struct BasicStateDynamics
     {
-        std::vector<Real> decay, drift, sd;
-        std::vector<Real> weight_scale, weight_G;
+        std::vector<T> decay, drift, sd;
+        std::vector<T> weight_scale, weight_G;
     };
+
+    using StateDynamics = BasicStateDynamics<Real>;
 
 } // namespace quantModeling::xva
 

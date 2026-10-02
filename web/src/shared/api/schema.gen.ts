@@ -761,6 +761,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/xva/sensitivities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Xva Sensitivities
+         * @description The sensitivities of the adjustments to every market quote, by adjoint
+         *     differentiation, and SA-CVA from them.
+         */
+        post: operations["xva_sensitivities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1474,6 +1495,36 @@ export interface components {
             not_included: string[];
             /** Portfolios */
             portfolios: components["schemas"]["Portfolio-Output"][];
+        };
+        /**
+         * AdjustmentRisks
+         * @description The sensitivity of each adjustment to one quantity, per unit of it
+         *     (multiply by 0.0001 for a basis point), with its Monte-Carlo error.
+         */
+        AdjustmentRisks: {
+            cva: components["schemas"]["Estimate"];
+            /** @description The regulatory CVA's: the bank assumed default-free */
+            cva_unilateral: components["schemas"]["Estimate"];
+            dva: components["schemas"]["Estimate"];
+            /**
+             * Expiry
+             * @description Expiry of a swaption; 0 otherwise
+             */
+            expiry: number;
+            fba: components["schemas"]["Estimate"];
+            fca: components["schemas"]["Estimate"];
+            /** Label */
+            label: string;
+            /**
+             * Level
+             * @description The quantity today
+             */
+            level: number;
+            /**
+             * Tenor
+             * @description Tenor of the swap, the swaption or the spread
+             */
+            tenor: number;
         };
         /** Adjustments */
         Adjustments: {
@@ -4736,6 +4787,45 @@ export interface components {
             /** Ttm */
             ttm: number;
         };
+        /**
+         * SaCvaOut
+         * @description The standardised approach for CVA risk (MAR50), from the sensitivities
+         *     of the unilateral CVA.
+         */
+        SaCvaOut: {
+            /** Capital */
+            capital: number;
+            /** Capital Credit Spread Delta */
+            capital_credit_spread_delta: number;
+            /** Capital Interest Rate Delta */
+            capital_interest_rate_delta: number;
+            /** Capital Interest Rate Vega */
+            capital_interest_rate_vega: number;
+            /** Credit Spread Delta */
+            credit_spread_delta: number[];
+            /** Credit Spread Risk Weight */
+            credit_spread_risk_weight: number;
+            /** Credit Spread Tenors */
+            credit_spread_tenors: number[];
+            /**
+             * Interest Rate Delta
+             * @description Sensitivity to the risk-free yield of each tenor, per unit
+             */
+            interest_rate_delta: number[];
+            /** Interest Rate Risk Weights */
+            interest_rate_risk_weights: number[];
+            /** Interest Rate Tenors */
+            interest_rate_tenors: number[];
+            /**
+             * Interest Rate Vega
+             * @description Sensitivity to a relative shift of every volatility, per unit
+             */
+            interest_rate_vega: number;
+            /** Investment Grade */
+            investment_grade: boolean;
+            /** Sector */
+            sector: string;
+        };
         /** SabrInput */
         SabrInput: {
             /** Alpha */
@@ -5167,6 +5257,14 @@ export interface components {
              * Format: date
              */
             valuation_date?: string;
+        };
+        /** SensitivityAdjustments */
+        SensitivityAdjustments: {
+            cva: components["schemas"]["Estimate"];
+            cva_unilateral: components["schemas"]["Estimate"];
+            dva: components["schemas"]["Estimate"];
+            fba: components["schemas"]["Estimate"];
+            fca: components["schemas"]["Estimate"];
         };
         /** SeriesValue */
         SeriesValue: {
@@ -6230,6 +6328,136 @@ export interface components {
             trades: components["schemas"]["XvaTrade"][];
             /** Value Today */
             value_today: number;
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * XvaSensitivitiesRequest
+         * @description The netting set whose CVA, DVA and FVA are differentiated to every
+         *     market quote. Swaps and European swaptions, with or without variation
+         *     margin: what the adjoint run covers.
+         */
+        XvaSensitivitiesRequest: {
+            /**
+             * Borrowing Spread
+             * @default 0
+             */
+            borrowing_spread: number;
+            /**
+             * Counterparty Rating
+             * @default BBB
+             * @enum {string}
+             */
+            counterparty_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /** @description None for an uncollateralised netting set */
+            csa?: components["schemas"]["CsaInput"] | null;
+            /**
+             * Lending Spread
+             * @default 0
+             */
+            lending_spread: number;
+            /**
+             * Own Rating
+             * @default A
+             * @enum {string}
+             */
+            own_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Paths
+             * @default 5000
+             */
+            paths: number;
+            /**
+             * Portfolio
+             * @default single_swap
+             * @enum {string}
+             */
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
+            /**
+             * Recovery
+             * @default 0.4
+             */
+            recovery: number;
+            /**
+             * Sector
+             * @description The counterparty's sector, for SA-CVA
+             * @default other
+             * @enum {string}
+             */
+            sector: "sovereign" | "local_government" | "financial" | "basic_materials_energy_industrials" | "consumer_transport_administrative" | "technology_telecommunications" | "health_care_utilities_professional" | "other";
+            /**
+             * Seed
+             * @default 42
+             */
+            seed: number;
+        };
+        /** XvaSensitivitiesResponse */
+        XvaSensitivitiesResponse: {
+            adjustments: components["schemas"]["SensitivityAdjustments"];
+            /**
+             * Bump Valuations
+             * @description Valuations a central difference of every input would take
+             */
+            bump_valuations: number;
+            /** Compute Ms */
+            compute_ms: number;
+            /**
+             * Cost Ratio
+             * @description seconds_adjoint / seconds_valuation
+             */
+            cost_ratio: number;
+            /** Counterparty Spreads */
+            counterparty_spreads: components["schemas"]["AdjustmentRisks"][];
+            hull_white: components["schemas"]["HullWhiteInput"];
+            /**
+             * Inputs
+             * @description Inputs of the model differentiated to
+             */
+            inputs: number;
+            /**
+             * Market As Of
+             * Format: date
+             */
+            market_as_of: string;
+            /** Methodology */
+            methodology: components["schemas"]["MethodologySection"][];
+            /** Model Risks */
+            model_risks: components["schemas"]["AdjustmentRisks"][];
+            /**
+             * Others
+             * @description Losses given default and funding spreads
+             */
+            others: components["schemas"]["AdjustmentRisks"][];
+            /** Own Credit */
+            own_credit: components["schemas"]["AdjustmentRisks"][];
+            /** Paths */
+            paths: number;
+            /**
+             * Portfolio
+             * @enum {string}
+             */
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
+            /** Portfolio Label */
+            portfolio_label: string;
+            sa_cva: components["schemas"]["SaCvaOut"];
+            /**
+             * Seconds Adjoint
+             * @description Wall time of the paths with every sensitivity
+             */
+            seconds_adjoint: number;
+            /**
+             * Seconds Valuation
+             * @description Wall time of the same paths without sensitivities
+             */
+            seconds_valuation: number;
+            /** Seed */
+            seed: number;
+            /** Swap Rates */
+            swap_rates: components["schemas"]["AdjustmentRisks"][];
+            /** Swaption Vols */
+            swaption_vols: components["schemas"]["AdjustmentRisks"][];
+            /** Threads */
+            threads: number;
             /** Warnings */
             warnings: string[];
         };
@@ -7767,6 +7995,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["XvaPortfoliosResponse"];
+                };
+            };
+        };
+    };
+    xva_sensitivities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["XvaSensitivitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XvaSensitivitiesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
