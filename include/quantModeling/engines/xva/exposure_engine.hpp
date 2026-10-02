@@ -3,6 +3,7 @@
 
 #include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/engines/xva/future_value.hpp"
+#include "quantModeling/engines/xva/xva_risks.hpp"
 #include "quantModeling/instruments/base.hpp"
 #include "quantModeling/market/historical_rate_dynamics.hpp"
 #include "quantModeling/models/rates/hull_white_curve.hpp"
@@ -249,6 +250,26 @@ namespace quantModeling
                                                 const NettingSetRequest &request,
                                                 ThreadPool *pool = nullptr);
 
+        /**
+         * @brief CVA, DVA, FCA and FBA of the netting set of all the trades,
+         *        and their sensitivities to every input, by adjoint
+         *        differentiation (engines/xva/xva_risks.hpp, lot X8).
+         *
+         * `settings` gives the paths, the seed and the grid; the CSA's margin
+         * period of risk is put on the grid.
+         *
+         * @throws InvalidInput when a trade is valued by regression, when the
+         *         model has two curves, or under the historical measure.
+         */
+        XvaRisks xva_risks(ExposureSimulationSettings settings, const XvaRiskInputs &inputs,
+                           ThreadPool *pool = nullptr);
+
+        /// The same estimator in plain doubles, without sensitivities: what
+        /// xva_risks() is checked against by finite differences, and what its
+        /// cost is measured against.
+        XvaValues xva_values(ExposureSimulationSettings settings, const XvaRiskInputs &inputs,
+                             ThreadPool *pool = nullptr);
+
         /// Standard deviation of the pilot's starting state in the last
         /// simulate(): 0 unless the main simulation ran under the historical
         /// measure with a trade valued by regression.
@@ -278,6 +299,12 @@ namespace quantModeling
         /// on the GPU, the reason is thrown.
         bool on_device(const ExposureSimulationSettings &settings, xva::ExposureProgram &program,
                        std::string &note) const;
+
+        /// What a run of xva_risks() or xva_values() is set up with
+        /// (src/engines/xva/xva_risks.cpp).
+        struct RiskRun;
+        void prepare_risk_run(ExposureSimulationSettings &settings, const XvaRiskInputs &inputs,
+                              RiskRun &run);
 
         const HullWhiteCurveModel &model_;
         std::vector<Trade> trades_;

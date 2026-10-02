@@ -34,6 +34,59 @@
         "title": "AccountExport",
         "type": "object"
       },
+      "AdjustmentRisks": {
+        "description": "The sensitivity of each adjustment to one quantity, per unit of it\n(multiply by 0.0001 for a basis point), with its Monte-Carlo error.",
+        "properties": {
+          "cva": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "cva_unilateral": {
+            "$ref": "#/components/schemas/Estimate",
+            "description": "The regulatory CVA's: the bank assumed default-free"
+          },
+          "dva": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "expiry": {
+            "description": "Expiry of a swaption; 0 otherwise",
+            "title": "Expiry",
+            "type": "number"
+          },
+          "fba": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "fca": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "level": {
+            "description": "The quantity today",
+            "title": "Level",
+            "type": "number"
+          },
+          "tenor": {
+            "description": "Tenor of the swap, the swaption or the spread",
+            "title": "Tenor",
+            "type": "number"
+          }
+        },
+        "required": [
+          "label",
+          "expiry",
+          "tenor",
+          "level",
+          "cva",
+          "dva",
+          "fca",
+          "fba",
+          "cva_unilateral"
+        ],
+        "title": "AdjustmentRisks",
+        "type": "object"
+      },
       "Adjustments": {
         "properties": {
           "colva": {
@@ -7261,6 +7314,97 @@
         "title": "SABRPathRequest",
         "type": "object"
       },
+      "SaCvaOut": {
+        "description": "The standardised approach for CVA risk (MAR50), from the sensitivities\nof the unilateral CVA.",
+        "properties": {
+          "capital": {
+            "title": "Capital",
+            "type": "number"
+          },
+          "capital_credit_spread_delta": {
+            "title": "Capital Credit Spread Delta",
+            "type": "number"
+          },
+          "capital_interest_rate_delta": {
+            "title": "Capital Interest Rate Delta",
+            "type": "number"
+          },
+          "capital_interest_rate_vega": {
+            "title": "Capital Interest Rate Vega",
+            "type": "number"
+          },
+          "credit_spread_delta": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Credit Spread Delta",
+            "type": "array"
+          },
+          "credit_spread_risk_weight": {
+            "title": "Credit Spread Risk Weight",
+            "type": "number"
+          },
+          "credit_spread_tenors": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Credit Spread Tenors",
+            "type": "array"
+          },
+          "interest_rate_delta": {
+            "description": "Sensitivity to the risk-free yield of each tenor, per unit",
+            "items": {
+              "type": "number"
+            },
+            "title": "Interest Rate Delta",
+            "type": "array"
+          },
+          "interest_rate_risk_weights": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Interest Rate Risk Weights",
+            "type": "array"
+          },
+          "interest_rate_tenors": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Interest Rate Tenors",
+            "type": "array"
+          },
+          "interest_rate_vega": {
+            "description": "Sensitivity to a relative shift of every volatility, per unit",
+            "title": "Interest Rate Vega",
+            "type": "number"
+          },
+          "investment_grade": {
+            "title": "Investment Grade",
+            "type": "boolean"
+          },
+          "sector": {
+            "title": "Sector",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interest_rate_tenors",
+          "interest_rate_delta",
+          "interest_rate_risk_weights",
+          "interest_rate_vega",
+          "credit_spread_tenors",
+          "credit_spread_delta",
+          "credit_spread_risk_weight",
+          "capital_interest_rate_delta",
+          "capital_interest_rate_vega",
+          "capital_credit_spread_delta",
+          "capital",
+          "sector",
+          "investment_grade"
+        ],
+        "title": "SaCvaOut",
+        "type": "object"
+      },
       "SabrInput": {
         "properties": {
           "alpha": {
@@ -8042,6 +8186,34 @@
           "messages"
         ],
         "title": "ScriptingChatRequest",
+        "type": "object"
+      },
+      "SensitivityAdjustments": {
+        "properties": {
+          "cva": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "cva_unilateral": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "dva": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "fba": {
+            "$ref": "#/components/schemas/Estimate"
+          },
+          "fca": {
+            "$ref": "#/components/schemas/Estimate"
+          }
+        },
+        "required": [
+          "cva",
+          "dva",
+          "fca",
+          "fba",
+          "cva_unilateral"
+        ],
+        "title": "SensitivityAdjustments",
         "type": "object"
       },
       "SeriesValue": {
@@ -10699,6 +10871,281 @@
         "title": "XvaResponse",
         "type": "object"
       },
+      "XvaSensitivitiesRequest": {
+        "description": "The netting set whose CVA, DVA and FVA are differentiated to every\nmarket quote. Swaps and European swaptions, with or without variation\nmargin: what the adjoint run covers.",
+        "properties": {
+          "borrowing_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Borrowing Spread",
+            "type": "number"
+          },
+          "counterparty_rating": {
+            "default": "BBB",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Counterparty Rating",
+            "type": "string"
+          },
+          "csa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CsaInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None for an uncollateralised netting set"
+          },
+          "lending_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Lending Spread",
+            "type": "number"
+          },
+          "own_rating": {
+            "default": "A",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Own Rating",
+            "type": "string"
+          },
+          "paths": {
+            "default": 5000,
+            "maximum": 20000.0,
+            "minimum": 1000.0,
+            "title": "Paths",
+            "type": "integer"
+          },
+          "portfolio": {
+            "default": "single_swap",
+            "enum": [
+              "single_swap",
+              "bought_swaption",
+              "sold_swaption",
+              "directional",
+              "balanced",
+              "bermudan",
+              "cancellable",
+              "scripted_swap",
+              "custom"
+            ],
+            "title": "Portfolio",
+            "type": "string"
+          },
+          "recovery": {
+            "default": 0.4,
+            "maximum": 0.9,
+            "minimum": 0.0,
+            "title": "Recovery",
+            "type": "number"
+          },
+          "sector": {
+            "default": "other",
+            "description": "The counterparty's sector, for SA-CVA",
+            "enum": [
+              "sovereign",
+              "local_government",
+              "financial",
+              "basic_materials_energy_industrials",
+              "consumer_transport_administrative",
+              "technology_telecommunications",
+              "health_care_utilities_professional",
+              "other"
+            ],
+            "title": "Sector",
+            "type": "string"
+          },
+          "seed": {
+            "default": 42,
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "title": "XvaSensitivitiesRequest",
+        "type": "object"
+      },
+      "XvaSensitivitiesResponse": {
+        "properties": {
+          "adjustments": {
+            "$ref": "#/components/schemas/SensitivityAdjustments"
+          },
+          "bump_valuations": {
+            "description": "Valuations a central difference of every input would take",
+            "title": "Bump Valuations",
+            "type": "integer"
+          },
+          "compute_ms": {
+            "title": "Compute Ms",
+            "type": "number"
+          },
+          "cost_ratio": {
+            "description": "seconds_adjoint / seconds_valuation",
+            "title": "Cost Ratio",
+            "type": "number"
+          },
+          "counterparty_spreads": {
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Counterparty Spreads",
+            "type": "array"
+          },
+          "hull_white": {
+            "$ref": "#/components/schemas/HullWhiteInput"
+          },
+          "inputs": {
+            "description": "Inputs of the model differentiated to",
+            "title": "Inputs",
+            "type": "integer"
+          },
+          "market_as_of": {
+            "format": "date",
+            "title": "Market As Of",
+            "type": "string"
+          },
+          "methodology": {
+            "items": {
+              "$ref": "#/components/schemas/MethodologySection"
+            },
+            "title": "Methodology",
+            "type": "array"
+          },
+          "model_risks": {
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Model Risks",
+            "type": "array"
+          },
+          "others": {
+            "description": "Losses given default and funding spreads",
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Others",
+            "type": "array"
+          },
+          "own_credit": {
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Own Credit",
+            "type": "array"
+          },
+          "paths": {
+            "title": "Paths",
+            "type": "integer"
+          },
+          "portfolio": {
+            "enum": [
+              "single_swap",
+              "bought_swaption",
+              "sold_swaption",
+              "directional",
+              "balanced",
+              "bermudan",
+              "cancellable",
+              "scripted_swap",
+              "custom"
+            ],
+            "title": "Portfolio",
+            "type": "string"
+          },
+          "portfolio_label": {
+            "title": "Portfolio Label",
+            "type": "string"
+          },
+          "sa_cva": {
+            "$ref": "#/components/schemas/SaCvaOut"
+          },
+          "seconds_adjoint": {
+            "description": "Wall time of the paths with every sensitivity",
+            "title": "Seconds Adjoint",
+            "type": "number"
+          },
+          "seconds_valuation": {
+            "description": "Wall time of the same paths without sensitivities",
+            "title": "Seconds Valuation",
+            "type": "number"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "swap_rates": {
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Swap Rates",
+            "type": "array"
+          },
+          "swaption_vols": {
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Swaption Vols",
+            "type": "array"
+          },
+          "threads": {
+            "title": "Threads",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "portfolio",
+          "portfolio_label",
+          "adjustments",
+          "swap_rates",
+          "swaption_vols",
+          "counterparty_spreads",
+          "own_credit",
+          "others",
+          "model_risks",
+          "sa_cva",
+          "hull_white",
+          "market_as_of",
+          "paths",
+          "seed",
+          "threads",
+          "inputs",
+          "seconds_adjoint",
+          "seconds_valuation",
+          "cost_ratio",
+          "bump_valuations",
+          "compute_ms",
+          "warnings",
+          "methodology"
+        ],
+        "title": "XvaSensitivitiesResponse",
+        "type": "object"
+      },
       "XvaTrade": {
         "properties": {
           "description": {
@@ -13323,6 +13770,45 @@
           }
         },
         "summary": "Xva Portfolios"
+      }
+    },
+    "/api/xva/sensitivities": {
+      "post": {
+        "description": "The sensitivities of the adjustments to every market quote, by adjoint\ndifferentiation, and SA-CVA from them.",
+        "operationId": "xva_sensitivities",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/XvaSensitivitiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XvaSensitivitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Xva Sensitivities"
       }
     },
     "/health": {

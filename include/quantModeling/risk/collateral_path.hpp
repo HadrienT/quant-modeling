@@ -62,27 +62,46 @@ namespace quantModeling
         OnlyBankPays
     };
 
-    /// max(V - H_C, 0) - max(-V - H_I, 0): what a perfect CSA would hold.
-    QM_HOST_DEVICE inline Real variation_margin_required(Real value, const CollateralTerms &terms)
+    /// max(x, 0), for a double or a differentiable number.
+    template <class T>
+    QM_HOST_DEVICE inline T positive_part(const T &x)
     {
-        const Real called = value - terms.threshold_counterparty;
-        const Real posted = -value - terms.threshold_bank;
-        return (called > 0.0 ? called : 0.0) - (posted > 0.0 ? posted : 0.0);
+        if (x > 0.0)
+            return x;
+        return T(0.0);
+    }
+
+    /// x rounded to the nearest multiple of `unit`. The differentiable
+    /// version (engines/xva) is a constant: a rounded amount does not move
+    /// with what it rounds.
+    QM_HOST_DEVICE inline Real round_to_multiple(Real x, Real unit)
+    {
+        using std::round;
+        return round(x / unit) * unit;
+    }
+
+    /// max(V - H_C, 0) - max(-V - H_I, 0): what a perfect CSA would hold.
+    template <class T>
+    QM_HOST_DEVICE inline T variation_margin_required(const T &value, const CollateralTerms &terms)
+    {
+        const T called = value - terms.threshold_counterparty;
+        const T posted = -value - terms.threshold_bank;
+        return positive_part(called) - positive_part(posted);
     }
 
     /// One margin call: nothing moves below the minimum transfer amount,
     /// otherwise the transfer is rounded to the nearest multiple of the
     /// rounding.
-    QM_HOST_DEVICE inline Real balance_after_call(Real held, Real required, const CollateralTerms &terms)
+    template <class T>
+    QM_HOST_DEVICE inline T balance_after_call(const T &held, const T &required, const CollateralTerms &terms)
     {
         using std::fabs;
-        using std::round;
-        Real transfer = required - held;
+        T transfer = required - held;
         // Strictly below the MTA: no transfer. A zero transfer is none either.
         if (transfer == 0.0 || fabs(transfer) < terms.minimum_transfer_amount)
             return held;
         if (terms.rounding > 0.0)
-            transfer = round(transfer / terms.rounding) * terms.rounding;
+            transfer = round_to_multiple(transfer, terms.rounding);
         return held + transfer;
     }
 
@@ -157,17 +176,22 @@ namespace quantModeling
      *
      * The balance is only updated when a call is observed, in time order: the
      * minimum transfer amount makes it depend on the whole path.
+     *
+     * @param held_today the balance after the call on today's value
+     *                   (CollateralPlan::held_today; its own argument because
+     *                   a differentiable run carries it as a number that
+     *                   depends on the curve).
      */
-    QM_HOST_DEVICE inline void collateral_balances(const CollateralPlanView &plan, const Real *value,
-                                                   Real *held)
+    template <class T>
+    QM_HOST_DEVICE inline void collateral_balances(const CollateralPlanView &plan, const T *value, T *held,
+                                                   const T &held_today)
     {
-        Real balance = plan.held_today;
+        T balance = held_today;
         for (int i = 0; i < plan.dates; ++i)
         {
             if (!plan.is_call_date[i])
                 continue;
-            balance = balance_after_call(balance, variation_margin_required(value[i], plan.terms),
-                                         plan.terms);
+            balance = balance_after_call(balance, variation_margin_required(value[i], plan.terms), plan.terms);
             held[i] = balance;
         }
     }
@@ -181,24 +205,26 @@ namespace quantModeling
      * @param flow the netted cash flows of the path; read only when the plan
      *             needs them.
      */
-    QM_HOST_DEVICE inline Real collateralised_value(const CollateralPlanView &plan, int r,
-                                                    const Real *value, const Real *flow,
-                                                    const Real *held)
+    template <class T>
+    QM_HOST_DEVICE inline T collateralised_value(const CollateralPlanView &plan, int r, const T *value,
+                                                 const T *flow, const T *held, const T &held_today)
     {
         const int i = plan.reporting[r];
         const int lagged = plan.lagged[i];
-        const Real collateral = (lagged == CollateralPlan::kToday ? plan.held_today : held[lagged]) +
-                                plan.terms.independent_amount;
-        Real exposure = value[i] - collateral;
+        T exposure = value[i] - ((lagged == CollateralPlan::kToday ? held_today : held[lagged]) +
+                                 plan.terms.independent_amount);
         if (plan.cashflows != static_cast<int>(MarginPeriodCashflows::Paid))
         {
             // Flows due in (t - MPoR, t] that were not exchanged stay in the
             // close-out amount.
             const int first = lagged == CollateralPlan::kToday ? 0 : lagged + 1;
             for (int j = first; j <= i; ++j)
-                exposure += plan.cashflows == static_cast<int>(MarginPeriodCashflows::Withheld)
-                                ? flow[j]
-                                : (flow[j] > 0.0 ? flow[j] : 0.0);
+            {
+                if (plan.cashflows == static_cast<int>(MarginPeriodCashflows::Withheld))
+                    exposure = exposure + flow[j];
+                else
+                    exposure = exposure + positive_part(flow[j]);
+            }
         }
         return exposure;
     }

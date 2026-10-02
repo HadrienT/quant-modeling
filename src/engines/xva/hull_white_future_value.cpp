@@ -96,6 +96,9 @@ namespace quantModeling
                                std::exp(0.5 * coupon.g * coupon.g * model_.y(c.start));
                     coupon.constant = -1.0 + swap_.spread * c.accrual;
                     coupon.scale = side * N;
+                    coupon.beta = basis(c);
+                    coupon.start = c.start;
+                    coupon.end = c.end;
                     dates_[grid_index(grid, c.end)].floating_paid.push_back(floating_.size());
                     floating_.push_back(coupon);
                 }
@@ -183,20 +186,30 @@ namespace quantModeling
                 trade.date_begin = static_cast<int>(program.date_records.size());
                 const int first_coupon = static_cast<int>(program.coupons.size());
                 for (const FloatingCoupon &c : floating_)
+                {
                     program.coupons.push_back({c.B, c.g, c.constant, c.scale,
                                                c.fixing == kFixedToday ? -1 : static_cast<int>(c.fixing)});
+                    program.coupon_sources.push_back({c.beta, c.start, c.end});
+                }
                 for (const Date &date : dates_)
                 {
                     xva::ProgramDate record;
                     record.fixed_cashflow = date.fixed_cashflow;
                     record.exp_begin = static_cast<int>(program.exps.size());
                     for (const Bond &b : date.bonds)
+                    {
                         program.exps.push_back({b.amount, b.G});
+                        program.exp_sources.push_back({b.raw, b.from, b.maturity});
+                    }
                     record.exp_end = static_cast<int>(program.exps.size());
                     record.accrued_begin = static_cast<int>(program.accrued.size());
                     for (const InProgress &c : date.in_progress)
+                    {
                         program.accrued.push_back({c.discount.amount, c.discount.G,
                                                    first_coupon + static_cast<int>(c.coupon)});
+                        program.accrued_sources.push_back(
+                            {c.discount.raw, c.discount.from, c.discount.maturity});
+                    }
                     record.accrued_end = static_cast<int>(program.accrued.size());
                     record.paid_begin = static_cast<int>(program.paid.size());
                     for (const std::size_t k : date.floating_paid)
@@ -205,6 +218,23 @@ namespace quantModeling
                     program.date_records.push_back(record);
                 }
                 program.trades.push_back(trade);
+
+                // Today: every cash flow still to come, as bonds seen from
+                // today (the terms of sensitivities_today()).
+                xva::TodaySource today;
+                today.term_begin = static_cast<int>(program.today_terms.size());
+                const Real side = swap_.payer ? 1.0 : -1.0;
+                const Real N = swap_.notional;
+                for (const CouponPeriod &c : swap_.fixed_leg)
+                    program.today_terms.push_back({-side * N * swap_.fixed_rate * c.accrual, c.payment});
+                for (const FloatingCoupon &c : floating_)
+                {
+                    const Real accrual_spread = c.constant + 1.0; // spread × accrual
+                    program.today_terms.push_back({side * N * c.beta, c.start});
+                    program.today_terms.push_back({-side * N * (1.0 - accrual_spread), c.end});
+                }
+                today.term_end = static_cast<int>(program.today_terms.size());
+                program.today.push_back(today);
                 return true;
             }
 
@@ -263,6 +293,10 @@ namespace quantModeling
                 Real amount;
                 Real G;
                 Time maturity;
+                /// The cash flow before discounting, and the date it is seen
+                /// from: what the amount was computed from.
+                Real raw = 0.0;
+                Time from = 0.0;
             };
             struct FloatingCoupon
             {
@@ -271,6 +305,9 @@ namespace quantModeling
                 Real g = 0.0;
                 Real constant = 0.0;
                 Real scale = 0.0;
+                /// What B was computed from.
+                Real beta = 1.0;
+                Time start = 0.0, end = 0.0;
             };
             struct InProgress
             {
@@ -292,7 +329,7 @@ namespace quantModeling
                 const Real G = model_.G(t, T);
                 return {coefficient * model_.discount().discount(T) / model_.discount().discount(t) *
                             std::exp(-0.5 * G * G * model_.y(t)),
-                        G, T};
+                        G, T, coefficient, t};
             }
 
             static Real coupon_amount(const FloatingCoupon &c, const Real *state)
@@ -378,16 +415,24 @@ namespace quantModeling
                         {tr.decay, tr.drift, tr.variance, std::sqrt(tr.variance),
                          0.5 * (tr.variance - y_expiry),
                          d.discount(expiry_) / d.discount(t) * std::exp(-0.5 * G * G * model_.y(t)), G});
+                    program.option_date_sources.push_back({t, expiry_});
                 }
                 trade.bond_begin = static_cast<int>(program.option_bonds.size());
                 for (std::size_t k = 0; k < region_.bonds.size(); ++k)
+                {
                     program.option_bonds.push_back(
                         {region_.bonds[k].amount * region_.forward_bond[k], region_.G[k]});
+                    program.option_bond_sources.push_back(
+                        {region_.bonds[k].amount, expiry_, region_.bonds[k].time});
+                }
                 trade.bond_end = static_cast<int>(program.option_bonds.size());
                 trade.interval_begin = static_cast<int>(program.intervals.size());
                 for (const auto &[lower, upper] : region_.intervals)
                     program.intervals.push_back({lower, upper});
                 trade.interval_end = static_cast<int>(program.intervals.size());
+                // Today the trade is the option, not the swap the underlying
+                // has just recorded.
+                program.today.back().expiry = expiry_;
                 return true;
             }
 

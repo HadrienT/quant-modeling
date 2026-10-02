@@ -911,3 +911,121 @@ def test_the_scripts_of_the_request_are_trades_of_the_netting_set():
     equity = {"script": f"{end}\n    pays max(spot() - 100, 0)\n"}
     assert "spot" in refused(portfolio="custom", scripts=[equity])
     assert refused(portfolio="custom", scripts=[bond] * 4)
+
+
+# ── Lot X8: sensitivities by adjoint differentiation, and SA-CVA ─────────────
+
+
+def sensitivities(**body) -> dict:
+    r = client.post("/api/xva/sensitivities", json={"paths": PATHS, **body})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_the_sensitivities_of_a_swaps_cva_to_every_quote():
+    body = sensitivities(portfolio="single_swap", borrowing_spread=0.004)
+    adj = body["adjustments"]
+    assert adj["cva"]["value"] < 0 < adj["dva"]["value"] and adj["fca"]["value"] < 0
+    # The bank's own default removes scenarios: the bilateral CVA is smaller.
+    assert adj["cva_unilateral"]["value"] < adj["cva"]["value"]
+    # The same netting set as the valuation endpoint, to the credit curve
+    # (one spread at five tenors here, one hazard rate there).
+    valued = run(portfolio="single_swap")["adjustments"]["cva"]["value"]
+    assert adj["cva"]["value"] == pytest.approx(valued, rel=0.02)
+
+    # One sensitivity per quote, each with its error.
+    assert [q["tenor"] for q in body["swap_rates"]] == [float(t) for t in PAR]
+    assert [(q["expiry"], q["tenor"]) for q in body["swaption_vols"]] == [
+        (float(e), float(t)) for e, t, _ in VOLS
+    ]
+    assert [q["tenor"] for q in body["counterparty_spreads"]] == [0.5, 1, 3, 5, 10]
+    assert body["swap_rates"][5]["label"] == "swap rate 10Y"
+    ten = body["swap_rates"][5]["cva"]
+    # A payer swap at par: a higher 10-year rate puts it in the money, so the
+    # CVA, a cost, grows. It is the largest of the swap-rate sensitivities.
+    assert ten["value"] < 0 and 0 < ten["error"] < 0.1 * abs(ten["value"])
+    assert abs(ten["value"]) == max(abs(q["cva"]["value"]) for q in body["swap_rates"])
+    # Nothing is paid after ten years: the longer rates do not matter.
+    assert body["swap_rates"][-1]["cva"]["value"] == 0.0
+    # More volatility, more exposure; a wider counterparty spread, more CVA.
+    assert sum(q["cva"]["value"] for q in body["swaption_vols"]) < 0
+    assert sum(q["cva"]["value"] for q in body["counterparty_spreads"]) < 0
+    assert sum(q["dva"]["value"] for q in body["counterparty_spreads"]) < 0
+    # CVA is linear in the loss given default, FCA in the borrowing spread.
+    others = {q["label"]: q for q in body["others"]}
+    lgd = others["counterparty loss given default"]
+    assert lgd["cva"]["value"] == pytest.approx(adj["cva"]["value"] / 0.6, rel=1e-9)
+    assert others["borrowing spread"]["fca"]["value"] == pytest.approx(
+        adj["fca"]["value"] / 0.004, rel=1e-9
+    )
+    # The model's own inputs are there too.
+    labels = [m["label"] for m in body["model_risks"]]
+    assert "Hull-White volatility" in labels and "zero rate 10Y" in labels
+    assert body["inputs"] == len(labels)
+
+    # What it cost: one run for everything, against two per input by bumping.
+    assert body["bump_valuations"] == 2 * body["inputs"]
+    assert 1 < body["cost_ratio"] < body["bump_valuations"]
+    assert body["hull_white"]["sigma"] > 0 and body["market_as_of"] == AS_OF.isoformat()
+    titles = [s["title"] for s in body["methodology"]]
+    assert "Adjoint differentiation" in titles and "SA-CVA" in titles
+
+
+def test_sa_cva_from_the_sensitivities():
+    body = sensitivities(portfolio="directional", sector="financial")
+    sa = body["sa_cva"]
+    assert sa["interest_rate_tenors"] == [1, 2, 5, 10, 30]
+    assert sa["interest_rate_risk_weights"] == [0.0111, 0.0093, 0.0074, 0.0074, 0.0074]
+    assert sa["credit_spread_tenors"] == [0.5, 1, 3, 5, 10]
+    # BBB, a financial: investment grade, bucket 2 of MAR50.65.
+    assert (sa["sector"], sa["investment_grade"]) == ("financial", True)
+    assert sa["credit_spread_risk_weight"] == 0.05
+    # The swap-rate sensitivities of the unilateral CVA, spread over the five
+    # tenors, add up to their sum; the vega is every vol moved by the same share.
+    unilateral = [q["cva_unilateral"]["value"] for q in body["swap_rates"]]
+    assert sum(sa["interest_rate_delta"]) == pytest.approx(sum(unilateral), rel=1e-9)
+    assert sa["interest_rate_vega"] == pytest.approx(
+        sum(q["level"] * q["cva_unilateral"]["value"] for q in body["swaption_vols"]),
+        rel=1e-9,
+    )
+    assert sa["capital_interest_rate_vega"] == pytest.approx(
+        abs(sa["interest_rate_vega"])
+    )
+    # The classes add up, and the counterparty's spread dominates.
+    parts = (
+        sa["capital_interest_rate_delta"]
+        + sa["capital_interest_rate_vega"]
+        + sa["capital_credit_spread_delta"]
+    )
+    assert sa["capital"] == pytest.approx(parts) and sa["capital"] > 0
+    assert sa["capital_credit_spread_delta"] > sa["capital_interest_rate_delta"]
+    # A high-yield counterparty: 12 % instead of 5 %.
+    risky = sensitivities(
+        portfolio="directional", sector="financial", counterparty_rating="B"
+    )["sa_cva"]
+    assert not risky["investment_grade"] and risky["credit_spread_risk_weight"] == 0.12
+
+
+def test_sensitivities_under_a_csa_and_what_is_not_differentiated():
+    open_set = sensitivities(portfolio="balanced")
+    margined = sensitivities(portfolio="balanced", csa={})
+    # Variation margin leaves a fraction of the CVA and of its sensitivities.
+    assert abs(margined["adjustments"]["cva"]["value"]) < 0.5 * abs(
+        open_set["adjustments"]["cva"]["value"]
+    )
+    spread = lambda b: sum(q["cva"]["value"] for q in b["counterparty_spreads"])
+    assert abs(spread(margined)) < 0.5 * abs(spread(open_set))
+    assert not any("minimum transfer" in w for w in margined["warnings"])
+    with_mta = sensitivities(portfolio="balanced", csa={"minimum_transfer_amount": 5e4})
+    assert any("minimum transfer" in w for w in with_mta["warnings"])
+
+    def refused(**body):
+        r = client.post("/api/xva/sensitivities", json={"paths": PATHS, **body})
+        assert r.status_code == 422, r.text
+        return r.text
+
+    assert "valued by regression" in refused(portfolio="bermudan")
+    assert "valued by regression" in refused(portfolio="scripted_swap")
+    assert "scripts" in refused(portfolio="custom")
+    assert "initial margin" in refused(csa={"initial_margin": True})
+    assert refused(paths=50_000)

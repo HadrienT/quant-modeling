@@ -38,8 +38,10 @@ namespace quantModeling::aad
       public:
         /// Width of the multi-adjoint row every node carries once
         /// Tape::multi is turned on (differentiating several results in one
-        /// backward pass -- lot 17f). 1 until then.
-        static std::size_t num_adj;
+        /// backward pass -- lot 17f). 1 until then. Per thread, like the
+        /// tape itself (ADR-A2): two runs on two threads may differentiate a
+        /// different number of results at once.
+        static thread_local std::size_t num_adj;
 
         explicit Node(std::size_t n = 0)
             : n_(n) {}
@@ -58,8 +60,11 @@ namespace quantModeling::aad
         {
             adjoint_ = 0.0;
             if (adjoints_multi_)
-                for (std::size_t j = 0; j < num_adj; ++j)
+            {
+                const std::size_t m = num_adj;
+                for (std::size_t j = 0; j < m; ++j)
                     adjoints_multi_[j] = 0.0;
+            }
         }
 
         void propagate_one()
@@ -79,10 +84,11 @@ namespace quantModeling::aad
         {
             if (!n_)
                 return;
+            const std::size_t m = num_adj;
             for (std::size_t i = 0; i < n_; ++i)
             {
                 double *row = arg_adjoints_[i];
-                for (std::size_t j = 0; j < num_adj; ++j)
+                for (std::size_t j = 0; j < m; ++j)
                     row[j] += derivatives_[i] * adjoints_multi_[j];
             }
         }

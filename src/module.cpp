@@ -32,6 +32,7 @@
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/market/hull_white_calibration.hpp"
 #include "quantModeling/engines/xva/exposure_engine.hpp"
+#include "quantModeling/engines/xva/xva_market_risks.hpp"
 #include "quantModeling/market/historical_rate_dynamics.hpp"
 #include "quantModeling/engines/xva/script_future_value.hpp"
 #include "quantModeling/risk/xva_report.hpp"
@@ -1042,6 +1043,67 @@ namespace
     }
 } // namespace
 
+namespace
+{
+    /// Adds the trades of a request to the engine (parsed while the GIL is
+    /// held; the engine copies them), with the SA-CCR description of each.
+    /// `scripts_have_capital`: a script has no such description, and is only
+    /// accepted when no capital is asked for or the method needs none.
+    void add_xva_trades(qm_::HullWhiteExposureEngine &engine, const py::list &trades,
+                        const qm_::HullWhiteCurveModel &model, const qm_::DiscountCurve &curve,
+                        bool scripts_have_capital, std::vector<qm_::sa_ccr::Trade> &regulatory_trades)
+    {
+        for (const py::handle &h : trades)
+        {
+            const py::dict t = h.cast<py::dict>();
+            const auto kind = t["kind"].cast<std::string>();
+            const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
+            const qm_::Time expiry = item_or<qm_::Time>(t, "expiry", 0.0);
+            if (kind == "script")
+            {
+                // A trade written in the payoff language, on rates only: its
+                // exposure by regression of what it pays (lot X4b). SA-CCR has
+                // no description of an arbitrary script.
+                if (!scripts_have_capital)
+                    throw qm_::InvalidInput(
+                        "xva: the standardised approach has no SA-CCR description of a scripted trade; "
+                        "ask for the capital by the internal models method (capital method "
+                        "'internal_model'), which reads the exposure off the simulation");
+                const qm_::ValuationContext ctx{
+                    qm_::Date::from_iso(t["valuation_date"].cast<std::string>())};
+                engine.add(qm_::make_script_future_value(t["script"].cast<std::string>(), ctx, model),
+                           quantity);
+                continue;
+            }
+            const bool is_swap = kind == "swap";
+            if (!is_swap && kind != "swaption" && kind != "bermudan")
+                throw qm_::InvalidInput("xva: unknown trade kind '" + kind +
+                                        "' (swap, swaption, bermudan, script)");
+            const qm_::Time tenor = t["tenor"].cast<qm_::Time>();
+            const qm_::InterestRateSwap swap = qm_::make_swap(
+                is_swap ? item_or<qm_::Time>(t, "start", 0.0) : expiry, tenor, t["fixed_rate"].cast<qm_::Real>(),
+                item_or<int>(t, "fixed_frequency", 1), item_or<int>(t, "float_frequency", 1),
+                item_or<qm_::Real>(t, "notional", 1.0), item_or<bool>(t, "payer", true));
+            qm_::Time last_exercise = expiry;
+            if (is_swap)
+                engine.add(swap, quantity);
+            else if (kind == "swaption")
+                engine.add(qm_::Swaption(swap, expiry), quantity);
+            else
+            {
+                // Exercisable on `expiry` and on each anniversary while a full
+                // year of the swap is left.
+                std::vector<qm_::Time> exercise;
+                for (qm_::Time e = expiry; e < expiry + tenor - 1e-9; e += 1.0)
+                    exercise.push_back(e);
+                last_exercise = exercise.back();
+                engine.add(qm_::BermudanSwaption(swap, exercise), quantity);
+            }
+            regulatory_trades.push_back(sa_ccr_trade(kind, swap, expiry, last_exercise, quantity, curve));
+        }
+    }
+} // namespace
+
 static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_::Real> dd,
                                      std::pair<qm_::Real, qm_::Real> hull_white, const py::list &trades,
                                      const std::pair<std::vector<qm_::Time>, std::vector<qm_::Real>> &counterparty_hazard,
@@ -1072,54 +1134,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     // Instruments are parsed while the GIL is held; the engine copies them.
     qm_::HullWhiteExposureEngine engine(model);
     std::vector<qm_::sa_ccr::Trade> regulatory_trades;
-    for (const py::handle &h : trades)
-    {
-        const py::dict t = h.cast<py::dict>();
-        const auto kind = t["kind"].cast<std::string>();
-        const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
-        const qm_::Time expiry = item_or<qm_::Time>(t, "expiry", 0.0);
-        if (kind == "script")
-        {
-            // A trade written in the payoff language, on rates only: its
-            // exposure by regression of what it pays (lot X4b). SA-CCR has
-            // no description of an arbitrary script.
-            if (!capital.is_none() && !internal_model)
-                throw qm_::InvalidInput(
-                    "xva: the standardised approach has no SA-CCR description of a scripted trade; "
-                    "ask for the capital by the internal models method (capital method "
-                    "'internal_model'), which reads the exposure off the simulation");
-            const qm_::ValuationContext ctx{
-                qm_::Date::from_iso(t["valuation_date"].cast<std::string>())};
-            engine.add(qm_::make_script_future_value(t["script"].cast<std::string>(), ctx, model),
-                       quantity);
-            continue;
-        }
-        const bool is_swap = kind == "swap";
-        if (!is_swap && kind != "swaption" && kind != "bermudan")
-            throw qm_::InvalidInput("xva: unknown trade kind '" + kind +
-                                    "' (swap, swaption, bermudan, script)");
-        const qm_::Time tenor = t["tenor"].cast<qm_::Time>();
-        const qm_::InterestRateSwap swap = qm_::make_swap(
-            is_swap ? item_or<qm_::Time>(t, "start", 0.0) : expiry, tenor, t["fixed_rate"].cast<qm_::Real>(),
-            item_or<int>(t, "fixed_frequency", 1), item_or<int>(t, "float_frequency", 1),
-            item_or<qm_::Real>(t, "notional", 1.0), item_or<bool>(t, "payer", true));
-        qm_::Time last_exercise = expiry;
-        if (is_swap)
-            engine.add(swap, quantity);
-        else if (kind == "swaption")
-            engine.add(qm_::Swaption(swap, expiry), quantity);
-        else
-        {
-            // Exercisable on `expiry` and on each anniversary while a full
-            // year of the swap is left.
-            std::vector<qm_::Time> exercise;
-            for (qm_::Time e = expiry; e < expiry + tenor - 1e-9; e += 1.0)
-                exercise.push_back(e);
-            last_exercise = exercise.back();
-            engine.add(qm_::BermudanSwaption(swap, exercise), quantity);
-        }
-        regulatory_trades.push_back(sa_ccr_trade(kind, swap, expiry, last_exercise, quantity, curve));
-    }
+    add_xva_trades(engine, trades, model, curve, capital.is_none() || internal_model, regulatory_trades);
 
     qm_::XvaInputs inputs;
     inputs.counterparty = credit_curve(counterparty_hazard);
@@ -1288,6 +1303,181 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         out["simm_today"] = py::none();
     out["uncollateralised"] = uncollateralised ? py::object(report_dict(*uncollateralised)) : py::object(py::none());
     out["risk"] = risk ? py::object(exposure_dict(*risk)) : py::object(py::none());
+    return out;
+}
+
+namespace
+{
+    const char *const kXvaOutputNames[qm_::kXvaOutputs] = {"cva", "dva", "fca", "fba", "cva_unilateral"};
+
+    py::list quote_risks(const std::vector<qm_::XvaQuoteRisk> &risks)
+    {
+        py::list out;
+        for (const qm_::XvaQuoteRisk &q : risks)
+        {
+            py::dict d;
+            d["label"] = q.label;
+            d["expiry"] = q.expiry;
+            d["tenor"] = q.tenor;
+            d["level"] = q.level;
+            for (std::size_t o = 0; o < qm_::kXvaOutputs; ++o)
+                d[kXvaOutputNames[o]] = estimate_dict(q.risk[o]);
+            out.append(d);
+        }
+        return out;
+    }
+} // namespace
+
+static py::dict xva_sensitivities_impl(const std::vector<std::pair<qm_::Time, qm_::Real>> &swap_rates,
+                                       const std::vector<std::tuple<qm_::Time, qm_::Time, qm_::Real>> &swaption_vols,
+                                       const py::list &trades,
+                                       const std::vector<std::pair<qm_::Time, qm_::Real>> &counterparty_spreads,
+                                       const std::pair<std::vector<qm_::Time>, std::vector<qm_::Real>> &own_hazard,
+                                       qm_::Real recovery, qm_::Real lgd_counterparty, qm_::Real lgd_own,
+                                       const py::object &csa, qm_::Real borrowing_spread, qm_::Real lending_spread,
+                                       std::size_t paths, std::uint64_t seed, std::size_t threads,
+                                       const std::string &sector, bool investment_grade,
+                                       qm_::Real exercise_smoothing)
+{
+    // The market, rebuilt here from its quotes: the curve is their bootstrap,
+    // a and σ the fit to the swaption vols, the counterparty's hazard rates
+    // the bootstrap of its credit spreads.
+    std::vector<qm_::ParRateQuote> par;
+    for (const auto &[tenor, rate] : swap_rates)
+        par.push_back(qm_::make_ois_quote(tenor, rate));
+    const qm_::DiscountCurve curve = qm_::bootstrap_curve({}, par);
+    qm_::XvaMarketQuotes quotes;
+    quotes.swap_rates = swap_rates;
+    for (const auto &[expiry, tenor, vol] : swaption_vols)
+        quotes.swaption_vols.push_back({expiry, tenor, vol});
+    quotes.recovery = recovery;
+    const qm_::HullWhiteCalibration calibration = qm_::calibrate_hull_white(curve, curve, quotes.swaption_vols, 1, 1);
+    const qm_::HullWhiteCurveModel model(calibration.mean_reversion, calibration.sigma, curve);
+
+    std::vector<qm_::CdsQuote> cds;
+    for (const auto &[tenor, spread] : counterparty_spreads)
+    {
+        cds.push_back({tenor, spread});
+        quotes.counterparty_spread_tenors.push_back(tenor);
+    }
+
+    qm_::HullWhiteExposureEngine engine(model);
+    std::vector<qm_::sa_ccr::Trade> regulatory_trades;
+    add_xva_trades(engine, trades, model, curve, true, regulatory_trades);
+
+    qm_::XvaRiskInputs inputs;
+    inputs.counterparty = qm_::bootstrap_credit_curve(cds, curve, recovery);
+    inputs.own = credit_curve(own_hazard);
+    inputs.lgd_counterparty = lgd_counterparty;
+    inputs.lgd_own = lgd_own;
+    inputs.borrowing_spread = borrowing_spread;
+    inputs.lending_spread = lending_spread;
+    inputs.exercise_smoothing = exercise_smoothing;
+    if (!csa.is_none())
+    {
+        const py::dict c = csa.cast<py::dict>();
+        qm_::Csa terms;
+        terms.threshold_counterparty = item_or<qm_::Real>(c, "threshold_counterparty", 0.0);
+        terms.threshold_bank = item_or<qm_::Real>(c, "threshold_bank", 0.0);
+        terms.minimum_transfer_amount = item_or<qm_::Real>(c, "minimum_transfer_amount", 0.0);
+        terms.rounding = item_or<qm_::Real>(c, "rounding", 0.0);
+        terms.independent_amount = item_or<qm_::Real>(c, "independent_amount", 0.0);
+        terms.margin_period_of_risk = item_or<qm_::Time>(c, "margin_period_of_risk", terms.margin_period_of_risk);
+        inputs.csa = terms;
+        const auto flows = item_or<std::string>(c, "cashflows", "paid");
+        if (flows == "withheld")
+            inputs.cashflows = qm_::MarginPeriodCashflows::Withheld;
+        else if (flows == "only_bank_pays")
+            inputs.cashflows = qm_::MarginPeriodCashflows::OnlyBankPays;
+        else if (flows != "paid")
+            throw qm_::InvalidInput("xva: unknown cash-flow treatment '" + flows + "'");
+    }
+    qm_::ExposureSimulationSettings settings;
+    settings.paths = paths;
+    settings.seed = seed;
+    const qm_::ba_cva::Sector bucket = ba_cva_sector(sector);
+    const qm_::ba_cva::CreditQuality quality = investment_grade
+                                                   ? qm_::ba_cva::CreditQuality::InvestmentGrade
+                                                   : qm_::ba_cva::CreditQuality::HighYieldOrNotRated;
+
+    std::optional<qm_::XvaRisks> risks;
+    std::optional<qm_::XvaValues> values;
+    std::optional<qm_::XvaMarketRisks> market;
+    std::size_t workers = 0;
+    {
+        py::gil_scoped_release release;
+        // A path's tape is a couple of megabytes: past eight threads they no
+        // longer fit the cache together and more threads are slower
+        // (blueprint/wp/23-xva.md §14.13).
+        qm_::ThreadPool pool;
+        workers = (threads > 0 ? threads : std::min<std::size_t>(qm_::available_cpus(), 8)) - 1;
+        if (workers > 0)
+            pool.start(workers);
+        qm_::ThreadPool *p = workers > 0 ? &pool : nullptr;
+        risks = engine.xva_risks(settings, inputs, p);
+        // The same estimator without its sensitivities: what the adjoint
+        // costs is measured against it.
+        qm_::XvaRiskInputs same = inputs;
+        same.smoothing_widths = risks->smoothing_widths;
+        values = engine.xva_values(settings, same, p);
+        market = qm_::xva_market_risks(*risks, model, inputs.counterparty, inputs.own, quotes);
+    }
+
+    py::dict out;
+    py::dict adjustments;
+    for (std::size_t o = 0; o < qm_::kXvaOutputs; ++o)
+        adjustments[kXvaOutputNames[o]] = estimate_dict(risks->values[o]);
+    out["adjustments"] = adjustments;
+    py::dict hw;
+    hw["mean_reversion"] = calibration.mean_reversion;
+    hw["sigma"] = calibration.sigma;
+    out["hull_white"] = hw;
+
+    py::list model_risks;
+    for (std::size_t j = 0; j < risks->factors.size(); ++j)
+    {
+        py::dict d;
+        d["label"] = risks->labels[j];
+        d["tenor"] = risks->tenors[j];
+        d["level"] = risks->levels[j];
+        for (std::size_t o = 0; o < qm_::kXvaOutputs; ++o)
+            d[kXvaOutputNames[o]] = estimate_dict(risks->risk(static_cast<qm_::XvaOutput>(o), j));
+        model_risks.append(d);
+    }
+    out["model_risks"] = model_risks;
+    out["swap_rates"] = quote_risks(market->swap_rates);
+    out["swaption_vols"] = quote_risks(market->swaption_vols);
+    out["counterparty_spreads"] = quote_risks(market->counterparty_spreads);
+    out["own_credit"] = quote_risks(market->own_spreads);
+    out["others"] = quote_risks(market->others);
+
+    const qm_::sa_cva::Sensitivities sensitivities = qm_::sa_cva_sensitivities(*market, bucket, quality);
+    const qm_::sa_cva::Capital k = qm_::sa_cva::capital(sensitivities);
+    py::dict sa;
+    sa["interest_rate_tenors"] =
+        std::vector<qm_::Time>(qm_::sa_cva::interest_rate_tenors.begin(), qm_::sa_cva::interest_rate_tenors.end());
+    sa["interest_rate_delta"] =
+        std::vector<qm_::Real>(sensitivities.interest_rate_delta.begin(), sensitivities.interest_rate_delta.end());
+    sa["interest_rate_risk_weights"] = std::vector<qm_::Real>(qm_::sa_cva::interest_rate_risk_weights.begin(),
+                                                              qm_::sa_cva::interest_rate_risk_weights.end());
+    sa["interest_rate_vega"] = sensitivities.interest_rate_vega;
+    sa["credit_spread_tenors"] =
+        std::vector<qm_::Time>(qm_::sa_cva::credit_spread_tenors.begin(), qm_::sa_cva::credit_spread_tenors.end());
+    sa["credit_spread_delta"] =
+        std::vector<qm_::Real>(sensitivities.credit_spread_delta.begin(), sensitivities.credit_spread_delta.end());
+    sa["credit_spread_risk_weight"] = qm_::sa_cva::credit_spread_risk_weight(bucket, quality);
+    sa["capital_interest_rate_delta"] = k.interest_rate_delta;
+    sa["capital_interest_rate_vega"] = k.interest_rate_vega;
+    sa["capital_credit_spread_delta"] = k.credit_spread_delta;
+    sa["capital"] = k.total();
+    out["sa_cva"] = sa;
+
+    out["paths"] = risks->paths;
+    out["threads"] = workers + 1;
+    out["factors"] = risks->factors.size();
+    out["seconds_adjoint"] = risks->seconds;
+    out["seconds_valuation"] = values->seconds;
+    out["smoothing_widths"] = risks->smoothing_widths;
     return out;
 }
 
@@ -2529,6 +2719,19 @@ PYBIND11_MODULE(quantmodeling, m)
           "device 'cpu' | 'gpu' | 'auto' is where the paths are valued: the GPU takes swaps and "
           "European swaptions without SIMM per path; 'auto' falls back to the CPU and says why in "
           "device_note. A cost is negative.");
+    m.def("xva_sensitivities", &xva_sensitivities_impl, py::arg("swap_rates"), py::arg("swaption_vols"),
+          py::arg("trades"), py::arg("counterparty_spreads"), py::arg("own_hazard"), py::arg("recovery") = 0.4,
+          py::arg("lgd_counterparty") = 0.6, py::arg("lgd_own") = 0.6, py::arg("csa") = py::none(),
+          py::arg("borrowing_spread") = 0.0, py::arg("lending_spread") = 0.0, py::arg("paths") = 5000,
+          py::arg("seed") = 42, py::arg("threads") = 0, py::arg("sector") = "other",
+          py::arg("investment_grade") = false, py::arg("exercise_smoothing") = 0.05,
+          "Sensitivities of CVA, DVA, FCA and FBA of a netting set of swaps and European swaptions to every "
+          "market quote, by adjoint differentiation (blueprint/wp/23-xva.md, lot X8). The market is rebuilt "
+          "from its quotes: swap_rates [(tenor, par rate)] are bootstrapped into the curve, swaption_vols "
+          "[(expiry, tenor, normal vol)] calibrate Hull-White, counterparty_spreads [(tenor, spread)] "
+          "bootstrap the counterparty's hazard rates. Returns the adjustments, the risks to the model's "
+          "inputs and to each quote with their Monte-Carlo errors, the SA-CVA capital (MAR50) from the "
+          "sensitivities of the unilateral CVA, and the time of the adjoint run against one valuation.");
     m.def("estimate_historical_rate_dynamics", &estimate_historical_rate_dynamics_impl, py::arg("rates"),
           py::arg("dt"),
           "Maximum-likelihood (a, theta, sigma) of a mean-reverting Gaussian short rate from a series "

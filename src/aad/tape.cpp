@@ -2,8 +2,8 @@
 
 namespace quantModeling::aad
 {
-    std::size_t Node::num_adj = 1;
-    bool Tape::multi = false;
+    thread_local std::size_t Node::num_adj = 1;
+    thread_local bool Tape::multi = false;
 
     void Tape::reset_adjoints()
     {

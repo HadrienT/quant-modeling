@@ -87,9 +87,12 @@ target_sources(quantModeling
         src/engines/xva/script_future_value.cpp
         src/utils/bucketed_regression.cpp
         src/engines/xva/exposure_engine.cpp
+        src/engines/xva/xva_risks.cpp
+        src/engines/xva/xva_market_risks.cpp
         src/risk/regulatory/sa_ccr.cpp
         src/risk/regulatory/irb.cpp
         src/risk/regulatory/ba_cva.cpp
+        src/risk/regulatory/sa_cva.cpp
         src/risk/regulatory/im_schedule.cpp
         src/market/raw_vol_surface.cpp
         src/market/svi.cpp
@@ -237,6 +240,10 @@ if(QM_BUILD_CLI)
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wconversion -Wshadow>
   )
 
+  # Lot X8 of blueprint/wp/23-xva.md: the cost of the CVA's sensitivities by
+  # adjoint differentiation, against one valuation.
+  add_executable(qm_xva_aad_bench benchmarks/xva_aad_cost.cpp)
+  target_link_libraries(qm_xva_aad_bench PRIVATE quantModeling)
   add_executable(qm_price_script examples/scripting/price_script.cpp)
   target_link_libraries(qm_price_script PRIVATE quantModeling)
   target_compile_options(qm_price_script PRIVATE
@@ -317,6 +324,8 @@ if(QM_BUILD_TESTS)
     tests/testSimm.cpp
     tests/testSimmPaths.cpp
     tests/testExposureProgram.cpp
+    tests/testXvaRisks.cpp
+    tests/testXvaMarketRisks.cpp
     tests/testXvaReport.cpp
     tests/testHistoricalMeasure.cpp
     tests/testSaCcr.cpp

@@ -405,3 +405,111 @@ class XvaPortfoliosResponse(BaseModel):
     portfolios: List[XvaPortfolioInfo]
     ratings: List[str]
     wrong_way_scenarios: List[WrongWayScenario]
+
+
+# ── Sensitivities (lot X8) ───────────────────────────────────────────────────
+
+
+class XvaSensitivitiesRequest(BaseModel):
+    """The netting set whose CVA, DVA and FVA are differentiated to every
+    market quote. Swaps and European swaptions, with or without variation
+    margin: what the adjoint run covers."""
+
+    portfolio: PortfolioId = "single_swap"
+    counterparty_rating: Rating = "BBB"
+    own_rating: Rating = "A"
+    recovery: float = Field(default=0.4, ge=0.0, le=0.9)
+    csa: Optional[CsaInput] = Field(
+        default=None, description="None for an uncollateralised netting set"
+    )
+    borrowing_spread: float = Field(default=0.0, ge=0, le=0.1)
+    lending_spread: float = Field(default=0.0, ge=0, le=0.1)
+    sector: Sector = Field(
+        default="other", description="The counterparty's sector, for SA-CVA"
+    )
+    paths: int = Field(default=5000, ge=1000, le=20000)
+    seed: int = Field(default=42, ge=0, le=2**31 - 1)
+
+
+class AdjustmentRisks(BaseModel):
+    """The sensitivity of each adjustment to one quantity, per unit of it
+    (multiply by 0.0001 for a basis point), with its Monte-Carlo error."""
+
+    label: str
+    expiry: float = Field(description="Expiry of a swaption; 0 otherwise")
+    tenor: float = Field(description="Tenor of the swap, the swaption or the spread")
+    level: float = Field(description="The quantity today")
+    cva: Estimate
+    dva: Estimate
+    fca: Estimate
+    fba: Estimate
+    cva_unilateral: Estimate = Field(
+        description="The regulatory CVA's: the bank assumed default-free"
+    )
+
+
+class SensitivityAdjustments(BaseModel):
+    cva: Estimate
+    dva: Estimate
+    fca: Estimate
+    fba: Estimate
+    cva_unilateral: Estimate
+
+
+class SaCvaOut(BaseModel):
+    """The standardised approach for CVA risk (MAR50), from the sensitivities
+    of the unilateral CVA."""
+
+    interest_rate_tenors: List[float]
+    interest_rate_delta: List[float] = Field(
+        description="Sensitivity to the risk-free yield of each tenor, per unit"
+    )
+    interest_rate_risk_weights: List[float]
+    interest_rate_vega: float = Field(
+        description="Sensitivity to a relative shift of every volatility, per unit"
+    )
+    credit_spread_tenors: List[float]
+    credit_spread_delta: List[float]
+    credit_spread_risk_weight: float
+    capital_interest_rate_delta: float
+    capital_interest_rate_vega: float
+    capital_credit_spread_delta: float
+    capital: float
+    sector: str
+    investment_grade: bool
+
+
+class XvaSensitivitiesResponse(BaseModel):
+    portfolio: PortfolioId
+    portfolio_label: str
+    adjustments: SensitivityAdjustments
+    #: To what the market quotes.
+    swap_rates: List[AdjustmentRisks]
+    swaption_vols: List[AdjustmentRisks]
+    counterparty_spreads: List[AdjustmentRisks]
+    own_credit: List[AdjustmentRisks]
+    others: List[AdjustmentRisks] = Field(
+        description="Losses given default and funding spreads"
+    )
+    #: To what the model is written in.
+    model_risks: List[AdjustmentRisks]
+    sa_cva: SaCvaOut
+    hull_white: HullWhiteInput
+    market_as_of: date
+    paths: int
+    seed: int
+    threads: int
+    inputs: int = Field(description="Inputs of the model differentiated to")
+    seconds_adjoint: float = Field(
+        description="Wall time of the paths with every sensitivity"
+    )
+    seconds_valuation: float = Field(
+        description="Wall time of the same paths without sensitivities"
+    )
+    cost_ratio: float = Field(description="seconds_adjoint / seconds_valuation")
+    bump_valuations: int = Field(
+        description="Valuations a central difference of every input would take"
+    )
+    compute_ms: float
+    warnings: List[str]
+    methodology: List[MethodologySection]

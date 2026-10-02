@@ -208,12 +208,12 @@ namespace quantModeling
                 }
             }
 
-            collateral_balances(dates, value.data(), held.data());
+            collateral_balances(dates, value.data(), held.data(), held_today);
             for (std::size_t r = 0; r < m; ++r)
             {
                 const std::size_t i = static_cast<std::size_t>(reporting[r]);
                 const Real exposure = collateralised_value(dates, static_cast<int>(r), value.data(),
-                                                           flow.data(), held.data());
+                                                           flow.data(), held.data(), held_today);
                 out.trade_values[0][p * m + r] = net_of_initial_margin(
                     exposure,
                     margin(settings.initial_margin_received_paths, settings.initial_margin_received, p, r),
