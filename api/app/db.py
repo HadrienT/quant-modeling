@@ -536,6 +536,25 @@ def dividend_yield_history(ticker: str, since: date) -> List[Tuple[date, float]]
         return [(d, float(v)) for d, v in cur.fetchall()]
 
 
+# ── credit.rating_default_rates (ESMA CEREP: yearly, percent) ────────────────
+
+
+def rating_default_rates(agency: str, rating: str) -> List[Tuple[date, int, float]]:
+    """(1 January, defaults, default rate in percent) of each calendar year
+    the agency reported for this rating category: the share of the issuers
+    rated there at the start of the year that defaulted during it."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT period_start, defaults, default_rate "
+            "FROM credit.rating_default_rates "
+            "WHERE agency = %s AND rating = %s "
+            "  AND period_end - period_start BETWEEN 364 AND 365 "
+            "ORDER BY period_start",
+            (agency, rating),
+        )
+        return [(d, int(n), float(r)) for d, n, r in cur.fetchall()]
+
+
 # ── fx.ecb_reference_rates (units of currency per EUR) ───────────────────────
 
 

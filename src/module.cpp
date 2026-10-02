@@ -1057,6 +1057,18 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     const qm_::DiscountCurve curve = rate_curve(std::move(dt), std::move(dd));
     const qm_::HullWhiteCurveModel model(hull_white.first, hull_white.second, curve);
 
+    // How the exposure at default is measured (risk/capital.hpp): from a
+    // supervisory description of each trade, or off the simulation itself.
+    bool internal_model = false;
+    if (!capital.is_none())
+    {
+        const auto method = item_or<std::string>(capital.cast<py::dict>(), "method", "sa_ccr");
+        if (method != "sa_ccr" && method != "internal_model")
+            throw qm_::InvalidInput("xva: unknown capital method '" + method +
+                                    "' (sa_ccr, internal_model)");
+        internal_model = method == "internal_model";
+    }
+
     // Instruments are parsed while the GIL is held; the engine copies them.
     qm_::HullWhiteExposureEngine engine(model);
     std::vector<qm_::sa_ccr::Trade> regulatory_trades;
@@ -1071,9 +1083,11 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
             // A trade written in the payoff language, on rates only: its
             // exposure by regression of what it pays (lot X4b). SA-CCR has
             // no description of an arbitrary script.
-            if (!capital.is_none())
-                throw qm_::InvalidInput("xva: the capital projection has no SA-CCR description of a "
-                                        "scripted trade; price the netting set without capital");
+            if (!capital.is_none() && !internal_model)
+                throw qm_::InvalidInput(
+                    "xva: the standardised approach has no SA-CCR description of a scripted trade; "
+                    "ask for the capital by the internal models method (capital method "
+                    "'internal_model'), which reads the exposure off the simulation");
             const qm_::ValuationContext ctx{
                 qm_::Date::from_iso(t["valuation_date"].cast<std::string>())};
             engine.add(qm_::make_script_future_value(t["script"].cast<std::string>(), ctx, model),
@@ -1178,6 +1192,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     {
         const py::dict k = capital.cast<py::dict>();
         qm_::CapitalInputs c;
+        c.method = internal_model ? qm_::ExposureMethod::InternalModel : qm_::ExposureMethod::SaCcr;
         c.trades = regulatory_trades;
         c.pd = k["pd"].cast<qm_::Real>();
         c.lgd = item_or<qm_::Real>(k, "lgd", 0.40);
@@ -2506,8 +2521,10 @@ PYBIND11_MODULE(quantmodeling, m)
           "projects the margin both parties post and gives the MVA — by regression, or as ISDA SIMM "
           "from the sensitivities of each path (swaps and European swaptions only); "
           "collateral_spread (what the CSA pays over the discount rate) the ColVA; capital (a dict: pd, lgd, "
-          "sector, investment_grade, large_financial, cost_of_capital) the SA-CCR, IRB and BA-CVA "
-          "capital and the KVA. wrong_way_b makes the counterparty's hazard exp(a(t) + b V(t)) "
+          "sector, investment_grade, large_financial, cost_of_capital, method 'sa_ccr' | "
+          "'internal_model') the IRB and BA-CVA capital and the KVA, on an exposure at default "
+          "that is SA-CCR's or, with 'internal_model', 1.4 x the Effective EPE of the simulation "
+          "(CRE53), the only one a scripted trade has. wrong_way_b makes the counterparty's hazard exp(a(t) + b V(t)) "
           "(Hull & White 2012), per unit of currency; cva_independent is then the CVA without it. "
           "device 'cpu' | 'gpu' | 'auto' is where the paths are valued: the GPU takes swaps and "
           "European swaptions without SIMM per path; 'auto' falls back to the CPU and says why in "

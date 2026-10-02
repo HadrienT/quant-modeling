@@ -55,6 +55,18 @@ SPREADS_PCT = {
     "B": 2.95,
     "CCC and lower": 7.9,
 }
+#: S&P's yearly default rates by category, percent, with the defaults of the
+#: year: three of the years CEREP holds (2008, 2009, 2024), repeated to make a
+#: history.
+DEFAULT_RATES = {
+    "AAA": [(0, 0.0), (0, 0.0), (0, 0.0)],
+    "AA": [(2, 0.24), (0, 0.0), (0, 0.0)],
+    "A": [(6, 0.34), (0, 0.0), (0, 0.0)],
+    "BBB": [(5, 0.32), (11, 0.69), (0, 0.0)],
+    "BB": [(8, 0.71), (7, 0.78), (2, 0.21)],
+    "B": [(46, 3.95), (124, 11.7), (30, 1.88)],
+    "CCC": [(24, 27.59), (70, 45.64), (92, 28.52)],
+}
 PATHS = 2000
 
 
@@ -97,6 +109,17 @@ def store(monkeypatch):
         lambda table, ids: (date.today(), {i: by_series[i] for i in ids}),
     )
     monkeypatch.setattr(db, "fred_series", lambda series_id, since=None: _history())
+
+    def default_rates(agency, rating):
+        if not state["default_rates"]:
+            return []
+        assert agency == "S&P"
+        return [
+            (date(2000 + k, 1, 1), *DEFAULT_RATES[rating][k % 3]) for k in range(12)
+        ]
+
+    state["default_rates"] = True
+    monkeypatch.setattr(db, "rating_default_rates", default_rates)
     events = []
     monkeypatch.setattr(
         xva_router,
@@ -118,6 +141,23 @@ def test_the_portfolios_and_ratings_are_listed():
     assert [p["id"] for p in body["portfolios"]] == list(xva.PORTFOLIOS)
     assert all(p["lesson"] for p in body["portfolios"])
     assert body["ratings"] == ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
+    # The wrong-way parameter is offered as scenarios, each with what it
+    # assumes; the figures of the text are those of the parameter.
+    scenarios = {s["id"]: s for s in body["wrong_way_scenarios"]}
+    assert list(scenarios) == [
+        "independent",
+        "wrong_way",
+        "strong_wrong_way",
+        "right_way",
+    ]
+    assert scenarios["independent"]["wrong_way_risk"] == 0.0
+    assert "rises by 65 %" in scenarios["wrong_way"]["explanation"]  # e^0.5
+    assert "multiplied by 2.7" in scenarios["strong_wrong_way"]["explanation"]  # e^1
+    assert "falls by 39 %" in scenarios["right_way"]["explanation"]  # e^-0.5
+    assert all(s["explanation"] for s in scenarios.values())
+    # Each one is a value the endpoint takes.
+    bounds = xva_router.XvaRequest.model_fields["wrong_way_risk"].metadata
+    assert all(-30 <= s["wrong_way_risk"] <= 30 for s in scenarios.values()) and bounds
 
 
 def test_a_swap_at_par_costs_a_cva_and_earns_a_dva():
@@ -309,6 +349,14 @@ def test_missing_inputs_are_explicit_errors_not_fallbacks(store, monkeypatch):
     monkeypatch.undo()
 
 
+def test_without_default_rates_the_capital_needs_a_pd(store):
+    store["default_rates"] = False
+    r = client.post("/api/xva/netting-set", json={"paths": PATHS})
+    assert r.status_code == 503 and "rating-default-rates" in r.text
+    # Nothing is read when the request brings its own.
+    assert run(capital={"pd": 0.01})["capital"]["pd_source"] == "entered"
+
+
 def test_no_history_or_an_unreachable_store(monkeypatch):
     monkeypatch.setattr(
         db, "fred_series", lambda series_id, since=None: pd.Series(dtype="float64")
@@ -381,6 +429,7 @@ def test_every_run_leaves_an_audit_record_that_can_be_run_again(store):
         "credit_spread:BB",
         "credit_spread:A",
         "rate_history:DGS3MO",
+        "default_rate:BB",
     ]
     assert all(m.value_hash.startswith("sha256:") for m in payload.market_inputs)
     assert payload.result.cva == body["adjustments"]["cva"]["value"]
@@ -514,17 +563,29 @@ def test_capital_and_its_cost():
     assert k["default_capital_today"] > 0 and k["cva_capital_today"] > 0
     assert k["expected_ead"][-1] == 0.0  # nothing left at maturity
     assert body["adjustments"]["kva"] < 0
-    # No PD given: the market-implied one, and the page is told.
-    assert k["pd_is_market_implied"]
-    assert any("higher than the default rate" in w for w in body["warnings"])
+    # No PD given: the historical default rate of the rating, with what it
+    # rests on -- far below what the spread implies.
+    assert k["pd_source"] == "historical"
+    basis = body["market"]["default_rate"]
+    assert (basis["agency"], basis["rating"]) == ("S&P", "BBB")
+    assert (basis["first_year"], basis["last_year"], basis["years"]) == (2000, 2011, 12)
+    assert basis["defaults"] == 4 * (5 + 11)
+    assert basis["rate"] == pytest.approx((0.32 + 0.69 + 0.0) / 3 / 100)
+    assert k["pd"] == pytest.approx(basis["rate"])
+    assert k["pd"] < 0.25 * body["market"]["counterparty"]["hazard"]
+    assert "S&P's BBB corporate ratings from 2000 to 2011" in k["pd_reason"]
+    assert "0.34 % (64 defaults in 12 years" in k["pd_reason"]
     assert (k["lgd"], k["sector"], k["investment_grade"]) == (0.40, "other", True)
 
-    # A bank's own PD, lower: less default capital, no warning.
-    own = run(portfolio="single_swap", capital={"pd": 0.002})
-    assert not own["capital"]["pd_is_market_implied"]
-    assert own["capital"]["default_capital_today"] < k["default_capital_today"]
+    # A bank's own PD, higher: more default capital, and nothing read.
+    own = run(portfolio="single_swap", capital={"pd": 0.02})
+    assert own["capital"]["pd_source"] == "entered"
+    assert own["market"]["default_rate"] is None
+    assert own["capital"]["default_capital_today"] > k["default_capital_today"]
     assert own["capital"]["cva_capital_today"] == pytest.approx(k["cva_capital_today"])
-    assert not any("higher than the default rate" in w for w in own["warnings"])
+    # A rating that never defaulted on record: the regulatory floor.
+    safe = run(portfolio="single_swap", counterparty_rating="AAA")["capital"]
+    assert safe["pd"] == 0.0005 and "floor" in safe["pd_reason"]
     # A financial counterparty: 45 % LGD (CRE32.6).
     assert run(capital={"sector": "financial"})["capital"]["lgd"] == 0.45
     # KVA is linear in the cost of capital.
@@ -574,24 +635,34 @@ def test_a_scripted_trade_has_an_exposure_in_the_library():
         1_000_000 * math.exp(-0.04 * 2.0), rel=2e-3
     )
     assert result["cva"]["value"] < 0 and result["dva"]["value"] == 0.0
-    # No SA-CCR description of a script: the capital says so instead of guessing.
+    # No SA-CCR description of a script: the standardised approach says so
+    # instead of guessing; the internal models method needs none.
+    bond = [
+        {
+            "kind": "script",
+            "script": "2028-10-01\n    pays 1000000\n",
+            "valuation_date": "2026-10-02",
+        }
+    ]
     with pytest.raises(Exception, match="SA-CCR description of a scripted trade"):
         qm.xva_netting_set(
-            times,
-            dfs,
-            (0.03, 0.01),
-            [
-                {
-                    "kind": "script",
-                    "script": "2028-10-01\n    pays 1\n",
-                    "valuation_date": "2026-10-02",
-                }
-            ],
-            flat,
-            flat,
-            paths=1000,
-            capital={"pd": 0.01},
+            times, dfs, (0.03, 0.01), bond, flat, flat, paths=1000, capital={"pd": 0.01}
         )
+    modelled = qm.xva_netting_set(
+        times,
+        dfs,
+        (0.03, 0.01),
+        bond,
+        flat,
+        flat,
+        paths=2000,
+        capital={"pd": 0.01, "method": "internal_model"},
+    )
+    # A bond bought is an exposure of about its value all along: the EAD is
+    # 1.4 times it, a little more as it accretes over the year.
+    value = modelled["trade_values_today"][0]
+    assert 1.4 * value < modelled["capital"]["ead_today"] < 1.4 * 1.06 * value
+    assert modelled["kva"] < 0
 
 
 # ── Lot X6: wrong-way risk ───────────────────────────────────────────────────
@@ -739,3 +810,104 @@ def test_the_response_says_where_the_paths_ran_and_why(store):
     assert r.status_code == 422 and "GPU requested" in r.text
     r = client.post("/api/xva/netting-set", json={"paths": PATHS, "device": "tpu"})
     assert r.status_code == 422
+
+
+# ── Decision D4: scripted trades in the portfolios, and their capital ────────
+
+
+def test_a_swap_written_as_a_script_is_the_swap():
+    native = run(portfolio="single_swap", capital={"method": "internal_model"})
+    scripted = run(portfolio="scripted_swap")
+    (trade,) = scripted["trades"]
+    assert trade["kind"] == "script" and "pays 10000000 * (" in trade["script"]
+    assert "libor = 1 / df(" in trade["script"]
+    # The terms it was written from are kept, and it is struck at par.
+    assert trade["fixed_rate"] == pytest.approx(native["trades"][0]["fixed_rate"])
+    assert (trade["tenor"], trade["maturity"]) == (10.0, 10.0)
+    assert abs(trade["value_today"]) < 2e-3 * 10_000_000
+    assert scripted["pilot_paths"] >= 20_000
+
+    # Same exposure and CVA as the native swap, to the regression's accuracy.
+    a, b = native["adjustments"], scripted["adjustments"]
+    assert b["cva"]["value"] == pytest.approx(a["cva"]["value"], rel=0.06)
+    assert b["dva"]["value"] == pytest.approx(a["dva"]["value"], rel=0.06)
+    assert max(scripted["exposure"]["ee"]) == pytest.approx(
+        max(native["exposure"]["ee"]), rel=0.06
+    )
+
+    # No supervisory description: the capital is read off the simulation, and
+    # the page is told why.
+    k = scripted["capital"]
+    assert k["method"] == "internal_model" and "script" in k["method_reason"]
+    assert k["ead_today"] == pytest.approx(native["capital"]["ead_today"], rel=0.06)
+    # 1.4 × the Effective EPE of the pricing simulation's own profile.
+    assert k["ead_today"] == pytest.approx(1.4 * scripted["exposure"]["eepe"], rel=1e-6)
+    assert b["kva"] < 0
+    assert b["kva"] == pytest.approx(a["kva"], rel=0.08)
+    # A script is valued by regression: on the CPU, and no SIMM.
+    assert scripted["device"] == "cpu"
+    margined = run(portfolio="scripted_swap", csa={"initial_margin": True})
+    assert margined["initial_margin"]["model"] == "regression"
+    assert "script" in margined["initial_margin"]["reason"]
+    assert margined["capital"]["ead_today"] < 0.3 * k["ead_today"]
+
+
+def test_the_capital_method_is_chosen_announced_and_can_be_set():
+    standard = run(portfolio="single_swap")["capital"]
+    assert standard["method"] == "sa_ccr" and "SA-CCR" in standard["method_reason"]
+    modelled = run(portfolio="single_swap", capital={"method": "internal_model"})
+    k = modelled["capital"]
+    assert (k["method"], k["method_reason"]) == ("internal_model", "Chosen by hand.")
+    # The internal model: 1.4 × the Effective EPE of the pricing simulation,
+    # below the standardised figure, which is built to be conservative.
+    assert 0.2 * standard["ead_today"] < k["ead_today"] < standard["ead_today"]
+    assert modelled["adjustments"]["kva"] < 0
+    # Asked for by name on a script, the standardised approach is refused.
+    r = client.post(
+        "/api/xva/netting-set",
+        json={
+            "paths": PATHS,
+            "portfolio": "scripted_swap",
+            "capital": {"method": "sa_ccr"},
+        },
+    )
+    assert r.status_code == 422 and "supervisory description" in r.text
+
+
+def test_the_scripts_of_the_request_are_trades_of_the_netting_set():
+    end = (AS_OF.replace(year=AS_OF.year + 3)).isoformat()
+    bond = {"script": f"{end}\n    pays 1000000\n", "label": "Zero-coupon bond 3Y"}
+    alone = run(portfolio="custom", scripts=[bond])
+    (trade,) = alone["trades"]
+    assert (trade["kind"], trade["description"]) == ("script", "Zero-coupon bond 3Y")
+    assert trade["notional"] is None and trade["script"] == bond["script"]
+    assert trade["maturity"] == pytest.approx(3.0, abs=0.01)
+    # A bond bought: an asset until it pays, so a CVA and no DVA.
+    assert 800_000 < trade["value_today"] < 1_000_000
+    assert alone["adjustments"]["cva"]["value"] < 0
+    assert alone["adjustments"]["dva"]["value"] == 0.0
+    assert alone["capital"]["method"] == "internal_model"
+
+    # Added to a portfolio, it nets with it; sold, it is the other side.
+    both = run(portfolio="single_swap", scripts=[{**bond, "quantity": -1.0}])
+    assert [t["kind"] for t in both["trades"]] == ["swap", "script"]
+    assert both["trades"][1]["value_today"] == pytest.approx(
+        -trade["value_today"], rel=5e-3
+    )
+    assert both["capital"]["method"] == "internal_model"
+
+    # What cannot be priced is the request's error, with the reason.
+    def refused(**body):
+        r = client.post("/api/xva/netting-set", json={"paths": PATHS, **body})
+        assert r.status_code == 422, r.text
+        return r.text
+
+    assert "at least one" in refused(portfolio="custom")
+    assert "Script 1" in refused(portfolio="custom", scripts=[{"script": "pays 1 +"}])
+    past = {"script": "2020-01-01\n    pays 1\n"}
+    assert "historical fixing for 2020-01-01" in refused(
+        portfolio="custom", scripts=[past]
+    )
+    equity = {"script": f"{end}\n    pays max(spot() - 100, 0)\n"}
+    assert "spot" in refused(portfolio="custom", scripts=[equity])
+    assert refused(portfolio="custom", scripts=[bond] * 4)

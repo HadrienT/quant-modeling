@@ -247,7 +247,8 @@ namespace quantModeling
 
         if (in.initial_margin && !in.csa)
             throw InvalidInput("xVA report: initial margin needs a collateral agreement");
-        if (in.capital && in.capital->trades.size() != trades.size())
+        if (in.capital && in.capital->method == ExposureMethod::SaCcr &&
+            in.capital->trades.size() != trades.size())
             throw InvalidInput("xVA report: the capital inputs must describe each netted trade");
         if (!std::isfinite(in.initial_margin_spread) || !std::isfinite(in.collateral_spread) ||
             !(in.cost_of_capital >= 0.0))

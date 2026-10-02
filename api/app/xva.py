@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -36,6 +36,7 @@ from .xva_schemas import (
     CreditInput,
     Estimate,
     ExposureProfileOut,
+    HistoricalDefaultRate,
     HistoricalDynamics,
     HullWhiteInput,
     InitialMarginOut,
@@ -68,7 +69,7 @@ class XvaInputError(ValueError):
 @dataclass(frozen=True)
 class _Spec:
     description: str
-    kind: str  # "swap" | "swaption" | "bermudan"
+    kind: str  # "swap" | "swaption" | "bermudan" | "script"
     payer: bool
     tenor: float
     notional: float
@@ -79,6 +80,9 @@ class _Spec:
     #: not the trade's own swap: the right to cancel a swap is struck at that
     #: swap's rate.
     par_of: Optional[Tuple[float, float]] = None
+    #: The text of a scripted trade; None for the swap this module writes as
+    #: a script itself, at today's par rate.
+    script: Optional[str] = None
 
 
 def _swap(tenor: float, payer: bool, notional: float = NOTIONAL) -> _Spec:
@@ -98,6 +102,16 @@ def _swaption(
         notional,
         start=expiry,
         quantity=1.0 if bought else -1.0,
+    )
+
+
+def _scripted_swap(tenor: int, notional: float = NOTIONAL) -> _Spec:
+    return _Spec(
+        f"Payer swap {tenor:g}Y at par, written as a script",
+        "script",
+        True,
+        float(tenor),
+        notional,
     )
 
 
@@ -184,6 +198,23 @@ PORTFOLIOS: Dict[str, Tuple[str, str, List[_Spec]]] = {
         "removes what the bank would owe, not what it is owed: the DVA shrinks, "
         "and the option, an asset, adds its own exposure.",
         [_swap(10, True), _bermudan(1, 9, False, par_of=(0.0, 10.0))],
+    ),
+    "scripted_swap": (
+        "A swap written as a script",
+        "The 10-year payer swap again, this time written in the payoff language "
+        "of the Scripting page. Nothing tells the engine that it is a swap: it "
+        "replays the script on every scenario, reads what it pays, and estimates "
+        "its value by regression. The exposure and the CVA are those of the "
+        "native swap; the capital is read off the simulated exposure, because a "
+        "script has no regulatory description of itself.",
+        [_scripted_swap(10)],
+    ),
+    "custom": (
+        "Your own scripts",
+        "The netting set is made of the scripts of the request alone: any payoff "
+        "on interest rates the language can write has an exposure, a CVA and a "
+        "cost of capital.",
+        [],
     ),
 }
 
@@ -316,11 +347,83 @@ def _historical(req: XvaRequest) -> HistoricalDynamics:
 # ── Computation ──────────────────────────────────────────────────────────────
 
 
+def _discount(rates: _Rates, t: float) -> float:
+    """P(0, t) on the bootstrapped curve, log-linear between its pillars."""
+    times, dfs = [0.0] + rates.times, [1.0] + rates.dfs
+    for k in range(1, len(times)):
+        if t <= times[k]:
+            w = (t - times[k - 1]) / (times[k] - times[k - 1])
+            return math.exp((1.0 - w) * math.log(dfs[k - 1]) + w * math.log(dfs[k]))
+    return dfs[-1]
+
+
+def swap_script(rates: _Rates, tenor: int, fixed_rate: float, notional: float) -> str:
+    """A payer swap, annual on both legs, in the payoff language: on each
+    anniversary it pays the floating coupon fixed a year earlier against the
+    fixed one, and fixes the next from the curve of that date. The coupon
+    that starts today is known today."""
+
+    def day(k: int) -> str:
+        # Exactly t = k under the script's ACT/365F.
+        return (rates.as_of + timedelta(days=365 * k)).isoformat()
+
+    first = 1.0 / _discount(rates, 1.0) - 1.0
+    lines = []
+    for k in range(1, tenor + 1):
+        lines.append(day(k))
+        floating = f"{first:.10f}" if k == 1 else "libor"
+        lines.append(f"    pays {notional:.0f} * ({floating} - {fixed_rate:.10f})")
+        if k < tenor:
+            lines.append(f"    libor = 1 / df({day(k + 1)}) - 1")
+    return "\n".join(lines) + "\n"
+
+
+def _script_specs(req: XvaRequest, rates: _Rates) -> List[_Spec]:
+    """The scripts of the request as trades. Each is parsed here, so that a
+    script that does not parse is the request's error, with the parser's
+    message, and its last date is known."""
+    specs = []
+    for k, trade in enumerate(req.scripts):
+        try:
+            events = qm.validate_script(
+                trade.script, rates.as_of.isoformat(), "ACT/365F"
+            )["events"]
+        except RuntimeError as exc:
+            raise XvaInputError(f"Script {k + 1} ({trade.label}): {exc}") from exc
+        if not events or events[-1]["t"] <= 0.0:
+            raise XvaInputError(
+                f"Script {k + 1} ({trade.label}) has no event after the valuation "
+                f"date, {rates.as_of.isoformat()}"
+            )
+        specs.append(
+            _Spec(
+                trade.label,
+                "script",
+                True,
+                events[-1]["t"],
+                0.0,
+                quantity=trade.quantity,
+                script=trade.script,
+            )
+        )
+    return specs
+
+
 def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
     """The trades at the market: each fixed rate is the par rate of its swap
     on today's curve (the forward par rate for a swaption)."""
     out = []
     for s in specs:
+        if s.kind == "script" and s.script is not None:
+            out.append(
+                {
+                    "kind": "script",
+                    "script": s.script,
+                    "valuation_date": rates.as_of.isoformat(),
+                    "quantity": s.quantity,
+                }
+            )
+            continue
         start, tenor = s.par_of or (s.start, s.tenor)
         par = qm.price_swap(
             rates.times,
@@ -336,6 +439,17 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
             True,
             0.0,
         )["par_rate"]
+        if s.kind == "script":
+            out.append(
+                {
+                    "kind": "script",
+                    "script": swap_script(rates, int(s.tenor), par, s.notional),
+                    "valuation_date": rates.as_of.isoformat(),
+                    "quantity": s.quantity,
+                    "fixed_rate": par,
+                }
+            )
+            continue
         trade = {
             "kind": s.kind,
             "tenor": s.tenor,
@@ -425,15 +539,77 @@ _PD_FLOOR = 0.0005
 _INVESTMENT_GRADE = {"AAA", "AA", "A", "BBB"}
 
 
-def _capital_inputs(req: XvaRequest, counterparty: CreditInput) -> dict:
+#: Whose default statistics the capital's PD is read from: the agency whose
+#: scale the ratings of this page are written in.
+_DEFAULT_RATE_AGENCY = "S&P"
+#: Fewer years than this is not a long-run average.
+_DEFAULT_RATE_MIN_YEARS = 10
+
+
+def _default_rate(rating: str) -> HistoricalDefaultRate:
+    """The historical one-year default rate of a rating: the average of the
+    yearly rates of its category. A capital formula wants this frequency, not
+    the intensity a spread implies under the pricing measure, which also pays
+    for bearing the risk."""
+    rows = db.rating_default_rates(_DEFAULT_RATE_AGENCY, rating)
+    if len(rows) < _DEFAULT_RATE_MIN_YEARS:
+        raise XvaUnavailable(
+            f"The historical default rates of rating {rating} are not in the store "
+            "(run data-ingest's rating-default-rates source with --full), and no "
+            "probability of default was given for the capital"
+        )
+    return HistoricalDefaultRate(
+        agency=_DEFAULT_RATE_AGENCY,
+        rating=rating,
+        first_year=rows[0][0].year,
+        last_year=rows[-1][0].year,
+        years=len(rows),
+        defaults=sum(n for _, n, _ in rows),
+        rate=sum(r for _, _, r in rows) / len(rows) / 100.0,
+    )
+
+
+def _capital_method(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
+    """How the exposure at default is measured, and why. The standardised
+    approach works from a supervisory description of each trade (asset class,
+    notional, dates, side), which a script does not carry; the internal models
+    method reads the exposure off the simulation, whatever the trade."""
+    asked = req.capital.method
+    scripted = any(s.kind == "script" for s in specs)
+    if asked == "sa_ccr" and scripted:
+        raise XvaInputError(
+            "The standardised approach (SA-CCR) needs a supervisory description of "
+            "each trade — asset class, notional, dates, side — which a script does "
+            "not carry. Use the internal models method for a netting set that "
+            "holds a script."
+        )
+    if asked != "auto":
+        return asked, "Chosen by hand."
+    if scripted:
+        return "internal_model", (
+            "This netting set holds a trade written as a script, which has no "
+            "supervisory description for the standardised approach. Its exposure "
+            "at default is read off the simulation instead, as the internal "
+            "models method does: 1.4 × the Effective EPE."
+        )
+    return "sa_ccr", (
+        "Every trade is a swap or a swaption, which the standardised approach "
+        "(SA-CCR) describes: the method a bank uses without an approved model."
+    )
+
+
+def _capital_inputs(
+    req: XvaRequest,
+    counterparty: CreditInput,
+    default_rate: Optional[HistoricalDefaultRate],
+    method: str,
+) -> dict:
     """What the capital projection takes: the counterparty's regulatory
     parameters and the cost of capital."""
     c = req.capital
-    # A rating's spread implies a default intensity under the pricing
-    # measure, above the default rates a bank's rating system would estimate:
-    # used only when no PD is given, and flagged.
-    pd = c.pd if c.pd is not None else 1.0 - math.exp(-counterparty.hazard)
+    pd = c.pd if c.pd is not None else default_rate.rate
     return {
+        "method": method,
         "pd": pd,
         # Foundation approach, CRE32.6.
         "lgd": (
@@ -445,9 +621,34 @@ def _capital_inputs(req: XvaRequest, counterparty: CreditInput) -> dict:
     }
 
 
-def _capital(r: dict, inputs: dict, req: XvaRequest, margined: bool) -> CapitalOut:
+def _pd_reason(inputs: dict, default_rate: Optional[HistoricalDefaultRate]) -> str:
+    floored = (
+        f" The regulatory floor of {100.0 * _PD_FLOOR:.2f} % applies."
+        if inputs["pd"] < _PD_FLOOR
+        else ""
+    )
+    if default_rate is None:
+        return "The probability of default given in the request." + floored
+    d = default_rate
+    return (
+        f"Average one-year default rate of {d.agency}'s {d.rating} corporate "
+        f"ratings from {d.first_year} to {d.last_year}: {100.0 * d.rate:.2f} % "
+        f"({d.defaults} default{'' if d.defaults == 1 else 's'} in {d.years} "
+        "years, as the agency reported them to ESMA)." + floored
+    )
+
+
+def _capital(
+    r: dict,
+    inputs: dict,
+    default_rate: Optional[HistoricalDefaultRate],
+    margined: bool,
+    method_reason: str,
+) -> CapitalOut:
     k = r["capital"]
     return CapitalOut(
+        method=inputs["method"],
+        method_reason=method_reason,
         ead_today=k["ead_today"],
         default_capital_today=k["default_capital_today"],
         cva_capital_today=k["cva_capital_today"],
@@ -455,7 +656,8 @@ def _capital(r: dict, inputs: dict, req: XvaRequest, margined: bool) -> CapitalO
         expected_ead=k["expected_ead"],
         discounted_capital=k["discounted_capital"],
         pd=max(inputs["pd"], _PD_FLOOR),
-        pd_is_market_implied=req.capital.pd is None,
+        pd_source="entered" if default_rate is None else "historical",
+        pd_reason=_pd_reason(inputs, default_rate),
         lgd=inputs["lgd"],
         sector=inputs["sector"],
         investment_grade=inputs["investment_grade"],
@@ -469,6 +671,12 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
     warnings: List[str] = []
     label, lesson, specs = PORTFOLIOS[req.portfolio]
     rates = _rates_market(today)
+    specs = specs + _script_specs(req, rates)
+    if not specs:
+        raise XvaInputError(
+            "The portfolio `custom` is made of the scripts of the request: give "
+            "at least one."
+        )
     counterparty = _credit(req.counterparty_rating, req.recovery, rates, warnings)
     own = _credit(req.own_rating, req.recovery, rates, warnings)
     historical = _historical(req)
@@ -497,7 +705,11 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             "spread": req.borrowing_spread,
             "model": margin_model,
         }
-    capital = _capital_inputs(req, counterparty)
+    default_rate = (
+        _default_rate(req.counterparty_rating) if req.capital.pd is None else None
+    )
+    capital_method, capital_reason = _capital_method(req, specs)
+    capital = _capital_inputs(req, counterparty, default_rate, capital_method)
     result = qm.xva_netting_set(
         rates.times,
         rates.dfs,
@@ -526,13 +738,6 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         "Counterparty and own credit curves are rating proxies built from bond "
         "spreads (ICE BofA indices), not CDS quotes of a name."
     )
-    if req.capital.pd is None:
-        warnings.append(
-            "The capital uses the default probability implied by the rating's "
-            "spread, which is higher than the default rate a bank's rating system "
-            "would estimate: the capital and the KVA are on the high side. Enter "
-            "your own one-year PD to replace it."
-        )
     if historical.estimated_mean_reversion is not None and not {
         "mean_reversion",
         "long_run_rate",
@@ -549,12 +754,16 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             XvaTrade(
                 description=spec.description,
                 kind=spec.kind,
-                payer=spec.payer,
                 quantity=spec.quantity,
-                notional=spec.notional,
-                fixed_rate=trade["fixed_rate"],
-                start=spec.start,
-                tenor=spec.tenor,
+                # A script of the request has only its text; the swap this
+                # module writes as a script keeps the terms it was written from.
+                payer=None if spec.script is not None else spec.payer,
+                notional=None if spec.script is not None else spec.notional,
+                fixed_rate=trade.get("fixed_rate"),
+                start=None if spec.script is not None else spec.start,
+                tenor=None if spec.script is not None else spec.tenor,
+                script=trade.get("script"),
+                maturity=spec.start + spec.tenor,
                 value_today=value,
                 standalone_cva=c["standalone_cva"],
                 incremental_cva=c["incremental_cva"],
@@ -589,9 +798,23 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             else None
         ),
         # SA-CCR is margined when the counterparty posts variation margin.
-        capital=_capital(result, capital, req, margined=req.csa is not None),
+        capital=_capital(
+            result,
+            capital,
+            default_rate,
+            margined=req.csa is not None,
+            method_reason=capital_reason,
+        ),
         capital_uncollateralised=(
-            _capital(open_set, capital, req, margined=False) if open_set else None
+            _capital(
+                open_set,
+                capital,
+                default_rate,
+                margined=False,
+                method_reason=capital_reason,
+            )
+            if open_set
+            else None
         ),
         market=XvaMarket(
             currency="USD",
@@ -608,6 +831,7 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             own=own,
             recovery=req.recovery,
             historical=historical,
+            default_rate=default_rate,
         ),
         paths=req.paths,
         pilot_paths=result["pilot_paths"],
@@ -639,6 +863,18 @@ def market_inputs(response: XvaResponse) -> List[Tuple[str, str, str, object]]:
     """(name, source, as_of, value) of what the computation read from the
     store, for the audit record."""
     m = response.market
+    default_rate = (
+        [
+            (
+                f"default_rate:{m.default_rate.rating}",
+                "db:credit.rating_default_rates",
+                f"{m.default_rate.last_year}-12-31",
+                m.default_rate.rate,
+            )
+        ]
+        if m.default_rate is not None
+        else []
+    )
     return [
         (
             "sofr_swap_curve",
@@ -674,7 +910,7 @@ def market_inputs(response: XvaResponse) -> List[Tuple[str, str, str, object]]:
                 m.historical.estimated_sigma,
             ],
         ),
-    ]
+    ] + default_rate
 
 
 # ── Methodology ──────────────────────────────────────────────────────────────
@@ -765,6 +1001,29 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
         ],
     ),
     (
+        "Trades written as scripts",
+        [
+            "A trade can be given as a script in the payoff language of the "
+            "Scripting page, on interest rates: dated events that read the curve "
+            "of their date with df(DATE), keep what they need in variables and "
+            "pay with `pays`. The engine does not know what the trade is. It "
+            "replays the script on every scenario, which gives its cash flows, "
+            "and estimates its value at each date by regressing the cash flows "
+            "still to come on the level of rates and on the script's own "
+            "variables, as for a Bermudan. A swap written this way has the "
+            "exposure and the CVA of the native swap, within the accuracy of the "
+            "regression.",
+            "This is the idea of Andreasen and Savine: the cash flows are the one "
+            "description of a trade, and every calculation — value, exposure, "
+            "capital — is run on them. So the capital of a scripted trade is the "
+            "internal models method's, which reads the simulated exposure; the "
+            "standardised approach would need a supervisory description the "
+            "script does not carry. Its value today is a Monte-Carlo price, and "
+            "ISDA SIMM, which needs sensitivities scenario by scenario, gives way "
+            "to the regression model of the margin.",
+        ],
+    ),
+    (
         "Wrong-way risk",
         [
             "Every figure above assumes that the counterparty's default has "
@@ -834,7 +1093,7 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
     (
         "Capital and KVA",
         [
-            "Two regulatory charges are projected. The exposure at default is the "
+            "Two regulatory charges are projected. By default the exposure at default is the "
             "standardised approach's (SA-CCR, Basel framework CRE52): 1.4 × "
             "(replacement cost + multiplier × add-on). At a future date the add-on "
             "comes from the trades that are left, the same in every scenario; the "
@@ -845,6 +1104,28 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
             "capped at five years, CRE32.46); the CVA capital is the reduced basic "
             "approach (BA-CVA, MAR50), with the sector and investment-grade risk "
             "weight of the counterparty and no cap on the maturity (MAR50.15).",
+            "The probability of default of that formula is a historical frequency: "
+            "the share of the issuers of the counterparty's rating category that "
+            "defaulted within a year, averaged over the years on record (S&P's "
+            "corporate ratings, as the agency reports them to ESMA). It is not the "
+            "probability the credit spread implies, which the CVA uses: a spread "
+            "also pays for bearing the risk, and implies several times more "
+            "defaults than have been observed. A probability of default can be "
+            "entered instead.",
+            "The other way to the exposure at default is the internal models "
+            "method (CRE53): 1.4 × the Effective EPE, the average over the coming "
+            "year of the expected exposure made non-decreasing, read off the "
+            "simulation itself with its collateral. Its effective maturity is a "
+            "ratio of areas under the exposure profile (CRE53.20), capped at five "
+            "years for the default charge and not for the CVA charge, whose "
+            "supervisory discount it replaces (MAR50.15). It needs no description "
+            "of the trades, so it is the method of a netting set that holds a "
+            "script; on swaps it can be asked for, to compare. Three things a "
+            "bank's approved model does are not done here: the exposure of a "
+            "future date is the one expected today, not the one the bank would "
+            "compute in each scenario; the profile comes from the pricing "
+            "simulation, which the rule allows; and the stressed calibration the "
+            "rule adds (CRE53.7) is not run.",
             "KVA = −Σ E[D × capital](t) × survival of both parties × cost of capital "
             "× Δt (Green, Kenyon & Dennis, 2014). An option keeps today's moneyness "
             "in its supervisory delta, and after its last exercise date it is "
@@ -930,12 +1211,18 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
         [
             "Gregory, The xVA Challenge: Counterparty Risk, Funding, Collateral, "
             "Capital and Initial Margin, 4th ed., Wiley, 2020.",
+            "Andreasen & Savine, Modern Computational Finance: Scripting for "
+            "Derivatives and xVA, Wiley, 2021.",
             "Pykhtin & Zhu, A Guide to Modelling Counterparty Credit Risk, GARP Risk "
             "Review, 2007.",
             "Andersen, Pykhtin & Sokol, Rethinking the Margin Period of Risk, Journal "
             "of Credit Risk, 2017.",
             "Basel Committee on Banking Supervision, Basel Framework, CRE53 (internal "
             "models method: Effective EE, Effective EPE).",
+            "European Securities and Markets Authority, Central Repository (CEREP): "
+            "default statistics reported by the credit rating agencies. The default "
+            "rates of this page were drafted using material downloaded from ESMA's "
+            "website; ESMA does not endorse this publication.",
         ],
     ),
 ]
@@ -943,6 +1230,69 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
 
 def methodology() -> List[MethodologySection]:
     return [MethodologySection(title=t, paragraphs=p) for t, p in _SECTIONS]
+
+
+#: The move of the netting set's value the explanations are written for, as a
+#: share of the reference notional.
+_WRONG_WAY_MOVE = 0.05
+
+
+def _hazard_change(b: float) -> str:
+    """What `wrong_way_risk` = b does to the hazard rate when the netting set
+    gains _WRONG_WAY_MOVE of the reference notional: exp(b × move)."""
+    factor = math.exp(b * _WRONG_WAY_MOVE)
+    if factor >= 2.0:
+        return f"is multiplied by {factor:.1f}"
+    if factor >= 1.0:
+        return f"rises by {100.0 * (factor - 1.0):.0f} %"
+    return f"falls by {100.0 * (1.0 - factor):.0f} %"
+
+
+def wrong_way_scenarios() -> List[Tuple[str, str, float, str]]:
+    """(id, label, wrong_way_risk, explanation): the scenarios the page offers
+    instead of a number to type. The parameter has no market quote, and the
+    credit curves here are rating proxies, on which it could not be estimated:
+    it is a scenario, and each one says what it assumes."""
+    move = f"{100.0 * _WRONG_WAY_MOVE:.0f} % of the reference notional"
+    closing = (
+        " The survival curve of the market is kept: default probability moves "
+        "between scenarios, none is created. A scenario, not an estimate "
+        "(Hull & White, 2012)."
+    )
+    return [
+        (
+            "independent",
+            "Independent",
+            0.0,
+            "The counterparty's default has nothing to do with what it owes: the "
+            "standard CVA, and the reference the other scenarios are read against.",
+        ),
+        (
+            "wrong_way",
+            "Wrong-way",
+            10.0,
+            "The counterparty defaults more often when it owes more: its hazard "
+            f"rate {_hazard_change(10.0)} in a scenario where the netting set is "
+            f"worth {move} more, and {_hazard_change(-10.0)} where it is worth "
+            "that much less." + closing,
+        ),
+        (
+            "strong_wrong_way",
+            "Strong wrong-way",
+            20.0,
+            "The same dependence, twice as strong: the hazard rate "
+            f"{_hazard_change(20.0)} where the netting set is worth {move} more."
+            + closing,
+        ),
+        (
+            "right_way",
+            "Right-way",
+            -10.0,
+            "The counterparty defaults less often when it owes more — it is hedging "
+            f"its own business with the trade: its hazard rate {_hazard_change(-10.0)} "
+            f"where the netting set is worth {move} more." + closing,
+        ),
+    ]
 
 
 def portfolios() -> List[Tuple[str, str, str]]:
@@ -954,6 +1304,7 @@ __all__ = [
     "market_inputs",
     "methodology",
     "portfolios",
+    "wrong_way_scenarios",
     "PORTFOLIOS",
     "RATINGS",
     "XvaInputError",

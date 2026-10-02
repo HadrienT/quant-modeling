@@ -27,6 +27,7 @@ from ..audit.payloads import (
 )
 from ..request_context import current_ip_hash
 from ..xva_schemas import (
+    WrongWayScenario,
     XvaPortfolioInfo,
     XvaPortfoliosResponse,
     XvaRequest,
@@ -44,6 +45,10 @@ def xva_portfolios() -> XvaPortfoliosResponse:
             for pid, label, lesson in xva.portfolios()
         ],
         ratings=xva.RATINGS,
+        wrong_way_scenarios=[
+            WrongWayScenario(id=i, label=label, wrong_way_risk=b, explanation=text)
+            for i, label, b, text in xva.wrong_way_scenarios()
+        ],
     )
 
 

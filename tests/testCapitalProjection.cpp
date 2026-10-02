@@ -261,6 +261,135 @@ namespace quantModeling
                                    (1.0 - 1e-12));
     }
 
+    // ── The internal models method (CRE53) ───────────────────────────────────
+
+    TEST(CapitalProjection, EffectiveEpeAndMaturityAreTheFormulasOfTheRule)
+    {
+        // A profile worked by hand, quarterly for a year then half-yearly.
+        const std::vector<Time> times{0.25, 0.5, 0.75, 1.0, 1.5, 2.0};
+        const std::vector<Real> ee{4.0, 6.0, 5.0, 3.0, 2.0, 0.0};
+        const std::vector<Real> flat(times.size(), 1.0);
+        // Effective EE: 4, 6, 6, 6 — it never comes down. Its average over
+        // the year: (4 + 6 + 6 + 6) / 4.
+        const InternalModelExposure a = internal_model_exposure(times, ee, flat, 0.0, 1.0);
+        EXPECT_DOUBLE_EQ(a.effective_epe, 5.5);
+        EXPECT_DOUBLE_EQ(a.ead(), 1.4 * 5.5);
+        // M: the first year's area plus the plain EE beyond, over the first
+        // year's area: (5.5 + 2 × 0.5 + 0 × 0.5) / 5.5.
+        EXPECT_DOUBLE_EQ(a.effective_maturity, 6.5 / 5.5);
+        // The current exposure is the first Effective EE: above every EE of
+        // the year, it is the whole year's.
+        EXPECT_DOUBLE_EQ(internal_model_exposure(times, ee, flat, 0.0, 9.0).effective_epe, 9.0);
+
+        // A step that straddles the year is cut at it: 2 for 0.6, then 4 for
+        // 0.4 inside the year and 0.4 beyond.
+        const InternalModelExposure cut =
+            internal_model_exposure({0.6, 1.4}, {2.0, 4.0}, {1.0, 1.0}, 0.0, 0.0);
+        EXPECT_DOUBLE_EQ(cut.effective_epe, 2.0 * 0.6 + 4.0 * 0.4);
+        EXPECT_DOUBLE_EQ(cut.effective_maturity, (2.8 + 4.0 * 0.4) / 2.8);
+
+        // Less than a year left: the average over what is left, and M at its
+        // floor of one year.
+        const InternalModelExposure brief =
+            internal_model_exposure({0.25, 0.5}, {2.0, 4.0}, {1.0, 1.0}, 0.0, 3.0);
+        EXPECT_DOUBLE_EQ(brief.effective_epe, (3.0 * 0.25 + 4.0 * 0.25) / 0.5);
+        EXPECT_DOUBLE_EQ(brief.effective_maturity, 1.0);
+
+        // Seen from a later date, time restarts there: from 0.5 with an
+        // exposure of 6, the year runs to 1.5 and nothing is above 6.
+        const InternalModelExposure later = internal_model_exposure(times, ee, flat, 0.5, ee[1]);
+        EXPECT_DOUBLE_EQ(later.effective_epe, 6.0);
+        EXPECT_DOUBLE_EQ(later.effective_maturity, 1.0); // 0 of EE in the last half-year
+        // Nothing after the last date.
+        EXPECT_EQ(internal_model_exposure(times, ee, flat, 2.0, 0.0).ead(), 0.0);
+
+        // Discounting only weighs the maturity: the far exposure counts less.
+        std::vector<Real> discount;
+        for (const Time t : times)
+            discount.push_back(std::exp(-0.05 * t));
+        const InternalModelExposure d = internal_model_exposure(times, ee, discount, 0.0, 1.0);
+        EXPECT_DOUBLE_EQ(d.effective_epe, 5.5);
+        EXPECT_LT(d.effective_maturity, a.effective_maturity);
+        EXPECT_GT(d.effective_maturity, 1.0);
+
+        EXPECT_THROW(internal_model_exposure(times, {1.0}, flat, 0.0, 0.0), InvalidInput);
+        EXPECT_THROW(internal_model_exposure(times, ee, flat, 0.0, -1.0), InvalidInput);
+        EXPECT_THROW(internal_model_exposure(times, ee, flat, 0.3, 0.0), InvalidInput); // not a date
+    }
+
+    TEST(CapitalProjection, TheInternalModelNeedsNoDescriptionOfTheTrades)
+    {
+        const HullWhiteCurveModel m = model();
+        const ExposurePaths paths = simulate(m);
+        CapitalInputs in = inputs();
+        in.method = ExposureMethod::InternalModel;
+        in.trades.clear(); // the simulation is the description
+        const CapitalProfile capital = projected_capital(paths, in);
+
+        // Today: 1.4 × the Effective EPE of the exposure statistics, computed
+        // by other code (a par swap has no current exposure to start from).
+        const ExposureStatistics stats = exposure_statistics(paths);
+        EXPECT_NEAR(capital.ead_today, internal_model_alpha * stats.eepe, 1e-9 * capital.ead_today);
+        EXPECT_GT(capital.ead_today, 0.0);
+        // The charges on that exposure: IRB at the maturity of the rule,
+        // BA-CVA without the cap and without the supervisory discount.
+        const InternalModelExposure today =
+            internal_model_exposure(stats.times, stats.ee, paths.discount, 0.0, 0.0);
+        // M is a ratio of areas, not a date: a swap's exposure builds up
+        // after the first year, so the whole area is many times the first
+        // year's — more than the swap's ten years, and what the cap is for.
+        EXPECT_GT(today.effective_maturity, 10.0);
+        EXPECT_LT(today.effective_maturity, 20.0);
+        EXPECT_NEAR(capital.default_capital_today,
+                    irb::capital_requirement(0.01, 0.40, std::min(today.effective_maturity, 5.0)) *
+                        capital.ead_today,
+                    1e-9 * capital.default_capital_today);
+        ba_cva::Counterparty c{ba_cva::Sector::Financial, ba_cva::CreditQuality::InvestmentGrade, {}};
+        c.netting_sets.push_back({capital.ead_today, today.effective_maturity, true});
+        EXPECT_NEAR(capital.cva_capital_today, ba_cva::capital_reduced({c}),
+                    1e-9 * capital.cva_capital_today);
+
+        // The profile runs off with the swap, and costs something.
+        EXPECT_EQ(capital.expected_ead.back(), 0.0);
+        const auto at = [&capital](Time t)
+        {
+            std::size_t i = 0;
+            while (capital.times[i] < t - 1e-9)
+                ++i;
+            return i;
+        };
+        EXPECT_GT(capital.expected_ead[at(3.0)], capital.expected_ead[at(8.0)]);
+        EXPECT_GT(capital.expected_ead[at(8.0)], capital.expected_ead[at(9.5)]);
+        const CreditCurve safe(0.0);
+        EXPECT_LT(kva(capital.times, capital.discounted_capital, safe, safe, 0.10), 0.0);
+
+        // The same order of magnitude as the standardised approach, which
+        // is built to be the more conservative of the two.
+        const CapitalProfile standard = projected_capital(paths, inputs());
+        EXPECT_LT(capital.ead_today, standard.ead_today);
+        EXPECT_GT(capital.ead_today, 0.2 * standard.ead_today);
+    }
+
+    TEST(CapitalProjection, TheInternalModelSeesTheCollateral)
+    {
+        const HullWhiteCurveModel m = model();
+        const ExposurePaths paths = simulate(m);
+        Csa csa;
+        csa.margin_period_of_risk = kMpor;
+        const ExposurePaths collateralised = collateralise(paths, csa);
+        CapitalInputs in = inputs();
+        in.method = ExposureMethod::InternalModel;
+        const CapitalProfile open = projected_capital(paths, in);
+        const CapitalProfile margined = projected_capital(collateralised, in);
+        const InitialMargin im = DynamicInitialMargin::fit(paths, kMpor).margin(paths);
+        const CapitalProfile with_im = projected_capital(collateralised, in, &im);
+        // Variation margin leaves the move of ten days; initial margin, sized
+        // for 99 % of it, nearly nothing.
+        EXPECT_LT(margined.ead_today, 0.3 * open.ead_today);
+        EXPECT_GT(margined.ead_today, 0.0);
+        EXPECT_LT(with_im.ead_today, 0.1 * margined.ead_today);
+    }
+
     TEST(CapitalProjection, RejectsWhatItCannotUse)
     {
         const HullWhiteCurveModel m = model();

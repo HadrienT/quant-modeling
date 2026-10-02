@@ -36,11 +36,72 @@ namespace quantModeling
      * exercise date has passed it is carried as its underlying swap, as if
      * exercised. The market-risk capital of the hedges and the leverage
      * ratio are left out.
+     *
+     * **The internal models method** (CRE53) is the other way to the
+     * exposure at default: EAD = alpha × Effective EPE, read off the
+     * simulated exposure itself. It needs no regulatory description of the
+     * trades — the simulation is the description — which is what a trade
+     * written as a payoff script has (Andreasen & Savine: the cash flows are
+     * the one representation every calculation is run on, capital included).
      */
+
+    /// How the exposure at default of the netting set is measured.
+    enum class ExposureMethod
+    {
+        /// The standardised approach (CRE52): replacement cost and add-ons,
+        /// from a supervisory description of each trade.
+        SaCcr,
+        /// The internal models method (CRE53): alpha × Effective EPE of the
+        /// simulated exposure. CapitalInputs::trades is not read.
+        InternalModel
+    };
+
+    /// Alpha of the internal models method (CRE53.14).
+    inline constexpr Real internal_model_alpha = 1.4;
+
+    /// What the internal models method reads off an exposure profile.
+    struct InternalModelExposure
+    {
+        /// The average over the first year (or the life left, if shorter) of
+        /// Effective EE, the running maximum of EE (CRE53.12-13).
+        Real effective_epe = 0.0;
+        /// M of CRE53.20, floored at one year and **not** capped: the
+        /// default-risk charge caps it at five years, BA-CVA does not
+        /// (MAR50.15).
+        Time effective_maturity = 1.0;
+
+        Real ead() const { return internal_model_alpha * effective_epe; }
+    };
+
+    /**
+     * @brief Effective EPE and effective maturity of a netting set, seen
+     *        from the date `from`, by the formulas of CRE53:
+     *
+     *   Effective EE(t_k) = max(Effective EE(t_{k-1}), EE(t_k)),
+     *   Effective EPE = Σ_{t_k <= 1y} Effective EE(t_k) Δt_k / min(1y, life left),
+     *   M = [Σ_{<= 1y} Effective EE Δt df + Σ_{> 1y} EE Δt df] / Σ_{<= 1y} Effective EE Δt df,
+     *
+     * with times counted from `from`, df the discount factor from `from`, and
+     * Effective EE starting from the current exposure.
+     *
+     * @param times            t_1 < ... < t_n, the dates of the profile.
+     * @param ee               undiscounted expected exposure at each date.
+     * @param discount         P(0, t_k).
+     * @param from             today (0) or a later date; dates up to it are
+     *                         ignored.
+     * @param current_exposure the exposure at `from`: max(V, 0) today.
+     * @throws InvalidInput on sizes that do not match or a negative exposure.
+     */
+    InternalModelExposure internal_model_exposure(const std::vector<Time> &times,
+                                                  const std::vector<Real> &ee,
+                                                  const std::vector<Real> &discount, Time from,
+                                                  Real current_exposure);
 
     struct CapitalInputs
     {
-        /// The SA-CCR description of each netted trade **as of today**.
+        ExposureMethod method = ExposureMethod::SaCcr;
+        /// The SA-CCR description of each netted trade **as of today**; not
+        /// read by the internal models method.
         std::vector<sa_ccr::Trade> trades;
         /// The margin agreement, when the counterparty posts variation
         /// margin; its NICA is the independent amount (the initial margin of
@@ -108,6 +169,14 @@ namespace quantModeling
      * @param margin_received the initial margin held on each path, when
      *        there is one: it counts as collateral (it lowers V - C) and as
      *        NICA.
+     *
+     * Under the internal models method the exposure of a future date t is
+     * alpha × the Effective EPE of the profile **from t on**, starting from
+     * the expected exposure at t: the same number in every scenario. The
+     * exposure a bank would compute at t depends on where the market is by
+     * then, which only a simulation inside each scenario would give; the
+     * expected profile is the usual stand-in. The stressed calibration the
+     * rule also asks for (CRE53.7) is not run.
      * @throws InvalidInput on a cube with several trades or under the
      *         historical measure, a PD outside [0, 1), an LGD outside [0, 1],
      *         or whatever SA-CCR rejects in the trades.
