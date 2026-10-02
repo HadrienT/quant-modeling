@@ -590,3 +590,39 @@ def test_a_scripted_trade_has_an_exposure_in_the_library():
             paths=1000,
             capital={"pd": 0.01},
         )
+
+
+# ── Lot X6: wrong-way risk ───────────────────────────────────────────────────
+
+
+def test_wrong_way_risk_raises_the_cva_and_leaves_the_independent_one_alone():
+    plain = run(portfolio="single_swap")
+    adj = plain["adjustments"]
+    # No dependence asked for: the two are the same numbers.
+    assert adj["cva"] == adj["cva_independent"] and adj["dva"] == adj["dva_independent"]
+
+    wrong = run(portfolio="single_swap", wrong_way_risk=10.0)["adjustments"]
+    right = run(portfolio="single_swap", wrong_way_risk=-10.0)["adjustments"]
+    for a in (wrong, right):
+        assert a["cva_independent"] == adj["cva"]
+    # Default where the swap is an asset: a dearer CVA. And a larger DVA:
+    # where the bank owes, the counterparty now survives longer, so the
+    # bank's own default is more often the first.
+    assert wrong["cva"]["value"] < 1.3 * adj["cva"]["value"] < 0
+    assert wrong["dva"]["value"] > adj["dva"]["value"]
+    # The other way round for right-way risk.
+    assert adj["cva"]["value"] < 0.8 * adj["cva"]["value"] < right["cva"]["value"] < 0
+    assert right["dva"]["value"] < adj["dva"]["value"]
+    assert "Wrong-way risk" in [s["title"] for s in plain["methodology"]]
+
+    # Under a CSA the exposure is a ten-day move: the level of the value, and
+    # so this hazard, hardly matters.
+    csa = run(portfolio="single_swap", csa={}, wrong_way_risk=10.0)["adjustments"]
+    ratio = csa["cva"]["value"] / csa["cva_independent"]["value"]
+    assert 0.6 < ratio < 1.1
+    assert (
+        client.post(
+            "/api/xva/netting-set", json={"paths": PATHS, "wrong_way_risk": 100}
+        ).status_code
+        == 422
+    )

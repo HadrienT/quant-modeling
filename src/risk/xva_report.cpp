@@ -1,6 +1,7 @@
 #include "quantModeling/risk/xva_report.hpp"
 
 #include "quantModeling/risk/exposure_metrics.hpp"
+#include "quantModeling/risk/wrong_way_risk.hpp"
 #include "quantModeling/risk/xva.hpp"
 
 #include <algorithm>
@@ -116,20 +117,109 @@ namespace quantModeling
             dva = estimate(d, d2);
         }
 
+        /// The survival of every path on the dates of `cube` (the reporting
+        /// dates of a collateralised cube are some of the grid's).
+        PathwiseSurvival on_dates_of(const PathwiseSurvival &full, const ExposurePaths &cube)
+        {
+            if (full.times == cube.times)
+                return full;
+            PathwiseSurvival out;
+            out.times = cube.times;
+            out.paths = full.paths;
+            out.b = full.b;
+            const std::size_t n = full.dates(), m = cube.dates();
+            out.survival.resize(full.paths * m);
+            std::size_t i = 0;
+            for (std::size_t r = 0; r < m; ++r)
+            {
+                while (i < n && full.times[i] < cube.times[r] - 1e-10)
+                    ++i;
+                if (i == n || std::abs(full.times[i] - cube.times[r]) > 1e-10)
+                    throw InvalidInput("xVA report: a reporting date is not on the simulation grid");
+                for (std::size_t p = 0; p < full.paths; ++p)
+                    out.survival[p * m + r] = full.survival[p * n + i];
+            }
+            return out;
+        }
+
+        /**
+         * CVA and DVA when the counterparty's survival is the path's own
+         * (wrong-way risk). Per path,
+         *
+         *   loss = -LGD_C Σ_i D max(V, 0) S_I(t_{i-1}) (q_{i-1} - q_i)
+         *   gain = -LGD_I Σ_i D min(V, 0) q_{i-1} (S_I(t_{i-1}) - S_I(t_i))
+         *
+         * which are those of pathwise_adjustments when q is the market curve.
+         */
+        void wrong_way_adjustments(const ExposurePaths &cube, const XvaInputs &in,
+                                   const PathwiseSurvival &q, Estimate &cva, Estimate &dva)
+        {
+            const std::size_t n = cube.dates(), N = cube.paths;
+            std::vector<Real> own_before(n), own_default(n);
+            Time previous = 0.0;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                own_before[i] = in.own.survival(previous);
+                own_default[i] = own_before[i] - in.own.survival(cube.times[i]);
+                previous = cube.times[i];
+            }
+            Real c = 0.0, c2 = 0.0, d = 0.0, d2 = 0.0;
+            for (std::size_t p = 0; p < N; ++p)
+            {
+                Real loss = 0.0, gain = 0.0;
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    const Real v = cube.discount_weight[p * n + i] * cube.trade_values[0][p * n + i];
+                    const Real before = q.before(p, i);
+                    loss += std::max(v, 0.0) * own_before[i] * (before - q.survival[p * n + i]);
+                    gain += std::min(v, 0.0) * before * own_default[i];
+                }
+                loss *= -in.lgd_counterparty;
+                gain *= -in.lgd_own;
+                c += loss;
+                c2 += loss * loss;
+                d += gain;
+                d2 += gain * gain;
+            }
+            const Real count = static_cast<Real>(N);
+            const auto estimate = [count, N](Real sum, Real sum2)
+            {
+                Estimate e;
+                e.value = sum / count;
+                if (N > 1)
+                    e.error = std::sqrt(std::max(sum2 / count - e.value * e.value, 0.0) / (count - 1.0));
+                return e;
+            };
+            cva = estimate(c, c2);
+            dva = estimate(d, d2);
+        }
+
         /// Bilateral CVA of a subset of the trades, under the same CSA and,
-        /// when there is one, its own initial margin.
+        /// when there is one, its own initial margin; under wrong-way risk,
+        /// with the hazard driven by the subset's own value.
         Real bilateral_cva(const ExposurePaths &paths, const XvaInputs &in,
                            const std::vector<std::size_t> &trades, Real margin_scaling)
         {
-            ExposureStatistics s;
+            ExposurePaths cube;
             if (in.initial_margin)
             {
                 const InitialMargin margin = initial_margin(paths, in, trades, margin_scaling);
-                s = exposure_statistics(netting_set_cube(paths, in, trades, &margin));
+                cube = netting_set_cube(paths, in, trades, &margin);
             }
             else
-                s = exposure_statistics(netting_set_cube(paths, in, trades));
-            return cva_bilateral(s.profile(), in.counterparty, in.own, in.lgd_counterparty);
+                cube = netting_set_cube(paths, in, trades);
+            if (in.wrong_way_b != 0.0)
+            {
+                Estimate cva, dva;
+                wrong_way_adjustments(
+                    cube, in,
+                    on_dates_of(wrong_way_survival(paths, trades, in.counterparty, in.wrong_way_b),
+                                cube),
+                    cva, dva);
+                return cva.value;
+            }
+            return cva_bilateral(exposure_statistics(cube).profile(), in.counterparty, in.own,
+                                 in.lgd_counterparty);
         }
     } // namespace
 
@@ -187,7 +277,17 @@ namespace quantModeling
         report.exposure = exposure_statistics(cube, {}, in.pfe_confidence);
         const ExposureProfile profile = report.exposure.profile();
 
-        pathwise_adjustments(cube, in, report.cva, report.dva);
+        pathwise_adjustments(cube, in, report.cva_independent, report.dva_independent);
+        if (in.wrong_way_b != 0.0)
+            wrong_way_adjustments(
+                cube, in,
+                on_dates_of(wrong_way_survival(paths, trades, in.counterparty, in.wrong_way_b), cube),
+                report.cva, report.dva);
+        else
+        {
+            report.cva = report.cva_independent;
+            report.dva = report.dva_independent;
+        }
         report.cva_unilateral = cva_unilateral(profile, in.counterparty, in.lgd_counterparty);
         // Segregated initial margin funds nothing: FVA is on the cube
         // without it.
@@ -216,7 +316,7 @@ namespace quantModeling
         // Euler allocation of the uncollateralised CVA: the trade's
         // contribution to EE*, integrated against the same default weights.
         std::vector<Real> marginal(trades.size(), std::numeric_limits<Real>::quiet_NaN());
-        if (!in.csa)
+        if (!in.csa && in.wrong_way_b == 0.0)
         {
             const ExposureStatistics by_trade = exposure_statistics(paths, trades, in.pfe_confidence);
             const std::vector<Real> weights = default_weights(by_trade.times, in.counterparty, in.own);

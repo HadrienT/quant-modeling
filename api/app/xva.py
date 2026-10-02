@@ -364,6 +364,8 @@ def _adjustments(r: dict) -> Adjustments:
     return Adjustments(
         cva=Estimate(**r["cva"]),
         dva=Estimate(**r["dva"]),
+        cva_independent=Estimate(**r["cva_independent"]),
+        dva_independent=Estimate(**r["dva_independent"]),
         cva_unilateral=r["cva_unilateral"],
         fca=r["fca"],
         fba=r["fba"],
@@ -468,6 +470,8 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         initial_margin=margin,
         collateral_spread=req.csa.collateral_rate_spread if req.csa else 0.0,
         capital=capital,
+        # Per unit of currency in the library; per reference notional here.
+        wrong_way_b=req.wrong_way_risk / NOTIONAL,
     )
 
     warnings.append(
@@ -689,6 +693,28 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
             "swaptions, where the exact value is known, the same regression "
             "reproduces the expected exposure within 1 to 2 % of its peak and the "
             "99 % quantile within 2 to 4 %, the more pilot paths the closer.",
+        ],
+    ),
+    (
+        "Wrong-way risk",
+        [
+            "Every figure above assumes that the counterparty's default has "
+            "nothing to do with what it owes. Wrong-way risk is the case where it "
+            "defaults more often precisely when it owes more. It is modelled as "
+            "Hull & White (2012) do: the hazard rate depends on the value of the "
+            "netting set, λ(t) = exp(a(t) + b × V(t)), with a(t) solved at each "
+            "date so that the survival probability averaged over the scenarios is "
+            "still the market's. The parameter moves default probability between "
+            "scenarios; it does not create any.",
+            "The parameter is entered per reference notional of 10 M: a value of "
+            "10 multiplies the hazard by e^0.5 ≈ 1.65 in a scenario where the "
+            "netting set is worth 5 % of the notional more. It has no market "
+            "quote: it is a scenario, and the figure to read is the ratio of the "
+            "CVA with it to the independent CVA, shown side by side. Under a "
+            "collateral agreement the effect nearly disappears: the exposure is "
+            "then the move of the value over ten days, which is no larger where "
+            "the value is high. Funding, margin and capital adjustments keep the "
+            "market survival curve.",
         ],
     ),
     (

@@ -52,6 +52,18 @@ namespace quantModeling
 
         Real pfe_confidence = 0.95;
 
+        /**
+         * @brief Wrong-way risk (lot X6, risk/wrong_way_risk.hpp): the
+         *        counterparty's hazard is exp(a(t) + b V(t)), V the value of
+         *        the netted trades before collateral. Per unit of currency;
+         *        0 is independence, > 0 wrong-way, < 0 right-way.
+         *
+         * It changes CVA and DVA (the counterparty's survival weighs the
+         * bank's own default). The funding, margin and capital adjustments
+         * keep the market survival curve.
+         */
+        Real wrong_way_b = 0.0;
+
         // ── Margin and capital (lot X5) ─────────────────────────────────
 
         /// Initial margin exchanged both ways, as the margin rules for
@@ -96,7 +108,8 @@ namespace quantModeling
          *        netting set's CVA, the shares adding up to it exactly.
          *        NaN under a CSA: with a threshold or a minimum transfer
          *        amount the exposure is no longer homogeneous in the trades
-         *        and no exact allocation exists.
+         *        and no exact allocation exists. NaN under wrong-way risk
+         *        too: the hazard depends on the value of the whole set.
          */
         Real marginal_cva = 0.0;
     };
@@ -110,7 +123,12 @@ namespace quantModeling
         /// the other party), with their Monte-Carlo errors.
         Estimate cva;
         Estimate dva;
-        /// CVA ignoring the bank's own default.
+        /// The same two with the counterparty's default independent of the
+        /// exposure: equal to `cva` and `dva` unless XvaInputs::wrong_way_b
+        /// is set. cva / cva_independent is the cost of the wrong-way risk.
+        Estimate cva_independent;
+        Estimate dva_independent;
+        /// CVA ignoring the bank's own default (and any wrong-way risk).
         Real cva_unilateral = 0.0;
         /// Funding cost and benefit; zero with zero spreads. Under initial
         /// margin they are those of the variation margin alone: segregated
