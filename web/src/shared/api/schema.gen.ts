@@ -1982,8 +1982,15 @@ export interface components {
              */
             lgd?: number | null;
             /**
+             * Method
+             * @description How the exposure at default is measured. sa_ccr: the standardised approach, from a supervisory description of each trade. internal_model: 1.4 × the Effective EPE of the simulation, which needs no description. auto: sa_ccr unless a trade is a script, which has none
+             * @default auto
+             * @enum {string}
+             */
+            method: "auto" | "sa_ccr" | "internal_model";
+            /**
              * Pd
-             * @description One-year probability of default for the IRB formula; unset takes the one implied by the rating's spread, which is higher than a bank's own estimate would be
+             * @description One-year probability of default for the IRB formula; unset takes the historical default rate of the counterparty's rating
              */
             pd?: number | null;
             /**
@@ -2018,7 +2025,7 @@ export interface components {
             discounted_capital: number[];
             /**
              * Ead Today
-             * @description SA-CCR exposure at default
+             * @description Exposure at default
              */
             ead_today: number;
             /** Expected Ead */
@@ -2029,16 +2036,36 @@ export interface components {
             lgd: number;
             /**
              * Margined
-             * @description SA-CCR treats the netting set as margined
+             * @description The netting set is under a margin agreement
              */
             margined: boolean;
+            /**
+             * Method
+             * @description How the exposure at default is measured
+             * @enum {string}
+             */
+            method: "sa_ccr" | "internal_model";
+            /**
+             * Method Reason
+             * @description Why this method, in plain terms
+             */
+            method_reason: string;
             /**
              * Pd
              * @description After the regulatory floor of 0.05 %
              */
             pd: number;
-            /** Pd Is Market Implied */
-            pd_is_market_implied: boolean;
+            /**
+             * Pd Reason
+             * @description Where the PD comes from, in plain terms
+             */
+            pd_reason: string;
+            /**
+             * Pd Source
+             * @description historical: the default rate of the rating; entered: the request's own
+             * @enum {string}
+             */
+            pd_source: "historical" | "entered";
             /** Sector */
             sector: string;
             /** Times */
@@ -3074,6 +3101,33 @@ export interface components {
             v0: number;
             /** Xi */
             xi: number;
+        };
+        /**
+         * HistoricalDefaultRate
+         * @description The default rate of a rating category on record: the average of the
+         *     yearly rates the agency reported to ESMA (CEREP).
+         */
+        HistoricalDefaultRate: {
+            /** Agency */
+            agency: string;
+            /**
+             * Defaults
+             * @description Defaults of the category over those years
+             */
+            defaults: number;
+            /** First Year */
+            first_year: number;
+            /** Last Year */
+            last_year: number;
+            /**
+             * Rate
+             * @description Average one-year default rate, a decimal
+             */
+            rate: number;
+            /** Rating */
+            rating: string;
+            /** Years */
+            years: number;
         };
         /** HistoricalDynamics */
         HistoricalDynamics: {
@@ -4859,6 +4913,27 @@ export interface components {
             vol?: number | null;
         };
         /**
+         * ScriptTradeInput
+         * @description A trade written in the payoff language of the Scripting page, on
+         *     interest rates only: its events are dated, read the curve with df(DATE)
+         *     and pay with `pays`.
+         */
+        ScriptTradeInput: {
+            /**
+             * Label
+             * @default Scripted trade
+             */
+            label: string;
+            /**
+             * Quantity
+             * @description Negative for the other side
+             * @default 1
+             */
+            quantity: number;
+            /** Script */
+            script: string;
+        };
+        /**
          * ScriptUnderlying
          * @description One underlying of a multi-asset script (spot(i) is the i-th): a ticker
          *     whose inputs come from the database, an exchange rate (`fx`), or typed
@@ -5971,6 +6046,24 @@ export interface components {
             /** Vol */
             vol: number;
         };
+        /**
+         * WrongWayScenario
+         * @description A value of the wrong-way parameter offered as a button, with the text
+         *     shown when the pointer is on it.
+         */
+        WrongWayScenario: {
+            /** Explanation */
+            explanation: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Wrong Way Risk
+             * @description The request's `wrong_way_risk`
+             */
+            wrong_way_risk: number;
+        };
         /** XvaMarket */
         XvaMarket: {
             counterparty: components["schemas"]["CreditInput"];
@@ -5983,6 +6076,7 @@ export interface components {
             curve_as_of: string;
             /** Curve Label */
             curve_label: string;
+            default_rate?: components["schemas"]["HistoricalDefaultRate"] | null;
             historical: components["schemas"]["HistoricalDynamics"];
             hull_white: components["schemas"]["HullWhiteInput"];
             own: components["schemas"]["CreditInput"];
@@ -5995,7 +6089,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable";
+            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
             /** Label */
             label: string;
             /** Lesson */
@@ -6007,6 +6101,8 @@ export interface components {
             portfolios: components["schemas"]["XvaPortfolioInfo"][];
             /** Ratings */
             ratings: string[];
+            /** Wrong Way Scenarios */
+            wrong_way_scenarios: components["schemas"]["WrongWayScenario"][];
         };
         /** XvaRequest */
         XvaRequest: {
@@ -6058,12 +6154,17 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
             /**
              * Recovery
              * @default 0.4
              */
             recovery: number;
+            /**
+             * Scripts
+             * @description Scripted trades added to the portfolio's; with the portfolio `custom` they are the whole netting set
+             */
+            scripts?: components["schemas"]["ScriptTradeInput"][];
             /**
              * Seed
              * @default 42
@@ -6119,7 +6220,7 @@ export interface components {
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
             /** Portfolio Label */
             portfolio_label: string;
             risk: components["schemas"]["ExposureProfileOut"];
@@ -6137,37 +6238,47 @@ export interface components {
             /** Description */
             description: string;
             /** Fixed Rate */
-            fixed_rate: number;
+            fixed_rate: number | null;
             /** Incremental Cva */
             incremental_cva: number;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "swap" | "swaption" | "bermudan";
+            kind: "swap" | "swaption" | "bermudan" | "script";
             /**
              * Marginal Cva
              * @description Euler share of the CVA; none under a CSA
              */
             marginal_cva: number | null;
+            /**
+             * Maturity
+             * @description Years to the trade's last payment
+             */
+            maturity: number;
             /** Notional */
-            notional: number;
+            notional: number | null;
             /** Payer */
-            payer: boolean;
+            payer: boolean | null;
             /**
              * Quantity
              * @description -1 for a sold option
              */
             quantity: number;
+            /**
+             * Script
+             * @description The text of a scripted trade
+             */
+            script: string | null;
             /** Standalone Cva */
             standalone_cva: number;
             /**
              * Start
              * @description Start of a swap, expiry of a swaption, first exercise date of a Bermudan (then exercisable each year)
              */
-            start: number;
+            start: number | null;
             /** Tenor */
-            tenor: number;
+            tenor: number | null;
             /** Value Today */
             value_today: number;
         };

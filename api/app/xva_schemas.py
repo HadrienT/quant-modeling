@@ -20,6 +20,8 @@ PortfolioId = Literal[
     "balanced",
     "bermudan",
     "cancellable",
+    "scripted_swap",
+    "custom",
 ]
 
 # ── Request ──────────────────────────────────────────────────────────────────
@@ -85,6 +87,18 @@ Sector = Literal[
 ]
 
 
+class ScriptTradeInput(BaseModel):
+    """A trade written in the payoff language of the Scripting page, on
+    interest rates only: its events are dated, read the curve with df(DATE)
+    and pay with `pays`."""
+
+    script: str = Field(min_length=1, max_length=4000)
+    quantity: float = Field(
+        default=1.0, ge=-1000, le=1000, description="Negative for the other side"
+    )
+    label: str = Field(default="Scripted trade", min_length=1, max_length=80)
+
+
 class CapitalInput(BaseModel):
     """What the regulatory capital of the netting set depends on, besides its
     exposure, and what that capital costs."""
@@ -98,13 +112,19 @@ class CapitalInput(BaseModel):
     sector: Sector = Field(
         default="other", description="The counterparty's sector, for BA-CVA"
     )
+    method: Literal["auto", "sa_ccr", "internal_model"] = Field(
+        default="auto",
+        description="How the exposure at default is measured. sa_ccr: the "
+        "standardised approach, from a supervisory description of each trade. "
+        "internal_model: 1.4 × the Effective EPE of the simulation, which needs "
+        "no description. auto: sa_ccr unless a trade is a script, which has none",
+    )
     pd: Optional[float] = Field(
         default=None,
         gt=0,
         lt=1,
         description="One-year probability of default for the IRB formula; unset "
-        "takes the one implied by the rating's spread, which is higher than a "
-        "bank's own estimate would be",
+        "takes the historical default rate of the counterparty's rating",
     )
     lgd: Optional[float] = Field(
         default=None,
@@ -126,6 +146,12 @@ class XvaRequest(BaseModel):
     borrowing_spread: float = Field(default=0.0, ge=0, le=0.1)
     lending_spread: float = Field(default=0.0, ge=0, le=0.1)
     capital: CapitalInput = Field(default_factory=lambda: CapitalInput())
+    scripts: List[ScriptTradeInput] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Scripted trades added to the portfolio's; with the "
+        "portfolio `custom` they are the whole netting set",
+    )
     wrong_way_risk: float = Field(
         default=0.0,
         ge=-30.0,
@@ -152,16 +178,19 @@ class XvaRequest(BaseModel):
 
 class XvaTrade(BaseModel):
     description: str
-    kind: Literal["swap", "swaption", "bermudan"]
-    payer: bool
+    kind: Literal["swap", "swaption", "bermudan", "script"]
     quantity: float = Field(description="-1 for a sold option")
-    notional: float
-    fixed_rate: float
-    start: float = Field(
+    #: The terms of a swap or a swaption; a script has only its text.
+    payer: Optional[bool]
+    notional: Optional[float]
+    fixed_rate: Optional[float]
+    start: Optional[float] = Field(
         description="Start of a swap, expiry of a swaption, first exercise date "
         "of a Bermudan (then exercisable each year)"
     )
-    tenor: float
+    tenor: Optional[float]
+    script: Optional[str] = Field(description="The text of a scripted trade")
+    maturity: float = Field(description="Years to the trade's last payment")
     value_today: float
     standalone_cva: float
     incremental_cva: float
@@ -237,7 +266,11 @@ class InitialMarginOut(BaseModel):
 class CapitalOut(BaseModel):
     """Regulatory capital of the netting set: today's, and projected."""
 
-    ead_today: float = Field(description="SA-CCR exposure at default")
+    method: Literal["sa_ccr", "internal_model"] = Field(
+        description="How the exposure at default is measured"
+    )
+    method_reason: str = Field(description="Why this method, in plain terms")
+    ead_today: float = Field(description="Exposure at default")
     default_capital_today: float = Field(description="IRB capital on that EAD")
     cva_capital_today: float = Field(description="BA-CVA capital on that EAD")
     times: List[float]
@@ -246,11 +279,15 @@ class CapitalOut(BaseModel):
         description="E[D(t) K(t)], both charges: what KVA integrates"
     )
     pd: float = Field(description="After the regulatory floor of 0.05 %")
-    pd_is_market_implied: bool
+    pd_source: Literal["historical", "entered"] = Field(
+        description="historical: the default rate of the rating; entered: the "
+        "request's own"
+    )
+    pd_reason: str = Field(description="Where the PD comes from, in plain terms")
     lgd: float
     sector: str
     investment_grade: bool
-    margined: bool = Field(description="SA-CCR treats the netting set as margined")
+    margined: bool = Field(description="The netting set is under a margin agreement")
     cost_of_capital: float
 
 
@@ -285,6 +322,19 @@ class HistoricalDynamics(BaseModel):
     overridden: List[str]
 
 
+class HistoricalDefaultRate(BaseModel):
+    """The default rate of a rating category on record: the average of the
+    yearly rates the agency reported to ESMA (CEREP)."""
+
+    agency: str
+    rating: str
+    first_year: int
+    last_year: int
+    years: int
+    defaults: int = Field(description="Defaults of the category over those years")
+    rate: float = Field(description="Average one-year default rate, a decimal")
+
+
 class XvaMarket(BaseModel):
     currency: str
     curve_as_of: date
@@ -294,6 +344,8 @@ class XvaMarket(BaseModel):
     own: CreditInput
     recovery: float
     historical: HistoricalDynamics
+    #: What the capital's PD rests on; None when the request gave its own.
+    default_rate: Optional[HistoricalDefaultRate] = None
 
 
 class XvaResponse(BaseModel):
@@ -339,6 +391,17 @@ class XvaPortfolioInfo(BaseModel):
     lesson: str
 
 
+class WrongWayScenario(BaseModel):
+    """A value of the wrong-way parameter offered as a button, with the text
+    shown when the pointer is on it."""
+
+    id: str
+    label: str
+    wrong_way_risk: float = Field(description="The request's `wrong_way_risk`")
+    explanation: str
+
+
 class XvaPortfoliosResponse(BaseModel):
     portfolios: List[XvaPortfolioInfo]
     ratings: List[str]
+    wrong_way_scenarios: List[WrongWayScenario]

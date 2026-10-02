@@ -1895,6 +1895,100 @@ donne ni PFE ni allocation d'Euler, ne prend la marge initiale que comme un
 profil (pas par chemin) et ignore le wrong-way risk — pour tout cela, le
 cube.
 
+### 14.12 Décisions D2, D3 et D4 (2026-10-02)
+
+Les trois décisions laissées au mainteneur par les lots X5 et X6 sont prises
+et codées.
+
+**D2 — la PD du capital est une fréquence historique.** La formule IRB veut
+la probabilité qu'un émetteur de cette notation fasse défaut dans l'année,
+telle qu'on l'a observée ; le spread implique une probabilité sous la mesure
+de pricing, qui rémunère aussi le portage du risque. Mainteneur : « trouve
+une table de vraies données et fais l'ingestion ».
+
+- **Source : le répertoire central de l'ESMA (CEREP)**, où les agences de
+  notation déposent leurs statistiques. Les études de défaut des agences sont
+  la référence habituelle, mais leurs conditions interdisent de stocker ou de
+  redistribuer les tables (l'étude 2024 de S&P interdit de reproduire son
+  contenu ou de le stocker dans une base sans autorisation écrite) ; la
+  notice légale de l'ESMA autorise la
+  reproduction avec mention de la source. Les chiffres sont ceux des agences,
+  dans un format réglementaire.
+- **Ingestion** : source `rating-default-rates` de `~/data-ingest` (PR #11),
+  table `credit.rating_default_rates` : par agence (S&P, Moody's, Fitch),
+  année civile et catégorie de notation, le nombre de défauts et le taux en
+  pourcentage. 1 028 lignes ; S&P de 2000 à 2025.
+- **Contrôle** : la moyenne des taux annuels de S&P sur 2000-2025 donne
+  AA 0,01 %, A 0,04 %, BBB 0,11 %, BB 0,53 %, B 2,96 %, CCC 24,7 % ; l'étude
+  de S&P sur 1981-2024 donne 0,02 %, 0,05 %, 0,14 %, 0,56 %, 2,93 % et
+  26,1 % (CCC/C).
+- **Usage** : sans PD saisie, l'API prend la moyenne des taux annuels de la
+  catégorie de la contrepartie (S&P, dont l'échelle est celle de la page),
+  l'annonce avec ce sur quoi elle repose (`pd_source`, `pd_reason`,
+  `market.default_rate`) et la consigne dans l'événement d'audit. Table
+  absente : erreur explicite, pas de repli sur le spread. Le plancher de
+  0,05 % (CRE32.4) s'applique à AAA, AA et A.
+- **Effet** (swap payeur 10 ans, contrepartie BBB, 1ᵉʳ octobre 2026) : PD de
+  0,11 % au lieu de 1,69 % implicite du spread ; capital de défaut 20 000 au
+  lieu de 55 400 ; KVA −78 500 au lieu de −110 000. Le capital CVA ne dépend
+  pas de la PD.
+- **Limites** : la cohorte est celle de l'entité européenne de l'agence (peu
+  de noms en AAA) ; moyenne simple des années, l'ESMA ne publiant pas le
+  dénominateur ; la catégorie CCC seule (CC et C, une poignée de noms par an,
+  sont laissées de côté) ; pas de PD « through the cycle » au sens d'un
+  système de notation interne.
+
+**D3 — le wrong-way risk se choisit par un bouton de scénario, expliqué au
+survol.** Le paramètre $b$ n'a pas de cotation et ne peut pas s'estimer sur
+des courbes par notation. `GET /api/xva/portfolios` renvoie les scénarios
+(`wrong_way_scenarios`) : indépendant ($b = 0$), wrong-way (10), wrong-way
+fort (20), right-way (−10), chacun avec le texte du survol, dont les chiffres
+sont calculés à partir du paramètre (le hazard monte de 65 % quand le netting
+set gagne 5 % du notionnel de référence, est multiplié par 2,7, baisse de
+39 %). La page `/xva` (X9) affiche ces boutons ; le champ numérique de la
+requête reste pour qui veut une autre valeur. L'estimation historique reste
+notée (C6).
+
+**D4 — une transaction en script a une exposition, un CVA et un capital.**
+Mainteneur : « Savine a littéralement fait le scripting compatible pour
+xVA ». C'est la thèse d'Andreasen et Savine : les flux sont *la*
+représentation de la transaction, et tout calcul — valeur, exposition,
+capital — se fait dessus. L'exposition existait (lot X4b) ; il manquait le
+capital, parce que SA-CCR part d'une description réglementaire (classe
+d'actif, notionnel, dates, sens) qu'un script ne porte pas.
+
+- **La méthode des modèles internes** (CRE53, relue sur le texte) n'en a pas
+  besoin : $EAD = 1{,}4 \times$ Effective EPE (CRE53.11, 53.14), l'Effective
+  EE étant l'EE rendue non décroissante à partir de l'exposition courante
+  (53.12) et l'Effective EPE sa moyenne sur la première année (53.13). La
+  maturité effective est un rapport d'aires (53.20), plafonnée à cinq ans
+  pour le capital de défaut et pas pour le BA-CVA, dont elle remplace
+  l'actualisation prudentielle (MAR50.15). Codée dans `risk/capital.hpp`
+  (`ExposureMethod::InternalModel`, `internal_model_exposure`).
+- **Ce qu'un modèle agréé fait et que l'outil ne fait pas** : l'exposition
+  d'une date future est celle attendue aujourd'hui (le profil à partir de
+  $t$), pas celle que la banque calculerait dans chaque scénario, qui
+  demanderait une simulation dans la simulation ; le profil vient de la
+  simulation de pricing (la note 1 de CRE53.12 le permet) ; la calibration
+  stressée (53.7) n'est pas faite.
+- **Dans l'API** : `capital.method` vaut `auto` (SA-CCR, sauf si le netting
+  set contient un script : modèle interne, avec la raison), `sa_ccr` ou
+  `internal_model` — demandable sur des swaps, pour comparer. `scripts`
+  ajoute jusqu'à trois transactions en script au portefeuille ; le
+  portefeuille `custom` n'est fait que d'elles ; `scripted_swap` est le swap
+  payeur 10 ans écrit en script par l'API. Un script qui ne se lit pas, qui
+  lit un spot ou qui est dans le passé est une erreur 422 avec le message du
+  parseur.
+- **Vérifié** : le swap écrit en script a le CVA du swap natif (−24 841
+  contre −24 914), la même EAD par modèle interne (283 300 contre 283 000)
+  et le même KVA (−46 400 contre −46 500), en 5 s pour 20 000 chemins.
+- **SA-CCR contre modèle interne**, même swap : EAD de 550 900 contre
+  283 000, KVA de −78 500 contre −46 500. L'approche standard est construite
+  pour être la plus prudente des deux.
+- **Ce qui suit du script** : exposition par régression (CPU), valeur
+  d'aujourd'hui par Monte-Carlo, marge initiale par le modèle de régression
+  (la SIMM demande des sensibilités).
+
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
 forwards, options actions, CDS (WP 20), scripts.
@@ -2069,14 +2163,14 @@ Chaque point dit **ce qui manque** et **pourquoi cela compterait**. La même
 liste est suivie dans l'issue GitHub #154 ; les lots
 restants (X8 à X10) sont dans le tableau du §14.
 
-### Décisions qui attendent le mainteneur
+### Décisions du mainteneur
 
 | # | Question | Ce qui en dépend |
 |---|---|---|
 | D1 | ~~Coder la SIMM taux ou garder la DIM par régression~~ — **tranché par le lot X5b** : la SIMM taux est codée (§14.10) | — |
-| D2 | Ingérer des **taux de défaut historiques par notation** dans `~/data-ingest` | la PD du capital : aujourd'hui implicite du spread, donc un KVA surestimé (−110 000 contre −83 900 avec 0,2 %) |
-| D3 | Comment **présenter $b$** (wrong-way risk) : un scénario saisi, ou un paramètre estimé sur l'historique spread / valeur comme le proposent Hull & White | la page `/xva` (X9) |
-| D4 | Exposer des **transactions en script** dans les portefeuilles de l'API | demande une description SA-CCR du script, ou un capital désactivable |
+| D2 | ~~Ingérer des taux de défaut historiques par notation~~ — **tranché** : ingérés depuis l'ESMA, la PD du capital est la fréquence historique (§14.12) | — |
+| D3 | ~~Comment présenter $b$~~ — **tranché** : un bouton de scénario, expliqué au survol (§14.12) ; les boutons eux-mêmes viennent avec la page | la page `/xva` (X9) |
+| D4 | ~~Exposer des transactions en script~~ — **tranché** : exposées, avec un capital par la méthode des modèles internes (§14.12) | — |
 
 ### Exposition par régression (X4a, X4b)
 
@@ -2116,6 +2210,16 @@ restants (X8 à X10) sont dans le tableau du §14.
 | S5 | Vega : interpolation dans le cube de vols plutôt que la vol propre de chaque swaption | suffisant tant que le modèle n'a qu'une volatilité |
 | S6 | Suivre les versions de l'ISDA (recalibrage annuel) : paramètres en données plutôt qu'en constantes | la version 2.8+2512 est codée en dur |
 | S7 | SIMM par chemin sur GPU | 12 × 12 produits par chemin et par date : parallèle par nature ; non fait au lot X7 (voir G5) |
+
+### Capital par modèle interne et scripts (D2, D4)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| K1 | **Calibration stressée** de l'EEPE (CRE53.7) : le maximum de l'EEPE courante et de celle d'une période de stress | la règle la demande ; il faut une volatilité de Hull-White calée sur une période de stress |
+| K2 | EAD future **par scénario** (régression de l'EEPE à venir sur l'état) au lieu du profil attendu | le KVA par modèle interne ignore la dispersion du capital futur |
+| K3 | Dénominateurs des taux de défaut (cohortes) pour une moyenne pondérée et une catégorie CCC/CC/C | l'ESMA ne les publie pas dans cette vue ; la matrice de transition du CEREP les approche |
+| K4 | Scripts de l'utilisateur depuis la page `/scripting` vers `/xva` | l'API les accepte ; il manque le lien dans le front (X9) |
+| K5 | SA-CCR d'un script par une **visite de son arbre** (dates, sens, notionnel) | permettrait de comparer les deux méthodes sur un script ; aucune règle ne dit comment lire le notionnel d'un payoff quelconque |
 
 ### GPU (X7)
 

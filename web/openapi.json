@@ -1067,6 +1067,17 @@
             "description": "Regulatory loss given default; unset takes the foundation approach's 45 % for a financial counterparty, 40 % otherwise",
             "title": "Lgd"
           },
+          "method": {
+            "default": "auto",
+            "description": "How the exposure at default is measured. sa_ccr: the standardised approach, from a supervisory description of each trade. internal_model: 1.4 \u00d7 the Effective EPE of the simulation, which needs no description. auto: sa_ccr unless a trade is a script, which has none",
+            "enum": [
+              "auto",
+              "sa_ccr",
+              "internal_model"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
           "pd": {
             "anyOf": [
               {
@@ -1078,7 +1089,7 @@
                 "type": "null"
               }
             ],
-            "description": "One-year probability of default for the IRB formula; unset takes the one implied by the rating's spread, which is higher than a bank's own estimate would be",
+            "description": "One-year probability of default for the IRB formula; unset takes the historical default rate of the counterparty's rating",
             "title": "Pd"
           },
           "sector": {
@@ -1127,7 +1138,7 @@
             "type": "array"
           },
           "ead_today": {
-            "description": "SA-CCR exposure at default",
+            "description": "Exposure at default",
             "title": "Ead Today",
             "type": "number"
           },
@@ -1147,18 +1158,42 @@
             "type": "number"
           },
           "margined": {
-            "description": "SA-CCR treats the netting set as margined",
+            "description": "The netting set is under a margin agreement",
             "title": "Margined",
             "type": "boolean"
+          },
+          "method": {
+            "description": "How the exposure at default is measured",
+            "enum": [
+              "sa_ccr",
+              "internal_model"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "method_reason": {
+            "description": "Why this method, in plain terms",
+            "title": "Method Reason",
+            "type": "string"
           },
           "pd": {
             "description": "After the regulatory floor of 0.05 %",
             "title": "Pd",
             "type": "number"
           },
-          "pd_is_market_implied": {
-            "title": "Pd Is Market Implied",
-            "type": "boolean"
+          "pd_reason": {
+            "description": "Where the PD comes from, in plain terms",
+            "title": "Pd Reason",
+            "type": "string"
+          },
+          "pd_source": {
+            "description": "historical: the default rate of the rating; entered: the request's own",
+            "enum": [
+              "historical",
+              "entered"
+            ],
+            "title": "Pd Source",
+            "type": "string"
           },
           "sector": {
             "title": "Sector",
@@ -1173,6 +1208,8 @@
           }
         },
         "required": [
+          "method",
+          "method_reason",
           "ead_today",
           "default_capital_today",
           "cva_capital_today",
@@ -1180,7 +1217,8 @@
           "expected_ead",
           "discounted_capital",
           "pd",
-          "pd_is_market_implied",
+          "pd_source",
+          "pd_reason",
           "lgd",
           "sector",
           "investment_grade",
@@ -3577,6 +3615,52 @@
           "rho"
         ],
         "title": "HestonParams",
+        "type": "object"
+      },
+      "HistoricalDefaultRate": {
+        "description": "The default rate of a rating category on record: the average of the\nyearly rates the agency reported to ESMA (CEREP).",
+        "properties": {
+          "agency": {
+            "title": "Agency",
+            "type": "string"
+          },
+          "defaults": {
+            "description": "Defaults of the category over those years",
+            "title": "Defaults",
+            "type": "integer"
+          },
+          "first_year": {
+            "title": "First Year",
+            "type": "integer"
+          },
+          "last_year": {
+            "title": "Last Year",
+            "type": "integer"
+          },
+          "rate": {
+            "description": "Average one-year default rate, a decimal",
+            "title": "Rate",
+            "type": "number"
+          },
+          "rating": {
+            "title": "Rating",
+            "type": "string"
+          },
+          "years": {
+            "title": "Years",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agency",
+          "rating",
+          "first_year",
+          "last_year",
+          "years",
+          "defaults",
+          "rate"
+        ],
+        "title": "HistoricalDefaultRate",
         "type": "object"
       },
       "HistoricalDynamics": {
@@ -7498,6 +7582,37 @@
         "title": "ScriptRequest",
         "type": "object"
       },
+      "ScriptTradeInput": {
+        "description": "A trade written in the payoff language of the Scripting page, on\ninterest rates only: its events are dated, read the curve with df(DATE)\nand pay with `pays`.",
+        "properties": {
+          "label": {
+            "default": "Scripted trade",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "quantity": {
+            "default": 1.0,
+            "description": "Negative for the other side",
+            "maximum": 1000.0,
+            "minimum": -1000.0,
+            "title": "Quantity",
+            "type": "number"
+          },
+          "script": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Script",
+            "type": "string"
+          }
+        },
+        "required": [
+          "script"
+        ],
+        "title": "ScriptTradeInput",
+        "type": "object"
+      },
       "ScriptUnderlying": {
         "description": "One underlying of a multi-asset script (spot(i) is the i-th): a ticker\nwhose inputs come from the database, an exchange rate (`fx`), or typed\nflat Black-Scholes inputs.",
         "properties": {
@@ -10126,6 +10241,36 @@
         "title": "VolatilitySwapRequest",
         "type": "object"
       },
+      "WrongWayScenario": {
+        "description": "A value of the wrong-way parameter offered as a button, with the text\nshown when the pointer is on it.",
+        "properties": {
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "wrong_way_risk": {
+            "description": "The request's `wrong_way_risk`",
+            "title": "Wrong Way Risk",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "wrong_way_risk",
+          "explanation"
+        ],
+        "title": "WrongWayScenario",
+        "type": "object"
+      },
       "XvaMarket": {
         "properties": {
           "counterparty": {
@@ -10143,6 +10288,16 @@
           "curve_label": {
             "title": "Curve Label",
             "type": "string"
+          },
+          "default_rate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistoricalDefaultRate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "historical": {
             "$ref": "#/components/schemas/HistoricalDynamics"
@@ -10181,7 +10336,9 @@
               "directional",
               "balanced",
               "bermudan",
-              "cancellable"
+              "cancellable",
+              "scripted_swap",
+              "custom"
             ],
             "title": "Id",
             "type": "string"
@@ -10218,11 +10375,19 @@
             },
             "title": "Ratings",
             "type": "array"
+          },
+          "wrong_way_scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/WrongWayScenario"
+            },
+            "title": "Wrong Way Scenarios",
+            "type": "array"
           }
         },
         "required": [
           "portfolios",
-          "ratings"
+          "ratings",
+          "wrong_way_scenarios"
         ],
         "title": "XvaPortfoliosResponse",
         "type": "object"
@@ -10322,7 +10487,9 @@
               "directional",
               "balanced",
               "bermudan",
-              "cancellable"
+              "cancellable",
+              "scripted_swap",
+              "custom"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -10333,6 +10500,15 @@
             "minimum": 0.0,
             "title": "Recovery",
             "type": "number"
+          },
+          "scripts": {
+            "description": "Scripted trades added to the portfolio's; with the portfolio `custom` they are the whole netting set",
+            "items": {
+              "$ref": "#/components/schemas/ScriptTradeInput"
+            },
+            "maxItems": 3,
+            "title": "Scripts",
+            "type": "array"
           },
           "seed": {
             "default": 42,
@@ -10458,7 +10634,9 @@
               "directional",
               "balanced",
               "bermudan",
-              "cancellable"
+              "cancellable",
+              "scripted_swap",
+              "custom"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -10528,8 +10706,15 @@
             "type": "string"
           },
           "fixed_rate": {
-            "title": "Fixed Rate",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Rate"
           },
           "incremental_cva": {
             "title": "Incremental Cva",
@@ -10539,7 +10724,8 @@
             "enum": [
               "swap",
               "swaption",
-              "bermudan"
+              "bermudan",
+              "script"
             ],
             "title": "Kind",
             "type": "string"
@@ -10556,31 +10742,76 @@
             "description": "Euler share of the CVA; none under a CSA",
             "title": "Marginal Cva"
           },
-          "notional": {
-            "title": "Notional",
+          "maturity": {
+            "description": "Years to the trade's last payment",
+            "title": "Maturity",
             "type": "number"
           },
+          "notional": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notional"
+          },
           "payer": {
-            "title": "Payer",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payer"
           },
           "quantity": {
             "description": "-1 for a sold option",
             "title": "Quantity",
             "type": "number"
           },
+          "script": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The text of a scripted trade",
+            "title": "Script"
+          },
           "standalone_cva": {
             "title": "Standalone Cva",
             "type": "number"
           },
           "start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Start of a swap, expiry of a swaption, first exercise date of a Bermudan (then exercisable each year)",
-            "title": "Start",
-            "type": "number"
+            "title": "Start"
           },
           "tenor": {
-            "title": "Tenor",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenor"
           },
           "value_today": {
             "title": "Value Today",
@@ -10590,12 +10821,14 @@
         "required": [
           "description",
           "kind",
-          "payer",
           "quantity",
+          "payer",
           "notional",
           "fixed_rate",
           "start",
           "tenor",
+          "script",
+          "maturity",
           "value_today",
           "standalone_cva",
           "incremental_cva",

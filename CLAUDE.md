@@ -52,7 +52,7 @@ sait rejouer. Tout nouveau log ou événement métier passe par `api/app/audit/`
 
 Les données de marché viennent de **la base Postgres alimentée par
 `~/data-ingest`** (cours, chaînes d'options, rendements de dividende, courbes
-FRED, spreads de crédit ICE BofA, faits XBRL des 10-K / 10-Q du S&P 500, swaps et swaptions SOFR traités publiés par la DTCC). **Tout nouveau chemin de données passe par la base, sans repli vers Yahoo
+FRED, spreads de crédit ICE BofA, faits XBRL des 10-K / 10-Q du S&P 500, swaps et swaptions SOFR traités publiés par la DTCC, taux de défaut historiques par notation publiés par l'ESMA). **Tout nouveau chemin de données passe par la base, sans repli vers Yahoo
 Finance** : une donnée absente ou trop ancienne y est une erreur explicite (les
 chemins de pricing des scripts passent par `api/app/market_snapshot.py`, qui
 n'importe pas `yfinance`). Les replis en direct **déjà en place** dans les
