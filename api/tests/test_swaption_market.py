@@ -1,5 +1,5 @@
 """Swaption vols from traded premiums — `swaption_market.py`, `market_request`
-and `/api/rates/market`, on the real C++ library and a fake store.
+and `/api/rates/quotes/usd-sofr`, on the real C++ library and a fake store.
 
 Trades are generated from a known normal vol with Bachelier's formula on a
 known swap curve: the grid must give that vol back, platform straddles must
@@ -287,12 +287,14 @@ def test_market_request_carries_the_quotes_and_what_they_rest_on(store):
     assert "not dealer quotes" in m["label"] and DAY.isoformat() in m["label"]
 
 
-def test_the_endpoint_feeds_the_analysis_and_hull_white_fits_the_traded_vols(store):
-    r = client.get("/api/rates/market")
+def test_the_quote_set_prices_and_hull_white_fits_the_traded_vols(store):
+    r = client.get("/api/rates/quotes/usd-sofr")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["as_of"] == DAY.isoformat() and body["trades_used"] == 25
-    assert {(v["expiry"], v["tenor"]) for v in body["swaption_vols"]} == {
+    assert body["source"] == "market" and body["as_of"] == DAY.isoformat()
+    trades = body["trades"]
+    assert trades["trades_used"] == 25
+    assert {(v["expiry"], v["tenor"]) for v in trades["swaption_vols"]} == {
         (0.5, 10.0),
         (1.0, 2.0),
         (1.0, 5.0),
@@ -300,13 +302,22 @@ def test_the_endpoint_feeds_the_analysis_and_hull_white_fits_the_traded_vols(sto
         (2.0, 10.0),
     }
 
-    analysis = client.post("/api/rates/analyse", json=body["request"])
-    assert analysis.status_code == 200, analysis.text
-    result = analysis.json()
     # One curve discounts and projects: the swaps reprice and there is no basis.
-    assert result["curves"]["max_repricing_error_bp"] < 1e-6
-    assert all(abs(p["basis_bp"]) < 1e-6 for p in result["curves"]["points"])
-    hw = result["hull_white"]
+    curves = client.post("/api/rates/curves", json=body["curves"])
+    assert curves.status_code == 200, curves.text
+    built = curves.json()["curves"]
+    assert built["max_repricing_error_bp"] < 1e-6 and built["single_curve"]
+
+    priced = client.post(
+        "/price/rates/swaption",
+        json={
+            "curves": body["curves"],
+            "swaption_vols": body["swaption_vols"],
+            "swaption": body["swaption"],
+        },
+    )
+    assert priced.status_code == 200, priced.text
+    hw = priced.json()["swaption"]["hull_white"]
     assert hw["converged"] and hw["rmse_bp"] < 3.0
     assert 0.008 < hw["sigma"] < 0.016 and hw["mean_reversion"] > 0.0
 
@@ -317,7 +328,7 @@ def test_no_fallback_when_the_store_has_nothing_usable(store):
     store["curves"] = {stale: CURVE}
     with pytest.raises(rates_derivatives.RatesMarketUnavailable, match="days ago"):
         rates_derivatives.market_request()
-    r = client.get("/api/rates/market")
+    r = client.get("/api/rates/quotes/usd-sofr")
     assert r.status_code == 503 and stale.isoformat() in r.json()["message"]
 
     # A curve but no swaption trade.
@@ -341,7 +352,7 @@ def test_an_unreachable_store_is_a_503(monkeypatch):
         raise db.StoreUnavailable("connection refused")
 
     monkeypatch.setattr(db, "dtcc_swap_curves", down)
-    r = client.get("/api/rates/market")
+    r = client.get("/api/rates/quotes/usd-sofr")
     assert (
         r.status_code == 503 and r.json()["message"] == "Market data store unavailable"
     )

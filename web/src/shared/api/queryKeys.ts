@@ -50,9 +50,8 @@ export const queryKeys = {
 	},
 
 	rates: {
-		example: () => ["rates", "example"] as const,
-		market: () => ["rates", "market"] as const,
-		analysis: (request: unknown) => ["rates", "analysis", request] as const,
+		quotes: (setId: string) => ["rates", "quotes", setId] as const,
+		curves: (quotes: unknown) => ["rates", "curves", quotes] as const,
 	},
 
 	pricing: {

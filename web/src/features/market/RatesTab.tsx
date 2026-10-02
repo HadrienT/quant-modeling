@@ -5,6 +5,7 @@ import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import { GovernmentCurvePanel } from "./GovernmentCurvePanel";
 import { RatesMethodology } from "./RatesMethodology";
 import { ReferenceRatesPanel } from "./ReferenceRatesPanel";
+import { SwapMarketPanel } from "./SwapMarketPanel";
 
 const CURRENCIES: RateCurrency[] = ["USD", "EUR", "GBP", "CHF", "JPY"];
 const FORWARD_PERIODS = [
@@ -14,9 +15,10 @@ const FORWARD_PERIODS = [
 ];
 
 /**
- * Rates tab: per currency, the government curve (the only free full term
- * structure), the reference rates (fixings and published averages — listed,
- * never drawn on a tenor axis), and the methodology, always visible. Every
+ * Rates tab: per currency, the government curve, the reference rates
+ * (fixings and published averages — listed, never drawn on a tenor axis),
+ * for USD the SOFR swap curve and swaption vols built from traded prices,
+ * and the methodology, always visible. Every
  * number and every sentence of the methodology comes from the API
  * (api/app/rates.py), so the page cannot describe a computation it does not do.
  */
@@ -72,6 +74,8 @@ export function RatesTab({
 						benchmarks={data.benchmarks}
 						headline={data.headline_series}
 					/>
+					{/* The only currency whose swaps are published trade by trade. */}
+					{currency === "USD" && <SwapMarketPanel />}
 					<RatesMethodology sections={data.methodology} />
 				</>
 			)}

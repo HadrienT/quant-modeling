@@ -1,6 +1,6 @@
-import type { RatesAnalysisResponse } from "@/shared/api";
+import type { SwaptionPricingResponse } from "@/shared/api";
+import { rateBp, ratePct, tenorLabel } from "@/shared/format";
 import { Metric, MetricRow } from "@/shared/ui";
-import { bp, pct, tenorLabel } from "./format";
 
 /**
  * Hull-White calibrated to the ATM swaption grid: the parameters, the fit in
@@ -9,18 +9,18 @@ import { bp, pct, tenorLabel } from "./format";
 export function CalibrationPanel({
 	hw,
 }: {
-	hw: RatesAnalysisResponse["hull_white"];
+	hw: SwaptionPricingResponse["swaption"]["hull_white"];
 }) {
 	return (
 		<section className="flex flex-col gap-3">
 			<h2 className="text-sm font-semibold text-ink">Hull-White calibration</h2>
-			<MetricRow>
+			<MetricRow className="xl:grid-cols-3">
 				<Metric
 					label="Mean reversion a"
 					value={hw.mean_reversion.toFixed(4)}
 					footnote={hw.mean_reversion_fixed ? "Fixed by you" : "Fitted"}
 				/>
-				<Metric label="Short-rate vol σ" value={bp(hw.sigma)} />
+				<Metric label="Short-rate vol σ" value={rateBp(hw.sigma)} />
 				<Metric
 					label="RMSE"
 					value={`${hw.rmse_bp.toFixed(2)} bp`}
@@ -56,13 +56,13 @@ export function CalibrationPanel({
 								<td className="px-2 py-1 font-sans">
 									{tenorLabel(p.expiry)} into {tenorLabel(p.tenor)}
 								</td>
-								<td className="px-2 py-1 text-right">{pct(p.strike)}</td>
-								<td className="px-2 py-1 text-right">{bp(p.market_vol)}</td>
-								<td className="px-2 py-1 text-right">{bp(p.model_vol)}</td>
+								<td className="px-2 py-1 text-right">{ratePct(p.strike)}</td>
+								<td className="px-2 py-1 text-right">{rateBp(p.market_vol)}</td>
+								<td className="px-2 py-1 text-right">{rateBp(p.model_vol)}</td>
 								<td className="px-2 py-1 text-right">
 									{p.model_vol == null
 										? "—"
-										: bp(p.model_vol - p.market_vol, 2)}
+										: rateBp(p.model_vol - p.market_vol, 2)}
 								</td>
 							</tr>
 						))}
