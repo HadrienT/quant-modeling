@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/shared/ui";
+import { AssistantStatus, AssistantStatusNotice } from "./AssistantStatus";
 import { MessageBody } from "./MessageBody";
 import { useAssistantChat, type EditorContext } from "./useAssistantChat";
 
@@ -61,13 +62,17 @@ export function AssistantPanel({
 	return (
 		<div className="flex flex-col gap-3 rounded-md border border-hairline bg-surface p-4">
 			<div className="flex items-center justify-between">
-				<p className="text-2xs text-ink-muted uppercase">Assistant</p>
+				<div className="flex items-center gap-3">
+					<p className="text-2xs text-ink-muted uppercase">Assistant</p>
+					<AssistantStatus />
+				</div>
 				{chat.messages.length > 0 && (
 					<Button size="sm" variant="ghost" onClick={chat.reset}>
 						New chat
 					</Button>
 				)}
 			</div>
+			<AssistantStatusNotice />
 			<div className="flex max-h-[28rem] min-h-40 flex-col gap-3 overflow-y-auto">
 				{chat.messages.length === 0 ? (
 					<div className="flex flex-col gap-2">

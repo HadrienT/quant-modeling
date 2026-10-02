@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import { LanguageReference } from "../LanguageReference";
 import { AssistantPanel } from "./AssistantPanel";
+import { AssistantStatus } from "./AssistantStatus";
 import type { EditorContext } from "./useAssistantChat";
 
 /** Right-hand column of the scripting page: the assistant, or the static
@@ -15,7 +16,14 @@ export function AssistantSidebar(props: {
 	return (
 		<Tabs defaultValue="assistant" className="min-w-0">
 			<TabsList>
-				<TabsTrigger value="assistant">Assistant</TabsTrigger>
+				<TabsTrigger
+					value="assistant"
+					className="inline-flex items-center gap-1.5"
+				>
+					Assistant
+					{/* Visible from the Reference tab too. */}
+					<AssistantStatus compact />
+				</TabsTrigger>
 				<TabsTrigger value="reference">Reference</TabsTrigger>
 			</TabsList>
 			<TabsContent

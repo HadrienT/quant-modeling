@@ -16,6 +16,7 @@ os.environ.setdefault("JWT_SECRET", "test-only-secret-not-for-deployment")
 import pytest
 import quantmodeling as qm
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 from api.app.assistant import agent
 from api.app.assistant.agent import (
@@ -28,7 +29,7 @@ from api.app.assistant.llm import LLMError
 from api.app.assistant.prompt import EXAMPLES, build_system_prompt
 from api.app.assistant.schemas import ScriptingChatEvent, ScriptingChatRequest
 from api.app.auth import require_user
-from api.app.main import _validation_exception_handler
+from api.app.main import _validation_exception_handler, app
 from api.app.routers import assistant as route
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -305,3 +306,61 @@ def test_route_requires_a_signed_in_user():
     owner's GPU: it must sit behind the same JWT dependency as portfolios."""
     (r,) = [r for r in route.router.routes if r.path.endswith("/scripting/chat")]
     assert require_user in [d.call for d in r.dependant.dependencies]
+
+
+# ── Status: is the model server up, and with which model ─────────────────────
+
+
+def _status(monkeypatch, served):
+    """The status the route gives when the model server reports `served`
+    (a list of ids), or does not answer (an exception)."""
+
+    def served_models(self):
+        if isinstance(served, Exception):
+            raise served
+        return served
+
+    monkeypatch.setattr(route.LlamaServerClient, "served_models", served_models)
+    monkeypatch.setenv("QM_LLM_MODEL", "Qwen3-Coder-30B-A3B-Instruct")
+    monkeypatch.setattr(route, "_STATUS_CACHE", route.TTLCache(1, 15))
+    r = TestClient(app).get("/api/assistant/status")
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_status_is_up_when_the_server_serves_the_assistants_model(monkeypatch):
+    # Listed as a file path, as llama-server does when started with -m.
+    body = _status(monkeypatch, ["/models/qwen3-coder-30b-a3b-instruct.gguf"])
+    assert body["state"] == "up" and body["detail"] == "The assistant is online."
+
+
+def test_status_names_another_model_loaded_in_its_place(monkeypatch):
+    body = _status(monkeypatch, ["plamo-2-translate"])
+    assert body["state"] == "wrong_model"
+    assert body["serving"] == ["plamo-2-translate"]
+    assert "plamo-2-translate" in body["detail"] and "Qwen3-Coder" in body["detail"]
+
+
+def test_status_is_down_without_leaking_the_servers_address(monkeypatch):
+    from api.app.assistant.llm import LLMError
+
+    body = _status(
+        monkeypatch, LLMError("model server unreachable: http://172.17.0.1:8001")
+    )
+    assert body["state"] == "down" and body["serving"] == []
+    assert "172.17" not in json.dumps(body)
+
+
+def test_status_is_public_and_probes_the_server_once_per_cache_window(monkeypatch):
+    calls = []
+
+    def served_models(self):
+        calls.append(1)
+        return ["Qwen3-Coder-30B-A3B-Instruct"]
+
+    monkeypatch.setattr(route.LlamaServerClient, "served_models", served_models)
+    monkeypatch.setattr(route, "_STATUS_CACHE", route.TTLCache(1, 15))
+    anonymous = TestClient(app)
+    for _ in range(5):
+        assert anonymous.get("/api/assistant/status").json()["state"] == "up"
+    assert len(calls) == 1

@@ -70,7 +70,10 @@ l'URL est `QM_LLM_BASE_URL` (défaut `http://127.0.0.1:8000/v1` hors Docker ;
 `http://172.17.0.1:8001/v1` dans les fichiers compose, via le socket
 `llama-bridge` d'AgenticEnv). Connexion (JWT) obligatoire : la prod est publique
 et la route consomme le GPU. Tout script écrit par le modèle est vérifié par le
-vrai parseur avant d'être proposé. Le prompt décrit le langage : **quand le
+vrai parseur avant d'être proposé. `GET /api/assistant/status` (public, mis en
+cache 15 s) dit si le serveur répond et avec quel modèle : la page l'affiche,
+car le `llama-server` est partagé et peut être arrêté ou chargé avec un autre
+modèle. Le prompt décrit le langage : **quand le
 langage change (nouvelle fonction, nouvelle syntaxe), mettre à jour
 `assistant/prompt.py`** — `pytest` valide ses exemples contre le
 parseur et échoue s'ils ne passent plus.

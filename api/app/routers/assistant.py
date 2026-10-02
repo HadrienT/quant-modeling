@@ -1,6 +1,7 @@
 """Router — the payoff-scripting assistant (chat with a local LLM).
 
 POST /api/assistant/scripting/chat   (Server-Sent Events)
+GET  /api/assistant/status           is the model server up, and with which model
 
 The model is the llama-server already running on the host (AgenticEnv); this
 route adds what a raw chat lacks: the DSL prompt, and a check of every script
@@ -16,6 +17,8 @@ from __future__ import annotations
 import json
 import threading
 import time
+from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Callable, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,16 +26,75 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
 from ..assistant.agent import run_assistant
-from ..assistant.llm import LlamaServerClient
-from ..assistant.schemas import ScriptingChatRequest
+from ..assistant.llm import LlamaServerClient, LLMError
+from ..assistant.schemas import AssistantStatusResponse, ScriptingChatRequest
 from ..audit import emit
 from ..audit.payloads import AssistantChatPayload, AssistantOutcome
 from ..auth import require_user
+from ..cache import TTLCache
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 _MAX_CONCURRENT_CHATS = 2
 _slots = threading.BoundedSemaphore(_MAX_CONCURRENT_CHATS)
+
+
+# The status is public (the page shows it before anyone signs in) and each
+# probe is a request to the model server: answered from a short cache, so the
+# route cannot be used to hammer it.
+_STATUS_CACHE = TTLCache[str, AssistantStatusResponse](max_size=1, ttl_seconds=15)
+
+
+def _model_key(name: str) -> str:
+    """A model's name whatever form the server lists it in: a bare id, a file
+    name or a path to a .gguf."""
+    return PurePosixPath(name).name.lower().removesuffix(".gguf")
+
+
+def _probe() -> AssistantStatusResponse:
+    client = LlamaServerClient.from_env()
+    now = datetime.now(timezone.utc)
+    try:
+        serving = client.served_models()
+    except LLMError:
+        # The reason (an internal address, a socket error) stays in the logs.
+        return AssistantStatusResponse(
+            state="down",
+            model=client.model,
+            detail="The model server does not answer: the assistant is offline.",
+            checked_at=now,
+        )
+    wanted = _model_key(client.model)
+    # A server that lists nothing cannot be told apart from a right one.
+    if not serving or any(_model_key(m) == wanted for m in serving):
+        return AssistantStatusResponse(
+            state="up",
+            model=client.model,
+            serving=serving,
+            detail="The assistant is online.",
+            checked_at=now,
+        )
+    return AssistantStatusResponse(
+        state="wrong_model",
+        model=client.model,
+        serving=serving,
+        detail=(
+            f"The model server is running {', '.join(serving)}, not the "
+            f"assistant's model ({client.model}): answers would come from that "
+            "model."
+        ),
+        checked_at=now,
+    )
+
+
+@router.get("/status", response_model=AssistantStatusResponse)
+def assistant_status_endpoint() -> AssistantStatusResponse:
+    cached = _STATUS_CACHE.get("status")
+    if cached is not None:
+        return cached
+    status = _probe()
+    _STATUS_CACHE.set("status", status)
+    return status
 
 
 def _sse(event: dict) -> str:
