@@ -2,6 +2,7 @@
 #define QM_RISK_EXPOSURE_PATHS_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/risk/simm.hpp"
 #include "quantModeling/risk/xva.hpp"
 
 #include <cstddef>
@@ -71,6 +72,19 @@ namespace quantModeling
         /// Per trade: cash flow at (path, date), > 0 received. Empty unless
         /// the simulation was asked to keep them.
         std::vector<std::vector<Real>> trade_cashflows;
+
+        /**
+         * @brief ISDA SIMM of **all the trades together**, on each path at
+         *        each date (lot X5b): the initial margin the sensitivities
+         *        of that scenario call for. Empty unless the simulation was
+         *        asked for it (ExposureSimulationSettings::simm).
+         *
+         * Unlike the values it is not kept per trade: a margin is not the
+         * sum of the margins of its trades.
+         */
+        std::vector<Real> simm;
+        /// The same today, with its three parts.
+        simm::Margin simm_today;
 
         std::size_t dates() const { return times.size(); }
         std::size_t trades() const { return trade_values.size(); }

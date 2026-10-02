@@ -78,6 +78,7 @@ target_sources(quantModeling
         src/risk/initial_margin.cpp
         src/risk/capital.cpp
         src/risk/wrong_way_risk.cpp
+        src/risk/simm.cpp
         src/risk/xva_report.cpp
         src/market/historical_rate_dynamics.cpp
         src/engines/xva/hull_white_future_value.cpp
@@ -312,6 +313,8 @@ if(QM_BUILD_TESTS)
     tests/testInitialMargin.cpp
     tests/testCapitalProjection.cpp
     tests/testWrongWayRisk.cpp
+    tests/testSimm.cpp
+    tests/testSimmPaths.cpp
     tests/testXvaReport.cpp
     tests/testHistoricalMeasure.cpp
     tests/testSaCcr.cpp

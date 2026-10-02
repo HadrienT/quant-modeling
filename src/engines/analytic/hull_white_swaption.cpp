@@ -201,6 +201,41 @@ namespace quantModeling
         return std::max(model.zcb(t, T, x) * value, 0.0);
     }
 
+    void hull_white_european_swaption_terms(const HullWhiteExerciseRegion &region,
+                                            const HullWhiteCurveModel &model, Time t, Real x,
+                                            std::vector<Real> &terms)
+    {
+        const std::vector<BondCashflow> &cfs = region.bonds;
+        terms.assign(cfs.size(), 0.0);
+        if (cfs.empty())
+            return;
+        const Time T = region.expiry;
+        if (t > T + kTimeEps)
+            throw InvalidInput("Hull-White swaption: valuation date past the expiry");
+        if (!(T - t > kTimeEps))
+        {
+            // At the expiry: the swap's own bonds, when it is exercised.
+            if (bonds_value(cfs, T, x, model) > 0.0)
+                for (std::size_t k = 0; k < cfs.size(); ++k)
+                    terms[k] = cfs[k].amount * model.zcb(T, cfs[k].time, x);
+            return;
+        }
+        // The sum of hull_white_european_swaption, kept apart per bond.
+        const auto tr = model.transition(t, T, T);
+        const Real m = tr.decay * x + tr.drift, v = tr.variance, sd = std::sqrt(v);
+        const Real convexity = 0.5 * (v - model.y(T));
+        const Real discount = model.zcb(t, T, x);
+        for (const auto &[l, u] : region.intervals)
+            for (std::size_t k = 0; k < cfs.size(); ++k)
+            {
+                const Real G = region.G[k];
+                const Real Fu = std::isinf(u) ? 1.0 : norm_cdf((u - m + G * v) / sd);
+                const Real Fl = std::isinf(l) ? 0.0 : norm_cdf((l - m + G * v) / sd);
+                terms[k] += discount * cfs[k].amount * region.forward_bond[k] *
+                            std::exp(-G * m + G * G * convexity) * (Fu - Fl);
+            }
+    }
+
     Real hull_white_european_swaption(const Swaption &swaption, const HullWhiteCurveModel &model)
     {
         return hull_white_european_swaption(hull_white_exercise_region(swaption, model), model,

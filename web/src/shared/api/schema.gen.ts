@@ -2282,6 +2282,13 @@ export interface components {
              */
             initial_margin: boolean;
             /**
+             * Initial Margin Model
+             * @description simm: ISDA SIMM from the sensitivities of each scenario (swaps and European swaptions only). regression: a model of the margin, fitted on the simulated values. auto: SIMM when every trade can give its sensitivities, the regression otherwise
+             * @default auto
+             * @enum {string}
+             */
+            initial_margin_model: "auto" | "simm" | "regression";
+            /**
              * Initial Margin Today
              * @description The initial margin actually computed today (a SIMM amount): the projected profile is scaled to start from it
              */
@@ -3218,6 +3225,24 @@ export interface components {
         InitialMarginOut: {
             /** Expected */
             expected: number[];
+            /**
+             * Model
+             * @description What the margin of each scenario is computed with
+             * @enum {string}
+             */
+            model: "simm" | "regression";
+            /**
+             * Reason
+             * @description Why this model, in plain terms
+             */
+            reason: string;
+            /**
+             * Requested
+             * @enum {string}
+             */
+            requested: "auto" | "simm" | "regression";
+            /** @description Today's SIMM, when the margin is SIMM */
+            simm_today: components["schemas"]["SimmToday"] | null;
             /** Times */
             times: number[];
             /** Today */
@@ -5078,6 +5103,20 @@ export interface components {
             series_id: string;
             /** Value */
             value: number | null;
+        };
+        /**
+         * SimmToday
+         * @description Today's ISDA SIMM of the netting set, by margin type.
+         */
+        SimmToday: {
+            /** Curvature */
+            curvature: number;
+            /** Delta */
+            delta: number;
+            /** Total */
+            total: number;
+            /** Vega */
+            vega: number;
         };
         /** SimulationCalibrateRequest */
         SimulationCalibrateRequest: {
