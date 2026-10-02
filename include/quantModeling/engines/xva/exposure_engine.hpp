@@ -68,6 +68,28 @@ namespace quantModeling
          * risk measures (PFE, EPE, EEPE), not for xVA.
          */
         std::optional<HistoricalRateDynamics> historical;
+        /**
+         * @brief Paths of the pilot simulation the regression-based trades
+         *        are fitted on (lot X4); 0 picks four times the main paths,
+         *        between 20 000 and 200 000. Ignored when every trade has a
+         *        closed form.
+         *
+         * More than the main simulation, on purpose: a pilot path only
+         * evaluates cash flows, and the noise of the fitted values — the
+         * future cash flows of years are regressed on one number — is what
+         * limits the accuracy of the exposure, not the bias of the basis.
+         *
+         * The pilot is independent of the main simulation (another seed)
+         * and always drawn under the pricing measure. Under the historical
+         * measure its paths start from a dispersed state, wide enough for
+         * the fitted values to cover where the historical scenarios go:
+         * a regression says nothing outside the range it was fitted on.
+         */
+        std::size_t pilot_paths = 0;
+        /// Standard deviation of the state the pilot paths start from;
+        /// unset is automatic: 0 under the pricing measure, what covers the
+        /// scenarios under the historical one.
+        std::optional<Real> pilot_dispersion;
     };
 
     /**
@@ -125,6 +147,11 @@ namespace quantModeling
         ExposurePaths simulate(const ExposureSimulationSettings &settings = {},
                                ThreadPool *pool = nullptr);
 
+        /// Standard deviation of the pilot's starting state in the last
+        /// simulate(): 0 unless the main simulation ran under the historical
+        /// measure with a trade valued by regression.
+        Real pilot_dispersion() const { return pilot_dispersion_; }
+
       private:
         struct Trade
         {
@@ -134,6 +161,7 @@ namespace quantModeling
 
         const HullWhiteCurveModel &model_;
         std::vector<Trade> trades_;
+        Real pilot_dispersion_ = 0.0;
     };
 
 } // namespace quantModeling

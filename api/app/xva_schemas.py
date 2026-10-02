@@ -13,7 +13,13 @@ from .schemas import MethodologySection
 
 Rating = Literal["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]
 PortfolioId = Literal[
-    "single_swap", "bought_swaption", "sold_swaption", "directional", "balanced"
+    "single_swap",
+    "bought_swaption",
+    "sold_swaption",
+    "directional",
+    "balanced",
+    "bermudan",
+    "cancellable",
 ]
 
 # ── Request ──────────────────────────────────────────────────────────────────
@@ -62,12 +68,15 @@ class XvaRequest(BaseModel):
 
 class XvaTrade(BaseModel):
     description: str
-    kind: Literal["swap", "swaption"]
+    kind: Literal["swap", "swaption", "bermudan"]
     payer: bool
     quantity: float = Field(description="-1 for a sold option")
     notional: float
     fixed_rate: float
-    start: float
+    start: float = Field(
+        description="Start of a swap, expiry of a swaption, first exercise date "
+        "of a Bermudan (then exercisable each year)"
+    )
     tenor: float
     value_today: float
     standalone_cva: float
@@ -166,6 +175,10 @@ class XvaResponse(BaseModel):
     adjustments_uncollateralised: Optional[Adjustments]
     market: XvaMarket
     paths: int
+    pilot_paths: int = Field(
+        description="Independent paths the regression of a Bermudan was fitted "
+        "on; 0 when every trade has a closed form"
+    )
     seed: int
     compute_ms: float
     warnings: List[str]

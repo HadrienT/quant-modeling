@@ -9869,7 +9869,9 @@
               "bought_swaption",
               "sold_swaption",
               "directional",
-              "balanced"
+              "balanced",
+              "bermudan",
+              "cancellable"
             ],
             "title": "Id",
             "type": "string"
@@ -9994,7 +9996,9 @@
               "bought_swaption",
               "sold_swaption",
               "directional",
-              "balanced"
+              "balanced",
+              "bermudan",
+              "cancellable"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -10067,13 +10071,20 @@
             "title": "Paths",
             "type": "integer"
           },
+          "pilot_paths": {
+            "description": "Independent paths the regression of a Bermudan was fitted on; 0 when every trade has a closed form",
+            "title": "Pilot Paths",
+            "type": "integer"
+          },
           "portfolio": {
             "enum": [
               "single_swap",
               "bought_swaption",
               "sold_swaption",
               "directional",
-              "balanced"
+              "balanced",
+              "bermudan",
+              "cancellable"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -10121,6 +10132,7 @@
           "adjustments_uncollateralised",
           "market",
           "paths",
+          "pilot_paths",
           "seed",
           "compute_ms",
           "warnings",
@@ -10146,7 +10158,8 @@
           "kind": {
             "enum": [
               "swap",
-              "swaption"
+              "swaption",
+              "bermudan"
             ],
             "title": "Kind",
             "type": "string"
@@ -10181,6 +10194,7 @@
             "type": "number"
           },
           "start": {
+            "description": "Start of a swap, expiry of a swaption, first exercise date of a Bermudan (then exercisable each year)",
             "title": "Start",
             "type": "number"
           },
