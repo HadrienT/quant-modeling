@@ -144,6 +144,20 @@ namespace quantModeling
              const CreditCurve &own, Real borrowing_spread, Real lending_spread);
 
     /**
+     * @brief ColVA = -Σ E[D C](t_i) S_C S_I (r_c - r) Δt_i: the cost (< 0) of
+     *        paying on the collateral held a rate r_c above the rate r the
+     *        trades are discounted at — or, on collateral posted, of earning
+     *        less than r.
+     *
+     * @param discounted_expected_collateral > 0 held by the bank, < 0 posted.
+     * @param collateral_spread r_c - r; zero for a CSA that pays the
+     *        overnight rate, which is why collateralised trades are
+     *        discounted on the OIS curve (Piterbarg 2010).
+     */
+    Real colva(const std::vector<Time> &times, const std::vector<Real> &discounted_expected_collateral,
+               const CreditCurve &counterparty, const CreditCurve &own, Real collateral_spread);
+
+    /**
      * @brief MVA = -Σ E[D IM_I](t_i) S_C S_I (FS_B - s_IM) Δt_i <= 0.
      *
      * @param discounted_expected_im   the initial margin the bank **posts**

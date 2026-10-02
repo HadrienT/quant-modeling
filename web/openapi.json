@@ -36,6 +36,11 @@
       },
       "Adjustments": {
         "properties": {
+          "colva": {
+            "description": "Rate paid on the collateral; 0 without a CSA",
+            "title": "Colva",
+            "type": "number"
+          },
           "cva": {
             "$ref": "#/components/schemas/Estimate"
           },
@@ -58,6 +63,16 @@
           "fca": {
             "title": "Fca",
             "type": "number"
+          },
+          "kva": {
+            "description": "Cost of the regulatory capital held",
+            "title": "Kva",
+            "type": "number"
+          },
+          "mva": {
+            "description": "Funding of the initial margin posted",
+            "title": "Mva",
+            "type": "number"
           }
         },
         "required": [
@@ -66,6 +81,9 @@
           "cva_unilateral",
           "fca",
           "fba",
+          "colva",
+          "mva",
+          "kva",
           "cva_rule_of_thumb"
         ],
         "title": "Adjustments",
@@ -1015,6 +1033,154 @@
         "title": "CalibrationPoint",
         "type": "object"
       },
+      "CapitalInput": {
+        "description": "What the regulatory capital of the netting set depends on, besides its\nexposure, and what that capital costs.",
+        "properties": {
+          "cost_of_capital": {
+            "default": 0.1,
+            "description": "Return required on the capital held, a year",
+            "maximum": 0.5,
+            "minimum": 0.0,
+            "title": "Cost Of Capital",
+            "type": "number"
+          },
+          "lgd": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Regulatory loss given default; unset takes the foundation approach's 45 % for a financial counterparty, 40 % otherwise",
+            "title": "Lgd"
+          },
+          "pd": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 1.0,
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One-year probability of default for the IRB formula; unset takes the one implied by the rating's spread, which is higher than a bank's own estimate would be",
+            "title": "Pd"
+          },
+          "sector": {
+            "default": "other",
+            "description": "The counterparty's sector, for BA-CVA",
+            "enum": [
+              "sovereign",
+              "local_government",
+              "financial",
+              "basic_materials_energy_industrials",
+              "consumer_transport_administrative",
+              "technology_telecommunications",
+              "health_care_utilities_professional",
+              "other"
+            ],
+            "title": "Sector",
+            "type": "string"
+          }
+        },
+        "title": "CapitalInput",
+        "type": "object"
+      },
+      "CapitalOut": {
+        "description": "Regulatory capital of the netting set: today's, and projected.",
+        "properties": {
+          "cost_of_capital": {
+            "title": "Cost Of Capital",
+            "type": "number"
+          },
+          "cva_capital_today": {
+            "description": "BA-CVA capital on that EAD",
+            "title": "Cva Capital Today",
+            "type": "number"
+          },
+          "default_capital_today": {
+            "description": "IRB capital on that EAD",
+            "title": "Default Capital Today",
+            "type": "number"
+          },
+          "discounted_capital": {
+            "description": "E[D(t) K(t)], both charges: what KVA integrates",
+            "items": {
+              "type": "number"
+            },
+            "title": "Discounted Capital",
+            "type": "array"
+          },
+          "ead_today": {
+            "description": "SA-CCR exposure at default",
+            "title": "Ead Today",
+            "type": "number"
+          },
+          "expected_ead": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Expected Ead",
+            "type": "array"
+          },
+          "investment_grade": {
+            "title": "Investment Grade",
+            "type": "boolean"
+          },
+          "lgd": {
+            "title": "Lgd",
+            "type": "number"
+          },
+          "margined": {
+            "description": "SA-CCR treats the netting set as margined",
+            "title": "Margined",
+            "type": "boolean"
+          },
+          "pd": {
+            "description": "After the regulatory floor of 0.05 %",
+            "title": "Pd",
+            "type": "number"
+          },
+          "pd_is_market_implied": {
+            "title": "Pd Is Market Implied",
+            "type": "boolean"
+          },
+          "sector": {
+            "title": "Sector",
+            "type": "string"
+          },
+          "times": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Times",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ead_today",
+          "default_capital_today",
+          "cva_capital_today",
+          "times",
+          "expected_ead",
+          "discounted_capital",
+          "pd",
+          "pd_is_market_implied",
+          "lgd",
+          "sector",
+          "investment_grade",
+          "margined",
+          "cost_of_capital"
+        ],
+        "title": "CapitalOut",
+        "type": "object"
+      },
       "ChatMessage": {
         "properties": {
           "content": {
@@ -1526,6 +1692,33 @@
             ],
             "title": "Cashflows",
             "type": "string"
+          },
+          "collateral_rate_spread": {
+            "default": 0.0,
+            "description": "What the agreement pays on cash collateral, over the rate the trades are discounted at; 0 for a CSA paying the overnight rate",
+            "maximum": 0.05,
+            "minimum": -0.05,
+            "title": "Collateral Rate Spread",
+            "type": "number"
+          },
+          "initial_margin": {
+            "default": false,
+            "description": "Both parties also post initial margin, as the margin rules for non-cleared derivatives require: projected by regression, 99 % of the move over the margin period of risk",
+            "title": "Initial Margin",
+            "type": "boolean"
+          },
+          "initial_margin_today": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The initial margin actually computed today (a SIMM amount): the projected profile is scaled to start from it",
+            "title": "Initial Margin Today"
           },
           "margin_period_of_risk_days": {
             "default": 10,
@@ -3756,6 +3949,36 @@
           }
         },
         "title": "HullWhiteInputs",
+        "type": "object"
+      },
+      "InitialMarginOut": {
+        "description": "The initial margin each party posts, on the dates of the exposure.",
+        "properties": {
+          "expected": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Expected",
+            "type": "array"
+          },
+          "times": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Times",
+            "type": "array"
+          },
+          "today": {
+            "title": "Today",
+            "type": "number"
+          }
+        },
+        "required": [
+          "today",
+          "times",
+          "expected"
+        ],
+        "title": "InitialMarginOut",
         "type": "object"
       },
       "InputView": {
@@ -9926,6 +10149,9 @@
             "title": "Borrowing Spread",
             "type": "number"
           },
+          "capital": {
+            "$ref": "#/components/schemas/CapitalInput"
+          },
           "counterparty_rating": {
             "default": "BBB",
             "enum": [
@@ -10036,6 +10262,19 @@
               }
             ]
           },
+          "capital": {
+            "$ref": "#/components/schemas/CapitalOut"
+          },
+          "capital_uncollateralised": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapitalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "compute_ms": {
             "title": "Compute Ms",
             "type": "number"
@@ -10047,6 +10286,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/PricingExposure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "initial_margin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InitialMarginOut"
               },
               {
                 "type": "null"
@@ -10130,6 +10379,9 @@
           "risk",
           "adjustments",
           "adjustments_uncollateralised",
+          "initial_margin",
+          "capital",
+          "capital_uncollateralised",
           "market",
           "paths",
           "pilot_paths",

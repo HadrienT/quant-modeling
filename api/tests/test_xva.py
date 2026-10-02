@@ -444,3 +444,98 @@ def test_the_right_to_cancel_a_swap_removes_what_the_bank_would_owe():
         cancellable["adjustments"]["cva"]["value"] < swap["adjustments"]["cva"]["value"]
     )
     assert max(cancellable["exposure"]["ee"]) > max(swap["exposure"]["ee"])
+
+
+# ── Lot X5: margin and capital ───────────────────────────────────────────────
+
+
+def test_initial_margin_turns_the_cva_into_an_mva():
+    csa = {"cashflows": "withheld"}
+    vm = run(portfolio="single_swap", csa=csa, borrowing_spread=0.005)
+    im = run(
+        portfolio="single_swap",
+        csa={**csa, "initial_margin": True},
+        borrowing_spread=0.005,
+    )
+    assert vm["initial_margin"] is None and vm["adjustments"]["mva"] == 0.0
+    margin = im["initial_margin"]
+    assert margin["today"] > 0
+    assert (
+        len(margin["expected"]) == len(margin["times"]) == len(im["exposure"]["times"])
+    )
+    # A 10-year swap of 10 M: ten days of rate moves at 99 % is a few
+    # hundred thousand.
+    assert 50_000 < margin["today"] < 1_000_000
+    # The margin covers 99 % of the move: almost no CVA left...
+    assert abs(im["adjustments"]["cva"]["value"]) < 0.1 * abs(
+        vm["adjustments"]["cva"]["value"]
+    )
+    # ...and a cost of funding the margin posted, larger than the CVA removed.
+    removed = im["adjustments"]["cva"]["value"] - vm["adjustments"]["cva"]["value"]
+    assert im["adjustments"]["mva"] < -removed < 0
+    # Segregated margin funds nothing.
+    assert im["adjustments"]["fca"] == pytest.approx(vm["adjustments"]["fca"])
+
+    # Anchored on today's actual margin, the profile and the MVA scale.
+    anchored = run(
+        portfolio="single_swap",
+        csa={
+            **csa,
+            "initial_margin": True,
+            "initial_margin_today": 2 * margin["today"],
+        },
+        borrowing_spread=0.005,
+    )
+    assert anchored["initial_margin"]["today"] == pytest.approx(2 * margin["today"])
+    assert anchored["adjustments"]["mva"] == pytest.approx(2 * im["adjustments"]["mva"])
+    assert "Initial margin and MVA" in [s["title"] for s in im["methodology"]]
+
+
+def test_colva_is_the_rate_paid_on_the_collateral():
+    flat = run(portfolio="bought_swaption", csa={})
+    assert flat["adjustments"]["colva"] == 0.0
+    # The bank holds collateral against the option it bought; the agreement
+    # pays 25 bp more than the discount rate on it: a cost.
+    costly = run(portfolio="bought_swaption", csa={"collateral_rate_spread": 0.0025})
+    cheap = run(portfolio="bought_swaption", csa={"collateral_rate_spread": -0.0025})
+    assert costly["adjustments"]["colva"] < 0
+    assert cheap["adjustments"]["colva"] == pytest.approx(
+        -costly["adjustments"]["colva"]
+    )
+    assert run(portfolio="bought_swaption")["adjustments"]["colva"] == 0.0
+
+
+def test_capital_and_its_cost():
+    body = run(portfolio="single_swap")
+    k = body["capital"]
+    assert k["ead_today"] > 0 and not k["margined"]
+    assert k["default_capital_today"] > 0 and k["cva_capital_today"] > 0
+    assert k["expected_ead"][-1] == 0.0  # nothing left at maturity
+    assert body["adjustments"]["kva"] < 0
+    # No PD given: the market-implied one, and the page is told.
+    assert k["pd_is_market_implied"]
+    assert any("higher than the default rate" in w for w in body["warnings"])
+    assert (k["lgd"], k["sector"], k["investment_grade"]) == (0.40, "other", True)
+
+    # A bank's own PD, lower: less default capital, no warning.
+    own = run(portfolio="single_swap", capital={"pd": 0.002})
+    assert not own["capital"]["pd_is_market_implied"]
+    assert own["capital"]["default_capital_today"] < k["default_capital_today"]
+    assert own["capital"]["cva_capital_today"] == pytest.approx(k["cva_capital_today"])
+    assert not any("higher than the default rate" in w for w in own["warnings"])
+    # A financial counterparty: 45 % LGD (CRE32.6).
+    assert run(capital={"sector": "financial"})["capital"]["lgd"] == 0.45
+    # KVA is linear in the cost of capital.
+    dear = run(portfolio="single_swap", capital={"cost_of_capital": 0.15})
+    assert dear["adjustments"]["kva"] == pytest.approx(1.5 * body["adjustments"]["kva"])
+
+    # Under a CSA the netting set is margined: less capital, and the same
+    # paths without the CSA are reported next to it.
+    margined = run(portfolio="single_swap", csa={})
+    assert margined["capital"]["margined"]
+    assert margined["capital"]["ead_today"] < k["ead_today"]
+    assert margined["capital_uncollateralised"]["ead_today"] == pytest.approx(
+        k["ead_today"]
+    )
+    assert margined["adjustments"]["kva"] > body["adjustments"]["kva"]
+    assert "Capital and KVA" in [s["title"] for s in body["methodology"]]

@@ -364,4 +364,24 @@ namespace quantModeling::sa_ccr
         return unmargined;
     }
 
+    Real exposure_at_default(Real value_minus_collateral, Real add_on_unmargined,
+                             const std::optional<MarginAgreement> &margin, Real add_on_margined)
+    {
+        if (!(add_on_unmargined >= 0.0) || !(add_on_margined >= 0.0))
+            throw InvalidInput("SA-CCR: an add-on must be >= 0");
+        const auto ead = [value_minus_collateral](Real rc, Real add_on)
+        {
+            // Nothing left to add on: the multiplier has nothing to scale.
+            const Real pfe = add_on > 0.0 ? multiplier(value_minus_collateral, add_on) * add_on : 0.0;
+            return alpha * (rc + pfe);
+        };
+        const Real unmargined = ead(std::max(value_minus_collateral, 0.0), add_on_unmargined);
+        if (!margin)
+            return unmargined;
+        const Real rc = std::max(
+            {value_minus_collateral, margin->threshold + margin->minimum_transfer_amount - margin->nica,
+             0.0});
+        return std::min(ead(rc, add_on_margined), unmargined);
+    }
+
 } // namespace quantModeling::sa_ccr

@@ -1265,7 +1265,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X2 — Collatéral** | CSA (seuil, MTA, arrondi, IA), MPoR classique puis avancée (flux pendant la MPoR), grille d'IM ; IM déterministe | EE collatéralisée ≈ $0{,}4\sigma_V\sqrt{MPoR}$ sur un produit gaussien ; monotonie en seuil et en MTA ; seuil infini = non collatéralisé ; pics de flux visibles |
 | **X3 — CVA / DVA** | courbes proxy ICE BofA, CVA unilatéral et bilatéral (premier défaut), CVA incrémental et marginal, API + événement d'audit | symétrie CVA$_I$ = DVA$_C$ ; hazard nul → CVA nul ; approximation $-s\,EPE\,T$ à quelques % ; rejouable par le replay |
 | **X4 — AMC** (X4a fait : §14.6 ; X4b : scripts) | exposition par régression sur toute la grille, bermudans avec état d'exercice, scripts quelconques | sur swaps et swaptions européennes, régression = forme fermée à l'erreur MC près (EE et PFE 99 %) ; bermudan : exposition cohérente avec le prix du réseau (WP 21) à $t=0$ |
-| **X5 — FVA, ColVA, MVA, KVA** | FCA / FBA (symétrique et asymétrique), ColVA, DIM par régression (Anfuso et al.) calée sur une SIMM d'aujourd'hui, MVA ; capital projeté SA-CCR + BA-CVA → KVA | FVA symétrique = $-FS\sum EFV^*\Delta t$ ; DIM backtestée sur un historique simulé ; KVA d'un netting set vide = 0 |
+| **X5 — FVA, ColVA, MVA, KVA** (fait : §14.7) | FCA / FBA (symétrique et asymétrique), ColVA, DIM par régression (Anfuso et al.) calée sur une SIMM d'aujourd'hui, MVA ; capital projeté SA-CCR + BA-CVA → KVA | FVA symétrique = $-FS\sum EFV^*\Delta t$ ; DIM backtestée sur un historique simulé ; KVA d'un netting set vide = 0 |
 | **X5b — SIMM par chemin** (ambitieux) | sensibilités CRIF par AAD sur chemins et dates, SIMM par chemin, sur GPU | SIMM à $t = 0$ = SIMM calculée directement ; DIM par chemin vs régression |
 | **X6 — Wrong-way risk** | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
 | **X7 — GPU** | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
@@ -1552,6 +1552,85 @@ brancher sur l'état du moteur d'exposition.
 - **Non couverts** : scripts (X4b) ; bermudan à règlement en espèces ;
   régresseurs autres que l'état pour la continuation ; biais de la règle
   d'exercice non borné par le haut (pas de dual).
+
+### 14.7 Lot X5 : marge initiale dynamique, MVA, ColVA, capital projeté et KVA
+
+Livré : `utils/bucketed_regression.hpp` (la régression du lot X4, sortie de
+`engines/xva/` pour servir aussi au risque), `risk/initial_margin.hpp` (DIM et
+son backtest), `risk/capital.hpp` (capital projeté), ColVA dans `risk/xva.hpp`,
+le collatéral attendu et la marge initiale **par chemin** dans
+`risk/collateral.hpp`, le tout dans `risk/xva_report.hpp`, `qm.xva_netting_set`
+et `POST /api/xva/netting-set` ; tests dans `tests/testInitialMargin.cpp`,
+`tests/testCapitalProjection.cpp`, `tests/testXvaReport.cpp` et
+`api/tests/test_xva.py`. FCA et FBA (symétrique ou non) dataient du lot X3.
+
+- **DIM par régression** (Anfuso, Aziz, Giltinan & Loukopoulos 2017). Pour
+  chaque date, le carré du mouvement de valeur sur la MPoR (flux de la période
+  compris quand le cube les garde) est régressé sur la valeur du netting set :
+  c'est sa variance conditionnelle, et $IM = \Phi^{-1}(0{,}99)\,\hat\sigma$.
+  Un seul polynôme de degré 2 : une variance n'a pas de coude à suivre. La
+  même marge pour les deux parties (règles de marge des dérivés non compensés).
+  C'est un post-traitement du cube (ADR-X2), sans produit ni modèle.
+- **Pas de SIMM.** Le lot prévoyait de caler la DIM sur une SIMM d'aujourd'hui ;
+  il n'y a pas de SIMM dans le dépôt, et ses paramètres ne se citent pas de
+  mémoire. La DIM donne donc **son propre** montant d'aujourd'hui (écart-type
+  du mouvement sur la plus longue période partant d'aujourd'hui, ramené à la
+  MPoR en racine du temps), et `im_today` permet de **recaler tout le profil**
+  sur un montant calculé ailleurs. *Décision à prendre par le mainteneur :
+  coder la SIMM taux (lot X5b) ou s'en tenir à ce modèle.*
+- **Backtest** (le critère du lot) : ajustée sur un jeu de chemins, appliquée
+  à un autre, la marge est dépassée sur 0,99 % des chemins (cible 1 %), 0,91 %
+  à la hausse et 1,07 % à la baisse. Deux limites visibles, et écrites dans
+  l'en-tête : la dérive de la valeur sur dix jours est ignorée (d'où
+  l'asymétrie), et une fois le dernier coupon fixé la valeur ne bouge plus que
+  par portage — un montant infime que le modèle gaussien ne décrit pas.
+- **Exposition sous marge initiale** : `CollateralSettings` accepte une marge
+  par chemin. Il reste de l'exposition sur environ un chemin sur cent (testé),
+  et le CVA disparaît presque. Le FVA reste celui de la marge de variation :
+  la marge ségréguée ne finance rien.
+- **ColVA** : $-\sum \mathbb{E}[D\,C](t_i)\,S_C S_I\,(r_c - r)\,\Delta t_i$ sur
+  le collatéral détenu ($C > 0$) ou versé, lu sur la même récursion que
+  l'exposition collatéralisée.
+- **Capital projeté** (Green, Kenyon & Dennis 2014). EAD SA-CCR chemin par
+  chemin : l'add-on est calculé une fois par date sur les transactions
+  **vieillies** (maturités raccourcies), le coût de remplacement et le
+  multiplicateur viennent de la valeur du chemin, la marge initiale détenue
+  compte comme collatéral et comme NICA. Capital de défaut = formule IRB sur
+  cette EAD, capital CVA = BA-CVA réduit ; les deux sont linéaires en EAD.
+  Paragraphes vérifiés sur le texte de Bâle en ligne le 2 octobre 2026 :
+  plancher de PD 0,05 % (CRE32.4), LGD fondation 45 % / 40 % (CRE32.6),
+  maturité effective plancher 1 an et plafond 5 ans (CRE32.46), moyenne
+  pondérée par les notionnels (CRE32.49), pas de plafond pour BA-CVA
+  (MAR50.15), bermudan $S$ = première date d'exercice et $T$ = dernière
+  (CRE52.32 tableau 1, CRE52.42).
+- **Approximations du capital**, toutes côté réglementaire : le delta
+  prudentiel d'une option garde la monnaie d'aujourd'hui ; passée sa dernière
+  date d'exercice elle est portée comme son swap sous-jacent ; ni capital de
+  marché des couvertures ni ratio de levier.
+- **La PD.** Faute de taux de défaut historiques en base, l'API prend par
+  défaut la PD **implicite du spread** de la notation (1,7 % pour BBB), bien
+  au-dessus de ce qu'estimerait le système de notation d'une banque : le
+  capital est surestimé, la réponse le dit (`pd_is_market_implied`, un
+  avertissement) et accepte une PD saisie. *Décision à prendre : ingérer des
+  taux de défaut par notation dans `~/data-ingest`.*
+- **Sur les données du 1ᵉʳ octobre 2026** (swap payeur 10 ans de 10 M$,
+  contrepartie BBB, banque A, financement à 50 pb, coût du capital 10 %) :
+
+  | | CVA | FCA | MVA | KVA | IM aujourd'hui | EAD aujourd'hui |
+  |---|---|---|---|---|---|---|
+  | sans CSA | −24 900 | −12 100 | 0 | −110 000 | — | 550 900 |
+  | CSA (seuil nul) | −2 600 | −1 300 | 0 | −21 300 | — | 165 300 |
+  | CSA + marge initiale | −20 | −1 300 | −7 400 | −4 700 | 322 200 | 45 600 |
+
+  Le KVA est le plus gros ajustement d'un swap non collatéralisé (avec la PD
+  de marché ; −83 900 avec une PD de 0,2 %). Sous marge initiale le CVA
+  disparaît et le MVA qui le remplace coûte près de trois fois le CVA retiré.
+- **Coût** : la DIM est réajustée pour chaque sous-ensemble (CVA incrémental
+  de chaque transaction) ; le book équilibré sous CSA et marge initiale prend
+  14 s à 20 000 chemins.
+- **Non couverts** : DIM sous la mesure historique dans le rapport (le modèle
+  s'y applique, `DynamicInitialMargin::margin`) ; régression de la dérive ;
+  option du collatéral le moins cher ; FVA asymétrique récursif.
 
 **Ne pas ajouter de produits** (règle de la roadmap) : le portefeuille de
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX

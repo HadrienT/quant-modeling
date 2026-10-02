@@ -258,6 +258,25 @@ namespace quantModeling::sa_ccr
     ///         one reference given two different sub-classes.
     Exposure exposure_at_default(const NettingSet &netting_set);
 
+    /**
+     * @brief The EAD of a netting set whose aggregate add-ons are already
+     *        known: alpha (RC + multiplier × AddOn), with the cap of the
+     *        margined EAD at the unmargined one (CRE52.2).
+     *
+     * For a projection of capital: at a future date the add-ons depend on
+     * the trades that are left, the same on every path, while V - C is the
+     * path's own.
+     *
+     * @param add_on_unmargined aggregate add-on with the unmargined maturity
+     *        factor; with a zero add-on the EAD is alpha × RC.
+     * @param margin            the margin agreement, or none.
+     * @param add_on_margined   aggregate add-on with the margined maturity
+     *        factor; ignored without a margin agreement.
+     */
+    Real exposure_at_default(Real value_minus_collateral, Real add_on_unmargined,
+                             const std::optional<MarginAgreement> &margin = std::nullopt,
+                             Real add_on_margined = 0.0);
+
 } // namespace quantModeling::sa_ccr
 
 #endif // QM_RISK_REGULATORY_SA_CCR_HPP

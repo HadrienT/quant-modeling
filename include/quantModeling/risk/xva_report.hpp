@@ -4,7 +4,9 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/credit_curve.hpp"
 #include "quantModeling/market/csa.hpp"
+#include "quantModeling/risk/capital.hpp"
 #include "quantModeling/risk/collateral.hpp"
+#include "quantModeling/risk/initial_margin.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
 
 #include <optional>
@@ -17,8 +19,9 @@ namespace quantModeling
      * @file xva_report.hpp
      * @brief From a simulated cube to the adjustments of one netting set
      *        (blueprint/wp/23-xva.md §7, §9, lot X3): exposure, CVA and DVA
-     *        with their Monte-Carlo errors, funding adjustments, and the
-     *        share of each trade.
+     *        with their Monte-Carlo errors, funding adjustments, the costs of
+     *        margin and capital (ColVA, MVA, KVA — lot X5), and the share of
+     *        each trade.
      *
      * Everything is read off the same paths: the netting set with and
      * without a trade, with and without the CSA. Signs are Gregory's — a
@@ -48,6 +51,25 @@ namespace quantModeling
         Real lending_spread = 0.0;
 
         Real pfe_confidence = 0.95;
+
+        // ── Margin and capital (lot X5) ─────────────────────────────────
+
+        /// Initial margin exchanged both ways, as the margin rules for
+        /// non-cleared derivatives require, projected by regression
+        /// (risk/initial_margin.hpp). Needs a CSA. The cube should carry
+        /// the cash flows (ExposureSimulationSettings::keep_cashflows).
+        std::optional<DimSettings> initial_margin;
+        /// FS_B - s_IM: the bank's funding spread over what the segregated
+        /// margin earns. MVA is zero when it is.
+        Real initial_margin_spread = 0.0;
+        /// r_c - r: what the CSA pays on cash collateral over the rate the
+        /// trades are discounted at. ColVA is zero when it is.
+        Real collateral_spread = 0.0;
+        /// What the capital projection needs (risk/capital.hpp), its trades
+        /// in the order of `trades`; none: no KVA.
+        std::optional<CapitalInputs> capital;
+        /// CC: the return required on the capital held, typically 10-15 %.
+        Real cost_of_capital = 0.10;
     };
 
     /// A Monte-Carlo estimate with its standard error.
@@ -90,9 +112,25 @@ namespace quantModeling
         Estimate dva;
         /// CVA ignoring the bank's own default.
         Real cva_unilateral = 0.0;
-        /// Funding cost and benefit; zero with zero spreads.
+        /// Funding cost and benefit; zero with zero spreads. Under initial
+        /// margin they are those of the variation margin alone: segregated
+        /// margin funds nothing, its cost is the MVA.
         Real fca = 0.0;
         Real fba = 0.0;
+        /// Cost (< 0) or gain of the rate paid on the collateral; zero
+        /// without a CSA.
+        Real colva = 0.0;
+        /// Cost of funding the initial margin posted; zero without one.
+        Real mva = 0.0;
+        /// Cost of the regulatory capital held; zero without capital inputs.
+        Real kva = 0.0;
+
+        /// The initial margin, when there is one: in place today, and its
+        /// expected profile on the dates of `exposure`.
+        Real initial_margin_today = 0.0;
+        std::vector<Real> expected_initial_margin;
+        /// The capital projection behind the KVA, on the dates of `exposure`.
+        std::optional<CapitalProfile> capital;
         /// Gregory's rule of thumb, -spread × EPE × T with the spread
         /// LGD × average hazard: an order of magnitude to set against `cva`.
         Real cva_rule_of_thumb = 0.0;
@@ -104,8 +142,10 @@ namespace quantModeling
     /**
      * @brief The report of a netting set.
      * @throws InvalidInput on a cube simulated under the historical measure
-     *         (xVA is a price), on a loss given default outside [0, 1], or
-     *         on whatever exposure_statistics / collateralise reject.
+     *         (xVA is a price), on a loss given default outside [0, 1], on
+     *         initial margin without a CSA, on capital inputs that do not
+     *         describe the netted trades, or on whatever exposure_statistics
+     *         / collateralise reject.
      */
     XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &inputs);
 

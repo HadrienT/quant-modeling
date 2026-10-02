@@ -1477,6 +1477,11 @@ export interface components {
         };
         /** Adjustments */
         Adjustments: {
+            /**
+             * Colva
+             * @description Rate paid on the collateral; 0 without a CSA
+             */
+            colva: number;
             cva: components["schemas"]["Estimate"];
             /**
              * Cva Rule Of Thumb
@@ -1490,6 +1495,16 @@ export interface components {
             fba: number;
             /** Fca */
             fca: number;
+            /**
+             * Kva
+             * @description Cost of the regulatory capital held
+             */
+            kva: number;
+            /**
+             * Mva
+             * @description Funding of the initial margin posted
+             */
+            mva: number;
         };
         /** AllocationRow */
         AllocationRow: {
@@ -1946,6 +1961,86 @@ export interface components {
             /** Tenor */
             tenor: number;
         };
+        /**
+         * CapitalInput
+         * @description What the regulatory capital of the netting set depends on, besides its
+         *     exposure, and what that capital costs.
+         */
+        CapitalInput: {
+            /**
+             * Cost Of Capital
+             * @description Return required on the capital held, a year
+             * @default 0.1
+             */
+            cost_of_capital: number;
+            /**
+             * Lgd
+             * @description Regulatory loss given default; unset takes the foundation approach's 45 % for a financial counterparty, 40 % otherwise
+             */
+            lgd?: number | null;
+            /**
+             * Pd
+             * @description One-year probability of default for the IRB formula; unset takes the one implied by the rating's spread, which is higher than a bank's own estimate would be
+             */
+            pd?: number | null;
+            /**
+             * Sector
+             * @description The counterparty's sector, for BA-CVA
+             * @default other
+             * @enum {string}
+             */
+            sector: "sovereign" | "local_government" | "financial" | "basic_materials_energy_industrials" | "consumer_transport_administrative" | "technology_telecommunications" | "health_care_utilities_professional" | "other";
+        };
+        /**
+         * CapitalOut
+         * @description Regulatory capital of the netting set: today's, and projected.
+         */
+        CapitalOut: {
+            /** Cost Of Capital */
+            cost_of_capital: number;
+            /**
+             * Cva Capital Today
+             * @description BA-CVA capital on that EAD
+             */
+            cva_capital_today: number;
+            /**
+             * Default Capital Today
+             * @description IRB capital on that EAD
+             */
+            default_capital_today: number;
+            /**
+             * Discounted Capital
+             * @description E[D(t) K(t)], both charges: what KVA integrates
+             */
+            discounted_capital: number[];
+            /**
+             * Ead Today
+             * @description SA-CCR exposure at default
+             */
+            ead_today: number;
+            /** Expected Ead */
+            expected_ead: number[];
+            /** Investment Grade */
+            investment_grade: boolean;
+            /** Lgd */
+            lgd: number;
+            /**
+             * Margined
+             * @description SA-CCR treats the netting set as margined
+             */
+            margined: boolean;
+            /**
+             * Pd
+             * @description After the regulatory floor of 0.05 %
+             */
+            pd: number;
+            /** Pd Is Market Implied */
+            pd_is_market_implied: boolean;
+            /** Sector */
+            sector: string;
+            /** Times */
+            times: number[];
+        };
         /** ChatMessage */
         ChatMessage: {
             /** Content */
@@ -2171,6 +2266,23 @@ export interface components {
              * @enum {string}
              */
             cashflows: "paid" | "withheld" | "only_bank_pays";
+            /**
+             * Collateral Rate Spread
+             * @description What the agreement pays on cash collateral, over the rate the trades are discounted at; 0 for a CSA paying the overnight rate
+             * @default 0
+             */
+            collateral_rate_spread: number;
+            /**
+             * Initial Margin
+             * @description Both parties also post initial margin, as the margin rules for non-cleared derivatives require: projected by regression, 99 % of the move over the margin period of risk
+             * @default false
+             */
+            initial_margin: boolean;
+            /**
+             * Initial Margin Today
+             * @description The initial margin actually computed today (a SIMM amount): the projected profile is scaled to start from it
+             */
+            initial_margin_today?: number | null;
             /**
              * Margin Period Of Risk Days
              * @description Business days
@@ -3095,6 +3207,18 @@ export interface components {
              * @default 0.01
              */
             sigma: number;
+        };
+        /**
+         * InitialMarginOut
+         * @description The initial margin each party posts, on the dates of the exposure.
+         */
+        InitialMarginOut: {
+            /** Expected */
+            expected: number[];
+            /** Times */
+            times: number[];
+            /** Today */
+            today: number;
         };
         /** InputView */
         InputView: {
@@ -5849,6 +5973,7 @@ export interface components {
              * @default 0
              */
             borrowing_spread: number;
+            capital?: components["schemas"]["CapitalInput"];
             /**
              * Counterparty Rating
              * @default BBB
@@ -5900,10 +6025,13 @@ export interface components {
         XvaResponse: {
             adjustments: components["schemas"]["Adjustments"];
             adjustments_uncollateralised: components["schemas"]["Adjustments"] | null;
+            capital: components["schemas"]["CapitalOut"];
+            capital_uncollateralised: components["schemas"]["CapitalOut"] | null;
             /** Compute Ms */
             compute_ms: number;
             exposure: components["schemas"]["PricingExposure"];
             exposure_uncollateralised: components["schemas"]["PricingExposure"] | null;
+            initial_margin: components["schemas"]["InitialMarginOut"] | null;
             /** Lesson */
             lesson: string;
             market: components["schemas"]["XvaMarket"];

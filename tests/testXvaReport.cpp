@@ -256,4 +256,143 @@ namespace quantModeling
         EXPECT_THROW(xva_report(paths, in), InvalidInput);
     }
 
+    // ── Lot X5: margin and capital ───────────────────────────────────────────
+
+    namespace
+    {
+        /// The three swaps of book(), as SA-CCR describes them.
+        std::vector<sa_ccr::Trade> book_trades()
+        {
+            const auto trade = [](Time tenor, bool payer, Real notional)
+            {
+                sa_ccr::Trade t;
+                t.subclass = sa_ccr::SubClass::InterestRate;
+                t.hedging_set = "USD";
+                t.notional = notional;
+                t.long_primary_risk_factor = payer;
+                t.maturity = tenor;
+                t.end = tenor;
+                return t;
+            };
+            return {trade(10.0, true, 100.0), trade(10.0, false, 60.0), trade(5.0, true, 50.0)};
+        }
+
+        XvaInputs margined_inputs()
+        {
+            XvaInputs in = inputs();
+            Csa csa;
+            csa.margin_period_of_risk = kTenDays;
+            in.csa = csa;
+            in.borrowing_spread = 0.006;
+            in.lending_spread = 0.002;
+            in.initial_margin_spread = 0.006;
+            return in;
+        }
+    } // namespace
+
+    TEST(XvaReport, InitialMarginTurnsTheCvaIntoAnMva)
+    {
+        const HullWhiteCurveModel m = model();
+        const ExposurePaths paths = book(m, 10000, 1.0, 42, kTenDays);
+        const XvaInputs variation_only = margined_inputs();
+        XvaInputs with_margin = variation_only;
+        with_margin.initial_margin = DimSettings{};
+
+        const XvaReport vm = xva_report(paths, variation_only);
+        const XvaReport im = xva_report(paths, with_margin);
+        EXPECT_EQ(vm.mva, 0.0);
+        EXPECT_EQ(vm.initial_margin_today, 0.0);
+        EXPECT_GT(im.initial_margin_today, 0.0);
+        ASSERT_EQ(im.expected_initial_margin.size(), im.exposure.times.size());
+
+        // The margin covers 99 % of the ten-day move: what is left of the
+        // counterparty risk is a fraction of what variation margin left...
+        EXPECT_LT(im.cva.value, 0.0);
+        EXPECT_GT(im.cva.value, 0.05 * vm.cva.value);
+        EXPECT_LT(im.dva.value, 0.05 * vm.dva.value);
+        // ...and its price is the funding of the margin posted, which here
+        // costs more than the CVA it removes.
+        EXPECT_LT(im.mva, 0.0);
+        EXPECT_GT(-im.mva, im.cva.value - vm.cva.value);
+        // Segregated margin funds nothing: FCA and FBA are unchanged.
+        EXPECT_DOUBLE_EQ(im.fca, vm.fca);
+        EXPECT_DOUBLE_EQ(im.fba, vm.fba);
+        // Each trade still has its figures, under its own margin.
+        for (const TradeContribution &c : im.contributions)
+        {
+            EXPECT_TRUE(std::isfinite(c.standalone_cva));
+            EXPECT_TRUE(std::isfinite(c.incremental_cva));
+            EXPECT_LE(c.standalone_cva, 0.0);
+        }
+
+        // The margin earns what it costs to fund: no MVA.
+        with_margin.initial_margin_spread = 0.0;
+        EXPECT_EQ(xva_report(paths, with_margin).mva, 0.0);
+        // Anchored on an amount computed elsewhere, twice the model's: twice
+        // the MVA.
+        with_margin.initial_margin_spread = 0.006;
+        with_margin.initial_margin->im_today = 2.0 * im.initial_margin_today;
+        EXPECT_NEAR(xva_report(paths, with_margin).mva, 2.0 * im.mva, 1e-9 * std::abs(im.mva));
+
+        // Initial margin without variation margin is not a set-up.
+        XvaInputs open = inputs();
+        open.initial_margin = DimSettings{};
+        EXPECT_THROW(xva_report(book(m, 500), open), InvalidInput);
+    }
+
+    TEST(XvaReport, ColvaAndKva)
+    {
+        const HullWhiteCurveModel m = model();
+        const ExposurePaths paths = book(m, 5000, 1.0, 42, kTenDays);
+        XvaInputs in = margined_inputs();
+        EXPECT_EQ(xva_report(paths, in).colva, 0.0); // the CSA pays the discount rate
+        EXPECT_EQ(xva_report(paths, in).kva, 0.0);   // no capital inputs
+        EXPECT_FALSE(xva_report(paths, in).capital.has_value());
+
+        // A CSA paying 20 bp under the discount rate. The book is at par
+        // today and its expected value drifts: whichever side holds the
+        // collateral on average earns or loses those 20 bp.
+        in.collateral_spread = -0.002;
+        const Real gain = xva_report(paths, in).colva;
+        in.collateral_spread = 0.002;
+        EXPECT_DOUBLE_EQ(xva_report(paths, in).colva, -gain);
+        EXPECT_NE(gain, 0.0);
+        // No CSA, no collateral.
+        XvaInputs open = inputs();
+        open.collateral_spread = 0.002;
+        EXPECT_EQ(xva_report(book(m, 500), open).colva, 0.0);
+
+        CapitalInputs capital;
+        capital.trades = book_trades();
+        capital.pd = 0.02;
+        capital.sector = ba_cva::Sector::Financial;
+        capital.quality = ba_cva::CreditQuality::InvestmentGrade;
+        open.capital = capital;
+        const XvaReport uncollateralised = xva_report(book(m, 5000), open);
+        ASSERT_TRUE(uncollateralised.capital.has_value());
+        EXPECT_LT(uncollateralised.kva, 0.0);
+        EXPECT_GT(uncollateralised.capital->ead_today, 0.0);
+
+        // Under the CSA: the margined SA-CCR, a fraction of the capital.
+        in.capital = capital;
+        in.capital->margin = sa_ccr::MarginAgreement{0.0, 0.0, 0.0, kTenDays};
+        const XvaReport margined = xva_report(paths, in);
+        EXPECT_LT(margined.kva, 0.0);
+        EXPECT_GT(margined.kva, 0.6 * uncollateralised.kva);
+        // With initial margin on top: less again.
+        in.initial_margin = DimSettings{};
+        EXPECT_GT(xva_report(paths, in).kva, margined.kva);
+        // A higher return required on capital costs proportionally more.
+        open.cost_of_capital = 0.15;
+        EXPECT_NEAR(xva_report(book(m, 5000), open).kva, 1.5 * uncollateralised.kva,
+                    1e-12 * std::abs(uncollateralised.kva));
+
+        // The capital inputs must describe the netted trades.
+        open.capital->trades.pop_back();
+        EXPECT_THROW(xva_report(book(m, 500), open), InvalidInput);
+        open = inputs();
+        open.cost_of_capital = -0.1;
+        EXPECT_THROW(xva_report(book(m, 500), open), InvalidInput);
+    }
+
 } // namespace quantModeling

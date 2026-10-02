@@ -2,6 +2,7 @@
 #define QM_ENGINES_XVA_FUTURE_VALUE_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/utils/bucketed_regression.hpp"
 
 #include <cstddef>
 #include <vector>
@@ -99,7 +100,7 @@ namespace quantModeling
         virtual void fit(const PilotPaths & /*pilot*/) {}
 
         /// Most regressors one date can have.
-        static constexpr std::size_t kMaxRegressors = 8;
+        static constexpr std::size_t kMaxRegressors = quantModeling::kMaxRegressors;
 
         /**
          * @brief What the value at grid[i] depends on, beyond the trade's
