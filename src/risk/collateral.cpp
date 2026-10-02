@@ -40,6 +40,18 @@ namespace quantModeling
             return lagged;
         }
 
+        void require_margin_matrix(const std::vector<Real> &matrix, std::size_t cells, const char *name)
+        {
+            if (matrix.empty())
+                return;
+            if (matrix.size() != cells)
+                throw InvalidInput(std::string("collateral: the path-dependent ") + name +
+                                   " needs one value per path and reporting date");
+            for (const Real im : matrix)
+                if (!(im >= 0.0))
+                    throw InvalidInput(std::string("collateral: ") + name + " must be >= 0");
+        }
+
         void require_margin_profile(const std::vector<Real> &profile, std::size_t dates,
                                     const char *name)
         {
@@ -134,6 +146,8 @@ namespace quantModeling
         const std::size_t m = reporting.size();
         require_margin_profile(settings.initial_margin_received, m, "initial margin received");
         require_margin_profile(settings.initial_margin_posted, m, "initial margin posted");
+        require_margin_matrix(settings.initial_margin_received_paths, N * m, "initial margin received");
+        require_margin_matrix(settings.initial_margin_posted_paths, N * m, "initial margin posted");
 
         // The dates at which a margin call is observed: the lagged dates.
         std::vector<bool> is_call_date(n, false);
@@ -159,11 +173,19 @@ namespace quantModeling
         }
         out.discount_weight.resize(N * m);
         out.trade_values.assign(1, std::vector<Real>(N * m));
-        const auto margin = [](const std::vector<Real> &profile, std::size_t r)
-        { return profile.empty() ? 0.0 : profile[r]; };
+        // Margin in place on path p at reporting date r: the path's own when
+        // a matrix was given, the profile's otherwise.
+        const auto margin = [m](const std::vector<Real> &matrix, const std::vector<Real> &profile,
+                                std::size_t p, std::size_t r)
+        {
+            if (!matrix.empty())
+                return matrix[p * m + r];
+            return profile.empty() ? 0.0 : profile[r];
+        };
         out.trade_values_today = {after_initial_margin(
             value_today - held_today - csa.independent_amount,
-            margin(settings.initial_margin_received, 0), margin(settings.initial_margin_posted, 0))};
+            margin(settings.initial_margin_received_paths, settings.initial_margin_received, 0, 0),
+            margin(settings.initial_margin_posted_paths, settings.initial_margin_posted, 0, 0))};
 
         std::vector<Real> value(n), flow(n), held(n);
         for (std::size_t p = 0; p < N; ++p)
@@ -212,13 +234,57 @@ namespace quantModeling
                                         ? flow[j]
                                         : std::max(flow[j], 0.0);
                 }
-                out.trade_values[0][p * m + r] =
-                    after_initial_margin(exposure, margin(settings.initial_margin_received, r),
-                                         margin(settings.initial_margin_posted, r));
+                out.trade_values[0][p * m + r] = after_initial_margin(
+                    exposure,
+                    margin(settings.initial_margin_received_paths, settings.initial_margin_received, p, r),
+                    margin(settings.initial_margin_posted_paths, settings.initial_margin_posted, p, r));
                 out.discount_weight[p * m + r] = paths.discount_weight[row + i];
             }
         }
         return out;
+    }
+
+    std::vector<MarginPeriod> margin_periods(const std::vector<Time> &times,
+                                             Time margin_period_of_risk)
+    {
+        const std::vector<std::size_t> lagged = lagged_dates(times, margin_period_of_risk);
+        std::vector<MarginPeriod> out;
+        for (std::size_t i = 0; i < times.size(); ++i)
+            if (lagged[i] != kMissing)
+                out.push_back({i, lagged[i] == kToday ? MarginPeriod::kToday : lagged[i]});
+        return out;
+    }
+
+    std::vector<Real> discounted_expected_collateral(const ExposurePaths &paths, const Csa &csa,
+                                                     const std::vector<std::size_t> &trades)
+    {
+        // V - C is the collateralised value: the collateral is what was taken
+        // off the value, read on the same recursion.
+        const ExposurePaths net = collateralise(paths, csa, trades, {});
+        const std::vector<std::size_t> reporting =
+            collateral_reporting_dates(paths, csa.margin_period_of_risk);
+        const std::size_t n = paths.dates(), N = paths.paths, m = reporting.size();
+        std::vector<std::size_t> set = trades;
+        if (set.empty())
+        {
+            set.resize(paths.trades());
+            std::iota(set.begin(), set.end(), std::size_t{0});
+        }
+        std::vector<Real> profile(m, 0.0);
+        for (std::size_t r = 0; r < m; ++r)
+        {
+            const std::size_t i = reporting[r];
+            Real sum = 0.0;
+            for (std::size_t p = 0; p < N; ++p)
+            {
+                Real value = 0.0;
+                for (const std::size_t k : set)
+                    value += paths.trade_values[k][p * n + i];
+                sum += net.discount_weight[p * m + r] * (value - net.trade_values[0][p * m + r]);
+            }
+            profile[r] = sum / static_cast<Real>(N);
+        }
+        return profile;
     }
 
     std::vector<Real> deterministic_initial_margin(Real im_today, const std::vector<Time> &times,

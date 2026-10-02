@@ -7,18 +7,40 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <optional>
 
 namespace quantModeling
 {
     namespace
     {
-        /// The cube of one netting set: collateralised when there is a CSA,
+        /// The initial margin of a set of trades on these paths, with the
+        /// netting set's scaling.
+        InitialMargin initial_margin(const ExposurePaths &paths, const XvaInputs &in,
+                                     const std::vector<std::size_t> &trades, Real scaling)
+        {
+            DimSettings settings = *in.initial_margin;
+            settings.im_today.reset();
+            return DynamicInitialMargin::fit(paths, in.csa->margin_period_of_risk, trades, settings)
+                .scaled(scaling)
+                .margin(paths);
+        }
+
+        /// The cube of one netting set: collateralised when there is a CSA
+        /// (with the initial margin on both sides when `margin` is given),
         /// the given trades otherwise.
         ExposurePaths netting_set_cube(const ExposurePaths &paths, const XvaInputs &in,
-                                       const std::vector<std::size_t> &trades)
+                                       const std::vector<std::size_t> &trades,
+                                       const InitialMargin *margin = nullptr)
         {
             if (in.csa)
-                return collateralise(paths, *in.csa, trades, in.collateral);
+            {
+                if (margin == nullptr)
+                    return collateralise(paths, *in.csa, trades, in.collateral);
+                CollateralSettings settings = in.collateral;
+                settings.initial_margin_received_paths = margin->margin;
+                settings.initial_margin_posted_paths = margin->margin;
+                return collateralise(paths, *in.csa, trades, settings);
+            }
             ExposurePaths out;
             out.measure = paths.measure;
             out.times = paths.times;
@@ -94,10 +116,19 @@ namespace quantModeling
             dva = estimate(d, d2);
         }
 
+        /// Bilateral CVA of a subset of the trades, under the same CSA and,
+        /// when there is one, its own initial margin.
         Real bilateral_cva(const ExposurePaths &paths, const XvaInputs &in,
-                           const std::vector<std::size_t> &trades)
+                           const std::vector<std::size_t> &trades, Real margin_scaling)
         {
-            const ExposureStatistics s = exposure_statistics(netting_set_cube(paths, in, trades));
+            ExposureStatistics s;
+            if (in.initial_margin)
+            {
+                const InitialMargin margin = initial_margin(paths, in, trades, margin_scaling);
+                s = exposure_statistics(netting_set_cube(paths, in, trades, &margin));
+            }
+            else
+                s = exposure_statistics(netting_set_cube(paths, in, trades));
             return cva_bilateral(s.profile(), in.counterparty, in.own, in.lgd_counterparty);
         }
     } // namespace
@@ -126,15 +157,55 @@ namespace quantModeling
             !(in.lgd_own >= 0.0 && in.lgd_own <= 1.0))
             throw InvalidInput("xVA report: loss given default must be in [0, 1]");
 
+        if (in.initial_margin && !in.csa)
+            throw InvalidInput("xVA report: initial margin needs a collateral agreement");
+        if (in.capital && in.capital->trades.size() != trades.size())
+            throw InvalidInput("xVA report: the capital inputs must describe each netted trade");
+        if (!std::isfinite(in.initial_margin_spread) || !std::isfinite(in.collateral_spread) ||
+            !(in.cost_of_capital >= 0.0))
+            throw InvalidInput("xVA report: spreads must be finite and the cost of capital >= 0");
+
         XvaReport report;
-        const ExposurePaths cube = netting_set_cube(paths, in, trades);
+        // Without initial margin: what variation margin alone leaves, the
+        // funding requirement, and the collateral that capital recognises.
+        const ExposurePaths variation_only = netting_set_cube(paths, in, trades);
+        std::optional<InitialMargin> margin;
+        Real margin_scaling = 1.0;
+        if (in.initial_margin)
+        {
+            const DynamicInitialMargin model = DynamicInitialMargin::fit(
+                paths, in.csa->margin_period_of_risk, trades, *in.initial_margin);
+            margin_scaling = model.scaling();
+            margin = model.margin(paths);
+            report.initial_margin_today = margin->today;
+            report.expected_initial_margin = margin->expected;
+            report.mva = mva(margin->times, margin->discounted_expected, in.counterparty, in.own,
+                             in.initial_margin_spread);
+        }
+        const ExposurePaths cube =
+            margin ? netting_set_cube(paths, in, trades, &*margin) : variation_only;
         report.exposure = exposure_statistics(cube, {}, in.pfe_confidence);
         const ExposureProfile profile = report.exposure.profile();
 
         pathwise_adjustments(cube, in, report.cva, report.dva);
         report.cva_unilateral = cva_unilateral(profile, in.counterparty, in.lgd_counterparty);
-        report.fca = fca(profile, in.counterparty, in.own, in.borrowing_spread);
-        report.fba = fba(profile, in.counterparty, in.own, in.lending_spread);
+        // Segregated initial margin funds nothing: FVA is on the cube
+        // without it.
+        const ExposureProfile funding =
+            margin ? exposure_statistics(variation_only).profile() : profile;
+        report.fca = fca(funding, in.counterparty, in.own, in.borrowing_spread);
+        report.fba = fba(funding, in.counterparty, in.own, in.lending_spread);
+        if (in.csa)
+            report.colva = colva(variation_only.times,
+                                 discounted_expected_collateral(paths, *in.csa, trades),
+                                 in.counterparty, in.own, in.collateral_spread);
+        if (in.capital)
+        {
+            report.capital =
+                projected_capital(variation_only, *in.capital, margin ? &*margin : nullptr);
+            report.kva = kva(report.capital->times, report.capital->discounted_capital,
+                             in.counterparty, in.own, in.cost_of_capital);
+        }
 
         const Time maturity = profile.times.back();
         const Real average_hazard = -std::log(in.counterparty.survival(maturity)) / maturity;
@@ -162,11 +233,12 @@ namespace quantModeling
         {
             TradeContribution c;
             c.trade = trades[j];
-            c.standalone_cva = bilateral_cva(paths, in, {trades[j]});
+            c.standalone_cva = bilateral_cva(paths, in, {trades[j]}, margin_scaling);
             std::vector<std::size_t> others = trades;
             others.erase(others.begin() + static_cast<std::ptrdiff_t>(j));
             c.incremental_cva =
-                report.cva.value - (others.empty() ? 0.0 : bilateral_cva(paths, in, others));
+                report.cva.value -
+                (others.empty() ? 0.0 : bilateral_cva(paths, in, others, margin_scaling));
             c.marginal_cva = marginal[j];
             report.contributions.push_back(c);
         }

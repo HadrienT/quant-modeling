@@ -36,6 +36,25 @@ class CsaInput(BaseModel):
         default=10, ge=1, le=60, description="Business days"
     )
     cashflows: Literal["paid", "withheld", "only_bank_pays"] = "paid"
+    initial_margin: bool = Field(
+        default=False,
+        description="Both parties also post initial margin, as the margin rules "
+        "for non-cleared derivatives require: projected by regression, 99 % of "
+        "the move over the margin period of risk",
+    )
+    initial_margin_today: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="The initial margin actually computed today (a SIMM amount): "
+        "the projected profile is scaled to start from it",
+    )
+    collateral_rate_spread: float = Field(
+        default=0.0,
+        ge=-0.05,
+        le=0.05,
+        description="What the agreement pays on cash collateral, over the rate "
+        "the trades are discounted at; 0 for a CSA paying the overnight rate",
+    )
 
 
 class HistoricalInput(BaseModel):
@@ -45,6 +64,48 @@ class HistoricalInput(BaseModel):
     mean_reversion: Optional[float] = Field(default=None, gt=0, le=5)
     long_run_rate: Optional[float] = Field(default=None, ge=-0.02, le=0.2)
     sigma: Optional[float] = Field(default=None, gt=0, le=0.05)
+
+
+Sector = Literal[
+    "sovereign",
+    "local_government",
+    "financial",
+    "basic_materials_energy_industrials",
+    "consumer_transport_administrative",
+    "technology_telecommunications",
+    "health_care_utilities_professional",
+    "other",
+]
+
+
+class CapitalInput(BaseModel):
+    """What the regulatory capital of the netting set depends on, besides its
+    exposure, and what that capital costs."""
+
+    cost_of_capital: float = Field(
+        default=0.10,
+        ge=0,
+        le=0.5,
+        description="Return required on the capital held, a year",
+    )
+    sector: Sector = Field(
+        default="other", description="The counterparty's sector, for BA-CVA"
+    )
+    pd: Optional[float] = Field(
+        default=None,
+        gt=0,
+        lt=1,
+        description="One-year probability of default for the IRB formula; unset "
+        "takes the one implied by the rating's spread, which is higher than a "
+        "bank's own estimate would be",
+    )
+    lgd: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Regulatory loss given default; unset takes the foundation "
+        "approach's 45 % for a financial counterparty, 40 % otherwise",
+    )
 
 
 class XvaRequest(BaseModel):
@@ -57,6 +118,7 @@ class XvaRequest(BaseModel):
     )
     borrowing_spread: float = Field(default=0.0, ge=0, le=0.1)
     lending_spread: float = Field(default=0.0, ge=0, le=0.1)
+    capital: CapitalInput = Field(default_factory=lambda: CapitalInput())
     historical: HistoricalInput = Field(default_factory=HistoricalInput)
     paths: int = Field(default=10000, ge=1000, le=50000)
     seed: int = Field(default=42, ge=0, le=2**31 - 1)
@@ -114,7 +176,38 @@ class Adjustments(BaseModel):
     cva_unilateral: float
     fca: float
     fba: float
+    colva: float = Field(description="Rate paid on the collateral; 0 without a CSA")
+    mva: float = Field(description="Funding of the initial margin posted")
+    kva: float = Field(description="Cost of the regulatory capital held")
     cva_rule_of_thumb: float = Field(description="−spread × EPE × T")
+
+
+class InitialMarginOut(BaseModel):
+    """The initial margin each party posts, on the dates of the exposure."""
+
+    today: float
+    times: List[float]
+    expected: List[float]
+
+
+class CapitalOut(BaseModel):
+    """Regulatory capital of the netting set: today's, and projected."""
+
+    ead_today: float = Field(description="SA-CCR exposure at default")
+    default_capital_today: float = Field(description="IRB capital on that EAD")
+    cva_capital_today: float = Field(description="BA-CVA capital on that EAD")
+    times: List[float]
+    expected_ead: List[float]
+    discounted_capital: List[float] = Field(
+        description="E[D(t) K(t)], both charges: what KVA integrates"
+    )
+    pd: float = Field(description="After the regulatory floor of 0.05 %")
+    pd_is_market_implied: bool
+    lgd: float
+    sector: str
+    investment_grade: bool
+    margined: bool = Field(description="SA-CCR treats the netting set as margined")
+    cost_of_capital: float
 
 
 class CreditInput(BaseModel):
@@ -173,6 +266,9 @@ class XvaResponse(BaseModel):
     risk: ExposureProfileOut
     adjustments: Adjustments
     adjustments_uncollateralised: Optional[Adjustments]
+    initial_margin: Optional[InitialMarginOut]
+    capital: CapitalOut
+    capital_uncollateralised: Optional[CapitalOut]
     market: XvaMarket
     paths: int
     pilot_paths: int = Field(

@@ -133,7 +133,8 @@ namespace quantModeling
                    own.survival(times[i]) * (times[i] - previous);
             previous = times[i];
         }
-        return -rate * sum;
+        // + 0.0: a zero rate gives 0, not -0.
+        return -rate * sum + 0.0;
     }
 
     Real fca(const ExposureProfile &profile, const CreditCurve &counterparty, const CreditCurve &own,
@@ -157,6 +158,13 @@ namespace quantModeling
     {
         return fca(profile, counterparty, own, borrowing_spread) +
                fba(profile, counterparty, own, lending_spread);
+    }
+
+    Real colva(const std::vector<Time> &times, const std::vector<Real> &discounted_expected_collateral,
+               const CreditCurve &counterparty, const CreditCurve &own, Real collateral_spread)
+    {
+        return running_cost_adjustment(times, discounted_expected_collateral, counterparty, own,
+                                       collateral_spread);
     }
 
     Real mva(const std::vector<Time> &times, const std::vector<Real> &discounted_expected_im,

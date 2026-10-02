@@ -63,6 +63,11 @@ namespace quantModeling
         /// Initial margin **posted** by the bank, segregated: it only reduces
         /// the counterparty's exposure to the bank.
         std::vector<Real> initial_margin_posted;
+        /// The same two margins when they depend on the path (a dynamic
+        /// initial margin, risk/initial_margin.hpp): paths × reporting dates,
+        /// row by row. A non-empty matrix takes precedence over the profile.
+        std::vector<Real> initial_margin_received_paths;
+        std::vector<Real> initial_margin_posted_paths;
     };
 
     /// The variation margin of a perfect CSA for a value V:
@@ -86,6 +91,21 @@ namespace quantModeling
     /// ExposureGridSettings::margin_period_of_risk is set.
     std::vector<std::size_t> collateral_reporting_dates(const ExposurePaths &paths,
                                                         Time margin_period_of_risk);
+
+    /// A margin period of risk on the grid: a reporting date and its lagged
+    /// date t - MPoR.
+    struct MarginPeriod
+    {
+        /// The lagged date is today (or earlier).
+        static constexpr std::size_t kToday = static_cast<std::size_t>(-1);
+        std::size_t date;
+        std::size_t lagged;
+    };
+
+    /// The reporting dates of collateral_reporting_dates(), each with its
+    /// lagged date.
+    std::vector<MarginPeriod> margin_periods(const std::vector<Time> &times,
+                                             Time margin_period_of_risk);
 
     /**
      * @brief Applies a CSA to a netting set and returns a cube holding one
@@ -116,12 +136,21 @@ namespace quantModeling
                                 const CollateralSettings &settings = {});
 
     /**
+     * @brief E[D(t) C(t - MPoR)] on the reporting dates: the discounted
+     *        expected collateral the bank holds (> 0) or has posted (< 0),
+     *        variation margin and independent amount. What ColVA integrates
+     *        (risk/xva.hpp).
+     */
+    std::vector<Real> discounted_expected_collateral(const ExposurePaths &paths, const Csa &csa,
+                                                     const std::vector<std::size_t> &trades = {});
+
+    /**
      * @brief The simplest projection of initial margin (blueprint §5.6):
      *        today's amount, decaying like the square root of the remaining
      *        life, im_today × sqrt(max(maturity - t, 0) / maturity).
      *
-     * Biased, and everybody's starting point; the regression of lot X5
-     * replaces it.
+     * Biased, and everybody's starting point; the regression of
+     * risk/initial_margin.hpp replaces it.
      */
     std::vector<Real> deterministic_initial_margin(Real im_today, const std::vector<Time> &times,
                                                    Time maturity);

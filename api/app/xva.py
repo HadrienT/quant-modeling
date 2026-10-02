@@ -20,6 +20,7 @@ the portfolios, gathers the inputs and carries the methodology.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -31,11 +32,13 @@ from . import credit, db, rates_derivatives
 from .schemas import MethodologySection
 from .xva_schemas import (
     Adjustments,
+    CapitalOut,
     CreditInput,
     Estimate,
     ExposureProfileOut,
     HistoricalDynamics,
     HullWhiteInput,
+    InitialMarginOut,
     PricingExposure,
     XvaMarket,
     XvaRequest,
@@ -364,7 +367,54 @@ def _adjustments(r: dict) -> Adjustments:
         cva_unilateral=r["cva_unilateral"],
         fca=r["fca"],
         fba=r["fba"],
+        colva=r["colva"],
+        mva=r["mva"],
+        kva=r["kva"],
         cva_rule_of_thumb=r["cva_rule_of_thumb"],
+    )
+
+
+#: The PD floor of the IRB formula (Basel framework, CRE32.4).
+_PD_FLOOR = 0.0005
+_INVESTMENT_GRADE = {"AAA", "AA", "A", "BBB"}
+
+
+def _capital_inputs(req: XvaRequest, counterparty: CreditInput) -> dict:
+    """What the capital projection takes: the counterparty's regulatory
+    parameters and the cost of capital."""
+    c = req.capital
+    # A rating's spread implies a default intensity under the pricing
+    # measure, above the default rates a bank's rating system would estimate:
+    # used only when no PD is given, and flagged.
+    pd = c.pd if c.pd is not None else 1.0 - math.exp(-counterparty.hazard)
+    return {
+        "pd": pd,
+        # Foundation approach, CRE32.6.
+        "lgd": (
+            c.lgd if c.lgd is not None else (0.45 if c.sector == "financial" else 0.40)
+        ),
+        "sector": c.sector,
+        "investment_grade": counterparty.rating in _INVESTMENT_GRADE,
+        "cost_of_capital": c.cost_of_capital,
+    }
+
+
+def _capital(r: dict, inputs: dict, req: XvaRequest, margined: bool) -> CapitalOut:
+    k = r["capital"]
+    return CapitalOut(
+        ead_today=k["ead_today"],
+        default_capital_today=k["default_capital_today"],
+        cva_capital_today=k["cva_capital_today"],
+        times=k["times"],
+        expected_ead=k["expected_ead"],
+        discounted_capital=k["discounted_capital"],
+        pd=max(inputs["pd"], _PD_FLOOR),
+        pd_is_market_implied=req.capital.pd is None,
+        lgd=inputs["lgd"],
+        sector=inputs["sector"],
+        investment_grade=inputs["investment_grade"],
+        margined=margined,
+        cost_of_capital=inputs["cost_of_capital"],
     )
 
 
@@ -390,6 +440,15 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         }
     lgd = 1.0 - req.recovery
     horizon = [max(s.start + s.tenor for s in specs)]
+    margin = None
+    if req.csa is not None and req.csa.initial_margin:
+        margin = {
+            "confidence": 0.99,
+            "im_today": req.csa.initial_margin_today,
+            # Segregated margin is funded at the bank's borrowing spread.
+            "spread": req.borrowing_spread,
+        }
+    capital = _capital_inputs(req, counterparty)
     result = qm.xva_netting_set(
         rates.times,
         rates.dfs,
@@ -406,12 +465,22 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         req.paths,
         req.seed,
         req.pfe_confidence,
+        initial_margin=margin,
+        collateral_spread=req.csa.collateral_rate_spread if req.csa else 0.0,
+        capital=capital,
     )
 
     warnings.append(
         "Counterparty and own credit curves are rating proxies built from bond "
         "spreads (ICE BofA indices), not CDS quotes of a name."
     )
+    if req.capital.pd is None:
+        warnings.append(
+            "The capital uses the default probability implied by the rating's "
+            "spread, which is higher than the default rate a bank's rating system "
+            "would estimate: the capital and the KVA are on the high side. Enter "
+            "your own one-year PD to replace it."
+        )
     if historical.estimated_mean_reversion is not None and not {
         "mean_reversion",
         "long_run_rate",
@@ -454,6 +523,20 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         risk=ExposureProfileOut(**_profile(result["risk"])),
         adjustments=_adjustments(result),
         adjustments_uncollateralised=_adjustments(open_set) if open_set else None,
+        initial_margin=(
+            InitialMarginOut(
+                today=result["initial_margin"]["today"],
+                times=result["exposure"]["times"],
+                expected=result["initial_margin"]["expected"],
+            )
+            if result["initial_margin"]
+            else None
+        ),
+        # SA-CCR is margined when the counterparty posts variation margin.
+        capital=_capital(result, capital, req, margined=req.csa is not None),
+        capital_uncollateralised=(
+            _capital(open_set, capital, req, margined=False) if open_set else None
+        ),
         market=XvaMarket(
             currency="USD",
             curve_as_of=rates.as_of,
@@ -606,6 +689,60 @@ _SECTIONS: List[Tuple[str, List[str]]] = [
             "swaptions, where the exact value is known, the same regression "
             "reproduces the expected exposure within 1 to 2 % of its peak and the "
             "99 % quantile within 2 to 4 %, the more pilot paths the closer.",
+        ],
+    ),
+    (
+        "Initial margin and MVA",
+        [
+            "Under the margin rules for non-cleared derivatives each party also "
+            "posts initial margin, held apart, sized to cover 99 % of the move of "
+            "the netting set's value over the margin period of risk. Pricing it "
+            "needs that margin in every scenario at every date. It is projected by "
+            "regression (Anfuso, Aziz, Giltinan & Loukopoulos, 2017): on the "
+            "simulated paths, the squared move of the value over the next ten days "
+            "is regressed on the value, which gives its conditional standard "
+            "deviation; the margin is 2.33 times it, the 99 % quantile of a normal "
+            "move. This is a model of the margin, not the industry's rule (ISDA "
+            "SIMM works from sensitivities): if you give today's actual margin, the "
+            "whole profile is scaled to start from it.",
+            "With that margin the exposure is what is left beyond it, on about one "
+            "path in a hundred: the CVA almost disappears. What replaces it is the "
+            "cost of funding the margin posted, MVA = −Σ E[D × IM](t) × survival of "
+            "both parties × funding spread × Δt. Segregated margin funds nothing, so "
+            "the funding adjustments stay those of the variation margin.",
+        ],
+    ),
+    (
+        "ColVA",
+        [
+            "A collateral agreement pays a rate on the cash it holds. When that "
+            "rate is the overnight rate the trades are discounted at, nothing is "
+            "gained or lost: this is why collateralised trades are discounted on "
+            "the OIS curve (Piterbarg, 2010). When it differs, ColVA = −Σ E[D × "
+            "collateral held](t) × survival of both parties × (rate paid − discount "
+            "rate) × Δt: a cost when the bank holds collateral on which it pays "
+            "more.",
+        ],
+    ),
+    (
+        "Capital and KVA",
+        [
+            "Two regulatory charges are projected. The exposure at default is the "
+            "standardised approach's (SA-CCR, Basel framework CRE52): 1.4 × "
+            "(replacement cost + multiplier × add-on). At a future date the add-on "
+            "comes from the trades that are left, the same in every scenario; the "
+            "replacement cost and the multiplier come from the value, and the "
+            "margin held, in the scenario. The default-risk capital is the IRB "
+            "formula on that exposure (CRE31, with the PD floor of 0.05 % of "
+            "CRE32.4, the foundation LGD of CRE32.6 and an effective maturity "
+            "capped at five years, CRE32.46); the CVA capital is the reduced basic "
+            "approach (BA-CVA, MAR50), with the sector and investment-grade risk "
+            "weight of the counterparty and no cap on the maturity (MAR50.15).",
+            "KVA = −Σ E[D × capital](t) × survival of both parties × cost of capital "
+            "× Δt (Green, Kenyon & Dennis, 2014). An option keeps today's moneyness "
+            "in its supervisory delta, and after its last exercise date it is "
+            "carried as its underlying swap. Market-risk capital of the hedges and "
+            "the leverage ratio are not included.",
         ],
     ),
     (

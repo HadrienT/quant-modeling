@@ -938,6 +938,34 @@ namespace
         out["fca"] = r.fca;
         out["fba"] = r.fba;
         out["cva_rule_of_thumb"] = r.cva_rule_of_thumb;
+        out["colva"] = r.colva;
+        out["mva"] = r.mva;
+        out["kva"] = r.kva;
+        if (r.expected_initial_margin.empty())
+            out["initial_margin"] = py::none();
+        else
+        {
+            py::dict margin;
+            margin["today"] = r.initial_margin_today;
+            margin["expected"] = r.expected_initial_margin;
+            out["initial_margin"] = margin;
+        }
+        if (!r.capital)
+            out["capital"] = py::none();
+        else
+        {
+            const qm_::CapitalProfile &k = *r.capital;
+            py::dict capital;
+            capital["times"] = k.times;
+            capital["ead_today"] = k.ead_today;
+            capital["default_capital_today"] = k.default_capital_today;
+            capital["cva_capital_today"] = k.cva_capital_today;
+            capital["expected_ead"] = k.expected_ead;
+            capital["discounted_capital"] = k.discounted_capital;
+            capital["discounted_default_capital"] = k.discounted_default_capital;
+            capital["discounted_cva_capital"] = k.discounted_cva_capital;
+            out["capital"] = capital;
+        }
         py::list contributions;
         for (const qm_::TradeContribution &c : r.contributions)
         {
@@ -954,6 +982,62 @@ namespace
     }
 } // namespace
 
+namespace
+{
+    qm_::ba_cva::Sector ba_cva_sector(const std::string &name)
+    {
+        using S = qm_::ba_cva::Sector;
+        static const std::map<std::string, S> sectors = {
+            {"sovereign", S::Sovereign},
+            {"local_government", S::LocalGovernment},
+            {"financial", S::Financial},
+            {"basic_materials_energy_industrials", S::BasicMaterialsEnergyIndustrials},
+            {"consumer_transport_administrative", S::ConsumerTransportAdministrative},
+            {"technology_telecommunications", S::TechnologyTelecommunications},
+            {"health_care_utilities_professional", S::HealthCareUtilitiesProfessional},
+            {"other", S::Other},
+        };
+        const auto it = sectors.find(name);
+        if (it == sectors.end())
+            throw qm_::InvalidInput("xva: unknown BA-CVA sector '" + name + "'");
+        return it->second;
+    }
+
+    /// One trade of the netting set as SA-CCR describes it (CRE52.32, Table 1):
+    /// a swap by its start and end; a swaption by its underlying swap, with
+    /// the option's terms; a Bermudan with S its first exercise date and T
+    /// its last (CRE52.42).
+    qm_::sa_ccr::Trade sa_ccr_trade(const std::string &kind, const qm_::InterestRateSwap &swap,
+                                    qm_::Time expiry, qm_::Time last_exercise, qm_::Real quantity,
+                                    const qm_::DiscountCurve &curve)
+    {
+        qm_::sa_ccr::Trade t;
+        t.subclass = qm_::sa_ccr::SubClass::InterestRate;
+        t.hedging_set = "USD";
+        t.notional = swap.notional * std::abs(quantity);
+        t.maturity = swap.maturity();
+        t.start = swap.start();
+        t.end = swap.maturity();
+        // A payer swap gains when rates rise; a negative quantity is the
+        // other side.
+        const bool long_rates = swap.payer == (quantity > 0.0);
+        if (kind == "swap")
+        {
+            t.long_primary_risk_factor = long_rates;
+            return t;
+        }
+        qm_::sa_ccr::OptionTerms option;
+        // A payer swaption is a call on the swap rate, a receiver a put.
+        option.type = swap.payer ? qm_::sa_ccr::OptionType::Call : qm_::sa_ccr::OptionType::Put;
+        option.side = quantity > 0.0 ? qm_::sa_ccr::OptionSide::Bought : qm_::sa_ccr::OptionSide::Sold;
+        option.underlying_price = qm_::value_swap(swap, qm_::MultiCurve{curve, curve}).par_rate;
+        option.strike = swap.fixed_rate;
+        option.exercise = kind == "bermudan" ? last_exercise : expiry;
+        t.option = option;
+        return t;
+    }
+} // namespace
+
 static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_::Real> dd,
                                      std::pair<qm_::Real, qm_::Real> hull_white, const py::list &trades,
                                      const std::pair<std::vector<qm_::Time>, std::vector<qm_::Real>> &counterparty_hazard,
@@ -962,13 +1046,15 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
                                      qm_::Real borrowing_spread, qm_::Real lending_spread,
                                      std::optional<std::tuple<qm_::Real, qm_::Real, qm_::Real>> historical,
                                      std::size_t paths, std::uint64_t seed, qm_::Real pfe_confidence,
-                                     std::size_t threads)
+                                     std::size_t threads, const py::object &initial_margin,
+                                     qm_::Real collateral_spread, const py::object &capital)
 {
     const qm_::DiscountCurve curve = rate_curve(std::move(dt), std::move(dd));
     const qm_::HullWhiteCurveModel model(hull_white.first, hull_white.second, curve);
 
     // Instruments are parsed while the GIL is held; the engine copies them.
     qm_::HullWhiteExposureEngine engine(model);
+    std::vector<qm_::sa_ccr::Trade> regulatory_trades;
     for (const py::handle &h : trades)
     {
         const py::dict t = h.cast<py::dict>();
@@ -983,6 +1069,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
             is_swap ? item_or<qm_::Time>(t, "start", 0.0) : expiry, tenor, t["fixed_rate"].cast<qm_::Real>(),
             item_or<int>(t, "fixed_frequency", 1), item_or<int>(t, "float_frequency", 1),
             item_or<qm_::Real>(t, "notional", 1.0), item_or<bool>(t, "payer", true));
+        qm_::Time last_exercise = expiry;
         if (is_swap)
             engine.add(swap, quantity);
         else if (kind == "swaption")
@@ -994,8 +1081,10 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
             std::vector<qm_::Time> exercise;
             for (qm_::Time e = expiry; e < expiry + tenor - 1e-9; e += 1.0)
                 exercise.push_back(e);
+            last_exercise = exercise.back();
             engine.add(qm_::BermudanSwaption(swap, exercise), quantity);
         }
+        regulatory_trades.push_back(sa_ccr_trade(kind, swap, expiry, last_exercise, quantity, curve));
     }
 
     qm_::XvaInputs inputs;
@@ -1032,6 +1121,47 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         settings.keep_cashflows = inputs.collateral.cashflows != qm_::MarginPeriodCashflows::Paid;
     }
 
+    inputs.collateral_spread = collateral_spread;
+    if (!initial_margin.is_none())
+    {
+        // Initial margin both ways, projected by regression; the clean move
+        // of the value needs the trades' cash flows.
+        const py::dict m = initial_margin.cast<py::dict>();
+        qm_::DimSettings dim;
+        dim.confidence = item_or<qm_::Real>(m, "confidence", 0.99);
+        if (m.contains("im_today") && !m["im_today"].is_none())
+            dim.im_today = m["im_today"].cast<qm_::Real>();
+        inputs.initial_margin = dim;
+        inputs.initial_margin_spread = item_or<qm_::Real>(m, "spread", borrowing_spread);
+        settings.keep_cashflows = true;
+    }
+    if (!capital.is_none())
+    {
+        const py::dict k = capital.cast<py::dict>();
+        qm_::CapitalInputs c;
+        c.trades = regulatory_trades;
+        c.pd = k["pd"].cast<qm_::Real>();
+        c.lgd = item_or<qm_::Real>(k, "lgd", 0.40);
+        c.large_financial = item_or<bool>(k, "large_financial", false);
+        c.sector = ba_cva_sector(item_or<std::string>(k, "sector", "other"));
+        c.quality = item_or<bool>(k, "investment_grade", false)
+                        ? qm_::ba_cva::CreditQuality::InvestmentGrade
+                        : qm_::ba_cva::CreditQuality::HighYieldOrNotRated;
+        // SA-CCR is margined when the counterparty posts variation margin
+        // (CRE52.2): a finite threshold on its side.
+        if (inputs.csa && std::isfinite(inputs.csa->threshold_counterparty))
+        {
+            qm_::sa_ccr::MarginAgreement agreement;
+            agreement.threshold = inputs.csa->threshold_counterparty;
+            agreement.minimum_transfer_amount = inputs.csa->minimum_transfer_amount;
+            agreement.nica = inputs.csa->independent_amount;
+            agreement.margin_period_of_risk = inputs.csa->margin_period_of_risk;
+            c.margin = agreement;
+        }
+        inputs.capital = c;
+        inputs.cost_of_capital = item_or<qm_::Real>(k, "cost_of_capital", 0.10);
+    }
+
     std::optional<qm_::XvaReport> report, uncollateralised;
     std::optional<qm_::ExposureStatistics> risk;
     std::vector<qm_::Real> values_today;
@@ -1054,6 +1184,9 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
             // The same paths without the CSA: what the collateral is worth.
             qm_::XvaInputs open = inputs;
             open.csa.reset();
+            open.initial_margin.reset();
+            if (open.capital)
+                open.capital->margin.reset();
             uncollateralised = qm_::xva_report(cube, open);
         }
         if (historical)
@@ -2295,11 +2428,17 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("borrowing_spread") = 0.0, py::arg("lending_spread") = 0.0,
           py::arg("historical") = py::none(), py::arg("paths") = 10000, py::arg("seed") = 42,
           py::arg("pfe_confidence") = 0.95, py::arg("threads") = 0,
+          py::arg("initial_margin") = py::none(), py::arg("collateral_spread") = 0.0,
+          py::arg("capital") = py::none(),
           "Exposure and CVA / DVA of a netting set of swaps, European and Bermudan swaptions under "
           "Hull-White (a, sigma): trades are dicts (kind 'swap' | 'swaption' | 'bermudan', tenor, "
           "fixed_rate, notional, payer, "
           "quantity, start | expiry, frequencies); hazard curves are (times, hazards); csa a dict of its "
-          "terms or None; historical (a, theta, sigma) adds the risk-measure profiles. A cost is negative.");
+          "terms or None; historical (a, theta, sigma) adds the risk-measure profiles. initial_margin "
+          "(a dict: confidence, im_today, spread) projects the margin both parties post and gives the MVA; "
+          "collateral_spread (what the CSA pays over the discount rate) the ColVA; capital (a dict: pd, lgd, "
+          "sector, investment_grade, large_financial, cost_of_capital) the SA-CCR, IRB and BA-CVA "
+          "capital and the KVA. A cost is negative.");
     m.def("estimate_historical_rate_dynamics", &estimate_historical_rate_dynamics_impl, py::arg("rates"),
           py::arg("dt"),
           "Maximum-likelihood (a, theta, sigma) of a mean-reverting Gaussian short rate from a series "
