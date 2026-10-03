@@ -1,7 +1,7 @@
 # Runbook — quant-modeling auto-hébergé (blueprint WP 14)
 
 Le site est servi **depuis le serveur perso**, joignable en HTTPS sur
-`https://tramonihadrien.com` **via un tunnel Cloudflare** : aucun port
+`https://quant.tramonihadrien.com` **via un tunnel Cloudflare** : aucun port
 n'est ouvert sur la box, l'IP résidentielle reste masquée, le certificat TLS est
 géré par Cloudflare.
 
@@ -144,7 +144,10 @@ Pour le supprimer proprement un jour : `git worktree remove ~/quant-modeling-pro
 à faire côté registrar. La zone sert aujourd'hui un site Google Sites (apex +
 `www`) et la messagerie Google Workspace (enregistrements `MX`).
 
-**Cible : `tramonihadrien.com` (et `www`) doit afficher l'app quant-modeling.**
+**Cible : `quant.tramonihadrien.com` affiche l'app quant-modeling ;
+`tramonihadrien.com` (et `www`) le site vitrine du dépôt
+[`HadrienT/portfolio`](https://github.com/HadrienT/portfolio)**, servi par le
+même tunnel (§3.4).
 
 ### 2.1 — Réglages de la zone (dashboard Cloudflare)
 
@@ -193,15 +196,31 @@ hostname**, deux fois :
 
 | Subdomain | Domain | Path | Type | URL |
 |---|---|---|---|---|
-| *(vide)* | `tramonihadrien.com` | *(vide)* | HTTP | `app:8080` |
-| `www` | `tramonihadrien.com` | *(vide)* | HTTP | `app:8080` |
+| `quant` | `tramonihadrien.com` | *(vide)* | HTTP | `app:8080` |
+| *(vide)* | `tramonihadrien.com` | *(vide)* | HTTP | `portfolio:8080` |
+| `www` | `tramonihadrien.com` | *(vide)* | HTTP | `portfolio:8080` |
 
-Cloudflare crée/écrase les enregistrements DNS tout seul (accepte l'écrasement
-de l'ancien `A`/`CNAME`). `app:8080` = le conteneur de l'app, joint par
-`cloudflared` sur le réseau docker interne.
+Cloudflare crée/écrase les enregistrements DNS tout seul (un `CNAME` vers
+`<id-du-tunnel>.cfargotunnel.com`, proxifié) : **aucun enregistrement DNS à
+créer à la main**. `app:8080` = le conteneur de l'app, `portfolio:8080` celui
+du site vitrine, joints par `cloudflared` sur le réseau docker
+`quant-modeling-prod_default`.
 
-> `www` et l'apex montreront la même app. Pour rediriger `www` → apex plus tard :
-> **Rules → Redirect Rules**, 30 secondes.
+### 3.4 — Le site vitrine sur l'apex
+
+Jusqu'au 2026-10, l'apex et `www` servaient l'app. La bascule, dans l'ordre :
+
+1. Hôte `quant` ajouté (§3.3), `https://quant.tramonihadrien.com/health`
+   répond.
+2. Console Google : ajouter le callback
+   `https://quant.tramonihadrien.com/api/auth/google/callback` (§8.1).
+3. Déployer quant-modeling (`./scripts/deploy.sh`) : `QM_PUBLIC_URL` vaut
+   désormais le sous-domaine. Un `QM_PUBLIC_URL` ou `CORS_ALLOW_ORIGINS`
+   posé dans `.env` l'emporte : le retirer ou le mettre à jour.
+4. Lancer le site vitrine (`~/portfolio`, `docker compose up -d --build`, voir
+   son `DEPLOY.md`), puis faire pointer l'apex et `www` sur `portfolio:8080`.
+   Son nginx renvoie les anciennes routes de l'app (`/price`, `/market`, …)
+   en 301 vers le sous-domaine.
 
 ---
 
@@ -221,8 +240,8 @@ cp .env.placeholder .env
 | `PGPASSWORD` | **identique** à `~/data-ingest/.env` |
 | `QM_WEB_PORT` | `8091` (port de debug local, lié à 127.0.0.1 uniquement) |
 
-(`CORS_ALLOW_ORIGINS` peut rester vide : le défaut couvre `tramonihadrien.com` +
-`www`. Le `COMMIT_SHA` est posé par `deploy.sh`. Si le jeton n'est pas encore
+(`CORS_ALLOW_ORIGINS` peut rester vide : le défaut couvre
+`quant.tramonihadrien.com`. Le `COMMIT_SHA` est posé par `deploy.sh`. Si le jeton n'est pas encore
 là, `deploy.sh` ne lance que `app` — c'est normal, relance-le après.)
 
 Puis :
@@ -249,15 +268,15 @@ docker compose -f docker-compose.prod.yml logs cloudflared | grep -i "Registered
 Une fois la zone Cloudflare active, **depuis n'importe où** :
 
 ```bash
-curl -sf https://tramonihadrien.com/health
+curl -sf https://quant.tramonihadrien.com/health
 ```
 
-Puis ouvre `https://tramonihadrien.com` dans un navigateur et contrôle :
+Puis ouvre `https://quant.tramonihadrien.com` dans un navigateur et contrôle :
 
 - Console : **aucune violation CSP** (teste aussi la page *Products* et la page
   *surface WebGL*, pas seulement l'accueil).
 - Onglet Réseau : **aucune requête vers un domaine tiers**.
-- `curl -sI -H 'Accept-Encoding: gzip' https://tramonihadrien.com/ | grep -i content-encoding`
+- `curl -sI -H 'Accept-Encoding: gzip' https://quant.tramonihadrien.com/ | grep -i content-encoding`
   → `gzip`.
 
 ---
@@ -331,7 +350,7 @@ docker volume rm qm_data_restore_check      # nettoyage
 ```bash
 sudo reboot
 # … au retour, SANS rien lancer à la main :
-curl -sf https://tramonihadrien.com/health
+curl -sf https://quant.tramonihadrien.com/health
 ```
 
 `./scripts/status.sh` doit tout afficher en vert. Si ça répond `ok`, les critères « redémarre proprement après reboot » et
@@ -371,7 +390,7 @@ gratuit et sans rapport avec l'hébergement : seul l'identifiant Google compte.
    scopes de base).
 3. **Credentials → Create credentials → OAuth client ID** : type *Web
    application*. **Authorized redirect URIs** (à l'identique, au caractère près) :
-   - prod : `https://tramonihadrien.com/api/auth/google/callback`
+   - prod : `https://quant.tramonihadrien.com/api/auth/google/callback`
    - dev : `http://localhost:5180/api/auth/google/callback`
 4. Copier l'identifiant et le secret dans `.env` (`GOOGLE_CLIENT_ID`,
    `GOOGLE_CLIENT_SECRET`). `QM_PUBLIC_URL` vaut par défaut l'URL de prod dans
@@ -463,7 +482,7 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 | Voir l'état | `dc ps` |
 | Logs de l'app | `dc logs -f app` |
 | Logs du tunnel | `dc --profile tunnel logs -f cloudflared` |
-| Santé (local / public) | `curl -s http://127.0.0.1:8091/health` · `curl -s https://tramonihadrien.com/health` |
+| Santé (local / public) | `curl -s http://127.0.0.1:8091/health` · `curl -s https://quant.tramonihadrien.com/health` |
 | Rollback | `git switch --detach <sha-précédent> && ./scripts/deploy.sh` (revenir ensuite : `git switch main`) |
 | Redémarrer | `sudo systemctl restart quant-modeling.service` |
 | Arrêter (temporaire) | `dc --profile tunnel down` — systemd le relancera au prochain boot ou `start` |

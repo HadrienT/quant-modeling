@@ -10,7 +10,7 @@ pricing engine, API, and front end.
 ![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Python](https://img.shields.io/badge/Python-FastAPI-009688?logo=fastapi&logoColor=white)
 
-**[tramonihadrien.com](https://tramonihadrien.com)** — live demo, self-hosted
+**[quant.tramonihadrien.com](https://quant.tramonihadrien.com)** — live demo, self-hosted
 (no cloud).
 
 ---
