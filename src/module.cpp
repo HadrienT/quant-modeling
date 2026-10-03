@@ -31,10 +31,13 @@
 #include "quantModeling/engines/analytic/hull_white_swaption.hpp"
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/market/hull_white_calibration.hpp"
+#include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"
 #include "quantModeling/engines/xva/exposure_engine.hpp"
 #include "quantModeling/engines/xva/xva_market_risks.hpp"
 #include "quantModeling/market/historical_rate_dynamics.hpp"
 #include "quantModeling/engines/xva/script_future_value.hpp"
+#include "quantModeling/instruments/fx/cross_currency_swap.hpp"
+#include "quantModeling/instruments/fx/forward.hpp"
 #include "quantModeling/risk/xva_report.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
 #include "quantModeling/market/multi_curve_bootstrap.hpp"
@@ -1114,7 +1117,116 @@ namespace
             regulatory_trades.push_back(sa_ccr_trade(kind, swap, expiry, last_exercise, quantity, curve));
         }
     }
+
+    /// The trades of a two-currency netting set (lot X10): rate trades of
+    /// either currency, FX forwards and cross-currency swaps, each with its
+    /// SA-CCR description. An FX trade's adjusted notional is that of its
+    /// foreign leg in domestic currency (CRE52.34), its hedging set the pair.
+    void add_two_currency_trades(qm_::CrossCurrencyExposureEngine &engine, const py::list &trades,
+                                 const qm_::CrossCurrencyHullWhiteModel &model, const std::string &pair,
+                                 const std::string &foreign_currency,
+                                 std::vector<qm_::sa_ccr::Trade> &regulatory_trades)
+    {
+        const auto fx_trade = [&](qm_::Real foreign_notional, bool long_foreign, qm_::Time maturity)
+        {
+            qm_::sa_ccr::Trade t;
+            t.subclass = qm_::sa_ccr::SubClass::ForeignExchange;
+            t.hedging_set = pair;
+            t.notional = foreign_notional * model.spot();
+            t.long_primary_risk_factor = long_foreign;
+            t.maturity = maturity;
+            return t;
+        };
+        for (const py::handle &h : trades)
+        {
+            const py::dict t = h.cast<py::dict>();
+            const auto kind = t["kind"].cast<std::string>();
+            const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
+            if (kind == "fx_forward")
+            {
+                const qm_::Time maturity = t["maturity"].cast<qm_::Time>();
+                const qm_::Real notional = item_or<qm_::Real>(t, "notional", 1.0);
+                engine.add(qm_::FXForward(t["strike"].cast<qm_::Real>(), maturity, notional), quantity);
+                regulatory_trades.push_back(fx_trade(notional * std::abs(quantity), quantity > 0.0, maturity));
+                continue;
+            }
+            if (kind == "cross_currency_swap")
+            {
+                const qm_::Time maturity = t["maturity"].cast<qm_::Time>();
+                const qm_::Real foreign_notional = t["foreign_notional"].cast<qm_::Real>();
+                const bool receive_foreign = item_or<bool>(t, "receive_foreign", true);
+                engine.add(qm_::CrossCurrencySwap(maturity, foreign_notional,
+                                                  t["domestic_notional"].cast<qm_::Real>(),
+                                                  t["foreign_rate"].cast<qm_::Real>(),
+                                                  t["domestic_rate"].cast<qm_::Real>(),
+                                                  item_or<int>(t, "frequency", 1), receive_foreign),
+                           quantity);
+                regulatory_trades.push_back(fx_trade(foreign_notional * std::abs(quantity),
+                                                     receive_foreign == (quantity > 0.0), maturity));
+                continue;
+            }
+            if (kind != "swap" && kind != "swaption")
+                throw qm_::InvalidInput("xva: with two currencies a trade is a swap, a swaption, an "
+                                        "fx_forward or a cross_currency_swap, not '" +
+                                        kind + "'");
+            const auto currency = item_or<std::string>(t, "currency", "domestic");
+            if (currency != "domestic" && currency != "foreign")
+                throw qm_::InvalidInput("xva: a trade's currency is 'domestic' or 'foreign'");
+            const bool foreign = currency == "foreign";
+            const qm_::Time expiry = item_or<qm_::Time>(t, "expiry", 0.0);
+            const bool is_swap = kind == "swap";
+            const qm_::InterestRateSwap swap = qm_::make_swap(
+                is_swap ? item_or<qm_::Time>(t, "start", 0.0) : expiry, t["tenor"].cast<qm_::Time>(),
+                t["fixed_rate"].cast<qm_::Real>(), item_or<int>(t, "fixed_frequency", 1),
+                item_or<int>(t, "float_frequency", 1), item_or<qm_::Real>(t, "notional", 1.0),
+                item_or<bool>(t, "payer", true));
+            if (is_swap)
+                foreign ? engine.add_foreign(swap, quantity) : engine.add_domestic(swap, quantity);
+            else
+                foreign ? engine.add_foreign(qm_::Swaption(swap, expiry), quantity)
+                        : engine.add_domestic(qm_::Swaption(swap, expiry), quantity);
+            const qm_::HullWhiteCurveModel &rates = foreign ? model.foreign() : model.domestic();
+            qm_::sa_ccr::Trade regulatory =
+                sa_ccr_trade(kind, swap, expiry, expiry, quantity, rates.discount());
+            if (foreign)
+            {
+                // Its own hedging set, its notional in domestic currency.
+                regulatory.hedging_set = foreign_currency;
+                regulatory.notional *= model.spot();
+            }
+            regulatory_trades.push_back(regulatory);
+        }
+    }
 } // namespace
+
+/// The spot volatility of the two-currency model that reprices an FX option
+/// of this expiry, and the Black volatilities the model then gives at the
+/// other expiries (models/rates/cross_currency_hull_white.hpp).
+static py::dict cross_currency_fx_volatility_impl(std::pair<qm_::Real, qm_::Real> domestic_hull_white,
+                                                  std::pair<qm_::Real, qm_::Real> foreign_hull_white,
+                                                  std::tuple<qm_::Real, qm_::Real, qm_::Real> correlations,
+                                                  qm_::Time expiry, qm_::Real market_volatility,
+                                                  const std::vector<qm_::Time> &expiries)
+{
+    // The curves play no part in a volatility.
+    const qm_::HullWhiteCurveModel domestic(domestic_hull_white.first, domestic_hull_white.second,
+                                            qm_::DiscountCurve(0.0));
+    const qm_::HullWhiteCurveModel foreign(foreign_hull_white.first, foreign_hull_white.second,
+                                           qm_::DiscountCurve(0.0));
+    const qm_::CrossCurrencyHullWhiteModel::Correlations rho{std::get<0>(correlations),
+                                                             std::get<1>(correlations),
+                                                             std::get<2>(correlations)};
+    const qm_::Real spot_volatility =
+        qm_::calibrated_fx_volatility(domestic, foreign, rho, expiry, market_volatility);
+    const qm_::CrossCurrencyHullWhiteModel model(domestic, foreign, 1.0, spot_volatility, rho);
+    std::vector<qm_::Real> implied;
+    for (const qm_::Time t : expiries)
+        implied.push_back(model.fx_implied_volatility(t));
+    py::dict out;
+    out["spot_volatility"] = spot_volatility;
+    out["implied_volatilities"] = implied;
+    return out;
+}
 
 static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_::Real> dd,
                                      std::pair<qm_::Real, qm_::Real> hull_white, const py::list &trades,
@@ -1126,7 +1238,8 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
                                      std::size_t paths, std::uint64_t seed, qm_::Real pfe_confidence,
                                      std::size_t threads, const py::object &initial_margin,
                                      qm_::Real collateral_spread, const py::object &capital,
-                                     qm_::Real wrong_way_b, const std::string &device)
+                                     qm_::Real wrong_way_b, const std::string &device,
+                                     const py::object &foreign)
 {
     const qm_::DiscountCurve curve = rate_curve(std::move(dt), std::move(dd));
     const qm_::HullWhiteCurveModel model(hull_white.first, hull_white.second, curve);
@@ -1146,7 +1259,33 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     // Instruments are parsed while the GIL is held; the engine copies them.
     qm_::HullWhiteExposureEngine engine(model);
     std::vector<qm_::sa_ccr::Trade> regulatory_trades;
-    add_xva_trades(engine, trades, model, curve, capital.is_none() || internal_model, regulatory_trades);
+    // A second currency (lot X10): its own Hull-White rate and the exchange
+    // rate, and the engine that simulates the three.
+    std::optional<qm_::CrossCurrencyHullWhiteModel> two_currencies;
+    std::optional<qm_::CrossCurrencyExposureEngine> two_currency_engine;
+    if (foreign.is_none())
+        add_xva_trades(engine, trades, model, curve, capital.is_none() || internal_model, regulatory_trades);
+    else
+    {
+        if (historical)
+            throw qm_::InvalidInput("xva: the historical measure is not available with two currencies");
+        const py::dict f = foreign.cast<py::dict>();
+        const auto hw = f["hull_white"].cast<std::pair<qm_::Real, qm_::Real>>();
+        const auto rho = f["correlations"].cast<std::tuple<qm_::Real, qm_::Real, qm_::Real>>();
+        two_currencies.emplace(
+            model,
+            qm_::HullWhiteCurveModel(hw.first, hw.second,
+                                     rate_curve(f["discount_times"].cast<std::vector<qm_::Time>>(),
+                                                f["discount_factors"].cast<std::vector<qm_::Real>>())),
+            f["spot"].cast<qm_::Real>(), f["fx_volatility"].cast<qm_::Real>(),
+            qm_::CrossCurrencyHullWhiteModel::Correlations{std::get<0>(rho), std::get<1>(rho),
+                                                           std::get<2>(rho)});
+        two_currency_engine.emplace(*two_currencies);
+        const auto currency = item_or<std::string>(f, "currency", "EUR");
+        add_two_currency_trades(*two_currency_engine, trades, *two_currencies,
+                                currency + "/" + item_or<std::string>(f, "domestic_currency", "USD"),
+                                currency, regulatory_trades);
+    }
 
     qm_::XvaInputs inputs;
     inputs.counterparty = credit_curve(counterparty_hazard);
@@ -1263,7 +1402,9 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
             threads > 0 ? threads - 1 : std::min<std::size_t>(qm_::available_cpus(), 16) - 1;
         if (workers > 0)
             pool.start(workers);
-        const qm_::ExposurePaths cube = engine.simulate(settings, workers > 0 ? &pool : nullptr);
+        const qm_::ExposurePaths cube =
+            two_currency_engine ? two_currency_engine->simulate(settings, workers > 0 ? &pool : nullptr)
+                                : engine.simulate(settings, workers > 0 ? &pool : nullptr);
         values_today = cube.trade_values_today;
         pilot_paths = cube.pilot_paths;
         ran_on = cube.device;
@@ -2709,6 +2850,12 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("fixed_mean_reversion") = py::none(),
           "Calibrate Hull-White (a, sigma) to ATM swaption normal vols [(expiry, tenor, vol)]; the "
           "report reads in bp of normal vol.");
+    m.def("cross_currency_fx_volatility", &cross_currency_fx_volatility_impl,
+          py::arg("domestic_hull_white"), py::arg("foreign_hull_white"), py::arg("correlations"),
+          py::arg("expiry"), py::arg("market_volatility"), py::arg("expiries") = std::vector<qm_::Time>{},
+          "Spot volatility of the two-currency Hull-White model (rates (a, sigma) in each currency, "
+          "correlations (domestic-foreign, domestic-fx, foreign-fx)) that gives an FX option of this "
+          "expiry its market Black volatility, and the model's Black volatilities at `expiries`.");
     m.def("xva_netting_set", &xva_netting_set_impl, py::arg("discount_times"), py::arg("discount_factors"),
           py::arg("hull_white"), py::arg("trades"), py::arg("counterparty_hazard"), py::arg("own_hazard"),
           py::arg("lgd_counterparty") = 0.6, py::arg("lgd_own") = 0.6, py::arg("csa") = py::none(),
@@ -2717,6 +2864,7 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("pfe_confidence") = 0.95, py::arg("threads") = 0,
           py::arg("initial_margin") = py::none(), py::arg("collateral_spread") = 0.0,
           py::arg("capital") = py::none(), py::arg("wrong_way_b") = 0.0, py::arg("device") = "cpu",
+          py::arg("foreign") = py::none(),
           "Exposure and CVA / DVA of a netting set of swaps, European and Bermudan swaptions under "
           "Hull-White (a, sigma): trades are dicts (kind 'swap' | 'swaption' | 'bermudan', tenor, "
           "fixed_rate, notional, payer, "
@@ -2734,7 +2882,14 @@ PYBIND11_MODULE(quantmodeling, m)
           "(Hull & White 2012), per unit of currency; cva_independent is then the CVA without it. "
           "device 'cpu' | 'gpu' | 'auto' is where the paths are valued: the GPU takes swaps and "
           "European swaptions without SIMM per path; 'auto' falls back to the CPU and says why in "
-          "device_note. A cost is negative.");
+          "device_note. foreign (a dict: discount_times, discount_factors, hull_white (a, sigma), spot in "
+          "domestic units per foreign unit, fx_volatility, correlations (domestic-foreign, domestic-fx, "
+          "foreign-fx), currency, domestic_currency) adds a second currency: trades are then swaps "
+          "and swaptions with currency 'domestic' | 'foreign', kind 'fx_forward' (strike, maturity, "
+          "notional in foreign currency) and kind 'cross_currency_swap' (maturity, foreign_notional, "
+          "domestic_notional, foreign_rate, domestic_rate, frequency, receive_foreign); everything is "
+          "in domestic currency, on the CPU, without the historical measure or SIMM. "
+          "A cost is negative.");
     m.def("xva_sensitivities", &xva_sensitivities_impl, py::arg("swap_rates"), py::arg("swaption_vols"),
           py::arg("trades"), py::arg("counterparty_spreads"), py::arg("own_hazard"), py::arg("recovery") = 0.4,
           py::arg("lgd_counterparty") = 0.6, py::arg("lgd_own") = 0.6, py::arg("csa") = py::none(),

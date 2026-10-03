@@ -24,7 +24,9 @@ const FAN: [number, number][] = [
 export function ExposurePanel({ data }: { data: XvaResponse }) {
 	const [measure, setMeasure] = useState<"pricing" | "risk">("pricing");
 	const e = data.exposure;
-	const profile = measure === "pricing" ? e : data.risk;
+	// The real-world measure covers one interest rate: a netting set in two
+	// currencies has the pricing measure only, and the page says why.
+	const profile = measure === "pricing" || !data.risk ? e : data.risk;
 	const open = data.exposure_uncollateralised;
 	const peak = profile.pfe.indexOf(Math.max(...profile.pfe));
 
@@ -72,25 +74,30 @@ export function ExposurePanel({ data }: { data: XvaResponse }) {
 						note={plusMinus(profile.pfe_error[peak])}
 					/>
 				</div>
-				<Segmented
-					label="Measure"
-					options={[
-						{
-							value: "pricing",
-							label: "Pricing measure",
-							title: "Risk-neutral scenarios: what the adjustments integrate",
-						},
-						{
-							value: "risk",
-							label: "Real-world measure",
-							title:
-								"Scenarios drawn from how rates have moved: what limits and capital read",
-						},
-					]}
-					value={measure}
-					onChange={setMeasure}
-				/>
+				{data.risk && (
+					<Segmented
+						label="Measure"
+						options={[
+							{
+								value: "pricing",
+								label: "Pricing measure",
+								title: "Risk-neutral scenarios: what the adjustments integrate",
+							},
+							{
+								value: "risk",
+								label: "Real-world measure",
+								title:
+									"Scenarios drawn from how rates have moved: what limits and capital read",
+							},
+						]}
+						value={measure}
+						onChange={setMeasure}
+					/>
+				)}
 			</div>
+			{data.risk_unavailable && (
+				<p className="text-xs text-ink-muted">{data.risk_unavailable}</p>
+			)}
 			<ProfileChart
 				title="Exposure profile"
 				times={profile.times}

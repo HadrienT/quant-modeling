@@ -68,6 +68,7 @@ target_sources(quantModeling
         src/market/multi_curve_bootstrap.cpp
         src/engines/analytic/swap.cpp
         src/models/rates/hull_white_curve.cpp
+        src/models/rates/cross_currency_hull_white.cpp
         src/engines/analytic/hull_white_swaption.cpp
         src/market/hull_white_calibration.cpp
         src/models/credit/merton_structural.cpp
@@ -87,6 +88,7 @@ target_sources(quantModeling
         src/engines/xva/script_future_value.cpp
         src/utils/bucketed_regression.cpp
         src/engines/xva/exposure_engine.cpp
+        src/engines/xva/cross_currency_exposure_engine.cpp
         src/engines/xva/xva_risks.cpp
         src/engines/xva/xva_market_risks.cpp
         src/risk/regulatory/sa_ccr.cpp
@@ -315,6 +317,7 @@ if(QM_BUILD_TESTS)
     tests/testExposureMetrics.cpp
     tests/testXvaIntegrals.cpp
     tests/testExposureEngine.cpp
+    tests/testCrossCurrencyExposure.cpp
     tests/testExposureRegression.cpp
     tests/testExposureScript.cpp
     tests/testCollateral.cpp

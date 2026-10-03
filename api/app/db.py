@@ -37,7 +37,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from functools import lru_cache
 from typing import Iterator, List, Optional, Sequence, Tuple
 
@@ -414,6 +414,59 @@ def dtcc_swaption_trades(underlier: str, since: date) -> List[SwaptionTrade]:
                 float(r[6]),
                 float(r[7]),
                 r[8],
+            )
+            for r in cur.fetchall()
+        ]
+
+
+@dataclass(frozen=True, slots=True)
+class FxOptionTrade:
+    report_date: date
+    trade_date: date
+    executed: Optional[datetime]
+    option_type: str  # "call" | "put", about the first currency of the pair
+    call_currency: Optional[str]
+    call_amount: Optional[float]
+    put_currency: Optional[str]
+    put_amount: Optional[float]
+    strike: float
+    expiry: date
+    premium: float
+    premium_currency: str
+
+
+def dtcc_fx_option_trades(pair: str, since: date) -> List[FxOptionTrade]:
+    """New vanilla option trades on `pair` ("EUR USD", as DTCC names it)
+    reported since `since` that carry a price: a premium in a known currency,
+    a strike, an expiry and uncapped amounts (data-ingest's dtcc-fx-options;
+    the rules are in that source's docstring)."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT report_date, COALESCE((execution_timestamp AT TIME ZONE 'UTC')::date, "
+            "report_date), execution_timestamp, option_type, call_currency, call_amount, "
+            "put_currency, put_amount, strike, expiry, premium, premium_currency "
+            "FROM fx.dtcc_options "
+            "WHERE pair = %s AND report_date >= %s "
+            "AND action_type = 'NEWT' AND event_type = 'TRAD' AND NOT notional_capped "
+            "AND premium > 0 AND premium_currency IS NOT NULL AND strike > 0 "
+            "AND expiry IS NOT NULL "
+            "ORDER BY report_date, dissemination_id",
+            (pair, since),
+        )
+        return [
+            FxOptionTrade(
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                r[4],
+                None if r[5] is None else float(r[5]),
+                r[6],
+                None if r[7] is None else float(r[7]),
+                float(r[8]),
+                r[9],
+                float(r[10]),
+                r[11],
             )
             for r in cur.fetchall()
         ]

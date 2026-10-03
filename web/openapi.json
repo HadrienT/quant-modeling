@@ -1676,6 +1676,36 @@
         "title": "ComputeDevicesResponse",
         "type": "object"
       },
+      "CorrelationEstimate": {
+        "properties": {
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "description": "Lower bound of the 95 % confidence interval",
+            "title": "Low",
+            "type": "number"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          },
+          "weeks": {
+            "description": "Weekly changes the estimate rests on",
+            "title": "Weeks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "value",
+          "low",
+          "high",
+          "weeks"
+        ],
+        "title": "CorrelationEstimate",
+        "type": "object"
+      },
       "CreditInput": {
         "properties": {
           "as_of": {
@@ -2895,6 +2925,104 @@
         "title": "FixedRateBondRequest",
         "type": "object"
       },
+      "ForeignMarket": {
+        "description": "The second currency of a two-currency netting set (lot X10).",
+        "properties": {
+          "calibration_expiry": {
+            "title": "Calibration Expiry",
+            "type": "number"
+          },
+          "correlation_domestic_fx": {
+            "$ref": "#/components/schemas/CorrelationEstimate"
+          },
+          "correlation_end": {
+            "format": "date",
+            "title": "Correlation End",
+            "type": "string"
+          },
+          "correlation_foreign_fx": {
+            "$ref": "#/components/schemas/CorrelationEstimate"
+          },
+          "correlation_rates": {
+            "$ref": "#/components/schemas/CorrelationEstimate"
+          },
+          "correlation_series": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Correlation Series",
+            "type": "array"
+          },
+          "correlation_start": {
+            "format": "date",
+            "title": "Correlation Start",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "curve_as_of": {
+            "format": "date",
+            "title": "Curve As Of",
+            "type": "string"
+          },
+          "curve_label": {
+            "title": "Curve Label",
+            "type": "string"
+          },
+          "fx_volatilities": {
+            "items": {
+              "$ref": "#/components/schemas/FxVolatilityPoint"
+            },
+            "title": "Fx Volatilities",
+            "type": "array"
+          },
+          "fx_window_start": {
+            "format": "date",
+            "title": "Fx Window Start",
+            "type": "string"
+          },
+          "hull_white": {
+            "$ref": "#/components/schemas/HullWhiteInput"
+          },
+          "spot": {
+            "description": "Domestic units per unit of foreign currency",
+            "title": "Spot",
+            "type": "number"
+          },
+          "spot_as_of": {
+            "format": "date",
+            "title": "Spot As Of",
+            "type": "string"
+          },
+          "spot_volatility": {
+            "description": "The model's volatility of the spot, calibrated on the straddles of `calibration_expiry`",
+            "title": "Spot Volatility",
+            "type": "number"
+          }
+        },
+        "required": [
+          "currency",
+          "curve_as_of",
+          "curve_label",
+          "hull_white",
+          "spot",
+          "spot_as_of",
+          "spot_volatility",
+          "calibration_expiry",
+          "fx_volatilities",
+          "fx_window_start",
+          "correlation_rates",
+          "correlation_domestic_fx",
+          "correlation_foreign_fx",
+          "correlation_start",
+          "correlation_end",
+          "correlation_series"
+        ],
+        "title": "ForeignMarket",
+        "type": "object"
+      },
       "FraInput": {
         "properties": {
           "end": {
@@ -3337,6 +3465,47 @@
           "warnings"
         ],
         "title": "FxOverviewResponse",
+        "type": "object"
+      },
+      "FxVolatilityPoint": {
+        "properties": {
+          "expiry": {
+            "title": "Expiry",
+            "type": "number"
+          },
+          "high": {
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "description": "Lower quartile",
+            "title": "Low",
+            "type": "number"
+          },
+          "market": {
+            "description": "Median at-the-money volatility of the straddles traded",
+            "title": "Market",
+            "type": "number"
+          },
+          "model": {
+            "description": "Black volatility of the model at this expiry: the market's at the calibration expiry only",
+            "title": "Model",
+            "type": "number"
+          },
+          "straddles": {
+            "title": "Straddles",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expiry",
+          "market",
+          "low",
+          "high",
+          "straddles",
+          "model"
+        ],
+        "title": "FxVolatilityPoint",
         "type": "object"
       },
       "GovernmentCurveResponse": {
@@ -10568,8 +10737,25 @@
               }
             ]
           },
+          "foreign": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ForeignMarket"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "historical": {
-            "$ref": "#/components/schemas/HistoricalDynamics"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HistoricalDynamics"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "hull_white": {
             "$ref": "#/components/schemas/HullWhiteInput"
@@ -10607,6 +10793,9 @@
               "bermudan",
               "cancellable",
               "scripted_swap",
+              "fx_forward",
+              "cross_currency",
+              "two_currencies",
               "custom"
             ],
             "title": "Id",
@@ -10758,6 +10947,9 @@
               "bermudan",
               "cancellable",
               "scripted_swap",
+              "fx_forward",
+              "cross_currency",
+              "two_currencies",
               "custom"
             ],
             "title": "Portfolio",
@@ -10905,6 +11097,9 @@
               "bermudan",
               "cancellable",
               "scripted_swap",
+              "fx_forward",
+              "cross_currency",
+              "two_currencies",
               "custom"
             ],
             "title": "Portfolio",
@@ -10915,7 +11110,25 @@
             "type": "string"
           },
           "risk": {
-            "$ref": "#/components/schemas/ExposureProfileOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExposureProfileOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risk_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Unavailable"
           },
           "seed": {
             "title": "Seed",
@@ -11042,6 +11255,9 @@
               "bermudan",
               "cancellable",
               "scripted_swap",
+              "fx_forward",
+              "cross_currency",
+              "two_currencies",
               "custom"
             ],
             "title": "Portfolio",
@@ -11163,6 +11379,9 @@
               "bermudan",
               "cancellable",
               "scripted_swap",
+              "fx_forward",
+              "cross_currency",
+              "two_currencies",
               "custom"
             ],
             "title": "Portfolio",
@@ -11245,6 +11464,11 @@
       },
       "XvaTrade": {
         "properties": {
+          "currency": {
+            "description": "The currency of the notional: the trade's own for a rate trade, the foreign one for an FX trade",
+            "title": "Currency",
+            "type": "string"
+          },
           "description": {
             "title": "Description",
             "type": "string"
@@ -11258,7 +11482,20 @@
                 "type": "null"
               }
             ],
+            "description": "The fixed rate of a swap; the delivery rate of an FX forward, in domestic units per foreign unit; the domestic coupon of a cross-currency swap",
             "title": "Fixed Rate"
+          },
+          "foreign_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The foreign coupon of a cross-currency swap",
+            "title": "Foreign Rate"
           },
           "incremental_cva": {
             "title": "Incremental Cva",
@@ -11269,7 +11506,9 @@
               "swap",
               "swaption",
               "bermudan",
-              "script"
+              "script",
+              "fx_forward",
+              "cross_currency_swap"
             ],
             "title": "Kind",
             "type": "string"
@@ -11365,6 +11604,7 @@
         "required": [
           "description",
           "kind",
+          "currency",
           "quantity",
           "payer",
           "notional",

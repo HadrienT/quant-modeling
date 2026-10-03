@@ -21,6 +21,11 @@ The rules, found on the real files (blueprint/wp/23-xva.md §13.7, issue #137):
   leg**: a call and a put with the same dates, strike, notional and premium
   on a platform other than a bilateral one count for half the premium each.
   Left alone they come out at twice the vol;
+- **a straddle reported as one product is two options**: the rows whose type
+  is neither a call nor a put (the product's own type, "Opt": the holder
+  chooses at expiry) carry the premium of a payer and a receiver, and count
+  for half of it. Left alone they come out at twice the vol too: 186 bp
+  against 94 on the EUR trades of early October 2026, 210 against 107 in USD;
 - **at the money, whatever "call" means**: the files do not say whether a
   call is a payer or a receiver swaption. A trade is kept only if the two
   readings give the same vol within `READING_TOLERANCE` — which is the case
@@ -182,7 +187,8 @@ def atm_normal_vols(
         # A few rows publish the strike as a percentage (4.9 for 0.049).
         strike = trade.strike / 100.0 if trade.strike > 0.3 else trade.strike
         forward, annuity = curve.forward_swap(expiry, int(tenor_bucket))
-        price = trade.premium / trade.notional * (0.5 if i in straddle else 1.0)
+        both_legs = i in straddle or trade.option_type == "other"
+        price = trade.premium / trade.notional * (0.5 if both_legs else 1.0)
         payer = qm.bachelier_implied_vol(True, price, forward, strike, expiry, annuity)
         receiver = qm.bachelier_implied_vol(
             False, price, forward, strike, expiry, annuity

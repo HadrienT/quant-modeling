@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from api.app import credit, db, rates_derivatives, xva
+from api.app import credit, db, rates_derivatives, xva, xva_fx
 from api.app.main import app
 from api.app.routers import xva as xva_router
 
@@ -120,6 +120,42 @@ def store(monkeypatch):
 
     state["default_rates"] = True
     monkeypatch.setattr(db, "rating_default_rates", default_rates)
+
+    def two_currency_market(as_of, usd_times, usd_dfs, usd_hull_white):
+        if not state["euro"]:
+            raise xva_fx.TwoCurrencyUnavailable("No Euribor swap curve in the store")
+        times = [1.0, 2.0, 5.0, 10.0, 30.0]
+        estimate = xva_fx.Estimate
+        return xva_fx.TwoCurrencyMarket(
+            rates=xva_fx.ForeignRates(
+                as_of,
+                "EUR Euribor, from traded prices",
+                times,
+                [math.exp(-0.035 * t) for t in times],
+                0.04,
+                0.0107,
+                4.7,
+                9,
+                91,
+            ),
+            spot=1.1225,
+            spot_as_of=as_of,
+            spot_volatility=0.069,
+            calibration_expiry=1.0,
+            fx_volatilities=[
+                xva_fx.FxVolatility(0.25, 0.061, 0.059, 0.063, 60, 0.069),
+                xva_fx.FxVolatility(1.0, 0.068, 0.067, 0.069, 73, 0.068),
+            ],
+            fx_window_start=as_of - timedelta(days=10),
+            domestic_foreign=estimate(0.72, 0.64, 0.79, 156),
+            domestic_fx=estimate(-0.14, -0.29, 0.02, 156),
+            foreign_fx=estimate(0.01, -0.15, 0.16, 156),
+            correlation_start=as_of - timedelta(days=1095),
+            correlation_end=as_of,
+        )
+
+    state["euro"] = True
+    monkeypatch.setattr(xva_fx, "market", two_currency_market)
     events = []
     monkeypatch.setattr(
         xva_router,
@@ -1069,3 +1105,124 @@ def test_sensitivities_under_a_csa_and_what_is_not_differentiated():
     assert "scripts" in refused(portfolio="custom")
     assert "initial margin" in refused(csa={"initial_margin": True})
     assert refused(paths=50_000)
+
+
+# ── Lot X10: two currencies ──────────────────────────────────────────────────
+
+
+def _peak_time(exposure: dict) -> float:
+    ee = exposure["ee"]
+    return exposure["times"][max(range(len(ee)), key=ee.__getitem__)]
+
+
+def test_an_fx_forward_is_struck_at_parity_and_its_exposure_rises_to_delivery():
+    body = run(portfolio="fx_forward")
+    (trade,) = body["trades"]
+    assert (trade["kind"], trade["currency"]) == ("fx_forward", "EUR")
+    # Covered interest parity: the euro yields less, so it is dearer forward.
+    foreign = body["market"]["foreign"]
+    assert trade["fixed_rate"] > foreign["spot"]
+    assert abs(trade["value_today"]) < 1e-6 * trade["notional"]
+    # Nothing amortises: the exposure peaks at the end, not in the first half.
+    assert _peak_time(body["exposure"]) > 0.9 * trade["maturity"]
+    assert body["adjustments"]["cva"]["value"] < 0 < body["adjustments"]["dva"]["value"]
+    # Everything in dollars, on the CPU, and it says so.
+    assert body["market"]["currency"] == "USD" and body["device"] == "cpu"
+    assert "two-currency" in body["device_reason"]
+
+
+def test_a_cross_currency_swap_has_several_times_the_exposure_of_a_rate_swap():
+    swap = run(portfolio="single_swap")
+    ccs = run(portfolio="cross_currency")
+    (trade,) = ccs["trades"]
+    assert trade["kind"] == "cross_currency_swap"
+    # Both legs at par, notionals at the spot: worth nothing today.
+    assert abs(trade["value_today"]) < 1e-6 * trade["notional"]
+    assert trade["foreign_rate"] < trade["fixed_rate"]  # euro coupon, dollar coupon
+    # A swap's exposure is a hump; this one keeps rising to the final exchange.
+    assert _peak_time(swap["exposure"]) < 5.0
+    assert _peak_time(ccs["exposure"]) > 9.0
+    assert ccs["exposure"]["epe"] > 2.0 * swap["exposure"]["epe"]
+    assert (
+        ccs["adjustments"]["cva"]["value"] < 2.0 * swap["adjustments"]["cva"]["value"]
+    )
+
+
+def test_two_currencies_say_what_they_rest_on_and_what_they_cannot_do():
+    body = run(portfolio="two_currencies")
+    assert [(t["kind"], t["currency"]) for t in body["trades"]] == [
+        ("swap", "USD"),
+        ("swap", "USD"),
+        ("swap", "EUR"),
+        ("cross_currency_swap", "EUR"),
+        ("fx_forward", "EUR"),
+    ]
+    # The euro swap is at the par rate of the euro curve, not the dollar one.
+    assert body["trades"][2]["fixed_rate"] == pytest.approx(0.0356, abs=5e-4)
+    assert all(abs(t["value_today"]) < 1e-6 * xva.NOTIONAL for t in body["trades"])
+    # Netted together: the set costs less than its trades one by one.
+    assert body["adjustments"]["cva"]["value"] > sum(
+        t["standalone_cva"] for t in body["trades"]
+    )
+    foreign = body["market"]["foreign"]
+    assert foreign["currency"] == "EUR" and foreign["hull_white"]["sigma"] == 0.0107
+    assert foreign["calibration_expiry"] == 1.0
+    assert foreign["correlation_rates"]["low"] < foreign["correlation_rates"]["value"]
+    assert any("historical estimates" in w for w in body["warnings"])
+    assert any("extrapolation" in w for w in body["warnings"])
+    assert [s["title"] for s in body["methodology"]][-3:] == [
+        "Two currencies",
+        "The volatility of the exchange rate",
+        "The correlations",
+    ]
+    # No real-world measure for three factors, and the reason is given.
+    assert body["risk"] is None and "one interest rate" in body["risk_unavailable"]
+    assert body["market"]["historical"] is None
+    # The standardised approach describes every trade.
+    assert body["capital"]["method"] == "sa_ccr"
+    assert "foreign-exchange trades" in body["capital"]["method_reason"]
+    # One currency: nothing of this, and the measure is there.
+    usd = run(portfolio="single_swap")
+    assert usd["market"]["foreign"] is None and usd["risk"] is not None
+    assert usd["risk_unavailable"] is None
+
+
+def test_two_currencies_under_a_csa_take_the_regression_margin():
+    body = run(
+        portfolio="two_currencies", csa={"initial_margin": True}, borrowing_spread=0.005
+    )
+    margin = body["initial_margin"]
+    assert margin["model"] == "regression" and "two currencies" in margin["reason"]
+    assert margin["today"] > 0 and body["adjustments"]["mva"] < 0
+    open_cva = body["adjustments_uncollateralised"]["cva"]["value"]
+    assert open_cva < body["adjustments"]["cva"]["value"] < 0
+
+
+def test_two_currencies_refuse_what_the_lot_does_not_cover(store):
+    def refused(**body) -> str:
+        r = client.post("/api/xva/netting-set", json={"paths": PATHS, **body})
+        assert r.status_code == 422, r.text
+        return r.json()["message"]
+
+    assert "runs on the CPU" in refused(portfolio="cross_currency", device="gpu")
+    assert "one currency" in refused(
+        portfolio="fx_forward",
+        csa={"initial_margin": True, "initial_margin_model": "simm"},
+    )
+    script = {"label": "A script", "script": "pay 1 on 2027-09-30", "quantity": 1.0}
+    assert "valued by regression" in refused(portfolio="fx_forward", scripts=[script])
+    r = client.post("/api/xva/sensitivities", json={"portfolio": "cross_currency"})
+    assert r.status_code == 422 and "one currency" in r.json()["message"]
+    # A euro market that is not in the store is a 503, not a fallback.
+    store["euro"] = False
+    r = client.post("/api/xva/netting-set", json={"portfolio": "fx_forward"})
+    assert r.status_code == 503 and "Euribor" in r.json()["message"]
+
+
+def test_the_audit_record_names_the_inputs_of_both_currencies(store):
+    run(portfolio="cross_currency")
+    _, payload = store["events"][-1]
+    names = [m.name for m in payload.market_inputs]
+    assert {"sofr_swap_curve", "euribor_swap_curve", "fx_spot:EURUSD"} <= set(names)
+    assert "fx_volatility:EURUSD" in names and "correlations:USD_EUR_EURUSD" in names
+    assert not any(n.startswith("rate_history") for n in names)

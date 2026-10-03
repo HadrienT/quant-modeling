@@ -109,7 +109,12 @@ export const handlers = [
 	// request asks for. Before the catch-all pricing handler.
 	http.get("*/api/xva/portfolios", () => HttpResponse.json(xva.portfolios)),
 	http.post("*/api/xva/netting-set", async ({ request }) => {
-		const body = (await request.json()) as { csa?: unknown };
+		const body = (await request.json()) as {
+			csa?: unknown;
+			portfolio?: string;
+		};
+		if (body.portfolio === "cross_currency")
+			return HttpResponse.json(xva.cross_currency);
 		return HttpResponse.json(body.csa ? xva.balanced_csa : xva.single_swap);
 	}),
 	http.post("*/api/xva/sensitivities", () =>

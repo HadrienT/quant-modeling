@@ -2313,6 +2313,23 @@ export interface components {
              */
             gpus?: string[];
         };
+        /** CorrelationEstimate */
+        CorrelationEstimate: {
+            /** High */
+            high: number;
+            /**
+             * Low
+             * @description Lower bound of the 95 % confidence interval
+             */
+            low: number;
+            /** Value */
+            value: number;
+            /**
+             * Weeks
+             * @description Weekly changes the estimate rests on
+             */
+            weeks: number;
+        };
         /** CreditInput */
         CreditInput: {
             /**
@@ -2863,6 +2880,61 @@ export interface components {
             /** Rate */
             rate: number;
         };
+        /**
+         * ForeignMarket
+         * @description The second currency of a two-currency netting set (lot X10).
+         */
+        ForeignMarket: {
+            /** Calibration Expiry */
+            calibration_expiry: number;
+            correlation_domestic_fx: components["schemas"]["CorrelationEstimate"];
+            /**
+             * Correlation End
+             * Format: date
+             */
+            correlation_end: string;
+            correlation_foreign_fx: components["schemas"]["CorrelationEstimate"];
+            correlation_rates: components["schemas"]["CorrelationEstimate"];
+            /** Correlation Series */
+            correlation_series: string[];
+            /**
+             * Correlation Start
+             * Format: date
+             */
+            correlation_start: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Curve As Of
+             * Format: date
+             */
+            curve_as_of: string;
+            /** Curve Label */
+            curve_label: string;
+            /** Fx Volatilities */
+            fx_volatilities: components["schemas"]["FxVolatilityPoint"][];
+            /**
+             * Fx Window Start
+             * Format: date
+             */
+            fx_window_start: string;
+            hull_white: components["schemas"]["HullWhiteInput"];
+            /**
+             * Spot
+             * @description Domestic units per unit of foreign currency
+             */
+            spot: number;
+            /**
+             * Spot As Of
+             * Format: date
+             */
+            spot_as_of: string;
+            /**
+             * Spot Volatility
+             * @description The model's volatility of the spot, calibrated on the straddles of `calibration_expiry`
+             */
+            spot_volatility: number;
+        };
         /** FraInput */
         FraInput: {
             /** End */
@@ -3061,6 +3133,30 @@ export interface components {
             spot_date: string;
             /** Warnings */
             warnings: string[];
+        };
+        /** FxVolatilityPoint */
+        FxVolatilityPoint: {
+            /** Expiry */
+            expiry: number;
+            /** High */
+            high: number;
+            /**
+             * Low
+             * @description Lower quartile
+             */
+            low: number;
+            /**
+             * Market
+             * @description Median at-the-money volatility of the straddles traded
+             */
+            market: number;
+            /**
+             * Model
+             * @description Black volatility of the model at this expiry: the market's at the calibration expiry only
+             */
+            model: number;
+            /** Straddles */
+            straddles: number;
         };
         /** GovernmentCurveResponse */
         GovernmentCurveResponse: {
@@ -6239,7 +6335,8 @@ export interface components {
             /** Curve Label */
             curve_label: string;
             default_rate?: components["schemas"]["HistoricalDefaultRate"] | null;
-            historical: components["schemas"]["HistoricalDynamics"];
+            foreign?: components["schemas"]["ForeignMarket"] | null;
+            historical: components["schemas"]["HistoricalDynamics"] | null;
             hull_white: components["schemas"]["HullWhiteInput"];
             own: components["schemas"]["CreditInput"];
             /** Recovery */
@@ -6251,7 +6348,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
+            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
             /** Label */
             label: string;
             /** Lesson */
@@ -6316,7 +6413,7 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
             /**
              * Recovery
              * @default 0.4
@@ -6382,10 +6479,12 @@ export interface components {
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
             /** Portfolio Label */
             portfolio_label: string;
-            risk: components["schemas"]["ExposureProfileOut"];
+            risk: components["schemas"]["ExposureProfileOut"] | null;
+            /** Risk Unavailable */
+            risk_unavailable?: string | null;
             /** Seed */
             seed: number;
             /** Trades */
@@ -6436,7 +6535,7 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
             /**
              * Recovery
              * @default 0.4
@@ -6500,7 +6599,7 @@ export interface components {
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
             /** Portfolio Label */
             portfolio_label: string;
             sa_cva: components["schemas"]["SaCvaOut"];
@@ -6527,17 +6626,30 @@ export interface components {
         };
         /** XvaTrade */
         XvaTrade: {
+            /**
+             * Currency
+             * @description The currency of the notional: the trade's own for a rate trade, the foreign one for an FX trade
+             */
+            currency: string;
             /** Description */
             description: string;
-            /** Fixed Rate */
+            /**
+             * Fixed Rate
+             * @description The fixed rate of a swap; the delivery rate of an FX forward, in domestic units per foreign unit; the domestic coupon of a cross-currency swap
+             */
             fixed_rate: number | null;
+            /**
+             * Foreign Rate
+             * @description The foreign coupon of a cross-currency swap
+             */
+            foreign_rate?: number | null;
             /** Incremental Cva */
             incremental_cva: number;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "swap" | "swaption" | "bermudan" | "script";
+            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap";
             /**
              * Marginal Cva
              * @description Euler share of the CVA; none under a CSA

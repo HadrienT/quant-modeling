@@ -21,6 +21,9 @@ PortfolioId = Literal[
     "bermudan",
     "cancellable",
     "scripted_swap",
+    "fx_forward",
+    "cross_currency",
+    "two_currencies",
     "custom",
 ]
 
@@ -178,12 +181,25 @@ class XvaRequest(BaseModel):
 
 class XvaTrade(BaseModel):
     description: str
-    kind: Literal["swap", "swaption", "bermudan", "script"]
+    kind: Literal[
+        "swap", "swaption", "bermudan", "script", "fx_forward", "cross_currency_swap"
+    ]
+    currency: str = Field(
+        description="The currency of the notional: the trade's own for a rate "
+        "trade, the foreign one for an FX trade"
+    )
     quantity: float = Field(description="-1 for a sold option")
     #: The terms of a swap or a swaption; a script has only its text.
     payer: Optional[bool]
     notional: Optional[float]
-    fixed_rate: Optional[float]
+    fixed_rate: Optional[float] = Field(
+        description="The fixed rate of a swap; the delivery rate of an FX forward, "
+        "in domestic units per foreign unit; the domestic coupon of a "
+        "cross-currency swap"
+    )
+    foreign_rate: Optional[float] = Field(
+        default=None, description="The foreign coupon of a cross-currency swap"
+    )
     start: Optional[float] = Field(
         description="Start of a swap, expiry of a swaption, first exercise date "
         "of a Bermudan (then exercisable each year)"
@@ -369,6 +385,52 @@ class HistoricalDefaultRate(BaseModel):
     rate: float = Field(description="Average one-year default rate, a decimal")
 
 
+class CorrelationEstimate(BaseModel):
+    value: float
+    low: float = Field(description="Lower bound of the 95 % confidence interval")
+    high: float
+    weeks: int = Field(description="Weekly changes the estimate rests on")
+
+
+class FxVolatilityPoint(BaseModel):
+    expiry: float
+    market: float = Field(
+        description="Median at-the-money volatility of the straddles traded"
+    )
+    low: float = Field(description="Lower quartile")
+    high: float
+    straddles: int
+    model: float = Field(
+        description="Black volatility of the model at this expiry: the market's "
+        "at the calibration expiry only"
+    )
+
+
+class ForeignMarket(BaseModel):
+    """The second currency of a two-currency netting set (lot X10)."""
+
+    currency: str
+    curve_as_of: date
+    curve_label: str
+    hull_white: HullWhiteInput
+    spot: float = Field(description="Domestic units per unit of foreign currency")
+    spot_as_of: date
+    spot_volatility: float = Field(
+        description="The model's volatility of the spot, calibrated on the "
+        "straddles of `calibration_expiry`"
+    )
+    calibration_expiry: float
+    fx_volatilities: List[FxVolatilityPoint]
+    fx_window_start: date
+    #: Historical estimates on weekly changes: no free market price implies them.
+    correlation_rates: CorrelationEstimate
+    correlation_domestic_fx: CorrelationEstimate
+    correlation_foreign_fx: CorrelationEstimate
+    correlation_start: date
+    correlation_end: date
+    correlation_series: List[str]
+
+
 class XvaMarket(BaseModel):
     currency: str
     curve_as_of: date
@@ -377,7 +439,9 @@ class XvaMarket(BaseModel):
     counterparty: CreditInput
     own: CreditInput
     recovery: float
-    historical: HistoricalDynamics
+    #: None with two currencies: the historical measure covers one rate.
+    historical: Optional[HistoricalDynamics]
+    foreign: Optional[ForeignMarket] = None
     #: What the capital's PD rests on; None when the request gave its own.
     default_rate: Optional[HistoricalDefaultRate] = None
 
@@ -392,8 +456,10 @@ class XvaResponse(BaseModel):
     exposure: PricingExposure
     #: The same netting set on the same paths without the CSA (CSA only).
     exposure_uncollateralised: Optional[PricingExposure]
-    #: Real-world scenarios: the risk measures (PFE, EPE, EEPE).
-    risk: ExposureProfileOut
+    #: Real-world scenarios: the risk measures (PFE, EPE, EEPE). None when the
+    #: historical measure does not cover the netting set, with the reason.
+    risk: Optional[ExposureProfileOut]
+    risk_unavailable: Optional[str] = None
     adjustments: Adjustments
     adjustments_uncollateralised: Optional[Adjustments]
     initial_margin: Optional[InitialMarginOut]
