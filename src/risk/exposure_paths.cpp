@@ -34,7 +34,8 @@ namespace quantModeling
 
     ExposureStatistics exposure_statistics(const ExposurePaths &paths,
                                            const std::vector<std::size_t> &trades,
-                                           Real pfe_confidence)
+                                           Real pfe_confidence,
+                                           const std::vector<Real> &quantile_levels)
     {
         const std::size_t n = paths.dates();
         const std::size_t N = paths.paths;
@@ -44,6 +45,10 @@ namespace quantModeling
             throw InvalidInput("exposure statistics: inconsistent simulation sizes");
         if (!(pfe_confidence > 0.0 && pfe_confidence < 1.0))
             throw InvalidInput("PFE confidence level must be in (0, 1)");
+        for (std::size_t k = 0; k < quantile_levels.size(); ++k)
+            if (!(quantile_levels[k] > 0.0 && quantile_levels[k] < 1.0) ||
+                (k > 0 && !(quantile_levels[k] > quantile_levels[k - 1])))
+                throw InvalidInput("quantile levels must be in (0, 1) and increasing");
 
         ExposureStatistics s;
         s.times = paths.times;
@@ -87,6 +92,8 @@ namespace quantModeling
         s.ene.resize(n);
         s.efv.resize(n);
         s.pfe.resize(n);
+        s.quantile_levels = quantile_levels;
+        s.value_quantiles.assign(quantile_levels.size(), std::vector<Real>(n));
         s.discounted_ee_contributions.assign(s.trades.size(), std::vector<Real>(n, 0.0));
 
         std::vector<std::pair<Real, Real>> order(N);
@@ -146,6 +153,20 @@ namespace quantModeling
                 }
             }
             s.pfe[i] = std::max(quantile, 0.0);
+
+            // The other quantiles, off the same sorted values.
+            cumulative = 0.0;
+            std::size_t level = 0;
+            for (const auto &[value, weight] : order)
+            {
+                cumulative += weight;
+                while (level < quantile_levels.size() && cumulative >= quantile_levels[level] * weights)
+                    s.value_quantiles[level++][i] = value;
+                if (level == quantile_levels.size())
+                    break;
+            }
+            for (; level < quantile_levels.size(); ++level)
+                s.value_quantiles[level][i] = order.back().first;
         }
 
         s.epe = expected_positive_exposure(s.times, s.ee);

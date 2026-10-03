@@ -1,6 +1,7 @@
 import { HttpResponse, http } from "msw";
 import * as fx from "./fixtures";
 import rates from "./rates.fixtures.json";
+import xva from "./xva.fixtures.json";
 
 /**
  * MSW handlers — serve the SAME fixtures to Vitest, Storybook and offline dev
@@ -106,6 +107,15 @@ export const handlers = [
 
 	// Rates: real responses of the API (dumped once), keyed by what the
 	// request asks for. Before the catch-all pricing handler.
+	http.get("*/api/xva/portfolios", () => HttpResponse.json(xva.portfolios)),
+	http.post("*/api/xva/netting-set", async ({ request }) => {
+		const body = (await request.json()) as { csa?: unknown };
+		return HttpResponse.json(body.csa ? xva.balanced_csa : xva.single_swap);
+	}),
+	http.post("*/api/xva/sensitivities", () =>
+		HttpResponse.json(xva.sensitivities),
+	),
+
 	http.get("*/api/rates/quotes/:set", ({ params }) =>
 		HttpResponse.json(rates.quotes[params.set as keyof typeof rates.quotes]),
 	),

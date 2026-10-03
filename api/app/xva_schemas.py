@@ -219,6 +219,13 @@ class PricingExposure(ExposureProfileOut):
     discounted_ee: List[float]
     discounted_ene: List[float]
     discounted_ee_error: List[float]
+    quantile_levels: List[float] = Field(
+        description="Levels of the quantiles of the netting set's value"
+    )
+    value_quantiles: List[List[float]] = Field(
+        description="value_quantiles[k][i]: the quantile quantile_levels[k] of "
+        "the value at times[i] — the distribution the profiles summarise"
+    )
 
 
 class Adjustments(BaseModel):

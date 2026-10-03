@@ -912,6 +912,8 @@ namespace
         out["efv"] = s.efv;
         out["pfe"] = s.pfe;
         out["pfe_confidence"] = s.pfe_confidence;
+        out["quantile_levels"] = s.quantile_levels;
+        out["value_quantiles"] = s.value_quantiles;
         out["discounted_ee"] = s.discounted_ee;
         out["discounted_ene"] = s.discounted_ene;
         out["discounted_ee_error"] = s.discounted_ee_error;
@@ -1144,6 +1146,10 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     inputs.borrowing_spread = borrowing_spread;
     inputs.lending_spread = lending_spread;
     inputs.pfe_confidence = pfe_confidence;
+    // The distribution of the value, for the envelope and the surface of the
+    // page: fifteen quantiles from the sort the PFE already does.
+    inputs.quantile_levels = {0.01, 0.025, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50,
+                              0.60, 0.70, 0.80, 0.90, 0.95, 0.975, 0.99};
 
     qm_::ExposureSimulationSettings settings;
     settings.paths = paths;

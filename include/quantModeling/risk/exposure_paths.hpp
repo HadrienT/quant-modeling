@@ -147,6 +147,16 @@ namespace quantModeling
         std::vector<Real> pfe;
         Real pfe_confidence = 0.95;
 
+        /**
+         * @brief Quantiles of the netting set's value at each date, under
+         *        the same measure as the PFE: value_quantiles[k][i] is the
+         *        quantile `quantile_levels[k]` of V(t_i). The distribution
+         *        the profiles summarise — the envelope of a chart, the
+         *        surface of a 3D view. Empty unless levels were asked for.
+         */
+        std::vector<Real> quantile_levels;
+        std::vector<std::vector<Real>> value_quantiles;
+
         /// EPE and Effective EPE of the undiscounted EE profile.
         Real epe = 0.0;
         Real eepe = 0.0;
@@ -179,12 +189,15 @@ namespace quantModeling
      *
      * @param trades         indices of the netted trades; empty means all.
      * @param pfe_confidence quantile of the PFE, in (0, 1).
+     * @param quantile_levels more quantiles of V(t) to report, each in (0, 1),
+     *        increasing; they come out of the sort the PFE already pays for.
      * @throws InvalidInput on an empty simulation, an index out of range or
      *         a repeated index.
      */
     ExposureStatistics exposure_statistics(const ExposurePaths &paths,
                                            const std::vector<std::size_t> &trades = {},
-                                           Real pfe_confidence = 0.95);
+                                           Real pfe_confidence = 0.95,
+                                           const std::vector<Real> &quantile_levels = {});
 
     /**
      * @brief The discounted profiles EE* and ENE* of the netted trades, and

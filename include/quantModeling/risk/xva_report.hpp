@@ -51,6 +51,9 @@ namespace quantModeling
         Real lending_spread = 0.0;
 
         Real pfe_confidence = 0.95;
+        /// More quantiles of the netting set's value to report with the
+        /// exposure (ExposureStatistics::value_quantiles).
+        std::vector<Real> quantile_levels;
 
         /**
          * @brief Wrong-way risk (lot X6, risk/wrong_way_risk.hpp): the

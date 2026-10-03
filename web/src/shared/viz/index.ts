@@ -16,6 +16,11 @@ export {
 export { AllocationChart, type AllocationRow } from "./charts/AllocationChart";
 export { DistributionChart } from "./charts/DistributionChart";
 export { RatesCurveChart, type RateSeries } from "./charts/RatesCurveChart";
+export {
+	ProfileChart,
+	type ProfileBand,
+	type ProfileLine,
+} from "./charts/ProfileChart";
 export { SmileChart, type SmileSlice } from "./charts/SmileChart";
 export {
 	AtmTermStructureChart,

@@ -49,6 +49,13 @@ export const queryKeys = {
 		structural: (ticker: string) => ["credit", "structural", ticker] as const,
 	},
 
+	xva: {
+		portfolios: () => ["xva", "portfolios"] as const,
+		nettingSet: (request: unknown) => ["xva", "netting-set", request] as const,
+		sensitivities: (request: unknown) =>
+			["xva", "sensitivities", request] as const,
+	},
+
 	rates: {
 		quotes: (setId: string) => ["rates", "quotes", setId] as const,
 		curves: (quotes: unknown) => ["rates", "curves", quotes] as const,
