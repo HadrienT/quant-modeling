@@ -920,6 +920,9 @@ namespace
         out["discounted_ene_error"] = s.discounted_ene_error;
         out["epe"] = s.epe;
         out["eepe"] = s.eepe;
+        out["epe_error"] = s.epe_error;
+        out["eepe_error"] = s.eepe_error;
+        out["pfe_error"] = s.pfe_error;
         out["value_today"] = s.value_today;
         return out;
     }
@@ -948,6 +951,13 @@ namespace
         out["colva"] = r.colva;
         out["mva"] = r.mva;
         out["kva"] = r.kva;
+        // Monte-Carlo standard errors (risk/xva_report.hpp).
+        out["fca_error"] = r.fca_error;
+        out["fba_error"] = r.fba_error;
+        out["fva_error"] = r.fva_error;
+        out["colva_error"] = r.colva_error;
+        out["mva_error"] = r.mva_error;
+        out["kva_error"] = r.kva_error;
         if (r.expected_initial_margin.empty())
             out["initial_margin"] = py::none();
         else

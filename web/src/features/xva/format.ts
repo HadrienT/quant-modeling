@@ -24,9 +24,10 @@ export function amount(v: number | null | undefined): string {
 	return v == null || Number.isNaN(v) ? dash : INT.format(v);
 }
 
-/** A Monte-Carlo standard error, next to the figure it qualifies. */
+/** A Monte-Carlo standard error, next to the figure it qualifies; nothing
+ * for a figure that is not simulated (an adjustment that is exactly zero). */
 export function plusMinus(error: number | null | undefined): string {
-	return error == null ? "" : `± ${INT.format(error)}`;
+	return error ? `± ${INT.format(error)}` : "";
 }
 
 /** A sensitivity per basis point of the quote, with one decimal. */

@@ -115,13 +115,22 @@ describe("adjustments", () => {
 		wrap(<AdjustmentsPanel data={swap} />);
 		const cva = screen.getByRole("row", { name: /^CVA/ });
 		// A cost: negative, with a true minus sign; the error next to it.
-		expect(cva).toHaveTextContent("−23,686");
-		expect(cva).toHaveTextContent("± 664");
+		expect(cva).toHaveTextContent("−24,664");
+		expect(cva).toHaveTextContent("± 681");
 		expect(screen.getByRole("row", { name: /^DVA/ })).toHaveTextContent(
-			"+16,814",
+			"+16,863",
 		);
-		expect(screen.getByRole("row", { name: /^KVA/ })).toHaveTextContent(
-			"−86,948",
+		// Every simulated adjustment carries its error: the funding ones (the
+		// error of the sum, smaller than the sum of the two) and the capital.
+		const fva = screen.getByRole("row", { name: /^FVA/ });
+		expect(fva).toHaveTextContent("−90");
+		expect(fva).toHaveTextContent("± 539");
+		const kva = screen.getByRole("row", { name: /^KVA/ });
+		expect(kva).toHaveTextContent("−76,145");
+		expect(kva).toHaveTextContent("± 1,741");
+		// No collateral, no margin: nothing simulated, no error to show.
+		expect(screen.getByRole("row", { name: /^ColVA/ })).not.toHaveTextContent(
+			"±",
 		);
 		// No collateral: one column, and the convention is stated.
 		expect(screen.queryByText("Without collateral")).not.toBeInTheDocument();
@@ -158,7 +167,7 @@ describe("adjustments", () => {
 		wrap(<TradesTable data={swap} />);
 		const row = screen.getByRole("row", { name: /Payer swap 10Y at par/ });
 		// Alone, the three are the same number: the CVA of the set.
-		expect(within(row).getAllByText("−23,686").length).toBe(3);
+		expect(within(row).getAllByText("−24,664").length).toBe(3);
 	});
 });
 
@@ -192,6 +201,13 @@ describe("exposure", () => {
 		const fan = "1–99 %, 5–95 % and 20–80 % of the value";
 		expect(screen.getByText(fan)).toBeInTheDocument();
 		expect(screen.getByText(amount(swap.exposure.epe))).toBeInTheDocument();
+		// EPE, Effective EPE and the peak PFE with their errors.
+		expect(screen.getByText("± 9,177")).toBeInTheDocument();
+		expect(screen.getByText("± 6,633")).toBeInTheDocument();
+		const peak = swap.exposure.pfe.indexOf(Math.max(...swap.exposure.pfe));
+		expect(
+			screen.getByText(`± ${amount(swap.exposure.pfe_error[peak])}`),
+		).toBeInTheDocument();
 		// The distribution behind the profiles, scenario by date (jsdom has no
 		// WebGL: the surface degrades to its heatmap, the title stays).
 		const surface = /Value of the netting set: scenario × time/;
@@ -202,6 +218,7 @@ describe("exposure", () => {
 		// Other scenarios, another exposure; the fan is the pricing measure's.
 		expect(swap.risk.epe).not.toBe(swap.exposure.epe);
 		expect(screen.getByText(amount(swap.risk.epe))).toBeInTheDocument();
+		expect(screen.getByText("± 1,910")).toBeInTheDocument();
 		expect(screen.queryByText(fan)).not.toBeInTheDocument();
 		expect(screen.queryByText(surface)).not.toBeInTheDocument();
 	});

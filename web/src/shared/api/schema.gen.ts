@@ -1533,6 +1533,8 @@ export interface components {
              * @description Rate paid on the collateral; 0 without a CSA
              */
             colva: number;
+            /** Colva Error */
+            colva_error: number;
             cva: components["schemas"]["Estimate"];
             /** @description CVA with the counterparty's default independent of the exposure; equal to cva unless wrong_way_risk is set */
             cva_independent: components["schemas"]["Estimate"];
@@ -1547,18 +1549,40 @@ export interface components {
             dva_independent: components["schemas"]["Estimate"];
             /** Fba */
             fba: number;
+            /** Fba Error */
+            fba_error: number;
             /** Fca */
             fca: number;
+            /**
+             * Fca Error
+             * @description Monte-Carlo standard error of the FCA, path by path
+             */
+            fca_error: number;
+            /**
+             * Fva Error
+             * @description Standard error of FCA + FBA: less than the sum of the two, which come from opposite scenarios
+             */
+            fva_error: number;
             /**
              * Kva
              * @description Cost of the regulatory capital held
              */
             kva: number;
             /**
+             * Kva Error
+             * @description Standard error of the KVA, by batch means: the capital is not an average over paths
+             */
+            kva_error: number;
+            /**
              * Mva
              * @description Funding of the initial margin posted
              */
             mva: number;
+            /**
+             * Mva Error
+             * @description Standard error of the MVA given the margin model: without the noise of the regression that fitted it
+             */
+            mva_error: number;
         };
         /** AllocationRow */
         AllocationRow: {
@@ -2702,12 +2726,27 @@ export interface components {
             ee: number[];
             /** Eepe */
             eepe: number;
+            /**
+             * Eepe Error
+             * @description Monte-Carlo standard error of the Effective EPE, by batch means
+             */
+            eepe_error: number;
             /** Ene */
             ene: number[];
             /** Epe */
             epe: number;
+            /**
+             * Epe Error
+             * @description Monte-Carlo standard error of the EPE, by batch means
+             */
+            epe_error: number;
             /** Pfe */
             pfe: number[];
+            /**
+             * Pfe Error
+             * @description Standard error of the PFE at each date, from the order statistics around the quantile
+             */
+            pfe_error: number[];
             /** Times */
             times: number[];
         };
@@ -4215,12 +4254,27 @@ export interface components {
             ee: number[];
             /** Eepe */
             eepe: number;
+            /**
+             * Eepe Error
+             * @description Monte-Carlo standard error of the Effective EPE, by batch means
+             */
+            eepe_error: number;
             /** Ene */
             ene: number[];
             /** Epe */
             epe: number;
+            /**
+             * Epe Error
+             * @description Monte-Carlo standard error of the EPE, by batch means
+             */
+            epe_error: number;
             /** Pfe */
             pfe: number[];
+            /**
+             * Pfe Error
+             * @description Standard error of the PFE at each date, from the order statistics around the quantile
+             */
+            pfe_error: number[];
             /**
              * Quantile Levels
              * @description Levels of the quantiles of the netting set's value

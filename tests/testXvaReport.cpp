@@ -5,6 +5,7 @@
 #include "quantModeling/risk/xva.hpp"
 #include "quantModeling/risk/xva_report.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -393,6 +394,119 @@ namespace quantModeling
         open = inputs();
         open.cost_of_capital = -0.1;
         EXPECT_THROW(xva_report(book(m, 500), open), InvalidInput);
+    }
+
+    // ── Lot X9: every adjustment with its Monte-Carlo error ──────────────────
+
+    namespace
+    {
+        struct Dispersion
+        {
+            std::vector<Real> values;
+            Real reported = 0.0;
+            void add(Real value, Real error)
+            {
+                values.push_back(value);
+                reported += error;
+            }
+            /// Standard deviation between the runs over the mean reported error.
+            Real ratio() const
+            {
+                const Real count = static_cast<Real>(values.size());
+                Real mean = 0.0, variance = 0.0;
+                for (const Real v : values)
+                    mean += v / count;
+                for (const Real v : values)
+                    variance += (v - mean) * (v - mean) / (count - 1.0);
+                return std::sqrt(variance) / (reported / count);
+            }
+        };
+    } // namespace
+
+    TEST(XvaReport, TheErrorOfEachAdjustmentIsItsDispersionBetweenSeeds)
+    {
+        const HullWhiteCurveModel m = model();
+        // Uncollateralised: funding both ways, capital by both methods.
+        XvaInputs open = inputs();
+        open.borrowing_spread = 0.008;
+        open.lending_spread = 0.003;
+        CapitalInputs capital;
+        capital.trades = book_trades();
+        capital.pd = 0.02;
+        open.capital = capital;
+        XvaInputs internal = open;
+        internal.capital->method = ExposureMethod::InternalModel;
+        // Under a CSA that pays 20 bp over the discount rate, with initial
+        // margin.
+        XvaInputs margined = margined_inputs();
+        margined.collateral_spread = 0.002;
+        margined.initial_margin = DimSettings{};
+        margined.initial_margin_spread = 0.006;
+
+        Dispersion fca, fba, fva, kva, kva_internal, epe, eepe, pfe, colva, mva;
+        const std::size_t runs = 24;
+        std::size_t peak = 0;
+        for (std::uint64_t seed = 1; seed <= runs; ++seed)
+        {
+            const ExposurePaths paths = book(m, 2000, 1.0, seed);
+            const XvaReport r = xva_report(paths, open);
+            fca.add(r.fca, r.fca_error);
+            fba.add(r.fba, r.fba_error);
+            fva.add(r.fca + r.fba, r.fva_error);
+            kva.add(r.kva, r.kva_error);
+            epe.add(r.exposure.epe, r.exposure.epe_error);
+            eepe.add(r.exposure.eepe, r.exposure.eepe_error);
+            if (seed == 1)
+                peak = static_cast<std::size_t>(
+                    std::max_element(r.exposure.pfe.begin(), r.exposure.pfe.end()) -
+                    r.exposure.pfe.begin());
+            pfe.add(r.exposure.pfe[peak], r.exposure.pfe_error[peak]);
+            const XvaReport i = xva_report(paths, internal);
+            kva_internal.add(i.kva, i.kva_error);
+
+            const XvaReport c = xva_report(book(m, 2000, 1.0, seed, kTenDays), margined);
+            colva.add(c.colva, c.colva_error);
+            mva.add(c.mva, c.mva_error);
+        }
+        // Measured over forty runs: every ratio between 0.91 and 1.06, the
+        // MVA's 1.13. Twenty-four give a standard deviation to about 15 %; the batch
+        // errors (EPE, Effective EPE, KVA) are themselves estimates.
+        for (const Dispersion *d : {&fca, &fba, &fva, &colva})
+        {
+            EXPECT_GT(d->ratio(), 0.7);
+            EXPECT_LT(d->ratio(), 1.4);
+        }
+        for (const Dispersion *d : {&kva, &kva_internal, &epe, &eepe, &pfe})
+        {
+            EXPECT_GT(d->ratio(), 0.6);
+            EXPECT_LT(d->ratio(), 1.6);
+        }
+        // The MVA's error is conditional on the fitted margin model: between
+        // seeds the regression moves too, and the dispersion is larger.
+        EXPECT_GT(mva.ratio(), 0.7);
+        EXPECT_LT(mva.ratio(), 1.8);
+        // The error of the sum is not the sum of the errors: the cost and
+        // the benefit come from opposite scenarios.
+        EXPECT_LT(fva.reported, fca.reported + fba.reported);
+    }
+
+    TEST(XvaReport, NoSpreadNoErrorAndFourTimesThePathsHalveIt)
+    {
+        const HullWhiteCurveModel m = model();
+        XvaInputs in = inputs();
+        const XvaReport none = xva_report(book(m, 2000), in);
+        EXPECT_EQ(none.fca_error, 0.0);
+        EXPECT_EQ(none.fba_error, 0.0);
+        EXPECT_EQ(none.colva_error, 0.0);
+        EXPECT_EQ(none.mva_error, 0.0);
+        EXPECT_EQ(none.kva_error, 0.0);
+        in.borrowing_spread = in.lending_spread = 0.005;
+        const XvaReport small = xva_report(book(m, 4000), in);
+        const XvaReport large = xva_report(book(m, 16000), in);
+        EXPECT_NEAR(small.fca_error / large.fca_error, 2.0, 0.15);
+        EXPECT_NEAR(small.exposure.pfe_error[20] / large.exposure.pfe_error[20], 2.0, 0.5);
+        // Too few paths for two batches: no batch error, and no crash.
+        EXPECT_EQ(xva_report(book(m, 12), in).exposure.epe_error, 0.0);
     }
 
     // ── Lot X5b: the margin from SIMM ────────────────────────────────────────

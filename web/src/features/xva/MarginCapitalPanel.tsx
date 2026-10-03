@@ -2,7 +2,7 @@ import type { XvaResponse } from "@/shared/api";
 import { Badge } from "@/shared/ui";
 import { ProfileChart } from "@/shared/viz";
 import { Explained, Figure } from "./Explained";
-import { amount, pct, signed } from "./format";
+import { amount, pct, plusMinus, signed } from "./format";
 import { GREGORY } from "./texts";
 
 const METHOD: Record<string, string> = {
@@ -35,7 +35,11 @@ export function MarginCapitalPanel({ data }: { data: XvaResponse }) {
 					<p className="text-sm text-ink-secondary">{im.reason}</p>
 					<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
 						<Figure label="Margin today" value={amount(im.today)} />
-						<Figure label="MVA" value={signed(data.adjustments.mva)} />
+						<Figure
+							label="MVA"
+							value={signed(data.adjustments.mva)}
+							note={plusMinus(data.adjustments.mva_error)}
+						/>
 						{im.simm_today && (
 							<>
 								<Figure
@@ -86,7 +90,7 @@ export function MarginCapitalPanel({ data }: { data: XvaResponse }) {
 					<Figure
 						label="KVA"
 						value={signed(data.adjustments.kva)}
-						note={`at ${pct(k.cost_of_capital, 0)} a year`}
+						note={`${plusMinus(data.adjustments.kva_error)} · at ${pct(k.cost_of_capital, 0)} a year`}
 					/>
 				</div>
 				<p className="text-xs text-ink-muted">{k.pd_reason}</p>

@@ -471,7 +471,8 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
 
 
 def _profile(e: dict) -> dict:
-    return {k: e[k] for k in ("times", "ee", "ene", "pfe", "epe", "eepe")}
+    keys = ("times", "ee", "ene", "pfe", "epe", "eepe")
+    return {k: e[k] for k in keys + ("epe_error", "eepe_error", "pfe_error")}
 
 
 def _pricing_exposure(e: dict) -> PricingExposure:
@@ -497,6 +498,12 @@ def _adjustments(r: dict) -> Adjustments:
         colva=r["colva"],
         mva=r["mva"],
         kva=r["kva"],
+        fca_error=r["fca_error"],
+        fba_error=r["fba_error"],
+        fva_error=r["fva_error"],
+        colva_error=r["colva_error"],
+        mva_error=r["mva_error"],
+        kva_error=r["kva_error"],
         cva_rule_of_thumb=r["cva_rule_of_thumb"],
     )
 

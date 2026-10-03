@@ -211,6 +211,16 @@ class ExposureProfileOut(BaseModel):
     pfe: List[float]
     epe: float
     eepe: float
+    epe_error: float = Field(
+        description="Monte-Carlo standard error of the EPE, by batch means"
+    )
+    eepe_error: float = Field(
+        description="Monte-Carlo standard error of the Effective EPE, by batch means"
+    )
+    pfe_error: List[float] = Field(
+        description="Standard error of the PFE at each date, from the order "
+        "statistics around the quantile"
+    )
 
 
 class PricingExposure(ExposureProfileOut):
@@ -242,6 +252,23 @@ class Adjustments(BaseModel):
     colva: float = Field(description="Rate paid on the collateral; 0 without a CSA")
     mva: float = Field(description="Funding of the initial margin posted")
     kva: float = Field(description="Cost of the regulatory capital held")
+    fca_error: float = Field(
+        description="Monte-Carlo standard error of the FCA, path by path"
+    )
+    fba_error: float
+    fva_error: float = Field(
+        description="Standard error of FCA + FBA: less than the sum of the two, "
+        "which come from opposite scenarios"
+    )
+    colva_error: float
+    mva_error: float = Field(
+        description="Standard error of the MVA given the margin model: without "
+        "the noise of the regression that fitted it"
+    )
+    kva_error: float = Field(
+        description="Standard error of the KVA, by batch means: the capital is "
+        "not an average over paths"
+    )
     cva_rule_of_thumb: float = Field(description="−spread × EPE × T")
 
 

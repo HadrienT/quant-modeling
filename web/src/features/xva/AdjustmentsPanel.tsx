@@ -11,13 +11,14 @@ function figures(a: XvaAdjustments, key: AdjustmentKey) {
 		case "dva":
 			return { value: a.dva.value, error: a.dva.error };
 		case "fva":
-			return { value: a.fca + a.fba };
+			// The error of the sum: the cost and the benefit are correlated.
+			return { value: a.fca + a.fba, error: a.fva_error };
 		case "colva":
-			return { value: a.colva };
+			return { value: a.colva, error: a.colva_error };
 		case "mva":
-			return { value: a.mva };
+			return { value: a.mva, error: a.mva_error };
 		case "kva":
-			return { value: a.kva };
+			return { value: a.kva, error: a.kva_error };
 	}
 }
 
@@ -92,10 +93,10 @@ export function AdjustmentsPanel({ data }: { data: XvaResponse }) {
 			</div>
 			<p className="text-xs text-ink-muted">
 				Cash-flow convention: a cost to the bank is negative. ± is the
-				Monte-Carlo standard error of the figure, estimated path by path for the
-				CVA and the DVA; the other adjustments are integrals of expected
-				profiles, whose error the engine does not estimate yet. Rule of thumb
-				for the CVA, credit spread × average exposure × maturity:{" "}
+				Monte-Carlo standard error of the figure: the dispersion of the per-path
+				amounts, or of batches of paths for the KVA, whose capital is not an
+				average over paths. The MVA&apos;s takes the margin model as given. Rule
+				of thumb for the CVA, credit spread × average exposure × maturity:{" "}
 				{signed(a.cva_rule_of_thumb)}.
 				{wrongWay &&
 					` With the counterparty's default independent of the exposure the CVA would be ${signed(a.cva_independent.value)}.`}

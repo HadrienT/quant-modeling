@@ -4,7 +4,7 @@ import { Segmented } from "@/shared/ui";
 import { ProfileChart, type ProfileLine } from "@/shared/viz";
 import { Explained, Figure } from "./Explained";
 import { ExposureSurface } from "./ExposureSurface";
-import { amount } from "./format";
+import { amount, plusMinus } from "./format";
 import { EPE_TEX, EXPOSURE_TEX, GREGORY } from "./texts";
 
 /** The fan's ranges of the value, from the widest to the narrowest. */
@@ -26,6 +26,7 @@ export function ExposurePanel({ data }: { data: XvaResponse }) {
 	const e = data.exposure;
 	const profile = measure === "pricing" ? e : data.risk;
 	const open = data.exposure_uncollateralised;
+	const peak = profile.pfe.indexOf(Math.max(...profile.pfe));
 
 	const lines: ProfileLine[] = [
 		{ label: "EE", values: profile.ee },
@@ -55,9 +56,21 @@ export function ExposurePanel({ data }: { data: XvaResponse }) {
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
 					<Figure label="Value today" value={amount(data.value_today)} />
-					<Figure label="EPE" value={amount(profile.epe)} />
-					<Figure label="Effective EPE" value={amount(profile.eepe)} />
-					<Figure label="Peak PFE" value={amount(Math.max(...profile.pfe))} />
+					<Figure
+						label="EPE"
+						value={amount(profile.epe)}
+						note={plusMinus(profile.epe_error)}
+					/>
+					<Figure
+						label="Effective EPE"
+						value={amount(profile.eepe)}
+						note={plusMinus(profile.eepe_error)}
+					/>
+					<Figure
+						label="Peak PFE"
+						value={amount(profile.pfe[peak])}
+						note={plusMinus(profile.pfe_error[peak])}
+					/>
 				</div>
 				<Segmented
 					label="Measure"

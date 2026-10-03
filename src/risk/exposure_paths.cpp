@@ -24,6 +24,26 @@ namespace quantModeling
         }
     } // namespace
 
+    std::size_t error_batches(std::size_t paths)
+    {
+        const std::size_t batches = std::min<std::size_t>(32, paths / 8);
+        return batches >= 2 ? batches : 0;
+    }
+
+    Real batch_error(const std::vector<Real> &batch_values)
+    {
+        const std::size_t B = batch_values.size();
+        if (B < 2)
+            return 0.0;
+        Real sum = 0.0, sum2 = 0.0;
+        for (const Real v : batch_values)
+        {
+            sum += v;
+            sum2 += v * v;
+        }
+        return mean_and_error(sum, sum2, B).second;
+    }
+
     ExposureProfile ExposureStatistics::profile() const
     {
         if (measure != ExposureMeasure::RiskNeutral)
@@ -92,19 +112,30 @@ namespace quantModeling
         s.ene.resize(n);
         s.efv.resize(n);
         s.pfe.resize(n);
+        s.pfe_error.resize(n);
         s.quantile_levels = quantile_levels;
         s.value_quantiles.assign(quantile_levels.size(), std::vector<Real>(n));
         s.discounted_ee_contributions.assign(s.trades.size(), std::vector<Real>(n, 0.0));
 
+        // The EE profile of each batch of paths, for the errors of EPE and
+        // Effective EPE.
+        const std::size_t B = error_batches(N);
+        const std::size_t batch_size = B > 0 ? N / B : N;
+        std::vector<std::vector<Real>> batch_ee(B, std::vector<Real>(n, 0.0));
+
         std::vector<std::pair<Real, Real>> order(N);
         for (std::size_t i = 0; i < n; ++i)
         {
-            Real ee = 0.0, ee2 = 0.0, ene = 0.0, ene2 = 0.0, efv = 0.0, efv2 = 0.0, weights = 0.0;
+            Real ee = 0.0, ee2 = 0.0, ene = 0.0, ene2 = 0.0, efv = 0.0, efv2 = 0.0, weights = 0.0,
+                 weights2 = 0.0;
             for (std::size_t p = 0; p < N; ++p)
             {
                 const Real w = paths.discount_weight[p * n + i];
                 const Real v = w * netted[p * n + i];
                 const Real positive = std::max(v, 0.0), negative = std::min(v, 0.0);
+                if (B > 0)
+                    batch_ee[std::min(p / batch_size, B - 1)][i] += positive;
+                weights2 += w * w;
                 ee += positive;
                 ee2 += positive * positive;
                 ene += negative;
@@ -154,6 +185,34 @@ namespace quantModeling
             }
             s.pfe[i] = std::max(quantile, 0.0);
 
+            // Its error: the quantiles one standard deviation of the
+            // empirical level away on each side.
+            if (N > 1 && weights2 > 0.0)
+            {
+                const Real effective = weights * weights / weights2;
+                const Real half = std::sqrt(pfe_confidence * (1.0 - pfe_confidence) / effective);
+                const Real low_target = std::max(pfe_confidence - half, 0.0) * weights;
+                const Real high_target = std::min(pfe_confidence + half, 1.0) * weights;
+                Real low = order.back().first, high = order.back().first;
+                bool low_found = false;
+                cumulative = 0.0;
+                for (const auto &[value, weight] : order)
+                {
+                    cumulative += weight;
+                    if (!low_found && cumulative >= low_target)
+                    {
+                        low = value;
+                        low_found = true;
+                    }
+                    if (cumulative >= high_target)
+                    {
+                        high = value;
+                        break;
+                    }
+                }
+                s.pfe_error[i] = 0.5 * (std::max(high, 0.0) - std::max(low, 0.0));
+            }
+
             // The other quantiles, off the same sorted values.
             cumulative = 0.0;
             std::size_t level = 0;
@@ -171,6 +230,21 @@ namespace quantModeling
 
         s.epe = expected_positive_exposure(s.times, s.ee);
         s.eepe = effective_expected_positive_exposure(s.times, s.ee);
+        if (B > 0)
+        {
+            std::vector<Real> epe(B), eepe(B);
+            for (std::size_t b = 0; b < B; ++b)
+            {
+                const Real count =
+                    static_cast<Real>(b + 1 < B ? batch_size : N - batch_size * (B - 1));
+                for (std::size_t i = 0; i < n; ++i)
+                    batch_ee[b][i] /= count * paths.discount[i];
+                epe[b] = expected_positive_exposure(s.times, batch_ee[b]);
+                eepe[b] = effective_expected_positive_exposure(s.times, batch_ee[b]);
+            }
+            s.epe_error = batch_error(epe);
+            s.eepe_error = batch_error(eepe);
+        }
         return s;
     }
 

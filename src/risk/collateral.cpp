@@ -235,8 +235,8 @@ namespace quantModeling
         return out;
     }
 
-    std::vector<Real> discounted_expected_collateral(const ExposurePaths &paths, const Csa &csa,
-                                                     const std::vector<std::size_t> &trades)
+    std::vector<Real> discounted_collateral_paths(const ExposurePaths &paths, const Csa &csa,
+                                                  const std::vector<std::size_t> &trades)
     {
         // V - C is the collateralised value: the collateral is what was taken
         // off the value, read on the same recursion.
@@ -250,18 +250,33 @@ namespace quantModeling
             set.resize(paths.trades());
             std::iota(set.begin(), set.end(), std::size_t{0});
         }
-        std::vector<Real> profile(m, 0.0);
+        std::vector<Real> collateral(N * m);
         for (std::size_t r = 0; r < m; ++r)
         {
             const std::size_t i = reporting[r];
-            Real sum = 0.0;
             for (std::size_t p = 0; p < N; ++p)
             {
                 Real value = 0.0;
                 for (const std::size_t k : set)
                     value += paths.trade_values[k][p * n + i];
-                sum += net.discount_weight[p * m + r] * (value - net.trade_values[0][p * m + r]);
+                collateral[p * m + r] =
+                    net.discount_weight[p * m + r] * (value - net.trade_values[0][p * m + r]);
             }
+        }
+        return collateral;
+    }
+
+    std::vector<Real> discounted_expected_collateral(const ExposurePaths &paths, const Csa &csa,
+                                                     const std::vector<std::size_t> &trades)
+    {
+        const std::vector<Real> collateral = discounted_collateral_paths(paths, csa, trades);
+        const std::size_t N = paths.paths, m = N > 0 ? collateral.size() / N : 0;
+        std::vector<Real> profile(m, 0.0);
+        for (std::size_t r = 0; r < m; ++r)
+        {
+            Real sum = 0.0;
+            for (std::size_t p = 0; p < N; ++p)
+                sum += collateral[p * m + r];
             profile[r] = sum / static_cast<Real>(N);
         }
         return profile;

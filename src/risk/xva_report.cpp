@@ -5,6 +5,7 @@
 #include "quantModeling/risk/xva.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <numeric>
@@ -99,6 +100,93 @@ namespace quantModeling
             };
             cva = estimate(c, c2);
             dva = estimate(d, d2);
+        }
+
+        /**
+         * The Monte-Carlo error of running-cost adjustments
+         *
+         *   -rate Σ_i E[X*(t_i)] S_C(t_i) S_I(t_i) Δt_i
+         *
+         * (risk/xva.hpp, running_cost_adjustment) from the quantity on each
+         * path: `discounted(p, i, out)` writes the discounted X of path p at
+         * times[i] for each of the K adjustments, already times its rate.
+         * The last output is the error of their sum.
+         */
+        template <std::size_t K, class F>
+        std::array<Real, K + 1> running_cost_errors(const std::vector<Time> &times, std::size_t N,
+                                                    const XvaInputs &in, F discounted)
+        {
+            const std::size_t n = times.size();
+            std::vector<Real> weight(n);
+            Time previous = 0.0;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                weight[i] = in.counterparty.survival(times[i]) * in.own.survival(times[i]) *
+                            (times[i] - previous);
+                previous = times[i];
+            }
+            std::array<Real, K + 1> sum{}, sum2{}, errors{};
+            std::array<Real, K> x{};
+            for (std::size_t p = 0; p < N; ++p)
+            {
+                std::array<Real, K + 1> path{};
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    discounted(p, i, x);
+                    for (std::size_t k = 0; k < K; ++k)
+                        path[k] -= x[k] * weight[i];
+                }
+                for (std::size_t k = 0; k < K; ++k)
+                    path[K] += path[k];
+                for (std::size_t k = 0; k <= K; ++k)
+                {
+                    sum[k] += path[k];
+                    sum2[k] += path[k] * path[k];
+                }
+            }
+            if (N < 2)
+                return errors;
+            const Real count = static_cast<Real>(N);
+            for (std::size_t k = 0; k <= K; ++k)
+            {
+                const Real mean = sum[k] / count;
+                errors[k] = std::sqrt(std::max(sum2[k] / count - mean * mean, 0.0) / (count - 1.0));
+            }
+            return errors;
+        }
+
+        /// The paths [first, first + count) of a one-trade cube, and of the
+        /// margin that goes with it.
+        ExposurePaths batch_of(const ExposurePaths &cube, std::size_t first, std::size_t count)
+        {
+            const std::size_t n = cube.dates();
+            const auto rows = [first, count, n](const std::vector<Real> &all)
+            {
+                return std::vector<Real>(all.begin() + static_cast<std::ptrdiff_t>(first * n),
+                                         all.begin() + static_cast<std::ptrdiff_t>((first + count) * n));
+            };
+            ExposurePaths out;
+            out.measure = cube.measure;
+            out.times = cube.times;
+            out.discount = cube.discount;
+            out.paths = count;
+            out.discount_weight = rows(cube.discount_weight);
+            out.trade_values = {rows(cube.trade_values[0])};
+            out.trade_values_today = cube.trade_values_today;
+            return out;
+        }
+
+        InitialMargin batch_of(const InitialMargin &margin, std::size_t first, std::size_t count)
+        {
+            const std::size_t n = margin.times.size();
+            InitialMargin out;
+            out.times = margin.times;
+            out.paths = count;
+            out.today = margin.today;
+            out.scaling = margin.scaling;
+            out.margin.assign(margin.margin.begin() + static_cast<std::ptrdiff_t>(first * n),
+                              margin.margin.begin() + static_cast<std::ptrdiff_t>((first + count) * n));
+            return out;
         }
 
         /// The survival of every path on the dates of `cube` (the reporting
@@ -287,6 +375,7 @@ namespace quantModeling
             report.mva = mva(margin->times, margin->discounted_expected, in.counterparty, in.own,
                              in.initial_margin_spread);
         }
+        const std::size_t N = paths.paths;
         const ExposurePaths cube =
             margin ? netting_set_cube(paths, in, trades, &*margin) : variation_only;
         report.exposure = exposure_statistics(cube, {}, in.pfe_confidence, in.quantile_levels);
@@ -310,16 +399,75 @@ namespace quantModeling
             margin ? exposure_profile(variation_only) : profile;
         report.fca = fca(funding, in.counterparty, in.own, in.borrowing_spread);
         report.fba = fba(funding, in.counterparty, in.own, in.lending_spread);
+        {
+            const ExposurePaths &funded = margin ? variation_only : cube;
+            const std::size_t n = funded.dates();
+            const auto errors = running_cost_errors<2>(
+                funded.times, N, in,
+                [&funded, &in, n](std::size_t p, std::size_t i, std::array<Real, 2> &x)
+                {
+                    const Real v = funded.discount_weight[p * n + i] * funded.trade_values[0][p * n + i];
+                    x[0] = in.borrowing_spread * std::max(v, 0.0);
+                    x[1] = in.lending_spread * std::min(v, 0.0);
+                });
+            report.fca_error = errors[0];
+            report.fba_error = errors[1];
+            report.fva_error = errors[2];
+        }
+        if (margin)
+        {
+            // The margin is on the dates of the collateralised cube.
+            const std::size_t n = cube.dates();
+            report.mva_error = running_cost_errors<1>(
+                cube.times, N, in,
+                [&cube, &margin, &in, n](std::size_t p, std::size_t i, std::array<Real, 1> &x)
+                {
+                    x[0] = in.initial_margin_spread * cube.discount_weight[p * n + i] *
+                           margin->margin[p * n + i];
+                })[0];
+        }
         if (in.csa)
-            report.colva = colva(variation_only.times,
-                                 discounted_expected_collateral(paths, *in.csa, trades),
-                                 in.counterparty, in.own, in.collateral_spread);
+        {
+            const std::vector<Real> collateral = discounted_collateral_paths(paths, *in.csa, trades);
+            const std::size_t m = variation_only.dates();
+            std::vector<Real> expected(m, 0.0);
+            for (std::size_t r = 0; r < m; ++r)
+            {
+                Real sum = 0.0;
+                for (std::size_t p = 0; p < N; ++p)
+                    sum += collateral[p * m + r];
+                expected[r] = sum / static_cast<Real>(N);
+            }
+            report.colva = colva(variation_only.times, expected, in.counterparty, in.own,
+                                 in.collateral_spread);
+            report.colva_error = running_cost_errors<1>(
+                variation_only.times, N, in,
+                [&collateral, &in, m](std::size_t p, std::size_t r, std::array<Real, 1> &x)
+                { x[0] = in.collateral_spread * collateral[p * m + r]; })[0];
+        }
         if (in.capital)
         {
             report.capital =
                 projected_capital(variation_only, *in.capital, margin ? &*margin : nullptr);
             report.kva = kva(report.capital->times, report.capital->discounted_capital,
                              in.counterparty, in.own, in.cost_of_capital);
+            // The same projection on each batch of paths.
+            const std::size_t B = error_batches(N);
+            std::vector<Real> batches(B);
+            for (std::size_t b = 0; b < B; ++b)
+            {
+                const std::size_t size = N / B, first = b * size;
+                const std::size_t count = b + 1 < B ? size : N - first;
+                const ExposurePaths part = batch_of(variation_only, first, count);
+                std::optional<InitialMargin> held;
+                if (margin)
+                    held = batch_of(*margin, first, count);
+                const CapitalProfile capital =
+                    projected_capital(part, *in.capital, held ? &*held : nullptr);
+                batches[b] = kva(capital.times, capital.discounted_capital, in.counterparty, in.own,
+                                 in.cost_of_capital);
+            }
+            report.kva_error = batch_error(batches);
         }
 
         const Time maturity = profile.times.back();
