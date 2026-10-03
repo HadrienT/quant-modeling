@@ -25,6 +25,7 @@ namespace quantModeling
     struct DispersionSwap;
     struct FXForward;
     struct FXOption;
+    struct CrossCurrencySwap;
     struct CommodityForward;
     struct CommodityOption;
     struct WorstOfOption;
@@ -86,6 +87,7 @@ namespace quantModeling
         virtual void visit(const DispersionSwap &) { throw UnsupportedInstrument("Dispersion swap is not supported by this engine."); }
         virtual void visit(const FXForward &) { throw UnsupportedInstrument("FX forward is not supported by this engine."); }
         virtual void visit(const FXOption &) { throw UnsupportedInstrument("FX option is not supported by this engine."); }
+        virtual void visit(const CrossCurrencySwap &) { throw UnsupportedInstrument("Cross-currency swap is not supported by this engine."); }
         virtual void visit(const CommodityForward &) { throw UnsupportedInstrument("Commodity forward is not supported by this engine."); }
         virtual void visit(const CommodityOption &) { throw UnsupportedInstrument("Commodity option is not supported by this engine."); }
         virtual void visit(const WorstOfOption &) { throw UnsupportedInstrument("Worst-of option is not supported by this engine."); }
