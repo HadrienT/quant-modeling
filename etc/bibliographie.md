@@ -253,6 +253,7 @@ Reprise exacte des `references` de `web/src/shared/products/docs.ts`.
 |---|---|
 | ★ Andreasen & Savine, *Modern Computational Finance: Scripting for Derivatives and xVA*, Wiley, 2021 | `scripting/` entier (lexer, parser, visiteurs, `fuzzy_evaluator`, bytecode) — **à suivre de près** |
 | Andreasen & Huge, « Random Grids », *Risk*, juillet 2011 | Le scripting tel qu'il se pratique en salle |
+| ➕ Aho, Lam, Sethi & Ullman, *Compilers: Principles, Techniques, and Tools*, 2ᵉ éd., Addison-Wesley, 2006 (ch. 6) | Ce que le livre de scripting ne couvre pas : machine à pile, génération de code, *backpatching* — `scripting/compiler.hpp`, `scripting/bytecode.hpp` ; expliqué dans `etc/bytecode-aad-gpu-ordre-2.md` |
 
 ---
 
