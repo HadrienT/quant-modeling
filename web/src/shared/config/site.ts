@@ -5,7 +5,7 @@
  */
 export const SITE = {
 	name: "Quant Modeling",
-	url: "https://tramonihadrien.com",
+	url: "https://quant.tramonihadrien.com",
 	publisher: "Hadrien Tramoni",
 	contact: "contact@tramonihadrien.com",
 	repository: "https://github.com/HadrienT/quant-modeling",

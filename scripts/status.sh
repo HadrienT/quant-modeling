@@ -85,7 +85,7 @@ fi
 
 title "Endpoints"
 probe "site (local)" "http://127.0.0.1:$(env_value QM_WEB_PORT 8091)/health"
-probe "site (public, via tunnel)" "$(env_value QM_PUBLIC_URL https://tramonihadrien.com)/health"
+probe "site (public, via tunnel)" "$(env_value QM_PUBLIC_URL https://quant.tramonihadrien.com)/health"
 probe "llama-server" "http://127.0.0.1:8000/health"
 probe "llama-bridge (from containers)" "http://172.17.0.1:8001/health"
 

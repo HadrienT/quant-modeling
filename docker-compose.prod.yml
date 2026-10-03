@@ -32,7 +32,7 @@ services:
       # Runtime app config — same origin, so apiBase stays empty.
       - APP_API_BASE=
       # Same-origin in practice; set explicitly so a stray cross-origin call is refused.
-      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-https://tramonihadrien.com,https://www.tramonihadrien.com}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-https://quant.tramonihadrien.com}
       - QM_STORAGE=local
       - QM_DATA_DIR=/app/data
       # Heston/SLV calibrated for each new chain snapshot before the first
@@ -49,7 +49,7 @@ services:
       # registered in the Google console (deploy/RUNBOOK.md, "Connexion Google").
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - QM_PUBLIC_URL=${QM_PUBLIC_URL:-https://tramonihadrien.com}
+      - QM_PUBLIC_URL=${QM_PUBLIC_URL:-https://quant.tramonihadrien.com}
       # data-ingest Postgres (market data), over the shared network
       - PGHOST=${PGHOST:-data-ingest-postgres}
       - PGPORT=${PGPORT:-5432}
