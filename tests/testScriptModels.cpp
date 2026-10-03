@@ -147,13 +147,16 @@ namespace quantModeling
     {
         using aad::Number;
         aad::Tape tape;
+        aad::Tape *const tape_before = aad::Number::tape;
         aad::Number::tape = &tape;
 
         const Grid g = make_grid(0.3);
         ScriptedProduct<Number> product(vanilla, ctx());
         auto m = make_script_model<Number>(spec("local_vol", g));
         const AADSimulResults res = simulate_aad(product, *m, 20000, 3);
-        aad::Number::tape = nullptr;
+        // Back to the thread's own tape: a null one would break whatever
+        // runs next in this process.
+        aad::Number::tape = tape_before;
 
         // spot, rate, div + one local vol per (K, T) point
         EXPECT_EQ(res.risks.size(), 3 + g.K.size() * g.T.size());
@@ -297,11 +300,12 @@ namespace quantModeling
         {
             using aad::Number;
             aad::Tape tape;
+            aad::Tape *const tape_before = Number::tape;
             Number::tape = &tape;
             ScriptedProduct<Number> product(vanilla, ctx());
             auto m = make_script_model<Number>(s);
             const AADSimulResults res = simulate_aad(product, *m, 60000, 17);
-            Number::tape = nullptr;
+            Number::tape = tape_before;
             return res;
         }
 

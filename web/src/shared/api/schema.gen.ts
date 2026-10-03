@@ -4221,8 +4221,18 @@ export interface components {
             epe: number;
             /** Pfe */
             pfe: number[];
+            /**
+             * Quantile Levels
+             * @description Levels of the quantiles of the netting set's value
+             */
+            quantile_levels: number[];
             /** Times */
             times: number[];
+            /**
+             * Value Quantiles
+             * @description value_quantiles[k][i]: the quantile quantile_levels[k] of the value at times[i] — the distribution the profiles summarise
+             */
+            value_quantiles: number[][];
         };
         /** PricingResponse */
         PricingResponse: {

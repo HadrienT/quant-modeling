@@ -1271,7 +1271,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X6 — Wrong-way risk** (fait : §14.9 ; sans le saut FX au défaut) | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
 | **X7 — GPU** (fait : §14.11 ; transactions en forme fermée, bit à bit entre cartes, à 10⁻¹³ près contre le CPU) | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
 | **X8 — CVA par AAD** *(le capstone)* (fait : §14.13 ; transactions en forme fermée, CPU ; pas à travers la régression ni sur GPU) | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
-| **X9 — Page `/xva`** | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
+| **X9 — Page `/xva`** (fait : §14.14 ; erreur Monte-Carlo sur le CVA, le DVA et les sensibilités seulement) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** *(optionnel)* | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 
 ### 14.1 Lot X0 : ce qui est fait, et les choix d'implémentation
@@ -2123,6 +2123,56 @@ attendu. Le BA-CVA du même swap vaut 100 600.
 démonstration n'utilise que ce qui existe — swaps, swaptions, bermudans, FX
 forwards, options actions, CDS (WP 20), scripts.
 
+### 14.14 Lot X9 : la page `/xva`
+
+Livré : `web/src/features/xva/` (la page et ses quatre onglets),
+`web/src/shared/api/xva.ts`, `web/src/shared/viz/charts/ProfileChart.tsx`,
+la route `/xva` et sa carte sur la page d'accueil ; côté moteur, les
+quantiles de la valeur (`ExposureStatistics::value_quantiles`,
+`XvaInputs::quantile_levels`), rendus par `POST /api/xva/netting-set`
+(`exposure.quantile_levels`, `exposure.value_quantiles`). Tests :
+`web/src/features/xva/xva.integration.test.tsx` sur des réponses enregistrées
+de la vraie API (`shared/test/xva.fixtures.json`),
+`ExposureEngine.TheQuantilesOfTheValueBracketThePfe`, `api/tests/test_xva.py`.
+
+**Ce que la page montre.** Tout ce qui définit la vue est dans l'URL
+(portefeuille, notations, CSA, scénario de wrong-way risk, spread de
+financement, chemins, onglet) : une vue est un lien.
+
+- *Exposure* : EE, ENE et PFE sur un éventail de quantiles de la valeur
+  (1–99 %, 5–95 %, 20–80 %), l'EE sans CSA en pointillé quand il y en a un,
+  la mesure de pricing ou la mesure historique au choix ; dessous, la
+  **surface scénario × temps × valeur** dans le `SurfaceView` du lot 05.
+- *Adjustments* : CVA, DVA, FVA, ColVA, MVA, KVA, signés en flux (un coût est
+  négatif), avec le même netting set sans collatéral à côté ; chaque
+  ajustement avec son texte, sa formule (notation de Gregory) et sa source ;
+  puis la part de chaque transaction (CVA autonome, incrémental, marginal).
+- *Margin and capital* : marge initiale projetée et son modèle, EAD, capital
+  de défaut et CVA, KVA, avec la méthode choisie par le serveur et sa raison.
+- *Sensitivities* : le lot X8, calculé à la demande ; coût en valorisations,
+  barres par cotation avec leur erreur, table SA-CVA ; un portefeuille non
+  couvert (bermudan, script) affiche la raison donnée par l'API.
+
+Les boutons de scénario de la décision D3 sont là, expliqués au survol.
+
+**La surface n'est pas « chemin × temps ».** Rapatrier des chemins pèserait
+(5 000 × 60 valeurs) pour une image illisible : des chemins voisins dans le
+cube ne le sont pas dans le marché. L'axe est donc le **rang du scénario** :
+quinze quantiles de $V(t)$ à chaque date, tirés du tri que la PFE paie déjà.
+La PFE est une ligne de cette surface, l'EE la moyenne de ce qui dépasse
+zéro. Les quantiles sont ceux de la mesure de pricing ; sous la mesure
+historique la page ne montre que les profils.
+
+**Écart au critère du lot**, assumé : *chaque chiffre avec son erreur
+Monte-Carlo* n'est tenu que là où le moteur estime chemin par chemin — CVA,
+DVA, chaque sensibilité. FCA, FBA, ColVA, MVA et KVA sont des intégrales de
+profils attendus, EPE et PFE aussi : le moteur n'en estime pas l'erreur, et
+la page le dit sous le tableau plutôt que d'afficher un ± inventé (§20, P1).
+
+**Pas vérifié** : la page n'a pas été ouverte dans un navigateur contre
+l'API réelle (pile de développement à l'arrêt) ; les tests tournent dans
+jsdom, où la surface se replie sur sa carte de chaleur.
+
 ---
 
 ## 15. Tests de propriété
@@ -2291,7 +2341,7 @@ bis.org/basel_framework) :
 Ce que les lots X4 à X6 ont laissé de côté ou révélé, pour ne pas le perdre.
 Chaque point dit **ce qui manque** et **pourquoi cela compterait**. La même
 liste est suivie dans l'issue GitHub #154 ; les lots
-restants (X8 à X10) sont dans le tableau du §14.
+restants (X10) sont dans le tableau du §14.
 
 ### Décisions du mainteneur
 
@@ -2299,7 +2349,7 @@ restants (X8 à X10) sont dans le tableau du §14.
 |---|---|---|
 | D1 | ~~Coder la SIMM taux ou garder la DIM par régression~~ — **tranché par le lot X5b** : la SIMM taux est codée (§14.10) | — |
 | D2 | ~~Ingérer des taux de défaut historiques par notation~~ — **tranché** : ingérés depuis l'ESMA, la PD du capital est la fréquence historique (§14.12) | — |
-| D3 | ~~Comment présenter $b$~~ — **tranché** : un bouton de scénario, expliqué au survol (§14.12) ; les boutons eux-mêmes viennent avec la page | la page `/xva` (X9) |
+| D3 | ~~Comment présenter $b$~~ — **tranché** : un bouton de scénario, expliqué au survol (§14.12) ; les boutons sont dans la page `/xva` (§14.14) | — |
 | D4 | ~~Exposer des transactions en script~~ — **tranché** : exposées, avec un capital par la méthode des modèles internes (§14.12) | — |
 
 ### Exposition par régression (X4a, X4b)
@@ -2353,6 +2403,16 @@ restants (X8 à X10) sont dans le tableau du §14.
 | A6 | Sensibilités du KVA, de la marge initiale, sous wrong-way risk ; deux courbes | hors périmètre de la passe adjointe |
 | A7 | Événement d'audit des sensibilités (type ou champs à ajouter au contrat de `quant-platform`) | une requête de sensibilités n'est pas tracée comme une valorisation |
 | A8 | SA-CVA : couvertures éligibles, plusieurs contreparties et devises, spreads cotés par échéance | une contrepartie, une devise, un spread par notation à toutes les échéances |
+
+### Page `/xva` (X9)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| P1 | **Erreur Monte-Carlo de FCA, FBA, ColVA, MVA, KVA, EPE et PFE** (estimation chemin par chemin ou par lots, comme le CVA) | le critère du lot X9 la demande pour chaque chiffre ; seuls le CVA, le DVA et les sensibilités l'ont |
+| P2 | Quantiles de la valeur sous la mesure historique | l'éventail et la surface n'existent que sous la mesure de pricing |
+| P3 | Termes du CSA réglables (seuil, MTA, période de marge) | la page n'offre que les termes des règles de marge ; l'API accepte les autres |
+| P4 | Scripts de l'utilisateur dans la page (voir K4) | le portefeuille `custom` n'est pas offert |
+| P5 | Libellés des vues prédéfinies de `SurfaceView` (« Smile », « Term ») | ce sont ceux d'une surface de volatilité |
 
 ### Capital par modèle interne et scripts (D2, D4)
 

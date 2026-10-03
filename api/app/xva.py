@@ -480,6 +480,8 @@ def _pricing_exposure(e: dict) -> PricingExposure:
         discounted_ee=e["discounted_ee"],
         discounted_ene=e["discounted_ene"],
         discounted_ee_error=e["discounted_ee_error"],
+        quantile_levels=e["quantile_levels"],
+        value_quantiles=e["value_quantiles"],
     )
 
 

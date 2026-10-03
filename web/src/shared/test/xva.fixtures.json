@@ -1,0 +1,3189 @@
+{
+	"portfolios": {
+		"portfolios": [
+			{
+				"id": "single_swap",
+				"label": "One 10-year payer swap",
+				"lesson": "The exposure of a swap is a hump: rates diffuse like the square root of time while the remaining coupons run off. CVA is close to the credit spread times the average exposure times the maturity."
+			},
+			{
+				"id": "bought_swaption",
+				"label": "One bought swaption",
+				"lesson": "An option that was paid for can only be an asset: until it expires its discounted expected exposure is its price, and the CVA of that period is the loss given default times the price times the probability of default. Once exercised it is a swap."
+			},
+			{
+				"id": "sold_swaption",
+				"label": "One sold swaption",
+				"lesson": "The seller received the premium and can only owe: no exposure and no CVA until the expiry, only a DVA. After a physical exercise it is a swap, which can turn either way."
+			},
+			{
+				"id": "directional",
+				"label": "A directional book: four payer swaps",
+				"lesson": "Trades that move together do not net: the exposure of the set is almost the sum of the exposures of its trades, and every trade adds to the CVA."
+			},
+			{
+				"id": "balanced",
+				"label": "A balanced book: payers, receivers and an option",
+				"lesson": "Close-out netting: trades that offset each other reduce the exposure of the set well below the sum of its trades. A trade can have a positive incremental CVA: it lowers the counterparty risk of what is already there."
+			},
+			{
+				"id": "bermudan",
+				"label": "One bought Bermudan swaption",
+				"lesson": "A Bermudan can be exercised on several dates, so no formula gives what it will be worth: its future value is estimated by regression on the simulated rates (American Monte-Carlo). Until it is exercised it is an asset, like any bought option. Each path that exercises becomes a swap, which can turn either way."
+			},
+			{
+				"id": "cancellable",
+				"label": "A cancellable swap",
+				"lesson": "A 10-year payer swap with the right to cancel it on each anniversary: that right is a Bermudan receiver swaption on what is left of the swap. The bank cancels when the swap has turned against it, so the right removes what the bank would owe, not what it is owed: the DVA shrinks, and the option, an asset, adds its own exposure."
+			},
+			{
+				"id": "scripted_swap",
+				"label": "A swap written as a script",
+				"lesson": "The 10-year payer swap again, this time written in the payoff language of the Scripting page. Nothing tells the engine that it is a swap: it replays the script on every scenario, reads what it pays, and estimates its value by regression. The exposure and the CVA are those of the native swap; the capital is read off the simulated exposure, because a script has no regulatory description of itself."
+			},
+			{
+				"id": "custom",
+				"label": "Your own scripts",
+				"lesson": "The netting set is made of the scripts of the request alone: any payoff on interest rates the language can write has an exposure, a CVA and a cost of capital."
+			}
+		],
+		"ratings": ["AAA", "AA", "A", "BBB", "BB", "B", "CCC"],
+		"wrong_way_scenarios": [
+			{
+				"id": "independent",
+				"label": "Independent",
+				"wrong_way_risk": 0.0,
+				"explanation": "The counterparty's default has nothing to do with what it owes: the standard CVA, and the reference the other scenarios are read against."
+			},
+			{
+				"id": "wrong_way",
+				"label": "Wrong-way",
+				"wrong_way_risk": 10.0,
+				"explanation": "The counterparty defaults more often when it owes more: its hazard rate rises by 65 % in a scenario where the netting set is worth 5 % of the reference notional more, and falls by 39 % where it is worth that much less. The survival curve of the market is kept: default probability moves between scenarios, none is created. A scenario, not an estimate (Hull & White, 2012)."
+			},
+			{
+				"id": "strong_wrong_way",
+				"label": "Strong wrong-way",
+				"wrong_way_risk": 20.0,
+				"explanation": "The same dependence, twice as strong: the hazard rate is multiplied by 2.7 where the netting set is worth 5 % of the reference notional more. The survival curve of the market is kept: default probability moves between scenarios, none is created. A scenario, not an estimate (Hull & White, 2012)."
+			},
+			{
+				"id": "right_way",
+				"label": "Right-way",
+				"wrong_way_risk": -10.0,
+				"explanation": "The counterparty defaults less often when it owes more \u2014 it is hedging its own business with the trade: its hazard rate falls by 39 % where the netting set is worth 5 % of the reference notional more. The survival curve of the market is kept: default probability moves between scenarios, none is created. A scenario, not an estimate (Hull & White, 2012)."
+			}
+		]
+	},
+	"single_swap": {
+		"portfolio": "single_swap",
+		"portfolio_label": "One 10-year payer swap",
+		"lesson": "The exposure of a swap is a hump: rates diffuse like the square root of time while the remaining coupons run off. CVA is close to the credit spread times the average exposure times the maturity.",
+		"value_today": 0.0,
+		"trades": [
+			{
+				"description": "Payer swap 10Y at par",
+				"kind": "swap",
+				"quantity": 1.0,
+				"payer": true,
+				"notional": 10000000.0,
+				"fixed_rate": 0.0486,
+				"start": 0.0,
+				"tenor": 10.0,
+				"script": null,
+				"maturity": 10.0,
+				"value_today": 0.0,
+				"standalone_cva": -23686.1,
+				"incremental_cva": -23686.1,
+				"marginal_cva": -23686.1
+			}
+		],
+		"exposure": {
+			"times": [
+				0.0192308, 0.0384615, 0.0576923, 0.0769231, 0.0833333, 0.166667, 0.25,
+				0.333333, 0.416667, 0.5, 0.583333, 0.666667, 0.75, 0.833333, 0.916667,
+				1.0, 1.08333, 1.16667, 1.25, 1.33333, 1.41667, 1.5, 1.58333, 1.66667,
+				1.75, 1.83333, 1.91667, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0,
+				4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0, 6.25, 6.5, 6.75, 7.0, 7.25,
+				7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25, 9.5, 9.75, 10.0
+			],
+			"ee": [
+				40523.8, 57357.3, 68871.0, 82165.9, 85937.8, 120576.0, 140542.0,
+				164533.0, 183155.0, 197078.0, 219323.0, 238394.0, 254235.0, 272403.0,
+				285014.0, 311208.0, 322893.0, 325805.0, 335858.0, 344144.0, 358884.0,
+				369604.0, 378674.0, 385480.0, 395708.0, 402722.0, 412387.0, 378949.0,
+				399296.0, 427503.0, 461684.0, 425645.0, 438165.0, 452282.0, 465975.0,
+				416685.0, 428939.0, 443388.0, 459953.0, 399721.0, 413565.0, 427851.0,
+				440621.0, 367891.0, 372660.0, 382205.0, 389576.0, 307250.0, 314505.0,
+				320034.0, 325303.0, 223041.0, 225687.0, 228863.0, 232333.0, 119813.0,
+				121286.0, 122777.0, 124286.0, 0.0
+			],
+			"ene": [
+				-39106.5, -55839.6, -68283.6, -76119.0, -79308.8, -112990.0, -147021.0,
+				-171759.0, -192362.0, -210277.0, -230138.0, -247368.0, -263752.0,
+				-278276.0, -295519.0, -298804.0, -310326.0, -324444.0, -333413.0,
+				-348255.0, -358804.0, -371393.0, -377816.0, -390134.0, -403680.0,
+				-411747.0, -422226.0, -398037.0, -426316.0, -446873.0, -465127.0,
+				-436178.0, -448780.0, -466505.0, -483291.0, -426810.0, -438352.0,
+				-463488.0, -483151.0, -409889.0, -424611.0, -434423.0, -450014.0,
+				-364152.0, -375661.0, -384720.0, -396547.0, -300495.0, -306633.0,
+				-313563.0, -320620.0, -220656.0, -225635.0, -229701.0, -233189.0,
+				-123261.0, -124777.0, -126311.0, -127863.0, 0.0
+			],
+			"pfe": [
+				174883.0, 227589.0, 271947.0, 320004.0, 341568.0, 512005.0, 575373.0,
+				671585.0, 743187.0, 835451.0, 914214.0, 978243.0, 1064520.0, 1125980.0,
+				1164920.0, 1263050.0, 1274130.0, 1295450.0, 1357590.0, 1396190.0,
+				1457750.0, 1488980.0, 1511900.0, 1517070.0, 1539590.0, 1586690.0,
+				1651960.0, 1472450.0, 1585690.0, 1680780.0, 1793540.0, 1661230.0,
+				1729980.0, 1822240.0, 1830850.0, 1635360.0, 1693990.0, 1755460.0,
+				1820980.0, 1596410.0, 1642470.0, 1709680.0, 1736030.0, 1414240.0,
+				1466220.0, 1533330.0, 1580970.0, 1202970.0, 1214020.0, 1246740.0,
+				1275740.0, 853936.0, 867068.0, 880999.0, 910479.0, 465179.0, 472360.0,
+				480927.0, 490811.0, 0.0
+			],
+			"epe": 324150.0,
+			"eepe": 204209.0,
+			"discounted_ee": [
+				40489.1, 57259.3, 68694.5, 81885.2, 85619.7, 119685.0, 138987.0,
+				162110.0, 179790.0, 192742.0, 213703.0, 231426.0, 245891.0, 262487.0,
+				273623.0, 297665.0, 307608.0, 309142.0, 317408.0, 323941.0, 336466.0,
+				345132.0, 352190.0, 357088.0, 365099.0, 370087.0, 377455.0, 345465.0,
+				359724.0, 380597.0, 406183.0, 370064.0, 376513.0, 384118.0, 391139.0,
+				345691.0, 351714.0, 359328.0, 368412.0, 316438.0, 323507.0, 330705.0,
+				336527.0, 277639.0, 277896.0, 281627.0, 283646.0, 221047.0, 223519.0,
+				224686.0, 225611.0, 152810.0, 152745.0, 153013.0, 153447.0, 78170.5,
+				78170.5, 78170.5, 78170.5, 0.0
+			],
+			"discounted_ene": [
+				-39073.0, -55744.1, -68108.5, -75858.9, -79015.3, -112156.0, -145395.0,
+				-169230.0, -188829.0, -205651.0, -224242.0, -240138.0, -255096.0,
+				-268147.0, -283708.0, -285800.0, -295636.0, -307850.0, -315098.0,
+				-327810.0, -336391.0, -346803.0, -351392.0, -361399.0, -372454.0,
+				-378380.0, -386461.0, -362866.0, -384065.0, -397842.0, -409213.0,
+				-379221.0, -385634.0, -396197.0, -405674.0, -354092.0, -359432.0,
+				-375617.0, -386993.0, -324488.0, -332148.0, -335785.0, -343701.0,
+				-274818.0, -280134.0, -283480.0, -288722.0, -216187.0, -217924.0,
+				-220142.0, -222364.0, -151175.0, -152710.0, -153574.0, -154012.0,
+				-80420.5, -80420.5, -80420.5, -80420.5, 0.0
+			],
+			"discounted_ee_error": [
+				1359.68, 1899.26, 2254.72, 2647.53, 2760.32, 4105.71, 4817.76, 5587.37,
+				6249.16, 6974.23, 7657.71, 8295.97, 8970.06, 9522.83, 9757.57, 10433.4,
+				10768.5, 10975.0, 11379.8, 11692.7, 12189.1, 12317.8, 12550.6, 12815.6,
+				13128.9, 13380.2, 13553.5, 12347.9, 12850.3, 13657.2, 14522.3, 13248.8,
+				13620.5, 13896.6, 14104.6, 12363.7, 12570.3, 12927.2, 13168.5, 11229.4,
+				11477.8, 11785.6, 11998.2, 9596.15, 9714.1, 9820.8, 9844.9, 7428.95,
+				7522.31, 7577.83, 7572.9, 5029.94, 5052.08, 5064.9, 5076.71, 2542.53,
+				2542.53, 2542.53, 2542.53, 0.0
+			],
+			"quantile_levels": [
+				0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95,
+				0.975, 0.99
+			],
+			"value_quantiles": [
+				[
+					-236651.0, -345275.0, -420514.0, -451476.0, -476725.0, -754678.0,
+					-964020.0, -1027560.0, -1147950.0, -1301940.0, -1419730.0, -1509970.0,
+					-1621170.0, -1671390.0, -1788880.0, -1896310.0, -1893680.0,
+					-1941400.0, -2148340.0, -2157230.0, -2248460.0, -2264180.0,
+					-2337360.0, -2337010.0, -2499120.0, -2526380.0, -2581530.0,
+					-2399570.0, -2615160.0, -2855080.0, -3053800.0, -2947100.0,
+					-3073190.0, -3095460.0, -3103040.0, -2874210.0, -2912220.0,
+					-3182250.0, -3186920.0, -2687300.0, -2757450.0, -2836530.0,
+					-2889980.0, -2416150.0, -2423310.0, -2449880.0, -2471400.0,
+					-1947350.0, -1962690.0, -1993850.0, -2054520.0, -1426550.0,
+					-1429780.0, -1429620.0, -1433390.0, -768392.0, -761275.0, -760805.0,
+					-758848.0, 0.0
+				],
+				[
+					-201094.0, -290341.0, -355457.0, -396110.0, -416918.0, -583571.0,
+					-765975.0, -889497.0, -998313.0, -1061250.0, -1176990.0, -1293990.0,
+					-1330440.0, -1370690.0, -1482170.0, -1550230.0, -1637380.0,
+					-1672690.0, -1695860.0, -1762160.0, -1851600.0, -1936320.0,
+					-1957940.0, -2006310.0, -2023850.0, -2143930.0, -2131520.0,
+					-2059570.0, -2251640.0, -2402330.0, -2558680.0, -2417170.0,
+					-2363740.0, -2467090.0, -2684850.0, -2371860.0, -2502200.0,
+					-2583970.0, -2678680.0, -2224730.0, -2271180.0, -2366520.0,
+					-2401380.0, -1948770.0, -1996740.0, -2066510.0, -2054350.0,
+					-1611300.0, -1653540.0, -1681630.0, -1728150.0, -1158340.0,
+					-1190180.0, -1212310.0, -1230200.0, -647193.0, -646260.0, -651494.0,
+					-655419.0, 0.0
+				],
+				[
+					-173715.0, -235919.0, -286725.0, -333097.0, -346194.0, -471540.0,
+					-611461.0, -738958.0, -822547.0, -897214.0, -1004480.0, -1052610.0,
+					-1090370.0, -1178610.0, -1224490.0, -1256900.0, -1282040.0,
+					-1392420.0, -1422370.0, -1467220.0, -1566690.0, -1627990.0,
+					-1611810.0, -1682000.0, -1739050.0, -1746370.0, -1822200.0,
+					-1757750.0, -1831670.0, -1998300.0, -2002480.0, -1862500.0,
+					-1963290.0, -2027160.0, -2110860.0, -1861070.0, -1947880.0,
+					-2022050.0, -2098670.0, -1822620.0, -1855480.0, -1885280.0,
+					-1994700.0, -1624000.0, -1632980.0, -1673690.0, -1687670.0,
+					-1320720.0, -1323130.0, -1353220.0, -1378950.0, -969366.0, -986965.0,
+					-968407.0, -998125.0, -522901.0, -528805.0, -529119.0, -530260.0, 0.0
+				],
+				[
+					-127740.0, -184487.0, -221074.0, -243077.0, -254881.0, -360378.0,
+					-473849.0, -566246.0, -628218.0, -676112.0, -766568.0, -799395.0,
+					-845513.0, -926504.0, -948190.0, -995806.0, -1017790.0, -1035850.0,
+					-1085960.0, -1152200.0, -1176100.0, -1212500.0, -1263330.0,
+					-1276330.0, -1353310.0, -1383440.0, -1407470.0, -1313950.0,
+					-1381690.0, -1488300.0, -1550820.0, -1414620.0, -1443170.0,
+					-1549910.0, -1572090.0, -1449680.0, -1427490.0, -1495030.0,
+					-1554260.0, -1330530.0, -1408220.0, -1418810.0, -1439790.0,
+					-1171590.0, -1232800.0, -1268130.0, -1306450.0, -1001780.0, -998336.0,
+					-1048490.0, -1050050.0, -729175.0, -734501.0, -751996.0, -767580.0,
+					-397467.0, -402996.0, -405320.0, -407218.0, 0.0
+				],
+				[
+					-79063.3, -114307.0, -145271.0, -160058.0, -165399.0, -225628.0,
+					-300156.0, -348618.0, -398033.0, -431210.0, -472960.0, -506120.0,
+					-555330.0, -578670.0, -630426.0, -615642.0, -632600.0, -661897.0,
+					-669067.0, -705619.0, -744473.0, -784944.0, -792145.0, -841654.0,
+					-838771.0, -850099.0, -867987.0, -814969.0, -888291.0, -911738.0,
+					-967522.0, -905890.0, -940549.0, -973349.0, -984332.0, -878478.0,
+					-887681.0, -958074.0, -980365.0, -836839.0, -867545.0, -905360.0,
+					-947531.0, -786376.0, -787276.0, -797208.0, -842134.0, -632398.0,
+					-644262.0, -653428.0, -688305.0, -459189.0, -476605.0, -471882.0,
+					-480466.0, -254925.0, -260091.0, -262939.0, -265024.0, 0.0
+				],
+				[
+					-49803.2, -72045.6, -89832.0, -96833.7, -102463.0, -140421.0,
+					-187720.0, -224249.0, -236300.0, -270132.0, -279982.0, -312316.0,
+					-319160.0, -355931.0, -369617.0, -379219.0, -388694.0, -419187.0,
+					-427746.0, -452367.0, -457170.0, -465435.0, -483568.0, -494700.0,
+					-507562.0, -517808.0, -528581.0, -500751.0, -536829.0, -544895.0,
+					-541963.0, -520477.0, -539487.0, -551822.0, -590801.0, -474836.0,
+					-501633.0, -557037.0, -601611.0, -495953.0, -520145.0, -530108.0,
+					-550694.0, -434049.0, -467129.0, -470495.0, -502238.0, -354369.0,
+					-369725.0, -379240.0, -381199.0, -273630.0, -286008.0, -289351.0,
+					-300494.0, -160765.0, -163618.0, -167954.0, -170377.0, 0.0
+				],
+				[
+					-22273.3, -30474.4, -36469.5, -44973.4, -45117.4, -69389.8, -87683.8,
+					-103563.0, -116966.0, -120323.0, -125834.0, -142854.0, -166332.0,
+					-157495.0, -172551.0, -166247.0, -178233.0, -200607.0, -193602.0,
+					-202689.0, -193851.0, -194860.0, -197916.0, -201229.0, -204690.0,
+					-213066.0, -241075.0, -222432.0, -248206.0, -198562.0, -219608.0,
+					-219230.0, -233769.0, -217507.0, -231211.0, -192275.0, -211809.0,
+					-252021.0, -277623.0, -214814.0, -227497.0, -223678.0, -238373.0,
+					-169033.0, -184653.0, -195655.0, -212463.0, -150703.0, -161083.0,
+					-157511.0, -175848.0, -110102.0, -122683.0, -117681.0, -128594.0,
+					-73573.4, -75150.5, -77930.1, -81095.9, 0.0
+				],
+				[
+					1419.15, 3575.35, 5964.94, 10970.6, 7900.9, -838.479, -4517.27,
+					14179.9, 11718.5, -2757.41, 683.637, 7958.93, -7911.27, 11263.9,
+					7592.08, 44505.8, 46399.8, 38166.8, 41144.6, 33206.4, 25563.3,
+					27523.5, 50221.2, 18072.8, 27853.1, 31921.8, 40155.0, 30469.8,
+					28086.8, 39762.3, 67569.1, 68905.0, 56912.3, 69442.2, 68864.5,
+					61160.8, 38647.7, 25413.6, 35299.8, 70013.3, 48815.0, 46730.9,
+					39374.9, 56226.7, 60950.3, 61967.6, 49165.0, 33067.4, 26866.8,
+					36984.8, 36131.9, 30194.6, 24058.7, 15251.2, 11251.7, 11279.3,
+					7511.82, 4865.29, 2678.48, 0.0
+				],
+				[
+					24383.7, 36374.9, 47778.6, 64522.6, 66078.9, 81574.5, 86454.5,
+					108072.0, 126242.0, 120423.0, 134570.0, 151016.0, 156714.0, 171726.0,
+					186610.0, 217533.0, 248894.0, 224988.0, 240369.0, 247192.0, 249973.0,
+					282253.0, 264064.0, 266669.0, 287634.0, 284165.0, 306706.0, 295995.0,
+					304785.0, 329005.0, 341125.0, 316586.0, 336609.0, 339155.0, 325981.0,
+					301828.0, 304476.0, 336272.0, 313216.0, 294480.0, 306407.0, 301187.0,
+					322778.0, 269234.0, 260072.0, 256542.0, 263323.0, 239514.0, 231491.0,
+					230886.0, 228039.0, 169312.0, 166429.0, 165586.0, 168448.0, 88183.5,
+					86065.1, 85083.5, 84725.4, 0.0
+				],
+				[
+					51378.4, 76869.2, 90262.6, 110918.0, 121129.0, 154607.0, 188122.0,
+					215991.0, 240505.0, 250652.0, 281842.0, 305965.0, 319796.0, 345723.0,
+					376734.0, 428763.0, 428268.0, 440072.0, 442737.0, 465717.0, 481375.0,
+					499355.0, 540373.0, 548073.0, 564918.0, 557110.0, 582196.0, 547389.0,
+					570077.0, 587065.0, 670196.0, 584737.0, 613231.0, 611588.0, 655099.0,
+					585836.0, 602073.0, 621561.0, 625802.0, 535284.0, 555887.0, 584146.0,
+					589803.0, 502094.0, 498138.0, 530208.0, 548174.0, 434921.0, 451262.0,
+					438084.0, 450666.0, 320986.0, 315272.0, 320565.0, 323448.0, 163185.0,
+					164999.0, 164543.0, 166277.0, 0.0
+				],
+				[
+					84982.7, 119711.0, 144975.0, 169074.0, 179874.0, 257248.0, 303662.0,
+					345514.0, 378534.0, 421617.0, 458016.0, 511595.0, 533302.0, 572690.0,
+					608685.0, 655415.0, 671106.0, 677762.0, 700924.0, 698521.0, 753593.0,
+					767813.0, 802517.0, 812003.0, 855920.0, 876772.0, 880583.0, 808782.0,
+					850853.0, 923939.0, 984399.0, 907736.0, 923792.0, 975552.0, 996395.0,
+					889015.0, 903811.0, 921677.0, 997523.0, 834699.0, 868756.0, 907912.0,
+					940872.0, 787958.0, 802468.0, 786955.0, 839443.0, 664402.0, 695119.0,
+					698590.0, 699400.0, 484207.0, 489893.0, 488540.0, 496453.0, 254781.0,
+					256206.0, 259755.0, 263322.0, 0.0
+				],
+				[
+					134349.0, 185433.0, 221304.0, 246891.0, 259281.0, 385309.0, 435951.0,
+					523365.0, 587824.0, 636557.0, 718444.0, 780757.0, 833281.0, 880190.0,
+					914030.0, 971647.0, 1023750.0, 1043600.0, 1069200.0, 1106420.0,
+					1141830.0, 1175440.0, 1212060.0, 1233610.0, 1233340.0, 1236050.0,
+					1248150.0, 1140060.0, 1233450.0, 1328940.0, 1442360.0, 1327270.0,
+					1358270.0, 1380240.0, 1441670.0, 1306450.0, 1378570.0, 1423720.0,
+					1486160.0, 1271520.0, 1330590.0, 1363590.0, 1426710.0, 1195890.0,
+					1209060.0, 1240850.0, 1253270.0, 965356.0, 999478.0, 1016900.0,
+					1032970.0, 689389.0, 697302.0, 720404.0, 740265.0, 371103.0, 377712.0,
+					384696.0, 390441.0, 0.0
+				],
+				[
+					174883.0, 227589.0, 271947.0, 320004.0, 341568.0, 512005.0, 575373.0,
+					671585.0, 743187.0, 835451.0, 914214.0, 978243.0, 1064520.0,
+					1125980.0, 1164920.0, 1263050.0, 1274130.0, 1295450.0, 1357590.0,
+					1396190.0, 1457750.0, 1488980.0, 1511900.0, 1517070.0, 1539590.0,
+					1586690.0, 1651960.0, 1472450.0, 1585690.0, 1680780.0, 1793540.0,
+					1661230.0, 1729980.0, 1822240.0, 1830850.0, 1635360.0, 1693990.0,
+					1755460.0, 1820980.0, 1596410.0, 1642470.0, 1709680.0, 1736030.0,
+					1414240.0, 1466220.0, 1533330.0, 1580970.0, 1202970.0, 1214020.0,
+					1246740.0, 1275740.0, 853936.0, 867068.0, 880999.0, 910479.0,
+					465179.0, 472360.0, 480927.0, 490811.0, 0.0
+				],
+				[
+					198901.0, 270795.0, 315255.0, 395912.0, 398888.0, 597344.0, 709658.0,
+					803625.0, 919051.0, 1011480.0, 1112770.0, 1208040.0, 1319500.0,
+					1375770.0, 1364580.0, 1487290.0, 1496740.0, 1573920.0, 1643060.0,
+					1666590.0, 1682970.0, 1760380.0, 1787350.0, 1814300.0, 1830480.0,
+					1885300.0, 1916630.0, 1764250.0, 1830320.0, 1921130.0, 2055410.0,
+					1907110.0, 2018620.0, 2107280.0, 2164090.0, 1920720.0, 1958860.0,
+					2095420.0, 2101520.0, 1829550.0, 1923690.0, 1984160.0, 2081020.0,
+					1641580.0, 1682490.0, 1708710.0, 1735830.0, 1400070.0, 1444020.0,
+					1472880.0, 1503000.0, 1022110.0, 1062480.0, 1086880.0, 1115470.0,
+					554885.0, 567992.0, 582397.0, 596976.0, 0.0
+				],
+				[
+					234553.0, 330786.0, 394402.0, 465953.0, 471792.0, 697877.0, 852219.0,
+					912540.0, 1072550.0, 1161070.0, 1262150.0, 1394180.0, 1485190.0,
+					1595940.0, 1608850.0, 1693340.0, 1752900.0, 1823860.0, 1935750.0,
+					1930850.0, 2035450.0, 1979220.0, 2051720.0, 2128940.0, 2152600.0,
+					2246460.0, 2251340.0, 2125970.0, 2129990.0, 2258790.0, 2511940.0,
+					2340050.0, 2461270.0, 2542890.0, 2626460.0, 2281550.0, 2341680.0,
+					2486980.0, 2586170.0, 2255120.0, 2255180.0, 2384970.0, 2443110.0,
+					1919330.0, 2070480.0, 2073390.0, 2082110.0, 1562120.0, 1613830.0,
+					1711160.0, 1734360.0, 1205700.0, 1236420.0, 1237860.0, 1278350.0,
+					661388.0, 685506.0, 694430.0, 713903.0, 0.0
+				]
+			]
+		},
+		"exposure_uncollateralised": null,
+		"risk": {
+			"times": [
+				0.0192308, 0.0384615, 0.0576923, 0.0769231, 0.0833333, 0.166667, 0.25,
+				0.333333, 0.416667, 0.5, 0.583333, 0.666667, 0.75, 0.833333, 0.916667,
+				1.0, 1.08333, 1.16667, 1.25, 1.33333, 1.41667, 1.5, 1.58333, 1.66667,
+				1.75, 1.83333, 1.91667, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0,
+				4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0, 6.25, 6.5, 6.75, 7.0, 7.25,
+				7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25, 9.5, 9.75, 10.0
+			],
+			"ee": [
+				13166.2, 17260.6, 19342.0, 22017.7, 22801.2, 27267.8, 26901.3, 27863.5,
+				27269.5, 27013.9, 27586.3, 27891.7, 27793.5, 27408.3, 25134.7, 12837.9,
+				5603.67, 5241.65, 5440.02, 5288.26, 5397.18, 4735.88, 4031.83, 3866.12,
+				3920.08, 3855.82, 3491.6, 3425.63, 2894.57, 2756.09, 2491.1, 2956.07,
+				2931.81, 2162.34, 1710.23, 1603.67, 936.865, 972.118, 667.259, 883.568,
+				777.346, 732.921, 494.983, 379.493, 374.208, 211.994, 167.815, 159.785,
+				76.3274, 120.259, 106.457, 63.2682, 63.8265, 49.6853, 30.2492, 18.0103,
+				18.3202, 18.5469, 18.7319, 0.0
+			],
+			"ene": [
+				-17682.5, -26789.2, -34231.4, -39807.7, -42042.5, -67914.1, -94498.3,
+				-117101.0, -138359.0, -160615.0, -181400.0, -201834.0, -222643.0,
+				-241484.0, -261126.0, -360856.0, -476131.0, -498743.0, -516897.0,
+				-537886.0, -554828.0, -572941.0, -588760.0, -608742.0, -628372.0,
+				-646079.0, -663337.0, -607452.0, -636524.0, -676412.0, -712244.0,
+				-633229.0, -652011.0, -685517.0, -718689.0, -620344.0, -645038.0,
+				-676134.0, -703239.0, -603390.0, -641693.0, -660942.0, -683375.0,
+				-545009.0, -563594.0, -579399.0, -597366.0, -454973.0, -475958.0,
+				-488406.0, -501018.0, -339842.0, -347434.0, -354462.0, -361234.0,
+				-184496.0, -185778.0, -187060.0, -188335.0, 0.0
+			],
+			"pfe": [
+				62323.3, 77998.8, 89576.1, 104303.0, 110202.0, 150009.0, 152720.0,
+				168979.0, 166610.0, 187096.0, 190001.0, 190031.0, 199221.0, 197274.0,
+				188610.0, 87426.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+			],
+			"epe": 3651.08,
+			"eepe": 26980.7
+		},
+		"adjustments": {
+			"cva": {
+				"value": -23686.1,
+				"error": 664.466
+			},
+			"dva": {
+				"value": 16813.8,
+				"error": 414.816
+			},
+			"cva_independent": {
+				"value": -23686.1,
+				"error": 664.466
+			},
+			"dva_independent": {
+				"value": 16813.8,
+				"error": 414.816
+			},
+			"cva_unilateral": -24833.1,
+			"fca": 0.0,
+			"fba": 0.0,
+			"colva": 0.0,
+			"mva": 0.0,
+			"kva": -86948.2,
+			"cva_rule_of_thumb": -26662.5
+		},
+		"adjustments_uncollateralised": null,
+		"initial_margin": null,
+		"capital": {
+			"method": "sa_ccr",
+			"method_reason": "Every trade is a swap or a swaption, which the standardised approach (SA-CCR) describes: the method a bank uses without an approved model.",
+			"ead_today": 550857.0,
+			"default_capital_today": 33036.3,
+			"cva_capital_today": 100632.0,
+			"times": [
+				0.0192308, 0.0384615, 0.0576923, 0.0769231, 0.0833333, 0.166667, 0.25,
+				0.333333, 0.416667, 0.5, 0.583333, 0.666667, 0.75, 0.833333, 0.916667,
+				1.0, 1.08333, 1.16667, 1.25, 1.33333, 1.41667, 1.5, 1.58333, 1.66667,
+				1.75, 1.83333, 1.91667, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0,
+				4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0, 6.25, 6.5, 6.75, 7.0, 7.25,
+				7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25, 9.5, 9.75, 10.0
+			],
+			"expected_ead": [
+				581710.0, 594913.0, 603409.0, 617634.0, 621059.0, 650391.0, 659626.0,
+				680602.0, 696100.0, 706450.0, 729035.0, 747531.0, 761453.0, 781171.0,
+				790718.0, 824223.0, 834693.0, 831503.0, 840841.0, 846198.0, 862238.0,
+				871788.0, 881106.0, 884855.0, 894184.0, 899503.0, 907440.0, 861043.0,
+				875115.0, 905701.0, 943232.0, 884314.0, 890938.0, 899556.0, 906935.0,
+				833814.0, 839223.0, 844902.0, 855779.0, 767634.0, 775054.0, 784524.0,
+				790227.0, 684519.0, 678681.0, 680783.0, 679098.0, 558366.0, 557237.0,
+				553281.0, 548996.0, 398875.0, 390655.0, 383266.0, 376596.0, 211188.0,
+				196597.0, 185744.0, 178694.0, 0.0
+			],
+			"discounted_capital": [
+				140877.0, 143790.0, 145555.0, 148692.0, 149418.0, 155133.0, 155980.0,
+				159546.0, 161758.0, 162726.0, 166451.0, 169164.0, 170781.0, 173636.0,
+				174177.0, 179915.0, 180490.0, 178103.0, 178394.0, 177816.0, 179447.0,
+				179683.0, 179839.0, 178840.0, 178950.0, 178234.0, 178019.0, 167226.0,
+				164870.0, 165426.0, 166920.0, 151524.0, 147731.0, 144239.0, 140517.0,
+				124728.0, 121098.0, 117498.0, 114584.0, 98855.4, 94716.2, 90790.2,
+				86402.9, 70535.3, 65721.8, 61760.9, 57513.2, 43969.5, 40605.2, 37112.9,
+				33693.1, 22237.6, 19615.8, 17153.5, 14830.5, 7198.14, 6619.43, 6178.08,
+				5871.39, 0.0
+			],
+			"pd": 0.00336667,
+			"pd_source": "historical",
+			"pd_reason": "Average one-year default rate of S&P's BBB corporate ratings from 2000 to 2011: 0.34 % (64 defaults in 12 years, as the agency reported them to ESMA).",
+			"lgd": 0.4,
+			"sector": "other",
+			"investment_grade": true,
+			"margined": false,
+			"cost_of_capital": 0.1
+		},
+		"capital_uncollateralised": null,
+		"market": {
+			"currency": "USD",
+			"curve_as_of": "2026-09-30",
+			"curve_label": "USD SOFR, from traded prices",
+			"hull_white": {
+				"mean_reversion": 0.0317566,
+				"sigma": 0.0117035,
+				"rmse_bp": 3.273,
+				"vol_points": 6,
+				"swaption_trades": 180
+			},
+			"counterparty": {
+				"rating": "BBB",
+				"spread": 0.0102,
+				"hazard": 0.016922,
+				"as_of": "2026-10-02"
+			},
+			"own": {
+				"rating": "A",
+				"spread": 0.0071,
+				"hazard": 0.0117789,
+				"as_of": "2026-10-02"
+			},
+			"recovery": 0.4,
+			"historical": {
+				"mean_reversion": 0.282671,
+				"long_run_rate": 0.0273708,
+				"sigma": 0.00450523,
+				"estimated_mean_reversion": 0.282671,
+				"estimated_long_run_rate": 0.0273708,
+				"estimated_sigma": 0.00450523,
+				"mean_reversion_std_error": 0.230997,
+				"long_run_rate_std_error": 0.00494313,
+				"series": "DGS3MO",
+				"since": "2016-01-04",
+				"observations": 2600,
+				"overridden": []
+			},
+			"default_rate": {
+				"agency": "S&P",
+				"rating": "BBB",
+				"first_year": 2000,
+				"last_year": 2011,
+				"years": 12,
+				"defaults": 64,
+				"rate": 0.00336667
+			}
+		},
+		"paths": 2000,
+		"pilot_paths": 0,
+		"seed": 42,
+		"device": "cpu",
+		"gpus": 0,
+		"device_reason": "The CPU was requested.",
+		"compute_ms": 1234.0,
+		"warnings": [
+			"Counterparty and own credit curves are rating proxies built from bond spreads (ICE BofA indices), not CDS quotes of a name.",
+			"The long-run rate and the mean reversion of the historical measure are estimates that change with the window; the risk measures depend on them."
+		],
+		"methodology": [
+			{
+				"title": "What is computed",
+				"paragraphs": [
+					"If a counterparty defaults while a trade is worth something to the bank, the bank loses that value less what it recovers. The credit valuation adjustment (CVA) is the price of that risk today; the debit valuation adjustment (DVA) is the same thing seen by the counterparty about the bank. Both come from one object: the distribution of the future value of the netting set, date by date.",
+					"Sign convention, Gregory's (4th edition): an adjustment is negative when it is a cost to the bank. Adjusted value = risk-free value + CVA + DVA + FVA. CVA is negative or zero, DVA positive or zero."
+				]
+			},
+			{
+				"title": "Exposure",
+				"paragraphs": [
+					"V(t) is the value of the netting set to the bank at a future date, after the payment of that date. Expected exposure EE(t) is the average of max(V(t), 0); expected negative exposure ENE(t) the average of min(V(t), 0), a negative number. Potential future exposure PFE(t) is a high quantile of V(t). EPE is the time average of EE; the Effective EPE (EEPE) of the Basel framework averages, over the first year, an EE that is not allowed to decrease.",
+					"The values come from a simulation: thousands of paths of interest rates on a grid of dates that includes every payment date, and each trade repriced on each path at each date. Close-out netting is applied path by path: values add up before the positive part is taken."
+				]
+			},
+			{
+				"title": "Interest-rate scenarios",
+				"paragraphs": [
+					"Rates follow the one-factor Hull-White model, dr = (\u03b8(t) \u2212 a r)dt + \u03c3 dW, fitted exactly to today's swap curve. In this model the price of every zero-coupon bond at a future date is a closed formula of one state variable, so swaps and European swaptions are repriced exactly on each path, without approximation.",
+					"The two parameters are calibrated to the swaptions actually traded: the mean reversion a and the volatility \u03c3 that best reproduce the normal vols implied by traded premiums (see the Rates page). The swap curve is the median rate of the swaps traded on the latest day. These are medians of trades published by DTCC, not dealer quotes."
+				]
+			},
+			{
+				"title": "CVA and DVA",
+				"paragraphs": [
+					"CVA = \u2212LGD \u00d7 \u03a3 EE*(t_i) \u00d7 S_bank(t_{i\u22121}) \u00d7 PD_counterparty(t_{i\u22121}, t_i), where EE* is the discounted expected exposure, LGD = 1 \u2212 recovery, PD the probability that the counterparty defaults in the interval and S_bank the probability that the bank has not defaulted before: only the first default matters. DVA is the mirror image, on the negative exposure and the bank's own default. The unilateral CVA ignores the bank's default.",
+					"Each figure carries its Monte-Carlo standard error, computed from the dispersion of the loss path by path. Rule of thumb shown next to it: CVA \u2248 \u2212credit spread \u00d7 EPE \u00d7 maturity.",
+					"The model assumes that default is independent of the level of rates (no wrong-way risk) and that the two defaults are independent of each other."
+				]
+			},
+			{
+				"title": "Bermudans: value by regression",
+				"paragraphs": [
+					"A swap and a European swaption have an exact value on every path at every date under the model. A Bermudan does not: what it is worth depends on when it will be exercised. Its value is estimated by American Monte-Carlo (Longstaff & Schwartz, 2001): on a separate, independent set of pilot paths, the cash flows it goes on to pay are regressed on the level of rates at each date, which gives its value as a function of rates. The number of pilot paths is shown with the result.",
+					"Each path carries an exercise state. On an exercise date the holder enters the swap when it is worth more than keeping the option; from then on the trade is that swap, valued exactly. The rule is an estimate of the best one, so the simulated holder is slightly sub-optimal: the value shown for today is the lattice price, and the simulated exposure starts just below it. On swaps and European swaptions, where the exact value is known, the same regression reproduces the expected exposure within 1 to 2 % of its peak and the 99 % quantile within 2 to 4 %, the more pilot paths the closer."
+				]
+			},
+			{
+				"title": "Trades written as scripts",
+				"paragraphs": [
+					"A trade can be given as a script in the payoff language of the Scripting page, on interest rates: dated events that read the curve of their date with df(DATE), keep what they need in variables and pay with `pays`. The engine does not know what the trade is. It replays the script on every scenario, which gives its cash flows, and estimates its value at each date by regressing the cash flows still to come on the level of rates and on the script's own variables, as for a Bermudan. A swap written this way has the exposure and the CVA of the native swap, within the accuracy of the regression.",
+					"This is the idea of Andreasen and Savine: the cash flows are the one description of a trade, and every calculation \u2014 value, exposure, capital \u2014 is run on them. So the capital of a scripted trade is the internal models method's, which reads the simulated exposure; the standardised approach would need a supervisory description the script does not carry. Its value today is a Monte-Carlo price, and ISDA SIMM, which needs sensitivities scenario by scenario, gives way to the regression model of the margin."
+				]
+			},
+			{
+				"title": "Wrong-way risk",
+				"paragraphs": [
+					"Every figure above assumes that the counterparty's default has nothing to do with what it owes. Wrong-way risk is the case where it defaults more often precisely when it owes more. It is modelled as Hull & White (2012) do: the hazard rate depends on the value of the netting set, \u03bb(t) = exp(a(t) + b \u00d7 V(t)), with a(t) solved at each date so that the survival probability averaged over the scenarios is still the market's. The parameter moves default probability between scenarios; it does not create any.",
+					"The parameter is entered per reference notional of 10 M: a value of 10 multiplies the hazard by e^0.5 \u2248 1.65 in a scenario where the netting set is worth 5 % of the notional more. It has no market quote: it is a scenario, and the figure to read is the ratio of the CVA with it to the independent CVA, shown side by side. Under a collateral agreement the effect nearly disappears: the exposure is then the move of the value over ten days, which is no larger where the value is high. Funding, margin and capital adjustments keep the market survival curve."
+				]
+			},
+			{
+				"title": "Initial margin and MVA",
+				"paragraphs": [
+					"Under the margin rules for non-cleared derivatives each party also posts initial margin, held apart, sized to cover 99 % of the move of the netting set's value over the margin period of risk. Pricing it needs that margin in every scenario at every date. It is projected by regression (Anfuso, Aziz, Giltinan & Loukopoulos, 2017): on the simulated paths, the squared move of the value over the next ten days is regressed on the value, which gives its conditional standard deviation; the margin is 2.33 times it, the 99 % quantile of a normal move. This is a model of the margin, not the industry's rule (ISDA SIMM works from sensitivities): if you give today's actual margin, the whole profile is scaled to start from it.",
+					"When every trade is a swap or a European swaption, the margin is instead ISDA SIMM itself (methodology version 2.8+2512, interest rate risk class), computed in every scenario at every date from the sensitivities of that scenario: the PV01 at each of the twelve vertices of the curve, weighted by ISDA's risk weights and aggregated with its correlations, plus the vega and curvature of the options. The sensitivities come from the closed forms, not from a bump: each cash flow's sensitivity to its own zero rate, shared between the two vertices around it; for an option, its vega at the normal volatility its price implies. (SIMM asks for sensitivities to market rates; zero rates are used here.) SIMM is calibrated on a period of stress and comes out about one and a half times the regression model's margin.",
+					"With that margin the exposure is what is left beyond it, on about one path in a hundred: the CVA almost disappears. What replaces it is the cost of funding the margin posted, MVA = \u2212\u03a3 E[D \u00d7 IM](t) \u00d7 survival of both parties \u00d7 funding spread \u00d7 \u0394t. Segregated margin funds nothing, so the funding adjustments stay those of the variation margin."
+				]
+			},
+			{
+				"title": "ColVA",
+				"paragraphs": [
+					"A collateral agreement pays a rate on the cash it holds. When that rate is the overnight rate the trades are discounted at, nothing is gained or lost: this is why collateralised trades are discounted on the OIS curve (Piterbarg, 2010). When it differs, ColVA = \u2212\u03a3 E[D \u00d7 collateral held](t) \u00d7 survival of both parties \u00d7 (rate paid \u2212 discount rate) \u00d7 \u0394t: a cost when the bank holds collateral on which it pays more."
+				]
+			},
+			{
+				"title": "Capital and KVA",
+				"paragraphs": [
+					"Two regulatory charges are projected. By default the exposure at default is the standardised approach's (SA-CCR, Basel framework CRE52): 1.4 \u00d7 (replacement cost + multiplier \u00d7 add-on). At a future date the add-on comes from the trades that are left, the same in every scenario; the replacement cost and the multiplier come from the value, and the margin held, in the scenario. The default-risk capital is the IRB formula on that exposure (CRE31, with the PD floor of 0.05 % of CRE32.4, the foundation LGD of CRE32.6 and an effective maturity capped at five years, CRE32.46); the CVA capital is the reduced basic approach (BA-CVA, MAR50), with the sector and investment-grade risk weight of the counterparty and no cap on the maturity (MAR50.15).",
+					"The probability of default of that formula is a historical frequency: the share of the issuers of the counterparty's rating category that defaulted within a year, averaged over the years on record (S&P's corporate ratings, as the agency reports them to ESMA). It is not the probability the credit spread implies, which the CVA uses: a spread also pays for bearing the risk, and implies several times more defaults than have been observed. A probability of default can be entered instead.",
+					"The other way to the exposure at default is the internal models method (CRE53): 1.4 \u00d7 the Effective EPE, the average over the coming year of the expected exposure made non-decreasing, read off the simulation itself with its collateral. Its effective maturity is a ratio of areas under the exposure profile (CRE53.20), capped at five years for the default charge and not for the CVA charge, whose supervisory discount it replaces (MAR50.15). It needs no description of the trades, so it is the method of a netting set that holds a script; on swaps it can be asked for, to compare. Three things a bank's approved model does are not done here: the exposure of a future date is the one expected today, not the one the bank would compute in each scenario; the profile comes from the pricing simulation, which the rule allows; and the stressed calibration the rule adds (CRE53.7) is not run.",
+					"KVA = \u2212\u03a3 E[D \u00d7 capital](t) \u00d7 survival of both parties \u00d7 cost of capital \u00d7 \u0394t (Green, Kenyon & Dennis, 2014). An option keeps today's moneyness in its supervisory delta, and after its last exercise date it is carried as its underlying swap. Market-risk capital of the hedges and the leverage ratio are not included."
+				]
+			},
+			{
+				"title": "Credit curves",
+				"paragraphs": [
+					"No free source publishes CDS spreads by name. The counterparty and the bank are given a rating, and the rating a spread: the option-adjusted spread of the ICE BofA US corporate index of that rating (FRED). The hazard rate is the constant default intensity that reprices a five-year CDS at that spread, about spread / (1 \u2212 recovery).",
+					"These are bond spreads, which differ from CDS spreads by a basis and include a liquidity premium: a proxy, as banks use for counterparties without a traded CDS."
+				]
+			},
+			{
+				"title": "Collateral",
+				"paragraphs": [
+					"Under a collateral agreement (CSA) the party that is owed money receives variation margin: the value above a threshold, called when the change exceeds a minimum transfer amount. What remains is the margin period of risk: if the counterparty defaults at t, the collateral in hand is the one called on the value some days earlier (ten business days by regulatory convention), and the exposure is V(t) \u2212 C(t \u2212 MPoR).",
+					"Coupons paid during that period matter: where the bank pays a coupon the value jumps while the collateral still reflects the value before it, which shows as spikes in the exposure. The treatment can be changed (both parties keep paying, both stop, or only the bank keeps paying).",
+					"The comparison with the uncollateralised netting set is made on the same paths."
+				]
+			},
+			{
+				"title": "Two measures: prices and risks",
+				"paragraphs": [
+					"CVA is a price: its exposure is computed on risk-neutral scenarios, calibrated to option prices. PFE and credit limits are risk measures \u2014 how large the exposure can really get \u2014 and are computed on scenarios that follow the historical behaviour of rates, dr = a(\u03b8 \u2212 r)dt + \u03c3 dW, estimated on the 3-month Treasury yield since 1990. In both cases each trade is valued on each path by the market-calibrated model: only the probability of the scenarios differs.",
+					"The historical volatility \u03c3 is well determined by the data. The mean reversion a and the long-run rate \u03b8 are not: they change entirely with the estimation window, and \u03b8 drives the result (a long-run rate below today's makes payer swaps lose value on average). They are shown with their standard errors and can be set by hand."
+				]
+			},
+			{
+				"title": "The share of each trade",
+				"paragraphs": [
+					"Stand-alone CVA: the trade as if it were alone. Incremental CVA: the CVA of the netting set minus its CVA without the trade \u2014 the price to charge for adding it, positive when the trade reduces the risk. Marginal CVA: the Euler allocation, the trade's value on the paths where the netting set is positive; the shares add up to the total. There is no exact allocation under a CSA with a threshold or a minimum transfer amount."
+				]
+			},
+			{
+				"title": "Where the paths are valued",
+				"paragraphs": [
+					"Swaps and European swaptions have a closed-form value under the model. When the server has graphics cards, their paths are valued there: one GPU thread per path draws the random numbers the CPU would have drawn and applies the same formulas. The scenarios are identical and the values agree to about fourteen digits; the last ones differ because a graphics card does not compute an exponential exactly as a processor does. The result is the same, bit for bit, on one card or on two.",
+					"A Bermudan or a scripted trade is valued by regression, and SIMM on every path needs the sensitivities of each scenario: both stay on the CPU. The response says where the paths ran and why."
+				]
+			},
+			{
+				"title": "Sources",
+				"paragraphs": [
+					"Gregory, The xVA Challenge: Counterparty Risk, Funding, Collateral, Capital and Initial Margin, 4th ed., Wiley, 2020.",
+					"Andreasen & Savine, Modern Computational Finance: Scripting for Derivatives and xVA, Wiley, 2021.",
+					"Pykhtin & Zhu, A Guide to Modelling Counterparty Credit Risk, GARP Risk Review, 2007.",
+					"Andersen, Pykhtin & Sokol, Rethinking the Margin Period of Risk, Journal of Credit Risk, 2017.",
+					"Basel Committee on Banking Supervision, Basel Framework, CRE53 (internal models method: Effective EE, Effective EPE).",
+					"European Securities and Markets Authority, Central Repository (CEREP): default statistics reported by the credit rating agencies. The default rates of this page were drafted using material downloaded from ESMA's website; ESMA does not endorse this publication."
+				]
+			}
+		]
+	},
+	"balanced_csa": {
+		"portfolio": "balanced",
+		"portfolio_label": "A balanced book: payers, receivers and an option",
+		"lesson": "Close-out netting: trades that offset each other reduce the exposure of the set well below the sum of its trades. A trade can have a positive incremental CVA: it lowers the counterparty risk of what is already there.",
+		"value_today": 204975.0,
+		"trades": [
+			{
+				"description": "Payer swap 10Y at par",
+				"kind": "swap",
+				"quantity": 1.0,
+				"payer": true,
+				"notional": 10000000.0,
+				"fixed_rate": 0.0486,
+				"start": 0.0,
+				"tenor": 10.0,
+				"script": null,
+				"maturity": 10.0,
+				"value_today": 0.0,
+				"standalone_cva": -0.105813,
+				"incremental_cva": 17.4768,
+				"marginal_cva": null
+			},
+			{
+				"description": "Receiver swap 10Y at par",
+				"kind": "swap",
+				"quantity": 1.0,
+				"payer": false,
+				"notional": 8000000.0,
+				"fixed_rate": 0.0486,
+				"start": 0.0,
+				"tenor": 10.0,
+				"script": null,
+				"maturity": 10.0,
+				"value_today": -0.0,
+				"standalone_cva": -0.285544,
+				"incremental_cva": -0.899547,
+				"marginal_cva": null
+			},
+			{
+				"description": "Payer swap 5Y at par",
+				"kind": "swap",
+				"quantity": 1.0,
+				"payer": true,
+				"notional": 6000000.0,
+				"fixed_rate": 0.0478,
+				"start": 0.0,
+				"tenor": 5.0,
+				"script": null,
+				"maturity": 5.0,
+				"value_today": 0.0,
+				"standalone_cva": -0.0186388,
+				"incremental_cva": 0.295623,
+				"marginal_cva": null
+			},
+			{
+				"description": "Receiver swap 7Y at par",
+				"kind": "swap",
+				"quantity": 1.0,
+				"payer": false,
+				"notional": 6000000.0,
+				"fixed_rate": 0.0481,
+				"start": 0.0,
+				"tenor": 7.0,
+				"script": null,
+				"maturity": 7.0,
+				"value_today": -0.0,
+				"standalone_cva": -0.262021,
+				"incremental_cva": 1.93846,
+				"marginal_cva": null
+			},
+			{
+				"description": "Receiver swap 2Y at par",
+				"kind": "swap",
+				"quantity": 1.0,
+				"payer": false,
+				"notional": 10000000.0,
+				"fixed_rate": 0.0473,
+				"start": 0.0,
+				"tenor": 2.0,
+				"script": null,
+				"maturity": 2.0,
+				"value_today": -0.0,
+				"standalone_cva": -0.243307,
+				"incremental_cva": 5.02159,
+				"marginal_cva": null
+			},
+			{
+				"description": "Bought payer swaption 2Y into 10Y, at the money",
+				"kind": "swaption",
+				"quantity": 1.0,
+				"payer": true,
+				"notional": 5000000.0,
+				"fixed_rate": 0.0498369,
+				"start": 2.0,
+				"tenor": 10.0,
+				"script": null,
+				"maturity": 12.0,
+				"value_today": 204975.0,
+				"standalone_cva": -2.90007,
+				"incremental_cva": -0.889615,
+				"marginal_cva": null
+			}
+		],
+		"exposure": {
+			"times": [
+				0.0176923, 0.0192308, 0.0369231, 0.0384615, 0.0576923, 0.0769231,
+				0.0833333, 0.166667, 0.25, 0.333333, 0.416667, 0.5, 0.583333, 0.666667,
+				0.75, 0.833333, 0.916667, 1.0, 1.08333, 1.16667, 1.25, 1.33333, 1.41667,
+				1.5, 1.58333, 1.66667, 1.75, 1.83333, 1.91667, 2.0, 2.25, 2.5, 2.75,
+				3.0, 3.25, 3.5, 3.75, 4.0, 4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0,
+				6.25, 6.5, 6.75, 7.0, 7.25, 7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25,
+				9.5, 9.75, 10.0, 10.25, 10.5, 10.75, 11.0, 11.25, 11.5, 11.75, 12.0
+			],
+			"ee": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.27081, 6.01441, 0.0, 0.0,
+				11.5023, 0.0, 57.2416, 36.0377, 0.0, 0.0, 3.06824, 0.0, 4.40188, 0.0,
+				18.007, 54.1719, 4.36672, 0.0, 28.7668, 23.4215, 2.59184, 11.012,
+				30.0009, 11.295, 13.8102, 4.33736, 4.47404, 5.36663, 13.3443, 6.31056,
+				0.760628, 0.0, 28.0629, 2.58123, 14.0401, 1.76222, 3.6084, 8.91137,
+				27.8853, 0.0, 0.0, 2.81912, 0.0248484, 12.6795, 29.298, 58.4864, 155.883
+			],
+			"ene": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, -33.0214, 0.0, 0.0, 0.0, -61.3491, 0.0,
+				-8.54796, -32.6621, -9.71688, 0.0, 0.0, -16.0468, 0.0, -7.01798,
+				-9.17573, -2.05981, -10.2664, -38.3838, -70.968, -22.6388, -12.2507,
+				-1.54145, -13.0353, -13.3768, -35.7712, -16.7008, -3.70122, -19.0921,
+				-3.55883, -1.26278, -10.9566, 0.0, -12.5636, -3.61013, -59.4629,
+				-0.0965289, -2.40064, -1.78163, -4.93869, -11.9317, -1.80931,
+				-0.0519769, -19.0763, 0.0, 0.0, -2.1738, -10.4458, -0.0240864,
+				-0.197903, -0.122899, -7.3167
+			],
+			"pfe": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 49.0153, 181.585, 0.0, 0.0, 0.0, 0.0, 0.0, 162.191,
+				383.588, 966.71
+			],
+			"epe": 13.4916,
+			"eepe": 0.0,
+			"discounted_ee": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.05425, 5.59377, 0.0, 0.0,
+				10.5702, 0.0, 52.1837, 32.4662, 0.0, 0.0, 2.66759, 0.0, 3.73847, 0.0,
+				14.939, 44.4189, 3.53885, 0.0, 22.7732, 18.3212, 2.00334, 8.41048,
+				22.641, 8.42277, 10.176, 3.15798, 3.21879, 3.81406, 9.3686, 4.37664,
+				0.521121, 0.0, 18.7623, 1.7048, 9.16032, 1.13578, 2.29743, 5.60486,
+				17.3257, 0.0, 0.0, 1.68371, 0.0146464, 7.37588, 16.8201, 33.1379,
+				87.1664
+			],
+			"discounted_ene": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, -31.3326, 0.0, 0.0, 0.0, -57.2872, 0.0,
+				-7.91837, -30.1356, -8.92945, 0.0, 0.0, -14.4565, 0.0, -6.17433,
+				-7.97756, -1.76999, -8.71913, -32.2193, -58.8767, -18.5629, -9.9281,
+				-1.23466, -10.3194, -10.4639, -27.6491, -12.7554, -2.79324, -14.2371,
+				-2.62231, -0.919419, -7.88255, 0.0, -8.82048, -2.50378, -40.7392,
+				-0.0653307, -1.60502, -1.17669, -3.22219, -7.69018, -1.15197,
+				-0.0326912, -11.8524, 0.0, 0.0, -1.29829, -6.15706, -0.0140115,
+				-0.113617, -0.0696337, -4.09133
+			],
+			"discounted_ee_error": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.05425, 5.59377, 0.0, 0.0,
+				10.5702, 0.0, 43.2848, 22.9517, 0.0, 0.0, 2.66759, 0.0, 2.70024, 0.0,
+				12.2581, 28.6601, 3.45978, 0.0, 14.9511, 10.3611, 2.00334, 6.69214,
+				15.5646, 7.08827, 8.11939, 3.15798, 2.51445, 3.81406, 6.51085, 4.37664,
+				0.521121, 0.0, 13.3725, 1.28096, 6.34105, 0.325397, 0.433707, 0.834228,
+				1.26114, 0.0, 0.0, 1.68371, 0.0146464, 1.33206, 1.87823, 2.54655,
+				4.82148
+			],
+			"quantile_levels": [
+				0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95,
+				0.975, 0.99
+			],
+			"value_quantiles": [
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, -59.7776, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					-114.046
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, -47.5803, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					-87.2723
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, -36.2656, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					-58.7087
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, -24.1378, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					-23.1313
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, -5.2922, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					7.97755
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 15.2775, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					3.85456, 194.873
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 6.28932, 90.3358, 0.0, 0.0, 0.0, 0.0, 0.0,
+					3.59217, 157.926, 542.621
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 49.0153, 181.585, 0.0, 0.0, 0.0, 0.0, 0.0,
+					162.191, 383.588, 966.71
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 37.3315, 103.435, 269.261, 0.0, 0.0, 0.0, 0.0, 130.57,
+					397.913, 617.546, 1313.04
+				],
+				[
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 31.0718, 106.646, 191.438, 431.362, 0.0, 0.0, 0.0, 0.0,
+					436.304, 737.287, 1069.36, 1877.69
+				]
+			]
+		},
+		"exposure_uncollateralised": {
+			"times": [
+				0.0176923, 0.0192308, 0.0369231, 0.0384615, 0.0433333, 0.0576923,
+				0.0769231, 0.0833333, 0.126667, 0.166667, 0.21, 0.25, 0.293333,
+				0.333333, 0.376667, 0.416667, 0.46, 0.5, 0.543333, 0.583333, 0.626667,
+				0.666667, 0.71, 0.75, 0.793333, 0.833333, 0.876667, 0.916667, 0.96, 1.0,
+				1.04333, 1.08333, 1.12667, 1.16667, 1.21, 1.25, 1.29333, 1.33333,
+				1.37667, 1.41667, 1.46, 1.5, 1.54333, 1.58333, 1.62667, 1.66667, 1.71,
+				1.75, 1.79333, 1.83333, 1.87667, 1.91667, 1.96, 2.0, 2.21, 2.25, 2.46,
+				2.5, 2.71, 2.75, 2.96, 3.0, 3.21, 3.25, 3.46, 3.5, 3.71, 3.75, 3.96,
+				4.0, 4.21, 4.25, 4.46, 4.5, 4.71, 4.75, 4.96, 5.0, 5.21, 5.25, 5.46,
+				5.5, 5.71, 5.75, 5.96, 6.0, 6.21, 6.25, 6.46, 6.5, 6.71, 6.75, 6.96,
+				7.0, 7.21, 7.25, 7.46, 7.5, 7.71, 7.75, 7.96, 8.0, 8.21, 8.25, 8.46,
+				8.5, 8.71, 8.75, 8.96, 9.0, 9.21, 9.25, 9.46, 9.5, 9.71, 9.75, 9.96,
+				10.0, 10.21, 10.25, 10.46, 10.5, 10.71, 10.75, 10.96, 11.0, 11.21,
+				11.25, 11.46, 11.5, 11.71, 11.75, 11.96, 12.0
+			],
+			"ee": [
+				205431.0, 205456.0, 205377.0, 205679.0, 205837.0, 206062.0, 204980.0,
+				205004.0, 205112.0, 204924.0, 205843.0, 206656.0, 206977.0, 207975.0,
+				207509.0, 206859.0, 207436.0, 206109.0, 206781.0, 206607.0, 208087.0,
+				208107.0, 208562.0, 208150.0, 208360.0, 208315.0, 208231.0, 207300.0,
+				207288.0, 195385.0, 198582.0, 196613.0, 196098.0, 195779.0, 195089.0,
+				194510.0, 195030.0, 194596.0, 195259.0, 195713.0, 197181.0, 199097.0,
+				200337.0, 201329.0, 199579.0, 201064.0, 201143.0, 204282.0, 206963.0,
+				206925.0, 206618.0, 208270.0, 208352.0, 226941.0, 232263.0, 233629.0,
+				242729.0, 242899.0, 244933.0, 245897.0, 253830.0, 218438.0, 226245.0,
+				227894.0, 233608.0, 232923.0, 237783.0, 239534.0, 243687.0, 208823.0,
+				212083.0, 213454.0, 220628.0, 221667.0, 230027.0, 230950.0, 235732.0,
+				208338.0, 214489.0, 216579.0, 219987.0, 220531.0, 226853.0, 228502.0,
+				232992.0, 209914.0, 214529.0, 215808.0, 224029.0, 225334.0, 228715.0,
+				229292.0, 235857.0, 239361.0, 243862.0, 244211.0, 251309.0, 251656.0,
+				258320.0, 258252.0, 261197.0, 198535.0, 199853.0, 200025.0, 201807.0,
+				202661.0, 205443.0, 205647.0, 207250.0, 143129.0, 146136.0, 146351.0,
+				148086.0, 148384.0, 150167.0, 150328.0, 152213.0, 87095.2, 88326.3,
+				88348.7, 89670.3, 90103.1, 90919.2, 90986.7, 91636.8, 45031.2, 45532.2,
+				45628.2, 46135.9, 46233.2, 46747.6, 46846.3, 47367.5, 0.0
+			],
+			"ene": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, -10.515, -25.3789, -113.879, -212.007, -523.249, -889.29,
+				-1316.7, -1919.2, -2325.36, -2909.62, -3592.78, -4354.18, -5069.08,
+				-5938.77, -6776.04, -7904.04, -8409.92, -9137.37, -10211.6, -11074.2,
+				-12136.3, -13150.8, -20715.2, -26869.1, -27506.0, -32896.1, -33447.7,
+				-39822.6, -40236.9, -45498.8, -36646.6, -40249.7, -40845.7, -44693.3,
+				-45245.9, -49751.6, -50034.9, -53314.9, -40849.7, -44916.5, -46095.4,
+				-48955.6, -49354.4, -52480.8, -52856.9, -55307.2, -46648.0, -49885.6,
+				-49988.8, -51869.8, -52190.7, -55158.9, -55766.9, -58443.6, -59205.3,
+				-61670.1, -61803.1, -67718.7, -68766.0, -75306.9, -76648.7, -83676.1,
+				-109421.0, -111965.0, -112817.0, -116788.0, -117491.0, -119641.0,
+				-120457.0, -124674.0, -91487.7, -94503.5, -94400.0, -94929.7, -95055.7,
+				-95594.0, -95844.6, -96931.3, -60235.9, -60886.0, -61449.7, -62813.9,
+				-62856.9, -64152.5, -64633.5, -65990.1, -27196.5, -27675.9, -27757.3,
+				-28101.2, -28195.5, -28645.3, -28826.1, -29393.4, -15575.3, -15748.6,
+				-15781.8, -15957.4, -15991.0, -16169.0, -16203.1, -16383.3, 0.0
+			],
+			"pfe": [
+				232517.0, 232742.0, 241012.0, 241991.0, 244842.0, 253888.0, 259835.0,
+				263508.0, 275778.0, 292427.0, 307746.0, 322615.0, 334275.0, 349865.0,
+				352323.0, 361066.0, 371867.0, 378787.0, 386570.0, 404290.0, 416191.0,
+				424908.0, 423505.0, 428246.0, 433958.0, 443519.0, 454697.0, 455146.0,
+				461934.0, 461131.0, 481213.0, 502895.0, 514555.0, 523855.0, 533921.0,
+				550935.0, 574900.0, 591488.0, 603323.0, 619606.0, 633316.0, 646651.0,
+				670449.0, 673241.0, 683804.0, 702250.0, 710655.0, 715940.0, 720312.0,
+				739435.0, 744193.0, 763240.0, 787419.0, 903879.0, 934543.0, 941506.0,
+				1010680.0, 995684.0, 1027640.0, 1028940.0, 1097660.0, 973521.0,
+				1033010.0, 1044820.0, 1063720.0, 1068540.0, 1101210.0, 1104080.0,
+				1165410.0, 969292.0, 970973.0, 971285.0, 1019210.0, 1025130.0,
+				1056680.0, 1080960.0, 1108960.0, 887254.0, 912617.0, 916484.0, 945656.0,
+				941826.0, 981711.0, 992242.0, 1031050.0, 996193.0, 1016890.0, 1034340.0,
+				1086460.0, 1085490.0, 1095760.0, 1126660.0, 1133300.0, 1091480.0,
+				1131880.0, 1132850.0, 1174550.0, 1193810.0, 1235990.0, 1261710.0,
+				1266280.0, 959757.0, 977495.0, 979409.0, 962261.0, 983531.0, 1012210.0,
+				1003000.0, 1031270.0, 717459.0, 746910.0, 741875.0, 761661.0, 769082.0,
+				773917.0, 779139.0, 801127.0, 484225.0, 483074.0, 486268.0, 496024.0,
+				499187.0, 512614.0, 519583.0, 521368.0, 251694.0, 254851.0, 255211.0,
+				260288.0, 261087.0, 264856.0, 265685.0, 270521.0, 0.0
+			],
+			"epe": 190666.0,
+			"eepe": 207659.0,
+			"discounted_ee": [
+				205269.0, 205280.0, 205040.0, 205327.0, 205441.0, 205533.0, 204279.0,
+				204245.0, 203959.0, 203410.0, 203928.0, 204370.0, 204293.0, 204913.0,
+				204060.0, 203059.0, 203234.0, 201574.0, 201842.0, 201313.0, 202365.0,
+				202025.0, 202076.0, 201318.0, 201133.0, 200732.0, 200265.0, 199015.0,
+				198620.0, 186882.0, 189545.0, 187306.0, 186427.0, 185766.0, 184727.0,
+				183825.0, 183934.0, 183172.0, 183414.0, 183487.0, 184479.0, 185915.0,
+				186684.0, 187248.0, 185235.0, 186255.0, 185941.0, 188480.0, 190557.0,
+				190157.0, 189480.0, 190628.0, 190306.0, 206888.0, 209642.0, 210475.0,
+				216506.0, 216248.0, 215898.0, 216337.0, 221104.0, 189914.0, 194776.0,
+				195828.0, 198773.0, 197819.0, 199969.0, 201064.0, 202547.0, 173244.0,
+				174226.0, 175024.0, 179136.0, 179642.0, 184591.0, 184985.0, 186967.0,
+				164931.0, 168103.0, 169417.0, 170363.0, 170458.0, 173592.0, 174520.0,
+				176171.0, 158418.0, 160283.0, 160930.0, 165391.0, 166037.0, 166844.0,
+				166945.0, 170009.0, 172205.0, 173652.0, 173561.0, 176782.0, 176680.0,
+				179506.0, 179108.0, 179301.0, 136020.0, 135525.0, 135377.0, 135188.0,
+				135495.0, 135952.0, 135822.0, 135483.0, 93383.0, 94371.5, 94325.8,
+				94468.9, 94474.7, 94633.6, 94549.9, 94757.9, 54113.9, 54274.9, 54174.4,
+				54379.7, 54527.1, 54415.6, 54341.4, 54127.4, 26542.7, 26542.7, 26542.7,
+				26542.7, 26542.7, 26542.7, 26542.7, 26542.7, 0.0
+			],
+			"discounted_ene": [
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, -10.0172, -24.1272, -108.055, -200.746, -494.505,
+				-838.691, -1239.4, -1802.78, -2180.1, -2722.19, -3354.9, -4057.44,
+				-4714.55, -5511.94, -6276.96, -7306.66, -7759.39, -8413.05, -9384.05,
+				-10155.7, -11108.2, -12011.9, -18884.8, -24252.2, -24780.0, -29342.2,
+				-29777.8, -35101.9, -35399.9, -39632.7, -31861.3, -34651.3, -35098.5,
+				-38028.7, -38426.8, -41839.7, -41999.2, -44314.2, -33889.9, -36898.9,
+				-37796.5, -39748.7, -39997.5, -42114.8, -42337.1, -43866.0, -36928.8,
+				-39097.3, -39103.3, -40169.2, -40340.4, -42208.7, -42592.4, -44190.7,
+				-44681.0, -46076.1, -46087.2, -49993.8, -50670.0, -54935.2, -55807.2,
+				-60314.9, -78721.2, -79729.3, -80178.8, -82153.3, -82486.8, -83138.7,
+				-83541.9, -85584.1, -62680.0, -64085.0, -63889.9, -63592.3, -63552.3,
+				-63259.6, -63301.6, -63365.6, -39300.3, -39318.8, -39605.3, -40071.2,
+				-40020.3, -40428.1, -40651.7, -41081.1, -16897.7, -17006.3, -17020.4,
+				-17041.7, -17062.9, -17144.3, -17216.2, -17361.9, -9180.52, -9180.52,
+				-9180.52, -9180.52, -9180.52, -9180.52, -9180.52, -9180.52, 0.0
+			],
+			"discounted_ee_error": [
+				407.164, 425.414, 567.495, 580.334, 619.279, 725.412, 833.207, 867.637,
+				1073.02, 1244.77, 1422.14, 1584.73, 1736.98, 1881.59, 1952.75, 2059.57,
+				2196.04, 2282.87, 2422.96, 2535.04, 2687.61, 2734.04, 2811.89, 2902.32,
+				3001.01, 3089.74, 3158.82, 3204.41, 3275.68, 3368.16, 3616.59, 3781.17,
+				3938.0, 4071.51, 4175.84, 4318.38, 4446.12, 4620.27, 4756.59, 4951.68,
+				5113.36, 5276.64, 5417.5, 5490.02, 5634.15, 5746.06, 5796.99, 5911.25,
+				6058.15, 6176.27, 6201.08, 6327.96, 6455.32, 7661.31, 7945.47, 8021.84,
+				8383.85, 8388.59, 8648.96, 8669.25, 9002.81, 7815.71, 8252.97, 8336.3,
+				8476.05, 8492.57, 8640.45, 8682.92, 8835.71, 7389.54, 7454.12, 7460.44,
+				7756.82, 7785.04, 7944.38, 7975.98, 8078.93, 6331.4, 6469.42, 6502.66,
+				6583.21, 6577.51, 6775.42, 6842.44, 7039.98, 7004.31, 7009.39, 7034.95,
+				7225.3, 7283.41, 7335.89, 7377.82, 7449.2, 7257.51, 7400.27, 7402.13,
+				7543.77, 7549.1, 7705.2, 7694.83, 7715.29, 5831.37, 5824.84, 5821.71,
+				5839.57, 5839.14, 5891.25, 5894.43, 5900.49, 4066.96, 4107.84, 4109.67,
+				4136.57, 4143.28, 4150.76, 4149.3, 4172.45, 2469.66, 2467.49, 2467.24,
+				2470.93, 2475.36, 2475.81, 2477.53, 2479.61, 1200.74, 1200.74, 1200.74,
+				1200.74, 1200.74, 1200.74, 1200.74, 1200.74, 0.0
+			],
+			"quantile_levels": [
+				0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95,
+				0.975, 0.99
+			],
+			"value_quantiles": [
+				[
+					173929.0, 171703.0, 161902.0, 161781.0, 159374.0, 151204.0, 146972.0,
+					146272.0, 135886.0, 131253.0, 125892.0, 122112.0, 119372.0, 118067.0,
+					116300.0, 114935.0, 113551.0, 112385.0, 111080.0, 109974.0, 108575.0,
+					107344.0, 105975.0, 104679.0, 103256.0, 101908.0, 100390.0, 98980.5,
+					97380.1, 82292.7, 46236.6, 30494.6, 15237.2, 1132.59, -3216.93,
+					-19569.5, -28451.6, -43260.7, -49653.6, -59580.3, -67171.3, -74844.2,
+					-81388.6, -83235.1, -97768.0, -109205.0, -114970.0, -113034.0,
+					-118309.0, -122019.0, -124342.0, -130209.0, -135104.0, -131708.0,
+					-207034.0, -227510.0, -340277.0, -330806.0, -438475.0, -446054.0,
+					-529121.0, -610774.0, -605820.0, -601936.0, -664627.0, -677121.0,
+					-723393.0, -694930.0, -747515.0, -707174.0, -737146.0, -767207.0,
+					-829574.0, -806937.0, -861241.0, -863772.0, -869907.0, -744608.0,
+					-816551.0, -833906.0, -799017.0, -731508.0, -803608.0, -820977.0,
+					-884639.0, -874335.0, -909861.0, -890395.0, -926725.0, -964332.0,
+					-1003330.0, -1034410.0, -1038530.0, -1024920.0, -1040690.0,
+					-1040090.0, -1121830.0, -1107020.0, -1136840.0, -1185670.0,
+					-1247140.0, -1005540.0, -1039160.0, -997871.0, -1025730.0, -1046460.0,
+					-1017640.0, -1023420.0, -1049330.0, -708890.0, -717255.0, -751522.0,
+					-756481.0, -768439.0, -744380.0, -765512.0, -757329.0, -479639.0,
+					-473631.0, -490754.0, -488500.0, -492475.0, -482027.0, -491521.0,
+					-516484.0, -260328.0, -260351.0, -260346.0, -260589.0, -260304.0,
+					-260540.0, -260603.0, -260620.0, 0.0
+				],
+				[
+					177958.0, 176530.0, 167063.0, 167090.0, 163974.0, 159027.0, 153965.0,
+					151562.0, 143887.0, 136808.0, 130386.0, 126820.0, 123557.0, 120096.0,
+					117874.0, 115977.0, 114126.0, 112822.0, 111633.0, 110315.0, 108921.0,
+					107585.0, 106069.0, 104819.0, 103480.0, 102040.0, 100481.0, 99080.0,
+					97487.6, 82459.1, 55012.4, 42388.2, 28885.8, 17728.4, 8726.54,
+					-4822.64, -13861.8, -24053.8, -31751.2, -35374.3, -41427.3, -49841.7,
+					-52542.6, -61670.2, -68628.5, -72863.9, -80235.7, -87892.5, -92295.4,
+					-96745.7, -98348.4, -104183.0, -110793.0, -108766.0, -138945.0,
+					-143958.0, -182517.0, -201739.0, -284963.0, -283905.0, -340583.0,
+					-377359.0, -448931.0, -456375.0, -480658.0, -510420.0, -527094.0,
+					-534664.0, -562884.0, -488784.0, -507485.0, -551357.0, -558917.0,
+					-569950.0, -616260.0, -616664.0, -636014.0, -541654.0, -567971.0,
+					-553725.0, -552878.0, -557855.0, -582591.0, -596604.0, -646696.0,
+					-629792.0, -660738.0, -632097.0, -669032.0, -679681.0, -718988.0,
+					-738750.0, -830592.0, -790799.0, -821695.0, -811361.0, -824578.0,
+					-841155.0, -840030.0, -840917.0, -864485.0, -669890.0, -690812.0,
+					-708016.0, -694533.0, -712737.0, -710671.0, -737479.0, -732727.0,
+					-537125.0, -522771.0, -534462.0, -540912.0, -558369.0, -560753.0,
+					-558041.0, -561126.0, -316247.0, -314252.0, -320096.0, -333481.0,
+					-330801.0, -338045.0, -331791.0, -349069.0, -190038.0, -189864.0,
+					-189873.0, -192376.0, -192666.0, -194502.0, -194492.0, -194986.0, 0.0
+				],
+				[
+					181209.0, 180534.0, 172640.0, 171946.0, 170450.0, 167738.0, 159981.0,
+					157876.0, 149978.0, 143449.0, 136832.0, 132214.0, 128271.0, 124520.0,
+					121400.0, 118830.0, 116395.0, 114451.0, 112834.0, 111352.0, 109779.0,
+					108149.0, 106594.0, 105310.0, 104090.0, 102660.0, 100951.0, 99561.4,
+					97893.5, 82891.6, 63526.6, 52365.6, 38721.2, 31973.4, 22025.8,
+					15530.0, 4749.42, -2598.08, -9725.24, -16767.3, -20227.1, -28285.0,
+					-36650.0, -41828.4, -45595.8, -49938.6, -58338.9, -61663.5, -67260.5,
+					-72271.8, -75348.4, -79629.4, -85919.1, -92199.2, -109082.0,
+					-110162.0, -122643.0, -122911.0, -153585.0, -153371.0, -188923.0,
+					-207634.0, -257817.0, -240928.0, -276941.0, -283201.0, -332934.0,
+					-332804.0, -373123.0, -330960.0, -344968.0, -343729.0, -368748.0,
+					-368489.0, -383692.0, -403018.0, -405854.0, -317451.0, -347228.0,
+					-352408.0, -381222.0, -379900.0, -410247.0, -421795.0, -417965.0,
+					-417544.0, -404335.0, -409548.0, -441456.0, -436639.0, -477316.0,
+					-487166.0, -540971.0, -505764.0, -549051.0, -551955.0, -560044.0,
+					-566395.0, -562266.0, -560379.0, -588208.0, -460778.0, -453690.0,
+					-452890.0, -474598.0, -469088.0, -467857.0, -469575.0, -476126.0,
+					-323808.0, -334649.0, -345850.0, -337684.0, -339376.0, -343488.0,
+					-347805.0, -352814.0, -216943.0, -220857.0, -215345.0, -217588.0,
+					-221673.0, -228495.0, -229897.0, -227403.0, -118942.0, -120181.0,
+					-120615.0, -121490.0, -121481.0, -122298.0, -122441.0, -123562.0, 0.0
+				],
+				[
+					186868.0, 185541.0, 179331.0, 178990.0, 178209.0, 174483.0, 168426.0,
+					167012.0, 159117.0, 152233.0, 145133.0, 140888.0, 136790.0, 132674.0,
+					129985.0, 125836.0, 123349.0, 120335.0, 117500.0, 114850.0, 113145.0,
+					110841.0, 109150.0, 107648.0, 105857.0, 104608.0, 102844.0, 101454.0,
+					99472.7, 84522.3, 74168.3, 65370.5, 56992.8, 50313.2, 42139.2,
+					33498.1, 28234.9, 20338.3, 12650.7, 9605.41, 1685.49, -3386.32,
+					-10528.1, -14495.2, -20010.0, -25841.1, -31497.4, -32191.0, -38364.1,
+					-45204.8, -47224.6, -52568.1, -54269.9, -68444.9, -79820.7, -80966.5,
+					-86863.0, -89766.9, -100233.0, -101985.0, -108583.0, -63828.5,
+					-67924.1, -68220.6, -78662.1, -76567.6, -89601.8, -87963.9, -91769.6,
+					-106656.0, -120205.0, -128060.0, -144235.0, -145498.0, -150533.0,
+					-132434.0, -135280.0, -126891.0, -132788.0, -138133.0, -152670.0,
+					-146617.0, -165533.0, -170366.0, -170299.0, -145337.0, -149115.0,
+					-141610.0, -177423.0, -176814.0, -212009.0, -223540.0, -220139.0,
+					-323234.0, -328844.0, -324562.0, -345383.0, -347213.0, -349721.0,
+					-361561.0, -362409.0, -261748.0, -271813.0, -264845.0, -278141.0,
+					-273233.0, -277008.0, -274080.0, -273703.0, -162872.0, -158661.0,
+					-162606.0, -157623.0, -157458.0, -162853.0, -166028.0, -171820.0,
+					-91880.6, -92160.2, -97649.1, -90884.9, -88801.9, -92661.4, -91647.6,
+					-100158.0, -46914.1, -48476.7, -48573.9, -50029.8, -50142.6, -51156.8,
+					-51214.8, -51701.4, 0.0
+				],
+				[
+					193232.0, 192770.0, 187910.0, 187264.0, 186339.0, 183905.0, 179087.0,
+					178223.0, 171336.0, 167040.0, 160973.0, 156773.0, 153222.0, 148316.0,
+					144114.0, 140910.0, 136439.0, 133824.0, 130404.0, 126950.0, 123538.0,
+					120617.0, 117723.0, 115122.0, 113474.0, 111704.0, 110250.0, 108007.0,
+					107043.0, 91101.4, 88763.4, 82417.7, 78528.1, 72063.8, 68255.8,
+					62272.9, 56945.4, 49207.4, 43928.0, 40496.6, 34036.6, 29019.1,
+					24809.8, 21232.7, 16369.1, 10741.6, 7290.07, 4265.91, 397.649,
+					-4665.98, -8309.99, -11289.2, -15249.6, -41760.9, -50046.5, -50404.7,
+					-54895.9, -54992.5, -60378.5, -61773.8, -64015.8, -33107.1, -35904.9,
+					-35801.2, -36940.8, -37277.6, -38270.8, -39150.1, -39557.5, -4286.4,
+					-12859.3, -13856.6, -17042.2, -16954.1, -20716.1, -20453.7, -26039.1,
+					-28438.0, -29121.8, -27426.1, -29110.6, -30040.9, -31597.2, -32209.4,
+					-33152.5, -45238.0, -54873.5, -54724.0, -68892.3, -70966.3, -79248.2,
+					-80667.2, -91761.0, -184178.0, -183515.0, -190267.0, -190712.0,
+					-194518.0, -194258.0, -197141.0, -204825.0, -137732.0, -144068.0,
+					-144008.0, -143652.0, -143185.0, -147240.0, -145862.0, -147739.0,
+					-76768.0, -76991.0, -77002.2, -78032.9, -77958.7, -80091.0, -81858.8,
+					-82832.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					197244.0, 197292.0, 193770.0, 193510.0, 192986.0, 190496.0, 187046.0,
+					186195.0, 180944.0, 176815.0, 173843.0, 169259.0, 166386.0, 162863.0,
+					158616.0, 154917.0, 151008.0, 148332.0, 145174.0, 140572.0, 139175.0,
+					135823.0, 132470.0, 129630.0, 127887.0, 124254.0, 121970.0, 120453.0,
+					117667.0, 103331.0, 103955.0, 98317.4, 97403.8, 94376.4, 89310.9,
+					84896.8, 82186.7, 75027.1, 68645.3, 65682.0, 61071.5, 58485.0,
+					53171.1, 49085.0, 43900.2, 39580.8, 36859.6, 32012.7, 29920.6,
+					26493.7, 20018.0, 16744.1, 13077.9, -25927.9, -31928.8, -32400.8,
+					-36598.1, -36849.0, -41003.4, -41148.5, -42922.6, -19507.3, -21051.5,
+					-21535.7, -21958.7, -22284.8, -22836.0, -23541.1, -23471.5, 5135.93,
+					1331.11, 366.064, -1777.27, -1681.7, -2079.82, -2996.22, -4256.97,
+					8442.71, 9051.6, 8048.24, 7807.63, 8121.8, 7387.49, 7615.36, 7403.98,
+					-18292.0, -23394.0, -23609.8, -32153.0, -32587.1, -36650.9, -37430.6,
+					-44490.5, -112361.0, -113318.0, -111596.0, -115847.0, -117567.0,
+					-119189.0, -120868.0, -124697.0, -82490.0, -83020.2, -86517.3,
+					-82870.9, -84161.7, -85749.0, -85728.5, -88987.0, -46840.2, -47106.5,
+					-47589.7, -48150.6, -48591.7, -49888.9, -50232.9, -51100.3, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0
+				],
+				[
+					201128.0, 200859.0, 198901.0, 198991.0, 198275.0, 197025.0, 194834.0,
+					193897.0, 190688.0, 187330.0, 186193.0, 183357.0, 178623.0, 176786.0,
+					173986.0, 170774.0, 167695.0, 163608.0, 161660.0, 159428.0, 157223.0,
+					156525.0, 153873.0, 150097.0, 146696.0, 145067.0, 139913.0, 137882.0,
+					135304.0, 121811.0, 123030.0, 118268.0, 115790.0, 114680.0, 111048.0,
+					108065.0, 107876.0, 100889.0, 97099.9, 92756.7, 90083.2, 86426.4,
+					86490.7, 81878.2, 77373.7, 72870.0, 68317.0, 64718.7, 59627.9,
+					55340.5, 52194.4, 49897.2, 45532.9, -12232.9, -18039.4, -18361.2,
+					-20784.0, -20993.2, -24600.1, -25450.7, -26689.3, -10075.6, -11314.2,
+					-11503.1, -12103.8, -11992.2, -12590.4, -12787.4, -13372.8, 11239.5,
+					10694.8, 10107.7, 10391.7, 10208.3, 11643.5, 11262.8, 11654.1,
+					37184.4, 37513.2, 37154.2, 37410.8, 37096.1, 39628.1, 38850.2,
+					36581.9, -2434.75, -1597.93, -2881.71, -3208.45, -4935.36, -7512.44,
+					-7745.13, -8709.32, -43836.8, -48619.6, -48518.6, -49790.7, -48434.2,
+					-51142.0, -49625.3, -56650.4, -35836.0, -38120.3, -38242.1, -38177.4,
+					-38594.5, -40282.1, -40884.1, -40360.1, -15736.8, -16678.3, -16684.8,
+					-19360.4, -18664.8, -19898.9, -20155.2, -22445.1, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					204559.0, 204495.0, 204834.0, 204368.0, 204518.0, 203479.0, 202047.0,
+					201984.0, 200749.0, 197539.0, 197374.0, 196643.0, 193017.0, 192610.0,
+					192680.0, 188579.0, 187573.0, 184058.0, 183081.0, 180008.0, 177107.0,
+					176362.0, 175212.0, 174127.0, 174609.0, 169496.0, 165254.0, 162588.0,
+					162367.0, 148024.0, 148652.0, 146917.0, 144730.0, 144696.0, 139261.0,
+					138563.0, 136733.0, 132890.0, 129618.0, 126309.0, 121834.0, 121067.0,
+					118177.0, 116529.0, 112048.0, 107612.0, 103761.0, 105011.0, 97866.3,
+					93421.6, 95038.4, 88225.0, 83334.4, 21687.0, -2818.58, -2553.07,
+					-5281.65, -5085.1, -6656.0, -8481.28, -9582.21, 1455.39, 1003.04,
+					1113.96, 309.373, 1030.08, -907.321, -709.564, -1294.52, 17354.2,
+					19730.9, 19370.8, 23205.5, 23499.6, 26342.0, 25980.3, 26427.7,
+					66362.1, 67298.4, 67038.7, 67372.0, 66157.9, 65898.8, 66798.2,
+					64207.6, 12260.2, 16986.2, 18272.7, 18842.7, 17656.6, 20232.0,
+					19474.5, 24991.0, 21512.4, 21529.4, 19455.6, 18709.0, 20082.3,
+					20235.5, 18493.8, 19353.4, 13953.5, 12690.4, 14006.5, 14656.2,
+					12583.0, 13405.5, 14150.0, 11479.0, 10942.1, 11041.0, 10169.6,
+					8847.66, 8878.05, 7368.79, 8385.91, 6793.13, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					208003.0, 208334.0, 209826.0, 210062.0, 210287.0, 210097.0, 209928.0,
+					210159.0, 210763.0, 209996.0, 210371.0, 209028.0, 209584.0, 210864.0,
+					210931.0, 209042.0, 208854.0, 204852.0, 205511.0, 205883.0, 202768.0,
+					203550.0, 202040.0, 201483.0, 201280.0, 199921.0, 201910.0, 201118.0,
+					198395.0, 181941.0, 185238.0, 184747.0, 185744.0, 183189.0, 181632.0,
+					180459.0, 174390.0, 175994.0, 175762.0, 171832.0, 172509.0, 171372.0,
+					166320.0, 171555.0, 161199.0, 159635.0, 154417.0, 156985.0, 153414.0,
+					148988.0, 151205.0, 156541.0, 145897.0, 167127.0, 152536.0, 155064.0,
+					138528.0, 126949.0, 81765.8, 62872.5, 38459.7, 23887.1, 18702.5,
+					20428.1, 20728.2, 20892.4, 17912.3, 17739.7, 16857.3, 23095.6,
+					30000.9, 31163.4, 37739.6, 38721.0, 43368.1, 43704.7, 47267.0,
+					100118.0, 98746.1, 99891.2, 99165.8, 99689.3, 96591.3, 98566.5,
+					96557.4, 25984.8, 39095.1, 39136.2, 45393.9, 44803.6, 56522.9,
+					56760.3, 58260.7, 88344.9, 87808.3, 90312.4, 89739.6, 91406.2,
+					93164.1, 91350.0, 86789.5, 65453.5, 63823.8, 63727.8, 63176.4,
+					64561.0, 66177.9, 66047.9, 64989.7, 40748.9, 41071.4, 40176.4,
+					37676.3, 37207.7, 36525.6, 36452.3, 36844.9, 0.0, 0.0, 0.0, 0.0, 0.0,
+					0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+				],
+				[
+					212171.0, 212253.0, 215670.0, 216047.0, 217253.0, 217521.0, 218337.0,
+					219062.0, 222674.0, 223298.0, 225785.0, 227253.0, 228528.0, 231032.0,
+					230862.0, 233111.0, 233694.0, 233349.0, 233382.0, 232322.0, 238249.0,
+					239606.0, 242246.0, 240335.0, 241436.0, 241346.0, 243971.0, 241619.0,
+					242352.0, 229147.0, 234317.0, 230626.0, 239292.0, 236837.0, 238631.0,
+					236784.0, 239400.0, 239605.0, 234920.0, 236796.0, 240990.0, 246813.0,
+					247165.0, 246191.0, 243013.0, 249164.0, 256104.0, 254820.0, 265804.0,
+					264198.0, 269095.0, 276013.0, 278694.0, 318045.0, 329740.0, 326784.0,
+					334914.0, 341242.0, 330533.0, 340325.0, 346612.0, 288054.0, 260996.0,
+					268396.0, 258734.0, 246695.0, 254394.0, 267717.0, 245849.0, 206271.0,
+					197317.0, 206648.0, 200132.0, 200537.0, 194482.0, 198980.0, 218419.0,
+					180835.0, 187883.0, 193018.0, 186905.0, 189604.0, 192965.0, 180856.0,
+					180496.0, 176233.0, 176272.0, 180562.0, 155714.0, 162985.0, 146888.0,
+					138565.0, 144327.0, 202035.0, 201020.0, 199329.0, 207554.0, 204917.0,
+					202548.0, 203236.0, 206535.0, 156205.0, 159738.0, 158173.0, 148029.0,
+					154972.0, 156647.0, 155052.0, 151753.0, 93539.2, 95571.8, 96138.2,
+					93301.0, 91988.1, 95122.5, 95509.6, 96264.7, 36236.7, 34056.1,
+					35284.8, 28151.4, 30941.0, 31158.3, 30334.6, 22592.0, 9612.94,
+					5149.53, 4978.91, 3949.11, 3879.0, 2683.39, 2464.81, 931.194, 0.0
+				],
+				[
+					217391.0, 217742.0, 222726.0, 223637.0, 224078.0, 227978.0, 228834.0,
+					230618.0, 236917.0, 239777.0, 244326.0, 251748.0, 255282.0, 258993.0,
+					263654.0, 265456.0, 270002.0, 267739.0, 272714.0, 275719.0, 280537.0,
+					284363.0, 283033.0, 286862.0, 291319.0, 295539.0, 294363.0, 294295.0,
+					296661.0, 287124.0, 298559.0, 304426.0, 303596.0, 307012.0, 311651.0,
+					313530.0, 323052.0, 321256.0, 333688.0, 328586.0, 339437.0, 346040.0,
+					358184.0, 363808.0, 370286.0, 378825.0, 382130.0, 404218.0, 413718.0,
+					415576.0, 410601.0, 410598.0, 415352.0, 487353.0, 507965.0, 505787.0,
+					543105.0, 551491.0, 570278.0, 567352.0, 585704.0, 506247.0, 537264.0,
+					527314.0, 550245.0, 555591.0, 573809.0, 565363.0, 568807.0, 478749.0,
+					509889.0, 504339.0, 495389.0, 506783.0, 527118.0, 521624.0, 527363.0,
+					436625.0, 463872.0, 466411.0, 471970.0, 472301.0, 482334.0, 495986.0,
+					465625.0, 467291.0, 467680.0, 482622.0, 505114.0, 513766.0, 501399.0,
+					499217.0, 503832.0, 501638.0, 478265.0, 481995.0, 515140.0, 498207.0,
+					504450.0, 507897.0, 512565.0, 395303.0, 391746.0, 385349.0, 394283.0,
+					391701.0, 385562.0, 366491.0, 372718.0, 267187.0, 267747.0, 269809.0,
+					277997.0, 272291.0, 273689.0, 270977.0, 266752.0, 175022.0, 176836.0,
+					178780.0, 176173.0, 176224.0, 172909.0, 176825.0, 174268.0, 89479.6,
+					89222.5, 88313.2, 88279.9, 88417.7, 89302.8, 88878.2, 89359.8, 0.0
+				],
+				[
+					225493.0, 225812.0, 231979.0, 232246.0, 235467.0, 240447.0, 245179.0,
+					247042.0, 258152.0, 266198.0, 279232.0, 288189.0, 295587.0, 303679.0,
+					307006.0, 312854.0, 322940.0, 329073.0, 335667.0, 340931.0, 350785.0,
+					346809.0, 360669.0, 364939.0, 363103.0, 370914.0, 380246.0, 373389.0,
+					393752.0, 377682.0, 394291.0, 408978.0, 401417.0, 417325.0, 429177.0,
+					441844.0, 465437.0, 467658.0, 486482.0, 506233.0, 524185.0, 522004.0,
+					535798.0, 538964.0, 552703.0, 565245.0, 570873.0, 585119.0, 595102.0,
+					599245.0, 607495.0, 606547.0, 615320.0, 732360.0, 774879.0, 769942.0,
+					798188.0, 822553.0, 834107.0, 843199.0, 899567.0, 784113.0, 816309.0,
+					824830.0, 861745.0, 868357.0, 884815.0, 904144.0, 914944.0, 775511.0,
+					781747.0, 787758.0, 807280.0, 814858.0, 844147.0, 835450.0, 843743.0,
+					689499.0, 725737.0, 728940.0, 732466.0, 739395.0, 775534.0, 777868.0,
+					800203.0, 796907.0, 790899.0, 790907.0, 809897.0, 810757.0, 856868.0,
+					866961.0, 903895.0, 884357.0, 910847.0, 912075.0, 925994.0, 933448.0,
+					955254.0, 951202.0, 987459.0, 734349.0, 751125.0, 741929.0, 746645.0,
+					751604.0, 754867.0, 784125.0, 773825.0, 547547.0, 559356.0, 560806.0,
+					551762.0, 562939.0, 549035.0, 555379.0, 560018.0, 341924.0, 350446.0,
+					349170.0, 353924.0, 353761.0, 363186.0, 362330.0, 369925.0, 174838.0,
+					176301.0, 177076.0, 177478.0, 177929.0, 180311.0, 180966.0, 183702.0,
+					0.0
+				],
+				[
+					232517.0, 232742.0, 241012.0, 241991.0, 244842.0, 253888.0, 259835.0,
+					263508.0, 275778.0, 292427.0, 307746.0, 322615.0, 334275.0, 349865.0,
+					352323.0, 361066.0, 371867.0, 378787.0, 386570.0, 404290.0, 416191.0,
+					424908.0, 423505.0, 428246.0, 433958.0, 443519.0, 454697.0, 455146.0,
+					461934.0, 461131.0, 481213.0, 502895.0, 514555.0, 523855.0, 533921.0,
+					550935.0, 574900.0, 591488.0, 603323.0, 619606.0, 633316.0, 646651.0,
+					670449.0, 673241.0, 683804.0, 702250.0, 710655.0, 715940.0, 720312.0,
+					739435.0, 744193.0, 763240.0, 787419.0, 903879.0, 934543.0, 941506.0,
+					1010680.0, 995684.0, 1027640.0, 1028940.0, 1097660.0, 973521.0,
+					1033010.0, 1044820.0, 1063720.0, 1068540.0, 1101210.0, 1104080.0,
+					1165410.0, 969292.0, 970973.0, 971285.0, 1019210.0, 1025130.0,
+					1056680.0, 1080960.0, 1108960.0, 887254.0, 912617.0, 916484.0,
+					945656.0, 941826.0, 981711.0, 992242.0, 1031050.0, 996193.0,
+					1016890.0, 1034340.0, 1086460.0, 1085490.0, 1095760.0, 1126660.0,
+					1133300.0, 1091480.0, 1131880.0, 1132850.0, 1174550.0, 1193810.0,
+					1235990.0, 1261710.0, 1266280.0, 959757.0, 977495.0, 979409.0,
+					962261.0, 983531.0, 1012210.0, 1003000.0, 1031270.0, 717459.0,
+					746910.0, 741875.0, 761661.0, 769082.0, 773917.0, 779139.0, 801127.0,
+					484225.0, 483074.0, 486268.0, 496024.0, 499187.0, 512614.0, 519583.0,
+					521368.0, 251694.0, 254851.0, 255211.0, 260288.0, 261087.0, 264856.0,
+					265685.0, 270521.0, 0.0
+				],
+				[
+					236671.0, 239730.0, 250390.0, 251156.0, 252744.0, 263758.0, 275057.0,
+					277600.0, 295115.0, 313861.0, 336157.0, 351861.0, 369168.0, 382997.0,
+					385915.0, 398815.0, 419002.0, 422712.0, 455645.0, 467759.0, 464540.0,
+					478470.0, 488346.0, 493984.0, 497632.0, 520387.0, 524631.0, 534690.0,
+					532975.0, 544793.0, 569336.0, 582116.0, 597898.0, 645561.0, 651397.0,
+					649501.0, 668764.0, 690031.0, 711057.0, 735024.0, 767879.0, 760075.0,
+					781376.0, 797565.0, 817457.0, 837865.0, 823923.0, 858183.0, 874155.0,
+					890703.0, 880312.0, 899400.0, 934503.0, 1051030.0, 1106460.0,
+					1127640.0, 1161550.0, 1169490.0, 1248090.0, 1215790.0, 1300600.0,
+					1119510.0, 1191950.0, 1197470.0, 1227860.0, 1260920.0, 1294440.0,
+					1329120.0, 1363450.0, 1124330.0, 1154010.0, 1157520.0, 1191680.0,
+					1210500.0, 1248090.0, 1258630.0, 1312940.0, 1033440.0, 1067250.0,
+					1072400.0, 1094360.0, 1109950.0, 1137010.0, 1130320.0, 1155580.0,
+					1151330.0, 1199500.0, 1209180.0, 1222360.0, 1246940.0, 1301850.0,
+					1288780.0, 1343500.0, 1328080.0, 1366720.0, 1374870.0, 1387600.0,
+					1403900.0, 1430030.0, 1450730.0, 1493990.0, 1110700.0, 1144370.0,
+					1155860.0, 1182260.0, 1189270.0, 1235440.0, 1238630.0, 1251230.0,
+					853722.0, 885271.0, 883111.0, 903406.0, 915744.0, 937528.0, 932486.0,
+					957247.0, 568181.0, 576662.0, 574523.0, 590891.0, 599331.0, 603872.0,
+					605000.0, 616160.0, 311462.0, 315975.0, 317169.0, 324334.0, 325546.0,
+					332276.0, 332880.0, 340630.0, 0.0
+				],
+				[
+					243129.0, 246251.0, 258726.0, 261968.0, 266298.0, 281362.0, 289688.0,
+					293170.0, 318665.0, 340950.0, 361852.0, 389108.0, 407725.0, 431251.0,
+					431803.0, 451548.0, 461375.0, 487672.0, 500664.0, 509157.0, 534474.0,
+					547195.0, 542293.0, 581154.0, 599341.0, 624009.0, 619263.0, 619612.0,
+					633997.0, 623991.0, 695960.0, 701768.0, 727917.0, 753815.0, 757638.0,
+					779045.0, 761118.0, 803721.0, 821107.0, 878098.0, 868058.0, 920429.0,
+					929769.0, 927306.0, 980801.0, 958247.0, 995835.0, 967624.0, 996659.0,
+					1011340.0, 1001840.0, 1031750.0, 1057400.0, 1252800.0, 1294570.0,
+					1330060.0, 1341200.0, 1332760.0, 1438100.0, 1475940.0, 1488600.0,
+					1278040.0, 1333390.0, 1380020.0, 1433220.0, 1422820.0, 1460400.0,
+					1484200.0, 1513520.0, 1288710.0, 1336640.0, 1344040.0, 1452950.0,
+					1470210.0, 1486970.0, 1482480.0, 1539420.0, 1190390.0, 1191290.0,
+					1235650.0, 1254180.0, 1265460.0, 1305320.0, 1332930.0, 1391960.0,
+					1399000.0, 1431350.0, 1441220.0, 1465260.0, 1495730.0, 1555320.0,
+					1623150.0, 1595550.0, 1548520.0, 1594370.0, 1607410.0, 1703160.0,
+					1721740.0, 1785730.0, 1798460.0, 1822600.0, 1346790.0, 1392460.0,
+					1387500.0, 1422910.0, 1410140.0, 1453390.0, 1435800.0, 1542250.0,
+					1066530.0, 1099080.0, 1103610.0, 1136220.0, 1142400.0, 1170030.0,
+					1192400.0, 1201050.0, 688650.0, 713622.0, 710514.0, 734987.0,
+					728517.0, 738713.0, 751156.0, 756098.0, 370231.0, 380350.0, 381510.0,
+					389182.0, 390488.0, 400800.0, 402373.0, 412454.0, 0.0
+				]
+			]
+		},
+		"risk": {
+			"times": [
+				0.0176923, 0.0192308, 0.0369231, 0.0384615, 0.0576923, 0.0769231,
+				0.0833333, 0.166667, 0.25, 0.333333, 0.416667, 0.5, 0.583333, 0.666667,
+				0.75, 0.833333, 0.916667, 1.0, 1.08333, 1.16667, 1.25, 1.33333, 1.41667,
+				1.5, 1.58333, 1.66667, 1.75, 1.83333, 1.91667, 2.0, 2.25, 2.5, 2.75,
+				3.0, 3.25, 3.5, 3.75, 4.0, 4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0,
+				6.25, 6.5, 6.75, 7.0, 7.25, 7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25,
+				9.5, 9.75, 10.0, 10.25, 10.5, 10.75, 11.0, 11.25, 11.5, 11.75, 12.0
+			],
+			"ee": [
+				1740.44, 1790.49, 2064.78, 2143.19, 2162.82, 2046.14, 2039.57, 1940.09,
+				2093.76, 1986.68, 1880.89, 1705.15, 1704.76, 1671.1, 1654.43, 1491.52,
+				1333.61, 31.5054, 2450.11, 2565.51, 2232.49, 1981.86, 1951.55, 1998.49,
+				1705.78, 1501.18, 1456.04, 1106.12, 966.116, 1557.01, 576.196, 516.479,
+				558.987, 846.561, 433.076, 352.852, 376.814, 485.728, 1199.59, 1200.69,
+				1214.01, 1952.83, 647.396, 626.111, 691.463, 664.587, 1843.21, 1983.66,
+				1828.52, 837.042, 1262.3, 1285.11, 1256.09, 1355.14, 753.283, 706.249,
+				695.294, 736.79, 52.8368, 78.5224, 37.6451, 0.0109424, 29.3061, 28.0466,
+				29.9103, 40.9564, 0.0125014, 0.0, 0.0, 0.0
+			],
+			"ene": [
+				-2852.23, -3004.3, -4533.82, -4626.09, -4784.44, -5005.15, -5133.19,
+				-4829.73, -4762.67, -4627.71, -4980.89, -4999.07, -4792.87, -4656.85,
+				-4788.98, -4531.87, -4584.54, -14026.5, -6708.52, -6431.45, -6163.75,
+				-5975.2, -5587.3, -5318.68, -5067.54, -4706.2, -4238.79, -3902.6,
+				-3134.13, -1895.88, -815.516, -981.96, -921.699, -570.701, -491.018,
+				-465.67, -529.54, -404.834, -1046.89, -953.998, -1077.21, -714.725,
+				-641.341, -795.775, -722.449, -716.366, -2272.19, -2382.68, -2399.0,
+				-4566.01, -1704.92, -1798.9, -1801.13, -1707.16, -943.955, -924.158,
+				-962.846, -955.955, -147.112, -126.502, -161.401, -446.458, -43.9435,
+				-48.2389, -39.1779, -34.937, -2.13824, -2.42333, -2.16562, -2.257
+			],
+			"pfe": [
+				8889.42, 8867.11, 10530.3, 10779.6, 11719.9, 10741.6, 10793.8, 10586.9,
+				11684.2, 10706.3, 10280.6, 9456.99, 9734.9, 9516.2, 9911.3, 8992.19,
+				7923.08, 0.0, 13316.0, 14706.8, 12032.2, 11002.5, 11298.2, 10537.0,
+				9593.32, 8223.12, 7349.02, 5162.67, 4536.26, 5789.73, 1770.53, 1969.59,
+				1912.38, 2423.91, 995.124, 987.736, 970.548, 1051.18, 4329.28, 4475.17,
+				4352.97, 5533.71, 2078.81, 2004.39, 2214.19, 2155.57, 8002.22, 8015.4,
+				7998.74, 5208.82, 5326.91, 5578.43, 5381.89, 5562.95, 2811.25, 2734.47,
+				2791.34, 2917.17, 1.16029, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0
+			],
+			"epe": 850.864,
+			"eepe": 2153.01
+		},
+		"adjustments": {
+			"cva": {
+				"value": -0.918933,
+				"error": 0.124992
+			},
+			"dva": {
+				"value": 0.592149,
+				"error": 0.0984312
+			},
+			"cva_independent": {
+				"value": -0.918933,
+				"error": 0.124992
+			},
+			"dva_independent": {
+				"value": 0.592149,
+				"error": 0.0984312
+			},
+			"cva_unilateral": -0.998009,
+			"fca": 0.0,
+			"fba": 0.0,
+			"colva": 0.0,
+			"mva": 0.0,
+			"kva": -2616.19,
+			"cva_rule_of_thumb": -1.12946
+		},
+		"adjustments_uncollateralised": {
+			"cva": {
+				"value": -16002.2,
+				"error": 491.614
+			},
+			"dva": {
+				"value": 2469.49,
+				"error": 96.6676
+			},
+			"cva_independent": {
+				"value": -16002.2,
+				"error": 491.614
+			},
+			"dva_independent": {
+				"value": 2469.49,
+				"error": 96.6676
+			},
+			"cva_unilateral": -16877.1,
+			"fca": 0.0,
+			"fba": 0.0,
+			"colva": 0.0,
+			"mva": 0.0,
+			"kva": -49967.3,
+			"cva_rule_of_thumb": -18280.4
+		},
+		"initial_margin": {
+			"today": 146537.0,
+			"times": [
+				0.0176923, 0.0192308, 0.0369231, 0.0384615, 0.0576923, 0.0769231,
+				0.0833333, 0.166667, 0.25, 0.333333, 0.416667, 0.5, 0.583333, 0.666667,
+				0.75, 0.833333, 0.916667, 1.0, 1.08333, 1.16667, 1.25, 1.33333, 1.41667,
+				1.5, 1.58333, 1.66667, 1.75, 1.83333, 1.91667, 2.0, 2.25, 2.5, 2.75,
+				3.0, 3.25, 3.5, 3.75, 4.0, 4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0,
+				6.25, 6.5, 6.75, 7.0, 7.25, 7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25,
+				9.5, 9.75, 10.0, 10.25, 10.5, 10.75, 11.0, 11.25, 11.5, 11.75, 12.0
+			],
+			"expected": [
+				146570.0, 146571.0, 146549.0, 146586.0, 145976.0, 145534.0, 145548.0,
+				144309.0, 144003.0, 144158.0, 144476.0, 144640.0, 144923.0, 145564.0,
+				146907.0, 147970.0, 149676.0, 151735.0, 178803.0, 177646.0, 177163.0,
+				176612.0, 175314.0, 175462.0, 174212.0, 172457.0, 171470.0, 169882.0,
+				169290.0, 168608.0, 118890.0, 118939.0, 118611.0, 117926.0, 97859.4,
+				99251.2, 100272.0, 100726.0, 87775.2, 89770.8, 91449.5, 93192.8,
+				84617.8, 87024.9, 89554.4, 92397.7, 99375.1, 101334.0, 101416.0,
+				100686.0, 78917.6, 80639.8, 80670.0, 80020.2, 56485.5, 57583.9, 56994.4,
+				56011.0, 30674.6, 31326.4, 31158.5, 30687.1, 16681.7, 16782.3, 16141.9,
+				15653.8, 319.451, 228.546, 156.196, 26.9708
+			],
+			"requested": "auto",
+			"model": "simm",
+			"reason": "Every trade is a swap or a European swaption, whose sensitivities are known in closed form in each scenario: the margin is ISDA SIMM itself, the rule the industry uses, rather than a model of it.",
+			"simm_today": {
+				"delta": 81727.5,
+				"vega": 40995.1,
+				"curvature": 23814.8,
+				"total": 146537.0
+			}
+		},
+		"capital": {
+			"method": "sa_ccr",
+			"method_reason": "Every trade is a swap or a swaption, which the standardised approach (SA-CCR) describes: the method a bank uses without an approved model.",
+			"ead_today": 1143.16,
+			"default_capital_today": 68.5585,
+			"cva_capital_today": 163.737,
+			"times": [
+				0.0176923, 0.0192308, 0.0369231, 0.0384615, 0.0576923, 0.0769231,
+				0.0833333, 0.166667, 0.25, 0.333333, 0.416667, 0.5, 0.583333, 0.666667,
+				0.75, 0.833333, 0.916667, 1.0, 1.08333, 1.16667, 1.25, 1.33333, 1.41667,
+				1.5, 1.58333, 1.66667, 1.75, 1.83333, 1.91667, 2.0, 2.25, 2.5, 2.75,
+				3.0, 3.25, 3.5, 3.75, 4.0, 4.25, 4.5, 4.75, 5.0, 5.25, 5.5, 5.75, 6.0,
+				6.25, 6.5, 6.75, 7.0, 7.25, 7.5, 7.75, 8.0, 8.25, 8.5, 8.75, 9.0, 9.25,
+				9.5, 9.75, 10.0, 10.25, 10.5, 10.75, 11.0, 11.25, 11.5, 11.75, 12.0
+			],
+			"expected_ead": [
+				1184.25, 1188.37, 1231.04, 1237.05, 1275.4, 1294.64, 1305.53, 1454.66,
+				1646.91, 1841.16, 2031.19, 2266.2, 2532.67, 2849.18, 3166.24, 3497.17,
+				3809.31, 4226.3, 6485.78, 6918.22, 7160.56, 7377.17, 7952.61, 8504.1,
+				9003.18, 9511.81, 10243.9, 10753.1, 11494.9, 41817.8, 51232.4, 49492.6,
+				47912.6, 46414.1, 48286.6, 45296.1, 43070.2, 40263.1, 36273.8, 34514.8,
+				33025.0, 26210.6, 29981.1, 28923.4, 28193.6, 26892.1, 26276.3, 24813.5,
+				23615.9, 24954.2, 26539.0, 24226.8, 22052.9, 20308.3, 22756.2, 20423.3,
+				18220.2, 16243.5, 18988.5, 16645.6, 14337.8, 12237.7, 11740.6, 9875.78,
+				8059.16, 6308.43, 7629.35, 5158.65, 2654.7, 218.237
+			],
+			"discounted_capital": [
+				240.119, 240.908, 249.013, 250.181, 257.322, 260.581, 262.563, 289.53,
+				324.378, 358.835, 391.687, 432.355, 478.013, 531.942, 584.705, 638.739,
+				688.064, 754.884, 1145.13, 1207.31, 1235.0, 1257.37, 1339.35, 1415.08,
+				1480.05, 1544.63, 1643.1, 1703.43, 1798.22, 7459.72, 8840.69, 8255.42,
+				7719.07, 7216.37, 7239.8, 6543.08, 5988.03, 5360.16, 4580.51, 4125.16,
+				3727.04, 3227.71, 3495.48, 3185.26, 2925.29, 2621.4, 2398.74, 2113.82,
+				1869.77, 2178.62, 2160.27, 1831.11, 1540.39, 1303.84, 1334.38, 1085.63,
+				870.115, 689.284, 706.226, 553.652, 471.099, 618.724, 534.116, 400.076,
+				286.995, 194.251, 231.851, 154.717, 78.5772, 0.0
+			],
+			"pd": 0.00336667,
+			"pd_source": "historical",
+			"pd_reason": "Average one-year default rate of S&P's BBB corporate ratings from 2000 to 2011: 0.34 % (64 defaults in 12 years, as the agency reported them to ESMA).",
+			"lgd": 0.4,
+			"sector": "other",
+			"investment_grade": true,
+			"margined": true,
+			"cost_of_capital": 0.1
+		},
+		"capital_uncollateralised": {
+			"method": "sa_ccr",
+			"method_reason": "Every trade is a swap or a swaption, which the standardised approach (SA-CCR) describes: the method a bank uses without an approved model.",
+			"ead_today": 356023.0,
+			"default_capital_today": 21351.6,
+			"cva_capital_today": 50993.6,
+			"times": [
+				0.0176923, 0.0192308, 0.0369231, 0.0384615, 0.0433333, 0.0576923,
+				0.0769231, 0.0833333, 0.126667, 0.166667, 0.21, 0.25, 0.293333,
+				0.333333, 0.376667, 0.416667, 0.46, 0.5, 0.543333, 0.583333, 0.626667,
+				0.666667, 0.71, 0.75, 0.793333, 0.833333, 0.876667, 0.916667, 0.96, 1.0,
+				1.04333, 1.08333, 1.12667, 1.16667, 1.21, 1.25, 1.29333, 1.33333,
+				1.37667, 1.41667, 1.46, 1.5, 1.54333, 1.58333, 1.62667, 1.66667, 1.71,
+				1.75, 1.79333, 1.83333, 1.87667, 1.91667, 1.96, 2.0, 2.21, 2.25, 2.46,
+				2.5, 2.71, 2.75, 2.96, 3.0, 3.21, 3.25, 3.46, 3.5, 3.71, 3.75, 3.96,
+				4.0, 4.21, 4.25, 4.46, 4.5, 4.71, 4.75, 4.96, 5.0, 5.21, 5.25, 5.46,
+				5.5, 5.71, 5.75, 5.96, 6.0, 6.21, 6.25, 6.46, 6.5, 6.71, 6.75, 6.96,
+				7.0, 7.21, 7.25, 7.46, 7.5, 7.71, 7.75, 7.96, 8.0, 8.21, 8.25, 8.46,
+				8.5, 8.71, 8.75, 8.96, 9.0, 9.21, 9.25, 9.46, 9.5, 9.71, 9.75, 9.96,
+				10.0, 10.21, 10.25, 10.46, 10.5, 10.71, 10.75, 10.96, 11.0, 11.21,
+				11.25, 11.46, 11.5, 11.71, 11.75, 11.96, 12.0
+			],
+			"expected_ead": [
+				357514.0, 357623.0, 358339.0, 358853.0, 359311.0, 360310.0, 359627.0,
+				359962.0, 362150.0, 363746.0, 367103.0, 370151.0, 372645.0, 375966.0,
+				377320.0, 378228.0, 381083.0, 380989.0, 383982.0, 385545.0, 389697.0,
+				391577.0, 394275.0, 395502.0, 397771.0, 399558.0, 401442.0, 401920.0,
+				403836.0, 389070.0, 426377.0, 424246.0, 424385.0, 424657.0, 424485.0,
+				424216.0, 425603.0, 425373.0, 426720.0, 427815.0, 430255.0, 433235.0,
+				435083.0, 436613.0, 433947.0, 435867.0, 435418.0, 439713.0, 442967.0,
+				441909.0, 440280.0, 441051.0, 438736.0, 624993.0, 622335.0, 622550.0,
+				626085.0, 624645.0, 617660.0, 617401.0, 620094.0, 575573.0, 578348.0,
+				579098.0, 579120.0, 576461.0, 574898.0, 575924.0, 573901.0, 529870.0,
+				513896.0, 514604.0, 519251.0, 519880.0, 527237.0, 527833.0, 530153.0,
+				468104.0, 474638.0, 477428.0, 480487.0, 480940.0, 488021.0, 490091.0,
+				495077.0, 460943.0, 479805.0, 480808.0, 485927.0, 486679.0, 484979.0,
+				484635.0, 486952.0, 488003.0, 486531.0, 485317.0, 487385.0, 486187.0,
+				487760.0, 486122.0, 482040.0, 399483.0, 392996.0, 391666.0, 386305.0,
+				385968.0, 381889.0, 380663.0, 374795.0, 291095.0, 283443.0, 282111.0,
+				276274.0, 275138.0, 269849.0, 268636.0, 264296.0, 181891.0, 177409.0,
+				176276.0, 171941.0, 171361.0, 166184.0, 165034.0, 159601.0, 93664.1,
+				85098.9, 83605.2, 76551.6, 75368.9, 70116.5, 69318.8, 66552.9, 0.0
+			],
+			"discounted_capital": [
+				72489.5, 72497.7, 72484.1, 72574.1, 72623.0, 72695.3, 72384.5, 72394.2,
+				72442.0, 72398.5, 72670.4, 72905.8, 72996.3, 73274.1, 73133.8, 72936.1,
+				73079.6, 72686.6, 72849.0, 72767.2, 73137.5, 73107.5, 73194.4, 73037.0,
+				73036.8, 72977.0, 72899.5, 72597.5, 72521.0, 69494.0, 75701.5, 74904.9,
+				74477.0, 74107.8, 73627.0, 73165.5, 72954.5, 72500.7, 72280.8, 72051.1,
+				72010.5, 72090.3, 71943.1, 71775.5, 70885.5, 70781.0, 70256.4, 70529.2,
+				70593.5, 70004.3, 69293.0, 68996.2, 68184.3, 111490.0, 107968.0,
+				107428.0, 105006.0, 104192.0, 100070.0, 99467.9, 96966.9, 89488.9,
+				87224.6, 86826.4, 84160.2, 83270.6, 80424.2, 80070.6, 77036.7, 70540.7,
+				65452.9, 64982.2, 62618.3, 62135.4, 60060.1, 59568.6, 56900.7, 57644.7,
+				55832.7, 55663.0, 53408.5, 52964.6, 51130.1, 50850.5, 48753.7, 44931.9,
+				44273.2, 43892.5, 41866.7, 41459.3, 38861.8, 38370.7, 36126.7, 42604.9,
+				40060.3, 39504.6, 37288.2, 36746.9, 34514.4, 33955.5, 31380.9, 25647.7,
+				23392.3, 22966.6, 20871.3, 20516.7, 18565.2, 18178.8, 16221.3, 12352.5,
+				10778.1, 10492.3, 9207.18, 9151.42, 8883.84, 8826.63, 8595.37, 9196.26,
+				8213.66, 8019.33, 7101.57, 6941.98, 6047.36, 5877.04, 5036.67, 2884.13,
+				2591.56, 2540.71, 2300.76, 2260.44, 2079.77, 2051.78, 1948.24, 0.0
+			],
+			"pd": 0.00336667,
+			"pd_source": "historical",
+			"pd_reason": "Average one-year default rate of S&P's BBB corporate ratings from 2000 to 2011: 0.34 % (64 defaults in 12 years, as the agency reported them to ESMA).",
+			"lgd": 0.4,
+			"sector": "other",
+			"investment_grade": true,
+			"margined": false,
+			"cost_of_capital": 0.1
+		},
+		"market": {
+			"currency": "USD",
+			"curve_as_of": "2026-09-30",
+			"curve_label": "USD SOFR, from traded prices",
+			"hull_white": {
+				"mean_reversion": 0.0317566,
+				"sigma": 0.0117035,
+				"rmse_bp": 3.273,
+				"vol_points": 6,
+				"swaption_trades": 180
+			},
+			"counterparty": {
+				"rating": "BBB",
+				"spread": 0.0102,
+				"hazard": 0.016922,
+				"as_of": "2026-10-02"
+			},
+			"own": {
+				"rating": "A",
+				"spread": 0.0071,
+				"hazard": 0.0117789,
+				"as_of": "2026-10-02"
+			},
+			"recovery": 0.4,
+			"historical": {
+				"mean_reversion": 0.282671,
+				"long_run_rate": 0.0273708,
+				"sigma": 0.00450523,
+				"estimated_mean_reversion": 0.282671,
+				"estimated_long_run_rate": 0.0273708,
+				"estimated_sigma": 0.00450523,
+				"mean_reversion_std_error": 0.230997,
+				"long_run_rate_std_error": 0.00494313,
+				"series": "DGS3MO",
+				"since": "2016-01-04",
+				"observations": 2600,
+				"overridden": []
+			},
+			"default_rate": {
+				"agency": "S&P",
+				"rating": "BBB",
+				"first_year": 2000,
+				"last_year": 2011,
+				"years": 12,
+				"defaults": 64,
+				"rate": 0.00336667
+			}
+		},
+		"paths": 2000,
+		"pilot_paths": 0,
+		"seed": 42,
+		"device": "cpu",
+		"gpus": 0,
+		"device_reason": "The CPU was requested.",
+		"compute_ms": 1234.0,
+		"warnings": [
+			"Counterparty and own credit curves are rating proxies built from bond spreads (ICE BofA indices), not CDS quotes of a name.",
+			"The long-run rate and the mean reversion of the historical measure are estimates that change with the window; the risk measures depend on them."
+		],
+		"methodology": [
+			{
+				"title": "What is computed",
+				"paragraphs": [
+					"If a counterparty defaults while a trade is worth something to the bank, the bank loses that value less what it recovers. The credit valuation adjustment (CVA) is the price of that risk today; the debit valuation adjustment (DVA) is the same thing seen by the counterparty about the bank. Both come from one object: the distribution of the future value of the netting set, date by date.",
+					"Sign convention, Gregory's (4th edition): an adjustment is negative when it is a cost to the bank. Adjusted value = risk-free value + CVA + DVA + FVA. CVA is negative or zero, DVA positive or zero."
+				]
+			},
+			{
+				"title": "Exposure",
+				"paragraphs": [
+					"V(t) is the value of the netting set to the bank at a future date, after the payment of that date. Expected exposure EE(t) is the average of max(V(t), 0); expected negative exposure ENE(t) the average of min(V(t), 0), a negative number. Potential future exposure PFE(t) is a high quantile of V(t). EPE is the time average of EE; the Effective EPE (EEPE) of the Basel framework averages, over the first year, an EE that is not allowed to decrease.",
+					"The values come from a simulation: thousands of paths of interest rates on a grid of dates that includes every payment date, and each trade repriced on each path at each date. Close-out netting is applied path by path: values add up before the positive part is taken."
+				]
+			},
+			{
+				"title": "Interest-rate scenarios",
+				"paragraphs": [
+					"Rates follow the one-factor Hull-White model, dr = (\u03b8(t) \u2212 a r)dt + \u03c3 dW, fitted exactly to today's swap curve. In this model the price of every zero-coupon bond at a future date is a closed formula of one state variable, so swaps and European swaptions are repriced exactly on each path, without approximation.",
+					"The two parameters are calibrated to the swaptions actually traded: the mean reversion a and the volatility \u03c3 that best reproduce the normal vols implied by traded premiums (see the Rates page). The swap curve is the median rate of the swaps traded on the latest day. These are medians of trades published by DTCC, not dealer quotes."
+				]
+			},
+			{
+				"title": "CVA and DVA",
+				"paragraphs": [
+					"CVA = \u2212LGD \u00d7 \u03a3 EE*(t_i) \u00d7 S_bank(t_{i\u22121}) \u00d7 PD_counterparty(t_{i\u22121}, t_i), where EE* is the discounted expected exposure, LGD = 1 \u2212 recovery, PD the probability that the counterparty defaults in the interval and S_bank the probability that the bank has not defaulted before: only the first default matters. DVA is the mirror image, on the negative exposure and the bank's own default. The unilateral CVA ignores the bank's default.",
+					"Each figure carries its Monte-Carlo standard error, computed from the dispersion of the loss path by path. Rule of thumb shown next to it: CVA \u2248 \u2212credit spread \u00d7 EPE \u00d7 maturity.",
+					"The model assumes that default is independent of the level of rates (no wrong-way risk) and that the two defaults are independent of each other."
+				]
+			},
+			{
+				"title": "Bermudans: value by regression",
+				"paragraphs": [
+					"A swap and a European swaption have an exact value on every path at every date under the model. A Bermudan does not: what it is worth depends on when it will be exercised. Its value is estimated by American Monte-Carlo (Longstaff & Schwartz, 2001): on a separate, independent set of pilot paths, the cash flows it goes on to pay are regressed on the level of rates at each date, which gives its value as a function of rates. The number of pilot paths is shown with the result.",
+					"Each path carries an exercise state. On an exercise date the holder enters the swap when it is worth more than keeping the option; from then on the trade is that swap, valued exactly. The rule is an estimate of the best one, so the simulated holder is slightly sub-optimal: the value shown for today is the lattice price, and the simulated exposure starts just below it. On swaps and European swaptions, where the exact value is known, the same regression reproduces the expected exposure within 1 to 2 % of its peak and the 99 % quantile within 2 to 4 %, the more pilot paths the closer."
+				]
+			},
+			{
+				"title": "Trades written as scripts",
+				"paragraphs": [
+					"A trade can be given as a script in the payoff language of the Scripting page, on interest rates: dated events that read the curve of their date with df(DATE), keep what they need in variables and pay with `pays`. The engine does not know what the trade is. It replays the script on every scenario, which gives its cash flows, and estimates its value at each date by regressing the cash flows still to come on the level of rates and on the script's own variables, as for a Bermudan. A swap written this way has the exposure and the CVA of the native swap, within the accuracy of the regression.",
+					"This is the idea of Andreasen and Savine: the cash flows are the one description of a trade, and every calculation \u2014 value, exposure, capital \u2014 is run on them. So the capital of a scripted trade is the internal models method's, which reads the simulated exposure; the standardised approach would need a supervisory description the script does not carry. Its value today is a Monte-Carlo price, and ISDA SIMM, which needs sensitivities scenario by scenario, gives way to the regression model of the margin."
+				]
+			},
+			{
+				"title": "Wrong-way risk",
+				"paragraphs": [
+					"Every figure above assumes that the counterparty's default has nothing to do with what it owes. Wrong-way risk is the case where it defaults more often precisely when it owes more. It is modelled as Hull & White (2012) do: the hazard rate depends on the value of the netting set, \u03bb(t) = exp(a(t) + b \u00d7 V(t)), with a(t) solved at each date so that the survival probability averaged over the scenarios is still the market's. The parameter moves default probability between scenarios; it does not create any.",
+					"The parameter is entered per reference notional of 10 M: a value of 10 multiplies the hazard by e^0.5 \u2248 1.65 in a scenario where the netting set is worth 5 % of the notional more. It has no market quote: it is a scenario, and the figure to read is the ratio of the CVA with it to the independent CVA, shown side by side. Under a collateral agreement the effect nearly disappears: the exposure is then the move of the value over ten days, which is no larger where the value is high. Funding, margin and capital adjustments keep the market survival curve."
+				]
+			},
+			{
+				"title": "Initial margin and MVA",
+				"paragraphs": [
+					"Under the margin rules for non-cleared derivatives each party also posts initial margin, held apart, sized to cover 99 % of the move of the netting set's value over the margin period of risk. Pricing it needs that margin in every scenario at every date. It is projected by regression (Anfuso, Aziz, Giltinan & Loukopoulos, 2017): on the simulated paths, the squared move of the value over the next ten days is regressed on the value, which gives its conditional standard deviation; the margin is 2.33 times it, the 99 % quantile of a normal move. This is a model of the margin, not the industry's rule (ISDA SIMM works from sensitivities): if you give today's actual margin, the whole profile is scaled to start from it.",
+					"When every trade is a swap or a European swaption, the margin is instead ISDA SIMM itself (methodology version 2.8+2512, interest rate risk class), computed in every scenario at every date from the sensitivities of that scenario: the PV01 at each of the twelve vertices of the curve, weighted by ISDA's risk weights and aggregated with its correlations, plus the vega and curvature of the options. The sensitivities come from the closed forms, not from a bump: each cash flow's sensitivity to its own zero rate, shared between the two vertices around it; for an option, its vega at the normal volatility its price implies. (SIMM asks for sensitivities to market rates; zero rates are used here.) SIMM is calibrated on a period of stress and comes out about one and a half times the regression model's margin.",
+					"With that margin the exposure is what is left beyond it, on about one path in a hundred: the CVA almost disappears. What replaces it is the cost of funding the margin posted, MVA = \u2212\u03a3 E[D \u00d7 IM](t) \u00d7 survival of both parties \u00d7 funding spread \u00d7 \u0394t. Segregated margin funds nothing, so the funding adjustments stay those of the variation margin."
+				]
+			},
+			{
+				"title": "ColVA",
+				"paragraphs": [
+					"A collateral agreement pays a rate on the cash it holds. When that rate is the overnight rate the trades are discounted at, nothing is gained or lost: this is why collateralised trades are discounted on the OIS curve (Piterbarg, 2010). When it differs, ColVA = \u2212\u03a3 E[D \u00d7 collateral held](t) \u00d7 survival of both parties \u00d7 (rate paid \u2212 discount rate) \u00d7 \u0394t: a cost when the bank holds collateral on which it pays more."
+				]
+			},
+			{
+				"title": "Capital and KVA",
+				"paragraphs": [
+					"Two regulatory charges are projected. By default the exposure at default is the standardised approach's (SA-CCR, Basel framework CRE52): 1.4 \u00d7 (replacement cost + multiplier \u00d7 add-on). At a future date the add-on comes from the trades that are left, the same in every scenario; the replacement cost and the multiplier come from the value, and the margin held, in the scenario. The default-risk capital is the IRB formula on that exposure (CRE31, with the PD floor of 0.05 % of CRE32.4, the foundation LGD of CRE32.6 and an effective maturity capped at five years, CRE32.46); the CVA capital is the reduced basic approach (BA-CVA, MAR50), with the sector and investment-grade risk weight of the counterparty and no cap on the maturity (MAR50.15).",
+					"The probability of default of that formula is a historical frequency: the share of the issuers of the counterparty's rating category that defaulted within a year, averaged over the years on record (S&P's corporate ratings, as the agency reports them to ESMA). It is not the probability the credit spread implies, which the CVA uses: a spread also pays for bearing the risk, and implies several times more defaults than have been observed. A probability of default can be entered instead.",
+					"The other way to the exposure at default is the internal models method (CRE53): 1.4 \u00d7 the Effective EPE, the average over the coming year of the expected exposure made non-decreasing, read off the simulation itself with its collateral. Its effective maturity is a ratio of areas under the exposure profile (CRE53.20), capped at five years for the default charge and not for the CVA charge, whose supervisory discount it replaces (MAR50.15). It needs no description of the trades, so it is the method of a netting set that holds a script; on swaps it can be asked for, to compare. Three things a bank's approved model does are not done here: the exposure of a future date is the one expected today, not the one the bank would compute in each scenario; the profile comes from the pricing simulation, which the rule allows; and the stressed calibration the rule adds (CRE53.7) is not run.",
+					"KVA = \u2212\u03a3 E[D \u00d7 capital](t) \u00d7 survival of both parties \u00d7 cost of capital \u00d7 \u0394t (Green, Kenyon & Dennis, 2014). An option keeps today's moneyness in its supervisory delta, and after its last exercise date it is carried as its underlying swap. Market-risk capital of the hedges and the leverage ratio are not included."
+				]
+			},
+			{
+				"title": "Credit curves",
+				"paragraphs": [
+					"No free source publishes CDS spreads by name. The counterparty and the bank are given a rating, and the rating a spread: the option-adjusted spread of the ICE BofA US corporate index of that rating (FRED). The hazard rate is the constant default intensity that reprices a five-year CDS at that spread, about spread / (1 \u2212 recovery).",
+					"These are bond spreads, which differ from CDS spreads by a basis and include a liquidity premium: a proxy, as banks use for counterparties without a traded CDS."
+				]
+			},
+			{
+				"title": "Collateral",
+				"paragraphs": [
+					"Under a collateral agreement (CSA) the party that is owed money receives variation margin: the value above a threshold, called when the change exceeds a minimum transfer amount. What remains is the margin period of risk: if the counterparty defaults at t, the collateral in hand is the one called on the value some days earlier (ten business days by regulatory convention), and the exposure is V(t) \u2212 C(t \u2212 MPoR).",
+					"Coupons paid during that period matter: where the bank pays a coupon the value jumps while the collateral still reflects the value before it, which shows as spikes in the exposure. The treatment can be changed (both parties keep paying, both stop, or only the bank keeps paying).",
+					"The comparison with the uncollateralised netting set is made on the same paths."
+				]
+			},
+			{
+				"title": "Two measures: prices and risks",
+				"paragraphs": [
+					"CVA is a price: its exposure is computed on risk-neutral scenarios, calibrated to option prices. PFE and credit limits are risk measures \u2014 how large the exposure can really get \u2014 and are computed on scenarios that follow the historical behaviour of rates, dr = a(\u03b8 \u2212 r)dt + \u03c3 dW, estimated on the 3-month Treasury yield since 1990. In both cases each trade is valued on each path by the market-calibrated model: only the probability of the scenarios differs.",
+					"The historical volatility \u03c3 is well determined by the data. The mean reversion a and the long-run rate \u03b8 are not: they change entirely with the estimation window, and \u03b8 drives the result (a long-run rate below today's makes payer swaps lose value on average). They are shown with their standard errors and can be set by hand."
+				]
+			},
+			{
+				"title": "The share of each trade",
+				"paragraphs": [
+					"Stand-alone CVA: the trade as if it were alone. Incremental CVA: the CVA of the netting set minus its CVA without the trade \u2014 the price to charge for adding it, positive when the trade reduces the risk. Marginal CVA: the Euler allocation, the trade's value on the paths where the netting set is positive; the shares add up to the total. There is no exact allocation under a CSA with a threshold or a minimum transfer amount."
+				]
+			},
+			{
+				"title": "Where the paths are valued",
+				"paragraphs": [
+					"Swaps and European swaptions have a closed-form value under the model. When the server has graphics cards, their paths are valued there: one GPU thread per path draws the random numbers the CPU would have drawn and applies the same formulas. The scenarios are identical and the values agree to about fourteen digits; the last ones differ because a graphics card does not compute an exponential exactly as a processor does. The result is the same, bit for bit, on one card or on two.",
+					"A Bermudan or a scripted trade is valued by regression, and SIMM on every path needs the sensitivities of each scenario: both stay on the CPU. The response says where the paths ran and why."
+				]
+			},
+			{
+				"title": "Sources",
+				"paragraphs": [
+					"Gregory, The xVA Challenge: Counterparty Risk, Funding, Collateral, Capital and Initial Margin, 4th ed., Wiley, 2020.",
+					"Andreasen & Savine, Modern Computational Finance: Scripting for Derivatives and xVA, Wiley, 2021.",
+					"Pykhtin & Zhu, A Guide to Modelling Counterparty Credit Risk, GARP Risk Review, 2007.",
+					"Andersen, Pykhtin & Sokol, Rethinking the Margin Period of Risk, Journal of Credit Risk, 2017.",
+					"Basel Committee on Banking Supervision, Basel Framework, CRE53 (internal models method: Effective EE, Effective EPE).",
+					"European Securities and Markets Authority, Central Repository (CEREP): default statistics reported by the credit rating agencies. The default rates of this page were drafted using material downloaded from ESMA's website; ESMA does not endorse this publication."
+				]
+			}
+		]
+	},
+	"sensitivities": {
+		"portfolio": "single_swap",
+		"portfolio_label": "One 10-year payer swap",
+		"adjustments": {
+			"cva": {
+				"value": -23743.5,
+				"error": 809.583
+			},
+			"dva": {
+				"value": 16874.6,
+				"error": 510.075
+			},
+			"fca": {
+				"value": 0.0,
+				"error": 0.0
+			},
+			"fba": {
+				"value": 0.0,
+				"error": 0.0
+			},
+			"cva_unilateral": {
+				"value": -24892.8,
+				"error": 848.0
+			}
+		},
+		"swap_rates": [
+			{
+				"label": "swap rate 1Y",
+				"expiry": 0.0,
+				"tenor": 1.0,
+				"level": 0.0455,
+				"cva": {
+					"value": 38598.1,
+					"error": 964.293
+				},
+				"dva": {
+					"value": 38568.3,
+					"error": 674.721
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 38939.3,
+					"error": 983.453
+				}
+			},
+			{
+				"label": "swap rate 2Y",
+				"expiry": 0.0,
+				"tenor": 2.0,
+				"level": 0.0473,
+				"cva": {
+					"value": 65533.4,
+					"error": 1743.49
+				},
+				"dva": {
+					"value": 58441.7,
+					"error": 1521.07
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 67035.3,
+					"error": 1773.76
+				}
+			},
+			{
+				"label": "swap rate 3Y",
+				"expiry": 0.0,
+				"tenor": 3.0,
+				"level": 0.0477,
+				"cva": {
+					"value": 204942.0,
+					"error": 5062.45
+				},
+				"dva": {
+					"value": 116294.0,
+					"error": 2425.8
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 213463.0,
+					"error": 5265.94
+				}
+			},
+			{
+				"label": "swap rate 5Y",
+				"expiry": 0.0,
+				"tenor": 5.0,
+				"level": 0.0478,
+				"cva": {
+					"value": 417475.0,
+					"error": 9905.62
+				},
+				"dva": {
+					"value": 237271.0,
+					"error": 4838.77
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 442949.0,
+					"error": 10508.4
+				}
+			},
+			{
+				"label": "swap rate 7Y",
+				"expiry": 0.0,
+				"tenor": 7.0,
+				"level": 0.0481,
+				"cva": {
+					"value": 632997.0,
+					"error": 14197.6
+				},
+				"dva": {
+					"value": 379145.0,
+					"error": 7985.59
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 689773.0,
+					"error": 15461.3
+				}
+			},
+			{
+				"label": "swap rate 10Y",
+				"expiry": 0.0,
+				"tenor": 10.0,
+				"level": 0.0486,
+				"cva": {
+					"value": -2923650.0,
+					"error": 54075.8
+				},
+				"dva": {
+					"value": -2210960.0,
+					"error": 37423.7
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -3070420.0,
+					"error": 56821.4
+				}
+			},
+			{
+				"label": "swap rate 15Y",
+				"expiry": 0.0,
+				"tenor": 15.0,
+				"level": 0.05,
+				"cva": {
+					"value": -20539.3,
+					"error": 1070.15
+				},
+				"dva": {
+					"value": 16066.7,
+					"error": 562.741
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -21523.6,
+					"error": 1126.71
+				}
+			},
+			{
+				"label": "swap rate 20Y",
+				"expiry": 0.0,
+				"tenor": 20.0,
+				"level": 0.0503,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "swap rate 30Y",
+				"expiry": 0.0,
+				"tenor": 30.0,
+				"level": 0.0494,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			}
+		],
+		"swaption_vols": [
+			{
+				"label": "swaption vol 6M into 10Y",
+				"expiry": 0.5,
+				"tenor": 10.0,
+				"level": 0.01,
+				"cva": {
+					"value": -500988.0,
+					"error": 24536.2
+				},
+				"dva": {
+					"value": 390826.0,
+					"error": 13016.4
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -525000.0,
+					"error": 25804.7
+				}
+			},
+			{
+				"label": "swaption vol 1Y into 2Y",
+				"expiry": 1.0,
+				"tenor": 2.0,
+				"level": 0.0117,
+				"cva": {
+					"value": 27035.9,
+					"error": 20397.5
+				},
+				"dva": {
+					"value": -31665.7,
+					"error": 10460.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 28296.9,
+					"error": 21830.2
+				}
+			},
+			{
+				"label": "swaption vol 1Y into 5Y",
+				"expiry": 1.0,
+				"tenor": 5.0,
+				"level": 0.0111,
+				"cva": {
+					"value": -219077.0,
+					"error": 6910.09
+				},
+				"dva": {
+					"value": 165163.0,
+					"error": 4406.65
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -229596.0,
+					"error": 7342.34
+				}
+			},
+			{
+				"label": "swaption vol 1Y into 10Y",
+				"expiry": 1.0,
+				"tenor": 10.0,
+				"level": 0.0103,
+				"cva": {
+					"value": -542189.0,
+					"error": 27542.2
+				},
+				"dva": {
+					"value": 423646.0,
+					"error": 14532.8
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -568174.0,
+					"error": 28984.9
+				}
+			},
+			{
+				"label": "swaption vol 2Y into 5Y",
+				"expiry": 2.0,
+				"tenor": 5.0,
+				"level": 0.0114,
+				"cva": {
+					"value": -301275.0,
+					"error": 9964.12
+				},
+				"dva": {
+					"value": 230913.0,
+					"error": 5887.33
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -315729.0,
+					"error": 10427.3
+				}
+			},
+			{
+				"label": "swaption vol 2Y into 10Y",
+				"expiry": 2.0,
+				"tenor": 10.0,
+				"level": 0.0107,
+				"cva": {
+					"value": -612094.0,
+					"error": 33068.4
+				},
+				"dva": {
+					"value": 479587.0,
+					"error": 17311.1
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -641425.0,
+					"error": 34837.7
+				}
+			}
+		],
+		"counterparty_spreads": [
+			{
+				"label": "counterparty credit spread 6M",
+				"expiry": 0.0,
+				"tenor": 0.5,
+				"level": 0.0102,
+				"cva": {
+					"value": 55409.9,
+					"error": 3750.37
+				},
+				"dva": {
+					"value": -529.29,
+					"error": 18.228
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 56272.0,
+					"error": 3786.72
+				}
+			},
+			{
+				"label": "counterparty credit spread 1Y",
+				"expiry": 0.0,
+				"tenor": 1.0,
+				"level": 0.0102,
+				"cva": {
+					"value": 121372.0,
+					"error": 9571.74
+				},
+				"dva": {
+					"value": -3491.87,
+					"error": 123.535
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 127731.0,
+					"error": 9853.8
+				}
+			},
+			{
+				"label": "counterparty credit spread 3Y",
+				"expiry": 0.0,
+				"tenor": 3.0,
+				"level": 0.0102,
+				"cva": {
+					"value": 110097.0,
+					"error": 23934.9
+				},
+				"dva": {
+					"value": -20533.7,
+					"error": 756.382
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 138777.0,
+					"error": 24773.4
+				}
+			},
+			{
+				"label": "counterparty credit spread 5Y",
+				"expiry": 0.0,
+				"tenor": 5.0,
+				"level": 0.0102,
+				"cva": {
+					"value": -592086.0,
+					"error": 39570.6
+				},
+				"dva": {
+					"value": -49323.6,
+					"error": 1824.85
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -579171.0,
+					"error": 41040.3
+				}
+			},
+			{
+				"label": "counterparty credit spread 10Y",
+				"expiry": 0.0,
+				"tenor": 10.0,
+				"level": 0.0102,
+				"cva": {
+					"value": -1861570.0,
+					"error": 68389.6
+				},
+				"dva": {
+					"value": -37199.0,
+					"error": 1609.73
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -2012630.0,
+					"error": 73914.8
+				}
+			}
+		],
+		"own_credit": [
+			{
+				"label": "own hazard rate",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0117789,
+				"cva": {
+					"value": 94534.3,
+					"error": 3271.32
+				},
+				"dva": {
+					"value": 1363870.0,
+					"error": 41010.5
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			}
+		],
+		"others": [
+			{
+				"label": "counterparty loss given default",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.6,
+				"cva": {
+					"value": -39572.5,
+					"error": 1349.3
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -41488.0,
+					"error": 1413.33
+				}
+			},
+			{
+				"label": "own loss given default",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.6,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 28124.3,
+					"error": 850.125
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "borrowing spread",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": -2330510.0,
+					"error": 79469.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "lending spread",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 2376140.0,
+					"error": 71798.2
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			}
+		],
+		"model_risks": [
+			{
+				"label": "zero rate 1Y",
+				"expiry": 0.0,
+				"tenor": 1.0,
+				"level": 0.0444952,
+				"cva": {
+					"value": 45776.8,
+					"error": 1039.24
+				},
+				"dva": {
+					"value": 29822.4,
+					"error": 573.515
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 46547.1,
+					"error": 1056.88
+				}
+			},
+			{
+				"label": "zero rate 2Y",
+				"expiry": 0.0,
+				"tenor": 2.0,
+				"level": 0.0462561,
+				"cva": {
+					"value": 66083.1,
+					"error": 2100.82
+				},
+				"dva": {
+					"value": 42340.0,
+					"error": 1140.42
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 67965.9,
+					"error": 2158.36
+				}
+			},
+			{
+				"label": "zero rate 3Y",
+				"expiry": 0.0,
+				"tenor": 3.0,
+				"level": 0.0466432,
+				"cva": {
+					"value": 155880.0,
+					"error": 4074.22
+				},
+				"dva": {
+					"value": 97461.3,
+					"error": 2149.02
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 162990.0,
+					"error": 4248.17
+				}
+			},
+			{
+				"label": "zero rate 5Y",
+				"expiry": 0.0,
+				"tenor": 5.0,
+				"level": 0.0467275,
+				"cva": {
+					"value": 273592.0,
+					"error": 7082.23
+				},
+				"dva": {
+					"value": 169339.0,
+					"error": 3939.03
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 293471.0,
+					"error": 7549.23
+				}
+			},
+			{
+				"label": "zero rate 7Y",
+				"expiry": 0.0,
+				"tenor": 7.0,
+				"level": 0.047041,
+				"cva": {
+					"value": 334929.0,
+					"error": 9494.75
+				},
+				"dva": {
+					"value": 200299.0,
+					"error": 5682.99
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 374960.0,
+					"error": 10406.2
+				}
+			},
+			{
+				"label": "zero rate 10Y",
+				"expiry": 0.0,
+				"tenor": 10.0,
+				"level": 0.0475912,
+				"cva": {
+					"value": -2559330.0,
+					"error": 47157.9
+				},
+				"dva": {
+					"value": -1946550.0,
+					"error": 33006.3
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -2687890.0,
+					"error": 49554.9
+				}
+			},
+			{
+				"label": "zero rate 15Y",
+				"expiry": 0.0,
+				"tenor": 15.0,
+				"level": 0.0492903,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "zero rate 20Y",
+				"expiry": 0.0,
+				"tenor": 20.0,
+				"level": 0.0495993,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "zero rate 30Y",
+				"expiry": 0.0,
+				"tenor": 30.0,
+				"level": 0.0479149,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "Hull-White mean reversion",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0305545,
+				"cva": {
+					"value": 102942.0,
+					"error": 4534.32
+				},
+				"dva": {
+					"value": -79941.3,
+					"error": 2451.5
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 107877.0,
+					"error": 4759.74
+				}
+			},
+			{
+				"label": "Hull-White volatility",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0116801,
+				"cva": {
+					"value": -1941260.0,
+					"error": 72507.7
+				},
+				"dva": {
+					"value": 1496840.0,
+					"error": 40897.8
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -2034360.0,
+					"error": 75916.2
+				}
+			},
+			{
+				"label": "counterparty hazard rate to 0.50Y",
+				"expiry": 0.0,
+				"tenor": 0.5,
+				"level": 0.017,
+				"cva": {
+					"value": -30963.2,
+					"error": 1219.82
+				},
+				"dva": {
+					"value": -8311.31,
+					"error": 254.054
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -30515.8,
+					"error": 1223.18
+				}
+			},
+			{
+				"label": "counterparty hazard rate to 1Y",
+				"expiry": 0.0,
+				"tenor": 1.0,
+				"level": 0.017,
+				"cva": {
+					"value": -63665.7,
+					"error": 2675.5
+				},
+				"dva": {
+					"value": -7926.08,
+					"error": 249.712
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -63734.9,
+					"error": 2692.58
+				}
+			},
+			{
+				"label": "counterparty hazard rate to 3Y",
+				"expiry": 0.0,
+				"tenor": 3.0,
+				"level": 0.0168989,
+				"cva": {
+					"value": -373293.0,
+					"error": 16309.2
+				},
+				"dva": {
+					"value": -25713.5,
+					"error": 879.424
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -380648.0,
+					"error": 16665.6
+				}
+			},
+			{
+				"label": "counterparty hazard rate to 5Y",
+				"expiry": 0.0,
+				"tenor": 5.0,
+				"level": 0.0169007,
+				"cva": {
+					"value": -366301.0,
+					"error": 13975.4
+				},
+				"dva": {
+					"value": -15543.3,
+					"error": 595.805
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -382653.0,
+					"error": 14598.8
+				}
+			},
+			{
+				"label": "counterparty hazard rate to 10Y",
+				"expiry": 0.0,
+				"tenor": 10.0,
+				"level": 0.0168974,
+				"cva": {
+					"value": -473055.0,
+					"error": 17378.9
+				},
+				"dva": {
+					"value": -9452.85,
+					"error": 409.059
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -511441.0,
+					"error": 18782.9
+				}
+			},
+			{
+				"label": "own hazard rate",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0117789,
+				"cva": {
+					"value": 94534.3,
+					"error": 3271.32
+				},
+				"dva": {
+					"value": 1363870.0,
+					"error": 41010.5
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "counterparty loss given default",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.6,
+				"cva": {
+					"value": -39572.5,
+					"error": 1349.3
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": -41488.0,
+					"error": 1413.33
+				}
+			},
+			{
+				"label": "own loss given default",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.6,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 28124.3,
+					"error": 850.125
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "borrowing spread",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": -2330510.0,
+					"error": 79469.0
+				},
+				"fba": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			},
+			{
+				"label": "lending spread",
+				"expiry": 0.0,
+				"tenor": 0.0,
+				"level": 0.0,
+				"cva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"dva": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fca": {
+					"value": 0.0,
+					"error": 0.0
+				},
+				"fba": {
+					"value": 2376140.0,
+					"error": 71798.2
+				},
+				"cva_unilateral": {
+					"value": 0.0,
+					"error": 0.0
+				}
+			}
+		],
+		"sa_cva": {
+			"interest_rate_tenors": [1.0, 2.0, 5.0, 10.0, 30.0],
+			"interest_rate_delta": [38939.3, 209344.0, 927968.0, -2810650.0, -5380.9],
+			"interest_rate_risk_weights": [0.0111, 0.0093, 0.0074, 0.0074, 0.0074],
+			"interest_rate_vega": -23782.2,
+			"credit_spread_tenors": [0.5, 1.0, 3.0, 5.0, 10.0],
+			"credit_spread_delta": [
+				56272.0, 127731.0, 138777.0, -579171.0, -2012630.0
+			],
+			"credit_spread_risk_weight": 0.05,
+			"capital_interest_rate_delta": 13622.6,
+			"capital_interest_rate_vega": 23782.2,
+			"capital_credit_spread_delta": 112651.0,
+			"capital": 150056.0,
+			"sector": "other",
+			"investment_grade": true
+		},
+		"hull_white": {
+			"mean_reversion": 0.0305545,
+			"sigma": 0.0116801,
+			"rmse_bp": 3.273,
+			"vol_points": 6,
+			"swaption_trades": 180
+		},
+		"market_as_of": "2026-09-30",
+		"paths": 2000,
+		"seed": 42,
+		"threads": 8,
+		"inputs": 21,
+		"seconds_adjoint": 0.21,
+		"seconds_valuation": 0.025,
+		"cost_ratio": 8.4,
+		"bump_valuations": 42,
+		"compute_ms": 1234.0,
+		"warnings": [
+			"Counterparty and own credit curves are rating proxies built from bond spreads (ICE BofA indices), not CDS quotes of a name: the same spread is used at every tenor."
+		],
+		"methodology": [
+			{
+				"title": "What is computed",
+				"paragraphs": [
+					"The derivative of each adjustment \u2014 CVA, DVA, the funding cost FCA and the funding benefit FBA \u2014 to every quote the market gives: each par swap rate of the curve, each swaption volatility the model was calibrated to, the credit spread of each party, the funding spreads. It is the hedge: how much the adjustment moves when a quote moves, per unit of the quote. A sensitivity to a rate of 1 000 000 means 100 per basis point.",
+					"Every figure comes with its Monte-Carlo error, measured as the dispersion of the sensitivity over batches of 64 scenarios."
+				]
+			},
+			{
+				"title": "Adjoint differentiation",
+				"paragraphs": [
+					"Bumping each input and running the simulation again costs two runs per input. The adjoint method (Giles & Glasserman, 2006; Savine, 2018) gets all of them from one run: every operation of the valuation is recorded on a tape, then the tape is read backwards, carrying the derivative of the result to each operation in turn. The cost is a small multiple of one valuation, whatever the number of inputs; the page shows the multiple measured on this run.",
+					"The set-up \u2014 the curve, the model, the coefficients of every trade, the default probabilities \u2014 is recorded once. Each scenario is then recorded, read backwards and erased, so the memory is that of one scenario: the check-pointing of Savine's book."
+				]
+			},
+			{
+				"title": "From the model to the market",
+				"paragraphs": [
+					"The simulation is written in zero rates, in the two parameters of Hull-White and in hazard rates; the market quotes swap rates, swaption volatilities and credit spreads. Each quote determines the model's inputs through a calibration \u2014 the bootstrap of the curve, the fit of the two parameters to the volatilities, the bootstrap of the hazard rates \u2014 and the calibration is differentiated at its solution, by the implicit function theorem, not through its iterations. A swap rate therefore moves the adjustment three ways: through the curve, through the model recalibrated on that curve, and through the hazard rates, which reprice the same credit spreads on it.",
+					"Checked against the direct calculation: move a quote, rebuild the curve, calibrate again, price again on the same scenarios."
+				]
+			},
+			{
+				"title": "What a path-by-path derivative misses",
+				"paragraphs": [
+					"A swaption that is exercised becomes a swap; one that is not becomes nothing. Scenario by scenario that choice does not move when the curve moves a little, so a naive derivative ignores the scenarios that change sides \u2014 more than a tenth of the sensitivity of a bought swaption to the 10-year rate. The choice is replaced by a narrow ramp (a twentieth of a standard deviation of the swap's value on each side), which recovers them and changes the CVA by a few thousandths of a percent. A minimum transfer amount makes the collateral jump in the same way; that jump is left out, and said so."
+				]
+			},
+			{
+				"title": "SA-CVA",
+				"paragraphs": [
+					"The standardised approach for CVA risk (Basel framework, MAR50.42 to 50.77) computes capital from sensitivities of the regulatory CVA \u2014 the unilateral one, without the bank's own default. Three risk classes matter for interest-rate trades in one currency: the delta to the risk-free yield at 1, 2, 5, 10 and 30 years; the vega, to a relative shift of every volatility; the delta to the counterparty's credit spread at 6 months, 1, 3, 5 and 10 years. Each sensitivity is multiplied by a supervisory risk weight, the weighted sensitivities of a class are aggregated with supervisory correlations, and the classes add up. The text allows the sensitivities to be computed by adjoint differentiation (MAR50.47, FAQ 1).",
+					"The swap-rate sensitivities are spread over the five prescribed tenors by linear interpolation. No hedge is recognised, and the multiplier is the default of 1."
+				]
+			},
+			{
+				"title": "Not covered",
+				"paragraphs": [
+					"Trades valued by regression (Bermudans, scripts), initial margin, wrong-way risk and the capital adjustments are not differentiated."
+				]
+			},
+			{
+				"title": "Sources",
+				"paragraphs": [
+					"Giles & Glasserman, Smoking adjoints: fast Monte Carlo Greeks, Risk, 2006.",
+					"Savine, Modern Computational Finance: AAD and Parallel Simulations, Wiley, 2018.",
+					"Andreasen & Savine, Modern Computational Finance: Scripting for Derivatives and xVA, Wiley, 2021 (smoothing of discontinuities).",
+					"Capriotti & Giles, Fast correlation Greeks by adjoint algorithmic differentiation, Risk, 2010.",
+					"Basel Committee on Banking Supervision, Basel Framework, MAR50 (minimum capital requirements for CVA risk)."
+				]
+			}
+		]
+	}
+}

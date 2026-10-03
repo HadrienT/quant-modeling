@@ -6124,11 +6124,30 @@
             "title": "Pfe",
             "type": "array"
           },
+          "quantile_levels": {
+            "description": "Levels of the quantiles of the netting set's value",
+            "items": {
+              "type": "number"
+            },
+            "title": "Quantile Levels",
+            "type": "array"
+          },
           "times": {
             "items": {
               "type": "number"
             },
             "title": "Times",
+            "type": "array"
+          },
+          "value_quantiles": {
+            "description": "value_quantiles[k][i]: the quantile quantile_levels[k] of the value at times[i] \u2014 the distribution the profiles summarise",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Value Quantiles",
             "type": "array"
           }
         },
@@ -6141,7 +6160,9 @@
           "eepe",
           "discounted_ee",
           "discounted_ene",
-          "discounted_ee_error"
+          "discounted_ee_error",
+          "quantile_levels",
+          "value_quantiles"
         ],
         "title": "PricingExposure",
         "type": "object"

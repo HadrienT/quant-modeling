@@ -289,7 +289,7 @@ namespace quantModeling
         }
         const ExposurePaths cube =
             margin ? netting_set_cube(paths, in, trades, &*margin) : variation_only;
-        report.exposure = exposure_statistics(cube, {}, in.pfe_confidence);
+        report.exposure = exposure_statistics(cube, {}, in.pfe_confidence, in.quantile_levels);
         const ExposureProfile profile = report.exposure.profile();
 
         pathwise_adjustments(cube, in, report.cva_independent, report.dva_independent);

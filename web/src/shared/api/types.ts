@@ -47,6 +47,20 @@ export type FigureCell = Schemas["FigureCell"];
 export type StructuralResponse = Schemas["StructuralResponse"];
 export type MethodologySection = Schemas["MethodologySection"];
 
+export type XvaRequest = Schemas["XvaRequest"];
+export type XvaResponse = Schemas["XvaResponse"];
+export type XvaPortfolios = Schemas["XvaPortfoliosResponse"];
+export type XvaPortfolioId = XvaResponse["portfolio"];
+export type XvaRating = NonNullable<XvaRequest["counterparty_rating"]>;
+export type XvaExposure = Schemas["PricingExposure"];
+export type XvaAdjustments = Schemas["Adjustments"];
+export type XvaTrade = Schemas["XvaTrade"];
+export type XvaCapital = Schemas["CapitalOut"];
+export type XvaEstimate = Schemas["Estimate"];
+export type XvaSensitivitiesRequest = Schemas["XvaSensitivitiesRequest"];
+export type XvaSensitivities = Schemas["XvaSensitivitiesResponse"];
+export type XvaQuoteRisk = Schemas["AdjustmentRisks"];
+
 // FastAPI splits models used for both request and response bodies.
 export type Portfolio = Schemas["Portfolio-Output"];
 export type PortfolioInput = Schemas["Portfolio-Input"];

@@ -7,6 +7,7 @@ import {
 	ChartCandlestick,
 	History,
 	Layers,
+	ShieldAlert,
 	Waves,
 	type LucideIcon,
 } from "lucide-react";
@@ -17,6 +18,7 @@ type Feature = {
 		| "/price"
 		| "/scripting"
 		| "/market"
+		| "/xva"
 		| "/simulation"
 		| "/portfolio"
 		| "/backtest"
@@ -44,6 +46,12 @@ const FEATURES: Feature[] = [
 		title: "Market",
 		icon: ChartCandlestick,
 		text: "Prices, rate curves, FX, and implied and local volatility surfaces built from option chains in the site's own database.",
+	},
+	{
+		to: "/xva",
+		title: "xVA",
+		icon: ShieldAlert,
+		text: "The counterparty risk of a netting set of rate trades: simulated exposure, CVA, DVA, FVA, margin and capital, with their sensitivities by adjoint differentiation.",
 	},
 	{
 		to: "/visualize",

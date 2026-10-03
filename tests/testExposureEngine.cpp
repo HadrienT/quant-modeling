@@ -722,4 +722,35 @@ namespace quantModeling
         EXPECT_LT(-cva, 1.0);
     }
 
+    TEST(ExposureEngine, TheQuantilesOfTheValueBracketThePfe)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        engine.add(par_swap(m, 10.0, true));
+        ExposureSimulationSettings settings;
+        settings.paths = 4000;
+        const ExposurePaths paths = engine.simulate(settings);
+        const std::vector<Real> levels{0.05, 0.25, 0.50, 0.75, 0.95};
+        const ExposureStatistics s = exposure_statistics(paths, {}, 0.95, levels);
+        ASSERT_EQ(s.quantile_levels, levels);
+        ASSERT_EQ(s.value_quantiles.size(), levels.size());
+        for (std::size_t i = 0; i < s.times.size(); ++i)
+        {
+            // Increasing in the level, and the PFE is the positive part of
+            // the quantile of its own level.
+            for (std::size_t k = 1; k < levels.size(); ++k)
+                ASSERT_GE(s.value_quantiles[k][i], s.value_quantiles[k - 1][i]);
+            ASSERT_DOUBLE_EQ(s.pfe[i], std::max(s.value_quantiles[4][i], 0.0));
+        }
+        // A swap at par: about as many scenarios on each side at the peak.
+        const std::size_t peak = s.times.size() / 3;
+        EXPECT_LT(s.value_quantiles[0][peak], 0.0);
+        EXPECT_GT(s.value_quantiles[4][peak], 0.0);
+        EXPECT_LT(std::abs(s.value_quantiles[2][peak]), 0.3 * s.value_quantiles[4][peak]);
+        // Nothing asked for, nothing computed.
+        EXPECT_TRUE(exposure_statistics(paths).value_quantiles.empty());
+        EXPECT_THROW(exposure_statistics(paths, {}, 0.95, {0.5, 0.4}), InvalidInput);
+        EXPECT_THROW(exposure_statistics(paths, {}, 0.95, {1.0}), InvalidInput);
+    }
+
 } // namespace quantModeling

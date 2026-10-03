@@ -91,6 +91,39 @@ const creditRoute = createRoute({
 	component: CreditPage,
 });
 
+// ── xVA ──────────────────────────────────────────────────────────────────
+// Page at /xva; its API lives under /api/xva/*, like the credit page's.
+const XvaPage = lazy(() => import("@/features/xva/XvaPage"));
+const XVA_RATING = z.enum(["AAA", "AA", "A", "BBB", "BB", "B", "CCC"]);
+const xvaRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/xva",
+	validateSearch: z.object({
+		portfolio: z
+			.enum([
+				"single_swap",
+				"bought_swaption",
+				"sold_swaption",
+				"directional",
+				"balanced",
+				"bermudan",
+				"cancellable",
+				"scripted_swap",
+			])
+			.optional(),
+		cpty: XVA_RATING.optional(),
+		own: XVA_RATING.optional(),
+		csa: z.enum(["none", "vm", "im"]).optional(),
+		wwr: z.number().min(-30).max(30).optional(),
+		funding: z.number().min(0).max(1000).optional(),
+		paths: z.number().int().min(1000).max(50000).optional(),
+		tab: z
+			.enum(["exposure", "adjustments", "capital", "sensitivities"])
+			.optional(),
+	}).parse,
+	component: XvaPage,
+});
+
 // ── Pricing ──────────────────────────────────────────────────────────────
 const PricingPage = lazy(() => import("@/features/pricing/PricingPage"));
 const priceRoute = createRoute({
@@ -211,6 +244,7 @@ const routeTree = rootRoute.addChildren([
 	marketRoute,
 	ratesRoute,
 	creditRoute,
+	xvaRoute,
 	priceRoute,
 	datedAsianRoute,
 	simulationRoute,
@@ -242,6 +276,7 @@ export const ROUTES = [
 	{ path: "/visualize", label: "Strategies" },
 	{ path: "/market", label: "Market" },
 	{ path: "/credit", label: "Credit" },
+	{ path: "/xva", label: "xVA" },
 	{ path: "/price", label: "Pricing" },
 	{ path: "/simulation", label: "Simulation" },
 	{ path: "/scripting", label: "Scripting" },

@@ -182,6 +182,20 @@ def test_a_swap_at_par_costs_a_cva_and_earns_a_dva():
     # The profile is a hump that ends at zero.
     ee = body["exposure"]["ee"]
     assert ee[-1] == 0.0 and max(ee) > 10 * ee[0] > 0
+    # The distribution behind the profile: quantiles of the value, increasing
+    # in their level, the PFE being the positive part of its own.
+    exposure = body["exposure"]
+    levels, quantiles = exposure["quantile_levels"], exposure["value_quantiles"]
+    assert levels == sorted(levels) and 0.95 in levels
+    assert all(len(q) == len(exposure["times"]) for q in quantiles)
+    assert all(
+        low[i] <= high[i]
+        for low, high in zip(quantiles, quantiles[1:])
+        for i in range(len(low))
+    )
+    assert exposure["pfe"] == pytest.approx(
+        [max(v, 0.0) for v in quantiles[levels.index(0.95)]]
+    )
 
 
 def test_what_the_computation_rests_on_is_returned():
