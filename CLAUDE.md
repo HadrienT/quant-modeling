@@ -125,6 +125,7 @@ authentifié (compte `HadrienT`).
 | `etc/roadmap.md` | Stratégie six mois côté quant : vol stochastique calibrée, AAD, Monte-Carlo GPU, capstone xVA. Document de stratégie, pas de spec. |
 | `etc/todo.md` | Checklist « desk grade » — ce qui manque pour ressembler à une lib de production. |
 | `etc/structure.md` | Arborescence cible du module de pricing. |
+| `etc/bytecode-aad-gpu-ordre-2.md` | Explication détaillée de ce qui dépasse les deux livres de Savine : le bytecode des scripts, l'AAD sur GPU (duaux, adjoint par chemin sans tape), l'AAD d'ordre 2. À tenir à jour quand ce code change. |
 
 **Règle de la roadmap qu'il ne faut pas contourner : arrêter d'ajouter des
 produits.** Le catalogue est déjà plus large que nécessaire ; la valeur
