@@ -135,6 +135,11 @@ namespace quantModeling
     std::vector<Real> discounted_expected_collateral(const ExposurePaths &paths, const Csa &csa,
                                                      const std::vector<std::size_t> &trades = {});
 
+    /// The same before the average: element (path p, reporting date r) is at
+    /// `p * dates + r`. What the Monte-Carlo error of ColVA is read on.
+    std::vector<Real> discounted_collateral_paths(const ExposurePaths &paths, const Csa &csa,
+                                                  const std::vector<std::size_t> &trades = {});
+
     /**
      * @brief The simplest projection of initial margin (blueprint §5.6):
      *        today's amount, decaying like the square root of the remaining

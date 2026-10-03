@@ -94,6 +94,10 @@
             "title": "Colva",
             "type": "number"
           },
+          "colva_error": {
+            "title": "Colva Error",
+            "type": "number"
+          },
           "cva": {
             "$ref": "#/components/schemas/Estimate"
           },
@@ -120,8 +124,22 @@
             "title": "Fba",
             "type": "number"
           },
+          "fba_error": {
+            "title": "Fba Error",
+            "type": "number"
+          },
           "fca": {
             "title": "Fca",
+            "type": "number"
+          },
+          "fca_error": {
+            "description": "Monte-Carlo standard error of the FCA, path by path",
+            "title": "Fca Error",
+            "type": "number"
+          },
+          "fva_error": {
+            "description": "Standard error of FCA + FBA: less than the sum of the two, which come from opposite scenarios",
+            "title": "Fva Error",
             "type": "number"
           },
           "kva": {
@@ -129,9 +147,19 @@
             "title": "Kva",
             "type": "number"
           },
+          "kva_error": {
+            "description": "Standard error of the KVA, by batch means: the capital is not an average over paths",
+            "title": "Kva Error",
+            "type": "number"
+          },
           "mva": {
             "description": "Funding of the initial margin posted",
             "title": "Mva",
+            "type": "number"
+          },
+          "mva_error": {
+            "description": "Standard error of the MVA given the margin model: without the noise of the regression that fitted it",
+            "title": "Mva Error",
             "type": "number"
           }
         },
@@ -146,6 +174,12 @@
           "colva",
           "mva",
           "kva",
+          "fca_error",
+          "fba_error",
+          "fva_error",
+          "colva_error",
+          "mva_error",
+          "kva_error",
           "cva_rule_of_thumb"
         ],
         "title": "Adjustments",
@@ -2536,6 +2570,11 @@
             "title": "Eepe",
             "type": "number"
           },
+          "eepe_error": {
+            "description": "Monte-Carlo standard error of the Effective EPE, by batch means",
+            "title": "Eepe Error",
+            "type": "number"
+          },
           "ene": {
             "items": {
               "type": "number"
@@ -2547,11 +2586,24 @@
             "title": "Epe",
             "type": "number"
           },
+          "epe_error": {
+            "description": "Monte-Carlo standard error of the EPE, by batch means",
+            "title": "Epe Error",
+            "type": "number"
+          },
           "pfe": {
             "items": {
               "type": "number"
             },
             "title": "Pfe",
+            "type": "array"
+          },
+          "pfe_error": {
+            "description": "Standard error of the PFE at each date, from the order statistics around the quantile",
+            "items": {
+              "type": "number"
+            },
+            "title": "Pfe Error",
             "type": "array"
           },
           "times": {
@@ -2568,7 +2620,10 @@
           "ene",
           "pfe",
           "epe",
-          "eepe"
+          "eepe",
+          "epe_error",
+          "eepe_error",
+          "pfe_error"
         ],
         "title": "ExposureProfileOut",
         "type": "object"
@@ -6106,6 +6161,11 @@
             "title": "Eepe",
             "type": "number"
           },
+          "eepe_error": {
+            "description": "Monte-Carlo standard error of the Effective EPE, by batch means",
+            "title": "Eepe Error",
+            "type": "number"
+          },
           "ene": {
             "items": {
               "type": "number"
@@ -6117,11 +6177,24 @@
             "title": "Epe",
             "type": "number"
           },
+          "epe_error": {
+            "description": "Monte-Carlo standard error of the EPE, by batch means",
+            "title": "Epe Error",
+            "type": "number"
+          },
           "pfe": {
             "items": {
               "type": "number"
             },
             "title": "Pfe",
+            "type": "array"
+          },
+          "pfe_error": {
+            "description": "Standard error of the PFE at each date, from the order statistics around the quantile",
+            "items": {
+              "type": "number"
+            },
+            "title": "Pfe Error",
             "type": "array"
           },
           "quantile_levels": {
@@ -6158,6 +6231,9 @@
           "pfe",
           "epe",
           "eepe",
+          "epe_error",
+          "eepe_error",
+          "pfe_error",
           "discounted_ee",
           "discounted_ene",
           "discounted_ee_error",

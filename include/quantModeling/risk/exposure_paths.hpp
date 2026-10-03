@@ -160,6 +160,23 @@ namespace quantModeling
         /// EPE and Effective EPE of the undiscounted EE profile.
         Real epe = 0.0;
         Real eepe = 0.0;
+        /**
+         * @brief Monte-Carlo standard errors of EPE and Effective EPE, by
+         *        batch means: the paths are cut into batches (at most 32),
+         *        each gives its own figure, and their dispersion gives the
+         *        error. Batches because the Effective EPE is not an average
+         *        over paths (a running maximum of the profile). Zero with
+         *        too few paths to make two batches of eight.
+         */
+        Real epe_error = 0.0;
+        Real eepe_error = 0.0;
+        /**
+         * @brief Standard error of the PFE at each date, read off the order
+         *        statistics: half the distance between the quantiles of
+         *        levels α ± sqrt(α (1 - α) / N), N the effective number of
+         *        paths (Σw)² / Σw². It needs no estimate of the density.
+         */
+        std::vector<Real> pfe_error;
 
         /**
          * @brief Euler allocation of EE* to the trades (blueprint §4.1):
@@ -198,6 +215,17 @@ namespace quantModeling
                                            const std::vector<std::size_t> &trades = {},
                                            Real pfe_confidence = 0.95,
                                            const std::vector<Real> &quantile_levels = {});
+
+    /**
+     * @brief How many batches the paths are cut into to estimate the error of
+     *        a figure that is not an average over paths: at most 32, at least
+     *        eight paths each; 0 when there are too few paths for two.
+     */
+    std::size_t error_batches(std::size_t paths);
+
+    /// The standard error of the mean of the batches' figures: their
+    /// dispersion over sqrt(their number). 0 with fewer than two.
+    Real batch_error(const std::vector<Real> &batch_values);
 
     /**
      * @brief The discounted profiles EE* and ENE* of the netted trades, and

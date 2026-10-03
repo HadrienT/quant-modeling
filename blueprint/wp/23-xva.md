@@ -1271,7 +1271,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X6 — Wrong-way risk** (fait : §14.9 ; sans le saut FX au défaut) | hazard de Hull & White 2012, $\lambda = e^{a(t) + bV}$ ; saut FX au défaut (si le multi-devise existe) | $b = 0$ redonne X3 au bit près ; survie de marché retrouvée pour tout $b$ ; CVA croissant en $b$ sur un portefeuille payeur |
 | **X7 — GPU** (fait : §14.11 ; transactions en forme fermée, bit à bit entre cartes, à 10⁻¹³ près contre le CPU) | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
 | **X8 — CVA par AAD** *(le capstone)* (fait : §14.13 ; transactions en forme fermée, CPU ; pas à travers la régression ni sur GPU) | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
-| **X9 — Page `/xva`** (fait : §14.14 ; erreur Monte-Carlo sur le CVA, le DVA et les sensibilités seulement) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
+| **X9 — Page `/xva`** (fait : §14.14) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** *(optionnel)* | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 
 ### 14.1 Lot X0 : ce qui est fait, et les choix d'implémentation
@@ -2163,11 +2163,35 @@ La PFE est une ligne de cette surface, l'EE la moyenne de ce qui dépasse
 zéro. Les quantiles sont ceux de la mesure de pricing ; sous la mesure
 historique la page ne montre que les profils.
 
-**Écart au critère du lot**, assumé : *chaque chiffre avec son erreur
-Monte-Carlo* n'est tenu que là où le moteur estime chemin par chemin — CVA,
-DVA, chaque sensibilité. FCA, FBA, ColVA, MVA et KVA sont des intégrales de
-profils attendus, EPE et PFE aussi : le moteur n'en estime pas l'erreur, et
-la page le dit sous le tableau plutôt que d'afficher un ± inventé (§20, P1).
+**Chaque chiffre avec son erreur Monte-Carlo** — le critère du lot. Le CVA
+et le DVA l'avaient (lot X3) ; les autres l'ont reçue dans un second temps,
+par trois estimateurs selon ce qu'est le chiffre :
+
+- **par chemin** pour ce qui est la moyenne sur les chemins d'une somme sur
+  les dates — FCA, FBA, ColVA, MVA : la dispersion des sommes par chemin,
+  corrélations entre dates comprises. Le FVA a la sienne, plus petite que la
+  somme de celles du FCA et du FBA : le coût et le bénéfice viennent de
+  scénarios opposés. Celle du MVA est conditionnelle au modèle de marge : elle
+  ne porte pas le bruit de la régression qui l'a calé ;
+- **par lots** (*batch means*, au plus 32 lots d'au moins huit chemins) pour
+  ce qui n'est pas une moyenne sur les chemins — l'EPE effective (un maximum
+  courant du profil), le KVA (le capital par modèle interne est une fonction
+  de tout le profil attendu), et l'EPE avec elles : chaque lot donne son
+  chiffre, leur dispersion donne l'erreur ;
+- **par les statistiques d'ordre** pour la PFE : la demi-distance entre les
+  quantiles de niveaux $\alpha \pm \sqrt{\alpha(1-\alpha)/N}$, sans
+  estimer de densité.
+
+Vérifié comme le CVA l'était : sur 40 graines, l'écart-type du chiffre
+rapporté à l'erreur annoncée vaut entre 0,91 et 1,06 pour les neuf premiers
+(`XvaReport.TheErrorOfEachAdjustmentIsItsDispersionBetweenSeeds`), et 1,13
+pour le MVA — l'écart est le bruit de la régression. Swap payeur 10 ans,
+contrepartie BBB, 2 000 chemins, 2 octobre 2026 : CVA −24 664 ± 681, FVA
+−90 ± 539 (FCA −11 635 ± 321, FBA +11 545 ± 285), KVA −76 145 ± 1 741,
+EPE 325 373 ± 9 177.
+
+Reste sans erreur : le CVA autonome, incrémental et marginal de chaque
+transaction, le CVA unilatéral, les profils de marge et d'EAD (§20, P1).
 
 **Pas vérifié** : la page n'a pas été ouverte dans un navigateur contre
 l'API réelle (pile de développement à l'arrêt) ; les tests tournent dans
@@ -2408,7 +2432,7 @@ restants (X10) sont dans le tableau du §14.
 
 | # | Amélioration | Pourquoi |
 |---|---|---|
-| P1 | **Erreur Monte-Carlo de FCA, FBA, ColVA, MVA, KVA, EPE et PFE** (estimation chemin par chemin ou par lots, comme le CVA) | le critère du lot X9 la demande pour chaque chiffre ; seuls le CVA, le DVA et les sensibilités l'ont |
+| P1 | Erreur Monte-Carlo du CVA autonome, incrémental et marginal de chaque transaction, et des profils de marge et d'EAD ; bruit de la régression dans l'erreur du MVA | les ajustements du netting set ont la leur (§14.14) ; la part de chaque transaction est affichée sans |
 | P2 | Quantiles de la valeur sous la mesure historique | l'éventail et la surface n'existent que sous la mesure de pricing |
 | P3 | Termes du CSA réglables (seuil, MTA, période de marge) | la page n'offre que les termes des règles de marge ; l'API accepte les autres |
 | P4 | Scripts de l'utilisateur dans la page (voir K4) | le portefeuille `custom` n'est pas offert |

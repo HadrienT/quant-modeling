@@ -157,6 +157,25 @@ namespace quantModeling
         /// Cost of the regulatory capital held; zero without capital inputs.
         Real kva = 0.0;
 
+        /**
+         * @brief Monte-Carlo standard errors of the adjustments above.
+         *
+         * FCA, FBA, their sum, ColVA and MVA are averages over the paths of
+         * a sum over the dates: the dispersion of the per-path sums gives
+         * the error, correlations between dates included (and between FCA
+         * and FBA, for `fva_error`). The MVA's is conditional on the margin
+         * model: it does not carry the noise of the regression that fitted
+         * it. The KVA's is by batch means (error_batches()): the capital of
+         * the internal models method is a function of the whole expected
+         * profile, not an average over paths.
+         */
+        Real fca_error = 0.0;
+        Real fba_error = 0.0;
+        Real fva_error = 0.0;
+        Real colva_error = 0.0;
+        Real mva_error = 0.0;
+        Real kva_error = 0.0;
+
         /// The initial margin, when there is one: in place today, and its
         /// expected profile on the dates of `exposure`.
         Real initial_margin_today = 0.0;

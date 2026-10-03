@@ -196,6 +196,32 @@ def test_a_swap_at_par_costs_a_cva_and_earns_a_dva():
     assert exposure["pfe"] == pytest.approx(
         [max(v, 0.0) for v in quantiles[levels.index(0.95)]]
     )
+    # Every figure of the profile has its Monte-Carlo error.
+    assert 0 < exposure["epe_error"] < 0.1 * exposure["epe"]
+    assert 0 < exposure["eepe_error"] < 0.1 * exposure["eepe"]
+    peak = max(range(len(exposure["pfe"])), key=exposure["pfe"].__getitem__)
+    assert 0 < exposure["pfe_error"][peak] < 0.1 * exposure["pfe"][peak]
+    assert 0 < body["risk"]["epe_error"] and len(body["risk"]["pfe_error"]) == len(
+        body["risk"]["times"]
+    )
+
+
+def test_every_adjustment_has_its_monte_carlo_error():
+    adj = run(
+        portfolio="balanced",
+        csa={"initial_margin": True, "collateral_rate_spread": 0.002},
+        borrowing_spread=0.006,
+        lending_spread=0.003,
+    )["adjustments"]
+    for name in ("fca", "fba", "colva", "mva", "kva"):
+        assert adj[name] != 0.0
+        assert 0 < adj[name + "_error"] < abs(adj[name]), name
+    # The cost and the benefit come from opposite scenarios.
+    assert adj["fva_error"] < adj["fca_error"] + adj["fba_error"]
+    # Nothing to fund, nothing to estimate.
+    free = run(portfolio="single_swap", borrowing_spread=0.0, lending_spread=0.0)
+    assert free["adjustments"]["fca_error"] == 0.0
+    assert free["adjustments"]["mva_error"] == 0.0
 
 
 def test_what_the_computation_rests_on_is_returned():
