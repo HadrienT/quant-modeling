@@ -28,15 +28,18 @@ from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
-from . import credit, db, rates_derivatives
+from . import credit, db, rates_derivatives, xva_fx
 from .schemas import MethodologySection
 from .xva_schemas import (
     AdjustmentRisks,
     Adjustments,
     CapitalOut,
+    CorrelationEstimate,
     CreditInput,
     Estimate,
     ExposureProfileOut,
+    ForeignMarket,
+    FxVolatilityPoint,
     HistoricalDefaultRate,
     HistoricalDynamics,
     HullWhiteInput,
@@ -54,6 +57,10 @@ from .xva_schemas import (
 
 #: Notional of the reference trade of every portfolio, USD.
 NOTIONAL = 10_000_000.0
+#: Notional of the trades in the second currency, EUR: about the same size.
+FOREIGN_NOTIONAL = 9_000_000.0
+#: The trades that exist only with two currencies.
+_FX_KINDS = ("fx_forward", "cross_currency_swap")
 #: The series the historical dynamics are estimated on, and from when.
 HISTORY_SERIES = "DGS3MO"
 HISTORY_SINCE = date(1990, 1, 1)
@@ -74,9 +81,14 @@ class XvaInputError(ValueError):
 @dataclass(frozen=True)
 class _Spec:
     description: str
-    kind: str  # "swap" | "swaption" | "bermudan" | "script"
+    #: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" |
+    #: "cross_currency_swap"
+    kind: str
+    #: A payer swap; for an FX trade, the side that receives the euros.
     payer: bool
+    #: The tenor of a swap; the maturity of an FX trade.
     tenor: float
+    #: In the trade's currency; in euros for an FX trade.
     notional: float
     #: The expiry of a swaption; the first exercise date of a Bermudan.
     start: float = 0.0
@@ -88,11 +100,58 @@ class _Spec:
     #: The text of a scripted trade; None for the swap this module writes as
     #: a script itself, at today's par rate.
     script: Optional[str] = None
+    #: The currency of a rate trade.
+    currency: str = "USD"
 
 
 def _swap(tenor: float, payer: bool, notional: float = NOTIONAL) -> _Spec:
     side = "Payer" if payer else "Receiver"
     return _Spec(f"{side} swap {tenor:g}Y at par", "swap", payer, tenor, notional)
+
+
+def _euro_swap(tenor: float, payer: bool, notional: float = FOREIGN_NOTIONAL) -> _Spec:
+    side = "Payer" if payer else "Receiver"
+    return _Spec(
+        f"{side} swap {tenor:g}Y in euros, at par",
+        "swap",
+        payer,
+        tenor,
+        notional,
+        currency="EUR",
+    )
+
+
+def _fx_forward(
+    maturity: float, buys_euros: bool, notional: float = FOREIGN_NOTIONAL
+) -> _Spec:
+    side = "Buys" if buys_euros else "Sells"
+    return _Spec(
+        f"{side} EUR {notional / 1e6:g} million against dollars in {maturity:g}Y, "
+        "at the forward rate",
+        "fx_forward",
+        buys_euros,
+        maturity,
+        notional,
+    )
+
+
+def _cross_currency_swap(
+    maturity: float, receives_euros: bool, notional: float = FOREIGN_NOTIONAL
+) -> _Spec:
+    legs = (
+        "receives euros, pays dollars"
+        if receives_euros
+        else "pays euros, receives dollars"
+    )
+    return _Spec(
+        f"Cross-currency swap {maturity:g}Y, fixed for fixed: {legs}; EUR "
+        f"{notional / 1e6:g} million against their value in dollars today, "
+        "exchanged back at maturity",
+        "cross_currency_swap",
+        receives_euros,
+        maturity,
+        notional,
+    )
 
 
 def _swaption(
@@ -213,6 +272,38 @@ PORTFOLIOS: Dict[str, Tuple[str, str, List[_Spec]]] = {
         "native swap; the capital is read off the simulated exposure, because a "
         "script has no regulatory description of itself.",
         [_scripted_swap(10)],
+    ),
+    "fx_forward": (
+        "One 5-year EUR/USD forward",
+        "A second risk factor: the exchange rate. Nothing is paid before the "
+        "delivery, so nothing amortises: the exposure grows like the square root "
+        "of time until the last day, where a swap's has long since turned down. "
+        "The two interest rates move the forward as well, and more as the "
+        "delivery is far.",
+        [_fx_forward(5, True)],
+    ),
+    "cross_currency": (
+        "One 10-year cross-currency swap",
+        "The notionals are exchanged back at maturity at the rate agreed today: "
+        "the swap is, above all, a ten-year FX forward on its whole notional. "
+        "Its exposure keeps rising until the end and is several times that of "
+        "an interest rate swap of the same size — compare with the first "
+        "portfolio.",
+        [_cross_currency_swap(10, True)],
+    ),
+    "two_currencies": (
+        "A book in two currencies",
+        "Dollar swaps, a euro swap, a cross-currency swap and a forward, netted "
+        "together in dollars: the exchange rate is in the value of every euro "
+        "trade, and the trades on it weigh more in the CVA than their number "
+        "suggests.",
+        [
+            _swap(10, True),
+            _swap(5, False, 0.6 * NOTIONAL),
+            _euro_swap(10, False),
+            _cross_currency_swap(5, False),
+            _fx_forward(2, True),
+        ],
     ),
     "custom": (
         "Your own scripts",
@@ -508,6 +599,79 @@ def _adjustments(r: dict) -> Adjustments:
     )
 
 
+def _two_currencies(specs: List[_Spec]) -> bool:
+    return any(s.kind in _FX_KINDS or s.currency != "USD" for s in specs)
+
+
+def _two_currency_trades(
+    specs: List[_Spec], rates: _Rates, foreign: xva_fx.TwoCurrencyMarket
+) -> List[dict]:
+    """The trades of a two-currency netting set at the market: swaps at the
+    par rate of their own curve, a forward at the forward exchange rate, a
+    cross-currency swap with both legs at par and its notionals at the spot.
+    Each is worth zero today."""
+    euro = foreign.rates
+    out = []
+    for s in specs:
+        if s.kind == "fx_forward":
+            out.append(
+                {
+                    "kind": "fx_forward",
+                    # Covered interest parity.
+                    "strike": foreign.spot
+                    * foreign.discount(s.tenor)
+                    / qm.rate_curve_discount_factors(rates.times, rates.dfs, [s.tenor])[
+                        0
+                    ],
+                    "maturity": s.tenor,
+                    "notional": s.notional,
+                    "quantity": s.quantity if s.payer else -s.quantity,
+                }
+            )
+        elif s.kind == "cross_currency_swap":
+            out.append(
+                {
+                    "kind": "cross_currency_swap",
+                    "maturity": s.tenor,
+                    "foreign_notional": s.notional,
+                    "domestic_notional": s.notional * foreign.spot,
+                    "foreign_rate": xva_fx.par_coupon(euro.times, euro.dfs, s.tenor),
+                    "domestic_rate": xva_fx.par_coupon(rates.times, rates.dfs, s.tenor),
+                    "frequency": 1,
+                    "receive_foreign": s.payer,
+                    "quantity": s.quantity,
+                }
+            )
+        elif s.kind in ("swap", "swaption"):
+            in_euros = s.currency != "USD"
+            times, dfs = (
+                (euro.times, euro.dfs) if in_euros else (rates.times, rates.dfs)
+            )
+            par = qm.price_swap(
+                times, dfs, times, dfs, s.start, s.tenor, 0.0, 1, 1, 1.0, True, 0.0
+            )["par_rate"]
+            trade = {
+                "kind": s.kind,
+                "currency": "foreign" if in_euros else "domestic",
+                "tenor": s.tenor,
+                "fixed_rate": par,
+                "notional": s.notional,
+                "payer": s.payer,
+                "quantity": s.quantity,
+                "fixed_frequency": 1,
+                "float_frequency": 1,
+            }
+            trade["start" if s.kind == "swap" else "expiry"] = s.start
+            out.append(trade)
+        else:
+            raise XvaInputError(
+                f"A {s.kind} is valued by regression, which the two-currency "
+                "simulation does not do: it takes swaps, European swaptions, FX "
+                "forwards and cross-currency swaps."
+            )
+    return out
+
+
 def _margin_model(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
     """The model of the initial margin, and why. SIMM needs the sensitivities
     of every trade in every scenario, which the closed forms give for swaps
@@ -526,6 +690,19 @@ def _margin_model(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
         )
     if asked == "regression":
         return "regression", "Chosen by hand."
+    if _two_currencies(specs):
+        if asked == "simm":
+            raise XvaInputError(
+                "SIMM is computed here for the interest rate risk of one currency. "
+                "This netting set also moves with the exchange rate and with euro "
+                "rates: use the regression model."
+            )
+        return "regression", (
+            "This netting set has two currencies. The SIMM computed here covers the "
+            "interest rate risk of one currency, not the exchange rate nor a second "
+            "curve, so the margin is modelled instead: the 99 % quantile of the move "
+            "of the value over ten days, fitted on the simulated paths."
+        )
     if by_regression:
         if asked == "simm":
             raise XvaInputError(
@@ -606,6 +783,14 @@ def _capital_method(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
             "at default is read off the simulation instead, as the internal "
             "models method does: 1.4 × the Effective EPE."
         )
+    if _two_currencies(specs):
+        return "sa_ccr", (
+            "Every trade has a supervisory description for the standardised "
+            "approach (SA-CCR), the method a bank uses without an approved model: "
+            "each currency's rate trades form a hedging set, and the forward and "
+            "the cross-currency swap are foreign-exchange trades, by the notional "
+            "of their euro leg converted into dollars."
+        )
     return "sa_ccr", (
         "Every trade is a swap or a swaption, which the standardised approach "
         "(SA-CCR) describes: the method a bank uses without an approved model."
@@ -685,6 +870,11 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
     warnings: List[str] = []
     label, lesson, specs = PORTFOLIOS[req.portfolio]
     rates = _rates_market(today)
+    if req.scripts and _two_currencies(specs):
+        raise XvaInputError(
+            "A scripted trade is valued by regression, which the two-currency "
+            "simulation does not do: add scripts to a portfolio in dollars."
+        )
     specs = specs + _script_specs(req, rates)
     if not specs:
         raise XvaInputError(
@@ -693,8 +883,23 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         )
     counterparty = _credit(req.counterparty_rating, req.recovery, rates, warnings)
     own = _credit(req.own_rating, req.recovery, rates, warnings)
-    historical = _historical(req)
-    trades = _trades(specs, rates)
+    foreign: Optional[xva_fx.TwoCurrencyMarket] = None
+    historical: Optional[HistoricalDynamics] = None
+    if _two_currencies(specs):
+        if req.device == "gpu":
+            raise XvaInputError(
+                "The two-currency simulation runs on the CPU: ask for `auto` or `cpu`."
+            )
+        try:
+            foreign = xva_fx.market(
+                rates.as_of, rates.times, rates.dfs, (rates.mean_reversion, rates.sigma)
+            )
+        except xva_fx.TwoCurrencyUnavailable as exc:
+            raise XvaUnavailable(str(exc)) from exc
+        trades = _two_currency_trades(specs, rates, foreign)
+    else:
+        historical = _historical(req)
+        trades = _trades(specs, rates)
 
     csa = None
     if req.csa is not None:
@@ -736,7 +941,11 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         csa,
         req.borrowing_spread,
         req.lending_spread,
-        (historical.mean_reversion, historical.long_run_rate, historical.sigma),
+        (
+            (historical.mean_reversion, historical.long_run_rate, historical.sigma)
+            if historical is not None
+            else None
+        ),
         req.paths,
         req.seed,
         req.pfe_confidence,
@@ -746,16 +955,36 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         # Per unit of currency in the library; per reference notional here.
         wrong_way_b=req.wrong_way_risk / NOTIONAL,
         device=req.device,
+        foreign=foreign.argument() if foreign is not None else None,
     )
 
+    if foreign is not None:
+        warnings.append(
+            "The three correlations — between dollar and euro rates, and of each "
+            "with the exchange rate — are historical estimates on weekly changes: "
+            "no freely published price implies them."
+        )
+        longest = max(s.start + s.tenor for s in specs)
+        if longest > foreign.calibration_expiry + 1e-9:
+            warnings.append(
+                f"The volatility of the exchange rate is calibrated on options of "
+                f"{foreign.calibration_expiry:g} year(s), the longest expiry traded "
+                f"in number; these trades run to {longest:g} years, where it is an "
+                "extrapolation."
+            )
     warnings.append(
         "Counterparty and own credit curves are rating proxies built from bond "
         "spreads (ICE BofA indices), not CDS quotes of a name."
     )
-    if historical.estimated_mean_reversion is not None and not {
-        "mean_reversion",
-        "long_run_rate",
-    } <= set(historical.overridden):
+    if (
+        historical is not None
+        and historical.estimated_mean_reversion is not None
+        and not {
+            "mean_reversion",
+            "long_run_rate",
+        }
+        <= set(historical.overridden)
+    ):
         warnings.append(
             "The long-run rate and the mean reversion of the historical measure are "
             "estimates that change with the window; the risk measures depend on them."
@@ -768,12 +997,16 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             XvaTrade(
                 description=spec.description,
                 kind=spec.kind,
+                currency="EUR" if spec.kind in _FX_KINDS else spec.currency,
                 quantity=spec.quantity,
                 # A script of the request has only its text; the swap this
                 # module writes as a script keeps the terms it was written from.
                 payer=None if spec.script is not None else spec.payer,
                 notional=None if spec.script is not None else spec.notional,
-                fixed_rate=trade.get("fixed_rate"),
+                fixed_rate=trade.get(
+                    "fixed_rate", trade.get("strike", trade.get("domestic_rate"))
+                ),
+                foreign_rate=trade.get("foreign_rate"),
                 start=None if spec.script is not None else spec.start,
                 tenor=None if spec.script is not None else spec.tenor,
                 script=trade.get("script"),
@@ -795,7 +1028,16 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         exposure_uncollateralised=(
             _pricing_exposure(open_set["exposure"]) if open_set else None
         ),
-        risk=ExposureProfileOut(**_profile(result["risk"])),
+        risk=(
+            ExposureProfileOut(**_profile(result["risk"])) if result["risk"] else None
+        ),
+        risk_unavailable=(
+            None
+            if foreign is None
+            else "The real-world measure is estimated here for one interest rate. "
+            "With two currencies it would take the joint history of two rates and "
+            "of the exchange rate: the profiles are those of the pricing measure."
+        ),
         adjustments=_adjustments(result),
         adjustments_uncollateralised=_adjustments(open_set) if open_set else None,
         initial_margin=(
@@ -846,6 +1088,7 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             recovery=req.recovery,
             historical=historical,
             default_rate=default_rate,
+            foreign=_foreign_market(foreign) if foreign is not None else None,
         ),
         paths=req.paths,
         pilot_paths=result["pilot_paths"],
@@ -855,7 +1098,51 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         device_reason=_device_reason(req.device, result),
         compute_ms=(time.perf_counter() - started) * 1000.0,
         warnings=warnings,
-        methodology=methodology(),
+        methodology=methodology(two_currencies=foreign is not None),
+    )
+
+
+def _foreign_market(m: xva_fx.TwoCurrencyMarket) -> ForeignMarket:
+    def estimate(e: xva_fx.Estimate) -> CorrelationEstimate:
+        return CorrelationEstimate(value=e.value, low=e.low, high=e.high, weeks=e.weeks)
+
+    return ForeignMarket(
+        currency=xva_fx.FOREIGN,
+        curve_as_of=m.rates.as_of,
+        curve_label=m.rates.label,
+        hull_white=HullWhiteInput(
+            mean_reversion=m.rates.mean_reversion,
+            sigma=m.rates.sigma,
+            rmse_bp=m.rates.rmse_bp,
+            vol_points=m.rates.vol_points,
+            swaption_trades=m.rates.swaption_trades,
+        ),
+        spot=m.spot,
+        spot_as_of=m.spot_as_of,
+        spot_volatility=m.spot_volatility,
+        calibration_expiry=m.calibration_expiry,
+        fx_volatilities=[
+            FxVolatilityPoint(
+                expiry=v.expiry,
+                market=v.market,
+                low=v.low,
+                high=v.high,
+                straddles=v.straddles,
+                model=v.model,
+            )
+            for v in m.fx_volatilities
+        ],
+        fx_window_start=m.fx_window_start,
+        correlation_rates=estimate(m.domestic_foreign),
+        correlation_domestic_fx=estimate(m.domestic_fx),
+        correlation_foreign_fx=estimate(m.foreign_fx),
+        correlation_start=m.correlation_start,
+        correlation_end=m.correlation_end,
+        correlation_series=[
+            xva_fx.USD_RATE_SERIES,
+            xva_fx.EUR_RATE_SERIES,
+            "ECB EUR/USD reference rate",
+        ],
     )
 
 
@@ -887,6 +1174,12 @@ def compute_sensitivities(
     started = time.perf_counter()
     warnings: List[str] = []
     label, _, specs = PORTFOLIOS[req.portfolio]
+    if _two_currencies(specs):
+        raise XvaInputError(
+            "The sensitivities are computed for netting sets in one currency: the "
+            "adjoint pass differentiates the one-rate simulation, not yet the one "
+            "with two rates and an exchange rate."
+        )
     by_regression = sorted({s.kind for s in specs} - {"swap", "swaption"})
     if not specs or by_regression:
         raise XvaInputError(
@@ -1003,42 +1296,89 @@ def market_inputs(response: XvaResponse) -> List[Tuple[str, str, str, object]]:
         if m.default_rate is not None
         else []
     )
-    return [
-        (
-            "sofr_swap_curve",
-            "db:rates.dtcc_swap_rates",
-            m.curve_as_of.isoformat(),
-            m.curve_label,
-        ),
-        (
-            "hull_white_calibration",
-            "db:rates.dtcc_swaptions",
-            m.curve_as_of.isoformat(),
-            [m.hull_white.mean_reversion, m.hull_white.sigma],
-        ),
-        (
-            f"credit_spread:{m.counterparty.rating}",
-            "db:macro.fred_series",
-            m.counterparty.as_of.isoformat(),
-            m.counterparty.spread,
-        ),
-        (
-            f"credit_spread:{m.own.rating}",
-            "db:macro.fred_series",
-            m.own.as_of.isoformat(),
-            m.own.spread,
-        ),
-        (
-            f"rate_history:{m.historical.series}",
-            "db:macro.fred_series",
-            None,
+    return (
+        [
+            (
+                "sofr_swap_curve",
+                "db:rates.dtcc_swap_rates",
+                m.curve_as_of.isoformat(),
+                m.curve_label,
+            ),
+            (
+                "hull_white_calibration",
+                "db:rates.dtcc_swaptions",
+                m.curve_as_of.isoformat(),
+                [m.hull_white.mean_reversion, m.hull_white.sigma],
+            ),
+            (
+                f"credit_spread:{m.counterparty.rating}",
+                "db:macro.fred_series",
+                m.counterparty.as_of.isoformat(),
+                m.counterparty.spread,
+            ),
+            (
+                f"credit_spread:{m.own.rating}",
+                "db:macro.fred_series",
+                m.own.as_of.isoformat(),
+                m.own.spread,
+            ),
+        ]
+        + (
             [
-                m.historical.estimated_mean_reversion,
-                m.historical.estimated_long_run_rate,
-                m.historical.estimated_sigma,
+                (
+                    f"rate_history:{m.historical.series}",
+                    "db:macro.fred_series",
+                    None,
+                    [
+                        m.historical.estimated_mean_reversion,
+                        m.historical.estimated_long_run_rate,
+                        m.historical.estimated_sigma,
+                    ],
+                )
+            ]
+            if m.historical is not None
+            else []
+        )
+        + _foreign_inputs(m.foreign)
+        + default_rate
+    )
+
+
+def _foreign_inputs(f: Optional[ForeignMarket]) -> List[Tuple[str, str, str, object]]:
+    if f is None:
+        return []
+    as_of = f.curve_as_of.isoformat()
+    return [
+        ("euribor_swap_curve", "db:rates.dtcc_swap_rates", as_of, f.curve_label),
+        (
+            "hull_white_calibration:EUR",
+            "db:rates.dtcc_swaptions",
+            as_of,
+            [f.hull_white.mean_reversion, f.hull_white.sigma],
+        ),
+        (
+            "fx_spot:EURUSD",
+            "db:fx.ecb_reference_rates",
+            f.spot_as_of.isoformat(),
+            f.spot,
+        ),
+        (
+            "fx_volatility:EURUSD",
+            "db:fx.dtcc_options",
+            as_of,
+            [f.calibration_expiry, f.spot_volatility],
+        ),
+        (
+            "correlations:USD_EUR_EURUSD",
+            "db:macro.fred_series,macro.intl_rates,fx.ecb_reference_rates",
+            f.correlation_end.isoformat(),
+            [
+                f.correlation_rates.value,
+                f.correlation_domestic_fx.value,
+                f.correlation_foreign_fx.value,
             ],
         ),
-    ] + default_rate
+    ]
 
 
 # ── Methodology ──────────────────────────────────────────────────────────────
@@ -1467,8 +1807,69 @@ def sensitivities_methodology() -> List[MethodologySection]:
     return [MethodologySection(title=t, paragraphs=p) for t, p in _SENSITIVITY_SECTIONS]
 
 
-def methodology() -> List[MethodologySection]:
-    return [MethodologySection(title=t, paragraphs=p) for t, p in _SECTIONS]
+_TWO_CURRENCY_SECTIONS: List[Tuple[str, List[str]]] = [
+    (
+        "Two currencies",
+        [
+            "Each currency has its own interest rate, a one-factor Hull-White model "
+            "calibrated on that currency's swap curve and swaption trades. The "
+            "exchange rate is lognormal, and the three move together through three "
+            "correlations. Everything is valued in dollars: a euro trade is worth its "
+            "value in euros, on the euro rate of the scenario, times the exchange "
+            "rate of the scenario.",
+            "What is simulated is not the spot but the forward exchange rate to the "
+            "last date of the netting set, F(t, T*) = S(t) P_EUR(t, T*) / P_USD(t, T*). "
+            "It has no drift under the measure the simulation runs in, and a "
+            "volatility known in advance, so the three factors are jointly Gaussian "
+            "and each step is drawn exactly, whatever its length. The spot is read "
+            "back from the forward and the two rates. Seen from the dollar measure, "
+            "the euro rate carries a drift −ρ σ_EUR σ_S, the quanto adjustment.",
+            "Source: Brigo & Mercurio, Interest Rate Models — Theory and Practice, "
+            "2nd ed., Springer, 2006, §14.3; Piterbarg, Smiling hybrids, Risk, 2006.",
+        ],
+    ),
+    (
+        "The volatility of the exchange rate",
+        [
+            "Implied FX volatilities are not published for free, but the trades are: "
+            "every FX option dealt by a US person is published with its premium by "
+            "DTCC's swap data repository. An option's premium says little without "
+            "the forward it was struck against, and the store holds one spot fixing "
+            "a day while the rate moves by half a percent in a session. A straddle "
+            "— a call and a put with the same strike, traded together — carries its "
+            "own forward by put-call parity, C − P = DF (F − K), and with it the "
+            "volatility that reprices either leg. The term structure is the median "
+            "over the at-the-money straddles of each expiry.",
+            "The model's spot volatility is the one that gives the option of the "
+            "calibration expiry its market volatility. The model then gives a "
+            "volatility to every expiry — the forward also carries the volatility "
+            "of both rates — and the table shows it next to the market's. One "
+            "number cannot follow a term structure: the fit is exact at one expiry.",
+            "Source: Garman & Kohlhagen, Foreign currency option values, Journal of "
+            "International Money and Finance, 1983.",
+        ],
+    ),
+    (
+        "The correlations",
+        [
+            "Between dollar and euro rates, and of each with the exchange rate. "
+            "No freely published price implies them — quanto and cross-currency "
+            "options do, and are not disseminated — so they are estimated on three "
+            "years of weekly changes of the five-year yields of each currency and of "
+            "the ECB's reference rate, with a 95 % confidence interval. Weekly, "
+            "because the series are not observed at the same hour and daily changes "
+            "would bias the estimate towards zero.",
+            "A cross-currency swap's exposure is that of its final exchange of "
+            "notionals: Gregory, The xVA Challenge, 4th ed., Wiley, 2020, the "
+            "exposure profiles of the chapter on future value and exposure.",
+        ],
+    ),
+]
+
+
+def methodology(two_currencies: bool = False) -> List[MethodologySection]:
+    sections = _SECTIONS + (_TWO_CURRENCY_SECTIONS if two_currencies else [])
+    return [MethodologySection(title=t, paragraphs=p) for t, p in sections]
 
 
 #: The move of the netting set's value the explanations are written for, as a

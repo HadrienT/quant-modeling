@@ -118,6 +118,24 @@ namespace quantModeling
         Correlations rho_;
     };
 
+    /**
+     * @brief The spot volatility σ_S for which the model's Black volatility
+     *        at `expiry` is the market's (fx_implied_volatility). The Black
+     *        variance is a quadratic in σ_S — σ_S² T, a cross term through
+     *        the correlations of the spot with each rate, and what the two
+     *        bonds add — solved exactly.
+     *
+     * Only the mean reversions and volatilities of the two rate models are
+     * read, not their curves.
+     *
+     * @throws InvalidInput when no positive σ_S gives that volatility: the
+     *         rates alone already move the forward more than the market
+     *         says.
+     */
+    Real calibrated_fx_volatility(const HullWhiteCurveModel &domestic, const HullWhiteCurveModel &foreign,
+                                  const CrossCurrencyHullWhiteModel::Correlations &correlations,
+                                  Time expiry, Real market_volatility);
+
 } // namespace quantModeling
 
 #endif

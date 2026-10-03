@@ -109,6 +109,9 @@ const xvaRoute = createRoute({
 				"bermudan",
 				"cancellable",
 				"scripted_swap",
+				"fx_forward",
+				"cross_currency",
+				"two_currencies",
 			])
 			.optional(),
 		cpty: XVA_RATING.optional(),

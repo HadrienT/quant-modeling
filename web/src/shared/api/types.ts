@@ -60,6 +60,7 @@ export type XvaEstimate = Schemas["Estimate"];
 export type XvaSensitivitiesRequest = Schemas["XvaSensitivitiesRequest"];
 export type XvaSensitivities = Schemas["XvaSensitivitiesResponse"];
 export type XvaQuoteRisk = Schemas["AdjustmentRisks"];
+export type XvaForeignMarket = Schemas["ForeignMarket"];
 
 // FastAPI splits models used for both request and response bodies.
 export type Portfolio = Schemas["Portfolio-Output"];

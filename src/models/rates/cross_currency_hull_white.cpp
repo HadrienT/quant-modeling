@@ -175,4 +175,30 @@ namespace quantModeling
         return out;
     }
 
+    Real calibrated_fx_volatility(const HullWhiteCurveModel &domestic, const HullWhiteCurveModel &foreign,
+                                  const CrossCurrencyHullWhiteModel::Correlations &correlations,
+                                  Time expiry, Real market_volatility)
+    {
+        if (!(expiry > 0.0) || !(market_volatility > 0.0))
+            throw InvalidInput("FX volatility calibration: expiry and market volatility must be > 0");
+        // The Black variance is T s² + B s + C in the spot volatility s:
+        // two evaluations give B and C.
+        const auto variance = [&](Real s)
+        {
+            const Real v =
+                CrossCurrencyHullWhiteModel(domestic, foreign, 1.0, s, correlations).fx_implied_volatility(expiry);
+            return v * v * expiry;
+        };
+        const Real s1 = 0.5 * market_volatility, s2 = 1.5 * market_volatility;
+        const Real v1 = variance(s1), v2 = variance(s2);
+        const Real B = (v2 - v1) / (s2 - s1) - expiry * (s1 + s2);
+        const Real C = v1 - expiry * s1 * s1 - B * s1 - market_volatility * market_volatility * expiry;
+        const Real discriminant = B * B - 4.0 * expiry * C;
+        const Real root = discriminant >= 0.0 ? (-B + std::sqrt(discriminant)) / (2.0 * expiry) : -1.0;
+        if (!(root > 0.0))
+            throw InvalidInput("FX volatility calibration: the two rates alone move the forward more "
+                               "than the market's volatility at this expiry");
+        return root;
+    }
+
 } // namespace quantModeling

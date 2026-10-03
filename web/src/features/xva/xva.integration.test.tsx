@@ -13,6 +13,7 @@ import fixtures from "@/shared/test/xva.fixtures.json";
 import { TooltipProvider } from "@/shared/ui";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { ExposurePanel } from "./ExposurePanel";
+import { ForeignMarketPanel } from "./ForeignMarketPanel";
 import { MarginCapitalPanel } from "./MarginCapitalPanel";
 import { SensitivitiesPanel } from "./SensitivitiesPanel";
 import { amount } from "./format";
@@ -31,6 +32,7 @@ import { XvaControls } from "./XvaControls";
 const options = fixtures.portfolios as XvaPortfolios;
 const swap = fixtures.single_swap as unknown as XvaResponse;
 const book = fixtures.balanced_csa as unknown as XvaResponse;
+const ccs = fixtures.cross_currency as unknown as XvaResponse;
 
 function wrap(ui: React.ReactNode) {
 	return render(
@@ -115,19 +117,19 @@ describe("adjustments", () => {
 		wrap(<AdjustmentsPanel data={swap} />);
 		const cva = screen.getByRole("row", { name: /^CVA/ });
 		// A cost: negative, with a true minus sign; the error next to it.
-		expect(cva).toHaveTextContent("−24,664");
-		expect(cva).toHaveTextContent("± 681");
+		expect(cva).toHaveTextContent("−24,632");
+		expect(cva).toHaveTextContent("± 680");
 		expect(screen.getByRole("row", { name: /^DVA/ })).toHaveTextContent(
-			"+16,863",
+			"+16,838",
 		);
 		// Every simulated adjustment carries its error: the funding ones (the
 		// error of the sum, smaller than the sum of the two) and the capital.
 		const fva = screen.getByRole("row", { name: /^FVA/ });
-		expect(fva).toHaveTextContent("−90");
-		expect(fva).toHaveTextContent("± 539");
+		expect(fva).toHaveTextContent("−92");
+		expect(fva).toHaveTextContent("± 538");
 		const kva = screen.getByRole("row", { name: /^KVA/ });
-		expect(kva).toHaveTextContent("−76,145");
-		expect(kva).toHaveTextContent("± 1,741");
+		expect(kva).toHaveTextContent("−76,087");
+		expect(kva).toHaveTextContent("± 1,738");
 		// No collateral, no margin: nothing simulated, no error to show.
 		expect(screen.getByRole("row", { name: /^ColVA/ })).not.toHaveTextContent(
 			"±",
@@ -167,7 +169,7 @@ describe("adjustments", () => {
 		wrap(<TradesTable data={swap} />);
 		const row = screen.getByRole("row", { name: /Payer swap 10Y at par/ });
 		// Alone, the three are the same number: the CVA of the set.
-		expect(within(row).getAllByText("−24,664").length).toBe(3);
+		expect(within(row).getAllByText("−24,632").length).toBe(3);
 	});
 });
 
@@ -202,8 +204,8 @@ describe("exposure", () => {
 		expect(screen.getByText(fan)).toBeInTheDocument();
 		expect(screen.getByText(amount(swap.exposure.epe))).toBeInTheDocument();
 		// EPE, Effective EPE and the peak PFE with their errors.
-		expect(screen.getByText("± 9,177")).toBeInTheDocument();
-		expect(screen.getByText("± 6,633")).toBeInTheDocument();
+		expect(screen.getByText("± 9,161")).toBeInTheDocument();
+		expect(screen.getByText("± 6,623")).toBeInTheDocument();
 		const peak = swap.exposure.pfe.indexOf(Math.max(...swap.exposure.pfe));
 		expect(
 			screen.getByText(`± ${amount(swap.exposure.pfe_error[peak])}`),
@@ -216,11 +218,92 @@ describe("exposure", () => {
 			screen.getByRole("button", { name: "Real-world measure" }),
 		);
 		// Other scenarios, another exposure; the fan is the pricing measure's.
-		expect(swap.risk.epe).not.toBe(swap.exposure.epe);
-		expect(screen.getByText(amount(swap.risk.epe))).toBeInTheDocument();
-		expect(screen.getByText("± 1,910")).toBeInTheDocument();
+		expect(swap.risk!.epe).not.toBe(swap.exposure.epe);
+		expect(screen.getByText(amount(swap.risk!.epe))).toBeInTheDocument();
+		expect(screen.getByText("± 1,908")).toBeInTheDocument();
 		expect(screen.queryByText(fan)).not.toBeInTheDocument();
 		expect(screen.queryByText(surface)).not.toBeInTheDocument();
+	});
+});
+
+describe("two currencies", () => {
+	it("offers the portfolios in two currencies with the others", () => {
+		wrap(
+			<XvaControls options={options} view={DEFAULT_VIEW} onChange={() => {}} />,
+		);
+		const group = screen.getByRole("group", { name: "Portfolio" });
+		expect(
+			within(group).getByRole("button", {
+				name: "One 10-year cross-currency swap",
+			}),
+		).toHaveAttribute(
+			"title",
+			expect.stringContaining("exchanged back at maturity"),
+		);
+		expect(
+			within(group).getByRole("button", { name: "A book in two currencies" }),
+		).toBeInTheDocument();
+	});
+
+	it("shows what the second currency rests on, estimates as estimates", () => {
+		const foreign = ccs.market.foreign!;
+		wrap(<ForeignMarketPanel market={foreign} domestic="USD" />);
+		expect(
+			screen.getByRole("heading", { name: "The second currency: EUR" }),
+		).toBeInTheDocument();
+		expect(screen.getByText(/EUR\/USD 1\.1225/)).toBeInTheDocument();
+		// The volatility traded and the model's, expiry by expiry: equal at the
+		// calibrated one, and the page shows where they are not.
+		const vols = screen.getByRole("table", {
+			name: "Volatility of EUR/USD, at the money",
+		});
+		const year = within(vols).getByRole("row", { name: /^1Y/ });
+		expect(year).toHaveTextContent("calibrated");
+		expect(year).toHaveTextContent("73");
+		expect(within(year).getAllByText("6.8 %").length).toBe(2);
+		const quarter = within(vols).getByRole("row", { name: /^3M/ });
+		expect(quarter).toHaveTextContent("5.9 %");
+		expect(quarter).toHaveTextContent("6.9 %");
+		// Each correlation with its interval, and what an interval through
+		// zero means.
+		const correlations = screen.getByRole("table", {
+			name: "Correlations, estimated on history",
+		});
+		const rates = within(correlations).getByRole("row", {
+			name: /^USD rates with EUR rates/,
+		});
+		expect(rates).toHaveTextContent("+0.72");
+		expect(rates).toHaveTextContent("+0.64 to +0.79");
+		expect(
+			within(correlations).getByRole("row", {
+				name: /^USD rates with EUR\/USD/,
+			}),
+		).toHaveTextContent("−0.29 to +0.02");
+		expect(
+			screen.getByText(/the data do not tell the sign/),
+		).toBeInTheDocument();
+	});
+
+	it("has the pricing measure only, and says why", () => {
+		wrap(<ExposurePanel data={ccs} />);
+		expect(
+			screen.queryByRole("button", { name: "Real-world measure" }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByText(/real-world measure is estimated here for one interest/),
+		).toBeInTheDocument();
+		// The exposure rises to the final exchange: its peak is at the end.
+		const { ee, times } = ccs.exposure;
+		const peak = times[ee.indexOf(Math.max(...ee))]!;
+		expect(peak).toBeGreaterThan(9);
+		expect(ccs.exposure.epe).toBeGreaterThan(2 * swap.exposure.epe);
+	});
+
+	it("values the trade in dollars and signs its CVA as a cost", () => {
+		wrap(<TradesTable data={ccs} />);
+		const row = screen.getByRole("row", { name: /Cross-currency swap 10Y/ });
+		expect(row).toHaveTextContent("receives euros, pays dollars");
+		expect(within(row).getAllByText("−68,302").length).toBe(3);
 	});
 });
 
@@ -235,7 +318,7 @@ describe("sensitivities", () => {
 			screen.getByRole("button", { name: "Compute the sensitivities" }),
 		);
 		expect(await screen.findByText("Par swap rates")).toBeInTheDocument();
-		expect(screen.getByText("8.4 valuations")).toBeInTheDocument();
+		expect(screen.getByText("7.8 valuations")).toBeInTheDocument();
 		expect(
 			screen.getByText(`${fixtures.sensitivities.bump_valuations} valuations`),
 		).toBeInTheDocument();

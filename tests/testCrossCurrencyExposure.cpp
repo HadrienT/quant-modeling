@@ -139,6 +139,23 @@ namespace quantModeling
         EXPECT_LT(model({0.0, 0.0, 0.5}).fx_implied_volatility(5.0), m.fx_implied_volatility(5.0));
     }
 
+    TEST(CrossCurrencyModel, TheSpotVolatilityIsCalibratedToAnOptionExactly)
+    {
+        const CrossCurrencyHullWhiteModel m = model();
+        for (const Time T : {0.5, 2.0, 10.0})
+        {
+            const Real spot_volatility = calibrated_fx_volatility(m.domestic(), m.foreign(), m.correlations(),
+                                                                  T, m.fx_implied_volatility(T));
+            EXPECT_NEAR(spot_volatility, 0.09, 1e-12) << T;
+        }
+        // A market volatility below what the rates alone give the forward
+        // over thirty years: no spot volatility reaches it.
+        EXPECT_THROW(calibrated_fx_volatility(m.domestic(), m.foreign(), Correlations{}, 30.0, 0.05),
+                     InvalidInput);
+        EXPECT_THROW(calibrated_fx_volatility(m.domestic(), m.foreign(), Correlations{}, 1.0, 0.0),
+                     InvalidInput);
+    }
+
     TEST(CrossCurrencyModel, RefusesWhatIsNotAModel)
     {
         const HullWhiteCurveModel usd(0.03, 0.01, DiscountCurve(0.04)), eur(0.05, 0.008, DiscountCurve(0.025));

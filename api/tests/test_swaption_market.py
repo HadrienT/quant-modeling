@@ -10,6 +10,7 @@ price must be left out and counted.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 import os
 from datetime import date, timedelta
 from typing import List
@@ -193,6 +194,25 @@ def test_a_platform_straddle_counts_for_half_its_premium():
         [trade(1.0, 10, platform="ISWV", notional=n) for n in (50e6, 75e6, 100e6)]
     ).points
     assert single.normal_vol == pytest.approx(VOL, rel=1e-6)
+
+
+def test_a_straddle_reported_as_one_product_counts_for_half_its_premium():
+    # One row whose type is neither a call nor a put: the holder chooses at
+    # expiry, and the premium is that of a payer and a receiver.
+    def chooser(factor: float):
+        rows = [
+            trade(1.0, 10, notional=n, premium_factor=factor)
+            for n in (50e6, 75e6, 100e6)
+        ]
+        return [replace(t, option_type="other") for t in rows]
+
+    (point,) = grid(chooser(2.0)).points
+    assert point.normal_vol == pytest.approx(VOL, rel=1e-6) and point.trades == 3
+    # The same premium on a call is twice the vol: it is the type that says so.
+    (as_calls,) = grid(
+        [trade(1.0, 10, notional=n, premium_factor=2.0) for n in (50e6, 75e6, 100e6)]
+    ).points
+    assert as_calls.normal_vol == pytest.approx(2.0 * VOL, rel=1e-6)
 
 
 def test_trades_that_are_not_an_at_the_money_price_are_counted_not_used():

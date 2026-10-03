@@ -12,6 +12,7 @@ import {
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import { AdjustmentsPanel } from "./AdjustmentsPanel";
 import { ExposurePanel } from "./ExposurePanel";
+import { ForeignMarketPanel } from "./ForeignMarketPanel";
 import { MarginCapitalPanel } from "./MarginCapitalPanel";
 import { SensitivitiesPanel } from "./SensitivitiesPanel";
 import {
@@ -101,6 +102,12 @@ export default function XvaPage() {
 						<p className="text-xs text-ink-muted">{data.device_reason}</p>
 					</div>
 					<WarningList warnings={data.warnings} />
+					{data.market.foreign && (
+						<ForeignMarketPanel
+							market={data.market.foreign}
+							domestic={data.market.currency}
+						/>
+					)}
 					<Tabs
 						value={tab}
 						onValueChange={(v) =>

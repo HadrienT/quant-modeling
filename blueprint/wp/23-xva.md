@@ -1272,7 +1272,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X7 — GPU** (fait : §14.11 ; transactions en forme fermée, bit à bit entre cartes, à 10⁻¹³ près contre le CPU) | moteur d'exposition et collatéral sur les deux V100 | égalité bit à bit CPU / 1 GPU / 2 GPU ; tableau temps pour une erreur donnée |
 | **X8 — CVA par AAD** *(le capstone)* (fait : §14.13 ; transactions en forme fermée, CPU ; pas à travers la régression ni sur GPU) | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
 | **X9 — Page `/xva`** (fait : §14.14) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
-| **X10 — Multi-devise** *(optionnel)* | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
+| **X10 — Multi-devise** (fait : §14.15 ; formes fermées, CPU, mesure de pricing ; un seul produit ajouté, le swap de devises) | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 
 ### 14.1 Lot X0 : ce qui est fait, et les choix d'implémentation
 
@@ -2197,6 +2197,132 @@ transaction, le CVA unilatéral, les profils de marge et d'EAD (§20, P1).
 l'API réelle (pile de développement à l'arrêt) ; les tests tournent dans
 jsdom, où la surface se replie sur sa carte de chaleur.
 
+### 14.15 Lot X10 : deux devises
+
+Livré : `models/rates/cross_currency_hull_white.hpp`,
+`engines/xva/cross_currency_exposure_engine.hpp`,
+`instruments/fx/cross_currency_swap.hpp`, `qm.xva_netting_set(..., foreign=)`,
+`qm.cross_currency_fx_volatility` ; côté API `xva_fx.py` (le marché de la
+seconde devise) et `fx_option_market.py` (les vols de change) ; trois
+portefeuilles sur la page ; côté `~/data-ingest`, la source
+`dtcc-fx-options` et les courbes €STR et Euribor dans `dtcc-swap-rates`
+(PR #12). Tests : `tests/testCrossCurrencyExposure.cpp`,
+`api/tests/test_fx_option_market.py`, `test_xva_fx.py`, `test_xva.py`.
+
+**Le modèle** (Brigo & Mercurio 2006, §14.3 ; Piterbarg 2006). Sous la
+mesure risque-neutre domestique, $S$ le prix d'une unité de devise
+étrangère :
+
+$$dx_d = (y_d - a_d x_d)\,dt + \sigma_d\,dW_d,\quad
+dx_f = (y_f - a_f x_f - \rho_{fS}\sigma_f\sigma_S)\,dt + \sigma_f\,dW_f,\quad
+dS/S = (r_d - r_f)\,dt + \sigma_S\,dW_S.$$
+
+Le terme $-\rho_{fS}\sigma_f\sigma_S$ est le drift quanto : le taux étranger
+vu de la mesure domestique.
+
+**Ce qui est simulé n'est pas le spot.** Son drift est la différence de deux
+taux stochastiques, dont il faudrait simuler l'intégrale. Le change à terme
+vers l'horizon, $F(t, T^*) = S(t)\,P_f(t, T^*) / P_d(t, T^*)$, est une
+martingale sous la mesure $T^*$-forward domestique, de volatilité
+déterministe : $dF/F = \sigma_S\,dW_S - \sigma_f G_f\,dW_f + \sigma_d G_d\,dW_d$.
+L'état $(x_d, x_f, \ln F)$ est donc gaussien et markovien : ses transitions
+sont exactes, et le spot se relit par les deux obligations, formes fermées
+des taux. Pas d'erreur de discrétisation, comme dans le moteur à une devise
+(ADR-X1). Les covariances d'un pas sont des intégrales de produits
+d'exponentielles, prises par Gauss-Legendre à seize points plutôt que
+développées à la main.
+
+**Le même cube.** Le moteur remplit l'`ExposurePaths` du moteur à une devise,
+en devise domestique : netting, collatéral, métriques, rapport xVA, capital,
+wrong-way risk s'appliquent sans une ligne de plus. Un swap ou une swaption
+de l'une des deux devises réutilise sa valeur future à une devise, lue sur le
+taux de sa devise et convertie au spot du chemin. Le taux domestique prend
+les tirages du moteur à une devise : un netting set domestique a le même cube
+**au bit près**.
+
+**Le seul produit ajouté : le swap de devises**, fixe contre fixe, contre la
+règle de la roadmap et par décision du mainteneur (2026-10-03). Le blueprint
+parlait de « cross-currency swaps existants » ; seul `FXForward` existait, et
+une exposition à deux devises n'a pas d'autre exemple de manuel. Forward et
+swap de devises sont des flux connus dans chaque devise :
+$V(t) = \sum c_{d,j} P_d(t, T_j) + S(t) \sum c_{f,j} P_f(t, T_j)$.
+
+**Le critère du lot.**
+
+- *Parité forward retrouvée* : valeur d'aujourd'hui
+  $N (S_0 P_f(0,T) - K P_d(0,T))$ à $10^{-10}$, nulle au change à terme.
+- *Profil dominé par le notionnel final* : sur 10 ans le pic d'EE est après
+  $0{,}85\,T$ (avant $T/2$ pour un swap de taux), le profil croît d'année en
+  année, et en fin de vie il vaut celui du seul échange final à 15 % près.
+  Sur les données du 2 octobre 2026 : EPE de 1,03 M contre 331 k pour le
+  swap payeur de même taille, pic à 9,75 ans, CVA −68 800 contre −25 100.
+
+**Ce que les tests gardent, et comment ils ont été éprouvés.** Chaque
+transaction est une martingale une fois actualisée, ses flux remis —
+c'est le test du drift quanto, par un swap en euros converti au spot. La loi
+jointe des facteurs à chaque date : covariance des deux taux et variance de
+$\ln S(t)$ en forme fermée (ce sont des gaussiennes à volatilités
+déterministes : elles ne dépendent pas de la mesure). Un swap de devises
+égale ses flux échangés un à un. **Chaque terme du modèle a été retiré tour à
+tour pour voir un test échouer** : le drift quanto, le changement de mesure,
+le drift de martingale, les trois covariances. Deux retraits passaient
+inaperçus avec les seuls tests de martingale — les covariances n'y entrent
+pas — d'où le test de loi jointe.
+
+**Les données : ce que le dépôt apprend des fichiers.** Décision du
+mainteneur : ingérer d'abord plutôt que caler sur l'historique.
+
+- *Swaptions EUR* : elles étaient déjà en base, `dtcc-swaptions` stocke
+  toutes les devises (environ 120 transactions exploitables par jour, sur
+  swaps Euribor). Il manquait la courbe où lire leur forward : ajoutée.
+- *Une ligne, un straddle.* Les swaptions dont le type n'est ni call ni put
+  (« Opt » : le détenteur choisit à l'échéance) portent la prime d'un payeur
+  et d'un receveur. Lues comme une option, elles sortent au double : 186 pb
+  contre 94 en EUR, 210 contre 107 en USD. Elles pesaient un tiers des
+  transactions EUR retenues ; le Hull-White EUR se calait à $a = 29$ %, $\sigma = 253$ pb
+  avec 27 pb d'écart. Corrigé (pour l'USD aussi, qui bouge peu) :
+  $a = 4{,}0$ %, $\sigma = 107$ pb, 4,7 pb d'écart.
+- *Options de change* : le fichier FOREX de la DTCC, environ 5 000 options
+  vanille par jour dont un quart sur EUR/USD.
+- **Des straddles, parce qu'ils n'ont pas besoin du spot.** La base n'a
+  qu'un fixing BCE par jour, et le change bouge d'un demi-pour-cent en
+  séance : autant que la distance à la monnaie d'une option à la monnaie.
+  Lue contre le fixing, une option à 3 mois sort à 4 % ou à 8,5 % pour un
+  marché à 6 %. Un call et un put de même strike traités ensemble portent
+  leur forward par parité, $C - P = DF\,(F - K)$. Résultat : 5,9 % à 3 mois
+  (quartiles 5,7 – 6,0), 6,3 % à 6 mois, 6,8 % à 1 an (6,7 – 6,9).
+- *Actualisation avant le premier pilier* : `qm.discount_factors` rend un
+  facteur plat sous 1 an, où la courbe du moteur extrapole à taux forward
+  constant. Les vols courtes en sortaient gonflées de 2 à 4 % ; un test l'a
+  montré. Le marché à deux devises lit `qm.rate_curve_discount_factors`.
+
+**Calage.** $\sigma_S$ est la vol spot qui donne à l'option de l'échéance de
+calage — la plus longue ayant au moins dix straddles, 1 an ici — sa vol de
+marché ; la variance de Black est un trinôme en $\sigma_S$, résolu
+exactement. Les trois corrélations n'ont pas de prix libre qui les implique :
+estimées sur trois ans de variations hebdomadaires (taux 5 ans de chaque
+devise, fixing BCE), avec leur intervalle à 95 %, et affichées comme des
+estimations. Au 2 octobre 2026 : taux entre eux 0,72 [0,64 ; 0,79], taux USD
+et change −0,14 [−0,29 ; 0,02], taux EUR et change 0,01.
+
+**Écarts et limites**, assumés :
+
+- **un seul $\sigma_S$** : le modèle égale le marché à 1 an et a sa propre
+  structure par terme ailleurs (6,9 % à 3 mois contre 5,9 %, 6,8 % à 2 ans
+  contre 8,0 %). La page montre les deux colonnes ;
+- la vol de change est une **extrapolation au-delà d'un an** : il ne se
+  traite presque rien de plus long, et les transactions vont à dix ans ;
+- la courbe EUR est celle des swaps Euribor, en courbe unique ;
+- **pas de mesure historique** (elle porte sur un taux), pas de SIMM (la
+  marge initiale est le modèle par régression), pas de sensibilités, pas de
+  GPU, pas de transaction par régression : chaque refus dit pourquoi ;
+- SA-CCR : forward et swap de devises sont des transactions de change, par
+  le notionnel de leur jambe en euros ; le risque de taux du swap de devises
+  n'y est pas compté ;
+- seul l'historique depuis juillet 2026 est chargé pour les options de
+  change et les courbes EUR ; le DAG de `dtcc-fx-options` n'est pas encore
+  déployé (`~/data-ingest/scripts/deploy.sh`).
+
 ---
 
 ## 15. Tests de propriété
@@ -2365,7 +2491,7 @@ bis.org/basel_framework) :
 Ce que les lots X4 à X6 ont laissé de côté ou révélé, pour ne pas le perdre.
 Chaque point dit **ce qui manque** et **pourquoi cela compterait**. La même
 liste est suivie dans l'issue GitHub #154 ; les lots
-restants (X10) sont dans le tableau du §14.
+sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 
 ### Décisions du mainteneur
 
@@ -2472,6 +2598,21 @@ restants (X10) sont dans le tableau du §14.
 | C4 | Erreur Monte-Carlo du calage de $a(t)$ dans l'erreur du CVA ; allocation d'Euler sous wrong-way risk | l'erreur affichée ignore le bruit du calage |
 | C5 | Wrong-way risk dans FCA, FBA, MVA, KVA (survie par chemin) et sur le défaut propre (DVA) | seuls le CVA et le DVA voient $b$ |
 | C6 | Estimer $b$ sur l'historique | voir D3 |
+
+### Deux devises (X10)
+
+| # | Amélioration | Pourquoi |
+|---|---|---|
+| M1 | **Vol de change dépendant du temps** (constante par morceaux, calée échéance par échéance) | un seul $\sigma_S$ ne suit pas la structure par terme : 1 point d'écart à 3 mois et à 2 ans |
+| M2 | Mesure historique à trois facteurs (deux taux et le change, estimés ensemble) | les portefeuilles à deux devises n'ont que les profils de la mesure de pricing |
+| M3 | Sensibilités par AAD à deux devises ; SIMM avec le delta de change et une seconde courbe | refusées aujourd'hui, avec la raison |
+| M4 | Swap de devises flottant contre flottant, avec base et remise à niveau du notionnel | c'est le standard de marché ; le fixe contre fixe est l'exemple de manuel |
+| M5 | Saut du change au défaut de la contrepartie (wrong-way risk, C1) | le multi-devise existe maintenant |
+| M6 | Deux courbes en EUR (€STR pour actualiser, Euribor pour projeter) | la courbe €STR est en base depuis `data-ingest` #12 |
+| M7 | Corrélations implicites | aucune source libre connue (options quanto, swaptions en devise croisée non publiées) |
+| M8 | Scripts actions et quanto dans le moteur d'exposition (issue #86) | le modèle joint taux-change existe ; il reste le facteur actions |
+| M9 | Autres paires que EUR/USD | le fichier porte JPY, MXN, CAD, AUD ; il faut la courbe et les swaptions de la devise |
+| M10 | `qm.discount_factors` plat avant le premier pilier : l'aligner sur la courbe du moteur, ou revoir ses appelants (`fx.py`) | piège rencontré dans ce lot |
 
 ### Transverse
 
