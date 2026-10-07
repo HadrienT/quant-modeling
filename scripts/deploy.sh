@@ -17,10 +17,21 @@ fi
 
 # Fast-forward to the remote when reachable. Non-fatal: on boot the network may
 # not be up yet, and a stale checkout still deploys a working (older) site.
-if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-  git pull --ff-only --quiet 2>/dev/null \
-    && echo "→ synced with $(git rev-parse --abbrev-ref '@{u}')" \
-    || echo "⚠ git pull skipped (offline or diverged) — deploying the current checkout"
+# Not when scripts/auto-deploy.sh calls (DEPLOY_NO_PULL=1: it deploys exactly
+# the commit whose CI it checked), and not onto a commit it had to roll back —
+# the boot unit runs this script, and must not bring that commit back.
+rolled_back="$(cat "$(git rev-parse --absolute-git-dir)/autodeploy-failed" 2>/dev/null || true)"
+if [[ -n "${DEPLOY_NO_PULL:-}" ]]; then
+  :
+elif git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  git fetch --quiet 2>/dev/null || true
+  if [[ -n "$rolled_back" && "$(git rev-parse '@{u}')" == "$rolled_back" ]]; then
+    echo "⚠ $(git rev-parse --short '@{u}') was rolled back by auto-deploy — staying on $(git rev-parse --short HEAD)"
+  else
+    git merge --ff-only --quiet '@{u}' 2>/dev/null \
+      && echo "→ synced with $(git rev-parse --abbrev-ref '@{u}')" \
+      || echo "⚠ git pull skipped (offline or diverged) — deploying the current checkout"
+  fi
 fi
 
 docker network inspect dataplatform >/dev/null 2>&1 || docker network create dataplatform

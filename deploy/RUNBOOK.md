@@ -44,6 +44,42 @@ cd ~/quant-modeling-prod && ./scripts/deploy.sh
 l'étiquetant avec le SHA du commit → `up -d` → attend que `/health` réponde.
 Idempotent, tu peux le relancer sans risque.
 
+### Déploiement continu : fusionner dans `main` met en ligne
+
+Un timer `systemd` (utilisateur) lance `scripts/auto-deploy.sh` dans
+`~/quant-modeling-prod` toutes les deux minutes :
+
+1. rien de neuf sur `origin/main` → rien ne se passe ;
+2. la CI GitHub du commit tourne encore → on attend le passage suivant ;
+3. un job de la CI a échoué → le commit n'est pas déployé ;
+4. tout est vert → avance rapide, puis `scripts/deploy.sh` ;
+5. le déploiement échoue (build, `/health`) → retour au commit précédent, qui
+   est redéployé (son image, étiquetée par son SHA, est encore là), et l'unité
+   finit en `failed`.
+
+Un commit qui a échoué n'est pas retenté : pousser un correctif. Chaque
+tentative apparaît dans *Deployments* sur la page GitHub du dépôt.
+
+```bash
+cp deploy/autodeploy@.service deploy/autodeploy@.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now autodeploy@quant-modeling-prod.timer
+
+journalctl --user -u 'autodeploy@*' -f    # suivre
+systemctl --user --failed                  # un déploiement annulé
+systemctl --user disable --now autodeploy@quant-modeling-prod.timer   # couper
+```
+
+C'est le serveur qui tire, pas GitHub qui pousse : aucun port n'est ouvert, et
+un runner Actions auto-hébergé sur un dépôt public laisserait une pull request
+exécuter du code ici. Le retour arrière porte sur l'image et le code, pas sur
+le volume `qm_data` : un commit qui change le format des données stockées ne se
+défait pas ainsi (les sauvegardes du §5 sont là pour cela). Le script et les
+deux unités sont les mêmes dans `portfolio` et `data-ingest`.
+
+`./scripts/deploy.sh` reste utilisable à la main ; il ne tire pas un commit que
+le déploiement continu a dû annuler.
+
 ### D'où vient le nouveau code ?
 
 La réécriture (blueprint WP 00–14) **est fusionnée dans `main`** ; les branches
@@ -51,7 +87,8 @@ La réécriture (blueprint WP 00–14) **est fusionnée dans `main`** ; les bran
 
 - **Développer** : une branche dans `~/quant-modeling` → commit → `gh pr create`
   vers `main` → merge.
-- **Mettre en ligne** : `cd ~/quant-modeling-prod && ./scripts/deploy.sh`.
+- **Mettre en ligne** : rien à faire, le merge suffit (ci-dessus). À la main :
+  `cd ~/quant-modeling-prod && ./scripts/deploy.sh`.
 
 C'est tout. (La branche `core/dates-conventions`, si elle existe encore, est du
 travail C++ séparé qui devra être rebasé sur `main`.)
