@@ -6,6 +6,11 @@
 | **Bloque** | rien |
 | **Branche** | `web/11-backtest` |
 
+> **Suite :** ce lot a refait l'interface. La page est masquée depuis le
+> 11 octobre 2026 ; le fond — données, moteur, statistiques, backtest de
+> couverture — est réécrit dans le dépôt `~/quant-backtest`, et la moitié de
+> ce dépôt est décrite au [WP 24](24-backtest.md).
+
 ## Objectif
 
 Optimiser une allocation sur une fenêtre passée, la rejouer, et comparer au

@@ -23,7 +23,7 @@ de donnée de marché.
 
 ## Dépôts voisins
 
-Ce dépôt n'est pas seul sur le serveur ; trois dépôts frères, chacun avec son
+Ce dépôt n'est pas seul sur le serveur ; quatre dépôts frères, chacun avec son
 propre `CLAUDE.md`, portent ce qui n'est pas du pricing :
 
 | Dépôt | Rôle pour quant-modeling |
@@ -31,6 +31,7 @@ propre `CLAUDE.md`, portent ce qui n'est pas du pricing :
 | `~/data-ingest` | **Toute l'ingestion des données de marché** (Airflow → Postgres). quant-modeling ne fait que lire cette base (`PGHOST=data-ingest-postgres` via le réseau Docker `dataplatform`). Une donnée manquante se corrige là-bas, pas ici |
 | `~/quant-platform` ([GitHub](https://github.com/HadrienT/quant-platform)) | **Destination des logs, événements d'audit et de la télémétrie** : Kafka, Postgres d'audit append-only, OpenTelemetry Collector → Prometheus / Loki / Tempo, Grafana. Contrat producteur ↔ plateforme : `~/quant-platform/docs/contract.md`. Côté ici, le producteur est `api/app/audit/` (`emit()`, `record_fallback()`), conception dans `blueprint/wp/18-observability.md` |
 | `~/AgenticEnv` | `llama-server` de l'assistant de scripting (voir plus bas) |
+| `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) | **Moteur de backtest** en C++, livré comme wheel `quantbacktest`. Il consomme la lib `quantModeling` à un commit épinglé ; ici ne restent que la lecture en base, le routeur, l'audit et la page `/backtest` (masquée en attendant, `blueprint/wp/24-backtest.md`). Frontière : `~/quant-backtest/docs/contract.md`. Aucun calcul de backtest dans ce dépôt |
 
 Branchement vers `quant-platform` (WP 18, fait) : en **prod**, les événements
 d'audit partent dans son Kafka (`QM_AUDIT_SINK=kafka`, `kafka:9092`) et les
