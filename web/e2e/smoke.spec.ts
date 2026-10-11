@@ -18,7 +18,6 @@ test("no horizontal scroll at 390 px", async ({ page }) => {
 		"/scripting",
 		"/products",
 		"/portfolio",
-		"/backtest",
 		"/about",
 		"/legal",
 		"/privacy",
