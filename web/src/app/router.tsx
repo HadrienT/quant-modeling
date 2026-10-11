@@ -197,12 +197,14 @@ const portfolioRoute = createRoute({
 });
 
 // ── Backtest ─────────────────────────────────────────────────────────────
-const BacktestPage = lazy(() => import("@/features/backtest/BacktestPage"));
+// Hidden: the page showed figures that do not hold up. It comes back with the
+// engine rebuilt in the quant-backtest repo. The route stays registered, out
+// of ROUTES and answering "not found", so features/backtest/ still typechecks.
 const backtestRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/backtest",
 	validateSearch: z.object({ c: z.string().optional() }).parse,
-	component: BacktestPage,
+	component: NotFound,
 });
 
 // ── About ────────────────────────────────────────────────────────────────
@@ -285,7 +287,6 @@ export const ROUTES = [
 	{ path: "/scripting", label: "Scripting" },
 	{ path: "/products", label: "Products" },
 	{ path: "/portfolio", label: "Portfolio" },
-	{ path: "/backtest", label: "Backtest" },
 	{ path: "/about", label: "About" },
 ] as const;
 
