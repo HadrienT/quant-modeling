@@ -5,8 +5,7 @@ import {
 } from "@/shared/api";
 import { Button, Methodology, Segmented, WarningList } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
-import { Figure } from "./Explained";
-import { signed, tenorLabel } from "./format";
+import { Figure, signed, tenorLabel } from "@/shared/xva";
 import { SaCvaTable } from "./SaCvaTable";
 import { type RiskKey, SensitivityBars } from "./SensitivityBars";
 

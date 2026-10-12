@@ -11,14 +11,16 @@ import {
 import { server } from "@/shared/test/msw-server";
 import fixtures from "@/shared/test/xva.fixtures.json";
 import { TooltipProvider } from "@/shared/ui";
-import { AdjustmentsPanel } from "./AdjustmentsPanel";
-import { ExposurePanel } from "./ExposurePanel";
-import { ForeignMarketPanel } from "./ForeignMarketPanel";
-import { MarginCapitalPanel } from "./MarginCapitalPanel";
+import {
+	AdjustmentsPanel,
+	ExposurePanel,
+	ForeignMarketPanel,
+	MarginCapitalPanel,
+	TradesTable,
+	amount,
+} from "@/shared/xva";
 import { SensitivitiesPanel } from "./SensitivitiesPanel";
-import { amount } from "./format";
 import { DEFAULT_VIEW, nettingSetRequest, sensitivitiesRequest } from "./state";
-import { TradesTable } from "./TradesTable";
 import { XvaControls } from "./XvaControls";
 
 /**

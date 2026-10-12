@@ -787,6 +787,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/xva/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Xva Portfolio
+         * @description Exposure and xVA of one netting set of a portfolio: the trades held
+         *     under it today, the counterparty's rating and the collateral agreement
+         *     of the ledger, on the market of the xVA page.
+         */
+        post: operations["xva_portfolio"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/xva/portfolios": {
         parameters: {
             query?: never;
@@ -4281,6 +4303,64 @@ export interface components {
             updated_at: string;
         };
         /**
+         * PortfolioXvaRequest
+         * @description A netting set of the portfolio, and what is the bank's own: its
+         *     rating, its funding spreads, the return it wants on capital. The
+         *     counterparty's side comes from the portfolio.
+         */
+        PortfolioXvaRequest: {
+            /**
+             * Borrowing Spread
+             * @default 0
+             */
+            borrowing_spread: number;
+            /**
+             * Cost Of Capital
+             * @default 0.1
+             */
+            cost_of_capital: number;
+            /**
+             * Device
+             * @default auto
+             * @enum {string}
+             */
+            device: "auto" | "cpu" | "gpu";
+            /**
+             * Lending Spread
+             * @default 0
+             */
+            lending_spread: number;
+            /** Netting Set Id */
+            netting_set_id: string;
+            /**
+             * Own Rating
+             * @default A
+             * @enum {string}
+             */
+            own_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Paths
+             * @default 10000
+             */
+            paths: number;
+            /**
+             * Pfe Confidence
+             * @default 0.95
+             */
+            pfe_confidence: number;
+            portfolio: components["schemas"]["Portfolio-Input"];
+            /**
+             * Seed
+             * @default 42
+             */
+            seed: number;
+            /**
+             * Wrong Way Risk
+             * @default 0
+             */
+            wrong_way_risk: number;
+        };
+        /**
          * Position
          * @description A position of the portfolios before the ledger (version 1) — read only to
          *     be migrated (portfolio_ledger.migrate). product_type was spelled two ways
@@ -6599,7 +6679,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Label */
             label: string;
             /** Lesson */
@@ -6664,7 +6744,7 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /**
              * Recovery
              * @default 0.4
@@ -6730,7 +6810,7 @@ export interface components {
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Portfolio Label */
             portfolio_label: string;
             risk: components["schemas"]["ExposureProfileOut"] | null;
@@ -6786,7 +6866,7 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /**
              * Recovery
              * @default 0.4
@@ -6850,7 +6930,7 @@ export interface components {
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Portfolio Label */
             portfolio_label: string;
             sa_cva: components["schemas"]["SaCvaOut"];
@@ -8436,6 +8516,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["XvaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XvaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    xva_portfolio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioXvaRequest"];
             };
         };
         responses: {

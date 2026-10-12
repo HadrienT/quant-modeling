@@ -117,6 +117,17 @@ export const handlers = [
 			return HttpResponse.json(xva.cross_currency);
 		return HttpResponse.json(body.csa ? xva.balanced_csa : xva.single_swap);
 	}),
+	http.post("*/api/xva/portfolio", () =>
+		HttpResponse.json({
+			...xva.single_swap,
+			portfolio: "ledger",
+			portfolio_label:
+				"Northgate Bank (dealer): ISDA with CSA: variation margin",
+			warnings: [
+				"Trade 2: an equity derivative. It is left out of this netting set.",
+			],
+		}),
+	),
 	http.post("*/api/xva/sensitivities", () =>
 		HttpResponse.json(xva.sensitivities),
 	),

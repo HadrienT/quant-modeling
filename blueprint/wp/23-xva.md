@@ -1275,7 +1275,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X10 — Multi-devise** (fait : §14.15 ; formes fermées, CPU, mesure de pricing ; un seul produit ajouté, le swap de devises) | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 | **X11 — Contreparties et netting sets du portefeuille** (fait : §14.16) | un portefeuille porte ses contreparties (notation, secteur, recouvrement) et leurs netting sets (CSA ou non) ; un dérivé se traite sous un netting set ; sous-onglet *Counterparties* de la page Portfolio ; contreparties d'exemple | un instrument coté n'a pas de netting set ; un netting set utilisé ne se supprime pas ; le mark d'un dérivé ne dépend pas de qui il fait face |
 | **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans bermudan ni script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
-| **X13 — xVA d'un netting set du portefeuille** | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
+| **X13 — xVA d'un netting set du portefeuille** (fait : §14.16 ; sans sensibilités, swap entamé simulé depuis son prochain coupon) | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
 | **X14 — Dérivés actions dans le moteur d'exposition** | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
 
 ### 14.1 Lot X0 : ce qui est fait, et les choix d'implémentation
@@ -2406,8 +2406,39 @@ date (une seconde chacune, sur tout l'historique) ; à faire avec un cache de
 calibrations par date si le besoin se confirme. Pas de grecques de taux
 (PV01) dans l'onglet Risk : les positions de taux y figurent sans sensibilité.
 
-Limite dite dans l'interface : l'exposition et les xVA de ces netting sets ne
-sont pas encore calculés (lots X13 et X14).
+**Lot X13, ce qui est fait.** `POST /api/xva/portfolio` prend le registre, un
+netting set et le côté de la banque (sa notation, ses spreads de financement,
+son coût du capital) ; la notation, le secteur et le recouvrement de la
+contrepartie, et le CSA, viennent du registre. `api/app/portfolio_xva.py` en
+tire les transactions détenues à la date de la courbe — vie résiduelle, taux
+du contrat, quantité signée — et appelle `xva.compute`, qui accepte désormais
+un portefeuille fourni (`book`) et des transactions à taux donné (`_Spec.rate`)
+au lieu du taux de marché. La réponse est le `XvaResponse` de `/xva`, avec
+`portfolio = "ledger"`. Critère tenu : le swap de `single_swap` recomposé dans
+un portefeuille rend l'exposition, les ajustements et le capital de `/xva` à
+l'identique (`test_portfolio_xva.py`). L'événement `xva.valuation` porte les
+termes des transactions, pas le portefeuille.
+
+Côté front, les panneaux de résultats (exposition, ajustements, marge et
+capital, table des transactions, marché en euros) passent de `features/xva/`
+à `shared/xva/`, et la page Portfolio a un sous-onglet **xVA** : choix du
+netting set, calcul lancé à la demande.
+
+Ce que le moteur ne sait pas tenir est **écarté et dit dans les
+avertissements**, jamais approché en silence :
+
+- **swap entamé** : le moteur refuse un coupon commencé dans le passé (il lui
+  faudrait son fixing). Le coupon en cours, un montant connu, est laissé hors
+  de l'exposition, et le reste est simulé comme un swap qui démarre à la
+  prochaine date de coupon. L'écart est d'un coupon net jusqu'à cette date ;
+- **swap de devises entre deux dates de coupon** : écarté (le moteur compte
+  des années entières jusqu'à l'échéance) ;
+- **dérivé action** : écarté jusqu'au lot X14 ;
+- pas de sensibilités (onglet absent) : `xva.compute_sensitivities` ne prend
+  que les portefeuilles de `/xva`.
+
+Les deux premières limites se lèvent en C++ : un flux connu comme transaction
+du moteur, et un échéancier de swap de devises compté depuis l'échéance.
 
 ---
 

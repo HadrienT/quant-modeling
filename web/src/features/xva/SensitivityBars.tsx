@@ -1,5 +1,5 @@
 import type { XvaQuoteRisk } from "@/shared/api";
-import { perBp } from "./format";
+import { perBp } from "@/shared/xva";
 
 export type RiskKey = "cva" | "dva" | "fca" | "fba";
 

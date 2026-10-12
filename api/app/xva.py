@@ -24,7 +24,7 @@ import math
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
@@ -102,6 +102,13 @@ class _Spec:
     script: Optional[str] = None
     #: The currency of a rate trade.
     currency: str = "USD"
+    #: The terms of a trade that is not struck at today's market (a trade of
+    #: a portfolio, portfolio_xva.py); None for the market's. `rate` is the
+    #: fixed rate of a swap, the strike of a swaption, the delivery rate of
+    #: an FX forward, the dollar coupon of a cross-currency swap.
+    rate: Optional[float] = None
+    foreign_rate: Optional[float] = None
+    domestic_notional: Optional[float] = None
 
 
 def _swap(tenor: float, payer: bool, notional: float = NOTIONAL) -> _Spec:
@@ -521,20 +528,24 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
             )
             continue
         start, tenor = s.par_of or (s.start, s.tenor)
-        par = qm.price_swap(
-            rates.times,
-            rates.dfs,
-            rates.times,
-            rates.dfs,
-            start,
-            tenor,
-            0.0,
-            1,
-            1,
-            1.0,
-            True,
-            0.0,
-        )["par_rate"]
+        par = (
+            s.rate
+            if s.rate is not None
+            else qm.price_swap(
+                rates.times,
+                rates.dfs,
+                rates.times,
+                rates.dfs,
+                start,
+                tenor,
+                0.0,
+                1,
+                1,
+                1.0,
+                True,
+                0.0,
+            )["par_rate"]
+        )
         if s.kind == "script":
             out.append(
                 {
@@ -617,12 +628,16 @@ def _two_currency_trades(
             out.append(
                 {
                     "kind": "fx_forward",
-                    # Covered interest parity.
-                    "strike": foreign.spot
-                    * foreign.discount(s.tenor)
-                    / qm.rate_curve_discount_factors(rates.times, rates.dfs, [s.tenor])[
-                        0
-                    ],
+                    # Covered interest parity, unless the trade has its rate.
+                    "strike": (
+                        s.rate
+                        if s.rate is not None
+                        else foreign.spot
+                        * foreign.discount(s.tenor)
+                        / qm.rate_curve_discount_factors(
+                            rates.times, rates.dfs, [s.tenor]
+                        )[0]
+                    ),
                     "maturity": s.tenor,
                     "notional": s.notional,
                     "quantity": s.quantity if s.payer else -s.quantity,
@@ -634,9 +649,21 @@ def _two_currency_trades(
                     "kind": "cross_currency_swap",
                     "maturity": s.tenor,
                     "foreign_notional": s.notional,
-                    "domestic_notional": s.notional * foreign.spot,
-                    "foreign_rate": xva_fx.par_coupon(euro.times, euro.dfs, s.tenor),
-                    "domestic_rate": xva_fx.par_coupon(rates.times, rates.dfs, s.tenor),
+                    "domestic_notional": (
+                        s.domestic_notional
+                        if s.domestic_notional is not None
+                        else s.notional * foreign.spot
+                    ),
+                    "foreign_rate": (
+                        s.foreign_rate
+                        if s.foreign_rate is not None
+                        else xva_fx.par_coupon(euro.times, euro.dfs, s.tenor)
+                    ),
+                    "domestic_rate": (
+                        s.rate
+                        if s.rate is not None
+                        else xva_fx.par_coupon(rates.times, rates.dfs, s.tenor)
+                    ),
                     "frequency": 1,
                     "receive_foreign": s.payer,
                     "quantity": s.quantity,
@@ -647,9 +674,13 @@ def _two_currency_trades(
             times, dfs = (
                 (euro.times, euro.dfs) if in_euros else (rates.times, rates.dfs)
             )
-            par = qm.price_swap(
-                times, dfs, times, dfs, s.start, s.tenor, 0.0, 1, 1, 1.0, True, 0.0
-            )["par_rate"]
+            par = (
+                s.rate
+                if s.rate is not None
+                else qm.price_swap(
+                    times, dfs, times, dfs, s.start, s.tenor, 0.0, 1, 1, 1.0, True, 0.0
+                )["par_rate"]
+            )
             trade = {
                 "kind": s.kind,
                 "currency": "foreign" if in_euros else "domestic",
@@ -865,11 +896,27 @@ def _capital(
     )
 
 
-def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
+#: The trades of a netting set that is not one of PORTFOLIOS, once the date
+#: of the market is known: (label, what to say about it, trades, warnings).
+Book = Callable[[date], Tuple[str, str, List[_Spec], List[str]]]
+
+
+def compute(
+    req: XvaRequest, today: Optional[date] = None, book: Optional[Book] = None
+) -> XvaResponse:
     started = time.perf_counter()
     warnings: List[str] = []
-    label, lesson, specs = PORTFOLIOS[req.portfolio]
     rates = _rates_market(today)
+    if book is not None:
+        label, lesson, specs, said = book(rates.as_of)
+        warnings.extend(said)
+    elif req.portfolio not in PORTFOLIOS:
+        raise XvaInputError(
+            "A netting set of a portfolio is computed from the Portfolio page, "
+            "which sends its trades."
+        )
+    else:
+        label, lesson, specs = PORTFOLIOS[req.portfolio]
     if req.scripts and _two_currencies(specs):
         raise XvaInputError(
             "A scripted trade is valued by regression, which the two-currency "
@@ -878,7 +925,9 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
     specs = specs + _script_specs(req, rates)
     if not specs:
         raise XvaInputError(
-            "The portfolio `custom` is made of the scripts of the request: give "
+            "This netting set holds no trade the exposure engine can simulate."
+            if book is not None
+            else "The portfolio `custom` is made of the scripts of the request: give "
             "at least one."
         )
     counterparty = _credit(req.counterparty_rating, req.recovery, rates, warnings)
@@ -1173,6 +1222,11 @@ def compute_sensitivities(
     those sensitivities."""
     started = time.perf_counter()
     warnings: List[str] = []
+    if req.portfolio not in PORTFOLIOS:
+        raise XvaInputError(
+            "The sensitivities are computed for the portfolios of the xVA page, "
+            "not yet for a netting set of a portfolio."
+        )
     label, _, specs = PORTFOLIOS[req.portfolio]
     if _two_currencies(specs):
         raise XvaInputError(

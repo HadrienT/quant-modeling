@@ -4,6 +4,7 @@ import { ApiError } from "./errors";
 import { queryKeys } from "./queryKeys";
 import { STALE } from "./queryClient";
 import type {
+	PortfolioXvaRequest,
 	XvaPortfolios,
 	XvaRequest,
 	XvaResponse,
@@ -55,6 +56,26 @@ export function useXvaNettingSet(request: XvaRequest) {
 		queryFn: ({ signal }) =>
 			call<XvaResponse>(signal, (s) =>
 				api.POST("/api/xva/netting-set", { body: request, signal: s }),
+			),
+	});
+}
+
+/**
+ * The same for one netting set of a portfolio's ledger (null: not asked
+ * for — the run takes a few seconds and is started by the reader).
+ */
+export function usePortfolioXva(request: PortfolioXvaRequest | null) {
+	return useQuery<XvaResponse, ApiError>({
+		queryKey: queryKeys.xva.portfolio(request),
+		enabled: request != null,
+		staleTime: STALE.rates,
+		retry: false,
+		queryFn: ({ signal }) =>
+			call<XvaResponse>(signal, (s) =>
+				api.POST("/api/xva/portfolio", {
+					body: request as never,
+					signal: s,
+				}),
 			),
 	});
 }

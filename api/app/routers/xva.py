@@ -2,6 +2,7 @@
 
 GET  /api/xva/portfolios    the teaching portfolios and the ratings
 POST /api/xva/netting-set   exposure, CVA / DVA and each trade's share
+POST /api/xva/portfolio     the same for a netting set of a portfolio's ledger
 
 The computation and the methodology live in `xva.py`. Every run emits an
 `xva.valuation` audit event with its request, seed, model and market inputs.
@@ -12,7 +13,7 @@ import os
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
 
-from .. import db, valuation, xva
+from .. import db, portfolio_xva, valuation, xva
 from ..audit import emit
 from ..audit.envelope import lib_build_sha
 from ..audit.payloads import (
@@ -54,8 +55,23 @@ def xva_portfolios() -> XvaPortfoliosResponse:
     )
 
 
-def _payload(req: XvaRequest, response: XvaResponse) -> XvaValuationPayload:
+def _payload(
+    req: XvaRequest, response: XvaResponse, trades: bool = False
+) -> XvaValuationPayload:
     request = req.model_dump(mode="json")
+    if trades:
+        # A netting set of a portfolio is not named by its id: its trades
+        # are part of what was asked. The portfolio itself is not recorded.
+        request["trades"] = [
+            t.model_dump(
+                mode="json",
+                include={
+                    "kind", "currency", "quantity", "payer", "notional",
+                    "fixed_rate", "foreign_rate", "start", "tenor", "maturity",
+                },
+            )
+            for t in response.trades
+        ]  # fmt: skip
     hw = response.market.hull_white
     return XvaValuationPayload(
         request=request,
@@ -114,6 +130,27 @@ async def xva_netting_set(req: XvaRequest) -> XvaResponse:
         # InvalidInput from the C++: an input no curve or model accepts.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     emit("xva.valuation", _payload(req, response))
+    return response
+
+
+@router.post("/api/xva/portfolio", response_model=XvaResponse)
+async def xva_portfolio(req: portfolio_xva.PortfolioXvaRequest) -> XvaResponse:
+    """Exposure and xVA of one netting set of a portfolio: the trades held
+    under it today, the counterparty's rating and the collateral agreement
+    of the ledger, on the market of the xVA page."""
+    try:
+        run, response = await run_in_threadpool(portfolio_xva.compute, req)
+    except db.StoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+    except xva.XvaUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except xva.XvaInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    emit("xva.valuation", _payload(run, response, trades=True))
     return response
 
 

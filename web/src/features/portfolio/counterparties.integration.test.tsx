@@ -170,4 +170,46 @@ describe("counterparties of a portfolio", () => {
 			price: 0,
 		});
 	});
+
+	it("computes the xVA of a netting set on demand, with what was left out", async () => {
+		const pf = fx.portfolio("OTC book");
+		const instruments = pf.instruments.map((i) =>
+			i.id === "cac-call" ? { ...i, netting_set_id: "example-dealer-vm" } : i,
+		);
+		localStorage.setItem(
+			KEY,
+			JSON.stringify([
+				{ ...pf, instruments, counterparties: fx.counterpartyExamples() },
+			]),
+		);
+		const user = userEvent.setup();
+		renderPage();
+		await user.click(await screen.findByRole("tab", { name: "xVA" }));
+		expect(screen.getByLabelText("Netting set")).toHaveTextContent(
+			"Northgate Bank (dealer) (A): ISDA with CSA: variation margin — 1 trade",
+		);
+		// Nothing is simulated before it is asked for.
+		expect(screen.queryByRole("tab", { name: "Exposure" })).toBeNull();
+		await user.click(screen.getByRole("button", { name: "Compute xVA" }));
+		expect(
+			await screen.findByRole("tab", { name: "Exposure" }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/It is left out of this netting set/),
+		).toBeVisible();
+		expect(
+			screen.getByRole("heading", {
+				name: "Northgate Bank (dealer): ISDA with CSA: variation margin",
+			}),
+		).toBeVisible();
+	});
+
+	it("says what to do when no trade is under a netting set", async () => {
+		const user = userEvent.setup();
+		renderPage();
+		await user.click(await screen.findByRole("tab", { name: "xVA" }));
+		expect(
+			screen.getByText(/No open trade is under a netting set yet/),
+		).toBeVisible();
+	});
 });

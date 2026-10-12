@@ -25,6 +25,9 @@ PortfolioId = Literal[
     "cross_currency",
     "two_currencies",
     "custom",
+    # A netting set of a portfolio's ledger (portfolio_xva.py): not one of
+    # the teaching portfolios, and not offered among them.
+    "ledger",
 ]
 
 # ── Request ──────────────────────────────────────────────────────────────────

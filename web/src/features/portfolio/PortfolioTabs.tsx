@@ -9,10 +9,12 @@ import { PnlHistory } from "./PnlHistory";
 import { RiskPanel } from "./RiskPanel";
 import type { TradePreset } from "./TradeForm";
 import { TransactionsTable } from "./TransactionsTable";
+import { XvaTab } from "./XvaTab";
 
 /**
- * Positions, the journal, the P&L through time, risk per underlying, and
- * the counterparties the over-the-counter trades face.
+ * Positions, the journal, the P&L through time, risk per underlying, the
+ * counterparties the over-the-counter trades face, and the xVA of their
+ * netting sets.
  */
 export function PortfolioTabs({
 	pf,
@@ -70,6 +72,7 @@ export function PortfolioTabs({
 				<TabsTrigger value="counterparties">
 					Counterparties ({pf.counterparties?.length ?? 0})
 				</TabsTrigger>
+				<TabsTrigger value="xva">xVA</TabsTrigger>
 			</TabsList>
 			<TabsContent value="positions">
 				<HoldingsTable
@@ -111,6 +114,9 @@ export function PortfolioTabs({
 			</TabsContent>
 			<TabsContent value="counterparties">
 				<CounterpartiesTab pf={pf} onSave={onSave} />
+			</TabsContent>
+			<TabsContent value="xva">
+				<XvaTab pf={pf} />
 			</TabsContent>
 		</Tabs>
 	);

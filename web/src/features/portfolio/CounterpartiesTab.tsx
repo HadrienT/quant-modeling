@@ -53,9 +53,8 @@ export function CounterpartiesTab({
 				may default while it owes money. Trades under the same netting set close
 				out as one net amount, less the collateral its agreement provides. A
 				listed share is cleared and faces no one. A counterparty&apos;s credit
-				curve is the one of its rating. The exposure and the xVA of these
-				netting sets are not computed on this page yet: the xVA page shows them
-				on sample netting sets.
+				curve is the one of its rating. The xVA tab simulates the exposure of a
+				netting set and prices its adjustments.
 			</p>
 
 			{onSave && !editing && (

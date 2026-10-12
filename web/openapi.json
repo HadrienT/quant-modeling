@@ -6080,6 +6080,97 @@
         "title": "PortfolioSummary",
         "type": "object"
       },
+      "PortfolioXvaRequest": {
+        "description": "A netting set of the portfolio, and what is the bank's own: its\nrating, its funding spreads, the return it wants on capital. The\ncounterparty's side comes from the portfolio.",
+        "properties": {
+          "borrowing_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Borrowing Spread",
+            "type": "number"
+          },
+          "cost_of_capital": {
+            "default": 0.1,
+            "maximum": 0.5,
+            "minimum": 0.0,
+            "title": "Cost Of Capital",
+            "type": "number"
+          },
+          "device": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "cpu",
+              "gpu"
+            ],
+            "title": "Device",
+            "type": "string"
+          },
+          "lending_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Lending Spread",
+            "type": "number"
+          },
+          "netting_set_id": {
+            "title": "Netting Set Id",
+            "type": "string"
+          },
+          "own_rating": {
+            "default": "A",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Own Rating",
+            "type": "string"
+          },
+          "paths": {
+            "default": 10000,
+            "maximum": 50000.0,
+            "minimum": 1000.0,
+            "title": "Paths",
+            "type": "integer"
+          },
+          "pfe_confidence": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.5,
+            "title": "Pfe Confidence",
+            "type": "number"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          },
+          "seed": {
+            "default": 42,
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "wrong_way_risk": {
+            "default": 0.0,
+            "maximum": 30.0,
+            "minimum": -30.0,
+            "title": "Wrong Way Risk",
+            "type": "number"
+          }
+        },
+        "required": [
+          "portfolio",
+          "netting_set_id"
+        ],
+        "title": "PortfolioXvaRequest",
+        "type": "object"
+      },
       "Position-Input": {
         "description": "A position of the portfolios before the ledger (version 1) \u2014 read only to\nbe migrated (portfolio_ledger.migrate). product_type was spelled two ways\n(this enum, or the front's catalog keys), hence a plain string.",
         "properties": {
@@ -11216,7 +11307,8 @@
               "fx_forward",
               "cross_currency",
               "two_currencies",
-              "custom"
+              "custom",
+              "ledger"
             ],
             "title": "Id",
             "type": "string"
@@ -11370,7 +11462,8 @@
               "fx_forward",
               "cross_currency",
               "two_currencies",
-              "custom"
+              "custom",
+              "ledger"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -11520,7 +11613,8 @@
               "fx_forward",
               "cross_currency",
               "two_currencies",
-              "custom"
+              "custom",
+              "ledger"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -11678,7 +11772,8 @@
               "fx_forward",
               "cross_currency",
               "two_currencies",
-              "custom"
+              "custom",
+              "ledger"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -11802,7 +11897,8 @@
               "fx_forward",
               "cross_currency",
               "two_currencies",
-              "custom"
+              "custom",
+              "ledger"
             ],
             "title": "Portfolio",
             "type": "string"
@@ -14577,6 +14673,45 @@
           }
         },
         "summary": "Xva Netting Set"
+      }
+    },
+    "/api/xva/portfolio": {
+      "post": {
+        "description": "Exposure and xVA of one netting set of a portfolio: the trades held\nunder it today, the counterparty's rating and the collateral agreement\nof the ledger, on the market of the xVA page.",
+        "operationId": "xva_portfolio",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioXvaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XvaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Xva Portfolio"
       }
     },
     "/api/xva/portfolios": {
