@@ -53,6 +53,8 @@ export const queryKeys = {
 		portfolios: () => ["xva", "portfolios"] as const,
 		nettingSet: (request: unknown) => ["xva", "netting-set", request] as const,
 		portfolio: (request: unknown) => ["xva", "portfolio", request] as const,
+		portfolioSensitivities: (request: unknown) =>
+			["xva", "portfolio-sensitivities", request] as const,
 		sensitivities: (request: unknown) =>
 			["xva", "sensitivities", request] as const,
 	},

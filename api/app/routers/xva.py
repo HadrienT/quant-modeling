@@ -3,6 +3,8 @@
 GET  /api/xva/portfolios    the teaching portfolios and the ratings
 POST /api/xva/netting-set   exposure, CVA / DVA and each trade's share
 POST /api/xva/portfolio     the same for a netting set of a portfolio's ledger
+POST /api/xva/sensitivities             sensitivities by adjoint differentiation
+POST /api/xva/portfolio/sensitivities   the same for a netting set of a ledger
 
 The computation and the methodology live in `xva.py`. Every run emits an
 `xva.valuation` audit event with its request, seed, model and market inputs.
@@ -160,6 +162,28 @@ async def xva_sensitivities(req: XvaSensitivitiesRequest) -> XvaSensitivitiesRes
     differentiation, and SA-CVA from them."""
     try:
         return await run_in_threadpool(xva.compute_sensitivities, req)
+    except db.StoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+    except xva.XvaUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except xva.XvaInputError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/api/xva/portfolio/sensitivities", response_model=XvaSensitivitiesResponse
+)
+async def xva_portfolio_sensitivities(
+    req: portfolio_xva.PortfolioXvaSensitivitiesRequest,
+) -> XvaSensitivitiesResponse:
+    """The sensitivities of the adjustments of one netting set of a
+    portfolio to every market quote, by adjoint differentiation."""
+    try:
+        return await run_in_threadpool(portfolio_xva.compute_sensitivities, req)
     except db.StoreUnavailable as exc:
         raise HTTPException(
             status_code=503, detail="Market data store unavailable"

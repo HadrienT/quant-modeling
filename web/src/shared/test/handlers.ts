@@ -149,6 +149,9 @@ export const handlers = [
 			},
 		}),
 	),
+	http.post("*/api/xva/portfolio/sensitivities", () =>
+		HttpResponse.json({ ...xva.sensitivities, portfolio: "ledger" }),
+	),
 	http.post("*/api/xva/sensitivities", () =>
 		HttpResponse.json(xva.sensitivities),
 	),

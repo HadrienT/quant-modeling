@@ -19,9 +19,9 @@ import {
 	TradesTable,
 	amount,
 } from "@/shared/xva";
-import { SensitivitiesPanel } from "./SensitivitiesPanel";
 import { DEFAULT_VIEW, nettingSetRequest, sensitivitiesRequest } from "./state";
 import { XvaControls } from "./XvaControls";
+import { XvaSensitivities } from "./XvaSensitivities";
 
 /**
  * The xVA page against answers recorded from the real API
@@ -313,7 +313,7 @@ describe("sensitivities", () => {
 	const request = sensitivitiesRequest(DEFAULT_VIEW);
 
 	it("are computed on demand, each with its error, with what they cost", async () => {
-		wrap(<SensitivitiesPanel request={request} />);
+		wrap(<XvaSensitivities request={request} />);
 		// Nothing is asked before the button.
 		expect(screen.queryByText("Par swap rates")).not.toBeInTheDocument();
 		await userEvent.click(
@@ -349,7 +349,7 @@ describe("sensitivities", () => {
 				),
 			),
 		);
-		wrap(<SensitivitiesPanel request={request} />);
+		wrap(<XvaSensitivities request={request} />);
 		await userEvent.click(
 			screen.getByRole("button", { name: "Compute the sensitivities" }),
 		);

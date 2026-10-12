@@ -185,6 +185,60 @@ def test_a_swaption_without_traded_vols_has_no_mark():
     assert m.value is None and "no volatility" in m.note
 
 
+def test_a_swap_gains_its_annuity_per_basis_point_and_the_other_side_loses_it():
+    md = _md()
+    spec = pr.at_market(_draft(), START, md)
+    g = pr.mark(spec, START, md).greeks
+    _, times, dfs = md.rates_history.curve("USD", START)
+    # Every zero rate one basis point up: each flow of the swap, known or
+    # forward, loses its time × its value. For a payer at par,
+    # d(1 − P(T) − K Σ P(t_i)) = (T P(T) + K Σ t_i P(t_i)) dz.
+    pay = [(pr.years(START, p), p) for p in pr.schedule(spec)]
+    weighted = sum(t * pr.discount(times, dfs, t) for t, _ in pay)
+    last = pay[-1][0]
+    expected = (
+        spec.notional
+        * 1e-4
+        * (last * pr.discount(times, dfs, last) + spec.fixed_rate * weighted)
+    )
+    assert set(g) == {"pv01_usd"}
+    assert g["pv01_usd"] == pytest.approx(expected, rel=1e-3)
+    other = pr.mark(spec.model_copy(update={"payer": False}), START, md).greeks
+    assert other["pv01_usd"] == pytest.approx(-g["pv01_usd"])
+    # A coupon fixed on an earlier curve does not move with today's: once the
+    # swap has started, less of it is left to move.
+    later = pr.mark(spec, date(2025, 11, 14), md).greeks
+    assert 0 < later["pv01_usd"] < g["pv01_usd"]
+
+
+def test_an_fx_forward_is_long_its_euros_and_both_curves():
+    md = _md()
+    spec = pr.at_market(_draft("fx_forward", "EUR", 2), START, md)
+    g = pr.mark(spec, START, md).greeks
+    _, times, dfs = md.rates_history.curve("EUR", START)
+    euros = spec.notional * pr.discount(times, dfs, pr.years(START, spec.maturity))
+    assert g["fx_delta"] == pytest.approx(euros, rel=1e-9)
+    # It pays dollars later (worth less when dollar rates rise: a gain) and
+    # receives euros later (worth less when euro rates rise: a loss).
+    assert g["pv01_usd"] > 0 > g["pv01_eur"]
+    assert "normal_vega" not in g
+
+
+def test_a_swaption_has_a_vega_and_the_position_carries_its_sensitivities(monkeypatch):
+    md = _md()
+    monkeypatch.setattr(md.rates_history, "vols", lambda ccy, obs: [(1.0, 5.0, 0.01)])
+    spec = RateFxSpec.model_validate(
+        {**_draft("swaption", years=6), "start": "2025-10-01", "fixed_rate": 0.045}
+    )
+    g = pr.mark(spec, date(2025, 2, 3), md).greeks
+    assert g["normal_vega"] > 0 and g["pv01_usd"] > 0  # a payer: long rates
+
+    swap = pr.at_market(_draft(), START, _md())
+    [position] = pv.snapshot(_book(swap, quantity=-1.0), START).positions
+    # Per contract: the page multiplies by the quantity held.
+    assert position.greeks["pv01_usd"] > 0 and position.quantity == -1.0
+
+
 def test_contracts_the_engine_cannot_hold_are_refused():
     with pytest.raises(ValueError, match="whole number of years"):
         RateFxSpec.model_validate(

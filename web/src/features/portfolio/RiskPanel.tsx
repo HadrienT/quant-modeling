@@ -1,6 +1,7 @@
 import type { RiskAggregate } from "@/shared/portfolio";
 import { NumberCell } from "@/shared/ui";
 import { AllocationChart } from "@/shared/viz";
+import { RateRiskTable } from "./RateRiskTable";
 
 const GREEKS = ["delta", "gamma", "vega", "theta", "rho"] as const;
 const SYMBOL = { delta: "Δ", gamma: "Γ", vega: "Vega", theta: "Θ", rho: "ρ" };
@@ -9,6 +10,8 @@ const SYMBOL = { delta: "Δ", gamma: "Γ", vega: "Vega", theta: "Θ", rho: "ρ" 
  * Risk per underlying (WP 09 §4). Greeks are grouped PER UNDERLYING —
  * summing delta across AAPL and oil is a number with no meaning (pitfalls).
  * Delta is in shares of the underlying: a stock contributes its quantity.
+ * Rate and FX trades have other risks (RateRiskTable): their equity greeks
+ * are not zero, they do not exist.
  */
 export function RiskPanel({
 	risk,
@@ -57,11 +60,15 @@ export function RiskPanel({
 								</td>
 								{GREEKS.map((k) => (
 									<td key={k} className="p-2 text-right">
-										<NumberCell
-											value={g[k]}
-											magnitude="greek"
-											className="text-xs"
-										/>
+										{g.greeks ? (
+											<NumberCell
+												value={g[k]}
+												magnitude="greek"
+												className="text-xs"
+											/>
+										) : (
+											<span className="text-ink-muted">—</span>
+										)}
 									</td>
 								))}
 							</tr>
@@ -69,6 +76,7 @@ export function RiskPanel({
 					</tbody>
 				</table>
 			</div>
+			<RateRiskTable rows={risk.rates} />
 			<AllocationChart
 				title="Gross exposure by underlying"
 				rows={risk.byUnderlying.map((g) => ({

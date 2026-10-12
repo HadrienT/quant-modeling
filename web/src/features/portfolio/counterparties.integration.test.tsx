@@ -207,6 +207,12 @@ describe("counterparties of a portfolio", () => {
 				name: "Northgate Bank (dealer): ISDA with CSA: variation margin",
 			}),
 		).toBeVisible();
+		// The sensitivities are another simulation, asked for from their tab.
+		await user.click(screen.getByRole("tab", { name: "Sensitivities" }));
+		await user.click(
+			screen.getByRole("button", { name: "Compute the sensitivities" }),
+		);
+		expect(await screen.findByText("Par swap rates")).toBeVisible();
 	});
 
 	it("says what to do when no trade is under a netting set", async () => {

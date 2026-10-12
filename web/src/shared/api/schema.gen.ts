@@ -809,6 +809,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/xva/portfolio/sensitivities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Xva Portfolio Sensitivities
+         * @description The sensitivities of the adjustments of one netting set of a
+         *     portfolio to every market quote, by adjoint differentiation.
+         */
+        post: operations["xva_portfolio_sensitivities"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/xva/portfolios": {
         parameters: {
             query?: never;
@@ -4417,6 +4438,43 @@ export interface components {
              * @default 0
              */
             wrong_way_risk: number;
+        };
+        /**
+         * PortfolioXvaSensitivitiesRequest
+         * @description The netting set whose CVA, DVA and FVA are differentiated to every
+         *     market quote: its dollar swaps and European swaptions, at the rates of
+         *     their contracts.
+         */
+        PortfolioXvaSensitivitiesRequest: {
+            /**
+             * Borrowing Spread
+             * @default 0
+             */
+            borrowing_spread: number;
+            /**
+             * Lending Spread
+             * @default 0
+             */
+            lending_spread: number;
+            /** Netting Set Id */
+            netting_set_id: string;
+            /**
+             * Own Rating
+             * @default A
+             * @enum {string}
+             */
+            own_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Paths
+             * @default 5000
+             */
+            paths: number;
+            portfolio: components["schemas"]["Portfolio-Input"];
+            /**
+             * Seed
+             * @default 42
+             */
+            seed: number;
         };
         /**
          * Position
@@ -8618,6 +8676,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["XvaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    xva_portfolio_sensitivities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioXvaSensitivitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XvaSensitivitiesResponse"];
                 };
             };
             /** @description Validation Error */

@@ -5,6 +5,7 @@ import { queryKeys } from "./queryKeys";
 import { STALE } from "./queryClient";
 import type {
 	PortfolioXvaRequest,
+	PortfolioXvaSensitivitiesRequest,
 	XvaPortfolios,
 	XvaRequest,
 	XvaResponse,
@@ -97,6 +98,26 @@ export function useXvaSensitivities(
 		queryFn: ({ signal }) =>
 			call<XvaSensitivities>(signal, (s) =>
 				api.POST("/api/xva/sensitivities", { body: request, signal: s }),
+			),
+	});
+}
+
+/** The same for one netting set of a portfolio's ledger. */
+export function usePortfolioXvaSensitivities(
+	request: PortfolioXvaSensitivitiesRequest | null,
+	enabled: boolean,
+) {
+	return useQuery<XvaSensitivities, ApiError>({
+		queryKey: queryKeys.xva.portfolioSensitivities(request),
+		enabled: enabled && request != null,
+		staleTime: STALE.rates,
+		retry: false,
+		queryFn: ({ signal }) =>
+			call<XvaSensitivities>(signal, (s) =>
+				api.POST("/api/xva/portfolio/sensitivities", {
+					body: request as never,
+					signal: s,
+				}),
 			),
 	});
 }

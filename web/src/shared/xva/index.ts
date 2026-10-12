@@ -10,6 +10,7 @@ export { Explained, Figure } from "./Explained";
 export { ExposurePanel } from "./ExposurePanel";
 export { ForeignMarketPanel } from "./ForeignMarketPanel";
 export { MarginCapitalPanel } from "./MarginCapitalPanel";
+export { SensitivitiesPanel } from "./SensitivitiesPanel";
 export { TradesTable } from "./TradesTable";
 export { XvaResultHeader } from "./XvaResultHeader";
 export * from "./format";

@@ -17,7 +17,6 @@ import {
 	TradesTable,
 	XvaResultHeader,
 } from "@/shared/xva";
-import { SensitivitiesPanel } from "./SensitivitiesPanel";
 import {
 	DEFAULT_VIEW,
 	type XvaView,
@@ -25,6 +24,7 @@ import {
 	sensitivitiesRequest,
 } from "./state";
 import { XvaControls } from "./XvaControls";
+import { XvaSensitivities } from "./XvaSensitivities";
 
 /**
  * xVA — the counterparty risk of a netting set, from the simulated exposure
@@ -120,7 +120,7 @@ export default function XvaPage() {
 							<MarginCapitalPanel data={data} />
 						</TabsContent>
 						<TabsContent value="sensitivities">
-							<SensitivitiesPanel
+							<XvaSensitivities
 								key={JSON.stringify(sensitivitiesRequest(view))}
 								request={sensitivitiesRequest(view)}
 							/>

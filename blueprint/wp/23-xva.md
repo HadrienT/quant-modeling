@@ -2403,8 +2403,7 @@ courbe à moins d'une semaine n'a pas de mark. Choix :
 Laissé de côté, et pourquoi : le **bermudan** et le **script de taux** restent
 sur `/xva`. Les marquer chaque jour demande une calibration de Hull-White par
 date (une seconde chacune, sur tout l'historique) ; à faire avec un cache de
-calibrations par date si le besoin se confirme. Pas de grecques de taux
-(PV01) dans l'onglet Risk : les positions de taux y figurent sans sensibilité.
+calibrations par date si le besoin se confirme.
 
 **Lot X13, ce qui est fait.** `POST /api/xva/portfolio` prend le registre, un
 netting set et le côté de la banque (sa notation, ses spreads de financement,
@@ -2434,8 +2433,8 @@ avertissements**, jamais approché en silence :
 - **swap de devises entre deux dates de coupon** : écarté (le moteur compte
   des années entières jusqu'à l'échéance) ;
 - **dérivé action** : écarté jusqu'au lot X14 ;
-- pas de sensibilités (onglet absent) : `xva.compute_sensitivities` ne prend
-  que les portefeuilles de `/xva`.
+- pas de sensibilités dans ce lot (ajoutées ensuite, voir « Sensibilités »
+  plus bas).
 
 Les deux premières limites se lèvent en C++ : un flux connu comme transaction
 du moteur, et un échéancier de swap de devises compté depuis l'échéance.
@@ -2483,6 +2482,26 @@ l'option la plus longue ait sa volatilité de marché. SA-CCR décrit l'option
 comme une transaction action (`EquitySingleName`, `EquityIndex` pour un
 ticker en `^`), par le prix des titres. La réponse porte `market.equity`,
 affiché par `shared/xva/EquityMarketPanel.tsx`.
+
+**Sensibilités (après X14).** Deux ajouts, sans C++ nouveau :
+
+- *Les risques des transactions de taux et de change* dans l'onglet Risk
+  (`portfolio_rates.sensitivities`) : PV01 par devise (un point de base sur
+  tous les taux zéro de la courbe de swaps du jour), delta de change (les
+  euros dont la transaction est longue), vega normal des swaptions (un point
+  de base). Bump et revalorisation des formes fermées du marquage ; un coupon
+  déjà fixé ne bouge pas avec la courbe du jour. L'onglet n'affiche plus des
+  grecs actions à zéro pour ces lignes : ils n'existent pas.
+- *Les sensibilités des xVA d'un netting set du portefeuille*
+  (`POST /api/xva/portfolio/sensitivities`) : l'adjoint du lot X8 prenait déjà
+  des transactions quelconques ; seule l'API le réservait aux portefeuilles de
+  `/xva`. `xva.compute_sensitivities` accepte maintenant le `book` d'un
+  portefeuille. Vérifié contre des différences finies sur les cotations
+  (mêmes tirages) pour un receveur hors marché à départ différé netté avec un
+  payeur : CVA et DVA à 3 % près. Même périmètre que `/xva` : swaps et
+  swaptions européennes en dollars, avec ou sans marge de variation ; un
+  netting set qui porte une option action, une seconde devise ou de la marge
+  initiale dit pourquoi il n'est pas couvert.
 
 Limites, dites dans les avertissements de la réponse :
 

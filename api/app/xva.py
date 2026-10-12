@@ -1403,19 +1403,34 @@ _SPREAD_TENORS = (0.5, 1.0, 3.0, 5.0, 10.0)
 
 
 def compute_sensitivities(
-    req: XvaSensitivitiesRequest, today: Optional[date] = None
+    req: XvaSensitivitiesRequest,
+    today: Optional[date] = None,
+    book: Optional[Book] = None,
 ) -> XvaSensitivitiesResponse:
     """CVA, DVA and FVA of the netting set differentiated to every quote the
     market gives, by adjoint differentiation, and the SA-CVA capital from
-    those sensitivities."""
+    those sensitivities. `book`: the trades of a portfolio's netting set, at
+    the rates of their contracts (portfolio_xva.py)."""
     started = time.perf_counter()
     warnings: List[str] = []
-    if req.portfolio not in PORTFOLIOS:
+    rates = _rates_market(today)
+    if book is not None:
+        label, _, specs, said, _ = book(rates.as_of)
+        warnings.extend(said)
+    elif req.portfolio not in PORTFOLIOS:
         raise XvaInputError(
-            "The sensitivities are computed for the portfolios of the xVA page, "
-            "not yet for a netting set of a portfolio."
+            "A netting set of a portfolio is computed from the Portfolio page, "
+            "which sends its trades."
         )
-    label, _, specs = PORTFOLIOS[req.portfolio]
+    else:
+        label, _, specs = PORTFOLIOS[req.portfolio]
+    if _has_asset(specs):
+        raise XvaInputError(
+            "The sensitivities are computed for netting sets of dollar swaps and "
+            "swaptions: the adjoint pass differentiates the simulation of one "
+            "interest rate, not yet the one with a share. This netting set holds "
+            "equity options."
+        )
     if _two_currencies(specs):
         raise XvaInputError(
             "The sensitivities are computed for netting sets in one currency: the "
@@ -1430,7 +1445,11 @@ def compute_sensitivities(
             + (
                 f"This portfolio holds a {by_regression[0]}, valued by regression."
                 if by_regression
-                else "This portfolio is made of scripts, valued by regression."
+                else (
+                    "This netting set holds no such trade."
+                    if book is not None
+                    else "This portfolio is made of scripts, valued by regression."
+                )
             )
         )
     if req.csa is not None and req.csa.initial_margin:
@@ -1438,7 +1457,6 @@ def compute_sensitivities(
             "The sensitivities cover variation margin; initial margin, which is a "
             "model of the margin fitted on the paths, is not differentiated."
         )
-    rates = _rates_market(today)
     counterparty = _credit(req.counterparty_rating, req.recovery, rates, warnings)
     own = _credit(req.own_rating, req.recovery, rates, warnings)
     trades = _trades(specs, rates)

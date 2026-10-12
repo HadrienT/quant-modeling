@@ -1,5 +1,5 @@
 import type { XvaSensitivities } from "@/shared/api";
-import { amount, pct, tenorLabel } from "@/shared/xva";
+import { amount, pct, tenorLabel } from "./format";
 
 /**
  * SA-CVA: the capital for CVA risk computed from sensitivities (Basel

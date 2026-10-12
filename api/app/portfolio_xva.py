@@ -36,7 +36,14 @@ from .portfolio_schemas import (
     RateFxSpec,
     whole_years,
 )
-from .xva_schemas import CapitalInput, Rating, XvaRequest, XvaResponse
+from .xva_schemas import (
+    CapitalInput,
+    Rating,
+    XvaRequest,
+    XvaResponse,
+    XvaSensitivitiesRequest,
+    XvaSensitivitiesResponse,
+)
 
 
 class PortfolioXvaRequest(BaseModel):
@@ -272,21 +279,11 @@ def request(req: PortfolioXvaRequest) -> XvaRequest:
     )
 
 
-def compute(
-    req: PortfolioXvaRequest, today: Optional[date] = None
-) -> Tuple[XvaRequest, XvaResponse]:
-    """Exposure and xVA of the netting set on today's market, and the
-    request of the xVA page it was run as (for the audit record)."""
-    try:
-        pf = portfolio_ledger.migrate(req.portfolio)
-        portfolio_ledger.validate(pf)
-    except ValueError as exc:
-        raise xva.XvaInputError(str(exc)) from exc
-    run = request(req)
-    party, netting_set = portfolio_counterparties.netting_set(pf, req.netting_set_id)
+def _book(pf: Portfolio, netting_set_id: str) -> xva.Book:
+    party, netting_set = portfolio_counterparties.netting_set(pf, netting_set_id)
 
     def book(as_of: date):
-        specs, said, calibration = trades(pf, req.netting_set_id, as_of)
+        specs, said, calibration = trades(pf, netting_set_id, as_of)
         try:
             asset = (
                 xva_equity.market(calibration, as_of)
@@ -305,7 +302,75 @@ def compute(
             asset,
         )
 
-    return run, xva.compute(run, today, book)
+    return book
 
 
-__all__ = ["PortfolioXvaRequest", "compute", "request", "trades"]
+def _checked(portfolio: Portfolio) -> Portfolio:
+    try:
+        pf = portfolio_ledger.migrate(portfolio)
+        portfolio_ledger.validate(pf)
+    except ValueError as exc:
+        raise xva.XvaInputError(str(exc)) from exc
+    return pf
+
+
+def compute(
+    req: PortfolioXvaRequest, today: Optional[date] = None
+) -> Tuple[XvaRequest, XvaResponse]:
+    """Exposure and xVA of the netting set on today's market, and the
+    request of the xVA page it was run as (for the audit record)."""
+    pf = _checked(req.portfolio)
+    run = request(req)
+    return run, xva.compute(run, today, _book(pf, req.netting_set_id))
+
+
+class PortfolioXvaSensitivitiesRequest(BaseModel):
+    """The netting set whose CVA, DVA and FVA are differentiated to every
+    market quote: its dollar swaps and European swaptions, at the rates of
+    their contracts."""
+
+    portfolio: Portfolio
+    netting_set_id: str
+    own_rating: Rating = "A"
+    borrowing_spread: float = Field(default=0.0, ge=0, le=0.1)
+    lending_spread: float = Field(default=0.0, ge=0, le=0.1)
+    paths: int = Field(default=5000, ge=1000, le=20000)
+    seed: int = Field(default=42, ge=0, le=2**31 - 1)
+
+
+def compute_sensitivities(
+    req: PortfolioXvaSensitivitiesRequest, today: Optional[date] = None
+) -> XvaSensitivitiesResponse:
+    """The sensitivities of the netting set's adjustments, by adjoint
+    differentiation, with the counterparty and the collateral agreement of
+    the ledger."""
+    pf = _checked(req.portfolio)
+    found = portfolio_counterparties.netting_set(pf, req.netting_set_id)
+    if found is None:
+        raise xva.XvaInputError(
+            f"The portfolio has no netting set {req.netting_set_id!r}."
+        )
+    party, netting_set = found
+    run = XvaSensitivitiesRequest(
+        portfolio="ledger",
+        counterparty_rating=party.rating,
+        own_rating=req.own_rating,
+        recovery=party.recovery,
+        csa=netting_set.csa,
+        borrowing_spread=req.borrowing_spread,
+        lending_spread=req.lending_spread,
+        sector=party.sector,
+        paths=req.paths,
+        seed=req.seed,
+    )
+    return xva.compute_sensitivities(run, today, _book(pf, req.netting_set_id))
+
+
+__all__ = [
+    "PortfolioXvaRequest",
+    "PortfolioXvaSensitivitiesRequest",
+    "compute",
+    "compute_sensitivities",
+    "request",
+    "trades",
+]

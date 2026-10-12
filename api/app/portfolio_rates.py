@@ -407,11 +407,91 @@ _MARKS = {
 }
 
 
+# ── Sensitivities ────────────────────────────────────────────────────────────
+
+#: One basis point: the move of a curve and of a normal volatility.
+BP = 1e-4
+#: The relative move of the exchange rate the FX delta is measured on.
+SPOT_MOVE = 0.01
+
+
+class _Moved:
+    """The market of a day with one thing moved: the swap curve of a
+    currency shifted in parallel (every zero rate by `curve` ), the swaption
+    vols by `vol`, or the exchange rate by a factor. Only the day's own
+    market moves: a coupon fixed on an earlier curve keeps its fixing."""
+
+    def __init__(self, md: Any, d: date, ccy: str = "", curve=0.0, vol=0.0, spot=1.0):
+        self._md, self._d, self._ccy = md, d, ccy
+        self._curve, self._vol, self._spot = curve, vol, spot
+        self.rates_history = self
+
+    # The part of RatesHistory the marks read.
+    def curve(self, ccy: str, d: date) -> Curve:
+        base: RatesHistory = self._md.rates_history
+        obs, times, dfs = base.curve(ccy, d)
+        if ccy != self._ccy or obs != base.curve(ccy, self._d)[0]:
+            return obs, times, dfs
+        return obs, times, [f * math.exp(-self._curve * t) for f, t in zip(dfs, times)]
+
+    def fixing(self, ccy: str, d: date) -> float:
+        _, times, dfs = self.curve(ccy, d)
+        return 1.0 / discount(times, dfs, years(d, add_years(d, 1))) - 1.0
+
+    def vols(self, ccy: str, obs: date) -> List[Tuple[float, float, float]]:
+        return [
+            (e, t, v + self._vol) for e, t, v in self._md.rates_history.vols(ccy, obs)
+        ]
+
+    # The part of MarketData they read.
+    def fx(self, ccy: str, base: str) -> Any:
+        series, d, factor = self._md.fx(ccy, base), self._d, self._spot
+
+        class _Series:
+            def at(self, when: date):
+                got = series.at(when)
+                if got is None or when != d:
+                    return got
+                return got[0], got[1] * factor
+
+        return _Series()
+
+
+def sensitivities(spec: RateFxSpec, d: date, md: Any, value: float) -> Dict[str, float]:
+    """What the mark moves by, by bumping and revaluing (the marks are
+    closed forms), in the currency of the mark:
+
+    - `pv01_usd`, `pv01_eur`: for one basis point more on every zero rate of
+      that currency's swap curve;
+    - `fx_delta`: the euros the trade is long of — the move of its value for
+      a move of EUR/USD, per dollar of that move;
+    - `normal_vega`: for one basis point more of normal volatility.
+
+    Only what the product depends on is there.
+    """
+    price = _MARKS[spec.product]
+    out: Dict[str, float] = {}
+    fx = spec.product in ("fx_forward", "cross_currency_swap")
+    for ccy in ("USD", "EUR") if fx else (spec.currency,):
+        moved = price(spec, d, _Moved(md, d, ccy, curve=BP)).value
+        out[f"pv01_{ccy.lower()}"] = moved - value
+    if fx:
+        _, spot = _spot(md, d)
+        moved = price(spec, d, _Moved(md, d, spot=1.0 + SPOT_MOVE)).value
+        out["fx_delta"] = (moved - value) / (SPOT_MOVE * spot)
+    if spec.product == "swaption":
+        out["normal_vega"] = price(spec, d, _Moved(md, d, vol=BP)).value - value
+    return out
+
+
 def mark(spec: RateFxSpec, d: date, md: Any) -> Mark:
-    """The mark of one contract on `d`, in `spec.value_currency`; a Mark with
-    no value and its reason when the store cannot back it."""
+    """The mark of one contract on `d`, in `spec.value_currency`, with its
+    sensitivities; a Mark with no value and its reason when the store cannot
+    back it."""
     try:
         m = _MARKS[spec.product](spec, d, md)
+        if m.value is not None and math.isfinite(m.value):
+            m.greeks = sensitivities(spec, d, md, m.value)
     except NoMark as exc:
         return Mark(None, spec.value_currency, note=str(exc))
     except Exception as exc:  # noqa: BLE001 — one position must not sink the book
@@ -495,6 +575,7 @@ __all__ = [
     "mark",
     "par_rate",
     "schedule",
+    "sensitivities",
     "swap_value",
     "years",
 ]

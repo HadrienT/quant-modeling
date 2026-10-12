@@ -6273,6 +6273,66 @@
         "title": "PortfolioXvaRequest",
         "type": "object"
       },
+      "PortfolioXvaSensitivitiesRequest": {
+        "description": "The netting set whose CVA, DVA and FVA are differentiated to every\nmarket quote: its dollar swaps and European swaptions, at the rates of\ntheir contracts.",
+        "properties": {
+          "borrowing_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Borrowing Spread",
+            "type": "number"
+          },
+          "lending_spread": {
+            "default": 0.0,
+            "maximum": 0.1,
+            "minimum": 0.0,
+            "title": "Lending Spread",
+            "type": "number"
+          },
+          "netting_set_id": {
+            "title": "Netting Set Id",
+            "type": "string"
+          },
+          "own_rating": {
+            "default": "A",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Own Rating",
+            "type": "string"
+          },
+          "paths": {
+            "default": 5000,
+            "maximum": 20000.0,
+            "minimum": 1000.0,
+            "title": "Paths",
+            "type": "integer"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          },
+          "seed": {
+            "default": 42,
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "portfolio",
+          "netting_set_id"
+        ],
+        "title": "PortfolioXvaSensitivitiesRequest",
+        "type": "object"
+      },
       "Position-Input": {
         "description": "A position of the portfolios before the ledger (version 1) \u2014 read only to\nbe migrated (portfolio_ledger.migrate). product_type was spelled two ways\n(this enum, or the front's catalog keys), hence a plain string.",
         "properties": {
@@ -14825,6 +14885,45 @@
           }
         },
         "summary": "Xva Portfolio"
+      }
+    },
+    "/api/xva/portfolio/sensitivities": {
+      "post": {
+        "description": "The sensitivities of the adjustments of one netting set of a\nportfolio to every market quote, by adjoint differentiation.",
+        "operationId": "xva_portfolio_sensitivities",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioXvaSensitivitiesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/XvaSensitivitiesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Xva Portfolio Sensitivities"
       }
     },
     "/api/xva/portfolios": {

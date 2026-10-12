@@ -67,6 +67,54 @@ describe("aggregateRisk", () => {
 		expect(r.byUnderlying[0]!.delta).toBeCloseTo(9);
 	});
 
+	it("keeps rate and FX trades apart: their own risks, no equity greeks", () => {
+		const swap: Instrument = {
+			id: "irs",
+			label: "Receiver swap",
+			spec: {
+				kind: "rate_fx",
+				product: "swap",
+				currency: "USD",
+				notional: 1e7,
+				payer: false,
+				start: "2026-10-12",
+				maturity: "2031-10-12",
+				fixed_rate: 0.0365,
+			},
+		};
+		const r = aggregateRisk(
+			[
+				mark({}),
+				mark({
+					instrument_id: "irs",
+					label: "Receiver swap",
+					kind: "rate_fx",
+					currency: "USD",
+					quantity: -1,
+					// per contract: a payer's, held on the other side
+					greeks: { pv01_usd: 4500 },
+				}),
+			],
+			[equityInstrument("AAPL"), swap],
+		);
+		expect(r.rates).toEqual([
+			{
+				instrumentId: "irs",
+				label: "Receiver swap",
+				currency: "USD",
+				pv01Usd: -4500,
+				pv01Eur: null,
+				fxDelta: null,
+				normalVega: null,
+			},
+		]);
+		const rates = r.byUnderlying.find((g) => g.underlying === "USD rates")!;
+		expect(rates.greeks).toBe(false);
+		expect(r.byUnderlying.find((g) => g.underlying === "AAPL")!.greeks).toBe(
+			true,
+		);
+	});
+
 	it("says how many open positions the aggregate covers", () => {
 		const r = aggregateRisk(
 			[

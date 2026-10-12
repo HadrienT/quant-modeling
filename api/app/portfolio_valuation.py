@@ -912,6 +912,12 @@ METHODOLOGY = [
             "smile. An FX forward and a cross-currency swap discount each leg on its "
             "own swap curve and convert the euro leg at the spot rate, with no "
             "cross-currency basis (none is stored); they are valued in dollars.",
+            "Their risks (Risk tab) are bumps of that market, revalued: PV01 is the "
+            "change of the value for one basis point more on every zero rate of a "
+            "currency's swap curve, the FX delta the euros the trade is long of, the "
+            "vega the change for one basis point more of normal volatility. A coupon "
+            "already fixed does not move with today's curve. They have no equity "
+            "greeks.",
         ],
     ),
     (

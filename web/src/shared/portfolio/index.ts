@@ -6,7 +6,11 @@ export {
 	readLocalPortfolios,
 	clearLocalPortfolios,
 } from "./repository";
-export { aggregateRisk, type RiskAggregate } from "./risk";
+export {
+	aggregateRisk,
+	type RateSensitivities,
+	type RiskAggregate,
+} from "./risk";
 export {
 	DEFAULT_CSA,
 	RATINGS,

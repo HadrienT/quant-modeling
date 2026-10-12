@@ -28,6 +28,7 @@ from api.app.portfolio_schemas import (
     Trade,
     add_years,
 )
+from api.tests import test_xva
 from api.tests.test_xva import AS_OF, PATHS, client, run, store  # noqa: F401
 
 NOTIONAL = 10_000_000.0
@@ -350,6 +351,82 @@ def test_one_share_per_netting_set_and_no_second_currency_with_it():
 def test_a_share_without_history_is_an_explicit_error():
     r = post(_pf(_option(100.0, underlying="ZZZ")))
     assert r.status_code == 503 and "No close of ZZZ" in r.text
+
+
+# ── Sensitivities of a netting set, by adjoint differentiation ───────────────
+
+
+def risks(pf: Portfolio, netting_set="example-corporate-isda", **body):
+    return client.post(
+        "/api/xva/portfolio/sensitivities",
+        json={
+            "portfolio": pf.model_dump(mode="json"),
+            "netting_set_id": netting_set,
+            "paths": PATHS,
+            **body,
+        },
+    )
+
+
+def test_the_sensitivities_of_the_teaching_swap_recomposed_are_the_same():
+    page = client.post(
+        "/api/xva/sensitivities",
+        json={
+            "portfolio": "single_swap",
+            "paths": PATHS,
+            "sector": "basic_materials_energy_industrials",
+        },
+    ).json()
+    par = run(portfolio="single_swap")["trades"][0]["fixed_rate"]
+    r = risks(_pf(_swap(par)))
+    assert r.status_code == 200, r.text
+    mine = r.json()
+    assert mine["portfolio"] == "ledger"
+    for key in ("adjustments", "swap_rates", "swaption_vols", "sa_cva"):
+        assert mine[key] == page[key], key
+
+
+def test_adjoint_sensitivities_of_a_trade_off_the_market_match_bumped_quotes():
+    # Off the market, starting in a year, on the other side: nothing the
+    # teaching portfolios have.
+    pf = _pf(
+        _swap(0.040, years=7, start=add_years(AS_OF, 1), payer=False),
+        _swap(0.052, years=4),
+        quantity=1.0,
+    )
+    base = risks(pf, seed=3).json()
+    tenors = [q["tenor"] for q in base["swap_rates"]]
+    for tenor in (5, 10):
+        reported = base["swap_rates"][tenors.index(float(tenor))]
+        bumped = {}
+        quoted = test_xva.PAR[tenor]
+        try:
+            for sign in (+1, -1):
+                test_xva.PAR[tenor] = quoted + sign * 1e-4
+                bumped[sign] = risks(pf, seed=3).json()["adjustments"]
+        finally:
+            test_xva.PAR[tenor] = quoted
+        for name in ("cva", "dva"):
+            finite = (bumped[1][name]["value"] - bumped[-1][name]["value"]) / 2e-4
+            assert reported[name]["value"] == pytest.approx(
+                finite, rel=0.03, abs=3 * reported[name]["error"]
+            ), (tenor, name)
+    # Both trades end before 10 years... the 8-year receiver does not: the
+    # 10-year quote matters, the 30-year one does not.
+    assert base["swap_rates"][tenors.index(10.0)]["cva"]["value"] != 0.0
+    assert base["swap_rates"][-1]["cva"]["value"] == 0.0
+
+
+def test_sensitivities_say_what_they_do_not_cover():
+    r = risks(_pf(_swap(0.047), _option(100.0)))
+    assert r.status_code == 422 and "equity options" in r.text
+    r = risks(_pf(_swap(0.047), netting_set="example-dealer-im"), "example-dealer-im")
+    assert r.status_code == 422 and "initial margin" in r.text
+    r = risks(_pf(_option(100.0, product="american_vanilla")))
+    assert r.status_code == 422 and "no such trade" in r.text
+    # A swap already running: the coupon in progress is said to be left out.
+    body = risks(_pf(_swap(0.045, start=date(2025, 3, 31)))).json()
+    assert any("coupon in progress" in w for w in body["warnings"])
 
 
 def test_the_audit_record_holds_the_trades_and_not_the_portfolio(store):

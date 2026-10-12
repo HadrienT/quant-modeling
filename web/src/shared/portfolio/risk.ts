@@ -9,11 +9,31 @@ import { underlyingOf } from "./ledger";
  * so an equity line contributes its share count to delta.
  */
 
+/**
+ * What a rate or FX trade moves by, for the position held (quantity × the
+ * contract's), in the currency of its mark: per basis point of each swap
+ * curve, per dollar of EUR/USD (the euros it is long of), per basis point of
+ * normal volatility. null where the trade does not depend on it.
+ */
+export type RateSensitivities = {
+	instrumentId: string;
+	label: string;
+	currency: string;
+	pv01Usd: number | null;
+	pv01Eur: number | null;
+	fxDelta: number | null;
+	normalVega: number | null;
+};
+
 export type RiskAggregate = {
 	valuedCount: number;
 	openCount: number;
+	/** rate and FX trades, one row each: their risks do not add up to greeks */
+	rates: RateSensitivities[];
 	byUnderlying: {
 		underlying: string;
+		/** false for rate and FX trades, which have no equity greeks */
+		greeks: boolean;
 		marketValue: number;
 		unrealised: number;
 		delta: number;
@@ -30,6 +50,7 @@ export function aggregateRisk(
 ): RiskAggregate {
 	const byId = new Map(instruments.map((i) => [i.id, i]));
 	const groups = new Map<string, RiskAggregate["byUnderlying"][number]>();
+	const rates: RateSensitivities[] = [];
 	let valued = 0;
 	let open = 0;
 
@@ -41,8 +62,22 @@ export function aggregateRisk(
 		const key = underlyingOf(byId.get(p.instrument_id));
 		const g = p.greeks ?? {};
 		const q = p.quantity;
+		const contract = p.kind === "rate_fx";
+		if (contract) {
+			const held = (v: number | null | undefined) => (v == null ? null : q * v);
+			rates.push({
+				instrumentId: p.instrument_id,
+				label: p.label,
+				currency: p.currency,
+				pv01Usd: held(g.pv01_usd),
+				pv01Eur: held(g.pv01_eur),
+				fxDelta: held(g.fx_delta),
+				normalVega: held(g.normal_vega),
+			});
+		}
 		const acc = groups.get(key) ?? {
 			underlying: key,
+			greeks: !contract,
 			marketValue: 0,
 			unrealised: 0,
 			delta: 0,
@@ -64,6 +99,7 @@ export function aggregateRisk(
 	return {
 		valuedCount: valued,
 		openCount: open,
+		rates,
 		byUnderlying: [...groups.values()].sort(
 			(a, b) => Math.abs(b.marketValue) - Math.abs(a.marketValue),
 		),

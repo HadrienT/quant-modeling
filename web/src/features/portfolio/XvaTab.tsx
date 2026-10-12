@@ -1,6 +1,10 @@
 import { useState } from "react";
-import type { Portfolio, PortfolioXvaRequest } from "@/shared/api";
-import { usePortfolioXva } from "@/shared/api";
+import type {
+	Portfolio,
+	PortfolioXvaRequest,
+	PortfolioXvaSensitivitiesRequest,
+} from "@/shared/api";
+import { usePortfolioXva, usePortfolioXvaSensitivities } from "@/shared/api";
 import { RATINGS, netQuantities } from "@/shared/portfolio";
 import {
 	Button,
@@ -19,6 +23,7 @@ import {
 	ExposurePanel,
 	ForeignMarketPanel,
 	MarginCapitalPanel,
+	SensitivitiesPanel,
 	TradesTable,
 	XvaResultHeader,
 } from "@/shared/xva";
@@ -53,6 +58,20 @@ export function XvaTab({ pf }: { pf: Portfolio }) {
 	const [paths, setPaths] = useState(10000);
 	const [request, setRequest] = useState<PortfolioXvaRequest | null>(null);
 	const result = usePortfolioXva(request);
+	// The sensitivities are another simulation, asked for from their tab; a
+	// new run of the netting set starts them over.
+	const [risksOf, setRisksOf] = useState<PortfolioXvaRequest | null>(null);
+	const risks = usePortfolioXvaSensitivities(
+		request &&
+			({
+				portfolio: request.portfolio,
+				netting_set_id: request.netting_set_id,
+				own_rating: request.own_rating,
+				borrowing_spread: request.borrowing_spread,
+				lending_spread: request.lending_spread,
+			} as PortfolioXvaSensitivitiesRequest),
+		risksOf === request && request != null,
+	);
 	const data = result.data;
 	const id = chosen ?? traded[0]?.id ?? null;
 
@@ -166,6 +185,7 @@ export function XvaTab({ pf }: { pf: Portfolio }) {
 							<TabsTrigger value="exposure">Exposure</TabsTrigger>
 							<TabsTrigger value="adjustments">Adjustments</TabsTrigger>
 							<TabsTrigger value="capital">Margin and capital</TabsTrigger>
+							<TabsTrigger value="sensitivities">Sensitivities</TabsTrigger>
 						</TabsList>
 						<TabsContent value="exposure">
 							<ExposurePanel data={data} />
@@ -178,6 +198,14 @@ export function XvaTab({ pf }: { pf: Portfolio }) {
 						</TabsContent>
 						<TabsContent value="capital">
 							<MarginCapitalPanel data={data} />
+						</TabsContent>
+						<TabsContent value="sensitivities">
+							<SensitivitiesPanel
+								query={risks}
+								asked={risksOf === request}
+								onAsk={() => setRisksOf(request)}
+								id="portfolio-xva-sensitivities-methodology"
+							/>
 						</TabsContent>
 					</Tabs>
 					<Methodology
