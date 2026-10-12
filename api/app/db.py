@@ -823,6 +823,103 @@ def dividend_yield_on_or_before(
     return (row[0], float(row[1])) if row else None
 
 
+# ── Backtest reads (blueprint/wp/24-backtest.md, lot B8) ────────────────────
+#
+# prices.raw_daily   bars as quoted, never adjusted: the engine keeps a book in
+#                    shares and cash and applies dividends and splits itself.
+#                    Never prices.sp500_daily here: its closes are adjusted as
+#                    of the day each row was written.
+# prices.dividends   (ticker, ex_date, amount per share)
+# prices.splits      (ticker, date, ratio = new shares per old)
+# macro.fred_series, factors.french_daily: versioned (observed_at). The
+#                    backtest reads the FIRST vintage stored for each date, the
+#                    closest this database has to the value known that day, and
+#                    one a later revision cannot move under a replay.
+
+
+def raw_daily_bars(
+    tickers: Sequence[str], start: date, end: date
+) -> List[Tuple[date, str, float, float, float, float, Optional[int]]]:
+    """(date, ticker, open, high, low, close, volume), by date then ticker.
+    A day without a quote has no row."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT date, ticker, open, high, low, close, volume "
+            "FROM prices.raw_daily "
+            "WHERE ticker = ANY(%s) AND date BETWEEN %s AND %s "
+            "ORDER BY date, ticker",
+            (list(tickers), start, end),
+        )
+        return cur.fetchall()
+
+
+def raw_daily_coverage(tickers: Sequence[str]) -> dict:
+    """ticker → (first date, last date, number of bars)."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT ticker, min(date), max(date), count(*) FROM prices.raw_daily "
+            "WHERE ticker = ANY(%s) GROUP BY ticker",
+            (list(tickers),),
+        )
+        return {t: (lo, hi, int(n)) for t, lo, hi, n in cur.fetchall()}
+
+
+def dividends(
+    tickers: Sequence[str], start: date, end: date
+) -> List[Tuple[str, date, float]]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT ticker, ex_date, amount FROM prices.dividends "
+            "WHERE ticker = ANY(%s) AND ex_date BETWEEN %s AND %s "
+            "ORDER BY ex_date, ticker",
+            (list(tickers), start, end),
+        )
+        return cur.fetchall()
+
+
+def splits(
+    tickers: Sequence[str], start: date, end: date
+) -> List[Tuple[str, date, float]]:
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT ticker, date, ratio FROM prices.splits "
+            "WHERE ticker = ANY(%s) AND date BETWEEN %s AND %s "
+            "ORDER BY date, ticker",
+            (list(tickers), start, end),
+        )
+        return cur.fetchall()
+
+
+def fred_first_vintage(
+    series_id: str, start: date, end: date
+) -> List[Tuple[date, float]]:
+    """(date, value) of a FRED series, first vintage stored for each date."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT ON (date) date, value FROM macro.fred_series "
+            "WHERE series_id = %s AND value IS NOT NULL "
+            "AND date BETWEEN %s AND %s ORDER BY date, observed_at",
+            (series_id, start, end),
+        )
+        return [(d, float(v)) for d, v in cur.fetchall()]
+
+
+def french_first_vintage(
+    dataset: str, start: date, end: date
+) -> List[Tuple[date, str, float]]:
+    """(date, factor, value in percent, as published) of one of Kenneth
+    French's daily datasets, first vintage stored for each date."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT ON (date, factor) date, factor, value "
+            "FROM factors.french_daily "
+            "WHERE dataset = %s AND date BETWEEN %s AND %s "
+            "ORDER BY date, factor, observed_at",
+            (dataset, start, end),
+        )
+        return [(d, f, float(v)) for d, f, v in cur.fetchall()]
+
+
 # ── The one write path: caching a live option-chain fetch ──────────────────
 
 

@@ -23,16 +23,34 @@ Tout le reste est là-bas, et y est canonique :
 
 ## 1. État
 
-- **La page `/backtest` est masquée** depuis le 11 octobre 2026 : elle
-  affichait des chiffres faux (alpha quotidien affiché « 0.00 », taux sans
-  risque d'aujourd'hui appliqué au passé, indice sans dividendes face à des
-  titres avec). Elle est retirée du menu, de l'accueil et du sitemap ; l'URL
-  répond « not found ».
-- **L'ancien code n'est pas repris.** `api/app/routers/backtest.py` et
-  `web/src/features/backtest/` restent dans l'arbre jusqu'à leur remplacement,
-  pour que le contrat OpenAPI et le typecheck ne bougent pas entre-temps. Ne
-  pas les corriger, ne pas les étendre.
-- La route `POST /api/backtest/run` répond encore. Plus rien ne l'appelle.
+- **L'onglet stratégie est en ligne** (12 octobre 2026). La page `/backtest`
+  est revenue dans le menu, l'accueil et le sitemap. L'ancien routeur
+  (`POST /api/backtest/run`) et l'ancienne page ont été supprimés, sans rien
+  en reprendre.
+- **Fait** : lectures point-in-time (`db.py`, `backtest/market.py`), routeur
+  (`GET /api/backtest/universe`, `POST /api/backtest/strategy`,
+  `POST /api/backtest/validation`), événement `backtest.run` et son replay
+  (`backtest/record.py`, `POST /api/admin/replay/{id}`), page avec cinq
+  volets : performance, coûts, significativité, surapprentissage, données et
+  conventions.
+- **Pas de file de tâches** : un run sur une douzaine de fonds et dix-huit ans
+  prend deux secondes, bootstrap compris. La tranche « Tâche » attend le
+  premier onglet qui en a besoin (la couverture, sans doute).
+- **Reste à faire** : onglets couverture et modèle de risque ; journal des
+  essais (le Sharpe déflaté ne compte aujourd'hui que les configurations de
+  la requête, et la page le dit) ; univers S&P 500 à date par
+  `prices.sp500_membership` (la page ne propose que des listes choisies à la
+  main, avec un avertissement dès qu'une action y figure).
+- **Lectures « as-of »** : `macro.fred_series` et `factors.french_daily` ne
+  sont versionnées que depuis leur chargement (septembre et octobre 2026). Le
+  backtest lit le **premier millésime stocké** de chaque date : ce que la base
+  a de plus proche de la valeur connue ce jour-là, et qu'une révision
+  ultérieure ne déplace pas sous un replay.
+- **Ce qui reste du calcul ici**, et rien d'autre (`backtest/engine.py`) :
+  changements d'unité (points de base, pourcents), rendements
+  `value[t] / value[t-1] - 1`, rendement moins taux sans risque, indices de
+  ligne en dates. Côté page : l'indice de référence rebasé sur le capital
+  initial pour être tracé à côté des livres.
 - **Tranche « Wheel » faite.** Le moteur est épinglé par son commit dans
   `api/quantbacktest.pin`, seul endroit où l'épinglage vit : un commit plutôt
   qu'une version, parce qu'en `0.x` une signature peut changer sans que la
@@ -41,7 +59,7 @@ Tout le reste est là-bas, et y est canonique :
   `pytest` ; le commit est passé au build (`-DQB_GIT_SHA`), si bien que
   `build_info()["git_sha"]` le rend dans l'image aussi.
   `api/tests/test_quantbacktest_pin.py` échoue si le wheel installé n'est pas
-  ce commit. Rien n'appelle encore le wheel.
+  ce commit.
 
 ## 2. Ce que ce dépôt doit faire (lot B8)
 

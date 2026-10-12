@@ -35,9 +35,7 @@ from api.app.audit.sinks import (
     set_sink_for_testing,
 )
 from api.app.main import app
-from api.app.routers import backtest
 from api.app import vol_surface
-from api.app.cache import TTLCache
 
 
 @pytest.fixture
@@ -189,21 +187,6 @@ def test_fallback_dividend_yield_when_no_stored_value(monkeypatch, inmemory_sink
         e.payload["kind"] for e in inmemory_sink.events if e.type == "data.fallback"
     ]
     assert FallbackKind.LIVE_YFINANCE_DIVIDEND.value in kinds
-
-
-def test_fallback_default_rate_when_no_macro_rate(monkeypatch, inmemory_sink):
-    monkeypatch.setattr(
-        backtest, "_RF_RATE_CACHE", TTLCache(max_size=64, ttl_seconds=60 * 30)
-    )
-    monkeypatch.setattr(backtest.db, "fred_latest_value", lambda series_id: None)
-
-    rate = backtest._fetch_risk_free_rate()
-
-    assert rate == 0.04
-    kinds = [
-        e.payload["kind"] for e in inmemory_sink.events if e.type == "data.fallback"
-    ]
-    assert FallbackKind.DEFAULT_RATE.value in kinds
 
 
 def test_record_fallback_is_a_thin_wrapper_around_emit(inmemory_sink):

@@ -29,13 +29,13 @@ test("create a portfolio and value it", async ({ page }) => {
 	await expect(page.getByText(/Total \(1\)/)).toBeVisible();
 });
 
-// Skipped while /backtest is hidden (blueprint WP 24).
-test.skip("run a backtest", async ({ page }) => {
+test("run a backtest", async ({ page }) => {
 	await page.goto("/backtest");
-	await page.getByRole("button", { name: /run backtest/i }).click();
-	await expect(page.getByText(/equity curve/i)).toBeVisible({
+	await expect(page.getByText(/value of 1,000,000 invested/i)).toBeVisible({
 		timeout: 60_000,
 	});
+	await page.getByRole("tab", { name: /significance/i }).click();
+	await expect(page.getByText(/sharpe ratios and their/i)).toBeVisible();
 });
 
 test("sign in and out", async ({ page }) => {

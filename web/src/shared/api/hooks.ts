@@ -2,7 +2,6 @@ import {
 	type UseQueryOptions,
 	useMutation,
 	useQuery,
-	useQueryClient,
 	keepPreviousData,
 } from "@tanstack/react-query";
 import { LONG_TIMEOUT_MS, api, signalWithTimeout } from "./client";
@@ -11,8 +10,6 @@ import { queryKeys } from "./queryKeys";
 import { STALE } from "./queryClient";
 import type {
 	AccountExport,
-	BacktestRequest,
-	BacktestResponse,
 	BSPathRequest,
 	CleanedIVSurfaceResponse,
 	DeltaSurfaceResponse,
@@ -401,27 +398,6 @@ export function useDeleteAccount() {
 		mutationFn: async () => {
 			const { error } = await api.DELETE("/api/auth/me");
 			if (error !== undefined) throw ApiError.from(error);
-		},
-	});
-}
-
-/* ── Backtest ──────────────────────────────────────────────────────────── */
-export function useRunBacktest() {
-	const qc = useQueryClient();
-	return useMutation<BacktestResponse, ApiError, BacktestRequest>({
-		mutationFn: async (req) => {
-			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
-			try {
-				return (await unwrap(
-					api.POST("/api/backtest/run", { body: req, signal: s }),
-				)) as BacktestResponse;
-			} finally {
-				s.cleanup();
-			}
-		},
-		onSuccess: (data, req) => {
-			// Cache the result so an identical re-run does not recompute.
-			qc.setQueryData(queryKeys.backtest.run(req), data);
 		},
 	});
 }
