@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim AS build-base
 
 WORKDIR /app
 
@@ -8,7 +8,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libeigen3-dev \
 	pybind11-dev \
 	ninja-build \
+	git \
+	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
+
+# The backtest engine, at the commit pinned in api/quantbacktest.pin
+# (blueprint/wp/24-backtest.md). Rebuilt only when the pin moves.
+FROM build-base AS backtest-builder
+
+COPY api/quantbacktest.pin ./api/quantbacktest.pin
+COPY scripts/install_quantbacktest.sh ./scripts/install_quantbacktest.sh
+RUN scripts/install_quantbacktest.sh --wheel-only
+
+FROM build-base AS builder
 
 COPY pyproject.toml CMakeLists.txt README.md ./
 COPY bindings ./bindings
@@ -38,7 +50,8 @@ RUN python -m pip install --upgrade pip --root-user-action=ignore \
 	&& python -m pip install --root-user-action=ignore -r api/requirements.txt
 
 COPY --from=builder /app/dist/*.whl /tmp/
-RUN python -m pip install --root-user-action=ignore --force-reinstall /tmp/*.whl \
+COPY --from=backtest-builder /app/dist/quantbacktest/*.whl /tmp/
+RUN python -m pip install --root-user-action=ignore --force-reinstall --no-deps /tmp/*.whl \
 	&& rm -rf /tmp/*.whl
 
 

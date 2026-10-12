@@ -1,5 +1,5 @@
-### ── Stage 1: Build the C++ quantModeling Python wheel ──────────
-FROM python:3.12-slim AS cpp-builder
+### ── Stage 0: Toolchain shared by the two wheel builds ─────────
+FROM python:3.12-slim AS build-base
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ WORKDIR /app
 # on the CPU. QM_CUDA=OFF gives the CPU-only wheel.
 ARG QM_CUDA=ON
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake libeigen3-dev pybind11-dev ninja-build \
+    build-essential cmake libeigen3-dev pybind11-dev ninja-build git ca-certificates \
     && if [ "$QM_CUDA" = "ON" ]; then \
          sed -i 's/^Components: main$/Components: main contrib non-free/' /etc/apt/sources.list.d/debian.sources \
          && apt-get update \
@@ -21,6 +21,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        fi \
     && rm -rf /var/lib/apt/lists/*
 
+### ── Stage 1a: Build the quantbacktest wheel ───────────────────
+# The backtest engine, from its own repository at the commit pinned in
+# api/quantbacktest.pin (blueprint/wp/24-backtest.md). Only that file and the
+# script are copied, so this stage is rebuilt when the pin moves and at no
+# other time. Its CMake fetches quantModeling at the commit quant-backtest
+# pins, which is not this checkout: the hedging backtest prices with that one.
+FROM build-base AS backtest-builder
+
+COPY api/quantbacktest.pin ./api/quantbacktest.pin
+COPY scripts/install_quantbacktest.sh ./scripts/install_quantbacktest.sh
+RUN scripts/install_quantbacktest.sh --wheel-only
+
+### ── Stage 1b: Build the C++ quantModeling Python wheel ────────
+FROM build-base AS cpp-builder
+
+ARG QM_CUDA=ON
 COPY pyproject.toml CMakeLists.txt README.md ./
 COPY bindings ./bindings
 COPY include ./include
@@ -78,8 +94,10 @@ RUN python -m pip install --upgrade pip --root-user-action=ignore \
     && python -m pip install --root-user-action=ignore -r api/requirements.txt
 
 COPY --from=cpp-builder /app/dist/*.whl /tmp/
-RUN python -m pip install --root-user-action=ignore --force-reinstall /tmp/*.whl \
-    && rm -rf /tmp/*.whl
+COPY --from=backtest-builder /app/dist/quantbacktest/*.whl /tmp/
+RUN python -m pip install --root-user-action=ignore --force-reinstall --no-deps /tmp/*.whl \
+    && rm -rf /tmp/*.whl \
+    && python -c "import quantbacktest; print('quantbacktest', quantbacktest.build_info())"
 
 COPY --chown=quant:quant api ./api
 COPY --chown=quant:quant --from=frontend-builder /app/dist /usr/share/nginx/html

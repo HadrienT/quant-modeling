@@ -17,4 +17,8 @@ python -m pip install -r api/requirements.txt
 # after the first run this only recompiles the .cpp files that changed.
 scripts/dev_install.sh
 
+# The backtest engine, at the commit pinned in api/quantbacktest.pin. A no-op
+# once that commit is installed.
+scripts/install_quantbacktest.sh
+
 exec uvicorn api.app.main:app --reload

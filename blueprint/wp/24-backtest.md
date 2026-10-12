@@ -33,6 +33,15 @@ Tout le reste est là-bas, et y est canonique :
   pour que le contrat OpenAPI et le typecheck ne bougent pas entre-temps. Ne
   pas les corriger, ne pas les étendre.
 - La route `POST /api/backtest/run` répond encore. Plus rien ne l'appelle.
+- **Tranche « Wheel » faite.** Le moteur est épinglé par son commit dans
+  `api/quantbacktest.pin`, seul endroit où l'épinglage vit : un commit plutôt
+  qu'une version, parce qu'en `0.x` une signature peut changer sans que la
+  version bouge. `scripts/install_quantbacktest.sh` le lit, et à travers lui
+  `web/Dockerfile.prod`, `api/Dockerfile`, `scripts/run_api.sh` et le job CI
+  `pytest` ; le commit est passé au build (`-DQB_GIT_SHA`), si bien que
+  `build_info()["git_sha"]` le rend dans l'image aussi.
+  `api/tests/test_quantbacktest_pin.py` échoue si le wheel installé n'est pas
+  ce commit. Rien n'appelle encore le wheel.
 
 ## 2. Ce que ce dépôt doit faire (lot B8)
 

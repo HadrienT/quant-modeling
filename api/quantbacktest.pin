@@ -1,0 +1,16 @@
+# The quantbacktest wheel the API runs on (blueprint/wp/24-backtest.md, lot B8).
+#
+# The one place the pin lives: scripts/install_quantbacktest.sh reads it, and
+# through that script so do web/Dockerfile.prod, api/Dockerfile,
+# scripts/run_api.sh and the CI job `pytest`. api/tests/test_quantbacktest_pin.py
+# fails when the installed wheel is not this commit.
+#
+# A commit, not a version: while the wheel is 0.x a signature may change without
+# the version moving (~/quant-backtest/docs/contract.md, section 6). The version
+# is only checked against what that commit declares.
+#
+# Bumping it is step 3 of the contract's section 2: quant-backtest first pins
+# the quantModeling commit it prices with, then this file moves.
+QUANTBACKTEST_REPO=https://github.com/HadrienT/quant-backtest.git
+QUANTBACKTEST_SHA=2fa334e8993c91aa3b841ecbc266edee8b8f4202
+QUANTBACKTEST_VERSION=0.1.0
