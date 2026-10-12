@@ -197,14 +197,16 @@ const portfolioRoute = createRoute({
 });
 
 // ── Backtest ─────────────────────────────────────────────────────────────
-// Hidden: the page showed figures that do not hold up. It comes back with the
-// engine rebuilt in the quant-backtest repo. The route stays registered, out
-// of ROUTES and answering "not found", so features/backtest/ still typechecks.
+// The configuration is one base64 parameter: a backtest is a link.
+const BacktestPage = lazy(() => import("@/features/backtest/BacktestPage"));
 const backtestRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/backtest",
-	validateSearch: z.object({ c: z.string().optional() }).parse,
-	component: NotFound,
+	validateSearch: z.object({
+		c: z.string().optional(),
+		tab: z.string().optional(),
+	}).parse,
+	component: BacktestPage,
 });
 
 // ── About ────────────────────────────────────────────────────────────────
@@ -285,6 +287,7 @@ export const ROUTES = [
 	{ path: "/xva", label: "xVA" },
 	{ path: "/simulation", label: "Simulation" },
 	{ path: "/portfolio", label: "Portfolio" },
+	{ path: "/backtest", label: "Backtest" },
 	{ path: "/visualize", label: "Strategies" },
 	{ path: "/products", label: "Products" },
 	{ path: "/about", label: "About" },

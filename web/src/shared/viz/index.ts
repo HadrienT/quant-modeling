@@ -39,6 +39,9 @@ export {
 	type LinePoint,
 } from "./charts/lightweight";
 export { PnlHistoryChart, type PnlPoint } from "./charts/PnlHistoryChart";
+export { GrowthChart, type GrowthSeries } from "./charts/GrowthChart";
+export { WeightsChart } from "./charts/WeightsChart";
+export { IntervalChart, type IntervalRow } from "./charts/IntervalChart";
 export {
 	SurfaceView,
 	makeGrid,

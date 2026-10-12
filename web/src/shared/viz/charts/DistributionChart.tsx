@@ -5,8 +5,9 @@ import { niceDomain } from "../format";
 import { useChartTheme } from "../theme";
 
 /**
- * P&L histogram with VaR and ES drawn as vertical lines (blueprint WP 06 §2).
- * `samples` are raw P&L values; binning happens here.
+ * Histogram of raw samples, binned here: by default a P&L distribution with
+ * VaR and ES drawn as vertical lines (blueprint WP 06 §2). `xLabel` and
+ * `xFormat` make it the histogram of anything else.
  */
 export function DistributionChart({
 	samples,
@@ -14,6 +15,9 @@ export function DistributionChart({
 	expectedShortfall,
 	bins = 40,
 	title = "P&L distribution",
+	subtitle,
+	xLabel = "P&L",
+	xFormat = (v: number) => v.toFixed(0),
 	isLoading,
 	error,
 }: {
@@ -22,6 +26,9 @@ export function DistributionChart({
 	expectedShortfall?: number;
 	bins?: number;
 	title?: string;
+	subtitle?: string;
+	xLabel?: string;
+	xFormat?: (v: number) => string;
 	isLoading?: boolean;
 	error?: unknown;
 }) {
@@ -47,6 +54,7 @@ export function DistributionChart({
 	return (
 		<ChartFrame
 			title={title}
+			subtitle={subtitle}
 			isLoading={isLoading}
 			error={error}
 			isEmpty={isEmpty}
@@ -71,9 +79,9 @@ export function DistributionChart({
 						},
 					)}
 					yDomain={[0, Math.max(...hist.map((h) => h.n)) * 1.05]}
-					xLabel="P&L"
+					xLabel={xLabel}
 					zeroLine
-					xFormat={(v) => v.toFixed(0)}
+					xFormat={xFormat}
 					yFormat={(v) => v.toFixed(0)}
 				>
 					{({ xScale, yScale, innerHeight }) => (

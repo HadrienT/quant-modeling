@@ -66,3 +66,22 @@ export function niceDomain(
 	const pad = (max - min) * 0.06;
 	return [min - pad, max + pad];
 }
+
+const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+
+/** An ISO date as a year with a fraction, so that ticks fall on years. */
+export function yearFraction(iso: string): number {
+	const year = Number(iso.slice(0, 4));
+	const start = Date.UTC(year, 0, 1);
+	const end = Date.UTC(year + 1, 0, 1);
+	return year + (Date.parse(iso) - start) / (end - start);
+}
+
+/** A year with a fraction as a tick label: the year, or the month in it. */
+export function tickDate(v: number): string {
+	const year = Math.floor(v + 1e-9);
+	const month = Math.round((v - year) * 12);
+	if (month === 0) return String(year);
+	if (month === 12) return String(year + 1);
+	return `${MONTHS[month]} ${year}`;
+}

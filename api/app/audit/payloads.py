@@ -165,6 +165,37 @@ class XvaValuationPayload(BaseModel):
     ip_hash: str | None = None
 
 
+# ── backtest.run (blueprint/wp/24-backtest.md, lot B8) ───────────────────────
+
+
+class BacktestEngine(BaseModel):
+    """The `quantbacktest` wheel that ran: its version, its commit, and the
+    commit of quantModeling it prices with (its hedging module)."""
+
+    version: str
+    git_sha: str
+    quantmodeling_sha: str
+
+
+class BacktestRunPayload(BaseModel):
+    """A backtest, with what it takes to run it again and compare: the whole
+    request (seeds included, no credential), the fingerprint of every table
+    handed to the engine, the engine's build, and the headline figures.
+
+    These events are also the journal of the configurations tried on a
+    universe and a period, which the deflated Sharpe ratio counts."""
+
+    kind: str  # "strategy" | "validation"
+    request: dict[str, Any]
+    request_hash: str
+    fingerprints: dict[str, str]
+    engine: BacktestEngine
+    headline: dict[str, float | None]
+    timing: ValuationTiming
+    code: CodeVersion
+    ip_hash: str | None = None
+
+
 # ── assistant.chat ───────────────────────────────────────────────────────────
 
 
