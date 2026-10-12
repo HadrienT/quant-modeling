@@ -90,7 +90,8 @@ parseur et échoue s'ils ne passent plus.
 | `build/qm_xva_aad_bench [chemins] [threads]` | coût des sensibilités du CVA par différentiation adjointe contre une valorisation (WP 23, lot X8) |
 | `cmake --preset cuda && cmake --build build-cuda` | backend CUDA (WP 19, les deux V100) dans `build-cuda/` ; nvcc prend `g++-13` comme hôte (CUDA 12.4 refuse gcc 14). `ctest --test-dir build-cuda -L gpu` pour les seuls tests GPU (la CI n'a pas de GPU et ne les construit pas) ; `build-cuda/qm_gpu_bench` pour le benchmark en temps pour une erreur donnée, `qm_gpu_vr_bench` pour la réduction de variance générique, `qm_gpu_risk_bench` pour les risques GPU contre la tape CPU (lot G3), `qm_gpu_exposure_bench` pour l'exposition et le CVA d'un netting set (WP 23, lot X7). Côté Python : `QM_ENABLE_CUDA=1 scripts/run_api.sh` (ou `scripts/dev_install.sh`, `scripts/build_wheel.sh`) pour un module avec GPU ; l'image de prod le fait d'office (`QM_CUDA=ON`) |
 | `scripts/build_wheel.sh` | wheel pybind11 dans `dist/` |
-| `scripts/run_api.sh` | venv + wheel + `uvicorn --reload` |
+| `scripts/install_quantbacktest.sh` | construit et installe le wheel `quantbacktest` (moteur de backtest, dépôt `~/quant-backtest`) au commit épinglé dans `api/quantbacktest.pin` ; sans effet si ce commit est déjà installé. Lu aussi par les deux images Docker et par la CI : **monter la version du moteur, c'est changer ce seul fichier**. `NPROC=n` borne les compilations (16 par défaut) |
+| `scripts/run_api.sh` | venv + wheel + wheel `quantbacktest` épinglé + `uvicorn --reload` |
 | `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché, piste d'audit, producteur Kafka sur un faux broker, replay des valorisations), depuis la racine (`pytest.ini`). Lancés par la CI (job `pytest`, avec le vrai wheel) |
 | `docker compose up --build` | stack complète (API + front avec HMR) |
 | `cd web && npm run dev` | front seul |
