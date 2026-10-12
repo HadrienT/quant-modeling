@@ -1,0 +1,8 @@
+# Training side of blueprint/wp/25-ml.md: a development dependency, never
+# installed in the production image (the C++ core only reads weight files).
+# CPU build of PyTorch; for a GPU build, install torch from the matching
+# https://download.pytorch.org/whl/cuXXX index instead.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.5
+numpy
+pytest

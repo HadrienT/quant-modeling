@@ -66,6 +66,7 @@ htmlcov/
 *.whl
 venv/
 .venv/
+.venv-ml/
 ENV/
 env/
 

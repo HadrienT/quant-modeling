@@ -98,6 +98,7 @@ est à remplacer, pas à déplacer : c'est le préalable du
 | [22](wp/22-rough-bergomi.md) | Rough Bergomi calibré *(cœur C++)* | ξ0 répliqué sur le variance swap, (H, η, ρ) par Levenberg-Marquardt, pricer de surface sur chemins communs, modèle de script `rough_bergomi` |
 | [23](wp/23-xva.md) | xVA *(cœur C++, capstone)* | Exposition (EE, PFE, EEPE), netting, collatéral et MPoR, marge initiale (grille, SIMM, DIM), CVA / DVA / FVA / MVA / KVA, SA-CCR, IRB, BA-CVA / SA-CVA, wrong-way risk, moteur sur GPU, sensibilités CVA par AAD — compagnon de lecture de Gregory |
 | [24](wp/24-backtest.md) | Backtest *(API, page ; moteur dans `~/quant-backtest`)* | La moitié de ce dépôt : page `/backtest` masquée en attendant, puis wheel `quantbacktest`, lecture point-in-time, routeur mince, tâche annulable, audit et replay, page refaite. Le moteur C++, le compagnon de lecture et les lots B0 à B8 sont dans le dépôt `quant-backtest` |
+| [25](wp/25-ml.md) | Machine learning *(cœur C++)* | Differential ML (réseau jumeau et régression différentielle comme proxy de valeur future du moteur xVA), calibration neuronale du rough Bergomi, deep hedging sous coûts de transaction ; entraînement en PyTorch (`ml/qmml/`), évaluation en C++ (`ml::Mlp`) vérifiée contre PyTorch et contre la tape, chaque résultat comparé à sa référence classique — compagnon de lecture de Huge & Savine, Horvath et al., Buehler et al. |
 | [99](wp/99-recovered-work.md) | Travail perdu à refaire | Fiches produit disparues avec la VM |
 
 ## 5. Graphe de dépendances

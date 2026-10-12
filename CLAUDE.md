@@ -93,6 +93,7 @@ parseur et échoue s'ils ne passent plus.
 | `scripts/install_quantbacktest.sh` | construit et installe le wheel `quantbacktest` (moteur de backtest, dépôt `~/quant-backtest`) au commit épinglé dans `api/quantbacktest.pin` ; sans effet si ce commit est déjà installé. Lu aussi par les deux images Docker et par la CI : **monter la version du moteur, c'est changer ce seul fichier**. `NPROC=n` borne les compilations (16 par défaut) |
 | `scripts/run_api.sh` | venv + wheel + wheel `quantbacktest` épinglé + `uvicorn --reload` |
 | `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché, piste d'audit, producteur Kafka sur un faux broker, replay des valorisations), depuis la racine (`pytest.ini`). Lancés par la CI (job `pytest`, avec le vrai wheel) |
+| `uv venv .venv-ml && uv pip install --python .venv-ml/bin/python -r ml/requirements.txt`, puis `.venv-ml/bin/python -m pytest ml/tests` | côté entraînement du chantier ML (WP 25) : PyTorch en version CPU, dans un environnement à part — jamais dans celui de l'API ni dans l'image de prod. Le C++ ne fait que lire les fichiers de poids (`ml::Mlp`). Job CI `pytest-ml`. `cd ml && ../.venv-ml/bin/python -m qmml.make_fixture ../tests/data` régénère le jeu de cas partagé avec `tests/testMlp.cpp` |
 | `docker compose up --build` | stack complète (API + front avec HMR) |
 | `cd web && npm run dev` | front seul |
 | `cd web && npx tsc --noEmit` | typecheck du front |
