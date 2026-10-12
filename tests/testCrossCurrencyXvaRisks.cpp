@@ -6,6 +6,7 @@
 #include "quantModeling/instruments/fx/forward.hpp"
 #include "quantModeling/instruments/rates/swap.hpp"
 #include "quantModeling/models/rates/cross_currency_hull_white.hpp"
+#include "quantModeling/risk/collateral.hpp"
 #include "quantModeling/risk/exposure_metrics.hpp"
 #include "quantModeling/risk/xva.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
@@ -78,9 +79,17 @@ namespace quantModeling
             return out;
         }
 
-        XvaRiskInputs inputs(const Market &m)
+        XvaRiskInputs inputs(const Market &m, bool csa = false)
         {
             XvaRiskInputs in;
+            if (csa)
+            {
+                Csa terms;
+                terms.threshold_counterparty = 2.0;
+                terms.independent_amount = 0.5;
+                in.csa = terms;
+                in.cashflows = MarginPeriodCashflows::Withheld;
+            }
             in.counterparty = CreditCurve(m.hazard_c);
             in.own = CreditCurve(m.hazard_i);
             in.lgd_counterparty = m.lgd_c;
@@ -136,6 +145,31 @@ namespace quantModeling
             engine.add(option(100.0, 5.0, false, 2.0));
         }
 
+        /// Everything at once: swaps and swaptions of both currencies next to
+        /// a forward, a cross-currency swap and an option on the exchange
+        /// rate. Fixed rates are numbers, not par rates.
+        void mixed_book(CrossCurrencyExposureEngine &engine)
+        {
+            engine.add_domestic(make_swap(0.0, 6.0, 0.039, 1, 2, 120.0, true));
+            engine.add_domestic(make_swap(1.0, 4.0, 0.043, 1, 1, 90.0, false), 1.5);
+            engine.add_foreign(make_swap(0.0, 5.0, 0.027, 1, 1, 100.0, false));
+            engine.add_domestic(Swaption{make_swap(2.0, 5.0, 0.041, 1, 2, 150.0, true), 2.0});
+            engine.add_foreign(Swaption{make_swap(1.0, 4.0, 0.025, 1, 1, 110.0, false), 1.0}, -1.0);
+            engine.add(FXForward(1.14, 3.0, 40.0));
+            engine.add(CrossCurrencySwap(5.0, 50.0, 54.0, 0.025, 0.041, 1, false));
+            engine.add(option(1.12, 4.0, true, 60.0));
+        }
+
+        /// A swap and a swaption in dollars next to options on an asset: the
+        /// netting set of a portfolio with equity options.
+        void asset_and_rates_book(CrossCurrencyExposureEngine &engine)
+        {
+            engine.add_domestic(make_swap(0.0, 5.0, 0.040, 1, 1, 400.0, true));
+            engine.add_domestic(Swaption{make_swap(1.0, 4.0, 0.042, 1, 1, 300.0, false), 1.0});
+            engine.add(option(105.0, 2.0, true, 3.0));
+            engine.add(option(95.0, 4.0, false, 4.0), -1.0);
+        }
+
         Market asset_market()
         {
             Market m;
@@ -146,27 +180,32 @@ namespace quantModeling
             return m;
         }
 
-        XvaValues values(const Market &m, const Book &book, std::size_t paths)
+        /// A bumped run smooths exactly as the base run did: its widths.
+        XvaValues values(const Market &m, const Book &book, std::size_t paths, bool csa = false,
+                         const std::vector<Real> &widths = {})
         {
             const CrossCurrencyHullWhiteModel cc = model(m);
             CrossCurrencyExposureEngine engine(cc);
             book(engine);
-            return engine.xva_values(settings(paths), inputs(m));
+            XvaRiskInputs in = inputs(m, csa);
+            in.smoothing_widths = widths;
+            return engine.xva_values(settings(paths), in);
         }
 
-        XvaRisks risks(const Market &m, const Book &book, std::size_t paths, ThreadPool *pool = nullptr)
+        XvaRisks risks(const Market &m, const Book &book, std::size_t paths, ThreadPool *pool = nullptr,
+                       bool csa = false)
         {
             const CrossCurrencyHullWhiteModel cc = model(m);
             CrossCurrencyExposureEngine engine(cc);
             book(engine);
-            return engine.xva_risks(settings(paths), inputs(m), pool);
+            return engine.xva_risks(settings(paths), inputs(m, csa), pool);
         }
 
         /// Every adjoint sensitivity against a central difference of the same
         /// estimator, on the same scenarios.
-        void expect_adjoint_is_bump(const Market &base, const Book &book, std::size_t paths)
+        void expect_adjoint_is_bump(const Market &base, const Book &book, std::size_t paths, bool csa = false)
         {
-            const XvaRisks adjoint = risks(base, book, paths);
+            const XvaRisks adjoint = risks(base, book, paths, nullptr, csa);
             Market probe = base;
             ASSERT_EQ(factors(probe).size(), adjoint.factors.size());
             std::size_t compared = 0;
@@ -181,7 +220,8 @@ namespace quantModeling
                 const Real h = 2e-7 * std::max(std::abs(level), 0.01);
                 *factors(up)[j] += h;
                 *factors(down)[j] -= h;
-                const XvaValues high = values(up, book, paths), low = values(down, book, paths);
+                const XvaValues high = values(up, book, paths, csa, adjoint.smoothing_widths);
+                const XvaValues low = values(down, book, paths, csa, adjoint.smoothing_widths);
                 for (std::size_t o = 0; o < kXvaOutputs; ++o)
                 {
                     const Real bump = (high.values[o].value - low.values[o].value) / (2.0 * h);
@@ -199,15 +239,38 @@ namespace quantModeling
 
     TEST(CrossCurrencyXvaRisks, TheValuesAreThePricingEngines)
     {
-        for (const bool with_asset : {false, true})
+        struct Case
         {
-            const Market m = with_asset ? asset_market() : Market{};
-            const XvaRiskInputs in = inputs(m);
+            Market market;
+            Book book;
+            bool csa;
+        };
+        const std::vector<Case> cases{{Market{}, option_book, false},
+                                      {asset_market(), asset_book, false},
+                                      {Market{}, mixed_book, false},
+                                      {Market{}, mixed_book, true},
+                                      {asset_market(), asset_and_rates_book, true}};
+        for (const Case &c : cases)
+        {
+            const Market &m = c.market;
+            XvaRiskInputs in = inputs(m, c.csa);
+            // The pricing engine exercises on the sign of the swap: no ramp.
+            in.exercise_smoothing = 0.0;
             const CrossCurrencyHullWhiteModel cc = model(m);
             CrossCurrencyExposureEngine engine(cc);
-            with_asset ? asset_book(engine) : option_book(engine);
+            c.book(engine);
             const XvaValues direct = engine.xva_values(settings(3000), in);
-            const ExposureProfile profile = exposure_profile(engine.simulate(settings(3000)));
+
+            ExposureSimulationSettings s = settings(3000);
+            s.keep_cashflows = true;
+            if (c.csa)
+                s.grid.margin_period_of_risk = in.csa->margin_period_of_risk;
+            const ExposurePaths cube = engine.simulate(s);
+            CollateralSettings collateral;
+            collateral.cashflows = in.cashflows;
+            const ExposureProfile profile = c.csa
+                                                ? exposure_profile(collateralise(cube, *in.csa, {}, collateral))
+                                                : exposure_profile(cube);
             const auto near = [](Real a, Real b)
             { EXPECT_NEAR(a, b, 1e-9 * std::abs(b)); };
             near(direct[XvaOutput::Cva].value, cva_bilateral(profile, in.counterparty, in.own, m.lgd_c));
@@ -243,6 +306,32 @@ namespace quantModeling
     TEST(CrossCurrencyXvaRisks, OnAnAssetEveryAdjointSensitivityIsTheBump)
     {
         expect_adjoint_is_bump(asset_market(), asset_book, 400);
+    }
+
+    TEST(CrossCurrencyXvaRisks, OnSwapsAndSwaptionsOfBothCurrenciesEveryAdjointSensitivityIsTheBump)
+    {
+        expect_adjoint_is_bump(Market{}, mixed_book, 256);
+        // One width per rate trade, domestic ones first: the two swaptions
+        // are smoothed, the swaps are not.
+        const XvaRisks r = risks(Market{}, mixed_book, 64);
+        ASSERT_EQ(r.smoothing_widths.size(), 5u);
+        EXPECT_EQ(r.smoothing_widths[0], 0.0);
+        EXPECT_EQ(r.smoothing_widths[1], 0.0);
+        EXPECT_GT(r.smoothing_widths[2], 0.0);
+        EXPECT_EQ(r.smoothing_widths[3], 0.0);
+        EXPECT_GT(r.smoothing_widths[4], 0.0);
+    }
+
+    TEST(CrossCurrencyXvaRisks, UnderACsaEveryAdjointSensitivityIsTheBump)
+    {
+        expect_adjoint_is_bump(Market{}, mixed_book, 256, true);
+        expect_adjoint_is_bump(Market{}, option_book, 256, true);
+    }
+
+    TEST(CrossCurrencyXvaRisks, OnAnAssetWithRateTradesEveryAdjointSensitivityIsTheBump)
+    {
+        expect_adjoint_is_bump(asset_market(), asset_and_rates_book, 256);
+        expect_adjoint_is_bump(asset_market(), asset_and_rates_book, 256, true);
     }
 
     TEST(CrossCurrencyXvaRisks, TheSignsAndTheErrorsMakeSense)
@@ -291,21 +380,21 @@ namespace quantModeling
             EXPECT_DOUBLE_EQ(alone.risks[k], many.risks[k]);
     }
 
-    TEST(CrossCurrencyXvaRisks, WhatIsNotDifferentiatedYetIsRefused)
+    TEST(CrossCurrencyXvaRisks, RefusesWhatIsNotARun)
     {
         const Market m;
         const CrossCurrencyHullWhiteModel cc = model(m);
-        // A swap of one currency: not in this first slice.
-        CrossCurrencyExposureEngine with_swap(cc);
-        with_swap.add_domestic(make_swap(0.0, 5.0, 0.04, 1, 1, 100.0, true));
-        EXPECT_THROW(with_swap.xva_risks(settings(100), inputs(m)), InvalidInput);
-        // A collateral agreement.
-        CrossCurrencyExposureEngine engine(cc);
-        fx_book(engine);
-        XvaRiskInputs collateralised = inputs(m);
-        collateralised.csa = Csa{};
-        EXPECT_THROW(engine.xva_risks(settings(100), collateralised), InvalidInput);
         EXPECT_THROW(CrossCurrencyExposureEngine(cc).xva_values(settings(100), inputs(m)), InvalidInput);
+        CrossCurrencyExposureEngine engine(cc);
+        mixed_book(engine);
+        EXPECT_THROW(engine.xva_risks(settings(0), inputs(m)), InvalidInput);
+        // One smoothing width per rate trade, or none.
+        XvaRiskInputs widths = inputs(m);
+        widths.smoothing_widths = {0.1, 0.2};
+        EXPECT_THROW(engine.xva_values(settings(100), widths), InvalidInput);
+        XvaRiskInputs lgd = inputs(m);
+        lgd.lgd_counterparty = 1.5;
+        EXPECT_THROW(engine.xva_values(settings(100), lgd), InvalidInput);
     }
 
 } // namespace quantModeling

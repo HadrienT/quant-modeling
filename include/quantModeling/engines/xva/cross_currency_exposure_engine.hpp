@@ -2,6 +2,7 @@
 #define QM_ENGINES_XVA_CROSS_CURRENCY_EXPOSURE_ENGINE_HPP
 
 #include "quantModeling/engines/xva/exposure_engine.hpp"
+#include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/engines/xva/future_value.hpp"
 #include "quantModeling/engines/xva/xva_risks.hpp"
 #include "quantModeling/instruments/base.hpp"
@@ -41,6 +42,10 @@ namespace quantModeling
             };
             std::vector<Flow> domestic, foreign;
             std::vector<Option> options;
+            /// The rate trades of one currency (swaps, European swaptions),
+            /// in the terms of the one-currency engine: each is read on its
+            /// own currency's rate, a foreign one converted at the spot.
+            ExposureProgram domestic_program, foreign_program;
         };
     } // namespace xva
 
@@ -189,12 +194,15 @@ namespace quantModeling
          * make_asset_model the foreign curve is the dividend yield, and the
          * foreign rate's own a, σ and correlations mean nothing.
          *
-         * Covered so far: trades made of known cash flows (FX forwards,
-         * fixed-for-fixed cross-currency swaps) and European options on the
-         * exchange rate or the asset, uncollateralised.
+         * Covered: every trade the engine takes — known cash flows (FX
+         * forwards, fixed-for-fixed cross-currency swaps), European options
+         * on the exchange rate or the asset, swaps and European swaptions of
+         * either currency — with or without variation margin. A swaption's
+         * exercise is smoothed as in the one-currency run
+         * (XvaRiskInputs::exercise_smoothing; one width per rate trade,
+         * domestic ones first).
          *
-         * @throws InvalidInput for a trade of one currency (a swap, a
-         *         swaption), under a CSA, or when simulate() would throw.
+         * @throws InvalidInput when simulate() would throw.
          */
         XvaRisks xva_risks(ExposureSimulationSettings settings, const XvaRiskInputs &inputs,
                            ThreadPool *pool = nullptr);
@@ -214,7 +222,7 @@ namespace quantModeling
         /// What a run of xva_risks() or xva_values() is set up with
         /// (src/engines/xva/cross_currency_xva_risks.cpp).
         struct RiskRun;
-        void prepare_risk_run(const ExposureSimulationSettings &settings, const XvaRiskInputs &inputs,
+        void prepare_risk_run(ExposureSimulationSettings &settings, const XvaRiskInputs &inputs,
                               RiskRun &run) const;
 
         const CrossCurrencyHullWhiteModel &model_;

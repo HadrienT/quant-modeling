@@ -2,6 +2,7 @@
 
 #include "adjoint_support.hpp"
 
+#include "quantModeling/risk/collateral.hpp"
 #include "quantModeling/utils/gauss_legendre.hpp"
 #include "quantModeling/utils/philox.hpp"
 #include "quantModeling/utils/stats.hpp"
@@ -13,6 +14,7 @@
 #include <cstdio>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <string>
 
 // blueprint/wp/23-xva.md §14.17: the adjoint of the two-currency exposure
@@ -22,6 +24,16 @@
 // differentiable number for the risks and on double for the values they are
 // checked against; the set-up recorded once before the mark, the paths after
 // it, the adjoints of a batch carried down to the inputs.
+
+namespace quantModeling::aad
+{
+    /// A rounded amount does not move with what it rounds: a constant
+    /// (risk/collateral_path.hpp finds this overload by its argument).
+    inline Number round_to_multiple(const Number &x, double unit)
+    {
+        return Number(std::round(x.value() / unit) * unit);
+    }
+} // namespace quantModeling::aad
 
 namespace quantModeling
 {
@@ -113,6 +125,19 @@ namespace quantModeling
                 std::size_t expiry_index;
             };
             std::vector<Option> options;
+
+            /// The swaps and swaptions of each currency, and the half-width
+            /// of the ramp of each one that is an option (0 otherwise).
+            xva::ExposureProgram program_d, program_f;
+            std::vector<Real> widths_d, widths_f;
+
+            /// The known flows paid at each date, per currency.
+            std::vector<Real> paid_d, paid_f;
+            bool collateralised = false;
+            /// Its `reporting` is always filled; the rest only under a CSA.
+            CollateralPlan plan;
+
+            bool flows() const { return collateralised && plan.needs_cashflows(); }
         };
 
         /// ln P(0, t) of one of the two curves, in T, kept by date.
@@ -264,6 +289,45 @@ namespace quantModeling
             Curve<T> domestic, foreign;
         };
 
+        /// One of the two rates as a model of its own: what the terms of a
+        /// swap or a swaption of that currency are functions of.
+        template <class T>
+        struct RateSide
+        {
+            const T &a, &sigma;
+            Curve<T> &curve;
+
+            T G(Time t, Time maturity) const { return Model<T>::G(a, t, maturity); }
+            T y(Time t) const { return Model<T>::y(a, sigma, t); }
+            T log_discount(Time t) { return curve.log_discount(t); }
+            HullWhiteTransition<T> transition(Time s, Time t, Time numeraire_maturity) const
+            {
+                return hull_white_transition(a, sigma, s, t, numeraire_maturity);
+            }
+        };
+
+        /// Undiscounted Black price on a forward, from the deviation of its
+        /// logarithm at the expiry.
+        template <class T>
+        T black(const T &forward, Real strike, const T &deviation, bool call)
+        {
+            using std::log;
+            if (!(value_of(deviation) > 1e-12))
+            {
+                const bool in = call ? value_of(forward) > strike : value_of(forward) < strike;
+                if (!in)
+                    return T(0.0);
+                return call ? T(forward - strike) : T(strike - forward);
+            }
+            const T d1 = log(forward / strike) / deviation + 0.5 * deviation;
+            const T d2 = d1 - deviation;
+            const T price = call ? T(forward * cdf_of(d1) - strike * cdf_of(d2))
+                                 : T(strike * cdf_of(T(-d2)) - forward * cdf_of(T(-d1)));
+            // Far out of the money the difference of two rounded products can
+            // fall a hair below zero: a price does not.
+            return value_of(price) < 0.0 ? T(0.0) : price;
+        }
+
         /// amount × exp(-G x): a cash flow seen from a date, given the state.
         template <class T>
         struct Bond
@@ -294,8 +358,13 @@ namespace quantModeling
             std::vector<OptionDate> option_dates;
             std::vector<std::size_t> option_offset;
 
-            /// Per output, the weight of each date.
+            /// The swaps and swaptions of each currency.
+            ProgramSetup<T> program_d, program_f;
+
+            /// Per output, the weight of each reporting date.
             std::array<std::vector<T>, kXvaOutputs> weights;
+            /// The collateral held today: the call on today's value.
+            T held_today;
         };
 
         template <class T>
@@ -354,13 +423,17 @@ namespace quantModeling
                 }
             }
 
-            // Default and funding weights of each date (risk/xva.hpp: first
-            // to default, and the running funding cost).
+            RateSide<T> side_d{p.a_d, p.sigma_d, m.domestic}, side_f{p.a_f, p.sigma_f, m.foreign};
+            build_program(f.program_d, side_d, s.program_d);
+            build_program(f.program_f, side_f, s.program_f);
+
+            // Default and funding weights of each reporting date
+            // (risk/xva.hpp: first to default, and the running funding cost).
             T sc_before(1.0), si_before(1.0);
             previous = 0.0;
-            for (std::size_t i = 0; i < n; ++i)
+            for (const int i : f.plan.reporting)
             {
-                const Time t = f.times[i];
+                const Time t = f.times[static_cast<std::size_t>(i)];
                 const T sc = exp(log_survival(f.hazard_times_c, p.hazard_c, t));
                 const T si = exp(log_survival(f.hazard_times_i, p.hazard_i, t));
                 const auto push = [&s](XvaOutput o, const T &w)
@@ -374,36 +447,100 @@ namespace quantModeling
                 si_before = si;
                 previous = t;
             }
+
+            // The collateral held today is the call on today's value, in
+            // domestic currency: every trade seen from today.
+            s.held_today = T(0.0);
+            if (f.collateralised)
+            {
+                T value(0.0), foreign(0.0);
+                for (const Fixed::Flow &flow : f.flows_d)
+                    value += flow.amount * exp(m.domestic.log_discount(flow.time));
+                for (const Fixed::Flow &flow : f.flows_f)
+                    foreign += flow.amount * exp(m.foreign.log_discount(flow.time));
+                for (const Fixed::Option &o : f.options)
+                {
+                    const T bond_d = exp(m.domestic.log_discount(o.expiry));
+                    const T forward = p.spot * exp(m.foreign.log_discount(o.expiry)) / bond_d;
+                    value += o.notional * bond_d *
+                             black(forward, o.strike, T(sqrt(m.forward_variance(0.0, o.expiry))), o.call);
+                }
+                value += program_value_today(f.program_d, s.program_d, side_d);
+                foreign += program_value_today(f.program_f, s.program_f, side_f);
+                value += p.spot * foreign;
+                s.held_today =
+                    balance_after_call(T(0.0), variation_margin_required(value, f.plan.terms), f.plan.terms);
+            }
         }
 
         template <class T>
         struct Workspace
         {
-            std::vector<T> x_d, x_f, spot, value;
+            std::vector<T> x_d, x_f, spot, value, flow, held;
             explicit Workspace(std::size_t n)
-                : x_d(n), x_f(n), spot(n), value(n) {}
+                : x_d(n), x_f(n), spot(n), value(n), flow(n), held(n) {}
         };
 
-        /// Undiscounted Black price on a forward, from the deviation of its
-        /// logarithm at the expiry.
+        /**
+         * The swaps and swaptions of one currency on one path, added to the
+         * value (and to the cash flows) of the netting set: read on that
+         * currency's rate, and, for the foreign one, converted at the spot of
+         * each date. A swaption becomes its swap at the expiry on the paths
+         * that exercise; the indicator is a ramp over [-width, width] of the
+         * swap's value, in the swap's own currency (xva_risks.hpp).
+         */
         template <class T>
-        T black(const T &forward, Real strike, const T &deviation, bool call)
+        void add_program(const xva::ExposureProgram &prog, const ProgramSetup<T> &setup,
+                         const std::vector<Real> &widths, const T *state, const T *spot, bool flows,
+                         Workspace<T> &ws)
         {
-            using std::log;
-            if (!(value_of(deviation) > 1e-12))
+            const xva::BasicProgramView<T> view = setup.view(prog);
+            const int n = static_cast<int>(prog.dates);
+            const auto add = [spot](T &to, int i, const T &amount)
             {
-                const bool in = call ? value_of(forward) > strike : value_of(forward) < strike;
-                if (!in)
-                    return T(0.0);
-                return call ? T(forward - strike) : T(strike - forward);
+                if (spot != nullptr)
+                    to += spot[i] * amount;
+                else
+                    to += amount;
+            };
+            for (std::size_t k = 0; k < prog.trades.size(); ++k)
+            {
+                const xva::ProgramTrade &trade = prog.trades[k];
+                const Real q = trade.quantity;
+                const int e = trade.expiry;
+                if (e < 0)
+                {
+                    for (int i = 0; i < n; ++i)
+                    {
+                        add(ws.value[static_cast<std::size_t>(i)], i,
+                            T(q * xva::program_linear_value(view, trade, i, state)));
+                        if (flows)
+                            add(ws.flow[static_cast<std::size_t>(i)], i,
+                                T(q * xva::program_linear_cashflow(view, trade, i, state)));
+                    }
+                    continue;
+                }
+                for (int i = 0; i < e; ++i)
+                    add(ws.value[static_cast<std::size_t>(i)], i,
+                        T(q * xva::program_option_value(view, trade, i, state)));
+                const T at_expiry = xva::program_linear_value(view, trade, e, state);
+                const Real width = widths[k];
+                const Real v = value_of(at_expiry);
+                if (width > 0.0 ? v <= -width : !(v > 0.0))
+                    continue;
+                // Fully exercised, or on the ramp.
+                const bool whole = !(width > 0.0) || v >= width;
+                const T gate = whole ? T(1.0) : T(0.5 + at_expiry / (2.0 * width));
+                add(ws.value[static_cast<std::size_t>(e)], e, T(q * gate * at_expiry));
+                for (int i = e + 1; i < n; ++i)
+                {
+                    add(ws.value[static_cast<std::size_t>(i)], i,
+                        T(q * gate * xva::program_linear_value(view, trade, i, state)));
+                    if (flows)
+                        add(ws.flow[static_cast<std::size_t>(i)], i,
+                            T(q * gate * xva::program_linear_cashflow(view, trade, i, state)));
+                }
             }
-            const T d1 = log(forward / strike) / deviation + 0.5 * deviation;
-            const T d2 = d1 - deviation;
-            const T price = call ? T(forward * cdf_of(d1) - strike * cdf_of(d2))
-                                 : T(strike * cdf_of(T(-d2)) - forward * cdf_of(T(-d1)));
-            // Far out of the money the difference of two rounded products can
-            // fall a hair below zero: a price does not.
-            return value_of(price) < 0.0 ? T(0.0) : price;
         }
 
         /// One path: the three factors, the value of the netting set at
@@ -414,6 +551,7 @@ namespace quantModeling
         {
             using std::exp;
             const std::size_t n = f.times.size();
+            const bool flows = f.flows();
 
             // The draws of the pricing engine, stream by stream.
             PhiloxGaussianSource draw_d(f.seed), draw_f(f.seed ^ kForeignStream), draw_s(f.seed ^ kFxStream);
@@ -446,6 +584,8 @@ namespace quantModeling
                 for (std::size_t j = 0; j < count_f; ++j)
                     foreign = foreign + b[j].amount * exp(-b[j].G * ws.x_f[i]);
                 ws.value[i] = count_f > 0 ? T(domestic + ws.spot[i] * foreign) : domestic;
+                if (flows)
+                    ws.flow[i] = f.paid_f[i] != 0.0 ? T(f.paid_d[i] + ws.spot[i] * f.paid_f[i]) : T(f.paid_d[i]);
             }
 
             // The options: Black on the forward of the path, until the expiry.
@@ -462,21 +602,46 @@ namespace quantModeling
                 }
             }
 
+            if (flows)
+                for (const Fixed::Option &o : f.options)
+                {
+                    // Settled in cash at the expiry.
+                    const T &spot = ws.spot[o.expiry_index];
+                    const T payoff = o.call ? T(spot - o.strike) : T(o.strike - spot);
+                    if (value_of(payoff) > 0.0)
+                        ws.flow[o.expiry_index] += o.notional * payoff;
+                }
+
+            add_program(f.program_d, s.program_d, f.widths_d, ws.x_d.data(), static_cast<const T *>(nullptr), flows,
+                        ws);
+            add_program(f.program_f, s.program_f, f.widths_f, ws.x_f.data(), ws.spot.data(), flows, ws);
+
+            CollateralPlanView plan = view(f.plan);
+            plan.dates = static_cast<int>(n);
+            if (f.collateralised)
+                collateral_balances(plan, ws.value.data(), ws.held.data(), s.held_today);
+
             for (T &o : out)
                 o = T(0.0);
-            for (std::size_t i = 0; i < n; ++i)
+            const std::size_t reporting = f.plan.reporting.size();
+            for (std::size_t r = 0; r < reporting; ++r)
             {
-                const T v = s.weight_scale[i] * exp(s.G_d[i] * ws.x_d[i]) * ws.value[i];
+                const std::size_t i = static_cast<std::size_t>(f.plan.reporting[r]);
+                const T v = s.weight_scale[i] * exp(s.G_d[i] * ws.x_d[i]) *
+                            (f.collateralised
+                                 ? collateralised_value(plan, static_cast<int>(r), ws.value.data(), ws.flow.data(),
+                                                        ws.held.data(), s.held_today)
+                                 : ws.value[i]);
                 if (v > 0.0)
                 {
-                    out[0] += s.weights[0][i] * v;
-                    out[2] += s.weights[2][i] * v;
-                    out[4] += s.weights[4][i] * v;
+                    out[0] += s.weights[0][r] * v;
+                    out[2] += s.weights[2][r] * v;
+                    out[4] += s.weights[4][r] * v;
                 }
                 else if (v < 0.0)
                 {
-                    out[1] += s.weights[1][i] * v;
-                    out[3] += s.weights[3][i] * v;
+                    out[1] += s.weights[1][r] * v;
+                    out[3] += s.weights[3][r] * v;
                 }
             }
         }
@@ -532,7 +697,7 @@ namespace quantModeling
         std::vector<std::string> labels;
     };
 
-    void CrossCurrencyExposureEngine::prepare_risk_run(const ExposureSimulationSettings &settings,
+    void CrossCurrencyExposureEngine::prepare_risk_run(ExposureSimulationSettings &settings,
                                                        const XvaRiskInputs &inputs, RiskRun &run) const
     {
         if (trades_.empty())
@@ -541,41 +706,81 @@ namespace quantModeling
             throw InvalidInput("two-currency engine: the number of paths must be > 0");
         if (settings.historical)
             throw InvalidInput("xVA risks: adjustments are prices and need the pricing measure");
-        if (inputs.csa)
-            throw InvalidInput("two-currency xVA risks: a collateral agreement is not differentiated "
-                               "yet; the sensitivities are those of an uncollateralised netting set");
         if (!(inputs.lgd_counterparty >= 0.0 && inputs.lgd_counterparty <= 1.0) ||
             !(inputs.lgd_own >= 0.0 && inputs.lgd_own <= 1.0))
             throw InvalidInput("xVA risks: loss given default must be in [0, 1]");
         if (!std::isfinite(inputs.borrowing_spread) || !std::isfinite(inputs.lending_spread))
             throw InvalidInput("xVA risks: the funding spreads must be finite");
+        if (!(inputs.exercise_smoothing >= 0.0))
+            throw InvalidInput("xVA risks: the exercise smoothing must be >= 0");
+        if (inputs.csa)
+        {
+            inputs.csa->validate();
+            settings.grid.margin_period_of_risk = inputs.csa->margin_period_of_risk;
+        }
 
         Fixed &f = run.fixed;
         f.times = grid(settings.grid);
         f.seed = settings.seed;
 
-        // The netting set in flat terms, quantities included.
+        // The netting set in flat terms, quantities included. A rate trade
+        // of one currency gives the one-currency engine's own terms, which
+        // need the grid.
         std::map<Time, Real> by_time_d, by_time_f;
+        xva::TwoFactorTerms terms;
+        Real value_today = 0.0;
         for (std::size_t k = 0; k < trades_.size(); ++k)
         {
-            xva::TwoFactorTerms terms;
+            const Real q = trades_[k].quantity;
+            trades_[k].value->bind(f.times);
+            value_today += q * trades_[k].value->value_today();
+            const std::size_t flows_d = terms.domestic.size(), flows_f = terms.foreign.size();
+            const std::size_t options = terms.options.size();
+            const std::size_t rate_d = terms.domestic_program.trades.size();
+            const std::size_t rate_f = terms.foreign_program.trades.size();
             if (!trades_[k].value->describe(terms))
                 throw InvalidInput("two-currency xVA risks: trade " + std::to_string(k) +
-                                   " is a rate trade of one currency (a swap, a swaption); the "
-                                   "sensitivities cover known cash flows and options on the exchange "
-                                   "rate so far");
-            const Real q = trades_[k].quantity;
-            for (const auto &flow : terms.domestic)
-                by_time_d[flow.time] += q * flow.amount;
-            for (const auto &flow : terms.foreign)
-                by_time_f[flow.time] += q * flow.amount;
-            for (const auto &o : terms.options)
+                                   " has no closed form; its sensitivities are not computed");
+            for (std::size_t j = flows_d; j < terms.domestic.size(); ++j)
+                by_time_d[terms.domestic[j].time] += q * terms.domestic[j].amount;
+            for (std::size_t j = flows_f; j < terms.foreign.size(); ++j)
+                by_time_f[terms.foreign[j].time] += q * terms.foreign[j].amount;
+            for (std::size_t j = options; j < terms.options.size(); ++j)
+            {
+                const auto &o = terms.options[j];
                 f.options.push_back({o.strike, o.expiry, o.call, q * o.notional, grid_index(f.times, o.expiry)});
+            }
+            for (std::size_t j = rate_d; j < terms.domestic_program.trades.size(); ++j)
+                terms.domestic_program.trades[j].quantity = q;
+            for (std::size_t j = rate_f; j < terms.foreign_program.trades.size(); ++j)
+                terms.foreign_program.trades[j].quantity = q;
         }
+        f.program_d = std::move(terms.domestic_program);
+        f.program_f = std::move(terms.foreign_program);
+        // A program without a trade has no grid of its own.
+        f.program_d.dates = f.program_f.dates = f.times.size();
         f.flows_d = netted(by_time_d);
         f.flows_f = netted(by_time_f);
         f.first_d = first_after(f.times, f.flows_d);
         f.first_f = first_after(f.times, f.flows_f);
+        const auto paid = [&f](const std::vector<Fixed::Flow> &flows)
+        {
+            std::vector<Real> out(f.times.size(), 0.0);
+            for (const Fixed::Flow &flow : flows)
+                out[grid_index(f.times, flow.time)] += flow.amount;
+            return out;
+        };
+        f.paid_d = paid(f.flows_d);
+        f.paid_f = paid(f.flows_f);
+
+        f.collateralised = inputs.csa.has_value();
+        if (inputs.csa)
+            f.plan = collateral_plan(f.times, *inputs.csa, value_today, inputs.cashflows);
+        else
+        {
+            f.plan.reporting.resize(f.times.size());
+            std::iota(f.plan.reporting.begin(), f.plan.reporting.end(), 0);
+        }
 
         // The inputs, in the order they are reported in.
         Params<Real> &p = run.params;
@@ -646,6 +851,64 @@ namespace quantModeling
         add(XvaRiskFactor::OwnLgd, 0.0, "own loss given default");
         add(XvaRiskFactor::BorrowingSpread, 0.0, "borrowing spread");
         add(XvaRiskFactor::LendingSpread, 0.0, "lending spread");
+
+        // The ramp of each swaption: a fraction of the standard deviation of
+        // its swap's value at the expiry, |dV/dx| sd(x) at the mean state of
+        // its own rate, in its own currency.
+        const std::size_t count_d = f.program_d.trades.size(), count_f = f.program_f.trades.size();
+        if (!inputs.smoothing_widths.empty())
+        {
+            if (inputs.smoothing_widths.size() != count_d + count_f)
+                throw InvalidInput("xVA risks: one smoothing width per rate trade is needed");
+            f.widths_d.assign(inputs.smoothing_widths.begin(),
+                              inputs.smoothing_widths.begin() + static_cast<std::ptrdiff_t>(count_d));
+            f.widths_f.assign(inputs.smoothing_widths.begin() + static_cast<std::ptrdiff_t>(count_d),
+                              inputs.smoothing_widths.end());
+            return;
+        }
+        f.widths_d.assign(count_d, 0.0);
+        f.widths_f.assign(count_f, 0.0);
+        if (!(inputs.exercise_smoothing > 0.0) || count_d + count_f == 0)
+            return;
+        Setup<Real> setup;
+        build(f, p, setup);
+        const auto ramps = [&](const xva::ExposureProgram &prog, const ProgramSetup<Real> &coefficients,
+                               bool foreign_side, std::vector<Real> &widths)
+        {
+            // Mean and deviation of that rate's state at each date, under
+            // the measure of the simulation.
+            std::vector<Real> mean(f.times.size()), sd(f.times.size());
+            Real mu = 0.0, variance = 0.0;
+            for (std::size_t i = 0; i < f.times.size(); ++i)
+            {
+                const auto &step = setup.steps[i];
+                const std::size_t side = foreign_side ? 1 : 0;
+                const Real noise = foreign_side ? step.cholesky[1] * step.cholesky[1] +
+                                                      step.cholesky[2] * step.cholesky[2]
+                                                : step.cholesky[0] * step.cholesky[0];
+                mu = step.decay[side] * mu + step.drift[side];
+                variance = step.decay[side] * step.decay[side] * variance + noise;
+                mean[i] = mu;
+                sd[i] = std::sqrt(variance);
+            }
+            for (std::size_t k = 0; k < prog.trades.size(); ++k)
+            {
+                const xva::ProgramTrade &trade = prog.trades[k];
+                if (trade.expiry < 0)
+                    continue;
+                const std::size_t e = static_cast<std::size_t>(trade.expiry);
+                const xva::ProgramDate &date = prog.date_records[static_cast<std::size_t>(trade.date_begin) + e];
+                Real slope = 0.0;
+                for (int j = date.exp_begin; j < date.exp_end; ++j)
+                {
+                    const auto &b = coefficients.exps[static_cast<std::size_t>(j)];
+                    slope -= b.G * b.amount * std::exp(-b.G * mean[e]);
+                }
+                widths[k] = inputs.exercise_smoothing * std::abs(slope) * sd[e];
+            }
+        };
+        ramps(f.program_d, setup.program_d, false, f.widths_d);
+        ramps(f.program_f, setup.program_f, true, f.widths_f);
     }
 
     XvaValues CrossCurrencyExposureEngine::xva_values(ExposureSimulationSettings settings,
@@ -679,6 +942,8 @@ namespace quantModeling
         result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         result.paths = N;
         result.batches = batches;
+        result.smoothing_widths = f.widths_d;
+        result.smoothing_widths.insert(result.smoothing_widths.end(), f.widths_f.begin(), f.widths_f.end());
         for (std::size_t o = 0; o < kXvaOutputs; ++o)
         {
             std::vector<Real> column(batches);
@@ -786,6 +1051,8 @@ namespace quantModeling
         result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         result.paths = N;
         result.batches = batches;
+        result.smoothing_widths = f.widths_d;
+        result.smoothing_widths.insert(result.smoothing_widths.end(), f.widths_f.begin(), f.widths_f.end());
         result.factors = run.factors;
         result.tenors = run.tenors;
         result.labels = run.labels;

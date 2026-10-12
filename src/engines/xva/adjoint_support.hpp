@@ -9,6 +9,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/aad/tape.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/engines/xva/xva_risks.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
 #include "quantModeling/utils/accumulators.hpp"
@@ -193,6 +194,116 @@ namespace quantModeling::xva_adjoint
         if (failure)
             std::rethrow_exception(failure);
     }
+    /// The coefficients of an exposure program (engines/xva/exposure_program.hpp)
+    /// as functions of the inputs of one rate model.
+    template <class T>
+    struct ProgramSetup
+    {
+        std::vector<xva::BasicProgramExp<T>> exps;
+        std::vector<xva::BasicProgramCoupon<T>> coupons;
+        std::vector<xva::BasicProgramAccrued<T>> accrued;
+        std::vector<xva::BasicProgramOptionDate<T>> option_dates;
+        std::vector<xva::BasicProgramOptionBond<T>> option_bonds;
+
+        xva::BasicProgramView<T> view(const xva::ExposureProgram &p) const
+        {
+            return {p.trades.data(),
+                    p.date_records.data(),
+                    exps.data(),
+                    coupons.data(),
+                    accrued.data(),
+                    p.paid.data(),
+                    option_dates.data(),
+                    option_bonds.data(),
+                    p.intervals.data(),
+                    static_cast<int>(p.trades.size()),
+                    static_cast<int>(p.dates)};
+        }
+    };
+
+    /// An option seen from `from`: the state at its expiry under the
+    /// expiry-forward measure, and the bond to it. `M` is a rate model in T:
+    /// G(t, T), y(t), log_discount(t) and transition(s, t, numeraire).
+    template <class T, class M>
+    xva::BasicProgramOptionDate<T> program_option_date(M &m, Time from, Time expiry)
+    {
+        using std::exp;
+        using std::sqrt;
+        const auto tr = m.transition(from, expiry, expiry);
+        const T G = m.G(from, expiry);
+        return {tr.decay,
+                tr.drift,
+                tr.variance,
+                T(sqrt(tr.variance)),
+                T(0.5 * (tr.variance - m.y(expiry))),
+                T(exp(m.log_discount(expiry) - m.log_discount(from) - 0.5 * G * G * m.y(from))),
+                G};
+    }
+
+    /// Every coefficient of the program from its source, in T.
+    template <class T, class M>
+    void build_program(const xva::ExposureProgram &prog, M &m, ProgramSetup<T> &s)
+    {
+        using std::exp;
+        const auto bond = [&m](const xva::BondSource &b)
+        {
+            const T G = m.G(b.from, b.to);
+            return xva::BasicProgramExp<T>{
+                T(b.raw * exp(m.log_discount(b.to) - m.log_discount(b.from) - 0.5 * G * G * m.y(b.from))), G};
+        };
+        s.exps.reserve(prog.exp_sources.size());
+        for (const xva::BondSource &b : prog.exp_sources)
+            s.exps.push_back(bond(b));
+        s.coupons.reserve(prog.coupons.size());
+        for (std::size_t j = 0; j < prog.coupons.size(); ++j)
+        {
+            const xva::CouponSource &c = prog.coupon_sources[j];
+            const T g = m.G(c.start, c.end);
+            s.coupons.push_back({T(c.beta * exp(m.log_discount(c.start) - m.log_discount(c.end) +
+                                                0.5 * g * g * m.y(c.start))),
+                                 g, prog.coupons[j].constant, prog.coupons[j].scale, prog.coupons[j].fixing});
+        }
+        s.accrued.reserve(prog.accrued.size());
+        for (std::size_t j = 0; j < prog.accrued.size(); ++j)
+        {
+            const xva::BasicProgramExp<T> b = bond(prog.accrued_sources[j]);
+            s.accrued.push_back({b.amount, b.G, prog.accrued[j].coupon});
+        }
+        s.option_dates.reserve(prog.option_dates.size());
+        for (const xva::OptionDateSource &o : prog.option_date_sources)
+            s.option_dates.push_back(program_option_date<T>(m, o.from, o.expiry));
+        s.option_bonds.reserve(prog.option_bonds.size());
+        for (const xva::OptionBondSource &b : prog.option_bond_sources)
+            s.option_bonds.push_back(
+                {T(b.raw * exp(m.log_discount(b.to) - m.log_discount(b.expiry))), m.G(b.expiry, b.to)});
+    }
+
+    /// What the trades of the program are worth today, quantities included.
+    template <class T, class M>
+    T program_value_today(const xva::ExposureProgram &prog, const ProgramSetup<T> &s, M &m)
+    {
+        using std::exp;
+        const xva::BasicProgramView<T> view = s.view(prog);
+        T value(0.0);
+        for (std::size_t k = 0; k < prog.trades.size(); ++k)
+        {
+            const xva::TodaySource &today = prog.today[k];
+            T v(0.0);
+            if (today.expiry > 0.0)
+            {
+                const T x(0.0);
+                v = xva::program_option_integral(view, prog.trades[k],
+                                                 program_option_date<T>(m, 0.0, today.expiry), x);
+            }
+            else
+                for (int j = today.term_begin; j < today.term_end; ++j)
+                    v += prog.today_terms[static_cast<std::size_t>(j)].raw *
+                         exp(m.log_discount(prog.today_terms[static_cast<std::size_t>(j)].to));
+            value += prog.trades[k].quantity * v;
+        }
+        return value;
+    }
+
 } // namespace quantModeling::xva_adjoint
 
 #endif // QM_SRC_ENGINES_XVA_ADJOINT_SUPPORT_HPP

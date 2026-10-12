@@ -398,6 +398,13 @@ namespace quantModeling
                         cashflows[i] *= path.spot[i];
             }
 
+            /// The one-currency engine's own flat terms; the trade must be
+            /// bound to the grid.
+            bool describe(xva::TwoFactorTerms &terms) const override
+            {
+                return trade_->compile(foreign_ ? terms.foreign_program : terms.domestic_program);
+            }
+
           private:
             std::unique_ptr<FutureValue> trade_;
             bool foreign_;
