@@ -137,4 +137,37 @@ describe("counterparties of a portfolio", () => {
 			).getByRole("button", { name: /Delete/ }),
 		).toBeEnabled();
 	});
+
+	it("books a swap as one contract, at what it is worth, under a netting set", async () => {
+		const seeded = {
+			...fx.portfolio("OTC book"),
+			counterparties: fx.counterpartyExamples(),
+		};
+		localStorage.setItem(KEY, JSON.stringify([seeded]));
+		const user = userEvent.setup();
+		renderPage();
+		await user.click(await screen.findByRole("button", { name: /New trade/ }));
+		await user.selectOptions(
+			screen.getByLabelText("Instrument type"),
+			"rate_fx",
+		);
+		expect(
+			await screen.findByText(/Payer swap USD 10M at 3.650%/),
+		).toBeVisible();
+		await user.selectOptions(
+			screen.getByLabelText("Counterparty and netting set"),
+			"example-corporate-isda",
+		);
+		await user.click(screen.getByRole("button", { name: "Book purchase" }));
+
+		await waitFor(() => expect(stored().transactions).toHaveLength(4));
+		const swap = stored().instruments!.find((i) => i.spec.kind === "rate_fx")!;
+		expect(swap.netting_set_id).toBe("example-corporate-isda");
+		expect(swap.spec).toMatchObject({ product: "swap", fixed_rate: 0.0365 });
+		expect(stored().transactions!.at(-1)).toMatchObject({
+			instrument_id: swap.id,
+			quantity: 1,
+			price: 0,
+		});
+	});
 });

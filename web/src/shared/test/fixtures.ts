@@ -353,6 +353,27 @@ export function counterpartyExamples() {
 	];
 }
 
+/** A 5-year payer swap struck at the par rate of its trade date. */
+export function rateFxQuote() {
+	return {
+		spec: {
+			kind: "rate_fx" as const,
+			product: "swap" as const,
+			currency: "USD" as const,
+			notional: 10_000_000,
+			payer: true,
+			start: "2026-10-12",
+			maturity: "2031-10-12",
+			fixed_rate: 0.0365,
+			foreign_rate: null,
+			domestic_notional: null,
+		},
+		label: "Payer swap USD 10M at 3.650%, 2026-10-12 to 2031-10-12",
+		value: 0,
+		currency: "USD",
+	};
+}
+
 export function portfolioDemos() {
 	return [
 		{

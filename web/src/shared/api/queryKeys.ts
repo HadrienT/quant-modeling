@@ -80,6 +80,8 @@ export const queryKeys = {
 		history: (ledger: string, window: string) =>
 			["portfolio", "history", ledger, window] as const,
 		demos: () => ["portfolio", "demos"] as const,
+		rateFxQuote: (draft: string, date: string) =>
+			["portfolio", "rate-fx-quote", draft, date] as const,
 		counterpartyExamples: () =>
 			["portfolio", "counterparty-examples"] as const,
 		close: (ticker: string, date: string) =>

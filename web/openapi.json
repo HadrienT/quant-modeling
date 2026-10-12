@@ -4605,7 +4605,8 @@
             "discriminator": {
               "mapping": {
                 "derivative": "#/components/schemas/DerivativeSpec",
-                "equity": "#/components/schemas/EquitySpec"
+                "equity": "#/components/schemas/EquitySpec",
+                "rate_fx": "#/components/schemas/RateFxSpec"
               },
               "propertyName": "kind"
             },
@@ -4615,6 +4616,9 @@
               },
               {
                 "$ref": "#/components/schemas/DerivativeSpec"
+              },
+              {
+                "$ref": "#/components/schemas/RateFxSpec"
               }
             ],
             "title": "Spec"
@@ -6320,7 +6324,8 @@
           "kind": {
             "enum": [
               "equity",
-              "derivative"
+              "derivative",
+              "rate_fx"
             ],
             "title": "Kind",
             "type": "string"
@@ -7009,6 +7014,233 @@
           "maturity"
         ],
         "title": "RainbowRequest",
+        "type": "object"
+      },
+      "RateFxDraft": {
+        "description": "A rate or FX trade whose rates may be left out: they are then set at\nthe market of the trade date (portfolio_rates.at_market).",
+        "properties": {
+          "currency": {
+            "enum": [
+              "USD",
+              "EUR"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "domestic_notional": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domestic Notional"
+          },
+          "fixed_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Rate"
+          },
+          "foreign_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Foreign Rate"
+          },
+          "maturity": {
+            "format": "date",
+            "title": "Maturity",
+            "type": "string"
+          },
+          "notional": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000000000.0,
+            "title": "Notional",
+            "type": "number"
+          },
+          "payer": {
+            "default": true,
+            "title": "Payer",
+            "type": "boolean"
+          },
+          "product": {
+            "enum": [
+              "swap",
+              "swaption",
+              "fx_forward",
+              "cross_currency_swap"
+            ],
+            "title": "Product",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product",
+          "currency",
+          "notional",
+          "start",
+          "maturity"
+        ],
+        "title": "RateFxDraft",
+        "type": "object"
+      },
+      "RateFxQuote": {
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/RateFxSpec"
+          },
+          "value": {
+            "description": "What one contract is worth on the trade date, in `currency`: the price a trade on it is booked at by default",
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spec",
+          "label",
+          "value",
+          "currency"
+        ],
+        "title": "RateFxQuote",
+        "type": "object"
+      },
+      "RateFxQuoteRequest": {
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/RateFxDraft"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft",
+          "trade_date"
+        ],
+        "title": "RateFxQuoteRequest",
+        "type": "object"
+      },
+      "RateFxSpec": {
+        "description": "An over-the-counter rate or FX trade, marked each day on the swap\ncurves of the store (portfolio_rates.py) and simulated by the exposure\nengine (xVA). One contract is the whole notional: a trade's quantity is\n+1 for the side described here, -1 for the other.\n\nThe conventions are the exposure engine's: both legs of a swap pay once a\nyear and it lasts a whole number of years; an FX trade is in euros\nagainst dollars and is valued in dollars.\n\n| product | start | maturity | payer | fixed_rate |\n|---|---|---|---|---|\n| swap | first day | last payment | pays the fixed rate | the fixed rate |\n| swaption | expiry | end of the swap | on a payer swap | the strike |\n| fx_forward | trade date | delivery | buys the euros | USD per EUR |\n| cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |",
+        "properties": {
+          "currency": {
+            "description": "The currency of the notional: EUR for an FX trade",
+            "enum": [
+              "USD",
+              "EUR"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "domestic_notional": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 10000000000000.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The USD notional of a cross-currency swap: the EUR one at the exchange rate of its first day",
+            "title": "Domestic Notional"
+          },
+          "fixed_rate": {
+            "maximum": 10.0,
+            "minimum": -0.05,
+            "title": "Fixed Rate",
+            "type": "number"
+          },
+          "foreign_rate": {
+            "anyOf": [
+              {
+                "maximum": 0.5,
+                "minimum": -0.05,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The EUR coupon of a cross-currency swap",
+            "title": "Foreign Rate"
+          },
+          "kind": {
+            "const": "rate_fx",
+            "default": "rate_fx",
+            "title": "Kind",
+            "type": "string"
+          },
+          "maturity": {
+            "format": "date",
+            "title": "Maturity",
+            "type": "string"
+          },
+          "notional": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000000000.0,
+            "title": "Notional",
+            "type": "number"
+          },
+          "payer": {
+            "default": true,
+            "title": "Payer",
+            "type": "boolean"
+          },
+          "product": {
+            "enum": [
+              "swap",
+              "swaption",
+              "fx_forward",
+              "cross_currency_swap"
+            ],
+            "title": "Product",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product",
+          "currency",
+          "notional",
+          "start",
+          "maturity",
+          "fixed_rate"
+        ],
+        "title": "RateFxSpec",
         "type": "object"
       },
       "RateHistoryPoint": {
@@ -13278,6 +13510,48 @@
           }
         },
         "summary": "Portfolio Migrate",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/rate-fx/quote": {
+      "post": {
+        "description": "The contract with the rates the draft leaves out at the market of the\ntrade date, and its value that day. 503 when the store has no market for\nthe date: nothing is priced on an older one.",
+        "operationId": "rate_fx_quote",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateFxQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateFxQuote"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rate Fx Quote",
         "tags": [
           "portfolios"
         ]

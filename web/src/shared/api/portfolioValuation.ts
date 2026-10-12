@@ -10,6 +10,8 @@ import type {
 	PortfolioHistory,
 	PortfolioSnapshot,
 	PnlWindow,
+	RateFxDraft,
+	RateFxQuote,
 	TickerClose,
 } from "./types";
 
@@ -128,6 +130,32 @@ export function usePortfolioDemos() {
 			try {
 				return await unwrap<DemoPortfolio[]>(
 					api.GET("/api/portfolio-valuation/demos", { signal: s }),
+				);
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/**
+ * A rate or FX trade with the rates the draft leaves out set at the market
+ * of the trade date, and what it is worth that day (null draft: not asked).
+ */
+export function useRateFxQuote(draft: RateFxDraft | null, tradeDate: string) {
+	return useQuery({
+		queryKey: queryKeys.portfolio.rateFxQuote(JSON.stringify(draft), tradeDate),
+		enabled: draft != null && !!tradeDate,
+		staleTime: STALE.history,
+		retry: false,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return await unwrap<RateFxQuote>(
+					api.POST("/api/portfolio-valuation/rate-fx/quote", {
+						body: { draft: draft!, trade_date: tradeDate },
+						signal: s,
+					}),
 				);
 			} finally {
 				s.cleanup();

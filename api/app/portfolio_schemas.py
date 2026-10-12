@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .xva_schemas import CsaInput, Rating, Sector
 
@@ -126,10 +126,111 @@ class DerivativeSpec(BaseModel):
     currency: Currency = "USD"
 
 
+def add_years(d: date, years: int) -> date:
+    """The same day `years` later (28 February for a 29 February)."""
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d.replace(year=d.year + years, day=28)
+
+
+def whole_years(start: date, end: date) -> int:
+    """How many years from `start` to `end` when it is a whole number, 0
+    otherwise."""
+    n = end.year - start.year
+    return n if n > 0 and add_years(start, n) == end else 0
+
+
+class RateFxSpec(BaseModel):
+    """An over-the-counter rate or FX trade, marked each day on the swap
+    curves of the store (portfolio_rates.py) and simulated by the exposure
+    engine (xVA). One contract is the whole notional: a trade's quantity is
+    +1 for the side described here, -1 for the other.
+
+    The conventions are the exposure engine's: both legs of a swap pay once a
+    year and it lasts a whole number of years; an FX trade is in euros
+    against dollars and is valued in dollars.
+
+    | product | start | maturity | payer | fixed_rate |
+    |---|---|---|---|---|
+    | swap | first day | last payment | pays the fixed rate | the fixed rate |
+    | swaption | expiry | end of the swap | on a payer swap | the strike |
+    | fx_forward | trade date | delivery | buys the euros | USD per EUR |
+    | cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |
+    """
+
+    kind: Literal["rate_fx"] = "rate_fx"
+    product: Literal["swap", "swaption", "fx_forward", "cross_currency_swap"]
+    currency: Literal["USD", "EUR"] = Field(
+        description="The currency of the notional: EUR for an FX trade"
+    )
+    notional: float = Field(gt=0, le=1e12)
+    payer: bool = True
+    start: date
+    maturity: date
+    fixed_rate: float = Field(ge=-0.05, le=10.0)
+    foreign_rate: Optional[float] = Field(
+        default=None,
+        ge=-0.05,
+        le=0.5,
+        description="The EUR coupon of a cross-currency swap",
+    )
+    domestic_notional: Optional[float] = Field(
+        default=None,
+        gt=0,
+        le=1e13,
+        description="The USD notional of a cross-currency swap: the EUR one at "
+        "the exchange rate of its first day",
+    )
+
+    @model_validator(mode="after")
+    def _coherent(self) -> "RateFxSpec":
+        if self.maturity <= self.start:
+            raise ValueError("the maturity must be after the start")
+        fx = self.product in ("fx_forward", "cross_currency_swap")
+        if fx and self.currency != "EUR":
+            raise ValueError("an FX trade is in euros against dollars: currency EUR")
+        if self.product != "fx_forward":
+            n = whole_years(self.start, self.maturity)
+            if not 1 <= n <= 30:
+                raise ValueError(
+                    "the maturity must be a whole number of years (1 to 30) after "
+                    "the start: both legs pay once a year"
+                )
+        if self.product == "swaption" and (self.maturity - self.start).days > 30 * 366:
+            raise ValueError("the swap of a swaption lasts at most 30 years")
+        if self.product == "cross_currency_swap" and (
+            self.foreign_rate is None or self.domestic_notional is None
+        ):
+            raise ValueError(
+                "a cross-currency swap needs its EUR coupon and its USD notional"
+            )
+        return self
+
+    @property
+    def value_currency(self) -> str:
+        """What a mark of the trade is in."""
+        return (
+            "USD"
+            if self.currency == "EUR"
+            and self.product
+            in (
+                "fx_forward",
+                "cross_currency_swap",
+            )
+            else self.currency
+        )
+
+    @property
+    def end(self) -> date:
+        """The day after which the trade is no longer valued."""
+        return self.start if self.product == "swaption" else self.maturity
+
+
 class Instrument(BaseModel):
     id: str
     label: str = ""
-    spec: Union[EquitySpec, DerivativeSpec] = Field(discriminator="kind")
+    spec: Union[EquitySpec, DerivativeSpec, RateFxSpec] = Field(discriminator="kind")
     #: The netting set an over-the-counter derivative is traded under (one of
     #: the portfolio's counterparties'). None for a listed instrument, and for
     #: a derivative whose counterparty risk is not looked at. Not part of the

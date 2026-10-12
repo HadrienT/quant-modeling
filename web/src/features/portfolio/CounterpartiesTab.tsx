@@ -34,7 +34,7 @@ export function CounterpartiesTab({
 	const examples = useCounterpartyExamples();
 	const counterparties = pf.counterparties ?? [];
 	const derivatives = (pf.instruments ?? []).filter(
-		(i) => i.spec.kind === "derivative",
+		(i) => i.spec.kind !== "equity",
 	);
 	const missing = (examples.data ?? []).filter(
 		(e) => !counterparties.some((c) => c.id === e.id),

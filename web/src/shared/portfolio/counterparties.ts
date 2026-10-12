@@ -143,7 +143,7 @@ export function addExamples(pf: Portfolio, examples: Counterparty[]): Ledger {
 	});
 }
 
-/** Trade a derivative under a netting set (null: under none). */
+/** Trade an over-the-counter instrument under a netting set (null: none). */
 export function assignNettingSet(
 	pf: Portfolio,
 	instrumentId: string,
@@ -151,7 +151,7 @@ export function assignNettingSet(
 ): Ledger {
 	return ledger(pf, {
 		instruments: (pf.instruments ?? []).map((i) =>
-			i.id === instrumentId && i.spec.kind === "derivative"
+			i.id === instrumentId && i.spec.kind !== "equity"
 				? { ...i, netting_set_id: nettingSetId }
 				: i,
 		),

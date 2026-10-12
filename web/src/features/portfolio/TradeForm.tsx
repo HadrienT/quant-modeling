@@ -1,15 +1,9 @@
 import { useState } from "react";
 import type { Counterparty, Instrument } from "@/shared/api";
 import { useTickerClose } from "@/shared/api";
-import {
-	type TradeDraft,
-	derivativeInstrument,
-	equityInstrument,
-} from "@/shared/portfolio";
+import type { TradeDraft } from "@/shared/portfolio";
 import { Button, Input, Label } from "@/shared/ui";
-import { type DerivativeDraft, DerivativeFields } from "./DerivativeFields";
-import { NettingSetSelect } from "./NettingSetSelect";
-import { TickerPicker } from "./TickerPicker";
+import { InstrumentPicker, type Picked } from "./InstrumentPicker";
 
 export type TradePreset = {
 	instrument: Instrument;
@@ -18,15 +12,13 @@ export type TradePreset = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-const box =
-	"h-9 rounded-sm border border-hairline bg-surface px-2 text-sm text-ink";
 
 /**
  * Book a trade. A buy adds to a position, a sale reduces it — and selling
  * more than is held opens a short. From a position's row the instrument is
- * preset; otherwise a stock (market → ticker) or a derivative (catalog
- * product on a listed underlying) is defined here — a derivative with the
- * netting set it is traded under, if it faces a counterparty.
+ * preset; otherwise it is defined here (InstrumentPicker). A rate or FX
+ * trade is one contract: its price is what the contract is worth, which can
+ * be negative.
  */
 export function TradeForm({
 	preset,
@@ -39,42 +31,37 @@ export function TradeForm({
 	onBook: (instrument: Instrument, draft: TradeDraft) => void;
 	onCancel: () => void;
 }) {
-	const [kind, setKind] = useState<"equity" | "derivative">("equity");
 	const [side, setSide] = useState(preset?.side ?? "buy");
 	const [quantity, setQuantity] = useState(String(preset?.quantity ?? ""));
 	const [tradeDate, setTradeDate] = useState(today());
 	const [price, setPrice] = useState("");
 	const [fees, setFees] = useState("0");
 	const [note, setNote] = useState("");
-	const [ticker, setTicker] = useState<{ t: string; name?: string }>({ t: "" });
-	const [derivative, setDerivative] = useState<DerivativeDraft | null>(null);
-	const [nettingSet, setNettingSet] = useState<string | null>(null);
+	const [picked, setPicked] = useState<Picked>({
+		instrument: null,
+		closeTicker: "",
+		contract: false,
+	});
 
-	const presetTicker =
-		preset?.instrument.spec.kind === "equity"
-			? preset.instrument.spec.ticker
-			: "";
-	const closeTicker = preset ? presetTicker : kind === "equity" ? ticker.t : "";
+	const spec = preset?.instrument.spec;
+	const contract = preset ? spec?.kind === "rate_fx" : picked.contract;
+	const closeTicker = preset
+		? spec?.kind === "equity"
+			? spec.ticker
+			: ""
+		: picked.closeTicker;
 	const close = useTickerClose(closeTicker, tradeDate);
-	const unitPrice = price !== "" ? Number(price) : close.data?.close;
-
-	const instrument: Instrument | null = preset
-		? preset.instrument
-		: kind === "equity"
-			? ticker.t
-				? equityInstrument(ticker.t, ticker.name)
-				: null
-			: derivative && {
-					...derivativeInstrument(derivative.label, derivative.spec),
-					netting_set_id: nettingSet,
-				};
-	const qty = Number(quantity);
+	const fallback = picked.value ?? close.data?.close;
+	const unitPrice = price !== "" ? Number(price) : fallback;
+	const instrument = preset ? preset.instrument : picked.instrument;
+	// One contract unless said otherwise.
+	const qty = quantity === "" && contract ? 1 : Number(quantity);
 	const valid =
 		!!instrument &&
 		qty > 0 &&
 		unitPrice != null &&
 		Number.isFinite(unitPrice) &&
-		unitPrice >= 0 &&
+		(contract || unitPrice >= 0) &&
 		Number(fees) >= 0 &&
 		tradeDate <= today();
 
@@ -108,46 +95,17 @@ export function TradeForm({
 						</Button>
 					))}
 				</div>
-				{preset ? (
+				{preset && (
 					<span className="text-sm text-ink">{preset.instrument.label}</span>
-				) : (
-					<select
-						aria-label="Instrument type"
-						className={box}
-						value={kind}
-						onChange={(e) => setKind(e.target.value as typeof kind)}
-					>
-						<option value="equity">Stock / index</option>
-						<option value="derivative">Derivative</option>
-					</select>
 				)}
 			</div>
 
-			{!preset && kind === "equity" && (
-				<div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-					<TickerPicker
-						label="Ticker"
-						ticker={ticker.t}
-						onTicker={(t, name) => setTicker({ t, name })}
-					/>
-				</div>
-			)}
-			{!preset && kind === "derivative" && (
-				<>
-					<DerivativeFields tradeDate={tradeDate} onChange={setDerivative} />
-					<label className="flex flex-col gap-1">
-						<Label>Counterparty and netting set</Label>
-						<NettingSetSelect
-							label="Counterparty and netting set"
-							counterparties={counterparties}
-							value={nettingSet}
-							onChange={setNettingSet}
-						/>
-						<span className="text-2xs text-ink-muted">
-							Counterparties are created in the Counterparties tab.
-						</span>
-					</label>
-				</>
+			{!preset && (
+				<InstrumentPicker
+					tradeDate={tradeDate}
+					counterparties={counterparties}
+					onChange={setPicked}
+				/>
 			)}
 
 			<div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -167,6 +125,7 @@ export function TradeForm({
 						min={0}
 						step="any"
 						value={quantity}
+						placeholder={contract ? "1" : ""}
 						onChange={(e) => setQuantity(e.target.value)}
 					/>
 				</label>
@@ -174,10 +133,10 @@ export function TradeForm({
 					<Label>Unit price</Label>
 					<Input
 						type="number"
-						min={0}
+						min={contract ? undefined : 0}
 						step="any"
 						value={price}
-						placeholder={close.data ? String(close.data.close) : ""}
+						placeholder={fallback == null ? "" : String(fallback)}
 						onChange={(e) => setPrice(e.target.value)}
 					/>
 					{close.data && price === "" && (

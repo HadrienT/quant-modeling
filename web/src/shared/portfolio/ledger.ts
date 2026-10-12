@@ -2,6 +2,7 @@ import type {
 	Instrument,
 	Portfolio,
 	PortfolioCurrency,
+	RateFxSpec,
 	Trade,
 } from "@/shared/api";
 
@@ -112,10 +113,20 @@ export function deletePosition(
 	};
 }
 
-/** The ticker a position moves with: its own, or its derivative's underlying. */
+/**
+ * What a position moves with: its ticker, its derivative's underlying, or
+ * for a rate or FX trade the rates of its currency or the exchange rate.
+ */
 export function underlyingOf(instrument: Instrument | undefined): string {
 	if (!instrument) return "—";
-	return instrument.spec.kind === "equity"
-		? instrument.spec.ticker
-		: (instrument.spec.underlying ?? instrument.label);
+	const spec = instrument.spec;
+	if (spec.kind === "equity") return spec.ticker;
+	if (spec.kind === "derivative") return spec.underlying ?? instrument.label;
+	return spec.product === "swap" || spec.product === "swaption"
+		? `${spec.currency} rates`
+		: "EUR/USD";
+}
+
+export function rateFxInstrument(label: string, spec: RateFxSpec): Instrument {
+	return { id: uid(), label, spec };
 }

@@ -1274,7 +1274,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X9 — Page `/xva`** (fait : §14.14) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** (fait : §14.15 ; formes fermées, CPU, mesure de pricing ; un seul produit ajouté, le swap de devises) | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 | **X11 — Contreparties et netting sets du portefeuille** (fait : §14.16) | un portefeuille porte ses contreparties (notation, secteur, recouvrement) et leurs netting sets (CSA ou non) ; un dérivé se traite sous un netting set ; sous-onglet *Counterparties* de la page Portfolio ; contreparties d'exemple | un instrument coté n'a pas de netting set ; un netting set utilisé ne se supprime pas ; le mark d'un dérivé ne dépend pas de qui il fait face |
-| **X12 — Transactions de taux et de change dans le registre** | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
+| **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans bermudan ni script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
 | **X13 — xVA d'un netting set du portefeuille** | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
 | **X14 — Dérivés actions dans le moteur d'exposition** | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
 
@@ -2363,6 +2363,48 @@ fictives, une par type : banque, fonds, entreprise, entreprise à haut
 rendement, souverain, avec le collatéral habituel du type (marge de variation
 des règles de marge pour les financières, rien pour les autres). La démo
 *Options overlay* traite son put de gré à gré sous l'un d'eux.
+
+**Lot X12, ce qui est fait.** Un troisième type d'instrument, `RateFxSpec`
+(`kind: "rate_fx"`) : swap de taux, swaption européenne, forward de change et
+swap de devises fixe contre fixe, en USD ou en EUR pour les taux, en euros
+contre dollars pour le change. Une position est **un contrat entier** (quantité
++1 pour le sens décrit, −1 pour l'autre), et le prix d'un trade est ce que vaut
+le contrat ce jour-là, qui peut être négatif. `POST
+/api/portfolio-valuation/rate-fx/quote` rend le contrat avec les taux laissés
+vides mis au marché du jour du trade (taux pair, strike à la monnaie, cours à
+terme, coupons pairs et notionnel en dollars au comptant) et sa valeur : le
+formulaire s'en sert comme prix par défaut, zéro pour un trade au marché.
+
+Le marquage (`api/app/portfolio_rates.py`) lit le marché de `/xva`, sans
+repli : courbes de swaps SOFR et Euribor des transactions DTCC, vols de
+swaptions tirées des swaptions traitées, cours de référence BCE. Un jour sans
+courbe à moins d'une semaine n'a pas de mark. Choix :
+
+- **conventions du moteur d'exposition**, pour que le lot X13 simule ce que le
+  registre marque : deux jambes annuelles, une courbe par devise, durée en
+  années entières (refusé sinon), temps en 365,25 jours ;
+- **les coupons déjà payés restent dans le mark** (non capitalisés). Le
+  registre n'a pas de compte de trésorerie : sans cela chaque coupon payé
+  apparaîtrait comme une perte. Mark d'un swap = valeur de ce qui reste + ce
+  qui a été payé depuis le départ ; l'exposition (X13) ne compte que ce qui
+  reste ;
+- **le coupon flottant d'une période est fixé à son premier jour**, au taux à
+  un an de la courbe de ce jour : le fixing pour l'Euribor, et pour le SOFR
+  composé à terme échu l'espérance, ce jour-là, du taux composé — la
+  composition réalisée n'est pas rejouée (pas d'historique de fixings
+  nécessaire, seulement celui des courbes) ;
+- **swaption** : Bachelier à la vol normale à la monnaie la plus proche de la
+  grille du jour, quel que soit le strike (les vols traitées n'ont pas de
+  smile), statut `proxied` ; pas de mark quand aucune swaption n'a été traitée
+  dans les dix jours ;
+- **change** : chaque jambe sur sa courbe, la jambe en euros convertie au
+  comptant, pas de base de devises (aucune n'est en base) ; valeur en dollars.
+
+Laissé de côté, et pourquoi : le **bermudan** et le **script de taux** restent
+sur `/xva`. Les marquer chaque jour demande une calibration de Hull-White par
+date (une seconde chacune, sur tout l'historique) ; à faire avec un cache de
+calibrations par date si le besoin se confirme. Pas de grecques de taux
+(PV01) dans l'onglet Risk : les positions de taux y figurent sans sensibilité.
 
 Limite dite dans l'interface : l'exposition et les xVA de ces netting sets ne
 sont pas encore calculés (lots X13 et X14).

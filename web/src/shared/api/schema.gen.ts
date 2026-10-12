@@ -474,6 +474,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio-valuation/rate-fx/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rate Fx Quote
+         * @description The contract with the rates the draft leaves out at the market of the
+         *     trade date, and its value that day. 503 when the store has no market for
+         *     the date: nothing is priced on an older one.
+         */
+        post: operations["rate_fx_quote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolio-valuation/snapshot": {
         parameters: {
             query?: never;
@@ -3597,7 +3619,7 @@ export interface components {
             /** Netting Set Id */
             netting_set_id?: string | null;
             /** Spec */
-            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"];
+            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"] | components["schemas"]["RateFxSpec"];
         };
         /**
          * LeverageFit
@@ -4382,7 +4404,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "equity" | "derivative";
+            kind: "equity" | "derivative" | "rate_fx";
             /** Label */
             label: string;
             /** Mark */
@@ -4715,6 +4737,133 @@ export interface components {
             strike: number;
             /** Vols */
             vols: number[];
+        };
+        /**
+         * RateFxDraft
+         * @description A rate or FX trade whose rates may be left out: they are then set at
+         *     the market of the trade date (portfolio_rates.at_market).
+         */
+        RateFxDraft: {
+            /**
+             * Currency
+             * @enum {string}
+             */
+            currency: "USD" | "EUR";
+            /** Domestic Notional */
+            domestic_notional?: number | null;
+            /** Fixed Rate */
+            fixed_rate?: number | null;
+            /** Foreign Rate */
+            foreign_rate?: number | null;
+            /**
+             * Maturity
+             * Format: date
+             */
+            maturity: string;
+            /** Notional */
+            notional: number;
+            /**
+             * Payer
+             * @default true
+             */
+            payer: boolean;
+            /**
+             * Product
+             * @enum {string}
+             */
+            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+        };
+        /** RateFxQuote */
+        RateFxQuote: {
+            /** Currency */
+            currency: string;
+            /** Label */
+            label: string;
+            spec: components["schemas"]["RateFxSpec"];
+            /**
+             * Value
+             * @description What one contract is worth on the trade date, in `currency`: the price a trade on it is booked at by default
+             */
+            value: number;
+        };
+        /** RateFxQuoteRequest */
+        RateFxQuoteRequest: {
+            draft: components["schemas"]["RateFxDraft"];
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+        };
+        /**
+         * RateFxSpec
+         * @description An over-the-counter rate or FX trade, marked each day on the swap
+         *     curves of the store (portfolio_rates.py) and simulated by the exposure
+         *     engine (xVA). One contract is the whole notional: a trade's quantity is
+         *     +1 for the side described here, -1 for the other.
+         *
+         *     The conventions are the exposure engine's: both legs of a swap pay once a
+         *     year and it lasts a whole number of years; an FX trade is in euros
+         *     against dollars and is valued in dollars.
+         *
+         *     | product | start | maturity | payer | fixed_rate |
+         *     |---|---|---|---|---|
+         *     | swap | first day | last payment | pays the fixed rate | the fixed rate |
+         *     | swaption | expiry | end of the swap | on a payer swap | the strike |
+         *     | fx_forward | trade date | delivery | buys the euros | USD per EUR |
+         *     | cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |
+         */
+        RateFxSpec: {
+            /**
+             * Currency
+             * @description The currency of the notional: EUR for an FX trade
+             * @enum {string}
+             */
+            currency: "USD" | "EUR";
+            /**
+             * Domestic Notional
+             * @description The USD notional of a cross-currency swap: the EUR one at the exchange rate of its first day
+             */
+            domestic_notional?: number | null;
+            /** Fixed Rate */
+            fixed_rate: number;
+            /**
+             * Foreign Rate
+             * @description The EUR coupon of a cross-currency swap
+             */
+            foreign_rate?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rate_fx";
+            /**
+             * Maturity
+             * Format: date
+             */
+            maturity: string;
+            /** Notional */
+            notional: number;
+            /**
+             * Payer
+             * @default true
+             */
+            payer: boolean;
+            /**
+             * Product
+             * @enum {string}
+             */
+            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
         };
         /** RateHistoryPoint */
         RateHistoryPoint: {
@@ -7621,6 +7770,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Portfolio-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rate_fx_quote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateFxQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateFxQuote"];
                 };
             };
             /** @description Validation Error */

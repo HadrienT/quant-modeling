@@ -27,6 +27,7 @@ export {
 	equityInstrument,
 	equityInstrumentId,
 	derivativeInstrument,
+	rateFxInstrument,
 	bookTrade,
 	deleteTrade,
 	deletePosition,

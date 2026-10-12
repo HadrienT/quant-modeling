@@ -183,6 +183,9 @@ export const handlers = [
 		return HttpResponse.json(saved);
 	}),
 
+	http.post("*/api/portfolio-valuation/rate-fx/quote", () =>
+		HttpResponse.json(fx.rateFxQuote()),
+	),
 	http.get("*/api/portfolio-valuation/counterparty-examples", () =>
 		HttpResponse.json(fx.counterpartyExamples()),
 	),
