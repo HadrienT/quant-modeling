@@ -11,15 +11,17 @@ import {
 import { server } from "@/shared/test/msw-server";
 import fixtures from "@/shared/test/xva.fixtures.json";
 import { TooltipProvider } from "@/shared/ui";
-import { AdjustmentsPanel } from "./AdjustmentsPanel";
-import { ExposurePanel } from "./ExposurePanel";
-import { ForeignMarketPanel } from "./ForeignMarketPanel";
-import { MarginCapitalPanel } from "./MarginCapitalPanel";
-import { SensitivitiesPanel } from "./SensitivitiesPanel";
-import { amount } from "./format";
+import {
+	AdjustmentsPanel,
+	ExposurePanel,
+	ForeignMarketPanel,
+	MarginCapitalPanel,
+	TradesTable,
+	amount,
+} from "@/shared/xva";
 import { DEFAULT_VIEW, nettingSetRequest, sensitivitiesRequest } from "./state";
-import { TradesTable } from "./TradesTable";
 import { XvaControls } from "./XvaControls";
+import { XvaSensitivities } from "./XvaSensitivities";
 
 /**
  * The xVA page against answers recorded from the real API
@@ -311,7 +313,7 @@ describe("sensitivities", () => {
 	const request = sensitivitiesRequest(DEFAULT_VIEW);
 
 	it("are computed on demand, each with its error, with what they cost", async () => {
-		wrap(<SensitivitiesPanel request={request} />);
+		wrap(<XvaSensitivities request={request} />);
 		// Nothing is asked before the button.
 		expect(screen.queryByText("Par swap rates")).not.toBeInTheDocument();
 		await userEvent.click(
@@ -347,7 +349,7 @@ describe("sensitivities", () => {
 				),
 			),
 		);
-		wrap(<SensitivitiesPanel request={request} />);
+		wrap(<XvaSensitivities request={request} />);
 		await userEvent.click(
 			screen.getByRole("button", { name: "Compute the sensitivities" }),
 		);

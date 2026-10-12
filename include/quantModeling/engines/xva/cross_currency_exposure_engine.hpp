@@ -62,6 +62,12 @@ namespace quantModeling
      *
      * exact given the state: every bond is a closed form of its rate.
      *
+     * A European `VanillaOption` is an option on the exchange rate, settled
+     * in cash in domestic currency on `notional` units, bought: Black's
+     * formula on the forward of each path, with the variance that forward
+     * still has to accumulate. With make_asset_model it is an option on an
+     * asset under a stochastic rate (lot X14).
+     *
      * @throws UnsupportedInstrument for anything else.
      */
     std::unique_ptr<CrossCurrencyFutureValue>

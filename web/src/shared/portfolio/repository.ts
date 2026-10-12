@@ -2,11 +2,15 @@ import { api, migratePortfolio, signalWithTimeout } from "@/shared/api";
 import type { Portfolio, PortfolioSummary } from "@/shared/api";
 import { netQuantities } from "./ledger";
 
-/** What a trade changes: the ledger (and the currency it is reported in). */
+/**
+ * What a trade changes: the ledger (and the currency it is reported in).
+ * The counterparties are left as they are unless given.
+ */
 export type Ledger = Pick<
 	Portfolio,
 	"instruments" | "transactions" | "base_currency"
->;
+> &
+	Partial<Pick<Portfolio, "counterparties">>;
 
 /**
  * PortfolioRepository port — blueprint WP 04 §4. Portfolio components talk to
@@ -99,6 +103,7 @@ export const localRepository: PortfolioRepository = {
 			base_currency: "EUR",
 			instruments: [],
 			transactions: [],
+			counterparties: [],
 			positions: [],
 		};
 		saveAll([...loadAll(), pf]);
@@ -220,6 +225,7 @@ export const serverRepository: PortfolioRepository = {
 		return this.putLedger(created.id, {
 			instruments: ledger.instruments ?? [],
 			transactions: ledger.transactions ?? [],
+			counterparties: ledger.counterparties ?? [],
 			base_currency: ledger.base_currency ?? "EUR",
 		});
 	},

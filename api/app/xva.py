@@ -24,11 +24,14 @@ import math
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
 from . import credit, db, rates_derivatives, xva_fx
+
+if TYPE_CHECKING:  # pragma: no cover — xva_equity imports the portfolio modules
+    from .xva_equity import AssetMarket
 from .schemas import MethodologySection
 from .xva_schemas import (
     AdjustmentRisks,
@@ -36,6 +39,7 @@ from .xva_schemas import (
     CapitalOut,
     CorrelationEstimate,
     CreditInput,
+    EquityMarket,
     Estimate,
     ExposureProfileOut,
     ForeignMarket,
@@ -82,13 +86,16 @@ class XvaInputError(ValueError):
 class _Spec:
     description: str
     #: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" |
-    #: "cross_currency_swap"
+    #: "cross_currency_swap" | "equity_option"
     kind: str
-    #: A payer swap; for an FX trade, the side that receives the euros.
+    #: A payer swap; for an FX trade, the side that receives the euros; a
+    #: call, for an equity option.
     payer: bool
-    #: The tenor of a swap; the maturity of an FX trade.
+    #: The tenor of a swap; the maturity of an FX trade; the expiry of an
+    #: equity option.
     tenor: float
-    #: In the trade's currency; in euros for an FX trade.
+    #: In the trade's currency; in euros for an FX trade; the number of
+    #: shares an equity option is on.
     notional: float
     #: The expiry of a swaption; the first exercise date of a Bermudan.
     start: float = 0.0
@@ -102,6 +109,13 @@ class _Spec:
     script: Optional[str] = None
     #: The currency of a rate trade.
     currency: str = "USD"
+    #: The terms of a trade that is not struck at today's market (a trade of
+    #: a portfolio, portfolio_xva.py); None for the market's. `rate` is the
+    #: fixed rate of a swap, the strike of a swaption, the delivery rate of
+    #: an FX forward, the dollar coupon of a cross-currency swap.
+    rate: Optional[float] = None
+    foreign_rate: Optional[float] = None
+    domestic_notional: Optional[float] = None
 
 
 def _swap(tenor: float, payer: bool, notional: float = NOTIONAL) -> _Spec:
@@ -521,20 +535,24 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
             )
             continue
         start, tenor = s.par_of or (s.start, s.tenor)
-        par = qm.price_swap(
-            rates.times,
-            rates.dfs,
-            rates.times,
-            rates.dfs,
-            start,
-            tenor,
-            0.0,
-            1,
-            1,
-            1.0,
-            True,
-            0.0,
-        )["par_rate"]
+        par = (
+            s.rate
+            if s.rate is not None
+            else qm.price_swap(
+                rates.times,
+                rates.dfs,
+                rates.times,
+                rates.dfs,
+                start,
+                tenor,
+                0.0,
+                1,
+                1,
+                1.0,
+                True,
+                0.0,
+            )["par_rate"]
+        )
         if s.kind == "script":
             out.append(
                 {
@@ -603,6 +621,93 @@ def _two_currencies(specs: List[_Spec]) -> bool:
     return any(s.kind in _FX_KINDS or s.currency != "USD" for s in specs)
 
 
+def _has_asset(specs: List[_Spec]) -> bool:
+    return any(s.kind == "equity_option" for s in specs)
+
+
+def _asset_trades(
+    specs: List[_Spec], rates: _Rates, asset: "AssetMarket"
+) -> Tuple[List[dict], dict, float]:
+    """The trades of a netting set with equity options (lot X14), what
+    qm.xva_netting_set takes as `foreign` for the share, and the volatility
+    of the share in the model: the one that gives the option the model is
+    calibrated on its market Black volatility, once the interest rate's own
+    moves are counted in the forward's."""
+    try:
+        fit = qm.cross_currency_fx_volatility(
+            (rates.mean_reversion, rates.sigma),
+            # The dividend yield is known: a rate that does not move.
+            (rates.mean_reversion, 1e-10),
+            (0.0, asset.correlation.value, 0.0),
+            asset.calibration_expiry,
+            asset.market_volatility,
+            [],
+        )
+    except RuntimeError as exc:
+        raise XvaUnavailable(str(exc)) from exc
+    out = []
+    for s in specs:
+        if s.kind == "equity_option":
+            out.append(
+                {
+                    "kind": "asset_option",
+                    "strike": s.rate,
+                    "expiry": s.tenor,
+                    "is_call": s.payer,
+                    "notional": s.notional,
+                    "quantity": s.quantity,
+                }
+            )
+        elif s.kind in ("swap", "swaption") and s.currency == "USD":
+            par = (
+                s.rate
+                if s.rate is not None
+                else qm.price_swap(
+                    rates.times,
+                    rates.dfs,
+                    rates.times,
+                    rates.dfs,
+                    s.start,
+                    s.tenor,
+                    0.0,
+                    1,
+                    1,
+                    1.0,
+                    True,
+                    0.0,
+                )["par_rate"]
+            )
+            trade = {
+                "kind": s.kind,
+                "currency": "domestic",
+                "tenor": s.tenor,
+                "fixed_rate": par,
+                "notional": s.notional,
+                "payer": s.payer,
+                "quantity": s.quantity,
+                "fixed_frequency": 1,
+                "float_frequency": 1,
+            }
+            trade["start" if s.kind == "swap" else "expiry"] = s.start
+            out.append(trade)
+        else:
+            raise XvaInputError(
+                f"Next to equity options the engine takes dollar swaps and European "
+                f"swaptions, not a {s.kind.replace('_', ' ')}: its second factor is "
+                "the share."
+            )
+    argument = {
+        "currency": asset.ticker,
+        "domestic_currency": "USD",
+        "spot": asset.spot,
+        "dividend_yield": asset.dividend_yield,
+        "volatility": fit["spot_volatility"],
+        "rate_correlation": asset.correlation.value,
+        "index": asset.index,
+    }
+    return out, argument, fit["spot_volatility"]
+
+
 def _two_currency_trades(
     specs: List[_Spec], rates: _Rates, foreign: xva_fx.TwoCurrencyMarket
 ) -> List[dict]:
@@ -617,12 +722,16 @@ def _two_currency_trades(
             out.append(
                 {
                     "kind": "fx_forward",
-                    # Covered interest parity.
-                    "strike": foreign.spot
-                    * foreign.discount(s.tenor)
-                    / qm.rate_curve_discount_factors(rates.times, rates.dfs, [s.tenor])[
-                        0
-                    ],
+                    # Covered interest parity, unless the trade has its rate.
+                    "strike": (
+                        s.rate
+                        if s.rate is not None
+                        else foreign.spot
+                        * foreign.discount(s.tenor)
+                        / qm.rate_curve_discount_factors(
+                            rates.times, rates.dfs, [s.tenor]
+                        )[0]
+                    ),
                     "maturity": s.tenor,
                     "notional": s.notional,
                     "quantity": s.quantity if s.payer else -s.quantity,
@@ -634,9 +743,21 @@ def _two_currency_trades(
                     "kind": "cross_currency_swap",
                     "maturity": s.tenor,
                     "foreign_notional": s.notional,
-                    "domestic_notional": s.notional * foreign.spot,
-                    "foreign_rate": xva_fx.par_coupon(euro.times, euro.dfs, s.tenor),
-                    "domestic_rate": xva_fx.par_coupon(rates.times, rates.dfs, s.tenor),
+                    "domestic_notional": (
+                        s.domestic_notional
+                        if s.domestic_notional is not None
+                        else s.notional * foreign.spot
+                    ),
+                    "foreign_rate": (
+                        s.foreign_rate
+                        if s.foreign_rate is not None
+                        else xva_fx.par_coupon(euro.times, euro.dfs, s.tenor)
+                    ),
+                    "domestic_rate": (
+                        s.rate
+                        if s.rate is not None
+                        else xva_fx.par_coupon(rates.times, rates.dfs, s.tenor)
+                    ),
                     "frequency": 1,
                     "receive_foreign": s.payer,
                     "quantity": s.quantity,
@@ -647,9 +768,13 @@ def _two_currency_trades(
             times, dfs = (
                 (euro.times, euro.dfs) if in_euros else (rates.times, rates.dfs)
             )
-            par = qm.price_swap(
-                times, dfs, times, dfs, s.start, s.tenor, 0.0, 1, 1, 1.0, True, 0.0
-            )["par_rate"]
+            par = (
+                s.rate
+                if s.rate is not None
+                else qm.price_swap(
+                    times, dfs, times, dfs, s.start, s.tenor, 0.0, 1, 1, 1.0, True, 0.0
+                )["par_rate"]
+            )
             trade = {
                 "kind": s.kind,
                 "currency": "foreign" if in_euros else "domestic",
@@ -690,6 +815,18 @@ def _margin_model(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
         )
     if asked == "regression":
         return "regression", "Chosen by hand."
+    if _has_asset(specs):
+        if asked == "simm":
+            raise XvaInputError(
+                "SIMM is computed here for the interest rate risk of one currency. "
+                "This netting set also moves with a share: use the regression model."
+            )
+        return "regression", (
+            "This netting set holds equity options. The SIMM computed here covers "
+            "interest rate risk, not equity risk, so the margin is modelled instead: "
+            "the 99 % quantile of the move of the value over ten days, fitted on the "
+            "simulated paths."
+        )
     if _two_currencies(specs):
         if asked == "simm":
             raise XvaInputError(
@@ -783,6 +920,13 @@ def _capital_method(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
             "at default is read off the simulation instead, as the internal "
             "models method does: 1.4 × the Effective EPE."
         )
+    if _has_asset(specs):
+        return "sa_ccr", (
+            "Every trade has a supervisory description for the standardised "
+            "approach (SA-CCR), the method a bank uses without an approved model: "
+            "the rate trades form the dollar hedging set, and an equity option is "
+            "an equity trade, by the price of the shares it is on."
+        )
     if _two_currencies(specs):
         return "sa_ccr", (
             "Every trade has a supervisory description for the standardised "
@@ -865,11 +1009,31 @@ def _capital(
     )
 
 
-def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
+#: The trades of a netting set that is not one of PORTFOLIOS, once the date
+#: of the market is known: (label, what to say about it, trades, warnings,
+#: the share its equity options are on — None without any).
+Book = Callable[
+    [date], Tuple[str, str, List[_Spec], List[str], Optional["AssetMarket"]]
+]
+
+
+def compute(
+    req: XvaRequest, today: Optional[date] = None, book: Optional[Book] = None
+) -> XvaResponse:
     started = time.perf_counter()
     warnings: List[str] = []
-    label, lesson, specs = PORTFOLIOS[req.portfolio]
     rates = _rates_market(today)
+    asset: Optional["AssetMarket"] = None
+    if book is not None:
+        label, lesson, specs, said, asset = book(rates.as_of)
+        warnings.extend(said)
+    elif req.portfolio not in PORTFOLIOS:
+        raise XvaInputError(
+            "A netting set of a portfolio is computed from the Portfolio page, "
+            "which sends its trades."
+        )
+    else:
+        label, lesson, specs = PORTFOLIOS[req.portfolio]
     if req.scripts and _two_currencies(specs):
         raise XvaInputError(
             "A scripted trade is valued by regression, which the two-currency "
@@ -878,14 +1042,27 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
     specs = specs + _script_specs(req, rates)
     if not specs:
         raise XvaInputError(
-            "The portfolio `custom` is made of the scripts of the request: give "
+            "This netting set holds no trade the exposure engine can simulate."
+            if book is not None
+            else "The portfolio `custom` is made of the scripts of the request: give "
             "at least one."
         )
     counterparty = _credit(req.counterparty_rating, req.recovery, rates, warnings)
     own = _credit(req.own_rating, req.recovery, rates, warnings)
     foreign: Optional[xva_fx.TwoCurrencyMarket] = None
     historical: Optional[HistoricalDynamics] = None
-    if _two_currencies(specs):
+    asset_argument: Optional[dict] = None
+    asset_volatility = 0.0
+    if _has_asset(specs):
+        if asset is None:
+            raise XvaInputError("An equity option needs the market of its share.")
+        if req.device == "gpu":
+            raise XvaInputError(
+                "The simulation of a share with the interest rate runs on the CPU: "
+                "ask for `auto` or `cpu`."
+            )
+        trades, asset_argument, asset_volatility = _asset_trades(specs, rates, asset)
+    elif _two_currencies(specs):
         if req.device == "gpu":
             raise XvaInputError(
                 "The two-currency simulation runs on the CPU: ask for `auto` or `cpu`."
@@ -955,8 +1132,30 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         # Per unit of currency in the library; per reference notional here.
         wrong_way_b=req.wrong_way_risk / NOTIONAL,
         device=req.device,
-        foreign=foreign.argument() if foreign is not None else None,
+        foreign=(foreign.argument() if foreign is not None else asset_argument),
     )
+    if asset is not None and asset_argument is not None:
+        warnings.append(
+            f"The correlation of {asset.ticker} with the interest rate is a "
+            "historical estimate on weekly changes: no freely published price "
+            "implies it."
+        )
+        if asset.volatility_proxied:
+            warnings.append(
+                f"No option chain is stored for {asset.ticker}: its volatility is "
+                "its realised volatility over 63 business days, a proxy."
+            )
+        if asset.dividend_as_of is None:
+            warnings.append(
+                f"No dividend yield is stored for {asset.ticker}: it is taken as zero."
+            )
+        if sum(1 for s in specs if s.kind == "equity_option") > 1:
+            warnings.append(
+                f"The share has one volatility in the model, calibrated on the option "
+                f"struck at {asset.calibration_strike:g} expiring in "
+                f"{asset.calibration_expiry:.2f} years: the other options are valued "
+                "at it, without the smile."
+            )
 
     if foreign is not None:
         warnings.append(
@@ -998,6 +1197,7 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
                 description=spec.description,
                 kind=spec.kind,
                 currency="EUR" if spec.kind in _FX_KINDS else spec.currency,
+                # (an equity option: `payer` says call or put)
                 quantity=spec.quantity,
                 # A script of the request has only its text; the swap this
                 # module writes as a script keeps the terms it was written from.
@@ -1032,11 +1232,17 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             ExposureProfileOut(**_profile(result["risk"])) if result["risk"] else None
         ),
         risk_unavailable=(
-            None
-            if foreign is None
-            else "The real-world measure is estimated here for one interest rate. "
-            "With two currencies it would take the joint history of two rates and "
-            "of the exchange rate: the profiles are those of the pricing measure."
+            "The real-world measure is estimated here for one interest rate. With a "
+            "share it would take its expected return as well, which no data pins "
+            "down: the profiles are those of the pricing measure."
+            if asset_argument is not None
+            else (
+                None
+                if foreign is None
+                else "The real-world measure is estimated here for one interest rate. "
+                "With two currencies it would take the joint history of two rates and "
+                "of the exchange rate: the profiles are those of the pricing measure."
+            )
         ),
         adjustments=_adjustments(result),
         adjustments_uncollateralised=_adjustments(open_set) if open_set else None,
@@ -1089,6 +1295,35 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
             historical=historical,
             default_rate=default_rate,
             foreign=_foreign_market(foreign) if foreign is not None else None,
+            equity=(
+                EquityMarket(
+                    ticker=asset.ticker,
+                    spot=asset.spot,
+                    spot_as_of=asset.spot_as_of,
+                    dividend_yield=asset.dividend_yield,
+                    dividend_as_of=asset.dividend_as_of,
+                    market_volatility=asset.market_volatility,
+                    volatility_source=asset.volatility_source,
+                    volatility_proxied=asset.volatility_proxied,
+                    calibration_strike=asset.calibration_strike,
+                    calibration_expiry=asset.calibration_expiry,
+                    spot_volatility=asset_volatility,
+                    correlation=CorrelationEstimate(
+                        value=asset.correlation.value,
+                        low=asset.correlation.low,
+                        high=asset.correlation.high,
+                        weeks=asset.correlation.weeks,
+                    ),
+                    correlation_series=[
+                        xva_fx.USD_RATE_SERIES,
+                        f"{asset.ticker} closes",
+                    ],
+                    correlation_start=asset.correlation_start,
+                    correlation_end=asset.correlation_end,
+                )
+                if asset is not None and asset_argument is not None
+                else None
+            ),
         ),
         paths=req.paths,
         pilot_paths=result["pilot_paths"],
@@ -1098,7 +1333,9 @@ def compute(req: XvaRequest, today: Optional[date] = None) -> XvaResponse:
         device_reason=_device_reason(req.device, result),
         compute_ms=(time.perf_counter() - started) * 1000.0,
         warnings=warnings,
-        methodology=methodology(two_currencies=foreign is not None),
+        methodology=methodology(
+            two_currencies=foreign is not None, equity=asset_argument is not None
+        ),
     )
 
 
@@ -1166,14 +1403,34 @@ _SPREAD_TENORS = (0.5, 1.0, 3.0, 5.0, 10.0)
 
 
 def compute_sensitivities(
-    req: XvaSensitivitiesRequest, today: Optional[date] = None
+    req: XvaSensitivitiesRequest,
+    today: Optional[date] = None,
+    book: Optional[Book] = None,
 ) -> XvaSensitivitiesResponse:
     """CVA, DVA and FVA of the netting set differentiated to every quote the
     market gives, by adjoint differentiation, and the SA-CVA capital from
-    those sensitivities."""
+    those sensitivities. `book`: the trades of a portfolio's netting set, at
+    the rates of their contracts (portfolio_xva.py)."""
     started = time.perf_counter()
     warnings: List[str] = []
-    label, _, specs = PORTFOLIOS[req.portfolio]
+    rates = _rates_market(today)
+    if book is not None:
+        label, _, specs, said, _ = book(rates.as_of)
+        warnings.extend(said)
+    elif req.portfolio not in PORTFOLIOS:
+        raise XvaInputError(
+            "A netting set of a portfolio is computed from the Portfolio page, "
+            "which sends its trades."
+        )
+    else:
+        label, _, specs = PORTFOLIOS[req.portfolio]
+    if _has_asset(specs):
+        raise XvaInputError(
+            "The sensitivities are computed for netting sets of dollar swaps and "
+            "swaptions: the adjoint pass differentiates the simulation of one "
+            "interest rate, not yet the one with a share. This netting set holds "
+            "equity options."
+        )
     if _two_currencies(specs):
         raise XvaInputError(
             "The sensitivities are computed for netting sets in one currency: the "
@@ -1188,7 +1445,11 @@ def compute_sensitivities(
             + (
                 f"This portfolio holds a {by_regression[0]}, valued by regression."
                 if by_regression
-                else "This portfolio is made of scripts, valued by regression."
+                else (
+                    "This netting set holds no such trade."
+                    if book is not None
+                    else "This portfolio is made of scripts, valued by regression."
+                )
             )
         )
     if req.csa is not None and req.csa.initial_margin:
@@ -1196,7 +1457,6 @@ def compute_sensitivities(
             "The sensitivities cover variation margin; initial margin, which is a "
             "model of the margin fitted on the paths, is not differentiated."
         )
-    rates = _rates_market(today)
     counterparty = _credit(req.counterparty_rating, req.recovery, rates, warnings)
     own = _credit(req.own_rating, req.recovery, rates, warnings)
     trades = _trades(specs, rates)
@@ -1340,8 +1600,31 @@ def market_inputs(response: XvaResponse) -> List[Tuple[str, str, str, object]]:
             else []
         )
         + _foreign_inputs(m.foreign)
+        + _equity_inputs(m.equity)
         + default_rate
     )
+
+
+def _equity_inputs(e: Optional[EquityMarket]) -> List[Tuple[str, str, str, object]]:
+    if e is None:
+        return []
+    as_of = e.spot_as_of.isoformat()
+    return [
+        (f"spot:{e.ticker}", "db:prices", as_of, e.spot),
+        (f"dividend_yield:{e.ticker}", "db:prices", as_of, e.dividend_yield),
+        (
+            f"volatility:{e.ticker}",
+            "db:options" if not e.volatility_proxied else "db:prices",
+            as_of,
+            [e.market_volatility, e.calibration_strike, e.calibration_expiry],
+        ),
+        (
+            f"correlation:{xva_fx.USD_RATE_SERIES}:{e.ticker}",
+            "db:fred+prices",
+            e.correlation_end.isoformat(),
+            e.correlation.value,
+        ),
+    ]
 
 
 def _foreign_inputs(f: Optional[ForeignMarket]) -> List[Tuple[str, str, str, object]]:
@@ -1867,8 +2150,52 @@ _TWO_CURRENCY_SECTIONS: List[Tuple[str, List[str]]] = [
 ]
 
 
-def methodology(two_currencies: bool = False) -> List[MethodologySection]:
-    sections = _SECTIONS + (_TWO_CURRENCY_SECTIONS if two_currencies else [])
+_EQUITY_SECTIONS = [
+    (
+        "Equity options in the netting set",
+        [
+            "A share is simulated with the interest rate: its price is lognormal, "
+            "the rate follows Hull-White, and the two are correlated. Technically "
+            "the share takes the place the second currency has in the two-currency "
+            "model — its price is the exchange rate, its dividend yield a foreign "
+            "rate that is known and does not move (Brigo & Mercurio, Interest Rate "
+            "Models, 2nd ed., Springer, 2006, §14.3 and appendix B on equity under "
+            "stochastic rates).",
+            "A European option is then a closed form on every scenario: Black's "
+            "formula on the forward price of that scenario, with the variance the "
+            "forward still has to accumulate until the expiry, which is known "
+            "today. A bought option is an asset until it expires, pays its "
+            "intrinsic value then, and is nothing after; a sold one is a negative "
+            "quantity. Options are settled in cash and on one share each.",
+            "The share's volatility in the model is set so that the option the "
+            "model is calibrated on has its market Black volatility: the implied "
+            "volatility of the day's smile at its strike and expiry, or the "
+            "share's realised volatility over 63 business days when no option "
+            "chain is stored (a proxy, said in the warnings). There is one "
+            "volatility: several options are valued without the smile between them.",
+            "The correlation of the share with the interest rate is a historical "
+            "estimate — weekly changes of the five-year Treasury yield against "
+            "weekly log returns of the share over three years — given with its 95 % "
+            "confidence interval. The dividend yield is the stored trailing yield, "
+            "held constant.",
+            "One share per netting set, next to dollar swaps and European "
+            "swaptions. American, Asian, barrier, digital and lookback options, "
+            "trades in euros and a second share are left out, and the warnings say "
+            "so. As with two currencies: on the CPU, under the pricing measure, "
+            "with the margin modelled by regression.",
+        ],
+    ),
+]
+
+
+def methodology(
+    two_currencies: bool = False, equity: bool = False
+) -> List[MethodologySection]:
+    sections = (
+        _SECTIONS
+        + (_TWO_CURRENCY_SECTIONS if two_currencies else [])
+        + (_EQUITY_SECTIONS if equity else [])
+    )
     return [MethodologySection(title=t, paragraphs=p) for t, p in sections]
 
 

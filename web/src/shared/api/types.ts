@@ -61,6 +61,10 @@ export type XvaSensitivitiesRequest = Schemas["XvaSensitivitiesRequest"];
 export type XvaSensitivities = Schemas["XvaSensitivitiesResponse"];
 export type XvaQuoteRisk = Schemas["AdjustmentRisks"];
 export type XvaForeignMarket = Schemas["ForeignMarket"];
+export type XvaEquityMarket = Schemas["EquityMarket"];
+export type PortfolioXvaRequest = Schemas["PortfolioXvaRequest"];
+export type PortfolioXvaSensitivitiesRequest =
+	Schemas["PortfolioXvaSensitivitiesRequest"];
 
 // FastAPI splits models used for both request and response bodies.
 export type Portfolio = Schemas["Portfolio-Output"];
@@ -96,8 +100,14 @@ export type FxCorrelationResponse = Schemas["FxCorrelationResponse"];
 
 // Portfolio ledger and its valuation (MTM, daily P&L).
 export type Instrument = Schemas["Instrument"];
+export type Counterparty = Schemas["Counterparty-Output"];
+export type NettingSet = Schemas["NettingSet"];
+export type CsaTerms = Schemas["CsaInput"];
 export type EquitySpec = Schemas["EquitySpec"];
 export type DerivativeSpec = Schemas["DerivativeSpec"];
+export type RateFxSpec = Schemas["RateFxSpec"];
+export type RateFxDraft = Schemas["RateFxDraft"];
+export type RateFxQuote = Schemas["RateFxQuote"];
 export type Trade = Schemas["Trade"];
 export type PortfolioCurrency = Portfolio["base_currency"];
 export type PortfolioSnapshot = Schemas["SnapshotResponse"];

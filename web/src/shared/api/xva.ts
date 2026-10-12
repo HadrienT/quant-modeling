@@ -4,6 +4,8 @@ import { ApiError } from "./errors";
 import { queryKeys } from "./queryKeys";
 import { STALE } from "./queryClient";
 import type {
+	PortfolioXvaRequest,
+	PortfolioXvaSensitivitiesRequest,
 	XvaPortfolios,
 	XvaRequest,
 	XvaResponse,
@@ -60,6 +62,26 @@ export function useXvaNettingSet(request: XvaRequest) {
 }
 
 /**
+ * The same for one netting set of a portfolio's ledger (null: not asked
+ * for — the run takes a few seconds and is started by the reader).
+ */
+export function usePortfolioXva(request: PortfolioXvaRequest | null) {
+	return useQuery<XvaResponse, ApiError>({
+		queryKey: queryKeys.xva.portfolio(request),
+		enabled: request != null,
+		staleTime: STALE.rates,
+		retry: false,
+		queryFn: ({ signal }) =>
+			call<XvaResponse>(signal, (s) =>
+				api.POST("/api/xva/portfolio", {
+					body: request as never,
+					signal: s,
+				}),
+			),
+	});
+}
+
+/**
  * The sensitivities of the adjustments to every market quote. Asked for on
  * demand (`enabled`): it is a second simulation, and not every portfolio has
  * one.
@@ -76,6 +98,26 @@ export function useXvaSensitivities(
 		queryFn: ({ signal }) =>
 			call<XvaSensitivities>(signal, (s) =>
 				api.POST("/api/xva/sensitivities", { body: request, signal: s }),
+			),
+	});
+}
+
+/** The same for one netting set of a portfolio's ledger. */
+export function usePortfolioXvaSensitivities(
+	request: PortfolioXvaSensitivitiesRequest | null,
+	enabled: boolean,
+) {
+	return useQuery<XvaSensitivities, ApiError>({
+		queryKey: queryKeys.xva.portfolioSensitivities(request),
+		enabled: enabled && request != null,
+		staleTime: STALE.rates,
+		retry: false,
+		queryFn: ({ signal }) =>
+			call<XvaSensitivities>(signal, (s) =>
+				api.POST("/api/xva/portfolio/sensitivities", {
+					body: request as never,
+					signal: s,
+				}),
 			),
 	});
 }

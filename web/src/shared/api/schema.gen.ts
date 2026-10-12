@@ -397,6 +397,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio-valuation/counterparty-examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Counterparty Examples
+         * @description Fictional counterparties with their usual netting and collateral
+         *     terms, to copy into a portfolio (portfolio_counterparties.py).
+         */
+        get: operations["counterparty_examples"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolio-valuation/demos": {
         parameters: {
             query?: never;
@@ -447,6 +468,28 @@ export interface paths {
         put?: never;
         /** Portfolio Migrate */
         post: operations["portfolio_migrate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio-valuation/rate-fx/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rate Fx Quote
+         * @description The contract with the rates the draft leaves out at the market of the
+         *     trade date, and its value that day. 503 when the store has no market for
+         *     the date: nothing is priced on an older one.
+         */
+        post: operations["rate_fx_quote"];
         delete?: never;
         options?: never;
         head?: never;
@@ -738,6 +781,49 @@ export interface paths {
         put?: never;
         /** Xva Netting Set */
         post: operations["xva_netting_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xva/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Xva Portfolio
+         * @description Exposure and xVA of one netting set of a portfolio: the trades held
+         *     under it today, the counterparty's rating and the collateral agreement
+         *     of the ledger, on the market of the xVA page.
+         */
+        post: operations["xva_portfolio"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/xva/portfolio/sensitivities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Xva Portfolio Sensitivities
+         * @description The sensitivities of the adjustments of one netting set of a
+         *     portfolio to every market quote, by adjoint differentiation.
+         */
+        post: operations["xva_portfolio_sensitivities"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2330,6 +2416,68 @@ export interface components {
              */
             weeks: number;
         };
+        /**
+         * Counterparty
+         * @description Who the over-the-counter trades of a portfolio face. The credit curve
+         *     is the rating's (ICE BofA spreads, as on the credit and xVA pages); the
+         *     sector is what the regulatory CVA capital weighs it by.
+         */
+        "Counterparty-Input": {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Netting Sets */
+            netting_sets?: components["schemas"]["NettingSet"][];
+            /**
+             * Rating
+             * @default BBB
+             * @enum {string}
+             */
+            rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Recovery
+             * @default 0.4
+             */
+            recovery: number;
+            /**
+             * Sector
+             * @default other
+             * @enum {string}
+             */
+            sector: "sovereign" | "local_government" | "financial" | "basic_materials_energy_industrials" | "consumer_transport_administrative" | "technology_telecommunications" | "health_care_utilities_professional" | "other";
+        };
+        /**
+         * Counterparty
+         * @description Who the over-the-counter trades of a portfolio face. The credit curve
+         *     is the rating's (ICE BofA spreads, as on the credit and xVA pages); the
+         *     sector is what the regulatory CVA capital weighs it by.
+         */
+        "Counterparty-Output": {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Netting Sets */
+            netting_sets?: components["schemas"]["NettingSet"][];
+            /**
+             * Rating
+             * @default BBB
+             * @enum {string}
+             */
+            rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Recovery
+             * @default 0.4
+             */
+            recovery: number;
+            /**
+             * Sector
+             * @default other
+             * @enum {string}
+             */
+            sector: "sovereign" | "local_government" | "financial" | "basic_materials_energy_industrials" | "consumer_transport_administrative" | "technology_telecommunications" | "health_care_utilities_professional" | "other";
+        };
         /** CreditInput */
         CreditInput: {
             /**
@@ -2713,6 +2861,64 @@ export interface components {
          * @enum {string}
          */
         EngineType: "analytic" | "mc" | "binomial" | "trinomial" | "pde";
+        /**
+         * EquityMarket
+         * @description The share of a netting set that holds equity options (lot X14): a
+         *     lognormal price under the Hull-White rate, with a known dividend yield.
+         */
+        EquityMarket: {
+            /** Calibration Expiry */
+            calibration_expiry: number;
+            /** Calibration Strike */
+            calibration_strike: number;
+            /** @description Of the interest rate and the share, on weekly changes */
+            correlation: components["schemas"]["CorrelationEstimate"];
+            /**
+             * Correlation End
+             * Format: date
+             */
+            correlation_end: string;
+            /** Correlation Series */
+            correlation_series: string[];
+            /**
+             * Correlation Start
+             * Format: date
+             */
+            correlation_start: string;
+            /**
+             * Dividend As Of
+             * @description None when no yield is stored: it is then taken as zero
+             */
+            dividend_as_of: string | null;
+            /** Dividend Yield */
+            dividend_yield: number;
+            /**
+             * Market Volatility
+             * @description The Black volatility the model is calibrated to
+             */
+            market_volatility: number;
+            /** Spot */
+            spot: number;
+            /**
+             * Spot As Of
+             * Format: date
+             */
+            spot_as_of: string;
+            /**
+             * Spot Volatility
+             * @description The volatility of the share in the model: below the market's when rates add to the forward's
+             */
+            spot_volatility: number;
+            /** Ticker */
+            ticker: string;
+            /**
+             * Volatility Proxied
+             * @description True when it is a realised volatility, for want of options
+             */
+            volatility_proxied: boolean;
+            /** Volatility Source */
+            volatility_source: string;
+        };
         /**
          * EquitySpec
          * @description A listed share or index, marked at its stored close (any market of the
@@ -3511,8 +3717,10 @@ export interface components {
              * @default
              */
             label: string;
+            /** Netting Set Id */
+            netting_set_id?: string | null;
             /** Spec */
-            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"];
+            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"] | components["schemas"]["RateFxSpec"];
         };
         /**
          * LeverageFit
@@ -4024,6 +4232,19 @@ export interface components {
             vols: number[];
         };
         /**
+         * NettingSet
+         * @description The trades one master agreement closes out as a single net amount if
+         *     the counterparty defaults, and the collateral agreement on that amount
+         *     (None: uncollateralised).
+         */
+        NettingSet: {
+            csa?: components["schemas"]["CsaInput"] | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
          * Portfolio
          * @description A portfolio, stored as JSON (storage.py). Version 2 is a ledger:
          *     `instruments` and `transactions`; positions are derived from them
@@ -4037,6 +4258,8 @@ export interface components {
              * @enum {string}
              */
             base_currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Counterparties */
+            counterparties?: components["schemas"]["Counterparty-Input"][];
             /** Created At */
             created_at?: string;
             /** Id */
@@ -4079,6 +4302,8 @@ export interface components {
              * @enum {string}
              */
             base_currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Counterparties */
+            counterparties?: components["schemas"]["Counterparty-Output"][];
             /** Created At */
             created_at?: string;
             /** Id */
@@ -4155,6 +4380,101 @@ export interface components {
             total_value: number;
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * PortfolioXvaRequest
+         * @description A netting set of the portfolio, and what is the bank's own: its
+         *     rating, its funding spreads, the return it wants on capital. The
+         *     counterparty's side comes from the portfolio.
+         */
+        PortfolioXvaRequest: {
+            /**
+             * Borrowing Spread
+             * @default 0
+             */
+            borrowing_spread: number;
+            /**
+             * Cost Of Capital
+             * @default 0.1
+             */
+            cost_of_capital: number;
+            /**
+             * Device
+             * @default auto
+             * @enum {string}
+             */
+            device: "auto" | "cpu" | "gpu";
+            /**
+             * Lending Spread
+             * @default 0
+             */
+            lending_spread: number;
+            /** Netting Set Id */
+            netting_set_id: string;
+            /**
+             * Own Rating
+             * @default A
+             * @enum {string}
+             */
+            own_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Paths
+             * @default 10000
+             */
+            paths: number;
+            /**
+             * Pfe Confidence
+             * @default 0.95
+             */
+            pfe_confidence: number;
+            portfolio: components["schemas"]["Portfolio-Input"];
+            /**
+             * Seed
+             * @default 42
+             */
+            seed: number;
+            /**
+             * Wrong Way Risk
+             * @default 0
+             */
+            wrong_way_risk: number;
+        };
+        /**
+         * PortfolioXvaSensitivitiesRequest
+         * @description The netting set whose CVA, DVA and FVA are differentiated to every
+         *     market quote: its dollar swaps and European swaptions, at the rates of
+         *     their contracts.
+         */
+        PortfolioXvaSensitivitiesRequest: {
+            /**
+             * Borrowing Spread
+             * @default 0
+             */
+            borrowing_spread: number;
+            /**
+             * Lending Spread
+             * @default 0
+             */
+            lending_spread: number;
+            /** Netting Set Id */
+            netting_set_id: string;
+            /**
+             * Own Rating
+             * @default A
+             * @enum {string}
+             */
+            own_rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Paths
+             * @default 5000
+             */
+            paths: number;
+            portfolio: components["schemas"]["Portfolio-Input"];
+            /**
+             * Seed
+             * @default 42
+             */
+            seed: number;
         };
         /**
          * Position
@@ -4280,7 +4600,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "equity" | "derivative";
+            kind: "equity" | "derivative" | "rate_fx";
             /** Label */
             label: string;
             /** Mark */
@@ -4613,6 +4933,133 @@ export interface components {
             strike: number;
             /** Vols */
             vols: number[];
+        };
+        /**
+         * RateFxDraft
+         * @description A rate or FX trade whose rates may be left out: they are then set at
+         *     the market of the trade date (portfolio_rates.at_market).
+         */
+        RateFxDraft: {
+            /**
+             * Currency
+             * @enum {string}
+             */
+            currency: "USD" | "EUR";
+            /** Domestic Notional */
+            domestic_notional?: number | null;
+            /** Fixed Rate */
+            fixed_rate?: number | null;
+            /** Foreign Rate */
+            foreign_rate?: number | null;
+            /**
+             * Maturity
+             * Format: date
+             */
+            maturity: string;
+            /** Notional */
+            notional: number;
+            /**
+             * Payer
+             * @default true
+             */
+            payer: boolean;
+            /**
+             * Product
+             * @enum {string}
+             */
+            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+        };
+        /** RateFxQuote */
+        RateFxQuote: {
+            /** Currency */
+            currency: string;
+            /** Label */
+            label: string;
+            spec: components["schemas"]["RateFxSpec"];
+            /**
+             * Value
+             * @description What one contract is worth on the trade date, in `currency`: the price a trade on it is booked at by default
+             */
+            value: number;
+        };
+        /** RateFxQuoteRequest */
+        RateFxQuoteRequest: {
+            draft: components["schemas"]["RateFxDraft"];
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+        };
+        /**
+         * RateFxSpec
+         * @description An over-the-counter rate or FX trade, marked each day on the swap
+         *     curves of the store (portfolio_rates.py) and simulated by the exposure
+         *     engine (xVA). One contract is the whole notional: a trade's quantity is
+         *     +1 for the side described here, -1 for the other.
+         *
+         *     The conventions are the exposure engine's: both legs of a swap pay once a
+         *     year and it lasts a whole number of years; an FX trade is in euros
+         *     against dollars and is valued in dollars.
+         *
+         *     | product | start | maturity | payer | fixed_rate |
+         *     |---|---|---|---|---|
+         *     | swap | first day | last payment | pays the fixed rate | the fixed rate |
+         *     | swaption | expiry | end of the swap | on a payer swap | the strike |
+         *     | fx_forward | trade date | delivery | buys the euros | USD per EUR |
+         *     | cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |
+         */
+        RateFxSpec: {
+            /**
+             * Currency
+             * @description The currency of the notional: EUR for an FX trade
+             * @enum {string}
+             */
+            currency: "USD" | "EUR";
+            /**
+             * Domestic Notional
+             * @description The USD notional of a cross-currency swap: the EUR one at the exchange rate of its first day
+             */
+            domestic_notional?: number | null;
+            /** Fixed Rate */
+            fixed_rate: number;
+            /**
+             * Foreign Rate
+             * @description The EUR coupon of a cross-currency swap
+             */
+            foreign_rate?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rate_fx";
+            /**
+             * Maturity
+             * Format: date
+             */
+            maturity: string;
+            /** Notional */
+            notional: number;
+            /**
+             * Payer
+             * @default true
+             */
+            payer: boolean;
+            /**
+             * Product
+             * @enum {string}
+             */
+            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
         };
         /** RateHistoryPoint */
         RateHistoryPoint: {
@@ -6335,6 +6782,7 @@ export interface components {
             /** Curve Label */
             curve_label: string;
             default_rate?: components["schemas"]["HistoricalDefaultRate"] | null;
+            equity?: components["schemas"]["EquityMarket"] | null;
             foreign?: components["schemas"]["ForeignMarket"] | null;
             historical: components["schemas"]["HistoricalDynamics"] | null;
             hull_white: components["schemas"]["HullWhiteInput"];
@@ -6348,7 +6796,7 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            id: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Label */
             label: string;
             /** Lesson */
@@ -6413,7 +6861,7 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /**
              * Recovery
              * @default 0.4
@@ -6479,7 +6927,7 @@ export interface components {
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Portfolio Label */
             portfolio_label: string;
             risk: components["schemas"]["ExposureProfileOut"] | null;
@@ -6535,7 +6983,7 @@ export interface components {
              * @default single_swap
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /**
              * Recovery
              * @default 0.4
@@ -6599,7 +7047,7 @@ export interface components {
              * Portfolio
              * @enum {string}
              */
-            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom";
+            portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Portfolio Label */
             portfolio_label: string;
             sa_cva: components["schemas"]["SaCvaOut"];
@@ -6649,7 +7097,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap";
+            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap" | "equity_option";
             /**
              * Marginal Cva
              * @description Euler share of the CVA; none under a CSA
@@ -7426,6 +7874,26 @@ export interface operations {
             };
         };
     };
+    counterparty_examples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Counterparty-Output"][];
+                };
+            };
+        };
+    };
     portfolio_demos_list: {
         parameters: {
             query?: never;
@@ -7499,6 +7967,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Portfolio-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rate_fx_quote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RateFxQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateFxQuote"];
                 };
             };
             /** @description Validation Error */
@@ -8142,6 +8643,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["XvaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    xva_portfolio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioXvaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XvaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    xva_portfolio_sensitivities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioXvaSensitivitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["XvaSensitivitiesResponse"];
                 };
             };
             /** @description Validation Error */

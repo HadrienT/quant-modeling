@@ -4,11 +4,14 @@ import { ApiError } from "./errors";
 import { queryKeys } from "./queryKeys";
 import { STALE } from "./queryClient";
 import type {
+	Counterparty,
 	DemoPortfolio,
 	Portfolio,
 	PortfolioHistory,
 	PortfolioSnapshot,
 	PnlWindow,
+	RateFxDraft,
+	RateFxQuote,
 	TickerClose,
 } from "./types";
 
@@ -26,12 +29,15 @@ async function unwrap<T>(
 	return data as T;
 }
 
-/** The part of a portfolio its valuation depends on (the cache key). */
+/**
+ * The part of a portfolio its valuation depends on (the cache key): who a
+ * trade faces does not change its mark.
+ */
 function ledgerKey(pf: Portfolio | null | undefined) {
 	return pf
 		? JSON.stringify([
 				pf.base_currency,
-				pf.instruments ?? [],
+				(pf.instruments ?? []).map((i) => ({ ...i, netting_set_id: null })),
 				pf.transactions ?? [],
 				pf.positions ?? [],
 			])
@@ -124,6 +130,52 @@ export function usePortfolioDemos() {
 			try {
 				return await unwrap<DemoPortfolio[]>(
 					api.GET("/api/portfolio-valuation/demos", { signal: s }),
+				);
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/**
+ * A rate or FX trade with the rates the draft leaves out set at the market
+ * of the trade date, and what it is worth that day (null draft: not asked).
+ */
+export function useRateFxQuote(draft: RateFxDraft | null, tradeDate: string) {
+	return useQuery({
+		queryKey: queryKeys.portfolio.rateFxQuote(JSON.stringify(draft), tradeDate),
+		enabled: draft != null && !!tradeDate,
+		staleTime: STALE.history,
+		retry: false,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return await unwrap<RateFxQuote>(
+					api.POST("/api/portfolio-valuation/rate-fx/quote", {
+						body: { draft: draft!, trade_date: tradeDate },
+						signal: s,
+					}),
+				);
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/** Example counterparties, to copy into a portfolio. */
+export function useCounterpartyExamples() {
+	return useQuery({
+		queryKey: queryKeys.portfolio.counterpartyExamples(),
+		staleTime: STALE.history,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return await unwrap<Counterparty[]>(
+					api.GET("/api/portfolio-valuation/counterparty-examples", {
+						signal: s,
+					}),
 				);
 			} finally {
 				s.cleanup();

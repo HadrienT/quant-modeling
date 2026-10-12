@@ -18,7 +18,7 @@ const FORWARD_PERIODS = [
  * Rates tab: per currency, the government curve, the reference rates
  * (fixings and published averages — listed, never drawn on a tenor axis),
  * for USD the SOFR swap curve and swaption vols built from traded prices,
- * and the methodology, always visible. Every
+ * and the methodology. Every
  * number and every sentence of the methodology comes from the API
  * (api/app/rates.py), so the page cannot describe a computation it does not do.
  */

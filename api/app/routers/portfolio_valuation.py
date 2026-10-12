@@ -10,6 +10,8 @@ POST /api/portfolio-valuation/history    daily P&L over a window
 POST /api/portfolio-valuation/migrate    a position-based portfolio → ledger
 GET  /api/portfolio-valuation/close      a ticker's close on a date (trade form)
 GET  /api/portfolio-valuation/demos      read-only demo portfolios
+GET  /api/portfolio-valuation/counterparty-examples   example counterparties
+POST /api/portfolio-valuation/rate-fx/quote   a rate or FX trade at the market
 """
 
 from datetime import date, timedelta
@@ -20,11 +22,11 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .. import db
-from .. import portfolio_demos
+from .. import portfolio_counterparties, portfolio_demos, portfolio_rates
 from .. import portfolio_valuation as pv
 from ..logging_utils import get_logger
 from ..portfolio_ledger import migrate, validate
-from ..portfolio_schemas import Portfolio
+from ..portfolio_schemas import Counterparty, Portfolio, RateFxSpec
 from ..schemas import MethodologySection
 
 router = APIRouter(prefix="/api/portfolio-valuation", tags=["portfolios"])
@@ -67,7 +69,7 @@ class ModelView(BaseModel):
 class PositionMark(BaseModel):
     instrument_id: str
     label: str
-    kind: Literal["equity", "derivative"]
+    kind: Literal["equity", "derivative", "rate_fx"]
     currency: str
     quantity: float
     average_cost: float
@@ -262,3 +264,73 @@ async def portfolio_demos_list() -> List[DemoPortfolio]:
             continue
         out.append(DemoPortfolio(portfolio=pf, description=demo.description))
     return out
+
+
+@router.get("/counterparty-examples", response_model=List[Counterparty])
+async def counterparty_examples() -> List[Counterparty]:
+    """Fictional counterparties with their usual netting and collateral
+    terms, to copy into a portfolio (portfolio_counterparties.py)."""
+    return portfolio_counterparties.examples()
+
+
+class RateFxDraft(BaseModel):
+    """A rate or FX trade whose rates may be left out: they are then set at
+    the market of the trade date (portfolio_rates.at_market)."""
+
+    product: Literal["swap", "swaption", "fx_forward", "cross_currency_swap"]
+    currency: Literal["USD", "EUR"]
+    notional: float = Field(gt=0, le=1e12)
+    payer: bool = True
+    start: date
+    maturity: date
+    fixed_rate: Optional[float] = None
+    foreign_rate: Optional[float] = None
+    domestic_notional: Optional[float] = None
+
+
+class RateFxQuoteRequest(BaseModel):
+    draft: RateFxDraft
+    trade_date: date
+
+
+class RateFxQuote(BaseModel):
+    spec: RateFxSpec
+    label: str
+    value: float = Field(
+        description="What one contract is worth on the trade date, in "
+        "`currency`: the price a trade on it is booked at by default"
+    )
+    currency: str
+
+
+@router.post("/rate-fx/quote", response_model=RateFxQuote)
+async def rate_fx_quote(req: RateFxQuoteRequest) -> RateFxQuote:
+    """The contract with the rates the draft leaves out at the market of the
+    trade date, and its value that day. 503 when the store has no market for
+    the date: nothing is priced on an older one."""
+
+    def run() -> RateFxQuote:
+        md = pv.MarketData(req.trade_date)
+        spec = portfolio_rates.at_market(
+            req.draft.model_dump(mode="json"), req.trade_date, md
+        )
+        m = portfolio_rates.mark(spec, req.trade_date, md)
+        if m.value is None:
+            raise portfolio_rates.NoMark(m.note or "no value")
+        return RateFxQuote(
+            spec=spec,
+            label=portfolio_rates.label(spec),
+            value=m.value,
+            currency=spec.value_currency,
+        )
+
+    try:
+        return await run_in_threadpool(run)
+    except db.StoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Market data store unavailable"
+        ) from exc
+    except portfolio_rates.NoMark as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

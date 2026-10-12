@@ -1,7 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useXvaNettingSet, useXvaPortfolios } from "@/shared/api";
 import {
-	Badge,
 	Methodology,
 	Tabs,
 	TabsContent,
@@ -10,19 +9,22 @@ import {
 	WarningList,
 } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
-import { AdjustmentsPanel } from "./AdjustmentsPanel";
-import { ExposurePanel } from "./ExposurePanel";
-import { ForeignMarketPanel } from "./ForeignMarketPanel";
-import { MarginCapitalPanel } from "./MarginCapitalPanel";
-import { SensitivitiesPanel } from "./SensitivitiesPanel";
+import {
+	AdjustmentsPanel,
+	ExposurePanel,
+	ForeignMarketPanel,
+	MarginCapitalPanel,
+	TradesTable,
+	XvaResultHeader,
+} from "@/shared/xva";
 import {
 	DEFAULT_VIEW,
 	type XvaView,
 	nettingSetRequest,
 	sensitivitiesRequest,
 } from "./state";
-import { TradesTable } from "./TradesTable";
 import { XvaControls } from "./XvaControls";
+import { XvaSensitivities } from "./XvaSensitivities";
 
 /**
  * xVA — the counterparty risk of a netting set, from the simulated exposure
@@ -83,24 +85,7 @@ export default function XvaPage() {
 				<ChartSkeleton />
 			) : (
 				<>
-					<div className="flex flex-col gap-2 rounded-sm border border-hairline bg-surface p-3">
-						<div className="flex flex-wrap items-center gap-2">
-							<h2 className="text-sm font-semibold text-ink">
-								{data.portfolio_label}
-							</h2>
-							<Badge>{data.market.curve_label}</Badge>
-							<span className="text-xs text-ink-muted">
-								as of {data.market.curve_as_of} ·{" "}
-								{data.paths.toLocaleString("en-US")} paths ·{" "}
-								{(data.compute_ms / 1000).toFixed(1)} s on the{" "}
-								{data.device === "gpu" ? "GPU" : "CPU"}
-							</span>
-						</div>
-						<p className="text-sm leading-relaxed text-ink-secondary">
-							{data.lesson}
-						</p>
-						<p className="text-xs text-ink-muted">{data.device_reason}</p>
-					</div>
+					<XvaResultHeader data={data} />
 					<WarningList warnings={data.warnings} />
 					{data.market.foreign && (
 						<ForeignMarketPanel
@@ -135,7 +120,7 @@ export default function XvaPage() {
 							<MarginCapitalPanel data={data} />
 						</TabsContent>
 						<TabsContent value="sensitivities">
-							<SensitivitiesPanel
+							<XvaSensitivities
 								key={JSON.stringify(sensitivitiesRequest(view))}
 								request={sensitivitiesRequest(view)}
 							/>

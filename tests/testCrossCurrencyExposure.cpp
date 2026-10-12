@@ -3,10 +3,12 @@
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"
 #include "quantModeling/engines/xva/exposure_engine.hpp"
+#include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/instruments/fx/cross_currency_swap.hpp"
 #include "quantModeling/instruments/fx/forward.hpp"
 #include "quantModeling/models/rates/cross_currency_hull_white.hpp"
 #include "quantModeling/risk/xva_report.hpp"
+#include "quantModeling/utils/stats.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -520,6 +522,149 @@ namespace quantModeling
         s = settings(100);
         s.memory_limit_bytes = 1024;
         EXPECT_THROW(engine.simulate(s), InvalidInput);
+    }
+
+    // ── Lot X14: an option on the exchange rate, and an asset as a currency ──
+
+    namespace
+    {
+        VanillaOption option(Real strike, Time expiry, bool call, Real units = 100.0)
+        {
+            return VanillaOption(
+                std::make_shared<PlainVanillaPayoff>(call ? OptionType::Call : OptionType::Put, strike),
+                std::make_shared<EuropeanExercise>(expiry), units);
+        }
+    } // namespace
+
+    TEST(CrossCurrencyEngine, AnOptionOnTheSpotIsAMartingaleAndNeverALiability)
+    {
+        const CrossCurrencyHullWhiteModel m = model();
+        const Time T = 3.0;
+        CrossCurrencyExposureEngine engine(m);
+        engine.add(option(1.15, T, true));
+        engine.add(option(1.05, T, false));
+        const ExposurePaths cube = engine.simulate(settings(40000));
+
+        // Black's formula on the forward, with the implied volatility of the
+        // model at that expiry: what σ_S is calibrated through.
+        const Real F = m.forward_fx(T), deviation = m.fx_implied_volatility(T) * std::sqrt(T);
+        const Real d1 = std::log(F / 1.15) / deviation + 0.5 * deviation;
+        EXPECT_NEAR(cube.trade_values_today[0],
+                    100.0 * std::exp(-0.04 * T) *
+                        (F * norm_cdf(d1) - 1.15 * norm_cdf(d1 - deviation)),
+                    1e-10);
+        // The closed form of every date is consistent with the simulation:
+        // the drift of the spot and both changes of measure are in it.
+        EXPECT_LT(martingale_gap(cube, 0), 4.0);
+        EXPECT_LT(martingale_gap(cube, 1), 4.0);
+        // A bought option is an asset until it expires, pays then, and is
+        // nothing after.
+        const std::size_t n = cube.dates();
+        const auto expiry = static_cast<std::size_t>(
+            std::lower_bound(cube.times.begin(), cube.times.end(), T - 1e-9) - cube.times.begin());
+        ASSERT_LT(expiry, n);
+        for (std::size_t trade = 0; trade < 2; ++trade)
+            for (std::size_t p = 0; p < cube.paths; ++p)
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    const Real v = cube.trade_values[trade][p * n + i];
+                    const Real flow = cube.trade_cashflows[trade][p * n + i];
+                    ASSERT_GE(v, 0.0);
+                    ASSERT_GE(flow, 0.0);
+                    if (i >= expiry)
+                        ASSERT_EQ(v, 0.0);
+                    if (i != expiry)
+                        ASSERT_EQ(flow, 0.0);
+                }
+    }
+
+    TEST(CrossCurrencyEngine, ACallLessAPutIsTheForwardOnEveryPath)
+    {
+        const CrossCurrencyHullWhiteModel m = model();
+        const Time T = 4.0;
+        const Real K = 1.12;
+        CrossCurrencyExposureEngine engine(m);
+        engine.add(option(K, T, true));
+        engine.add(option(K, T, false));
+        engine.add(FXForward(K, T, 100.0));
+        const ExposurePaths cube = engine.simulate(settings(500));
+        EXPECT_NEAR(cube.trade_values_today[0] - cube.trade_values_today[1],
+                    cube.trade_values_today[2], 1e-10);
+        for (std::size_t k = 0; k < cube.paths * cube.dates(); ++k)
+        {
+            ASSERT_NEAR(cube.trade_values[0][k] - cube.trade_values[1][k], cube.trade_values[2][k],
+                        1e-9);
+            ASSERT_NEAR(cube.trade_cashflows[0][k] - cube.trade_cashflows[1][k],
+                        cube.trade_cashflows[2][k], 1e-9);
+        }
+    }
+
+    TEST(CrossCurrencyModel, TheVarianceLeftToTheForwardAddsUp)
+    {
+        const CrossCurrencyHullWhiteModel m = model();
+        const Time T = 7.0;
+        const Real v = m.fx_implied_volatility(T);
+        EXPECT_NEAR(m.forward_variance(0.0, T), v * v * T, 1e-13);
+        // What is behind and what is ahead make the whole.
+        const CrossCurrencyHullWhiteModel::Transition step = m.transition(0.0, 2.5, T);
+        const Real accumulated = -2.0 * step.drift[2];
+        EXPECT_NEAR(accumulated + m.forward_variance(2.5, T), m.forward_variance(0.0, T), 1e-13);
+        EXPECT_EQ(m.forward_variance(T, T), 0.0);
+        EXPECT_THROW(m.forward_variance(3.0, 2.0), InvalidInput);
+    }
+
+    TEST(AssetModel, AnAssetWithAKnownYieldIsBlackScholesWhenRatesBarelyMove)
+    {
+        const Real S = 250.0, q = 0.015, r = 0.04, vol = 0.22, K = 260.0;
+        const Time T = 2.0;
+        const CrossCurrencyHullWhiteModel m =
+            make_asset_model(HullWhiteCurveModel(0.03, 1e-7, DiscountCurve(r)), S, q, vol, 0.0);
+        // The forward is the cost of carry.
+        EXPECT_NEAR(m.forward_fx(T), S * std::exp((r - q) * T), 1e-10);
+        EXPECT_NEAR(m.fx_implied_volatility(T), vol, 1e-9);
+        CrossCurrencyExposureEngine engine(m);
+        engine.add(option(K, T, true, 1.0));
+        const ExposurePaths cube = engine.simulate(settings(20000));
+        const Real d1 = (std::log(S / K) + (r - q + 0.5 * vol * vol) * T) / (vol * std::sqrt(T));
+        const Real black_scholes = S * std::exp(-q * T) * norm_cdf(d1) -
+                                   K * std::exp(-r * T) * norm_cdf(d1 - vol * std::sqrt(T));
+        EXPECT_NEAR(cube.trade_values_today[0], black_scholes, 1e-7);
+        EXPECT_LT(martingale_gap(cube, 0), 4.0);
+    }
+
+    TEST(AssetModel, RatesThatMoveAddToTheForwardsVolatilityAndTheCorrelationMatters)
+    {
+        const auto asset = [](Real rho)
+        { return make_asset_model(HullWhiteCurveModel(0.03, 0.010, DiscountCurve(0.04)), 100.0, 0.02, 0.20, rho); };
+        // The asset's forward carries the domestic bond's volatility: more
+        // so when the asset rises with rates (the bond then falls).
+        EXPECT_GT(asset(0.0).fx_implied_volatility(10.0), 0.20);
+        EXPECT_GT(asset(0.4).fx_implied_volatility(10.0), asset(0.0).fx_implied_volatility(10.0));
+        EXPECT_LT(asset(-0.4).fx_implied_volatility(10.0), asset(0.0).fx_implied_volatility(10.0));
+        // A swap and an option on the asset net in one cube, and the option
+        // stays a martingale under a rate that moves with the asset.
+        const CrossCurrencyHullWhiteModel m = asset(0.4);
+        CrossCurrencyExposureEngine engine(m);
+        engine.add(option(105.0, 5.0, false, 10.0));
+        engine.add_domestic(swap(m.domestic(), 5.0, 0.0, true));
+        const ExposurePaths cube = engine.simulate(settings(40000));
+        EXPECT_LT(martingale_gap(cube, 0), 4.0);
+        EXPECT_LT(martingale_gap(cube, 1), 4.0);
+        // The yield is known: the "foreign rate" does not move.
+        CrossCurrencyScenarios scenarios;
+        engine.simulate(settings(200), nullptr, &scenarios);
+        for (const Real x : scenarios.foreign)
+            ASSERT_LT(std::abs(x), 1e-8);
+    }
+
+    TEST(CrossCurrencyEngine, AnOptionThatIsNotEuropeanIsRefused)
+    {
+        const CrossCurrencyHullWhiteModel m = model();
+        CrossCurrencyExposureEngine engine(m);
+        EXPECT_THROW(engine.add(VanillaOption(std::make_shared<PlainVanillaPayoff>(OptionType::Call, 1.1),
+                                              std::make_shared<AmericanExercise>(2.0))),
+                     UnsupportedInstrument);
+        EXPECT_THROW(engine.add(option(-1.0, 2.0, true)), InvalidInput);
     }
 
 } // namespace quantModeling

@@ -51,11 +51,17 @@ import numpy as np
 import pandas as pd
 import quantmodeling as qm
 
-from . import db, fx, rates, valuation
+from . import db, fx, portfolio_rates, rates, valuation
 from .portfolio_ledger import Holding, QTY_EPS, sorted_trades
 from . import portfolio_models
 from .portfolio_marks import Input, Mark, ModelInfo, ModelParam
-from .portfolio_schemas import DerivativeSpec, EquitySpec, Instrument, Portfolio
+from .portfolio_schemas import (
+    DerivativeSpec,
+    EquitySpec,
+    Instrument,
+    Portfolio,
+    RateFxSpec,
+)
 from .storage import get_storage
 
 YEAR_DAYS = 365.25
@@ -106,6 +112,8 @@ class MarketData:
         #: This run's marks, today's included (never stored): a mark asked
         #: twice — prefetched, then read — is computed once.
         self.marks: Dict[Tuple[str, date], Mark] = {}
+        #: Swap curves and swaption vols of the rate and FX trades.
+        self.rates_history = portfolio_rates.RatesHistory()
 
     def closes(self, ticker: str) -> _OnOrBefore:
         if ticker not in self._closes:
@@ -467,18 +475,23 @@ def mark(
     instrument: Instrument, d: date, md: MarketData, today: Optional[date] = None
 ) -> Mark:
     today = today or date.today()
-    if isinstance(instrument.spec, DerivativeSpec):
-        memo = (MarkStore.key(instrument), d)
-        if memo in md.marks:
-            return md.marks[memo]
-        m = _STORE.get(instrument, d)
-        if m is None:
-            m = _mark_derivative(instrument.spec, d, md, today)
-            if m.value is not None:
-                _STORE.put(instrument, d, m, today)
-        md.marks[memo] = m
-        return m
-    return _mark_equity(instrument.spec, d, md)
+    spec = instrument.spec
+    if isinstance(spec, EquitySpec):
+        return _mark_equity(spec, d, md)
+    memo = (MarkStore.key(instrument), d)
+    if memo in md.marks:
+        return md.marks[memo]
+    m = _STORE.get(instrument, d)
+    if m is None:
+        m = (
+            portfolio_rates.mark(spec, d, md)
+            if isinstance(spec, RateFxSpec)
+            else _mark_derivative(spec, d, md, today)
+        )
+        if m.value is not None:
+            _STORE.put(instrument, d, m, today)
+    md.marks[memo] = m
+    return m
 
 
 #: Threads pricing derivative marks in parallel. One scripted pricing adds
@@ -607,6 +620,8 @@ def with_contract_starts(pf: Portfolio) -> Portfolio:
 
 def _ccy(instrument: Instrument, md: MarketData) -> str:
     spec = instrument.spec
+    if isinstance(spec, RateFxSpec):
+        return spec.value_currency
     return (
         spec.currency if isinstance(spec, DerivativeSpec) else md.currency(spec.ticker)
     )
@@ -871,6 +886,38 @@ METHODOLOGY = [
             "'default').",
             "An expired derivative is not valued past its expiry: book its settlement as "
             "a closing trade.",
+        ],
+    ),
+    (
+        "Rate and FX trades",
+        [
+            "Interest rate swaps, European swaptions, FX forwards and cross-currency "
+            "swaps are over-the-counter contracts: one position is one contract, with "
+            "its notional, held (+1) or on the other side (−1). They are valued on the "
+            "market the xVA page uses: the SOFR (USD) and Euribor (EUR) swap curves "
+            "built from the swaps DTCC publishes, the swaption vols implied by the "
+            "traded swaptions, and the ECB reference rate of EUR/USD. A day with no "
+            "swap curve within a week has no mark, never an older one.",
+            "Both legs of a swap pay once a year, and one curve per currency discounts "
+            "and projects. The floating coupon of a period is set on its first day at "
+            "the one-year rate of that day's curve: the fixing for Euribor, and for "
+            "SOFR, which is compounded in arrears, what the compounded rate was expected "
+            "to be that day.",
+            "The ledger has no cash account, so the coupons a swap has already paid "
+            "stay in its mark (not compounded): otherwise each payment would show as a "
+            "loss. The mark of a swap is the value of what is left to pay plus what was "
+            "paid since its start.",
+            "A swaption is priced by Bachelier's formula at the nearest at-the-money "
+            "normal vol of the day's grid, whatever its strike: the traded vols carry no "
+            "smile. An FX forward and a cross-currency swap discount each leg on its "
+            "own swap curve and convert the euro leg at the spot rate, with no "
+            "cross-currency basis (none is stored); they are valued in dollars.",
+            "Their risks (Risk tab) are bumps of that market, revalued: PV01 is the "
+            "change of the value for one basis point more on every zero rate of a "
+            "currency's swap curve, the FX delta the euros the trade is long of, the "
+            "vega the change for one basis point more of normal volatility. A coupon "
+            "already fixed does not move with today's curve. They have no equity "
+            "greeks.",
         ],
     ),
     (

@@ -2,7 +2,9 @@
 
 #include "quantModeling/engines/xva/hull_white_future_value.hpp"
 #include "quantModeling/instruments/fx/cross_currency_swap.hpp"
+#include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/instruments/fx/forward.hpp"
+#include "quantModeling/utils/stats.hpp"
 #include "quantModeling/utils/philox.hpp"
 
 #include <algorithm>
@@ -166,11 +168,131 @@ namespace quantModeling
             Real spot_;
         };
 
-        /// The instrument as its two streams of flows.
+        /// Undiscounted Black price on a forward, from the standard
+        /// deviation of its logarithm at the expiry.
+        Real black(Real forward, Real strike, Real deviation, bool call)
+        {
+            if (!(deviation > 1e-12))
+                return std::max(call ? forward - strike : strike - forward, 0.0);
+            const Real d1 = std::log(forward / strike) / deviation + 0.5 * deviation;
+            const Real d2 = d1 - deviation;
+            // Far out of the money the difference of two rounded products
+            // can fall a hair below zero: a price does not.
+            return std::max(call ? forward * norm_cdf(d1) - strike * norm_cdf(d2)
+                                 : strike * norm_cdf(-d2) - forward * norm_cdf(-d1),
+                            0.0);
+        }
+
+        /**
+         * A European option on the exchange rate, settled in cash in
+         * domestic currency, **bought** — an option on an asset when the
+         * "foreign currency" is one (make_asset_model). At t < T,
+         *
+         *   V(t) = N P_d(t, T) Black(F(t, T), K, √v(t, T)),
+         *   F(t, T) = S(t) P_f(t, T) / P_d(t, T),
+         *
+         * v(t, T) the variance the forward still has to accumulate, known
+         * today (CrossCurrencyHullWhiteModel::forward_variance): a closed
+         * form of the state on every path. At T it pays N (S − K)^+ or
+         * N (K − S)^+, and is worth nothing after.
+         */
+        class SpotOption final : public CrossCurrencyFutureValue
+        {
+          public:
+            SpotOption(Real strike, Time expiry, bool call, Real notional,
+                       const CrossCurrencyHullWhiteModel &model)
+                : strike_(strike), expiry_(expiry), call_(call), notional_(notional), model_(model)
+            {
+                if (!(strike_ > 0.0) || !std::isfinite(strike_))
+                    throw InvalidInput("spot option: the strike must be finite and > 0");
+                if (!(expiry_ > kTimeEps) || !std::isfinite(expiry_))
+                    throw InvalidInput("spot option: the expiry must be in the future");
+                if (!std::isfinite(notional_))
+                    throw InvalidInput("spot option: the notional must be finite");
+            }
+
+            std::vector<Time> event_times() const override { return {expiry_}; }
+            Time maturity() const override { return expiry_; }
+
+            Real value_today() const override
+            {
+                return notional_ * model_.domestic().discount().discount(expiry_) *
+                       black(model_.forward_fx(expiry_), strike_,
+                             std::sqrt(model_.forward_variance(0.0, expiry_)), call_);
+            }
+
+            void bind(const std::vector<Time> &grid) override
+            {
+                const auto at = std::lower_bound(grid.begin(), grid.end(), expiry_ - kTimeEps);
+                if (at == grid.end() || std::abs(*at - expiry_) > kTimeEps)
+                    throw InvalidInput("two-currency engine: an expiry is not on the grid");
+                expiry_index_ = static_cast<std::size_t>(at - grid.begin());
+                times_.assign(grid.begin(), grid.begin() + static_cast<std::ptrdiff_t>(expiry_index_));
+                deviation_.clear();
+                for (const Time t : times_)
+                    deviation_.push_back(std::sqrt(model_.forward_variance(t, expiry_)));
+            }
+
+            void evaluate_path(const CrossCurrencyPath &path, std::size_t dates, Real *values,
+                               Real *cashflows) const override
+            {
+                const std::size_t alive = std::min(dates, expiry_index_);
+                for (std::size_t i = 0; i < alive; ++i)
+                {
+                    const Real domestic = model_.domestic().zcb(times_[i], expiry_, path.domestic[i]);
+                    const Real foreign = model_.foreign().zcb(times_[i], expiry_, path.foreign[i]);
+                    values[i] = notional_ * domestic *
+                                black(path.spot[i] * foreign / domestic, strike_, deviation_[i], call_);
+                }
+                for (std::size_t i = alive; i < dates; ++i)
+                    values[i] = 0.0;
+                if (cashflows == nullptr)
+                    return;
+                for (std::size_t i = 0; i < dates; ++i)
+                    cashflows[i] = 0.0;
+                if (expiry_index_ < dates)
+                {
+                    const Real spot = path.spot[expiry_index_];
+                    cashflows[expiry_index_] =
+                        notional_ * std::max(call_ ? spot - strike_ : strike_ - spot, 0.0);
+                }
+            }
+
+          private:
+            Real strike_;
+            Time expiry_;
+            bool call_;
+            Real notional_;
+            const CrossCurrencyHullWhiteModel &model_;
+            std::size_t expiry_index_ = 0;
+            std::vector<Time> times_;
+            std::vector<Real> deviation_;
+        };
+
+        /// The instrument as its two streams of flows — or, for an option,
+        /// as its own future value.
         class StreamBuilder final : public IInstrumentVisitor
         {
           public:
+            explicit StreamBuilder(const CrossCurrencyHullWhiteModel &model)
+                : model_(model) {}
+
             std::vector<Flow> domestic, foreign;
+            std::unique_ptr<CrossCurrencyFutureValue> option;
+
+            /// A European option on the exchange rate (or on the asset the
+            /// foreign currency stands for), cash-settled, on `notional`
+            /// units.
+            void visit(const VanillaOption &o) override
+            {
+                if (!o.payoff || !o.exercise || o.exercise->type() != ExerciseType::European ||
+                    o.exercise->dates().size() != 1)
+                    throw UnsupportedInstrument("The two-currency exposure engine values European "
+                                                "options only.");
+                option = std::make_unique<SpotOption>(o.payoff->strike(), o.exercise->dates().front(),
+                                                      o.payoff->type() == OptionType::Call, o.notional,
+                                                      model_);
+            }
 
             void visit(const FXForward &forward) override
             {
@@ -205,9 +327,8 @@ namespace quantModeling
                 domestic.push_back({swap.maturity, -side * swap.domestic_notional});
             }
 
-            // The visitor's pure virtuals: equity and bond products have no
-            // place in a netting set of rate and FX trades.
-            void visit(const VanillaOption &) override { unsupported(); }
+            // The visitor's pure virtuals: path-dependent equity products and
+            // bonds have no closed form here.
             void visit(const AsianOption &) override { unsupported(); }
             void visit(const BarrierOption &) override { unsupported(); }
             void visit(const DigitalOption &) override { unsupported(); }
@@ -221,6 +342,8 @@ namespace quantModeling
                 throw UnsupportedInstrument("This instrument has no future value in the two-currency "
                                             "exposure engine.");
             }
+
+            const CrossCurrencyHullWhiteModel &model_;
         };
 
         /// A trade of one currency: the one-currency future value, read on
@@ -271,8 +394,10 @@ namespace quantModeling
     make_cross_currency_future_value(const Instrument &instrument,
                                      const CrossCurrencyHullWhiteModel &model)
     {
-        StreamBuilder builder;
+        StreamBuilder builder(model);
         instrument.accept(builder);
+        if (builder.option)
+            return std::move(builder.option);
         return std::make_unique<CashflowStreams>(std::move(builder.domestic),
                                                  std::move(builder.foreign), model);
     }

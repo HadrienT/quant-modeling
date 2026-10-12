@@ -1,8 +1,5 @@
 import { useState } from "react";
-import {
-	type XvaSensitivitiesRequest,
-	useXvaSensitivities,
-} from "@/shared/api";
+import type { ApiError, XvaSensitivities } from "@/shared/api";
 import { Button, Methodology, Segmented, WarningList } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import { Figure } from "./Explained";
@@ -19,17 +16,29 @@ const ADJUSTMENTS: { value: RiskKey; label: string }[] = [
 
 /**
  * The sensitivities of the adjustments to every market quote, by adjoint
- * differentiation: one more simulation, run on demand. A portfolio the
+ * differentiation: one more simulation, run on demand. A netting set the
  * adjoint does not cover says why instead of showing numbers.
+ *
+ * The page owns the query (the xVA page's portfolios, or a netting set of
+ * one's own portfolio): it is disabled until `asked`.
  */
 export function SensitivitiesPanel({
-	request,
+	query,
+	asked,
+	onAsk,
+	id = "xva-sensitivities-methodology",
 }: {
-	request: XvaSensitivitiesRequest;
+	query: {
+		data: XvaSensitivities | undefined;
+		error: ApiError | null;
+		refetch: () => unknown;
+	};
+	asked: boolean;
+	onAsk: () => void;
+	/** of the methodology panel: unique on the page */
+	id?: string;
 }) {
-	const [asked, setAsked] = useState(false);
 	const [adjustment, setAdjustment] = useState<RiskKey>("cva");
-	const query = useXvaSensitivities(request, asked);
 	const data = query.data;
 
 	if (!asked)
@@ -40,9 +49,7 @@ export function SensitivitiesPanel({
 					volatility or a credit spread moves? All of them come out of one more
 					simulation, read backwards: adjoint differentiation.
 				</p>
-				<Button onClick={() => setAsked(true)}>
-					Compute the sensitivities
-				</Button>
+				<Button onClick={onAsk}>Compute the sensitivities</Button>
 			</div>
 		);
 	if (query.error)
@@ -116,7 +123,7 @@ export function SensitivitiesPanel({
 			</div>
 			<SaCvaTable sa={data.sa_cva} />
 			<Methodology
-				id="xva-sensitivities-methodology"
+				id={id}
 				title="How the sensitivities are computed"
 				sections={data.methodology}
 			/>

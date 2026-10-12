@@ -17,7 +17,7 @@ import { TradeForm, type TradePreset } from "./TradeForm";
 
 /**
  * One portfolio, valued: today's numbers, the trade form, positions,
- * journal, P&L history, risk and methodology. Read-only (a demo): the same
+ * journal, P&L history, risk, counterparties and methodology. Read-only (a demo): the same
  * view without anything that edits the ledger.
  */
 export function PortfolioView({
@@ -58,6 +58,7 @@ export function PortfolioView({
 							: `${trading.instrument.id}-${trading.side}`
 					}
 					preset={trading === "new" ? undefined : trading}
+					counterparties={pf.counterparties ?? []}
 					onCancel={() => setTrading(null)}
 					onBook={(instrument, draft) => {
 						onSave(bookTrade(pf, instrument, draft));
@@ -66,20 +67,22 @@ export function PortfolioView({
 				/>
 			)}
 
-			{!hasTrades ? (
+			{!hasTrades && (
 				<p className="text-sm text-ink-muted">
 					No trades yet. Book a purchase (or a sale, to open a short).
 				</p>
-			) : (
-				<PortfolioTabs
-					pf={pf}
-					snap={snap}
-					readOnly={!onSave}
-					onTrade={setTrading}
-					onDelete={(id) => onSave?.(deleteTrade(pf, id))}
-					onDeletePosition={(id) => onSave?.(deletePosition(pf, id))}
-				/>
 			)}
+			{/* Without a trade the tabs still show: a counterparty is created
+			    before the first trade that faces it. */}
+			<PortfolioTabs
+				pf={pf}
+				snap={snap}
+				readOnly={!onSave}
+				onTrade={setTrading}
+				onDelete={(id) => onSave?.(deleteTrade(pf, id))}
+				onDeletePosition={(id) => onSave?.(deletePosition(pf, id))}
+				onSave={onSave}
+			/>
 
 			{snap && <PortfolioMethodology sections={snap.methodology} />}
 		</>

@@ -51,7 +51,7 @@ function renderRates(currency: RateCurrency) {
 }
 
 describe("rates tab", () => {
-	it("always shows the methodology, next to the curve", async () => {
+	it("shows the methodology, next to the curve", async () => {
 		renderRates("USD");
 		expect(
 			await screen.findByRole("heading", { name: "Methodology" }),

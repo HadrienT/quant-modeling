@@ -85,6 +85,16 @@ namespace quantModeling
         Real fx_implied_volatility(Time T) const;
 
         /**
+         * @brief The variance the forward exchange rate to T still has to
+         *        accumulate from t: ∫_t^T σ_F(u; T)² du, deterministic. The
+         *        Black variance of an option expiring at T seen from t, on
+         *        every path — what makes that option a closed form of the
+         *        state at each date of the exposure grid.
+         * @throws InvalidInput unless 0 <= t <= T.
+         */
+        Real forward_variance(Time t, Time T) const;
+
+        /**
          * @brief The exact Gaussian transition of (x_d, x_f, z) from s to t
          *        under the domestic T*-forward measure:
          *
@@ -135,6 +145,28 @@ namespace quantModeling
     Real calibrated_fx_volatility(const HullWhiteCurveModel &domestic, const HullWhiteCurveModel &foreign,
                                   const CrossCurrencyHullWhiteModel::Correlations &correlations,
                                   Time expiry, Real market_volatility);
+
+    /**
+     * @brief An asset that pays a known continuous yield, seen as a foreign
+     *        currency (blueprint/wp/23-xva.md §14.16, lot X14): its price is
+     *        the "exchange rate", its yield the "foreign rate". Holding the
+     *        asset is holding that currency, and the forward price is
+     *        covered interest parity, S e^{-qT} / P_d(0, T).
+     *
+     * The yield does not move: the foreign rate's volatility is set to
+     * kDeterministicRateVolatility, small enough to change no digit that is
+     * printed, because the rate model takes σ > 0. What is left is a
+     * lognormal asset under a Hull-White rate, correlated with it.
+     *
+     * @param rate_asset_correlation correlation of the domestic rate's and
+     *        the asset's Brownian motions.
+     */
+    CrossCurrencyHullWhiteModel make_asset_model(HullWhiteCurveModel domestic, Real spot,
+                                                 Real dividend_yield, Real volatility,
+                                                 Real rate_asset_correlation);
+
+    /// σ of the rate that stands for a known yield (make_asset_model).
+    inline constexpr Real kDeterministicRateVolatility = 1e-10;
 
 } // namespace quantModeling
 

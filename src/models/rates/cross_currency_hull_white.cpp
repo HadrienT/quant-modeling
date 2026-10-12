@@ -111,6 +111,22 @@ namespace quantModeling
         return std::sqrt(variance / T);
     }
 
+    Real CrossCurrencyHullWhiteModel::forward_variance(Time t, Time T) const
+    {
+        if (!(t >= 0.0) || !(T >= t))
+            throw InvalidInput("CrossCurrencyHullWhiteModel: need 0 <= t <= T");
+        if (T - t < 1e-14)
+            return 0.0;
+        // In pieces of at most a year, as fx_implied_volatility.
+        const int pieces = static_cast<int>(std::ceil(T - t));
+        Real variance = 0.0;
+        for (int k = 0; k < pieces; ++k)
+            variance += integrate(t + (T - t) * k / pieces, t + (T - t) * (k + 1) / pieces,
+                                  [this, T](Time u)
+                                  { return forward_variance_rate(u, T); });
+        return variance;
+    }
+
     CrossCurrencyHullWhiteModel::Transition
     CrossCurrencyHullWhiteModel::transition(Time s, Time t, Time numeraire_maturity) const
     {
@@ -199,6 +215,21 @@ namespace quantModeling
             throw InvalidInput("FX volatility calibration: the two rates alone move the forward more "
                                "than the market's volatility at this expiry");
         return root;
+    }
+
+    CrossCurrencyHullWhiteModel make_asset_model(HullWhiteCurveModel domestic, Real spot,
+                                                 Real dividend_yield, Real volatility,
+                                                 Real rate_asset_correlation)
+    {
+        if (!std::isfinite(dividend_yield))
+            throw InvalidInput("asset model: the dividend yield must be finite");
+        // Any mean reversion does: nothing moves. The domestic one's keeps
+        // the two rates on one time scale.
+        HullWhiteCurveModel yield(domestic.mean_reversion(), kDeterministicRateVolatility,
+                                  DiscountCurve(dividend_yield));
+        return CrossCurrencyHullWhiteModel(
+            std::move(domestic), std::move(yield), spot, volatility,
+            CrossCurrencyHullWhiteModel::Correlations{0.0, rate_asset_correlation, 0.0});
     }
 
 } // namespace quantModeling

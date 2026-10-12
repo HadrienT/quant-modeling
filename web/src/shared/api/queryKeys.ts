@@ -52,6 +52,9 @@ export const queryKeys = {
 	xva: {
 		portfolios: () => ["xva", "portfolios"] as const,
 		nettingSet: (request: unknown) => ["xva", "netting-set", request] as const,
+		portfolio: (request: unknown) => ["xva", "portfolio", request] as const,
+		portfolioSensitivities: (request: unknown) =>
+			["xva", "portfolio-sensitivities", request] as const,
 		sensitivities: (request: unknown) =>
 			["xva", "sensitivities", request] as const,
 	},
@@ -80,6 +83,9 @@ export const queryKeys = {
 		history: (ledger: string, window: string) =>
 			["portfolio", "history", ledger, window] as const,
 		demos: () => ["portfolio", "demos"] as const,
+		rateFxQuote: (draft: string, date: string) =>
+			["portfolio", "rate-fx-quote", draft, date] as const,
+		counterpartyExamples: () => ["portfolio", "counterparty-examples"] as const,
 		close: (ticker: string, date: string) =>
 			["portfolio", "close", ticker, date] as const,
 	},

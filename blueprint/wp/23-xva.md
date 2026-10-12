@@ -1273,6 +1273,10 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X8 — CVA par AAD** *(le capstone)* (fait : §14.13 ; transactions en forme fermée, CPU ; pas à travers la régression ni sur GPU) | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
 | **X9 — Page `/xva`** (fait : §14.14) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** (fait : §14.15 ; formes fermées, CPU, mesure de pricing ; un seul produit ajouté, le swap de devises) | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
+| **X11 — Contreparties et netting sets du portefeuille** (fait : §14.16) | un portefeuille porte ses contreparties (notation, secteur, recouvrement) et leurs netting sets (CSA ou non) ; un dérivé se traite sous un netting set ; sous-onglet *Counterparties* de la page Portfolio ; contreparties d'exemple | un instrument coté n'a pas de netting set ; un netting set utilisé ne se supprime pas ; le mark d'un dérivé ne dépend pas de qui il fait face |
+| **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans bermudan ni script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
+| **X13 — xVA d'un netting set du portefeuille** (fait : §14.16 ; sans sensibilités, swap entamé simulé depuis son prochain coupon) | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
+| **X14 — Dérivés actions dans le moteur d'exposition** (fait : §14.16 ; options européennes, une action par netting set, CPU) | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
 
 ### 14.1 Lot X0 : ce qui est fait, et les choix d'implémentation
 
@@ -2323,6 +2327,196 @@ et change −0,14 [−0,29 ; 0,02], taux EUR et change 0,01.
   change et les courbes EUR ; le DAG de `dtcc-fx-options` n'est pas encore
   déployé (`~/data-ingest/scripts/deploy.sh`).
 
+### 14.16 Lots X11 à X14 : les xVA du portefeuille (décisions du mainteneur, 2026-10-12)
+
+La page `/xva` reste l'outil pédagogique du §13.7, avec ses portefeuilles
+d'exemple. Elle est rigide par construction : on n'y choisit pas ses
+transactions. Le mainteneur décide donc que **la page Portfolio devient
+l'endroit où l'on compose ses propres netting sets** (ce que le §16 prévoyait),
+avec trois choix :
+
+1. les dérivés actions du portefeuille doivent pouvoir entrer dans un netting
+   set, et pas seulement les transactions de taux et de change que le moteur
+   simule aujourd'hui — d'où le lot X14, un modèle joint dans le moteur C++ ;
+2. les transactions de taux et de change sont des positions comme les autres :
+   marquées chaque jour, dans la valeur et le P&L du portefeuille (lot X12) ;
+3. `/xva` est conservée telle quelle.
+
+Ordre : X11 (fait) → X12 → X13 → X14. X13 ne demande que X11 et X12 ; X14 est
+indépendant de X12 mais n'a d'interface qu'après X13.
+
+**Lot X11, ce qui est fait.** Les contreparties vivent **dans le portefeuille**
+(`Portfolio.counterparties`, `api/app/portfolio_schemas.py`), pas dans un
+magasin à part : la page Portfolio marche sans compte (registre dans le
+navigateur), et un portefeuille exporté ou copié depuis une démo emporte ainsi
+les siennes. Une contrepartie a un nom, une notation (celles de `/xva` : la
+courbe de crédit est celle de la notation, OAS ICE BofA), un secteur (BA-CVA),
+un taux de recouvrement et un à dix netting sets ; un netting set a un nom et
+un CSA facultatif, le `CsaInput` de `/xva`. Le rattachement est
+`Instrument.netting_set_id`, hors du `spec` : la clé des marks stockés
+(`MarkStore.key`) hache le `spec`, et à qui l'on fait face ne change pas un
+mark. `portfolio_ledger.validate` refuse un netting set inconnu, un identifiant
+en double, et un instrument coté sous un netting set (il est compensé). Les
+exemples (`api/app/portfolio_counterparties.py`, servis par
+`GET /api/portfolio-valuation/counterparty-examples`) sont cinq contreparties
+fictives, une par type : banque, fonds, entreprise, entreprise à haut
+rendement, souverain, avec le collatéral habituel du type (marge de variation
+des règles de marge pour les financières, rien pour les autres). La démo
+*Options overlay* traite son put de gré à gré sous l'un d'eux.
+
+**Lot X12, ce qui est fait.** Un troisième type d'instrument, `RateFxSpec`
+(`kind: "rate_fx"`) : swap de taux, swaption européenne, forward de change et
+swap de devises fixe contre fixe, en USD ou en EUR pour les taux, en euros
+contre dollars pour le change. Une position est **un contrat entier** (quantité
++1 pour le sens décrit, −1 pour l'autre), et le prix d'un trade est ce que vaut
+le contrat ce jour-là, qui peut être négatif. `POST
+/api/portfolio-valuation/rate-fx/quote` rend le contrat avec les taux laissés
+vides mis au marché du jour du trade (taux pair, strike à la monnaie, cours à
+terme, coupons pairs et notionnel en dollars au comptant) et sa valeur : le
+formulaire s'en sert comme prix par défaut, zéro pour un trade au marché.
+
+Le marquage (`api/app/portfolio_rates.py`) lit le marché de `/xva`, sans
+repli : courbes de swaps SOFR et Euribor des transactions DTCC, vols de
+swaptions tirées des swaptions traitées, cours de référence BCE. Un jour sans
+courbe à moins d'une semaine n'a pas de mark. Choix :
+
+- **conventions du moteur d'exposition**, pour que le lot X13 simule ce que le
+  registre marque : deux jambes annuelles, une courbe par devise, durée en
+  années entières (refusé sinon), temps en 365,25 jours ;
+- **les coupons déjà payés restent dans le mark** (non capitalisés). Le
+  registre n'a pas de compte de trésorerie : sans cela chaque coupon payé
+  apparaîtrait comme une perte. Mark d'un swap = valeur de ce qui reste + ce
+  qui a été payé depuis le départ ; l'exposition (X13) ne compte que ce qui
+  reste ;
+- **le coupon flottant d'une période est fixé à son premier jour**, au taux à
+  un an de la courbe de ce jour : le fixing pour l'Euribor, et pour le SOFR
+  composé à terme échu l'espérance, ce jour-là, du taux composé — la
+  composition réalisée n'est pas rejouée (pas d'historique de fixings
+  nécessaire, seulement celui des courbes) ;
+- **swaption** : Bachelier à la vol normale à la monnaie la plus proche de la
+  grille du jour, quel que soit le strike (les vols traitées n'ont pas de
+  smile), statut `proxied` ; pas de mark quand aucune swaption n'a été traitée
+  dans les dix jours ;
+- **change** : chaque jambe sur sa courbe, la jambe en euros convertie au
+  comptant, pas de base de devises (aucune n'est en base) ; valeur en dollars.
+
+Laissé de côté, et pourquoi : le **bermudan** et le **script de taux** restent
+sur `/xva`. Les marquer chaque jour demande une calibration de Hull-White par
+date (une seconde chacune, sur tout l'historique) ; à faire avec un cache de
+calibrations par date si le besoin se confirme.
+
+**Lot X13, ce qui est fait.** `POST /api/xva/portfolio` prend le registre, un
+netting set et le côté de la banque (sa notation, ses spreads de financement,
+son coût du capital) ; la notation, le secteur et le recouvrement de la
+contrepartie, et le CSA, viennent du registre. `api/app/portfolio_xva.py` en
+tire les transactions détenues à la date de la courbe — vie résiduelle, taux
+du contrat, quantité signée — et appelle `xva.compute`, qui accepte désormais
+un portefeuille fourni (`book`) et des transactions à taux donné (`_Spec.rate`)
+au lieu du taux de marché. La réponse est le `XvaResponse` de `/xva`, avec
+`portfolio = "ledger"`. Critère tenu : le swap de `single_swap` recomposé dans
+un portefeuille rend l'exposition, les ajustements et le capital de `/xva` à
+l'identique (`test_portfolio_xva.py`). L'événement `xva.valuation` porte les
+termes des transactions, pas le portefeuille.
+
+Côté front, les panneaux de résultats (exposition, ajustements, marge et
+capital, table des transactions, marché en euros) passent de `features/xva/`
+à `shared/xva/`, et la page Portfolio a un sous-onglet **xVA** : choix du
+netting set, calcul lancé à la demande.
+
+Ce que le moteur ne sait pas tenir est **écarté et dit dans les
+avertissements**, jamais approché en silence :
+
+- **swap entamé** : le moteur refuse un coupon commencé dans le passé (il lui
+  faudrait son fixing). Le coupon en cours, un montant connu, est laissé hors
+  de l'exposition, et le reste est simulé comme un swap qui démarre à la
+  prochaine date de coupon. L'écart est d'un coupon net jusqu'à cette date ;
+- **swap de devises entre deux dates de coupon** : écarté (le moteur compte
+  des années entières jusqu'à l'échéance) ;
+- **dérivé action** : écarté jusqu'au lot X14 ;
+- pas de sensibilités dans ce lot (ajoutées ensuite, voir « Sensibilités »
+  plus bas).
+
+Les deux premières limites se lèvent en C++ : un flux connu comme transaction
+du moteur, et un échéancier de swap de devises compté depuis l'échéance.
+
+**Lot X14, ce qui est fait.** Le modèle joint n'est pas un modèle de plus :
+une action qui verse un rendement connu **est** une devise étrangère dont le
+taux ne bouge pas. Son cours est le « taux de change », son rendement de
+dividende le « taux étranger », son prix à terme la parité couverte des taux
+d'intérêt. Le moteur à deux devises du lot X10 simule donc déjà une action
+lognormale sous un taux Hull-White, corrélée avec lui (Brigo & Mercurio 2006,
+§14.3). En C++ :
+
+- `make_asset_model` (`models/rates/cross_currency_hull_white.hpp`) construit
+  ce modèle : taux étranger de courbe plate $q$ et de volatilité
+  `kDeterministicRateVolatility` $= 10^{-10}$ (le modèle de taux exige
+  $\sigma > 0$ ; cette valeur ne change aucun chiffre imprimé), corrélations
+  $(0, \rho_{rS}, 0)$ ;
+- `CrossCurrencyHullWhiteModel::forward_variance(t, T)` $= \int_t^T
+  \sigma_F(u;T)^2\,du$, la variance que le forward doit encore accumuler,
+  déterministe ;
+- une **option européenne sur le taux de change** (donc sur l'action), réglée
+  en espèces, entre dans le moteur par le visiteur, sur l'instrument
+  `VanillaOption` existant — aucun produit ajouté. À $t < T$, sur chaque
+  chemin, $V(t) = N\,P_d(t,T)\,\mathrm{Black}(F(t,T), K, \sqrt{v(t,T)})$ avec
+  $F(t,T) = S(t)P_f(t,T)/P_d(t,T)$ : une forme fermée de l'état, comme les
+  swaps (ADR-X1). À $T$ elle paie sa valeur intrinsèque ; après, rien.
+
+Tests de propriété (`tests/testCrossCurrencyExposure.cpp`) : martingale de la
+valeur actualisée à toutes les dates ; call − put = forward **sur chaque
+chemin et à chaque date** ; option achetée jamais négative, nulle après
+l'échéance ; limite Black-Scholes à $10^{-7}$ quand le taux ne bouge presque
+pas ; la volatilité implicite croît avec $\rho_{rS}$ ; le « taux étranger » ne
+bouge pas ; variance écoulée + variance restante = variance totale.
+
+Côté API (`api/app/xva_equity.py`, `portfolio_xva.py`, `xva.py`) : les options
+`vanilla` en dollars d'un netting set entrent dans la simulation, avec une
+quantité signée et une action par option. Entrées, toutes lues en base :
+clôture et rendement de dividende ; volatilité implicite du smile du jour au
+strike et à l'échéance de l'option de calage, ou volatilité réalisée 63 jours
+quand aucune chaîne d'options n'est en base (proxy, dit) ; corrélation
+taux-action estimée sur trois ans de variations hebdomadaires (DGS5 contre
+rendements log de l'action), avec son intervalle à 95 %. La volatilité du
+cours dans le modèle est calée (`qm.cross_currency_fx_volatility`) pour que
+l'option la plus longue ait sa volatilité de marché. SA-CCR décrit l'option
+comme une transaction action (`EquitySingleName`, `EquityIndex` pour un
+ticker en `^`), par le prix des titres. La réponse porte `market.equity`,
+affiché par `shared/xva/EquityMarketPanel.tsx`.
+
+**Sensibilités (après X14).** Deux ajouts, sans C++ nouveau :
+
+- *Les risques des transactions de taux et de change* dans l'onglet Risk
+  (`portfolio_rates.sensitivities`) : PV01 par devise (un point de base sur
+  tous les taux zéro de la courbe de swaps du jour), delta de change (les
+  euros dont la transaction est longue), vega normal des swaptions (un point
+  de base). Bump et revalorisation des formes fermées du marquage ; un coupon
+  déjà fixé ne bouge pas avec la courbe du jour. L'onglet n'affiche plus des
+  grecs actions à zéro pour ces lignes : ils n'existent pas.
+- *Les sensibilités des xVA d'un netting set du portefeuille*
+  (`POST /api/xva/portfolio/sensitivities`) : l'adjoint du lot X8 prenait déjà
+  des transactions quelconques ; seule l'API le réservait aux portefeuilles de
+  `/xva`. `xva.compute_sensitivities` accepte maintenant le `book` d'un
+  portefeuille. Vérifié contre des différences finies sur les cotations
+  (mêmes tirages) pour un receveur hors marché à départ différé netté avec un
+  payeur : CVA et DVA à 3 % près. Même périmètre que `/xva` : swaps et
+  swaptions européennes en dollars, avec ou sans marge de variation ; un
+  netting set qui porte une option action, une seconde devise ou de la marge
+  initiale dit pourquoi il n'est pas couvert.
+
+Limites, dites dans les avertissements de la réponse :
+
+- **une action par netting set**, et pas d'action avec une seconde devise :
+  le moteur n'a qu'un facteur en plus du taux dollar. Deux actions, ou une
+  action et l'euro, demandent un moteur à $n$ facteurs ;
+- **options européennes seulement** : américaines, asiatiques, barrières,
+  digitales et lookbacks sont écartées (pas de forme fermée par chemin ; il
+  faudrait la régression du lot X4 dans ce moteur) ;
+- **une seule volatilité** pour l'action : plusieurs options sont valorisées
+  sans le smile entre elles ;
+- sous-jacents en dollars seulement ; CPU, mesure de pricing, marge initiale
+  par régression (comme à deux devises) ; dividende en rendement continu
+  constant.
+
 ---
 
 ## 15. Tests de propriété
@@ -2511,7 +2705,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | A3 | État d'exercice du bermudan calculé une fois par chemin (`evaluate_path`) au lieu d'être recalculé à chaque date | 9 s pour 40 000 chemins sur un thread |
 | A4 | Bermudan réglé en espèces ; régresseurs autres que l'état (taux swap résiduel) | couverture des produits ; qualité de la continuation |
 | A5 | Scripts : rendre l'état « exercé » de l'évaluateur visible comme régime automatique | aujourd'hui le script doit poser lui-même un drapeau, sinon son exposition après exercice est fausse |
-| A6 | Scripts : erreur Monte-Carlo de la valeur d'aujourd'hui ; `forward()` ; scripts actions (modèle joint, lot X10) | la valeur d'aujourd'hui d'un script est un prix simulé, sans son erreur |
+| A6 | Scripts : erreur Monte-Carlo de la valeur d'aujourd'hui ; `forward()` ; scripts actions (le modèle joint existe depuis le lot X14, pour les options européennes) | la valeur d'aujourd'hui d'un script est un prix simulé, sans son erreur |
 | A7 | Scripts : mémoire de la passe pilote (chemins × événements × variables) hors de la limite du moteur | un script long à sept variables et 200 000 chemins pilotes prend plusieurs centaines de Mo que le moteur ne compte pas |
 | A8 | Pilote sous la mesure historique : la règle de couverture (3 σ du pilote pour 4 σ des scénarios) est une heuristique | à valider sur des dynamiques extrêmes |
 | A9 | Courbe de forwards en dents de scie sur les données DTCC (lissage, ou ajustement de la courbe aux transactions) | visible dans Market et dans tout profil d'exposition |
