@@ -278,15 +278,15 @@ declare module "@tanstack/react-router" {
 }
 
 export const ROUTES = [
-	{ path: "/visualize", label: "Strategies" },
+	{ path: "/price", label: "Pricing" },
+	{ path: "/scripting", label: "Scripting" },
 	{ path: "/market", label: "Market" },
 	{ path: "/credit", label: "Credit" },
 	{ path: "/xva", label: "xVA" },
-	{ path: "/price", label: "Pricing" },
 	{ path: "/simulation", label: "Simulation" },
-	{ path: "/scripting", label: "Scripting" },
-	{ path: "/products", label: "Products" },
 	{ path: "/portfolio", label: "Portfolio" },
+	{ path: "/visualize", label: "Strategies" },
+	{ path: "/products", label: "Products" },
 	{ path: "/about", label: "About" },
 ] as const;
 

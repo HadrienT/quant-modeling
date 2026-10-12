@@ -1,10 +1,10 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChevronRight } from "lucide-react";
 
 /**
- * The methodology of a data page, always visible (not behind a toggle): where
- * every number comes from and how each derived one is computed. The text is
- * served with the data, by the API module that computes it, so the page
- * cannot describe a computation it does not do.
+ * The methodology of a data page, in a panel that opens on demand (closed by
+ * default — it is long): where every number comes from and how each derived
+ * one is computed. The text is served with the data, by the API module that
+ * computes it, so the page cannot describe a computation it does not do.
  */
 export function Methodology({
 	sections,
@@ -16,26 +16,34 @@ export function Methodology({
 	title?: string;
 }) {
 	return (
-		<section
+		<details
 			aria-labelledby={id}
-			className="flex flex-col gap-4 rounded-sm border border-hairline bg-surface p-4"
+			className="group rounded-sm border border-hairline bg-surface"
 		>
-			<h2 id={id} className="text-sm font-semibold text-ink">
-				{title}
-			</h2>
-			{sections.map((s) => (
-				<div key={s.title} className="flex flex-col gap-1.5">
-					<h3 className="text-xs font-semibold tracking-wide text-ink-secondary uppercase">
-						{s.title}
-					</h3>
-					{s.paragraphs.map((p) => (
-						<p key={p} className="text-sm leading-relaxed text-ink-secondary">
-							{p}
-						</p>
-					))}
-				</div>
-			))}
-		</section>
+			<summary className="flex cursor-pointer list-none items-center gap-2 p-4 select-none [&::-webkit-details-marker]:hidden">
+				<ChevronRight
+					className="size-4 shrink-0 text-ink-muted transition-transform group-open:rotate-90"
+					aria-hidden
+				/>
+				<h2 id={id} className="text-sm font-semibold text-ink">
+					{title}
+				</h2>
+			</summary>
+			<div className="flex flex-col gap-4 px-4 pb-4">
+				{sections.map((s) => (
+					<div key={s.title} className="flex flex-col gap-1.5">
+						<h3 className="text-xs font-semibold tracking-wide text-ink-secondary uppercase">
+							{s.title}
+						</h3>
+						{s.paragraphs.map((p) => (
+							<p key={p} className="text-sm leading-relaxed text-ink-secondary">
+								{p}
+							</p>
+						))}
+					</div>
+				))}
+			</div>
+		</details>
 	);
 }
 
