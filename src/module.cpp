@@ -1544,7 +1544,7 @@ static py::dict xva_sensitivities_impl(const std::vector<std::pair<qm_::Time, qm
                                        const py::object &csa, qm_::Real borrowing_spread, qm_::Real lending_spread,
                                        std::size_t paths, std::uint64_t seed, std::size_t threads,
                                        const std::string &sector, bool investment_grade,
-                                       qm_::Real exercise_smoothing)
+                                       qm_::Real exercise_smoothing, const py::object &foreign)
 {
     // The market, rebuilt here from its quotes: the curve is their bootstrap,
     // a and σ the fit to the swaption vols, the counterparty's hazard rates
@@ -1570,7 +1570,53 @@ static py::dict xva_sensitivities_impl(const std::vector<std::pair<qm_::Time, qm
 
     qm_::HullWhiteExposureEngine engine(model);
     std::vector<qm_::sa_ccr::Trade> regulatory_trades;
-    add_xva_trades(engine, trades, model, curve, true, regulatory_trades);
+    // A second factor (blueprint/wp/23-xva.md §14.17): a second currency or
+    // an asset, and the engine that simulates it with the rate. Its spot
+    // volatility is the calibration to the market volatility of one option.
+    std::optional<qm_::CrossCurrencyHullWhiteModel> two_factors;
+    std::optional<qm_::CrossCurrencyExposureEngine> two_factor_engine;
+    qm_::Time vol_expiry = 0.0;
+    qm_::Real market_volatility = 0.0;
+    bool asset = false;
+    if (foreign.is_none())
+        add_xva_trades(engine, trades, model, curve, true, regulatory_trades);
+    else
+    {
+        const py::dict f = foreign.cast<py::dict>();
+        asset = f.contains("dividend_yield");
+        vol_expiry = f["volatility_expiry"].cast<qm_::Time>();
+        market_volatility = f["market_volatility"].cast<qm_::Real>();
+        const qm_::Real spot = f["spot"].cast<qm_::Real>();
+        if (asset)
+        {
+            const qm_::Real rho = item_or<qm_::Real>(f, "rate_correlation", 0.0);
+            const qm_::Real yield = f["dividend_yield"].cast<qm_::Real>();
+            const qm_::HullWhiteCurveModel still(model.mean_reversion(), qm_::kDeterministicRateVolatility,
+                                                 qm_::DiscountCurve(yield));
+            const qm_::Real sigma_s =
+                qm_::calibrated_fx_volatility(model, still, {0.0, rho, 0.0}, vol_expiry, market_volatility);
+            two_factors.emplace(qm_::make_asset_model(model, spot, yield, sigma_s, rho));
+        }
+        else
+        {
+            const auto hw = f["hull_white"].cast<std::pair<qm_::Real, qm_::Real>>();
+            const auto rho = f["correlations"].cast<std::tuple<qm_::Real, qm_::Real, qm_::Real>>();
+            const qm_::HullWhiteCurveModel other(
+                hw.first, hw.second,
+                rate_curve(f["discount_times"].cast<std::vector<qm_::Time>>(),
+                           f["discount_factors"].cast<std::vector<qm_::Real>>()));
+            const qm_::CrossCurrencyHullWhiteModel::Correlations correlations{std::get<0>(rho), std::get<1>(rho),
+                                                                              std::get<2>(rho)};
+            const qm_::Real sigma_s =
+                qm_::calibrated_fx_volatility(model, other, correlations, vol_expiry, market_volatility);
+            two_factors.emplace(model, other, spot, sigma_s, correlations);
+        }
+        two_factor_engine.emplace(*two_factors);
+        const auto currency = item_or<std::string>(f, "currency", asset ? "asset" : "EUR");
+        add_two_currency_trades(*two_factor_engine, trades, *two_factors,
+                                currency + "/" + item_or<std::string>(f, "domestic_currency", "USD"),
+                                currency, regulatory_trades, asset, item_or<bool>(f, "index", false));
+    }
 
     qm_::XvaRiskInputs inputs;
     inputs.counterparty = qm_::bootstrap_credit_curve(cds, curve, recovery);
@@ -1621,12 +1667,19 @@ static py::dict xva_sensitivities_impl(const std::vector<std::pair<qm_::Time, qm
         if (workers > 0)
             pool.start(workers);
         qm_::ThreadPool *p = workers > 0 ? &pool : nullptr;
-        risks = engine.xva_risks(settings, inputs, p);
+        risks = two_factor_engine ? two_factor_engine->xva_risks(settings, inputs, p)
+                                  : engine.xva_risks(settings, inputs, p);
         // The same estimator without its sensitivities: what the adjoint
         // costs is measured against it.
         qm_::XvaRiskInputs same = inputs;
         same.smoothing_widths = risks->smoothing_widths;
-        values = engine.xva_values(settings, same, p);
+        values = two_factor_engine ? two_factor_engine->xva_values(settings, same, p)
+                                   : engine.xva_values(settings, same, p);
+        // At a fixed market volatility of the spot, a and σ of the rates
+        // move its volatility in the model with them: folded in before the
+        // rate model's own inputs are mapped to their quotes.
+        if (two_factors)
+            qm_::fold_spot_volatility_calibration(*risks, *two_factors, vol_expiry, market_volatility);
         market = qm_::xva_market_risks(*risks, model, inputs.counterparty, inputs.own, quotes);
     }
 
@@ -1657,6 +1710,40 @@ static py::dict xva_sensitivities_impl(const std::vector<std::pair<qm_::Time, qm
     out["counterparty_spreads"] = quote_risks(market->counterparty_spreads);
     out["own_credit"] = quote_risks(market->own_spreads);
     out["others"] = quote_risks(market->others);
+
+    // What the second factor is read on, or estimated: its spot, its market
+    // volatility, its curve (a dividend yield, or the foreign zero rates),
+    // the foreign rate model and the correlations. Reported as they are.
+    if (two_factors)
+    {
+        std::vector<qm_::XvaQuoteRisk> second;
+        for (std::size_t j = 0; j < risks->factors.size(); ++j)
+        {
+            const qm_::XvaRiskFactor factor = risks->factors[j];
+            const bool of_the_asset = factor == qm_::XvaRiskFactor::Spot ||
+                                      factor == qm_::XvaRiskFactor::SpotVolatility ||
+                                      factor == qm_::XvaRiskFactor::ForeignZeroRate ||
+                                      factor == qm_::XvaRiskFactor::CorrelationDomesticSpot;
+            const bool of_the_currency = factor == qm_::XvaRiskFactor::ForeignMeanReversion ||
+                                         factor == qm_::XvaRiskFactor::ForeignSigma ||
+                                         factor == qm_::XvaRiskFactor::CorrelationDomesticForeign ||
+                                         factor == qm_::XvaRiskFactor::CorrelationForeignSpot;
+            // A yield that does not move has no rate model of its own.
+            if (of_the_asset || (of_the_currency && !asset))
+                second.push_back(qm_::factor_risk(*risks, j));
+        }
+        out["second_factor"] = quote_risks(second);
+        out["spot_volatility"] = two_factors->fx_volatility();
+        out["sa_cva"] = py::none();
+        out["paths"] = risks->paths;
+        out["threads"] = workers + 1;
+        out["factors"] = risks->factors.size();
+        out["seconds_adjoint"] = risks->seconds;
+        out["seconds_valuation"] = values->seconds;
+        out["smoothing_widths"] = risks->smoothing_widths;
+        return out;
+    }
+    out["second_factor"] = py::list();
 
     const qm_::sa_cva::Sensitivities sensitivities = qm_::sa_cva_sensitivities(*market, bucket, quality);
     const qm_::sa_cva::Capital k = qm_::sa_cva::capital(sensitivities);
@@ -2950,13 +3037,19 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("borrowing_spread") = 0.0, py::arg("lending_spread") = 0.0, py::arg("paths") = 5000,
           py::arg("seed") = 42, py::arg("threads") = 0, py::arg("sector") = "other",
           py::arg("investment_grade") = false, py::arg("exercise_smoothing") = 0.05,
+          py::arg("foreign") = py::none(),
           "Sensitivities of CVA, DVA, FCA and FBA of a netting set of swaps and European swaptions to every "
           "market quote, by adjoint differentiation (blueprint/wp/23-xva.md, lot X8). The market is rebuilt "
           "from its quotes: swap_rates [(tenor, par rate)] are bootstrapped into the curve, swaption_vols "
           "[(expiry, tenor, normal vol)] calibrate Hull-White, counterparty_spreads [(tenor, spread)] "
           "bootstrap the counterparty's hazard rates. Returns the adjustments, the risks to the model's "
           "inputs and to each quote with their Monte-Carlo errors, the SA-CVA capital (MAR50) from the "
-          "sensitivities of the unilateral CVA, and the time of the adjoint run against one valuation.");
+          "sensitivities of the unilateral CVA, and the time of the adjoint run against one valuation. "
+          "foreign (as in xva_netting_set, with market_volatility and volatility_expiry instead of the "
+          "spot's own volatility, which is calibrated to them) adds a second currency or an asset: the "
+          "risks of the rate model's inputs are then at a fixed market volatility, second_factor holds "
+          "those of the spot, its market volatility, its curve, the foreign rate model and the "
+          "correlations, and sa_cva is None (it would need the FX or equity risk classes).");
     m.def("estimate_historical_rate_dynamics", &estimate_historical_rate_dynamics_impl, py::arg("rates"),
           py::arg("dt"),
           "Maximum-likelihood (a, theta, sigma) of a mean-reverting Gaussian short rate from a series "

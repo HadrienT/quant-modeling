@@ -1607,6 +1607,13 @@ export interface components {
              */
             level: number;
             /**
+             * Move
+             * @description For a quantity that is not a rate: the move the page shows the sensitivity for (1 % of a price, a volatility point, 0.01 of a correlation). None: a basis point
+             */
+            move?: number | null;
+            /** Move Label */
+            move_label?: string | null;
+            /**
              * Tenor
              * @description Tenor of the swap, the swaption or the spread
              */
@@ -7050,7 +7057,15 @@ export interface components {
             portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Portfolio Label */
             portfolio_label: string;
-            sa_cva: components["schemas"]["SaCvaOut"];
+            /** @description None with a second currency or a share: see `sa_cva_unavailable` */
+            sa_cva: components["schemas"]["SaCvaOut"] | null;
+            /** Sa Cva Unavailable */
+            sa_cva_unavailable?: string | null;
+            /**
+             * Second Factor
+             * @description With a second currency or a share: the exchange rate or the share's price, its market volatility, its curve (the dividend yield, or the foreign zero rates), the foreign rate model and the correlations
+             */
+            second_factor?: components["schemas"]["AdjustmentRisks"][];
             /**
              * Seconds Adjoint
              * @description Wall time of the paths with every sensitivity

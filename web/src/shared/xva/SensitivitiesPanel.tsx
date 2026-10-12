@@ -5,6 +5,7 @@ import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import { Figure } from "./Explained";
 import { signed, tenorLabel } from "./format";
 import { SaCvaTable } from "./SaCvaTable";
+import { SecondFactorTable } from "./SecondFactorTable";
 import { type RiskKey, SensitivityBars } from "./SensitivityBars";
 
 const ADJUSTMENTS: { value: RiskKey; label: string }[] = [
@@ -121,7 +122,17 @@ export function SensitivitiesPanel({
 					label={(r) => r.label.replace("Hull-White ", "")}
 				/>
 			</div>
-			<SaCvaTable sa={data.sa_cva} />
+			<SecondFactorTable
+				risks={data.second_factor ?? []}
+				adjustment={adjustment}
+			/>
+			{data.sa_cva ? (
+				<SaCvaTable sa={data.sa_cva} />
+			) : (
+				<p className="rounded-sm border border-hairline bg-surface p-3 text-sm leading-relaxed text-ink-secondary">
+					{data.sa_cva_unavailable}
+				</p>
+			)}
 			<Methodology
 				id={id}
 				title="How the sensitivities are computed"

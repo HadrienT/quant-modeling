@@ -67,6 +67,29 @@
             "title": "Level",
             "type": "number"
           },
+          "move": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a quantity that is not a rate: the move the page shows the sensitivity for (1 % of a price, a volatility point, 0.01 of a correlation). None: a basis point",
+            "title": "Move"
+          },
+          "move_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Label"
+          },
           "tenor": {
             "description": "Tenor of the swap, the swaption or the spread",
             "title": "Tenor",
@@ -12080,7 +12103,34 @@
             "type": "string"
           },
           "sa_cva": {
-            "$ref": "#/components/schemas/SaCvaOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SaCvaOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None with a second currency or a share: see `sa_cva_unavailable`"
+          },
+          "sa_cva_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sa Cva Unavailable"
+          },
+          "second_factor": {
+            "description": "With a second currency or a share: the exchange rate or the share's price, its market volatility, its curve (the dividend yield, or the foreign zero rates), the foreign rate model and the correlations",
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Second Factor",
+            "type": "array"
           },
           "seconds_adjoint": {
             "description": "Wall time of the paths with every sensitivity",

@@ -97,6 +97,19 @@ def _rate_history() -> pd.Series:
     return pd.Series(values, index=days)
 
 
+def SHARE(ticker, since):
+    """The closes of the two fake shares, ending at 100."""
+    if ticker not in ("AAA", "BBB"):
+        return []
+    salt = 1.0 if ticker == "AAA" else 2.3
+    out, level = [], 100.0
+    for k, d in enumerate(SHARE_DAYS):
+        level *= math.exp(0.012 * math.sin(salt * k * 1.7) * math.cos(k / 7.0))
+        out.append((d, level))
+    scale = 100.0 / out[-1][1]
+    return [(d, v * scale) for d, v in out if d >= since]
+
+
 @pytest.fixture(autouse=True)
 def shares(monkeypatch, store):  # noqa: F811 — after the store it completes
     """Two listed shares around 100, with five years of closes; no option
@@ -105,18 +118,7 @@ def shares(monkeypatch, store):  # noqa: F811 — after the store it completes
         db, "fred_series", lambda series_id, since=None: _rate_history()
     )
 
-    def closes(ticker, since):
-        if ticker not in ("AAA", "BBB"):
-            return []
-        salt = 1.0 if ticker == "AAA" else 2.3
-        out, level = [], 100.0
-        for k, d in enumerate(SHARE_DAYS):
-            level *= math.exp(0.012 * math.sin(salt * k * 1.7) * math.cos(k / 7.0))
-            out.append((d, level))
-        scale = 100.0 / out[-1][1]
-        return [(d, v * scale) for d, v in out if d >= since]
-
-    monkeypatch.setattr(db, "price_history", closes)
+    monkeypatch.setattr(db, "price_history", SHARE)
     monkeypatch.setattr(db, "ticker_currency", lambda t: "USD")
     monkeypatch.setattr(
         db,
@@ -417,9 +419,50 @@ def test_adjoint_sensitivities_of_a_trade_off_the_market_match_bumped_quotes():
     assert base["swap_rates"][-1]["cva"]["value"] == 0.0
 
 
+def test_a_netting_set_with_a_share_has_the_sensitivities_of_both_factors():
+    pf = _pf(_swap(0.047), _option(100.0), quantity=1.0)
+    pf.transactions[1].quantity = 3000.0  # 3 000 calls next to the swap
+    r = risks(pf, seed=5)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    by_label = {q["label"]: q for q in body["second_factor"]}
+    assert set(by_label) == {
+        "dividend yield of AAA",
+        "price of AAA",
+        "market volatility of AAA",
+        "correlation of the dollar rate and AAA",
+    }
+    # Bought calls: the bank is owed more when the share rises or moves more
+    # (the CVA, a cost, grows), less when it pays more dividends.
+    assert by_label["price of AAA"]["cva"]["value"] < 0
+    assert by_label["market volatility of AAA"]["cva"]["value"] < 0
+    assert by_label["dividend yield of AAA"]["cva"]["value"] > 0
+    assert by_label["dividend yield of AAA"]["level"] == pytest.approx(0.015)
+    # The delta against the share's price moved in the store, same draws.
+    valued = {}
+    for sign in (+1, -1):
+        scale = 1.0 + sign * 0.001
+
+        def moved(ticker, since, scale=scale):
+            return [(d, v * scale) for d, v in SHARE(ticker, since)]
+
+        original = db.price_history
+        db.price_history = moved
+        try:
+            valued[sign] = risks(pf, seed=5).json()["adjustments"]["cva"]["value"]
+        finally:
+            db.price_history = original
+    finite = (valued[1] - valued[-1]) / (0.002 * by_label["price of AAA"]["level"])
+    reported = by_label["price of AAA"]["cva"]
+    assert reported["value"] == pytest.approx(
+        finite, rel=0.05, abs=3 * reported["error"]
+    )
+    assert body["sa_cva"] is None and "a share" in body["sa_cva_unavailable"]
+    # The swap rates still have theirs.
+    assert any(q["cva"]["value"] != 0.0 for q in body["swap_rates"])
+
+
 def test_sensitivities_say_what_they_do_not_cover():
-    r = risks(_pf(_swap(0.047), _option(100.0)))
-    assert r.status_code == 422 and "equity options" in r.text
     r = risks(_pf(_swap(0.047), netting_set="example-dealer-im"), "example-dealer-im")
     assert r.status_code == 422 and "initial margin" in r.text
     r = risks(_pf(_option(100.0, product="american_vanilla")))

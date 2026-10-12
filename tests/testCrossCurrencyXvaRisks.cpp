@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"
+#include "quantModeling/engines/xva/xva_market_risks.hpp"
 #include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/instruments/fx/cross_currency_swap.hpp"
 #include "quantModeling/instruments/fx/forward.hpp"
@@ -378,6 +379,57 @@ namespace quantModeling
         ASSERT_EQ(alone.risks.size(), many.risks.size());
         for (std::size_t k = 0; k < alone.risks.size(); ++k)
             EXPECT_DOUBLE_EQ(alone.risks[k], many.risks[k]);
+    }
+
+    TEST(CrossCurrencyXvaRisks, AtAFixedMarketVolatilityTheRatesMoveTheSpotVolatilityWithThem)
+    {
+        // The spot volatility is not quoted: it is what gives an option of
+        // three years its market volatility. With that volatility held
+        // fixed, a bump of the rate model's σ moves σ_S too.
+        const Time expiry = 3.0;
+        const Real quoted = 0.24;
+        const auto market = [&](Real sigma_d, Real vol)
+        {
+            Market m = asset_market();
+            m.sigma_d = sigma_d;
+            // As make_asset_model: a yield that does not move.
+            m.sigma_f = kDeterministicRateVolatility;
+            m.a_f = m.a_d;
+            m.rho_df = m.rho_fs = 0.0;
+            m.sigma_s = calibrated_fx_volatility(HullWhiteCurveModel(m.a_d, m.sigma_d, DiscountCurve(0.0)),
+                                                 HullWhiteCurveModel(m.a_f, m.sigma_f, DiscountCurve(0.0)),
+                                                 {m.rho_df, m.rho_ds, m.rho_fs}, expiry, vol);
+            return m;
+        };
+        const Market base = market(0.010, quoted);
+        EXPECT_LT(base.sigma_s, quoted); // the rate adds to the forward's volatility
+        const std::size_t paths = 256;
+        XvaRisks r = risks(base, asset_and_rates_book, paths);
+        const std::vector<Real> widths = r.smoothing_widths;
+        const auto find = [&](XvaRiskFactor factor)
+        { return static_cast<std::size_t>(std::find(r.factors.begin(), r.factors.end(), factor) - r.factors.begin()); };
+        const std::size_t sigma = find(XvaRiskFactor::Sigma), vol = find(XvaRiskFactor::SpotVolatility);
+        const Real before = r.risk(XvaOutput::Cva, sigma).value;
+        const CrossCurrencyHullWhiteModel cc = model(base);
+        fold_spot_volatility_calibration(r, cc, expiry, quoted);
+        EXPECT_NE(r.risk(XvaOutput::Cva, sigma).value, before);
+        EXPECT_EQ(r.labels[vol], "market volatility of the spot");
+        EXPECT_DOUBLE_EQ(r.levels[vol], quoted);
+
+        const auto cva = [&](const Market &m)
+        { return values(m, asset_and_rates_book, paths, false, widths)[XvaOutput::Cva].value; };
+        const Real h = 1e-7;
+        const Real to_sigma = (cva(market(0.010 + h, quoted)) - cva(market(0.010 - h, quoted))) / (2.0 * h);
+        const Real to_vol = (cva(market(0.010, quoted + h)) - cva(market(0.010, quoted - h))) / (2.0 * h);
+        EXPECT_NEAR(r.risk(XvaOutput::Cva, sigma).value, to_sigma, 1e-4 * std::abs(to_sigma));
+        EXPECT_NEAR(r.risk(XvaOutput::Cva, vol).value, to_vol, 1e-4 * std::abs(to_vol));
+        EXPECT_GT(r.risk(XvaOutput::Cva, vol).error, 0.0);
+        // One factor as a quote: its label, its level, every adjustment.
+        const XvaQuoteRisk q = factor_risk(r, vol);
+        EXPECT_EQ(q.label, r.labels[vol]);
+        EXPECT_DOUBLE_EQ(q.risk[0].value, r.risk(XvaOutput::Cva, vol).value);
+        // Not the calibration to this quote: refused.
+        EXPECT_THROW(fold_spot_volatility_calibration(r, cc, expiry, 0.30), InvalidInput);
     }
 
     TEST(CrossCurrencyXvaRisks, RefusesWhatIsNotARun)

@@ -1211,12 +1211,39 @@ def test_two_currencies_refuse_what_the_lot_does_not_cover(store):
     )
     script = {"label": "A script", "script": "pay 1 on 2027-09-30", "quantity": 1.0}
     assert "valued by regression" in refused(portfolio="fx_forward", scripts=[script])
-    r = client.post("/api/xva/sensitivities", json={"portfolio": "cross_currency"})
-    assert r.status_code == 422 and "one currency" in r.json()["message"]
     # A euro market that is not in the store is a 503, not a fallback.
     store["euro"] = False
     r = client.post("/api/xva/netting-set", json={"portfolio": "fx_forward"})
     assert r.status_code == 503 and "Euribor" in r.json()["message"]
+
+
+def test_two_currencies_have_their_sensitivities_too():
+    body = sensitivities(portfolio="two_currencies", borrowing_spread=0.004)
+    adj = body["adjustments"]
+    assert adj["cva"]["value"] < 0 < adj["dva"]["value"]
+    # The same netting set as the valuation endpoint, to the credit curve.
+    valued = run(portfolio="two_currencies")["adjustments"]["cva"]["value"]
+    assert adj["cva"]["value"] == pytest.approx(valued, rel=0.03)
+    # The dollar side, to its quotes, as with one currency.
+    assert [q["tenor"] for q in body["swap_rates"]] == [float(t) for t in PAR]
+    assert len(body["swaption_vols"]) == len(VOLS)
+    # The second factor: the exchange rate, its market volatility, the euro
+    # curve pillar by pillar, the euro rate model and the three correlations.
+    labels = [q["label"] for q in body["second_factor"]]
+    assert "EUR/USD spot" in labels and "market volatility of EUR/USD" in labels
+    assert "euro zero rate 10Y" in labels and "euro Hull-White volatility" in labels
+    assert "correlation of dollar and euro rates" in labels
+    by_label = {q["label"]: q for q in body["second_factor"]}
+    assert by_label["market volatility of EUR/USD"]["level"] == 0.068
+    spot = by_label["EUR/USD spot"]["cva"]
+    assert spot["value"] != 0.0 and 0 < spot["error"] < abs(spot["value"])
+    # No capital that would leave the exchange rate out.
+    assert body["sa_cva"] is None and "exchange rate" in body["sa_cva_unavailable"]
+    assert "With a second currency or a share" in [
+        s["title"] for s in body["methodology"]
+    ]
+    one = sensitivities(portfolio="single_swap")
+    assert one["sa_cva"] is not None and one["second_factor"] == []
 
 
 def test_the_audit_record_names_the_inputs_of_both_currencies(store):

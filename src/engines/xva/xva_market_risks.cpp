@@ -435,6 +435,106 @@ namespace quantModeling
         return out;
     }
 
+    void fold_spot_volatility_calibration(XvaRisks &risks, const CrossCurrencyHullWhiteModel &model,
+                                          Time expiry, Real market_volatility)
+    {
+        const std::size_t P = risks.factors.size();
+        const auto at = [&](XvaRiskFactor factor)
+        {
+            for (std::size_t j = 0; j < P; ++j)
+                if (risks.factors[j] == factor)
+                    return j;
+            throw InvalidInput("xVA market risks: these are not the risks of a two-factor run");
+        };
+        const std::size_t spot_vol = at(XvaRiskFactor::SpotVolatility);
+
+        // σ_S as a function of what it was calibrated with.
+        struct Inputs
+        {
+            Real a_d, sigma_d, a_f, sigma_f, rho_df, rho_ds, rho_fs, vol;
+        };
+        const Inputs base{model.domestic().mean_reversion(),
+                          model.domestic().sigma(),
+                          model.foreign().mean_reversion(),
+                          model.foreign().sigma(),
+                          model.correlations().domestic_foreign,
+                          model.correlations().domestic_fx,
+                          model.correlations().foreign_fx,
+                          market_volatility};
+        const auto spot_volatility = [expiry](const Inputs &x)
+        {
+            // The curves play no part in a volatility.
+            return calibrated_fx_volatility(HullWhiteCurveModel(x.a_d, x.sigma_d, DiscountCurve(0.0)),
+                                            HullWhiteCurveModel(x.a_f, x.sigma_f, DiscountCurve(0.0)),
+                                            {x.rho_df, x.rho_ds, x.rho_fs}, expiry, x.vol);
+        };
+        if (std::abs(spot_volatility(base) - model.fx_volatility()) > 1e-9 * model.fx_volatility())
+            throw InvalidInput("xVA market risks: the model's spot volatility is not the calibration to "
+                               "this market volatility");
+        const auto slope = [&](Real Inputs::*field, Real h)
+        {
+            Inputs up = base, down = base;
+            up.*field += h;
+            down.*field -= h;
+            return (spot_volatility(up) - spot_volatility(down)) / (2.0 * h);
+        };
+        // (factor, dσ_S / d factor). A rate that stands for a known yield
+        // (make_asset_model) does not move: its own inputs are left alone.
+        std::vector<std::pair<std::size_t, Real>> chain{
+            {at(XvaRiskFactor::MeanReversion), slope(&Inputs::a_d, 1e-5)},
+            {at(XvaRiskFactor::Sigma), slope(&Inputs::sigma_d, 1e-3 * base.sigma_d)},
+            {at(XvaRiskFactor::CorrelationDomesticSpot), slope(&Inputs::rho_ds, 1e-5)}};
+        if (base.sigma_f > 10.0 * kDeterministicRateVolatility)
+        {
+            chain.emplace_back(at(XvaRiskFactor::ForeignMeanReversion), slope(&Inputs::a_f, 1e-5));
+            chain.emplace_back(at(XvaRiskFactor::ForeignSigma), slope(&Inputs::sigma_f, 1e-3 * base.sigma_f));
+            chain.emplace_back(at(XvaRiskFactor::CorrelationDomesticForeign), slope(&Inputs::rho_df, 1e-5));
+            chain.emplace_back(at(XvaRiskFactor::CorrelationForeignSpot), slope(&Inputs::rho_fs, 1e-5));
+        }
+        const Real to_market = slope(&Inputs::vol, 1e-3 * market_volatility);
+
+        constexpr std::size_t kBatch = 64;
+        for (std::size_t b = 0; b < risks.batches; ++b)
+            for (std::size_t o = 0; o < kXvaOutputs; ++o)
+            {
+                Real *row = risks.batch_risks.data() + (b * kXvaOutputs + o) * P;
+                const Real to_spot_vol = row[spot_vol];
+                for (const auto &[factor, derivative] : chain)
+                    row[factor] += to_spot_vol * derivative;
+                row[spot_vol] = to_spot_vol * to_market;
+            }
+        // The means and the errors, again, from the batches.
+        for (std::size_t o = 0; o < kXvaOutputs; ++o)
+            for (std::size_t j = 0; j < P; ++j)
+            {
+                WelfordAccumulator acc;
+                Real sum = 0.0;
+                for (std::size_t b = 0; b < risks.batches; ++b)
+                {
+                    const Real x = risks.batch_risks[(b * kXvaOutputs + o) * P + j];
+                    acc.add(x);
+                    sum += x * static_cast<Real>(std::min(kBatch, risks.paths - b * kBatch));
+                }
+                risks.risks[o * P + j] = sum / static_cast<Real>(risks.paths);
+                risks.errors[o * P + j] = acc.std_error();
+            }
+        risks.labels[spot_vol] = "market volatility of the spot";
+        risks.levels[spot_vol] = market_volatility;
+    }
+
+    XvaQuoteRisk factor_risk(const XvaRisks &risks, std::size_t factor)
+    {
+        if (factor >= risks.factors.size())
+            throw InvalidInput("xVA market risks: no such factor");
+        XvaQuoteRisk q;
+        q.label = risks.labels[factor];
+        q.tenor = risks.tenors[factor];
+        q.level = risks.levels[factor];
+        for (std::size_t o = 0; o < kXvaOutputs; ++o)
+            q.risk[o] = risks.risk(static_cast<XvaOutput>(o), factor);
+        return q;
+    }
+
     sa_cva::Sensitivities sa_cva_sensitivities(const XvaMarketRisks &risks, ba_cva::Sector sector,
                                                ba_cva::CreditQuality quality)
     {

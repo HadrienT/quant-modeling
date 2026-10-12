@@ -2558,21 +2558,58 @@ devises, un book avec options de change, et des options sur un actif ; mêmes
 bits sur un thread ou plusieurs ; signes (delta, vega, dividende) et
 linéarité en LGD.
 
-**Ce qui reste**, dans l'ordre :
+**Suite, faite le même jour.**
 
-1. les **swaps et swaptions d'une devise** dans cet adjoint (aujourd'hui
-   refusés) : leurs termes sont ceux du programme à un facteur
-   (`exposure_program.hpp`), à relire sur l'état de la bonne devise et, pour
-   une transaction en devise étrangère, à convertir au cours du chemin ; la
-   rampe d'exercice des swaptions (`exercise_smoothing`) vient avec ;
-2. la **marge de variation** (CSA), comme en X8 ;
-3. des entrées du modèle aux **cotations de marché** (`xva_market_risks`) :
-   bootstrap de la seconde courbe, calage de $\sigma_S$ sur la volatilité de
-   marché (quadratique exacte, donc dérivée fermée), volatilité implicite de
-   l'action ; les corrélations, estimées, sont rapportées telles quelles ;
-4. le binding, l'API (`POST /api/xva/portfolio/sensitivities` cesse alors de
-   refuser ces netting sets) et l'affichage ;
-5. la mesure du coût (adjoint / valorisation) dans `qm_xva_aad_bench`.
+- *Swaps et swaptions d'une devise.* Ils entrent dans cet adjoint par les
+  termes à plat du moteur à un facteur (`FutureValue::compile`, que
+  `SingleCurrency::describe` relaie) : `build_program` en recalcule les
+  coefficients en `T` sur le modèle de taux de leur devise, et `add_program`
+  les lit sur l'état de ce taux, convertis au cours du chemin pour une
+  transaction en devise étrangère. L'exercice d'une swaption est lissé par la
+  même rampe qu'en X8, une largeur par transaction de taux, dans la devise du
+  swap.
+- *Marge de variation.* Comme en X8 : `collateral_plan`, soldes et valeur
+  collatéralisée par chemin, flux de la période de marge (flux connus,
+  règlement des options, coupons des swaps), appel d'aujourd'hui enregistré
+  avant la marque.
+- *Des entrées aux cotations.* `xva_market_risks` repère ses facteurs par
+  type : il s'applique tel quel au côté dollar (taux de swap, vols de
+  swaptions, spreads de crédit). Avant lui, `fold_spot_volatility_calibration`
+  replie la calibration de $\sigma_S$ : le marché cote la volatilité d'une
+  option, pas celle du cours dans le modèle, et celle-ci bouge avec $a$ et
+  $\sigma$ des taux et avec les corrélations. À volatilité de marché fixée,
+  $d/d\theta = \partial/\partial\theta + \partial/\partial\sigma_S \cdot
+  \partial\sigma_S/\partial\theta$ ; $\sigma_S$ est la racine d'une
+  quadratique, dérivée par différences centrées. Vérifié contre un bump à
+  volatilité de marché fixée ($10^{-4}$ près).
+- *Binding, API, page.* `qm.xva_sensitivities(..., foreign=...)` ;
+  `xva.compute_sensitivities` ne refuse plus une action ni une seconde devise
+  (les portefeuilles à deux devises de `/xva` y gagnent aussi leurs
+  sensibilités) ; la réponse porte `second_factor` — cours, volatilité de
+  marché, rendement de dividende ou taux zéro en euros, modèle de taux en
+  euros, corrélations —, chaque ligne avec le mouvement pour lequel elle est
+  affichée (1 % du cours, un point de volatilité, 0,01 de corrélation, un
+  point de base). Côté API, le delta du CVA au cours d'une action est vérifié
+  contre un cours déplacé en base.
+
+Tests : `tests/testCrossCurrencyXvaRisks.cpp` (12 tests : valeurs = moteur de
+pricing avec et sans CSA sur des books mêlant tout ; adjoint = bump partout),
+`test_xva.py`, `test_portfolio_xva.py`.
+
+**Limites, dites dans la réponse :**
+
+- **SA-CVA n'est pas rapporté** pour un netting set à deux facteurs : il
+  faudrait ajouter au capital la classe de risque change ou action de MAR50 ;
+  un chiffre sans elle le sous-estimerait ;
+- la **courbe en euros** est rapportée par taux zéro à chaque pilier, et le
+  modèle de taux en euros par ses deux paramètres, pas encore ramenés aux taux
+  de swap et aux vols de swaptions en euros (il faut porter ces cotations
+  jusqu'au binding, puis appliquer `xva_market_risks` au côté étranger) ;
+- les **corrélations** sont des estimations : leurs sensibilités disent ce que
+  coûte une erreur d'estimation, pas ce qui se couvre ;
+- pas de marge initiale, pas de transaction valorisée par régression, comme
+  en X8 ; le coût adjoint / valorisation est renvoyé par l'API mais pas encore
+  mesuré dans `qm_xva_aad_bench`.
 
 ---
 

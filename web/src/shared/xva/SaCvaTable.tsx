@@ -6,7 +6,11 @@ import { amount, pct, tenorLabel } from "./format";
  * framework, MAR50) — each sensitivity, its supervisory risk weight, and the
  * capital of each of the three risk classes.
  */
-export function SaCvaTable({ sa }: { sa: XvaSensitivities["sa_cva"] }) {
+export function SaCvaTable({
+	sa,
+}: {
+	sa: NonNullable<XvaSensitivities["sa_cva"]>;
+}) {
 	const rows: { name: string; detail: string; capital: number }[] = [
 		{
 			name: "Interest-rate delta",
