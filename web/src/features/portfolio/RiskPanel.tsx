@@ -2,13 +2,15 @@ import type { RiskAggregate } from "@/shared/portfolio";
 import { NumberCell } from "@/shared/ui";
 import { AllocationChart } from "@/shared/viz";
 import { RateRiskTable } from "./RateRiskTable";
+import { RiskTotals } from "./RiskTotals";
 
 const GREEKS = ["delta", "gamma", "vega", "theta", "rho"] as const;
 const SYMBOL = { delta: "Δ", gamma: "Γ", vega: "Vega", theta: "Θ", rho: "ρ" };
 
 /**
- * Risk per underlying (WP 09 §4). Greeks are grouped PER UNDERLYING —
- * summing delta across AAPL and oil is a number with no meaning (pitfalls).
+ * Risk of the portfolio, then per underlying (WP 09 §4). The greeks of the
+ * table are grouped PER UNDERLYING — a delta in shares of AAPL does not add
+ * to one in barrels of oil. The totals above add money instead (RiskTotals).
  * Delta is in shares of the underlying: a stock contributes its quantity.
  * Rate and FX trades have other risks (RateRiskTable): their equity greeks
  * are not zero, they do not exist.
@@ -34,6 +36,7 @@ export function RiskPanel({
 					aggregate covers a subset.
 				</p>
 			)}
+			<RiskTotals totals={risk.totals} base={base} />
 			<div className="overflow-x-auto rounded-md border border-hairline bg-surface">
 				<table className="w-full text-xs">
 					<thead>
