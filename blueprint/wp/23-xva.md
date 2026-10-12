@@ -1276,7 +1276,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X11 — Contreparties et netting sets du portefeuille** (fait : §14.16) | un portefeuille porte ses contreparties (notation, secteur, recouvrement) et leurs netting sets (CSA ou non) ; un dérivé se traite sous un netting set ; sous-onglet *Counterparties* de la page Portfolio ; contreparties d'exemple | un instrument coté n'a pas de netting set ; un netting set utilisé ne se supprime pas ; le mark d'un dérivé ne dépend pas de qui il fait face |
 | **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans bermudan ni script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
 | **X13 — xVA d'un netting set du portefeuille** (fait : §14.16 ; sans sensibilités, swap entamé simulé depuis son prochain coupon) | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
-| **X14 — Dérivés actions dans le moteur d'exposition** | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
+| **X14 — Dérivés actions dans le moteur d'exposition** (fait : §14.16 ; options européennes, une action par netting set, CPU) | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
 
 ### 14.1 Lot X0 : ce qui est fait, et les choix d'implémentation
 
@@ -2440,6 +2440,64 @@ avertissements**, jamais approché en silence :
 Les deux premières limites se lèvent en C++ : un flux connu comme transaction
 du moteur, et un échéancier de swap de devises compté depuis l'échéance.
 
+**Lot X14, ce qui est fait.** Le modèle joint n'est pas un modèle de plus :
+une action qui verse un rendement connu **est** une devise étrangère dont le
+taux ne bouge pas. Son cours est le « taux de change », son rendement de
+dividende le « taux étranger », son prix à terme la parité couverte des taux
+d'intérêt. Le moteur à deux devises du lot X10 simule donc déjà une action
+lognormale sous un taux Hull-White, corrélée avec lui (Brigo & Mercurio 2006,
+§14.3). En C++ :
+
+- `make_asset_model` (`models/rates/cross_currency_hull_white.hpp`) construit
+  ce modèle : taux étranger de courbe plate $q$ et de volatilité
+  `kDeterministicRateVolatility` $= 10^{-10}$ (le modèle de taux exige
+  $\sigma > 0$ ; cette valeur ne change aucun chiffre imprimé), corrélations
+  $(0, \rho_{rS}, 0)$ ;
+- `CrossCurrencyHullWhiteModel::forward_variance(t, T)` $= \int_t^T
+  \sigma_F(u;T)^2\,du$, la variance que le forward doit encore accumuler,
+  déterministe ;
+- une **option européenne sur le taux de change** (donc sur l'action), réglée
+  en espèces, entre dans le moteur par le visiteur, sur l'instrument
+  `VanillaOption` existant — aucun produit ajouté. À $t < T$, sur chaque
+  chemin, $V(t) = N\,P_d(t,T)\,\mathrm{Black}(F(t,T), K, \sqrt{v(t,T)})$ avec
+  $F(t,T) = S(t)P_f(t,T)/P_d(t,T)$ : une forme fermée de l'état, comme les
+  swaps (ADR-X1). À $T$ elle paie sa valeur intrinsèque ; après, rien.
+
+Tests de propriété (`tests/testCrossCurrencyExposure.cpp`) : martingale de la
+valeur actualisée à toutes les dates ; call − put = forward **sur chaque
+chemin et à chaque date** ; option achetée jamais négative, nulle après
+l'échéance ; limite Black-Scholes à $10^{-7}$ quand le taux ne bouge presque
+pas ; la volatilité implicite croît avec $\rho_{rS}$ ; le « taux étranger » ne
+bouge pas ; variance écoulée + variance restante = variance totale.
+
+Côté API (`api/app/xva_equity.py`, `portfolio_xva.py`, `xva.py`) : les options
+`vanilla` en dollars d'un netting set entrent dans la simulation, avec une
+quantité signée et une action par option. Entrées, toutes lues en base :
+clôture et rendement de dividende ; volatilité implicite du smile du jour au
+strike et à l'échéance de l'option de calage, ou volatilité réalisée 63 jours
+quand aucune chaîne d'options n'est en base (proxy, dit) ; corrélation
+taux-action estimée sur trois ans de variations hebdomadaires (DGS5 contre
+rendements log de l'action), avec son intervalle à 95 %. La volatilité du
+cours dans le modèle est calée (`qm.cross_currency_fx_volatility`) pour que
+l'option la plus longue ait sa volatilité de marché. SA-CCR décrit l'option
+comme une transaction action (`EquitySingleName`, `EquityIndex` pour un
+ticker en `^`), par le prix des titres. La réponse porte `market.equity`,
+affiché par `shared/xva/EquityMarketPanel.tsx`.
+
+Limites, dites dans les avertissements de la réponse :
+
+- **une action par netting set**, et pas d'action avec une seconde devise :
+  le moteur n'a qu'un facteur en plus du taux dollar. Deux actions, ou une
+  action et l'euro, demandent un moteur à $n$ facteurs ;
+- **options européennes seulement** : américaines, asiatiques, barrières,
+  digitales et lookbacks sont écartées (pas de forme fermée par chemin ; il
+  faudrait la régression du lot X4 dans ce moteur) ;
+- **une seule volatilité** pour l'action : plusieurs options sont valorisées
+  sans le smile entre elles ;
+- sous-jacents en dollars seulement ; CPU, mesure de pricing, marge initiale
+  par régression (comme à deux devises) ; dividende en rendement continu
+  constant.
+
 ---
 
 ## 15. Tests de propriété
@@ -2628,7 +2686,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | A3 | État d'exercice du bermudan calculé une fois par chemin (`evaluate_path`) au lieu d'être recalculé à chaque date | 9 s pour 40 000 chemins sur un thread |
 | A4 | Bermudan réglé en espèces ; régresseurs autres que l'état (taux swap résiduel) | couverture des produits ; qualité de la continuation |
 | A5 | Scripts : rendre l'état « exercé » de l'évaluateur visible comme régime automatique | aujourd'hui le script doit poser lui-même un drapeau, sinon son exposition après exercice est fausse |
-| A6 | Scripts : erreur Monte-Carlo de la valeur d'aujourd'hui ; `forward()` ; scripts actions (modèle joint, lot X10) | la valeur d'aujourd'hui d'un script est un prix simulé, sans son erreur |
+| A6 | Scripts : erreur Monte-Carlo de la valeur d'aujourd'hui ; `forward()` ; scripts actions (le modèle joint existe depuis le lot X14, pour les options européennes) | la valeur d'aujourd'hui d'un script est un prix simulé, sans son erreur |
 | A7 | Scripts : mémoire de la passe pilote (chemins × événements × variables) hors de la limite du moteur | un script long à sept variables et 200 000 chemins pilotes prend plusieurs centaines de Mo que le moteur ne compte pas |
 | A8 | Pilote sous la mesure historique : la règle de couverture (3 σ du pilote pour 4 σ des scénarios) est une heuristique | à valider sur des dynamiques extrêmes |
 | A9 | Courbe de forwards en dents de scie sur les données DTCC (lissage, ou ajustement de la courbe aux transactions) | visible dans Market et dans tout profil d'exposition |

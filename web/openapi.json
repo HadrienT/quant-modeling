@@ -2678,6 +2678,108 @@
         "title": "EngineType",
         "type": "string"
       },
+      "EquityMarket": {
+        "description": "The share of a netting set that holds equity options (lot X14): a\nlognormal price under the Hull-White rate, with a known dividend yield.",
+        "properties": {
+          "calibration_expiry": {
+            "title": "Calibration Expiry",
+            "type": "number"
+          },
+          "calibration_strike": {
+            "title": "Calibration Strike",
+            "type": "number"
+          },
+          "correlation": {
+            "$ref": "#/components/schemas/CorrelationEstimate",
+            "description": "Of the interest rate and the share, on weekly changes"
+          },
+          "correlation_end": {
+            "format": "date",
+            "title": "Correlation End",
+            "type": "string"
+          },
+          "correlation_series": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Correlation Series",
+            "type": "array"
+          },
+          "correlation_start": {
+            "format": "date",
+            "title": "Correlation Start",
+            "type": "string"
+          },
+          "dividend_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when no yield is stored: it is then taken as zero",
+            "title": "Dividend As Of"
+          },
+          "dividend_yield": {
+            "title": "Dividend Yield",
+            "type": "number"
+          },
+          "market_volatility": {
+            "description": "The Black volatility the model is calibrated to",
+            "title": "Market Volatility",
+            "type": "number"
+          },
+          "spot": {
+            "title": "Spot",
+            "type": "number"
+          },
+          "spot_as_of": {
+            "format": "date",
+            "title": "Spot As Of",
+            "type": "string"
+          },
+          "spot_volatility": {
+            "description": "The volatility of the share in the model: below the market's when rates add to the forward's",
+            "title": "Spot Volatility",
+            "type": "number"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          },
+          "volatility_proxied": {
+            "description": "True when it is a realised volatility, for want of options",
+            "title": "Volatility Proxied",
+            "type": "boolean"
+          },
+          "volatility_source": {
+            "title": "Volatility Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "spot",
+          "spot_as_of",
+          "dividend_yield",
+          "dividend_as_of",
+          "market_volatility",
+          "volatility_source",
+          "volatility_proxied",
+          "calibration_strike",
+          "calibration_expiry",
+          "spot_volatility",
+          "correlation",
+          "correlation_series",
+          "correlation_start",
+          "correlation_end"
+        ],
+        "title": "EquityMarket",
+        "type": "object"
+      },
       "EquitySpec": {
         "description": "A listed share or index, marked at its stored close (any market of the\nMarket page). Its currency is the listing's (prices.equity_universe).",
         "properties": {
@@ -11248,6 +11350,16 @@
               }
             ]
           },
+          "equity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EquityMarket"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "foreign": {
             "anyOf": [
               {
@@ -12024,7 +12136,8 @@
               "bermudan",
               "script",
               "fx_forward",
-              "cross_currency_swap"
+              "cross_currency_swap",
+              "equity_option"
             ],
             "title": "Kind",
             "type": "string"

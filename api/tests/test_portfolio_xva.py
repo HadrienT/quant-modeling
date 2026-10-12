@@ -10,9 +10,13 @@ out and said; a position on the other side is the opposite trade.
 
 from __future__ import annotations
 
-from datetime import date
+import math
+from datetime import date, timedelta
 
+import pandas as pd
 import pytest
+
+from api.app import db
 
 from api.app import portfolio_counterparties as cp
 from api.app import portfolio_xva
@@ -63,6 +67,63 @@ def _pf(*specs, netting_set="example-corporate-isda", quantity=1.0) -> Portfolio
             for k, i in enumerate(instruments)
         ],
     )
+
+
+def _option(strike=100.0, call=True, underlying="AAA", years=2, **more):
+    return DerivativeSpec(
+        **{
+            "product": "vanilla",
+            "params": {"strike": strike, "is_call": call},
+            "underlying": underlying,
+            "expiry": add_years(AS_OF, years),
+            "currency": "USD",
+            **more,
+        }
+    )
+
+
+SHARE_DAYS = [d.date() for d in pd.bdate_range(date(2019, 1, 1), AS_OF)]
+
+
+def _rate_history() -> pd.Series:
+    """A daily rate around 4 %, in percent, up to the valuation date."""
+    days = pd.bdate_range(date(2016, 1, 4), AS_OF)
+    values, r = [], 4.0
+    for k in range(len(days)):
+        shock = math.sin(12.9898 * k) * 43758.5453
+        r += 0.0012 * (2.5 - r) + 0.05 * (2.0 * (shock - math.floor(shock)) - 1.0)
+        values.append(r)
+    return pd.Series(values, index=days)
+
+
+@pytest.fixture(autouse=True)
+def shares(monkeypatch, store):  # noqa: F811 — after the store it completes
+    """Two listed shares around 100, with five years of closes; no option
+    chain (the realised volatility stands in) and a 1.5 % dividend yield."""
+    monkeypatch.setattr(
+        db, "fred_series", lambda series_id, since=None: _rate_history()
+    )
+
+    def closes(ticker, since):
+        if ticker not in ("AAA", "BBB"):
+            return []
+        salt = 1.0 if ticker == "AAA" else 2.3
+        out, level = [], 100.0
+        for k, d in enumerate(SHARE_DAYS):
+            level *= math.exp(0.012 * math.sin(salt * k * 1.7) * math.cos(k / 7.0))
+            out.append((d, level))
+        scale = 100.0 / out[-1][1]
+        return [(d, v * scale) for d, v in out if d >= since]
+
+    monkeypatch.setattr(db, "price_history", closes)
+    monkeypatch.setattr(db, "ticker_currency", lambda t: "USD")
+    monkeypatch.setattr(
+        db,
+        "dividend_yield_history",
+        lambda t, since: [(AS_OF - timedelta(days=5), 0.015)],
+    )
+    monkeypatch.setattr(db, "options_snapshot_date_on_or_before", lambda t, d: None)
+    monkeypatch.setattr(db, "rates_curve_history", lambda table, ids, since: [])
 
 
 def post(pf: Portfolio, netting_set="example-corporate-isda", **body):
@@ -142,17 +203,12 @@ def test_a_swap_already_running_is_simulated_from_its_next_coupon_and_says_so():
 
 
 def test_what_the_engine_cannot_hold_is_left_out_and_said():
-    option = DerivativeSpec(
-        product="vanilla",
-        params={"strike": 100.0, "is_call": True},
-        underlying="AAA",
-        expiry=date(2027, 6, 18),
-    )
-    body = ledger(_pf(_swap(0.047), option))
+    american = _option(product="american_vanilla")
+    body = ledger(_pf(_swap(0.047), american))
     assert len(body["trades"]) == 1
-    assert any("equity derivative" in w for w in body["warnings"])
+    assert any("European options only" in w for w in body["warnings"])
     # Nothing left to simulate is an error, not an empty result.
-    r = post(_pf(option))
+    r = post(_pf(american))
     assert r.status_code == 422 and "no trade the exposure engine" in r.text
     r = post(_pf(_swap(0.047)), "nowhere")
     assert r.status_code == 422 and "no netting set" in r.text
@@ -203,6 +259,97 @@ def test_trades_in_two_currencies_net_in_dollars():
     assert body["trades"][2]["foreign_rate"] == 0.025
     assert body["market"]["foreign"] is not None and body["device"] == "cpu"
     assert body["adjustments"]["cva"]["value"] < 0
+
+
+# ── Lot X14: equity options ──────────────────────────────────────────────────
+
+
+def test_a_bought_equity_option_is_an_asset_until_it_expires():
+    body = ledger(_pf(_option(105.0), quantity=1000.0))
+    (trade,) = body["trades"]
+    assert (trade["kind"], trade["fixed_rate"], trade["quantity"]) == (
+        "equity_option",
+        105.0,
+        1000.0,
+    )
+    assert trade["value_today"] > 0 and 1.99 < trade["maturity"] < 2.01
+    exposure = body["exposure"]
+    # It can only be owed to the bank: no negative exposure, no DVA.
+    assert max(exposure["ee"]) > 0 and min(exposure["ene"]) == 0.0
+    assert body["adjustments"]["cva"]["value"] < 0
+    assert body["adjustments"]["dva"]["value"] == 0.0
+    # Until the expiry its discounted expected exposure is its price.
+    discounted = body["exposure"]["discounted_ee"][0]
+    assert discounted == pytest.approx(
+        body["value_today"], rel=5 * 1.96 / math.sqrt(PATHS)
+    )
+    assert body["device"] == "cpu" and body["risk"] is None
+
+
+def test_a_sold_equity_option_has_no_exposure():
+    body = ledger(_pf(_option(95.0, call=False), quantity=-500.0))
+    assert body["value_today"] < 0
+    assert max(body["exposure"]["ee"]) == 0.0
+    assert body["adjustments"]["cva"]["value"] == 0.0
+    assert body["adjustments"]["dva"]["value"] > 0
+
+
+def test_the_share_says_what_it_rests_on():
+    body = ledger(_pf(_option(100.0), quantity=100.0))
+    e = body["market"]["equity"]
+    assert e["ticker"] == "AAA" and e["spot"] == pytest.approx(100.0)
+    assert e["dividend_yield"] == 0.015
+    # No option chain: the realised volatility, a proxy, and it says so.
+    assert e["volatility_proxied"] and "realised vol" in e["volatility_source"]
+    assert 0.02 < e["market_volatility"] < 1.0
+    assert e["calibration_strike"] == 100.0
+    assert (
+        e["correlation"]["low"] < e["correlation"]["value"] < e["correlation"]["high"]
+    )
+    # The share's own volatility differs from the option's: rates move too.
+    assert e["spot_volatility"] != e["market_volatility"]
+    assert e["spot_volatility"] == pytest.approx(e["market_volatility"], rel=0.05)
+    warned = " ".join(body["warnings"])
+    assert "historical estimate" in warned and "a proxy" in warned
+    assert "Equity options in the netting set" in [
+        m["title"] for m in body["methodology"]
+    ]
+    assert body["capital"] is not None  # SA-CCR describes an equity option
+
+
+def test_equity_options_net_with_dollar_swaps():
+    alone = ledger(_pf(_swap(0.047)))
+    both = ledger(_pf(_swap(0.047), _option(100.0, call=False)))
+    assert [t["kind"] for t in both["trades"]] == ["swap", "equity_option"]
+    # The swap is the same trade in both netting sets.
+    assert both["trades"][0]["value_today"] == pytest.approx(
+        alone["trades"][0]["value_today"]
+    )
+    assert both["value_today"] > alone["value_today"]
+
+
+def test_one_share_per_netting_set_and_no_second_currency_with_it():
+    two = ledger(_pf(_option(100.0), _option(100.0, underlying="BBB"), _option(110.0)))
+    assert [t["fixed_rate"] for t in two["trades"]] == [100.0, 110.0]
+    warned = " ".join(two["warnings"])
+    assert "those on BBB are left out" in warned and "without the smile" in warned
+    forward = RateFxSpec(
+        product="fx_forward",
+        currency="EUR",
+        notional=9_000_000.0,
+        payer=True,
+        start=AS_OF,
+        maturity=add_years(AS_OF, 2),
+        fixed_rate=1.20,
+    )
+    mixed = ledger(_pf(forward, _option(100.0)))
+    assert [t["kind"] for t in mixed["trades"]] == ["fx_forward"]
+    assert any("its equity options are left out" in w for w in mixed["warnings"])
+
+
+def test_a_share_without_history_is_an_explicit_error():
+    r = post(_pf(_option(100.0, underlying="ZZZ")))
+    assert r.status_code == 503 and "No close of ZZZ" in r.text
 
 
 def test_the_audit_record_holds_the_trades_and_not_the_portfolio(store):

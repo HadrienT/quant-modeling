@@ -36,6 +36,7 @@
 #include "quantModeling/engines/xva/xva_market_risks.hpp"
 #include "quantModeling/market/historical_rate_dynamics.hpp"
 #include "quantModeling/engines/xva/script_future_value.hpp"
+#include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/instruments/fx/cross_currency_swap.hpp"
 #include "quantModeling/instruments/fx/forward.hpp"
 #include "quantModeling/risk/xva_report.hpp"
@@ -1122,10 +1123,15 @@ namespace
     /// either currency, FX forwards and cross-currency swaps, each with its
     /// SA-CCR description. An FX trade's adjusted notional is that of its
     /// foreign leg in domestic currency (CRE52.34), its hedging set the pair.
+    ///
+    /// When the "foreign currency" is an asset (lot X14, `asset` true), the
+    /// only trade on it is a European option, kind 'asset_option': an equity
+    /// trade for SA-CCR, by the price of the units it is on (CRE52.36).
     void add_two_currency_trades(qm_::CrossCurrencyExposureEngine &engine, const py::list &trades,
                                  const qm_::CrossCurrencyHullWhiteModel &model, const std::string &pair,
                                  const std::string &foreign_currency,
-                                 std::vector<qm_::sa_ccr::Trade> &regulatory_trades)
+                                 std::vector<qm_::sa_ccr::Trade> &regulatory_trades, bool asset = false,
+                                 bool asset_is_index = false)
     {
         const auto fx_trade = [&](qm_::Real foreign_notional, bool long_foreign, qm_::Time maturity)
         {
@@ -1142,6 +1148,40 @@ namespace
             const py::dict t = h.cast<py::dict>();
             const auto kind = t["kind"].cast<std::string>();
             const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
+            if (kind == "asset_option")
+            {
+                if (!asset)
+                    throw qm_::InvalidInput("xva: an asset_option needs the asset of the netting set "
+                                            "(foreign.dividend_yield)");
+                const qm_::Time expiry = t["expiry"].cast<qm_::Time>();
+                const qm_::Real strike = t["strike"].cast<qm_::Real>();
+                const qm_::Real units = item_or<qm_::Real>(t, "notional", 1.0);
+                const bool call = item_or<bool>(t, "is_call", true);
+                engine.add(qm_::VanillaOption(
+                               std::make_shared<qm_::PlainVanillaPayoff>(
+                                   call ? qm_::OptionType::Call : qm_::OptionType::Put, strike),
+                               std::make_shared<qm_::EuropeanExercise>(expiry), units),
+                           quantity);
+                qm_::sa_ccr::Trade r;
+                r.subclass = asset_is_index ? qm_::sa_ccr::SubClass::EquityIndex
+                                            : qm_::sa_ccr::SubClass::EquitySingleName;
+                r.reference = foreign_currency;
+                r.notional = units * std::abs(quantity) * model.spot();
+                r.maturity = expiry;
+                qm_::sa_ccr::OptionTerms option;
+                option.type = call ? qm_::sa_ccr::OptionType::Call : qm_::sa_ccr::OptionType::Put;
+                option.side = quantity > 0.0 ? qm_::sa_ccr::OptionSide::Bought : qm_::sa_ccr::OptionSide::Sold;
+                option.underlying_price = model.spot();
+                option.strike = strike;
+                option.exercise = expiry;
+                r.option = option;
+                regulatory_trades.push_back(r);
+                continue;
+            }
+            if (asset && (kind == "fx_forward" || kind == "cross_currency_swap" ||
+                          item_or<std::string>(t, "currency", "domestic") == "foreign"))
+                throw qm_::InvalidInput("xva: with an asset in the netting set the other trades are "
+                                        "rate trades in the domestic currency");
             if (kind == "fx_forward")
             {
                 const qm_::Time maturity = t["maturity"].cast<qm_::Time>();
@@ -1270,21 +1310,31 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         if (historical)
             throw qm_::InvalidInput("xva: the historical measure is not available with two currencies");
         const py::dict f = foreign.cast<py::dict>();
-        const auto hw = f["hull_white"].cast<std::pair<qm_::Real, qm_::Real>>();
-        const auto rho = f["correlations"].cast<std::tuple<qm_::Real, qm_::Real, qm_::Real>>();
-        two_currencies.emplace(
-            model,
-            qm_::HullWhiteCurveModel(hw.first, hw.second,
-                                     rate_curve(f["discount_times"].cast<std::vector<qm_::Time>>(),
-                                                f["discount_factors"].cast<std::vector<qm_::Real>>())),
-            f["spot"].cast<qm_::Real>(), f["fx_volatility"].cast<qm_::Real>(),
-            qm_::CrossCurrencyHullWhiteModel::Correlations{std::get<0>(rho), std::get<1>(rho),
-                                                           std::get<2>(rho)});
+        // An asset with a known yield in place of the second currency
+        // (lot X14): its price is the "exchange rate".
+        const bool asset = f.contains("dividend_yield");
+        if (asset)
+            two_currencies.emplace(qm_::make_asset_model(
+                model, f["spot"].cast<qm_::Real>(), f["dividend_yield"].cast<qm_::Real>(),
+                f["volatility"].cast<qm_::Real>(), item_or<qm_::Real>(f, "rate_correlation", 0.0)));
+        else
+        {
+            const auto hw = f["hull_white"].cast<std::pair<qm_::Real, qm_::Real>>();
+            const auto rho = f["correlations"].cast<std::tuple<qm_::Real, qm_::Real, qm_::Real>>();
+            two_currencies.emplace(
+                model,
+                qm_::HullWhiteCurveModel(hw.first, hw.second,
+                                         rate_curve(f["discount_times"].cast<std::vector<qm_::Time>>(),
+                                                    f["discount_factors"].cast<std::vector<qm_::Real>>())),
+                f["spot"].cast<qm_::Real>(), f["fx_volatility"].cast<qm_::Real>(),
+                qm_::CrossCurrencyHullWhiteModel::Correlations{std::get<0>(rho), std::get<1>(rho),
+                                                               std::get<2>(rho)});
+        }
         two_currency_engine.emplace(*two_currencies);
-        const auto currency = item_or<std::string>(f, "currency", "EUR");
+        const auto currency = item_or<std::string>(f, "currency", asset ? "asset" : "EUR");
         add_two_currency_trades(*two_currency_engine, trades, *two_currencies,
                                 currency + "/" + item_or<std::string>(f, "domestic_currency", "USD"),
-                                currency, regulatory_trades);
+                                currency, regulatory_trades, asset, item_or<bool>(f, "index", false));
     }
 
     qm_::XvaInputs inputs;
@@ -2889,6 +2939,10 @@ PYBIND11_MODULE(quantmodeling, m)
           "notional in foreign currency) and kind 'cross_currency_swap' (maturity, foreign_notional, "
           "domestic_notional, foreign_rate, domestic_rate, frequency, receive_foreign); everything is "
           "in domestic currency, on the CPU, without the historical measure or SIMM. "
+          "foreign with dividend_yield (and spot, volatility, rate_correlation, currency = its name, "
+          "index) is instead an asset with a known yield, lognormal under the Hull-White rate: the "
+          "trades on it are kind 'asset_option' (strike, expiry, is_call, notional in units), European "
+          "and cash-settled, next to domestic rate trades. "
           "A cost is negative.");
     m.def("xva_sensitivities", &xva_sensitivities_impl, py::arg("swap_rates"), py::arg("swaption_vols"),
           py::arg("trades"), py::arg("counterparty_spreads"), py::arg("own_hazard"), py::arg("recovery") = 0.4,

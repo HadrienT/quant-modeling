@@ -2841,6 +2841,64 @@ export interface components {
          */
         EngineType: "analytic" | "mc" | "binomial" | "trinomial" | "pde";
         /**
+         * EquityMarket
+         * @description The share of a netting set that holds equity options (lot X14): a
+         *     lognormal price under the Hull-White rate, with a known dividend yield.
+         */
+        EquityMarket: {
+            /** Calibration Expiry */
+            calibration_expiry: number;
+            /** Calibration Strike */
+            calibration_strike: number;
+            /** @description Of the interest rate and the share, on weekly changes */
+            correlation: components["schemas"]["CorrelationEstimate"];
+            /**
+             * Correlation End
+             * Format: date
+             */
+            correlation_end: string;
+            /** Correlation Series */
+            correlation_series: string[];
+            /**
+             * Correlation Start
+             * Format: date
+             */
+            correlation_start: string;
+            /**
+             * Dividend As Of
+             * @description None when no yield is stored: it is then taken as zero
+             */
+            dividend_as_of: string | null;
+            /** Dividend Yield */
+            dividend_yield: number;
+            /**
+             * Market Volatility
+             * @description The Black volatility the model is calibrated to
+             */
+            market_volatility: number;
+            /** Spot */
+            spot: number;
+            /**
+             * Spot As Of
+             * Format: date
+             */
+            spot_as_of: string;
+            /**
+             * Spot Volatility
+             * @description The volatility of the share in the model: below the market's when rates add to the forward's
+             */
+            spot_volatility: number;
+            /** Ticker */
+            ticker: string;
+            /**
+             * Volatility Proxied
+             * @description True when it is a realised volatility, for want of options
+             */
+            volatility_proxied: boolean;
+            /** Volatility Source */
+            volatility_source: string;
+        };
+        /**
          * EquitySpec
          * @description A listed share or index, marked at its stored close (any market of the
          *     Market page). Its currency is the listing's (prices.equity_universe).
@@ -6666,6 +6724,7 @@ export interface components {
             /** Curve Label */
             curve_label: string;
             default_rate?: components["schemas"]["HistoricalDefaultRate"] | null;
+            equity?: components["schemas"]["EquityMarket"] | null;
             foreign?: components["schemas"]["ForeignMarket"] | null;
             historical: components["schemas"]["HistoricalDynamics"] | null;
             hull_white: components["schemas"]["HullWhiteInput"];
@@ -6980,7 +7039,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap";
+            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap" | "equity_option";
             /**
              * Marginal Cva
              * @description Euler share of the CVA; none under a CSA

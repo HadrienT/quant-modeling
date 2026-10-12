@@ -8,6 +8,9 @@ the rates of their contracts — and runs the computation of the xVA page
 (xva.py) on it, with the counterparty's rating, sector and recovery and the
 netting set's collateral agreement.
 
+Equity options enter the netting set too (lot X14): European options on one
+share, simulated with the interest rate (xva_equity.py).
+
 What the engine cannot hold is left out, and said so in the warnings of the
 response, never approximated in silence.
 """
@@ -19,7 +22,13 @@ from typing import List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
-from . import portfolio_counterparties, portfolio_ledger, portfolio_rates, xva
+from . import (
+    portfolio_counterparties,
+    portfolio_ledger,
+    portfolio_rates,
+    xva,
+    xva_equity,
+)
 from .portfolio_schemas import (
     DerivativeSpec,
     Instrument,
@@ -154,13 +163,50 @@ def _rate_fx(
     )
 
 
+def _equity_option(
+    inst: Instrument, spec: DerivativeSpec, quantity: float, d: date
+) -> Tuple[Optional[xva._Spec], Optional[str]]:
+    """A European option on a share as the engine takes it, or why not."""
+    name = inst.label or inst.id
+    if spec.product != "vanilla":
+        return None, (
+            f"{name}: the engine has a closed form for European options only. An "
+            f"option that is {spec.product.replace('_', ' ')} is left out of this "
+            "netting set."
+        )
+    if not spec.underlying or "strike" not in spec.params:
+        return None, f"{name}: no listed underlying or no strike; left out."
+    if spec.currency != "USD":
+        return None, (
+            f"{name}: in {spec.currency}. The netting set is simulated in dollars, "
+            "on the dollar curve: it is left out."
+        )
+    if d >= spec.expiry:
+        return None, f"{name}: expired, nothing is left to simulate."
+    call = bool(spec.params.get("is_call", True))
+    return (
+        xva._Spec(
+            name,
+            "equity_option",
+            call,
+            portfolio_rates.years(d, spec.expiry),
+            1.0,  # one option is on one share
+            quantity=quantity,
+            rate=float(spec.params["strike"]),
+        ),
+        None,
+    )
+
+
 def trades(
     pf: Portfolio, netting_set_id: str, d: date
-) -> Tuple[List[xva._Spec], List[str]]:
+) -> Tuple[List[xva._Spec], List[str], Optional[DerivativeSpec]]:
     """The trades held on `d` under a netting set, as the engine takes them,
-    and what had to be left out."""
+    what had to be left out, and — when equity options are among them — the
+    option the share's volatility is calibrated on: the longest one."""
     held = portfolio_ledger.holdings(pf, d)
     specs: List[xva._Spec] = []
+    options: List[Tuple[xva._Spec, DerivativeSpec]] = []
     said: List[str] = []
     for inst in pf.instruments:
         if inst.netting_set_id != netting_set_id:
@@ -169,18 +215,35 @@ def trades(
         if h is None or abs(h.quantity) < portfolio_ledger.QTY_EPS:
             continue
         if isinstance(inst.spec, DerivativeSpec):
-            said.append(
-                f"{inst.label or inst.id}: an equity derivative. The exposure engine "
-                "simulates interest rates and the exchange rate, not yet a share "
-                "price: it is left out of this netting set."
-            )
-            continue
-        spec, note = _rate_fx(inst, inst.spec, h.quantity, d)
-        if spec is not None:
-            specs.append(spec)
+            spec, note = _equity_option(inst, inst.spec, h.quantity, d)
+            if spec is not None:
+                options.append((spec, inst.spec))
+        else:
+            spec, note = _rate_fx(inst, inst.spec, h.quantity, d)
+            if spec is not None:
+                specs.append(spec)
         if note:
             said.append(note)
-    return specs, said
+    if not options:
+        return specs, said, None
+    # The engine has two factors beside the dollar rate's: a second currency
+    # with its exchange rate, or one share. Not both, and not two shares.
+    if xva._two_currencies(specs):
+        said.append(
+            "This netting set holds trades in euros or on the exchange rate, which "
+            "take the engine's second factor: its equity options are left out."
+        )
+        return specs, said, None
+    share = options[0][1].underlying
+    kept = [(s, o) for s, o in options if o.underlying == share]
+    others = sorted({o.underlying for _, o in options} - {share})
+    if others:
+        said.append(
+            f"The engine simulates one share per netting set: the options on {share} "
+            f"are simulated, those on {', '.join(others)} are left out."
+        )
+    calibration = max((o for _, o in kept), key=lambda o: o.expiry)
+    return specs + [s for s, _ in kept], said, calibration
 
 
 def request(req: PortfolioXvaRequest) -> XvaRequest:
@@ -223,7 +286,15 @@ def compute(
     party, netting_set = portfolio_counterparties.netting_set(pf, req.netting_set_id)
 
     def book(as_of: date):
-        specs, said = trades(pf, req.netting_set_id, as_of)
+        specs, said, calibration = trades(pf, req.netting_set_id, as_of)
+        try:
+            asset = (
+                xva_equity.market(calibration, as_of)
+                if calibration is not None
+                else None
+            )
+        except xva_equity.EquityUnavailable as exc:
+            raise xva.XvaUnavailable(str(exc)) from exc
         return (
             f"{party.name}: {netting_set.name}",
             "The trades of this portfolio under this netting set, with the life "
@@ -231,6 +302,7 @@ def compute(
             "contracts.",
             specs,
             said,
+            asset,
         )
 
     return run, xva.compute(run, today, book)

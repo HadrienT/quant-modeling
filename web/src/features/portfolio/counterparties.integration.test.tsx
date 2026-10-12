@@ -194,8 +194,13 @@ describe("counterparties of a portfolio", () => {
 		expect(
 			await screen.findByRole("tab", { name: "Exposure" }),
 		).toBeInTheDocument();
+		expect(screen.getByText(/is left out of this netting set/)).toBeVisible();
+		// The share its options are on, and what its model rests on.
 		expect(
-			screen.getByText(/It is left out of this netting set/),
+			screen.getByRole("heading", { name: "The share: ^FCHI" }),
+		).toBeVisible();
+		expect(
+			screen.getByText(/\+0\.12 \(95 % interval −0\.04 to \+0\.27\)/),
 		).toBeVisible();
 		expect(
 			screen.getByRole("heading", {

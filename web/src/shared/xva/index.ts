@@ -5,6 +5,7 @@
  * page (one's own netting sets): a feature does not import another.
  */
 export { AdjustmentsPanel } from "./AdjustmentsPanel";
+export { EquityMarketPanel } from "./EquityMarketPanel";
 export { Explained, Figure } from "./Explained";
 export { ExposurePanel } from "./ExposurePanel";
 export { ForeignMarketPanel } from "./ForeignMarketPanel";

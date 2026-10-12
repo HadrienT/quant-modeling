@@ -15,6 +15,7 @@ import {
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import {
 	AdjustmentsPanel,
+	EquityMarketPanel,
 	ExposurePanel,
 	ForeignMarketPanel,
 	MarginCapitalPanel,
@@ -29,7 +30,7 @@ const PATHS = [2000, 10000, 30000];
 
 /**
  * Exposure and xVA of one netting set of the portfolio: the trades held
- * under it today, the counterparty's rating and the collateral agreement of
+ * under it today (rate and FX trades, European equity options), the counterparty's rating and the collateral agreement of
  * the Counterparties tab, on the market of the xVA page. The bank's own side
  * (its rating, its funding spread) is chosen here. A run takes a few
  * seconds and is started by the reader.
@@ -156,6 +157,9 @@ export function XvaTab({ pf }: { pf: Portfolio }) {
 							market={data.market.foreign}
 							domestic={data.market.currency}
 						/>
+					)}
+					{data.market.equity && (
+						<EquityMarketPanel market={data.market.equity} />
 					)}
 					<Tabs defaultValue="exposure">
 						<TabsList>

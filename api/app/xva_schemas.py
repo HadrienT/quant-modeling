@@ -185,7 +185,13 @@ class XvaRequest(BaseModel):
 class XvaTrade(BaseModel):
     description: str
     kind: Literal[
-        "swap", "swaption", "bermudan", "script", "fx_forward", "cross_currency_swap"
+        "swap",
+        "swaption",
+        "bermudan",
+        "script",
+        "fx_forward",
+        "cross_currency_swap",
+        "equity_option",
     ]
     currency: str = Field(
         description="The currency of the notional: the trade's own for a rate "
@@ -434,6 +440,38 @@ class ForeignMarket(BaseModel):
     correlation_series: List[str]
 
 
+class EquityMarket(BaseModel):
+    """The share of a netting set that holds equity options (lot X14): a
+    lognormal price under the Hull-White rate, with a known dividend yield."""
+
+    ticker: str
+    spot: float
+    spot_as_of: date
+    dividend_yield: float
+    dividend_as_of: Optional[date] = Field(
+        description="None when no yield is stored: it is then taken as zero"
+    )
+    market_volatility: float = Field(
+        description="The Black volatility the model is calibrated to"
+    )
+    volatility_source: str
+    volatility_proxied: bool = Field(
+        description="True when it is a realised volatility, for want of options"
+    )
+    calibration_strike: float
+    calibration_expiry: float
+    spot_volatility: float = Field(
+        description="The volatility of the share in the model: below the "
+        "market's when rates add to the forward's"
+    )
+    correlation: CorrelationEstimate = Field(
+        description="Of the interest rate and the share, on weekly changes"
+    )
+    correlation_series: List[str]
+    correlation_start: date
+    correlation_end: date
+
+
 class XvaMarket(BaseModel):
     currency: str
     curve_as_of: date
@@ -445,6 +483,7 @@ class XvaMarket(BaseModel):
     #: None with two currencies: the historical measure covers one rate.
     historical: Optional[HistoricalDynamics]
     foreign: Optional[ForeignMarket] = None
+    equity: Optional[EquityMarket] = None
     #: What the capital's PD rests on; None when the request gave its own.
     default_rate: Optional[HistoricalDefaultRate] = None
 

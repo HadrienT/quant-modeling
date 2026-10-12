@@ -124,8 +124,29 @@ export const handlers = [
 			portfolio_label:
 				"Northgate Bank (dealer): ISDA with CSA: variation margin",
 			warnings: [
-				"Trade 2: an equity derivative. It is left out of this netting set.",
+				"Trade 2: an option that is american vanilla is left out of this netting set.",
 			],
+			market: {
+				...xva.single_swap.market,
+				equity: {
+					ticker: "^FCHI",
+					spot: 8100,
+					spot_as_of: "2026-10-09",
+					dividend_yield: 0.03,
+					dividend_as_of: "2026-10-01",
+					market_volatility: 0.18,
+					volatility_source:
+						"SVI surface of the ^FCHI option chain of 2026-10-09",
+					volatility_proxied: false,
+					calibration_strike: 8200,
+					calibration_expiry: 0.44,
+					spot_volatility: 0.179,
+					correlation: { value: 0.12, low: -0.04, high: 0.27, weeks: 156 },
+					correlation_series: ["DGS5", "^FCHI closes"],
+					correlation_start: "2023-10-13",
+					correlation_end: "2026-10-09",
+				},
+			},
 		}),
 	),
 	http.post("*/api/xva/sensitivities", () =>
