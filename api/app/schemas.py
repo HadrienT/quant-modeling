@@ -772,6 +772,12 @@ class PricingResponse(BaseModel):
         description="Server-side wall time of the pricing itself (the engine "
         "call), in milliseconds; excludes network and request parsing.",
     )
+    bumped_greeks: List[str] = Field(
+        default_factory=list,
+        description="The greeks the engine does not give, computed by bumping an "
+        "input and revaluing (greeks_fallback.py): finite differences, with no "
+        "standard error. The others are the engine's own.",
+    )
     device: Literal["cpu", "gpu"] = Field(
         "cpu", description="Where the pricing actually ran."
     )

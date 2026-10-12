@@ -144,6 +144,14 @@ export function ResultsPanel({
 						);
 					})}
 				</tbody>
+				{(r.bumped_greeks ?? []).length > 0 && (
+					<caption className="caption-bottom p-2 text-left text-2xs text-ink-muted">
+						{(r.bumped_greeks ?? []).join(", ")}: not given by this engine,
+						computed by bumping the input and revaluing
+						{isMc ? " on the same random draws" : ""} (finite differences, no
+						standard error). Per unit of spot, volatility, rate; theta per year.
+					</caption>
+				)}
 			</table>
 
 			{r.bond_analytics && (

@@ -4715,6 +4715,11 @@ export interface components {
         PricingResponse: {
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
             /**
+             * Bumped Greeks
+             * @description The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.
+             */
+            bumped_greeks?: string[];
+            /**
              * Compute Ms
              * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
              */
@@ -6224,6 +6229,11 @@ export interface components {
         SwapPricingResponse: {
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
             /**
+             * Bumped Greeks
+             * @description The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.
+             */
+            bumped_greeks?: string[];
+            /**
              * Compute Ms
              * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
              */
@@ -6363,6 +6373,11 @@ export interface components {
         /** SwaptionPricingResponse */
         SwaptionPricingResponse: {
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
+            /**
+             * Bumped Greeks
+             * @description The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.
+             */
+            bumped_greeks?: string[];
             /**
              * Compute Ms
              * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.

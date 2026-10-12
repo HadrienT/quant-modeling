@@ -6893,6 +6893,14 @@
               }
             ]
           },
+          "bumped_greeks": {
+            "description": "The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Bumped Greeks",
+            "type": "array"
+          },
           "compute_ms": {
             "anyOf": [
               {
@@ -10172,6 +10180,14 @@
               }
             ]
           },
+          "bumped_greeks": {
+            "description": "The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Bumped Greeks",
+            "type": "array"
+          },
           "compute_ms": {
             "anyOf": [
               {
@@ -10536,6 +10552,14 @@
                 "type": "null"
               }
             ]
+          },
+          "bumped_greeks": {
+            "description": "The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Bumped Greeks",
+            "type": "array"
           },
           "compute_ms": {
             "anyOf": [
