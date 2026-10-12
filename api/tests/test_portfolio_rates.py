@@ -312,3 +312,59 @@ def test_the_quote_endpoint_fills_the_rates_and_refuses_a_day_without_market():
         client.post("/api/portfolio-valuation/rate-fx/quote", json=bad).status_code
         == 422
     )
+
+
+def test_a_demo_with_rate_and_fx_trades_is_struck_at_the_market_and_faces_counterparties():
+    from api.app import portfolio_demos as demos
+    from api.app import portfolio_ledger
+
+    on = date(2025, 6, 2)
+    demo = demos.Demo(
+        id="demo-test-otc",
+        name="Test",
+        description="",
+        base_currency="USD",
+        rate_fx=(
+            demos.RateFx("swap", "swap", "USD", 10e6, True, 5, "example-dealer-vm"),
+            demos.RateFx(
+                "forward", "fx_forward", "EUR", 4e6, True, 2, "example-sovereign-isda"
+            ),
+            demos.RateFx(
+                "ccs", "cross_currency_swap", "EUR", 6e6, False, 5,
+                "example-sovereign-isda",
+            ),
+        ),
+        trades=(
+            demos.Buy(on, "swap", 1),
+            demos.Buy(on, "forward", 1),
+            demos.Buy(date(2025, 7, 1), "ccs", -1),
+        ),
+    )  # fmt: skip
+    pf = demos.build(demo, pv.MarketData(on))
+    portfolio_ledger.validate(pf)
+    by_id = {i.id: i for i in pf.instruments}
+    # Struck at the market of its own trade date: nothing changes hands.
+    assert all(abs(t.price) < 1.0 for t in pf.transactions)
+    assert by_id["ccs"].spec.start == date(2025, 7, 1)
+    assert by_id["swap"].netting_set_id == "example-dealer-vm"
+    assert "Payer swap USD 10M" in by_id["swap"].label
+    assert {c.id for c in pf.counterparties} >= {"example-dealer", "example-sovereign"}
+    # Valued like any portfolio, a year on.
+    snap = pv.snapshot(pf, date(2026, 6, 2))
+    assert [p.kind for p in snap.positions] == ["rate_fx"] * 3
+    assert all(p.mark is not None for p in snap.positions)
+
+    # No swaption traded in the store: the demo is unavailable, not guessed.
+    option = demos.RateFx(
+        "swaption", "swaption", "USD", 5e6, True, 5, "example-dealer-vm", 1
+    )
+    bad = demos.Demo(
+        id="demo-test-swaption",
+        name="Test",
+        description="",
+        base_currency="USD",
+        rate_fx=(option,),
+        trades=(demos.Buy(on, "swaption", 1),),
+    )
+    with pytest.raises(LookupError, match="no volatility"):
+        demos.build(bad, pv.MarketData(on))

@@ -61,12 +61,30 @@ def test_a_date_without_a_close_makes_the_demo_unavailable():
 
 
 def test_the_shipped_demos_are_well_formed():
+    from api.app import portfolio_counterparties as cp
+
+    netting_sets = {n.id for c in cp.EXAMPLES for n in c.netting_sets}
+    ids = [d.id for d in demos.DEMOS]
+    assert len(ids) == len(set(ids))
     for d in demos.DEMOS:
-        keys = {o.key for o in d.options}
+        keys = {o.key for o in d.options} | {r.key for r in d.rate_fx}
         assert d.id.startswith("demo-")
         assert all(t.on.weekday() < 5 for t in d.trades)
         assert all(o.expiry > t.on for o in d.options for t in d.trades)
+        # Every contract is traded, and under a netting set of the examples.
         assert keys <= {t.what for t in d.trades}
+        faced = [o.netting_set_id for o in d.options if o.netting_set_id]
+        faced += [r.netting_set_id for r in d.rate_fx]
+        assert set(faced) <= netting_sets
+        # One contract is bought or sold whole.
+        rate_fx = {r.key for r in d.rate_fx}
+        assert all(abs(t.quantity) == 1 for t in d.trades if t.what in rate_fx)
+        for r in d.rate_fx:
+            assert (r.product == "swaption") == (r.expiry_years > 0)
+    # Several demos face counterparties, on more than one netting set each.
+    faced = [d for d in demos.DEMOS if d.rate_fx]
+    assert len(faced) >= 3
+    assert all(len({r.netting_set_id for r in d.rate_fx}) >= 1 for d in faced)
 
 
 def test_the_endpoint_serves_the_demos_that_could_be_built(monkeypatch):
