@@ -324,16 +324,24 @@ namespace quantModeling
                     throw InvalidInput("cross-currency swap: maturity must be > 0 and frequency >= 1");
                 if (!(swap.foreign_notional > 0.0) || !(swap.domestic_notional > 0.0))
                     throw InvalidInput("cross-currency swap: both notionals must be > 0");
+                // The coupon dates are counted back from the maturity. A swap
+                // between two of them (one traded some time ago) pays its
+                // coupon in progress in full on the next date: a fixed coupon
+                // does not depend on when one looks at it.
                 const Real coupons = swap.maturity * swap.frequency;
-                const long count = std::lround(coupons);
-                if (count < 1 || std::abs(coupons - static_cast<Real>(count)) > 1e-8)
-                    throw InvalidInput("cross-currency swap: the maturity must be a whole number of "
-                                       "coupon periods");
+                const long count = static_cast<long>(std::ceil(coupons - 1e-8));
+                if (count < 1)
+                    throw InvalidInput("cross-currency swap: no coupon is left");
+                const bool whole = std::abs(coupons - static_cast<Real>(count)) <= 1e-8;
                 const Real side = swap.receive_foreign ? 1.0 : -1.0;
                 const Real period = 1.0 / swap.frequency;
                 for (long k = 1; k <= count; ++k)
                 {
-                    const Time t = k == count ? swap.maturity : static_cast<Real>(k) * period;
+                    // A whole number of periods keeps its dates to the bit.
+                    const Time t = k == count
+                                       ? swap.maturity
+                                   : whole ? static_cast<Real>(k) * period
+                                           : swap.maturity - static_cast<Real>(count - k) * period;
                     foreign.push_back({t, side * swap.foreign_notional * swap.foreign_rate * period});
                     domestic.push_back({t, -side * swap.domestic_notional * swap.domestic_rate * period});
                 }

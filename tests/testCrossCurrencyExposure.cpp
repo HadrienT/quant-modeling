@@ -500,7 +500,10 @@ namespace quantModeling
         const InterestRateSwap underlying = make_swap(1.0, 4.0, 0.04, 1, 4, 100.0, true);
         EXPECT_THROW(engine.add_domestic(BermudanSwaption(underlying, {1.0, 2.0, 3.0})),
                      UnsupportedInstrument);
-        EXPECT_THROW(engine.add(CrossCurrencySwap(2.5, 100.0, 110.0, 0.02, 0.04)), InvalidInput);
+        // (A maturity that is not a whole number of years is a swap already
+        // running: accepted since §14.16.)
+        EXPECT_NO_THROW(CrossCurrencyExposureEngine(m).add(CrossCurrencySwap(2.5, 100.0, 110.0, 0.02, 0.04)));
+        EXPECT_THROW(engine.add(CrossCurrencySwap(0.0, 100.0, 110.0, 0.02, 0.04)), InvalidInput);
         EXPECT_THROW(engine.add(CrossCurrencySwap(2.0, 0.0, 110.0, 0.02, 0.04)), InvalidInput);
         EXPECT_THROW(engine.add(FXForward(0.0, 1.0)), InvalidInput);
 
@@ -655,6 +658,37 @@ namespace quantModeling
         engine.simulate(settings(200), nullptr, &scenarios);
         for (const Real x : scenarios.foreign)
             ASSERT_LT(std::abs(x), 1e-8);
+    }
+
+    TEST(CrossCurrencyEngine, ACrossCurrencySwapAlreadyRunningPaysItsNextCouponInFull)
+    {
+        // Traded 0.6 year ago for five years: 4.4 years are left, and the
+        // coupons fall at 0.4, 1.4, ..., 4.4.
+        const CrossCurrencyHullWhiteModel m = model();
+        const Time T = 4.4;
+        const Real cf = 0.025, cd = 0.041, Nf = 100.0, Nd = 108.0;
+        CrossCurrencyExposureEngine engine(m);
+        engine.add(CrossCurrencySwap(T, Nf, Nd, cf, cd));
+        const ExposurePaths cube = engine.simulate(settings(20000));
+        Real expected = 0.0;
+        for (int k = 0; k < 5; ++k)
+        {
+            const Time t = T - k;
+            expected += m.spot() * Nf * cf * std::exp(-0.025 * t) - Nd * cd * std::exp(-0.04 * t);
+        }
+        expected += m.spot() * Nf * std::exp(-0.025 * T) - Nd * std::exp(-0.04 * T);
+        EXPECT_NEAR(cube.trade_values_today[0], expected, 1e-10);
+        EXPECT_LT(martingale_gap(cube, 0), 4.0);
+        // The first coupon is paid whole at 0.4, though it began before today.
+        const auto first = static_cast<std::size_t>(
+            std::lower_bound(cube.times.begin(), cube.times.end(), 0.4 - 1e-9) - cube.times.begin());
+        ASSERT_NEAR(cube.times[first], 0.4, 1e-9);
+        EXPECT_NE(cube.trade_cashflows[0][first], 0.0);
+        // A whole number of years is what it was, to the bit.
+        CrossCurrencyExposureEngine whole(m), again(m);
+        whole.add(par_ccs(m, 5.0));
+        again.add(par_ccs(m, 5.0));
+        EXPECT_EQ(whole.simulate(settings(100)).trade_values[0], again.simulate(settings(100)).trade_values[0]);
     }
 
     TEST(CrossCurrencyEngine, AnOptionThatIsNotEuropeanIsRefused)

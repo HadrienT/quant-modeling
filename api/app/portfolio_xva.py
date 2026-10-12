@@ -65,9 +65,25 @@ class PortfolioXvaRequest(BaseModel):
 
 
 def _rate_fx(
-    inst: Instrument, spec: RateFxSpec, quantity: float, d: date
-) -> Tuple[Optional[xva._Spec], Optional[str]]:
-    """The trade as the engine takes it on `d`, or why it is left out."""
+    inst: Instrument,
+    spec: RateFxSpec,
+    quantity: float,
+    d: date,
+    history: portfolio_rates.RatesHistory,
+) -> Tuple[List[xva._Spec], Optional[str]]:
+    """The trade as the engine takes it on `d` — one trade, or two for a swap
+    that has started — or why it is left out."""
+    made, note = _rate_fx_trade(inst, spec, quantity, d, history)
+    return ([] if made is None else made if isinstance(made, list) else [made]), note
+
+
+def _rate_fx_trade(
+    inst: Instrument,
+    spec: RateFxSpec,
+    quantity: float,
+    d: date,
+    history: portfolio_rates.RatesHistory,
+):
     name = inst.label or inst.id
     t = portfolio_rates.years
     if spec.product == "fx_forward":
@@ -105,22 +121,37 @@ def _rate_fx(
             ),
             None,
         )
+    if spec.product == "bermudan":
+        dates = portfolio_rates.bermudan_exercises(spec, d)
+        if not dates:
+            return None, f"{name}: its last exercise date has passed."
+        # Valued by regression, on the exercise dates that are left.
+        return (
+            xva._Spec(
+                name,
+                "bermudan",
+                spec.payer,
+                float(whole_years(dates[0], spec.maturity)),
+                spec.notional,
+                start=t(d, dates[0]),
+                quantity=quantity,
+                currency=spec.currency,
+                rate=spec.fixed_rate,
+            ),
+            None,
+        )
     left = [p for p in portfolio_rates.schedule(spec) if p > d]
     if not left:
         return None, f"{name}: matured, nothing is left to simulate."
     if spec.product == "cross_currency_swap":
-        if d > spec.start and d not in portfolio_rates.schedule(spec):
-            return None, (
-                f"{name}: a cross-currency swap between two coupon dates is not "
-                "simulated yet (the engine counts whole years to its maturity). It "
-                "is left out of this netting set."
-            )
+        # Between two coupon dates the coupon in progress is paid in full on
+        # the next one: the engine counts the dates back from the maturity.
         return (
             xva._Spec(
                 name,
                 "cross_currency_swap",
                 spec.payer,
-                float(len(left)),
+                t(d, spec.maturity) if d > spec.start else float(len(left)),
                 spec.notional,
                 quantity=quantity,
                 rate=spec.fixed_rate,
@@ -145,29 +176,46 @@ def _rate_fx(
             ),
             None,
         )
-    # Started: the engine has no fixing of the past, so the coupon in
-    # progress — a known amount — is left out and the rest starts on the
-    # next coupon date.
-    if len(left) == 1:
-        return None, (
-            f"{name}: only the coupon in progress is left, a known amount paid on "
-            f"{left[0]}. It is not simulated."
+    # Started. The coupon in progress was fixed on its first day: both legs
+    # pay a known amount on the next coupon date, and the coupons after it
+    # are a swap that starts then.
+    pay = portfolio_rates.schedule(spec)
+    reset = max([spec.start] + [p for p in pay if p <= d])
+    try:
+        fixing = history.fixing(spec.currency, reset)
+    except portfolio_rates.NoMark as exc:
+        return (
+            None,
+            f"{name}: {exc}; its coupon in progress is unknown, it is left out.",
         )
-    return (
+    sign = 1.0 if spec.payer else -1.0
+    made = [
         xva._Spec(
-            name,
-            "swap",
+            f"{name}: coupon in progress, fixed on {reset}",
+            "cashflow",
             spec.payer,
-            float(len(left) - 1),
-            spec.notional,
-            start=t(d, left[0]),
+            t(d, left[0]),
+            sign * spec.notional * (fixing - spec.fixed_rate),
             quantity=quantity,
             currency=spec.currency,
-            rate=spec.fixed_rate,
-        ),
-        f"{name}: the coupon in progress, a known amount paid on {left[0]}, is left "
-        "out of the exposure; the coupons after it are simulated.",
-    )
+            swap=(spec.notional, t(d, spec.maturity)),
+        )
+    ]
+    if len(left) > 1:
+        made.append(
+            xva._Spec(
+                f"{name}: coupons after {left[0]}",
+                "swap",
+                spec.payer,
+                float(len(left) - 1),
+                spec.notional,
+                start=t(d, left[0]),
+                quantity=quantity,
+                currency=spec.currency,
+                rate=spec.fixed_rate,
+            )
+        )
+    return made, None
 
 
 def _equity_option(
@@ -206,12 +254,17 @@ def _equity_option(
 
 
 def trades(
-    pf: Portfolio, netting_set_id: str, d: date
+    pf: Portfolio,
+    netting_set_id: str,
+    d: date,
+    history: Optional[portfolio_rates.RatesHistory] = None,
 ) -> Tuple[List[xva._Spec], List[str], Optional[DerivativeSpec]]:
     """The trades held on `d` under a netting set, as the engine takes them,
     what had to be left out, and — when equity options are among them — the
     option the share's volatility is calibrated on: the longest one."""
     held = portfolio_ledger.holdings(pf, d)
+    # The fixing of a coupon in progress is read on the curve of its reset.
+    history = history or portfolio_rates.RatesHistory()
     specs: List[xva._Spec] = []
     options: List[Tuple[xva._Spec, DerivativeSpec]] = []
     said: List[str] = []
@@ -226,9 +279,8 @@ def trades(
             if spec is not None:
                 options.append((spec, inst.spec))
         else:
-            spec, note = _rate_fx(inst, inst.spec, h.quantity, d)
-            if spec is not None:
-                specs.append(spec)
+            made, note = _rate_fx(inst, inst.spec, h.quantity, d, history)
+            specs.extend(made)
         if note:
             said.append(note)
     if not options:

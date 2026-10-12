@@ -4979,7 +4979,7 @@ export interface components {
              * Product
              * @enum {string}
              */
-            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            product: "swap" | "swaption" | "bermudan" | "fx_forward" | "cross_currency_swap";
             /**
              * Start
              * Format: date
@@ -5023,6 +5023,7 @@ export interface components {
          *     |---|---|---|---|---|
          *     | swap | first day | last payment | pays the fixed rate | the fixed rate |
          *     | swaption | expiry | end of the swap | on a payer swap | the strike |
+         *     | bermudan | first exercise | end of the swap | on a payer swap | the strike |
          *     | fx_forward | trade date | delivery | buys the euros | USD per EUR |
          *     | cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |
          */
@@ -5066,7 +5067,7 @@ export interface components {
              * Product
              * @enum {string}
              */
-            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            product: "swap" | "swaption" | "bermudan" | "fx_forward" | "cross_currency_swap";
             /**
              * Start
              * Format: date
@@ -7127,7 +7128,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap" | "equity_option";
+            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap" | "equity_option" | "cashflow";
             /**
              * Marginal Cva
              * @description Euler share of the CVA; none under a CSA

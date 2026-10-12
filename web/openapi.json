@@ -7364,6 +7364,7 @@
             "enum": [
               "swap",
               "swaption",
+              "bermudan",
               "fx_forward",
               "cross_currency_swap"
             ],
@@ -7433,7 +7434,7 @@
         "type": "object"
       },
       "RateFxSpec": {
-        "description": "An over-the-counter rate or FX trade, marked each day on the swap\ncurves of the store (portfolio_rates.py) and simulated by the exposure\nengine (xVA). One contract is the whole notional: a trade's quantity is\n+1 for the side described here, -1 for the other.\n\nThe conventions are the exposure engine's: both legs of a swap pay once a\nyear and it lasts a whole number of years; an FX trade is in euros\nagainst dollars and is valued in dollars.\n\n| product | start | maturity | payer | fixed_rate |\n|---|---|---|---|---|\n| swap | first day | last payment | pays the fixed rate | the fixed rate |\n| swaption | expiry | end of the swap | on a payer swap | the strike |\n| fx_forward | trade date | delivery | buys the euros | USD per EUR |\n| cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |",
+        "description": "An over-the-counter rate or FX trade, marked each day on the swap\ncurves of the store (portfolio_rates.py) and simulated by the exposure\nengine (xVA). One contract is the whole notional: a trade's quantity is\n+1 for the side described here, -1 for the other.\n\nThe conventions are the exposure engine's: both legs of a swap pay once a\nyear and it lasts a whole number of years; an FX trade is in euros\nagainst dollars and is valued in dollars.\n\n| product | start | maturity | payer | fixed_rate |\n|---|---|---|---|---|\n| swap | first day | last payment | pays the fixed rate | the fixed rate |\n| swaption | expiry | end of the swap | on a payer swap | the strike |\n| bermudan | first exercise | end of the swap | on a payer swap | the strike |\n| fx_forward | trade date | delivery | buys the euros | USD per EUR |\n| cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |",
         "properties": {
           "currency": {
             "description": "The currency of the notional: EUR for an FX trade",
@@ -7504,6 +7505,7 @@
             "enum": [
               "swap",
               "swaption",
+              "bermudan",
               "fx_forward",
               "cross_currency_swap"
             ],
@@ -12271,7 +12273,8 @@
               "script",
               "fx_forward",
               "cross_currency_swap",
-              "equity_option"
+              "equity_option",
+              "cashflow"
             ],
             "title": "Kind",
             "type": "string"

@@ -1,6 +1,6 @@
 """Marks of the rate and FX trades of a portfolio — interest rate swaps,
-European swaptions, FX forwards and cross-currency swaps — on the market of
-each day (blueprint/wp/23-xva.md, lot X12).
+European and Bermudan swaptions, FX forwards and cross-currency swaps — on
+the market of each day (blueprint/wp/23-xva.md, lot X12).
 
 The market is the one the xVA page uses, read from the store with no
 fallback: the SOFR (USD) and Euribor (EUR) swap curves and the swaption vols
@@ -50,6 +50,8 @@ VOL_WINDOW_DAYS = 10
 HISTORY_SINCE = date(2024, 9, 1)
 #: A curve needs this many tenors to be bootstrapped.
 _MIN_TENORS = 5
+#: Fewer swaption vols than this cannot calibrate Hull-White (as on the xVA page).
+MIN_CALIBRATION_VOLS = 3
 
 Curve = Tuple[date, List[float], List[float]]
 
@@ -71,6 +73,7 @@ class RatesHistory:
         self._curves: Dict[Tuple[str, date], Curve] = {}
         self._trades: Dict[str, list] = {}
         self._vols: Dict[Tuple[str, date], List[Tuple[float, float, float]]] = {}
+        self._hull_white: Dict[Tuple[str, date], Tuple[float, float]] = {}
 
     def _complete(self, ccy: str) -> Tuple[List[date], Dict[date, list]]:
         if ccy not in self._quotes:
@@ -121,6 +124,23 @@ class RatesHistory:
                 (p.expiry, float(p.tenor), p.normal_vol) for p in grid.points
             ]
         return self._vols[(ccy, obs)]
+
+    def hull_white(self, ccy: str, obs: date) -> Tuple[float, float]:
+        """(a, σ) of Hull-White fitted to the swaption vols of the curve date
+        `obs`: about a second, done once per currency and date. What a
+        Bermudan, which has no formula, is priced with."""
+        if (ccy, obs) not in self._hull_white:
+            vols = self.vols(ccy, obs)
+            if len(vols) < MIN_CALIBRATION_VOLS:
+                raise NoMark(
+                    f"only {len(vols)} {ccy} swaption vol points in the "
+                    f"{VOL_WINDOW_DAYS} days to {obs}: not enough to calibrate the "
+                    "model a Bermudan is priced with"
+                )
+            _, times, dfs = self.curve(ccy, obs)
+            fit = qm.calibrate_hull_white(times, dfs, times, dfs, vols, 1, 1, None)
+            self._hull_white[(ccy, obs)] = (fit["mean_reversion"], fit["sigma"])
+        return self._hull_white[(ccy, obs)]
 
 
 def discount(times: List[float], dfs: List[float], t: float) -> float:
@@ -280,6 +300,70 @@ def _mark_swaption(spec: RateFxSpec, d: date, md: Any) -> Mark:
     )
 
 
+def bermudan_exercises(spec: RateFxSpec, d: date) -> List[date]:
+    """The exercise dates still ahead on `d`: the first one and each
+    anniversary while a full year of the swap is left."""
+    n = whole_years(spec.start, spec.maturity)
+    return [e for e in (add_years(spec.start, k) for k in range(n)) if e > d]
+
+
+def _mark_bermudan(spec: RateFxSpec, d: date, md: Any) -> Mark:
+    left = bermudan_exercises(spec, d)
+    if not left:
+        raise NoMark(
+            f"its last exercise date, {spec.end}, has passed: book its settlement "
+            "as a closing trade, and the swap entered, if it was exercised, as a "
+            "new one"
+        )
+    history: RatesHistory = md.rates_history
+    obs, times, dfs = history.curve(spec.currency, d)
+    a, sigma = history.hull_white(spec.currency, obs)
+    first = years(d, left[0])
+    tenor = whole_years(left[0], spec.maturity)
+    out = qm.price_swaption(
+        times,
+        dfs,
+        times,
+        dfs,
+        first,
+        float(tenor),
+        spec.fixed_rate,
+        spec.payer,
+        1,
+        1,
+        spec.notional,
+        hull_white=(a, sigma),
+        bermudan_exercises=[first + k for k in range(len(left))],
+    )
+    name = CURVE_NAME[spec.currency]
+    return Mark(
+        float(out["hull_white_bermudan"]),
+        spec.currency,
+        [
+            Input(name, _status(d, obs), None, obs),
+            Input("Hull-White mean reversion", "proxied", a, obs),
+            Input("Hull-White volatility", "proxied", sigma, obs),
+            Input("exercise dates left", "observed", float(len(left)), d),
+        ],
+        model=ModelInfo(
+            "Hull-White, one factor",
+            "lattice",
+            "A Bermudan can be exercised on several dates and has no formula: it "
+            "is priced on a lattice of the short rate, under Hull-White fitted that "
+            "day to the traded at-the-money swaption vols. If its first exercise "
+            "date has passed without a closing trade, it is valued as still alive "
+            "on the dates that are left.",
+            [
+                ModelParam("strike", spec.fixed_rate, status="contract"),
+                ModelParam("mean reversion", a, status="calibrated"),
+                ModelParam("volatility", sigma, status="calibrated"),
+                ModelParam("European at the first date", float(out["hull_white"])),
+                ModelParam(name, text=obs.isoformat(), status=_status(d, obs)),
+            ],
+        ),
+    )
+
+
 def _two_curves(d: date, md: Any) -> Tuple[Curve, Curve, date, float]:
     history: RatesHistory = md.rates_history
     spot_date, spot = _spot(md, d)
@@ -402,6 +486,7 @@ def _mark_cross_currency(spec: RateFxSpec, d: date, md: Any) -> Mark:
 _MARKS = {
     "swap": _mark_swap,
     "swaption": _mark_swaption,
+    "bermudan": _mark_bermudan,
     "fx_forward": _mark_fx_forward,
     "cross_currency_swap": _mark_cross_currency,
 }
@@ -438,6 +523,11 @@ class _Moved:
         _, times, dfs = self.curve(ccy, d)
         return 1.0 / discount(times, dfs, years(d, add_years(d, 1))) - 1.0
 
+    def hull_white(self, ccy: str, obs: date) -> Tuple[float, float]:
+        # The model is held as calibrated: a Bermudan's PV01 is at fixed
+        # Hull-White parameters.
+        return self._md.rates_history.hull_white(ccy, obs)
+
     def vols(self, ccy: str, obs: date) -> List[Tuple[float, float, float]]:
         return [
             (e, t, v + self._vol) for e, t, v in self._md.rates_history.vols(ccy, obs)
@@ -467,7 +557,9 @@ def sensitivities(spec: RateFxSpec, d: date, md: Any, value: float) -> Dict[str,
       a move of EUR/USD, per dollar of that move;
     - `normal_vega`: for one basis point more of normal volatility.
 
-    Only what the product depends on is there.
+    Only what the product depends on is there. A Bermudan has its PV01
+    at fixed Hull-White parameters, and no vega: moving a quoted vol moves a
+    calibration, which is a second a move.
     """
     price = _MARKS[spec.product]
     out: Dict[str, float] = {}
@@ -522,7 +614,7 @@ def at_market(draft: dict, d: date, md: Any) -> RateFxSpec:
         }
     )
     history: RatesHistory = md.rates_history
-    if product in ("swap", "swaption"):
+    if product in ("swap", "swaption", "bermudan"):
         if terms.get("fixed_rate") is None:
             terms["fixed_rate"] = par_rate(probe, d, history)
     elif product == "fx_forward":
@@ -559,6 +651,12 @@ def label(spec: RateFxSpec) -> str:
             f"{side} swaption {spec.currency} {n} struck at {spec.fixed_rate:.3%}, "
             f"expiring {spec.start}, swap to {spec.maturity}"
         )
+    if spec.product == "bermudan":
+        side = "Payer" if spec.payer else "Receiver"
+        return (
+            f"Bermudan {side.lower()} swaption {spec.currency} {n} struck at "
+            f"{spec.fixed_rate:.3%}, yearly from {spec.start}, swap to {spec.maturity}"
+        )
     if spec.product == "fx_forward":
         side = "Buy" if spec.payer else "Sell"
         return f"{side} EUR {n} at {spec.fixed_rate:.4f} USD, delivery {spec.maturity}"
@@ -570,6 +668,7 @@ __all__ = [
     "NoMark",
     "RatesHistory",
     "at_market",
+    "bermudan_exercises",
     "cross_currency_value",
     "label",
     "mark",

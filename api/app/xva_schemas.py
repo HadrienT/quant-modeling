@@ -192,6 +192,7 @@ class XvaTrade(BaseModel):
         "fx_forward",
         "cross_currency_swap",
         "equity_option",
+        "cashflow",
     ]
     currency: str = Field(
         description="The currency of the notional: the trade's own for a rate "

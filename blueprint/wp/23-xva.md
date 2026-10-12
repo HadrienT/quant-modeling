@@ -1274,7 +1274,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X9 — Page `/xva`** (fait : §14.14) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** (fait : §14.15 ; formes fermées, CPU, mesure de pricing ; un seul produit ajouté, le swap de devises) | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 | **X11 — Contreparties et netting sets du portefeuille** (fait : §14.16) | un portefeuille porte ses contreparties (notation, secteur, recouvrement) et leurs netting sets (CSA ou non) ; un dérivé se traite sous un netting set ; sous-onglet *Counterparties* de la page Portfolio ; contreparties d'exemple | un instrument coté n'a pas de netting set ; un netting set utilisé ne se supprime pas ; le mark d'un dérivé ne dépend pas de qui il fait face |
-| **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans bermudan ni script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
+| **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
 | **X13 — xVA d'un netting set du portefeuille** (fait : §14.16 ; sans sensibilités, swap entamé simulé depuis son prochain coupon) | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
 | **X14 — Dérivés actions dans le moteur d'exposition** (fait : §14.16 ; options européennes, une action par netting set, CPU) | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
 
@@ -2516,6 +2516,44 @@ Limites, dites dans les avertissements de la réponse :
 - sous-jacents en dollars seulement ; CPU, mesure de pricing, marge initiale
   par régression (comme à deux devises) ; dividende en rendement continu
   constant.
+
+**Limites levées ensuite (issue #173).**
+
+- *Swap entamé.* Le moteur a une transaction de plus, qui n'est pas un
+  produit : un **flux connu** (`make_cash_flow_future_value`,
+  `engines/xva/hull_white_future_value.hpp`), montant × $P(t, T)$ jusqu'à son
+  paiement. Il se compile dans les termes à plat des swaps, donc il passe sur
+  le GPU et dans les deux adjoints sans code propre. Un swap entamé devient
+  son coupon en cours — fixé au premier jour de la période, lu sur la courbe
+  de ce jour — et le swap qui démarre à la prochaine date de coupon. Vérifié :
+  un swap d'un an est son premier coupon, chemin par chemin ; à une date de
+  coupon, un swap entamé a la valeur, l'exposition, le CVA **et le capital**
+  du swap neuf de ce qui reste. Pour SA-CCR, les deux morceaux doivent
+  redonner le swap entier (une transaction de taux d'aujourd'hui à sa fin,
+  CRE52.34) : le coupon reçoit la fin du swap, donc sa tranche de maturité, et
+  le début $S$ qui lui laisse la durée prudentielle de $(0, t)$,
+  $e^{-0{,}05 S} = e^{-0{,}05\,fin} + 1 - e^{-0{,}05\,t}$.
+- *Swap de devises entre deux coupons.* Les dates de coupon de
+  `CrossCurrencySwap` se comptent depuis l'échéance : une échéance qui n'est
+  pas un nombre entier de périodes est un swap entamé, dont le coupon en cours
+  est payé en entier à la prochaine date (un coupon fixe ne dépend pas du jour
+  où on le regarde). Un nombre entier de périodes garde ses dates au bit près.
+- *Bermudan dans le registre.* `RateFxSpec.product = "bermudan"` : premier
+  exercice, puis chaque anniversaire tant qu'il reste un an de swap. Marqué
+  sur le réseau (`hull_white_bermudan_swaption`) sous un Hull-White calé
+  **ce jour-là** sur les vols de swaptions traitées, une calibration par
+  devise et par date gardée dans `RatesHistory` (pas de mark avec moins de
+  trois points de vol). Si son premier exercice est passé sans trade de
+  clôture, il est valorisé vivant sur les dates qui restent. PV01 à
+  paramètres de modèle fixés, pas de vega (bouger une vol cotée, c'est une
+  calibration). Dans un netting set il est valorisé par régression (lot X4),
+  donc sans sensibilités adjointes ni seconde devise.
+
+Restent ouverts : les scripts de taux dans le registre ; pour les actions,
+plusieurs sous-jacents par netting set, les options non européennes et le
+smile entre options ; SA-CVA avec les classes change et action ; le côté euro
+en cotations ; la marge initiale dans les sensibilités ; un jour sans mark
+coupe la chaîne du P&L quotidien de la position.
 
 ### 14.17 L'adjoint à deux facteurs (commencé le 2026-10-12)
 

@@ -239,6 +239,60 @@ def test_a_swaption_has_a_vega_and_the_position_carries_its_sensitivities(monkey
     assert position.greeks["pv01_usd"] > 0 and position.quantity == -1.0
 
 
+VOLS = [(1.0, 2.0, 0.0117), (1.0, 5.0, 0.0111), (1.0, 10.0, 0.0103), (2.0, 5.0, 0.0114)]
+
+
+def _bermudan(first="2025-10-01", end="2031-10-01", **more) -> RateFxSpec:
+    return RateFxSpec.model_validate(
+        {
+            **_draft("bermudan"),
+            "start": first,
+            "maturity": end,
+            "fixed_rate": 0.042,
+            **more,
+        }
+    )
+
+
+def test_a_bermudan_is_worth_at_least_its_first_european_and_exactly_it_with_one_date(
+    monkeypatch,
+):
+    md = _md()
+    monkeypatch.setattr(md.rates_history, "vols", lambda ccy, obs: VOLS)
+    d = date(2025, 2, 3)
+    m = pr.mark(_bermudan(), d, md)
+    european = next(p.value for p in m.model.params if p.name.startswith("European"))
+    # The right to wait is worth something: six exercise dates against one.
+    assert m.value > european > 0
+    assert m.model.model == "Hull-White, one factor" and m.inputs[-1].value == 6.0
+    # One exercise date: a European swaption, to the lattice's accuracy.
+    one = pr.mark(_bermudan(end="2026-10-01"), d, md)
+    alone = next(p.value for p in one.model.params if p.name.startswith("European"))
+    assert one.value == pytest.approx(alone, rel=2e-2)
+    # A payer gains when rates rise; its PV01 is at fixed model parameters.
+    assert m.greeks["pv01_usd"] > 0 and "normal_vega" not in m.greeks
+    assert "Bermudan payer swaption USD 10M" in pr.label(_bermudan())
+
+
+def test_a_bermudan_lives_on_its_later_dates_and_needs_enough_vols(monkeypatch):
+    md = _md()
+    monkeypatch.setattr(md.rates_history, "vols", lambda ccy, obs: VOLS)
+    spec = _bermudan()
+    # Its first date has passed: five are left.
+    later = pr.mark(spec, date(2025, 11, 14), md)
+    assert later.value > 0 and later.inputs[-1].value == 5.0
+    assert pr.bermudan_exercises(spec, date(2025, 11, 14))[0] == date(2026, 10, 1)
+    # ...until the last one, a year before the end of the swap.
+    assert spec.end == date(2030, 10, 1)
+    gone = pr.mark(spec, date(2030, 10, 1), md)
+    assert gone.value is None and "last exercise date" in gone.note
+    # Two vol points do not calibrate two parameters.
+    monkeypatch.setattr(md.rates_history, "vols", lambda ccy, obs: VOLS[:2])
+    md.rates_history._hull_white.clear()
+    short = pr.mark(spec, date(2025, 2, 4), md)
+    assert short.value is None and "not enough to calibrate" in short.note
+
+
 def test_contracts_the_engine_cannot_hold_are_refused():
     with pytest.raises(ValueError, match="whole number of years"):
         RateFxSpec.model_validate(

@@ -567,6 +567,117 @@ namespace quantModeling
         };
     } // namespace
 
+    namespace
+    {
+        /// One amount known today: a zero-coupon bond until it is paid.
+        class HullWhiteCashFlowValue final : public FutureValue
+        {
+          public:
+            HullWhiteCashFlowValue(Time time, Real amount, const HullWhiteCurveModel &model)
+                : time_(time), amount_(amount), model_(model)
+            {
+                if (!(time_ > kTimeEps) || !std::isfinite(time_) || !std::isfinite(amount_))
+                    throw InvalidInput("cash flow future value: the amount must be finite and paid in "
+                                       "the future");
+            }
+
+            std::vector<Time> event_times() const override { return {time_}; }
+            Time maturity() const override { return time_; }
+            Real value_today() const override { return amount_ * model_.discount().discount(time_); }
+
+            void bind(const std::vector<Time> &grid) override
+            {
+                index_ = grid_index(grid, time_);
+                dates_ = grid.size();
+                from_.assign(grid.begin(), grid.begin() + static_cast<std::ptrdiff_t>(index_));
+                coefficient_.clear();
+                G_.clear();
+                for (const Time t : from_)
+                {
+                    const Real G = model_.G(t, time_);
+                    coefficient_.push_back(amount_ * model_.discount().discount(time_) /
+                                           model_.discount().discount(t) *
+                                           std::exp(-0.5 * G * G * model_.y(t)));
+                    G_.push_back(G);
+                }
+            }
+
+            Real value(std::size_t i, const Real *state) const override
+            {
+                return i < index_ ? coefficient_[i] * std::exp(-G_[i] * state[i]) : 0.0;
+            }
+
+            Real cashflow(std::size_t i, const Real *) const override
+            {
+                return i == index_ ? amount_ : 0.0;
+            }
+
+            bool compile(xva::ExposureProgram &program) const override
+            {
+                if (dates_ == 0)
+                    throw InvalidInput("cash flow future value: compile() needs the grid; call bind() "
+                                       "first");
+                if (program.trades.empty())
+                    program.dates = dates_;
+                else if (program.dates != dates_)
+                    throw InvalidInput("exposure program: the trades are not bound to one grid");
+                xva::ProgramTrade trade;
+                trade.date_begin = static_cast<int>(program.date_records.size());
+                for (std::size_t i = 0; i < dates_; ++i)
+                {
+                    xva::ProgramDate record;
+                    record.fixed_cashflow = i == index_ ? amount_ : 0.0;
+                    record.exp_begin = static_cast<int>(program.exps.size());
+                    if (i < index_)
+                    {
+                        program.exps.push_back({coefficient_[i], G_[i]});
+                        program.exp_sources.push_back({amount_, from_[i], time_});
+                    }
+                    record.exp_end = static_cast<int>(program.exps.size());
+                    record.accrued_begin = record.accrued_end = static_cast<int>(program.accrued.size());
+                    record.paid_begin = record.paid_end = static_cast<int>(program.paid.size());
+                    program.date_records.push_back(record);
+                }
+                program.trades.push_back(trade);
+                xva::TodaySource today;
+                today.term_begin = static_cast<int>(program.today_terms.size());
+                program.today_terms.push_back({amount_, time_});
+                today.term_end = static_cast<int>(program.today_terms.size());
+                program.today.push_back(today);
+                return true;
+            }
+
+            bool sensitivities(std::size_t i, const Real *state, std::vector<BondExposure> &bonds,
+                               std::vector<VolExposure> &) const override
+            {
+                if (i < index_)
+                    bonds.push_back({time_, value(i, state)});
+                return true;
+            }
+
+            bool sensitivities_today(std::vector<BondExposure> &bonds,
+                                     std::vector<VolExposure> &) const override
+            {
+                bonds.push_back({time_, value_today()});
+                return true;
+            }
+
+          private:
+            Time time_;
+            Real amount_;
+            const HullWhiteCurveModel &model_;
+            std::size_t index_ = 0, dates_ = 0;
+            std::vector<Time> from_;
+            std::vector<Real> coefficient_, G_;
+        };
+    } // namespace
+
+    std::unique_ptr<FutureValue> make_cash_flow_future_value(Time time, Real amount,
+                                                             const HullWhiteCurveModel &model)
+    {
+        return std::make_unique<HullWhiteCashFlowValue>(time, amount, model);
+    }
+
     std::unique_ptr<FutureValue> make_future_value(const InterestRateSwap &swap,
                                                    const HullWhiteCurveModel &model)
     {

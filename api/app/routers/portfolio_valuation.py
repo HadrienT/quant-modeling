@@ -277,7 +277,9 @@ class RateFxDraft(BaseModel):
     """A rate or FX trade whose rates may be left out: they are then set at
     the market of the trade date (portfolio_rates.at_market)."""
 
-    product: Literal["swap", "swaption", "fx_forward", "cross_currency_swap"]
+    product: Literal[
+        "swap", "swaption", "bermudan", "fx_forward", "cross_currency_swap"
+    ]
     currency: Literal["USD", "EUR"]
     notional: float = Field(gt=0, le=1e12)
     payer: bool = True

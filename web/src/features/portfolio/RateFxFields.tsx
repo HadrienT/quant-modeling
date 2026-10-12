@@ -2,50 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { RateFxDraft, RateFxSpec } from "@/shared/api";
 import { useRateFxQuote } from "@/shared/api";
 import { Input, Label } from "@/shared/ui";
+import { PRODUCTS, type Product, plusYears } from "./rateFxTerms";
 
 export type RateFxTerms = { label: string; spec: RateFxSpec; value: number };
 
-type Product = RateFxDraft["product"];
 const box =
 	"h-9 rounded-sm border border-hairline bg-surface px-2 text-sm text-ink";
-
-/** What the two sides and the rate of each product are called. */
-const PRODUCTS: Record<
-	Product,
-	{ label: string; sides: [string, string]; rate: string; percent: boolean }
-> = {
-	swap: {
-		label: "Interest rate swap",
-		sides: ["Pay fixed", "Receive fixed"],
-		rate: "Fixed rate (%)",
-		percent: true,
-	},
-	swaption: {
-		label: "European swaption",
-		sides: ["On a payer swap", "On a receiver swap"],
-		rate: "Strike (%)",
-		percent: true,
-	},
-	fx_forward: {
-		label: "FX forward EUR/USD",
-		sides: ["Buy the euros", "Sell the euros"],
-		rate: "Delivery rate (USD per EUR)",
-		percent: false,
-	},
-	cross_currency_swap: {
-		label: "Cross-currency swap EUR/USD",
-		sides: ["Receive EUR, pay USD", "Pay EUR, receive USD"],
-		rate: "USD coupon (%)",
-		percent: true,
-	},
-};
-
-const plusYears = (iso: string, years: number) => {
-	const [y, m, d] = iso.split("-").map(Number);
-	// 29 February has no anniversary three years out of four: the 28th.
-	const day = m === 2 && d === 29 && (y! + years) % 4 !== 0 ? 28 : d!;
-	return `${y! + years}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-};
 
 /**
  * The terms of a rate or FX trade. A rate left empty is set at the market of
@@ -69,18 +31,20 @@ export function RateFxFields({
 	const [rate, setRate] = useState("");
 	const meta = PRODUCTS[product];
 	const fx = product === "fx_forward" || product === "cross_currency_swap";
+	// An option on a swap: it has an expiry (its first exercise date).
+	const optional = product === "swaption" || product === "bermudan";
 
 	const draft = useMemo<RateFxDraft | null>(() => {
 		const n = Number(notional);
 		const y = Number(years);
-		const start = product === "swaption" ? expiry : tradeDate;
+		const start = optional ? expiry : tradeDate;
 		const maturity =
 			product === "fx_forward"
 				? delivery
 				: start && plusYears(start, Math.round(y));
 		if (!(n > 0) || !start || !maturity || maturity <= start) return null;
 		if (product !== "fx_forward" && !(y >= 1 && y <= 30)) return null;
-		if (product === "swaption" && expiry <= tradeDate) return null;
+		if (optional && expiry <= tradeDate) return null;
 		return {
 			product,
 			currency: fx ? "EUR" : currency,
@@ -101,6 +65,7 @@ export function RateFxFields({
 		rate,
 		tradeDate,
 		fx,
+		optional,
 		meta.percent,
 	]);
 	const quote = useRateFxQuote(draft, tradeDate);
@@ -164,9 +129,11 @@ export function RateFxFields({
 						</select>
 					</label>
 				)}
-				{product === "swaption" && (
+				{optional && (
 					<label className="flex flex-col gap-1">
-						<Label>Expiry</Label>
+						<Label>
+							{product === "bermudan" ? "First exercise" : "Expiry"}
+						</Label>
 						<Input
 							type="date"
 							min={tradeDate}
@@ -187,9 +154,7 @@ export function RateFxFields({
 					</label>
 				) : (
 					<label className="flex flex-col gap-1">
-						<Label>
-							{product === "swaption" ? "Swap length" : "Maturity"} (years)
-						</Label>
+						<Label>{optional ? "Swap length" : "Maturity"} (years)</Label>
 						<Input
 							type="number"
 							min={1}

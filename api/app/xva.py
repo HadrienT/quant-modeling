@@ -86,7 +86,8 @@ class XvaInputError(ValueError):
 class _Spec:
     description: str
     #: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" |
-    #: "cross_currency_swap" | "equity_option"
+    #: "cross_currency_swap" | "equity_option" | "cashflow" (an amount
+    #: already fixed: `notional` paid at `tenor`)
     kind: str
     #: A payer swap; for an FX trade, the side that receives the euros; a
     #: call, for an equity option.
@@ -116,6 +117,9 @@ class _Spec:
     rate: Optional[float] = None
     foreign_rate: Optional[float] = None
     domestic_notional: Optional[float] = None
+    #: For an amount already fixed: (notional, end) of the swap it is the
+    #: coupon in progress of — its supervisory description.
+    swap: Optional[Tuple[float, float]] = None
 
 
 def _swap(tenor: float, payer: bool, notional: float = NOTIONAL) -> _Spec:
@@ -519,6 +523,21 @@ def _script_specs(req: XvaRequest, rates: _Rates) -> List[_Spec]:
     return specs
 
 
+def _cashflow(s: _Spec) -> dict:
+    """An amount already fixed, as qm.xva_netting_set takes it."""
+    out = {
+        "kind": "cashflow",
+        "time": s.tenor,
+        "amount": s.notional,
+        "quantity": s.quantity,
+        "currency": "domestic" if s.currency == "USD" else "foreign",
+        "payer": s.payer,
+    }
+    if s.swap is not None:
+        out["notional"], out["swap_end"] = s.swap
+    return out
+
+
 def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
     """The trades at the market: each fixed rate is the par rate of its swap
     on today's curve (the forward par rate for a swaption)."""
@@ -533,6 +552,9 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
                     "quantity": s.quantity,
                 }
             )
+            continue
+        if s.kind == "cashflow":
+            out.append(_cashflow(s))
             continue
         start, tenor = s.par_of or (s.start, s.tenor)
         par = (
@@ -658,6 +680,8 @@ def _asset_trades(
                     "quantity": s.quantity,
                 }
             )
+        elif s.kind == "cashflow" and s.currency == "USD":
+            out.append(_cashflow(s))
         elif s.kind in ("swap", "swaption") and s.currency == "USD":
             par = (
                 s.rate
@@ -763,6 +787,8 @@ def _two_currency_trades(
                     "quantity": s.quantity,
                 }
             )
+        elif s.kind == "cashflow":
+            out.append(_cashflow(s))
         elif s.kind in ("swap", "swaption"):
             in_euros = s.currency != "USD"
             times, dfs = (
@@ -802,7 +828,7 @@ def _margin_model(req: XvaRequest, specs: List[_Spec]) -> Tuple[str, str]:
     of every trade in every scenario, which the closed forms give for swaps
     and European swaptions; a Bermudan is valued by regression and has none."""
     asked = req.csa.initial_margin_model
-    by_regression = sorted({s.kind for s in specs} - {"swap", "swaption"})
+    by_regression = sorted({s.kind for s in specs} - {"swap", "swaption", "cashflow"})
     if req.csa.initial_margin_today is not None:
         if asked == "simm":
             raise XvaInputError(
@@ -1203,8 +1229,12 @@ def compute(
                 # module writes as a script keeps the terms it was written from.
                 payer=None if spec.script is not None else spec.payer,
                 notional=None if spec.script is not None else spec.notional,
-                fixed_rate=trade.get(
-                    "fixed_rate", trade.get("strike", trade.get("domestic_rate"))
+                fixed_rate=(
+                    None
+                    if spec.kind == "cashflow"
+                    else trade.get(
+                        "fixed_rate", trade.get("strike", trade.get("domestic_rate"))
+                    )
                 ),
                 foreign_rate=trade.get("foreign_rate"),
                 start=None if spec.script is not None else spec.start,
@@ -1425,7 +1455,14 @@ def compute_sensitivities(
     else:
         label, _, specs = PORTFOLIOS[req.portfolio]
         asset = None
-    closed = {"swap", "swaption", "fx_forward", "cross_currency_swap", "equity_option"}
+    closed = {
+        "swap",
+        "swaption",
+        "fx_forward",
+        "cross_currency_swap",
+        "equity_option",
+        "cashflow",
+    }
     by_regression = sorted({s.kind for s in specs} - closed)
     if not specs or by_regression:
         raise XvaInputError(

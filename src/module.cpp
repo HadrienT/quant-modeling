@@ -32,6 +32,7 @@
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/market/hull_white_calibration.hpp"
 #include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"
+#include "quantModeling/engines/xva/hull_white_future_value.hpp"
 #include "quantModeling/engines/xva/exposure_engine.hpp"
 #include "quantModeling/engines/xva/xva_market_risks.hpp"
 #include "quantModeling/market/historical_rate_dynamics.hpp"
@@ -1061,6 +1062,31 @@ namespace
 
 namespace
 {
+    /// The supervisory description of an amount already fixed: the coupon in
+    /// progress of a swap of `notional` that ends at `swap_end`. The swap is
+    /// one interest rate trade from today to its end (CRE52.34), and the
+    /// engine holds it as two: this coupon, and the swap that starts on the
+    /// coupon's date. The two descriptions must add up to the swap's — its
+    /// supervisory duration, in its own maturity bucket. The part after the
+    /// coupon has the duration of (time, end); this one is given the end of
+    /// the swap too, and the start S that leaves it the duration of
+    /// (0, time): e^{-0.05 S} = e^{-0.05 end} + 1 - e^{-0.05 time}.
+    qm_::sa_ccr::Trade cash_flow_regulatory(const py::dict &t, qm_::Time time, qm_::Real quantity,
+                                            const std::string &hedging_set, qm_::Real to_domestic)
+    {
+        qm_::sa_ccr::Trade r;
+        r.subclass = qm_::sa_ccr::SubClass::InterestRate;
+        r.hedging_set = hedging_set;
+        r.notional = item_or<qm_::Real>(t, "notional", std::abs(t["amount"].cast<qm_::Real>())) *
+                     std::abs(quantity) * to_domestic;
+        const qm_::Time end = std::max(item_or<qm_::Time>(t, "swap_end", time), time);
+        r.end = end;
+        r.maturity = end;
+        r.start = -std::log(std::exp(-0.05 * end) + 1.0 - std::exp(-0.05 * time)) / 0.05;
+        r.long_primary_risk_factor = item_or<bool>(t, "payer", true) == (quantity > 0.0);
+        return r;
+    }
+
     /// Adds the trades of a request to the engine (parsed while the GIL is
     /// held; the engine copies them), with the SA-CCR description of each.
     /// `scripts_have_capital`: a script has no such description, and is only
@@ -1075,6 +1101,16 @@ namespace
             const auto kind = t["kind"].cast<std::string>();
             const qm_::Real quantity = item_or<qm_::Real>(t, "quantity", 1.0);
             const qm_::Time expiry = item_or<qm_::Time>(t, "expiry", 0.0);
+            if (kind == "cashflow")
+            {
+                // An amount already fixed: the coupon in progress of a swap
+                // that has started.
+                const qm_::Time time = t["time"].cast<qm_::Time>();
+                engine.add(qm_::make_cash_flow_future_value(time, t["amount"].cast<qm_::Real>(), model),
+                           quantity);
+                regulatory_trades.push_back(cash_flow_regulatory(t, time, quantity, "USD", 1.0));
+                continue;
+            }
             if (kind == "script")
             {
                 // A trade written in the payoff language, on rates only: its
@@ -1176,6 +1212,24 @@ namespace
                 option.exercise = expiry;
                 r.option = option;
                 regulatory_trades.push_back(r);
+                continue;
+            }
+            if (kind == "cashflow")
+            {
+                const bool in_foreign = item_or<std::string>(t, "currency", "domestic") == "foreign";
+                const qm_::Time time = t["time"].cast<qm_::Time>();
+                const qm_::Real amount = t["amount"].cast<qm_::Real>();
+                if (in_foreign)
+                    engine.add(qm_::in_foreign_currency(
+                                   qm_::make_cash_flow_future_value(time, amount, model.foreign()), model.spot()),
+                               quantity);
+                else
+                    engine.add(qm_::in_domestic_currency(
+                                   qm_::make_cash_flow_future_value(time, amount, model.domestic())),
+                               quantity);
+                regulatory_trades.push_back(cash_flow_regulatory(
+                    t, time, quantity, in_foreign ? foreign_currency : std::string("USD"),
+                    in_foreign ? model.spot() : 1.0));
                 continue;
             }
             if (asset && (kind == "fx_forward" || kind == "cross_currency_swap" ||

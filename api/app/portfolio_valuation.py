@@ -891,8 +891,8 @@ METHODOLOGY = [
     (
         "Rate and FX trades",
         [
-            "Interest rate swaps, European swaptions, FX forwards and cross-currency "
-            "swaps are over-the-counter contracts: one position is one contract, with "
+            "Interest rate swaps, European and Bermudan swaptions, FX forwards and "
+            "cross-currency swaps are over-the-counter contracts: one position is one contract, with "
             "its notional, held (+1) or on the other side (−1). They are valued on the "
             "market the xVA page uses: the SOFR (USD) and Euribor (EUR) swap curves "
             "built from the swaps DTCC publishes, the swaption vols implied by the "
@@ -909,7 +909,10 @@ METHODOLOGY = [
             "paid since its start.",
             "A swaption is priced by Bachelier's formula at the nearest at-the-money "
             "normal vol of the day's grid, whatever its strike: the traded vols carry no "
-            "smile. An FX forward and a cross-currency swap discount each leg on its "
+            "smile. A Bermudan swaption has no formula: it is priced on a lattice "
+            "under one-factor Hull-White, fitted that day to the same swaption vols "
+            "(a day with fewer than three of them has no mark). An FX forward and a "
+            "cross-currency swap discount each leg on its "
             "own swap curve and convert the euro leg at the spot rate, with no "
             "cross-currency basis (none is stored); they are valued in dollars.",
             "Their risks (Risk tab) are bumps of that market, revalued: PV01 is the "
