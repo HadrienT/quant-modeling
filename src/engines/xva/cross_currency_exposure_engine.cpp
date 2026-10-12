@@ -163,6 +163,15 @@ namespace quantModeling
                         cashflows[i] = domestic_.paid(i) + path.spot[i] * foreign_.paid(i);
             }
 
+            bool describe(xva::TwoFactorTerms &terms) const override
+            {
+                for (const Flow &f : domestic_.flows())
+                    terms.domestic.push_back({f.time, f.amount});
+                for (const Flow &f : foreign_.flows())
+                    terms.foreign.push_back({f.time, f.amount});
+                return true;
+            }
+
           private:
             Leg domestic_, foreign_;
             Real spot_;
@@ -256,6 +265,12 @@ namespace quantModeling
                     cashflows[expiry_index_] =
                         notional_ * std::max(call_ ? spot - strike_ : strike_ - spot, 0.0);
                 }
+            }
+
+            bool describe(xva::TwoFactorTerms &terms) const override
+            {
+                terms.options.push_back({strike_, expiry_, call_, notional_});
+                return true;
             }
 
           private:

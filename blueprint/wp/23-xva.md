@@ -2517,6 +2517,63 @@ Limites, dites dans les avertissements de la réponse :
   par régression (comme à deux devises) ; dividende en rendement continu
   constant.
 
+### 14.17 L'adjoint à deux facteurs (commencé le 2026-10-12)
+
+Le lot X8 différencie la simulation à un taux. Un netting set qui porte une
+seconde devise ou une action passe par le moteur à deux devises (lots X10 et
+X14), qui n'avait pas d'adjoint : ses sensibilités étaient refusées. Ce lot
+lui en donne un, sur le même plan que X8.
+
+**Ce qui est fait** (`src/engines/xva/cross_currency_xva_risks.cpp`,
+`CrossCurrencyExposureEngine::xva_risks` et `xva_values`) :
+
+- un seul code générique, instancié sur le nombre différentiable pour les
+  risques et sur `double` pour les valeurs contre lesquelles on les vérifie ;
+  mise en place enregistrée une fois avant la marque, chemins après, adjoints
+  d'un lot de 64 chemins redescendus jusqu'aux entrées (Savine, WP 17 §7) ;
+- le modèle en `T` : les transitions gaussiennes exactes de $(x_d, x_f, z)$,
+  leurs intégrales par Gauss-Legendre (`utils/gauss_legendre.hpp`, partagé
+  avec le modèle), la factorisation de Cholesky, la variance restante du
+  forward ; les mêmes tirages Philox que `simulate()` ;
+- les **entrées** : taux zéro des deux courbes (ou le rendement de dividende
+  d'un actif), $a$ et $\sigma$ des deux taux, le cours, sa volatilité, les
+  trois corrélations, les taux de hasard, les pertes en cas de défaut, les
+  spreads de financement (`XvaRiskFactor` étendu) ;
+- les **transactions** : flux connus dans chaque devise (forwards de change,
+  swaps de devises fixe contre fixe), nettés par date de paiement, et options
+  européennes sur le cours ou sur l'actif. Une transaction se décrit à plat
+  par `CrossCurrencyFutureValue::describe` (`xva::TwoFactorTerms`), parce
+  qu'un `evaluate_path` virtuel sur des `double` ne se rejoue pas sur un
+  nombre différentiable ;
+- ce que les deux adjoints partagent (courbe et transition de Hull-White en
+  `T`, lots de chemins, tape par thread) sort de `xva_risks.cpp` vers
+  `src/engines/xva/adjoint_support.hpp`.
+
+Tests (`tests/testCrossCurrencyXvaRisks.cpp`) : les valeurs du passage sur
+`double` sont celles du moteur de pricing à $10^{-9}$ près (CVA bilatéral, DVA,
+FCA, FBA, CVA unilatéral, sur le cube de `simulate()`) ; **chaque sensibilité
+adjointe est la différence centrée du même estimateur sur les mêmes
+scénarios**, à $2 \cdot 10^{-5}$ près, pour un book de forwards et de swaps de
+devises, un book avec options de change, et des options sur un actif ; mêmes
+bits sur un thread ou plusieurs ; signes (delta, vega, dividende) et
+linéarité en LGD.
+
+**Ce qui reste**, dans l'ordre :
+
+1. les **swaps et swaptions d'une devise** dans cet adjoint (aujourd'hui
+   refusés) : leurs termes sont ceux du programme à un facteur
+   (`exposure_program.hpp`), à relire sur l'état de la bonne devise et, pour
+   une transaction en devise étrangère, à convertir au cours du chemin ; la
+   rampe d'exercice des swaptions (`exercise_smoothing`) vient avec ;
+2. la **marge de variation** (CSA), comme en X8 ;
+3. des entrées du modèle aux **cotations de marché** (`xva_market_risks`) :
+   bootstrap de la seconde courbe, calage de $\sigma_S$ sur la volatilité de
+   marché (quadratique exacte, donc dérivée fermée), volatilité implicite de
+   l'action ; les corrélations, estimées, sont rapportées telles quelles ;
+4. le binding, l'API (`POST /api/xva/portfolio/sensitivities` cesse alors de
+   refuser ces netting sets) et l'affichage ;
+5. la mesure du coût (adjoint / valorisation) dans `qm_xva_aad_bench`.
+
 ---
 
 ## 15. Tests de propriété
