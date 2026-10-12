@@ -97,11 +97,30 @@ def holdings(portfolio: Portfolio, as_of: Optional[date] = None) -> Dict[str, Ho
 
 
 def validate(portfolio: Portfolio) -> None:
-    """Every trade points to a known instrument (raises ValueError)."""
+    """Every trade points to a known instrument, and every instrument traded
+    under a netting set to one of the portfolio's (raises ValueError)."""
     known = {i.id for i in portfolio.instruments}
     unknown = sorted({t.instrument_id for t in portfolio.transactions} - known)
     if unknown:
         raise ValueError(f"trades reference unknown instruments: {unknown}")
+    parties = [c.id for c in portfolio.counterparties]
+    sets = [n.id for c in portfolio.counterparties for n in c.netting_sets]
+    for what, ids in (("counterparty", parties), ("netting set", sets)):
+        repeated = sorted({i for i in ids if ids.count(i) > 1})
+        if repeated:
+            raise ValueError(f"duplicate {what} ids: {repeated}")
+    for i in portfolio.instruments:
+        if i.netting_set_id is None:
+            continue
+        if is_equity(i):
+            raise ValueError(
+                f"{i.id} is a listed instrument: it is cleared, and belongs to "
+                "no netting set"
+            )
+        if i.netting_set_id not in sets:
+            raise ValueError(
+                f"{i.id} is traded under an unknown netting set: {i.netting_set_id}"
+            )
 
 
 # ── Migration of the position-based portfolios (before the ledger) ───────────

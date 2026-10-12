@@ -22,6 +22,7 @@ from datetime import date, datetime, time, timezone
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
+from . import portfolio_counterparties
 from . import portfolio_valuation as pv
 from .portfolio_ledger import equity_instrument_id, validate
 from .portfolio_schemas import DerivativeSpec, EquitySpec, Instrument, Portfolio, Trade
@@ -40,6 +41,9 @@ class Option:
     moneyness: float
     expiry: date
     currency: str
+    #: Traded over the counter under this netting set of the examples
+    #: (portfolio_counterparties.py); None for a listed option.
+    netting_set_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -103,12 +107,22 @@ DEMOS: Tuple[Demo, ...] = (
         name="Options overlay",
         description=(
             "A covered call (100 AAPL, 100 calls sold 10 % out of the money) and "
-            "a protective put (100 SPY, 100 puts bought 10 % out of the money)."
+            "a protective put (100 SPY, 100 puts bought 10 % out of the money). "
+            "The put is bought over the counter from a dealer, under a "
+            "collateralised netting set."
         ),
         base_currency="USD",
         options=(
             Option("aapl-call", "AAPL", True, 1.10, date(2026, 12, 18), "USD"),
-            Option("spy-put", "SPY", False, 0.90, date(2027, 3, 19), "USD"),
+            Option(
+                "spy-put",
+                "SPY",
+                False,
+                0.90,
+                date(2027, 3, 19),
+                "USD",
+                netting_set_id="example-dealer-vm",
+            ),
         ),
         trades=(
             Buy(date(2026, 3, 2), "AAPL", 100, 1.0, "Covered call: the stock"),
@@ -152,6 +166,7 @@ def _option_instrument(opt: Option, first: date, md: pv.MarketData) -> Instrumen
     return Instrument(
         id=opt.key,
         label=f"{opt.underlying} {strike:g} {kind} {opt.expiry:%b-%y}",
+        netting_set_id=opt.netting_set_id,
         spec=DerivativeSpec(
             product="vanilla",
             underlying=opt.underlying,
@@ -221,6 +236,12 @@ def build(demo: Demo, md: pv.MarketData) -> Portfolio:
         updated_at=stamp,
         instruments=list(instruments.values()),
         transactions=trades,
+        # A demo with an over-the-counter trade shows the example counterparties.
+        counterparties=(
+            portfolio_counterparties.examples()
+            if any(o.netting_set_id for o in demo.options)
+            else []
+        ),
     )
     validate(pf)
     return pf

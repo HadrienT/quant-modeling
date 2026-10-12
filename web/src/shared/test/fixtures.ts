@@ -308,6 +308,51 @@ export function portfolio(name = "Desk book") {
 	};
 }
 
+/** Two of the API's example counterparties (portfolio_counterparties.py). */
+export function counterpartyExamples() {
+	const csa = {
+		threshold_counterparty: 0,
+		threshold_bank: 0,
+		minimum_transfer_amount: 500_000,
+		margin_period_of_risk_days: 10,
+		cashflows: "paid" as const,
+		initial_margin: false,
+		initial_margin_model: "auto" as const,
+		initial_margin_today: null,
+		collateral_rate_spread: 0,
+	};
+	return [
+		{
+			id: "example-dealer",
+			name: "Northgate Bank (dealer)",
+			rating: "A" as const,
+			sector: "financial" as const,
+			recovery: 0.4,
+			netting_sets: [
+				{
+					id: "example-dealer-vm",
+					name: "ISDA with CSA: variation margin",
+					csa,
+				},
+			],
+		},
+		{
+			id: "example-corporate",
+			name: "Meridian Industries (corporate)",
+			rating: "BBB" as const,
+			sector: "basic_materials_energy_industrials" as const,
+			recovery: 0.4,
+			netting_sets: [
+				{
+					id: "example-corporate-isda",
+					name: "ISDA, uncollateralised",
+					csa: null,
+				},
+			],
+		},
+	];
+}
+
 export function portfolioDemos() {
 	return [
 		{

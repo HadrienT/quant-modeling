@@ -1706,6 +1706,136 @@
         "title": "CorrelationEstimate",
         "type": "object"
       },
+      "Counterparty-Input": {
+        "description": "Who the over-the-counter trades of a portfolio face. The credit curve\nis the rating's (ICE BofA spreads, as on the credit and xVA pages); the\nsector is what the regulatory CVA capital weighs it by.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "netting_sets": {
+            "items": {
+              "$ref": "#/components/schemas/NettingSet"
+            },
+            "maxItems": 10,
+            "title": "Netting Sets",
+            "type": "array"
+          },
+          "rating": {
+            "default": "BBB",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Rating",
+            "type": "string"
+          },
+          "recovery": {
+            "default": 0.4,
+            "maximum": 0.9,
+            "minimum": 0.0,
+            "title": "Recovery",
+            "type": "number"
+          },
+          "sector": {
+            "default": "other",
+            "enum": [
+              "sovereign",
+              "local_government",
+              "financial",
+              "basic_materials_energy_industrials",
+              "consumer_transport_administrative",
+              "technology_telecommunications",
+              "health_care_utilities_professional",
+              "other"
+            ],
+            "title": "Sector",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "Counterparty",
+        "type": "object"
+      },
+      "Counterparty-Output": {
+        "description": "Who the over-the-counter trades of a portfolio face. The credit curve\nis the rating's (ICE BofA spreads, as on the credit and xVA pages); the\nsector is what the regulatory CVA capital weighs it by.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "netting_sets": {
+            "items": {
+              "$ref": "#/components/schemas/NettingSet"
+            },
+            "maxItems": 10,
+            "title": "Netting Sets",
+            "type": "array"
+          },
+          "rating": {
+            "default": "BBB",
+            "enum": [
+              "AAA",
+              "AA",
+              "A",
+              "BBB",
+              "BB",
+              "B",
+              "CCC"
+            ],
+            "title": "Rating",
+            "type": "string"
+          },
+          "recovery": {
+            "default": 0.4,
+            "maximum": 0.9,
+            "minimum": 0.0,
+            "title": "Recovery",
+            "type": "number"
+          },
+          "sector": {
+            "default": "other",
+            "enum": [
+              "sovereign",
+              "local_government",
+              "financial",
+              "basic_materials_energy_industrials",
+              "consumer_transport_administrative",
+              "technology_telecommunications",
+              "health_care_utilities_professional",
+              "other"
+            ],
+            "title": "Sector",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "Counterparty",
+        "type": "object"
+      },
       "CreditInput": {
         "properties": {
           "as_of": {
@@ -4460,6 +4590,17 @@
             "title": "Label",
             "type": "string"
           },
+          "netting_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Netting Set Id"
+          },
           "spec": {
             "discriminator": {
               "mapping": {
@@ -5637,6 +5778,37 @@
         "title": "MountainRequest",
         "type": "object"
       },
+      "NettingSet": {
+        "description": "The trades one master agreement closes out as a single net amount if\nthe counterparty defaults, and the collateral agreement on that amount\n(None: uncollateralised).",
+        "properties": {
+          "csa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CsaInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "NettingSet",
+        "type": "object"
+      },
       "Portfolio-Input": {
         "description": "A portfolio, stored as JSON (storage.py). Version 2 is a ledger:\n`instruments` and `transactions`; positions are derived from them\n(portfolio_ledger.py). Version 1 held `positions` directly and is migrated\non read.",
         "properties": {
@@ -5651,6 +5823,14 @@
             ],
             "title": "Base Currency",
             "type": "string"
+          },
+          "counterparties": {
+            "items": {
+              "$ref": "#/components/schemas/Counterparty-Input"
+            },
+            "maxItems": 50,
+            "title": "Counterparties",
+            "type": "array"
           },
           "created_at": {
             "title": "Created At",
@@ -5721,6 +5901,14 @@
             ],
             "title": "Base Currency",
             "type": "string"
+          },
+          "counterparties": {
+            "items": {
+              "$ref": "#/components/schemas/Counterparty-Output"
+            },
+            "maxItems": 50,
+            "title": "Counterparties",
+            "type": "array"
           },
           "created_at": {
             "title": "Created At",
@@ -12956,6 +13144,32 @@
           }
         },
         "summary": "Ticker Close",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/counterparty-examples": {
+      "get": {
+        "description": "Fictional counterparties with their usual netting and collateral\nterms, to copy into a portfolio (portfolio_counterparties.py).",
+        "operationId": "counterparty_examples",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Counterparty-Output"
+                  },
+                  "title": "Response Counterparty Examples",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Counterparty Examples",
         "tags": [
           "portfolios"
         ]

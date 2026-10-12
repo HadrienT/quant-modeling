@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
+from .xva_schemas import CsaInput, Rating, Sector
+
 # ---------------------------------------------------------------------------
 # Product category / type enums
 # ---------------------------------------------------------------------------
@@ -128,6 +130,34 @@ class Instrument(BaseModel):
     id: str
     label: str = ""
     spec: Union[EquitySpec, DerivativeSpec] = Field(discriminator="kind")
+    #: The netting set an over-the-counter derivative is traded under (one of
+    #: the portfolio's counterparties'). None for a listed instrument, and for
+    #: a derivative whose counterparty risk is not looked at. Not part of the
+    #: spec: who the trade faces does not change its mark.
+    netting_set_id: Optional[str] = None
+
+
+class NettingSet(BaseModel):
+    """The trades one master agreement closes out as a single net amount if
+    the counterparty defaults, and the collateral agreement on that amount
+    (None: uncollateralised)."""
+
+    id: str
+    name: str = Field(min_length=1, max_length=80)
+    csa: Optional[CsaInput] = None
+
+
+class Counterparty(BaseModel):
+    """Who the over-the-counter trades of a portfolio face. The credit curve
+    is the rating's (ICE BofA spreads, as on the credit and xVA pages); the
+    sector is what the regulatory CVA capital weighs it by."""
+
+    id: str
+    name: str = Field(min_length=1, max_length=80)
+    rating: Rating = "BBB"
+    sector: Sector = "other"
+    recovery: float = Field(default=0.4, ge=0.0, le=0.9)
+    netting_sets: List[NettingSet] = Field(default_factory=list, max_length=10)
 
 
 class Trade(BaseModel):
@@ -166,6 +196,7 @@ class Portfolio(BaseModel):
     base_currency: Currency = "EUR"
     instruments: List[Instrument] = Field(default_factory=list)
     transactions: List[Trade] = Field(default_factory=list)
+    counterparties: List[Counterparty] = Field(default_factory=list, max_length=50)
     positions: List[Position] = Field(default_factory=list)
 
 

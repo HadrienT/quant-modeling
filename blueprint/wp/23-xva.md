@@ -1273,6 +1273,10 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X8 — CVA par AAD** *(le capstone)* (fait : §14.13 ; transactions en forme fermée, CPU ; pas à travers la régression ni sur GPU) | sensibilités du CVA à tous les piliers (courbes, vols HW, hazards, financement), à travers la régression et la calibration ; sur GPU ensuite ; SA-CVA à partir de ces sensibilités | AAD = différences finies (CRN) à l'erreur MC ; coût AAD / pricing publié ; SA-CVA reproduit à la main sur un cas jouet |
 | **X9 — Page `/xva`** (fait : §14.14) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** (fait : §14.15 ; formes fermées, CPU, mesure de pricing ; un seul produit ajouté, le swap de devises) | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
+| **X11 — Contreparties et netting sets du portefeuille** (fait : §14.16) | un portefeuille porte ses contreparties (notation, secteur, recouvrement) et leurs netting sets (CSA ou non) ; un dérivé se traite sous un netting set ; sous-onglet *Counterparties* de la page Portfolio ; contreparties d'exemple | un instrument coté n'a pas de netting set ; un netting set utilisé ne se supprime pas ; le mark d'un dérivé ne dépend pas de qui il fait face |
+| **X12 — Transactions de taux et de change dans le registre** | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
+| **X13 — xVA d'un netting set du portefeuille** | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
+| **X14 — Dérivés actions dans le moteur d'exposition** | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
 
 ### 14.1 Lot X0 : ce qui est fait, et les choix d'implémentation
 
@@ -2322,6 +2326,46 @@ et change −0,14 [−0,29 ; 0,02], taux EUR et change 0,01.
 - seul l'historique depuis juillet 2026 est chargé pour les options de
   change et les courbes EUR ; le DAG de `dtcc-fx-options` n'est pas encore
   déployé (`~/data-ingest/scripts/deploy.sh`).
+
+### 14.16 Lots X11 à X14 : les xVA du portefeuille (décisions du mainteneur, 2026-10-12)
+
+La page `/xva` reste l'outil pédagogique du §13.7, avec ses portefeuilles
+d'exemple. Elle est rigide par construction : on n'y choisit pas ses
+transactions. Le mainteneur décide donc que **la page Portfolio devient
+l'endroit où l'on compose ses propres netting sets** (ce que le §16 prévoyait),
+avec trois choix :
+
+1. les dérivés actions du portefeuille doivent pouvoir entrer dans un netting
+   set, et pas seulement les transactions de taux et de change que le moteur
+   simule aujourd'hui — d'où le lot X14, un modèle joint dans le moteur C++ ;
+2. les transactions de taux et de change sont des positions comme les autres :
+   marquées chaque jour, dans la valeur et le P&L du portefeuille (lot X12) ;
+3. `/xva` est conservée telle quelle.
+
+Ordre : X11 (fait) → X12 → X13 → X14. X13 ne demande que X11 et X12 ; X14 est
+indépendant de X12 mais n'a d'interface qu'après X13.
+
+**Lot X11, ce qui est fait.** Les contreparties vivent **dans le portefeuille**
+(`Portfolio.counterparties`, `api/app/portfolio_schemas.py`), pas dans un
+magasin à part : la page Portfolio marche sans compte (registre dans le
+navigateur), et un portefeuille exporté ou copié depuis une démo emporte ainsi
+les siennes. Une contrepartie a un nom, une notation (celles de `/xva` : la
+courbe de crédit est celle de la notation, OAS ICE BofA), un secteur (BA-CVA),
+un taux de recouvrement et un à dix netting sets ; un netting set a un nom et
+un CSA facultatif, le `CsaInput` de `/xva`. Le rattachement est
+`Instrument.netting_set_id`, hors du `spec` : la clé des marks stockés
+(`MarkStore.key`) hache le `spec`, et à qui l'on fait face ne change pas un
+mark. `portfolio_ledger.validate` refuse un netting set inconnu, un identifiant
+en double, et un instrument coté sous un netting set (il est compensé). Les
+exemples (`api/app/portfolio_counterparties.py`, servis par
+`GET /api/portfolio-valuation/counterparty-examples`) sont cinq contreparties
+fictives, une par type : banque, fonds, entreprise, entreprise à haut
+rendement, souverain, avec le collatéral habituel du type (marge de variation
+des règles de marge pour les financières, rien pour les autres). La démo
+*Options overlay* traite son put de gré à gré sous l'un d'eux.
+
+Limite dite dans l'interface : l'exposition et les xVA de ces netting sets ne
+sont pas encore calculés (lots X13 et X14).
 
 ---
 

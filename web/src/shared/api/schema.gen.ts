@@ -397,6 +397,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio-valuation/counterparty-examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Counterparty Examples
+         * @description Fictional counterparties with their usual netting and collateral
+         *     terms, to copy into a portfolio (portfolio_counterparties.py).
+         */
+        get: operations["counterparty_examples"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolio-valuation/demos": {
         parameters: {
             query?: never;
@@ -2330,6 +2351,68 @@ export interface components {
              */
             weeks: number;
         };
+        /**
+         * Counterparty
+         * @description Who the over-the-counter trades of a portfolio face. The credit curve
+         *     is the rating's (ICE BofA spreads, as on the credit and xVA pages); the
+         *     sector is what the regulatory CVA capital weighs it by.
+         */
+        "Counterparty-Input": {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Netting Sets */
+            netting_sets?: components["schemas"]["NettingSet"][];
+            /**
+             * Rating
+             * @default BBB
+             * @enum {string}
+             */
+            rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Recovery
+             * @default 0.4
+             */
+            recovery: number;
+            /**
+             * Sector
+             * @default other
+             * @enum {string}
+             */
+            sector: "sovereign" | "local_government" | "financial" | "basic_materials_energy_industrials" | "consumer_transport_administrative" | "technology_telecommunications" | "health_care_utilities_professional" | "other";
+        };
+        /**
+         * Counterparty
+         * @description Who the over-the-counter trades of a portfolio face. The credit curve
+         *     is the rating's (ICE BofA spreads, as on the credit and xVA pages); the
+         *     sector is what the regulatory CVA capital weighs it by.
+         */
+        "Counterparty-Output": {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Netting Sets */
+            netting_sets?: components["schemas"]["NettingSet"][];
+            /**
+             * Rating
+             * @default BBB
+             * @enum {string}
+             */
+            rating: "AAA" | "AA" | "A" | "BBB" | "BB" | "B" | "CCC";
+            /**
+             * Recovery
+             * @default 0.4
+             */
+            recovery: number;
+            /**
+             * Sector
+             * @default other
+             * @enum {string}
+             */
+            sector: "sovereign" | "local_government" | "financial" | "basic_materials_energy_industrials" | "consumer_transport_administrative" | "technology_telecommunications" | "health_care_utilities_professional" | "other";
+        };
         /** CreditInput */
         CreditInput: {
             /**
@@ -3511,6 +3594,8 @@ export interface components {
              * @default
              */
             label: string;
+            /** Netting Set Id */
+            netting_set_id?: string | null;
             /** Spec */
             spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"];
         };
@@ -4024,6 +4109,19 @@ export interface components {
             vols: number[];
         };
         /**
+         * NettingSet
+         * @description The trades one master agreement closes out as a single net amount if
+         *     the counterparty defaults, and the collateral agreement on that amount
+         *     (None: uncollateralised).
+         */
+        NettingSet: {
+            csa?: components["schemas"]["CsaInput"] | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
          * Portfolio
          * @description A portfolio, stored as JSON (storage.py). Version 2 is a ledger:
          *     `instruments` and `transactions`; positions are derived from them
@@ -4037,6 +4135,8 @@ export interface components {
              * @enum {string}
              */
             base_currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Counterparties */
+            counterparties?: components["schemas"]["Counterparty-Input"][];
             /** Created At */
             created_at?: string;
             /** Id */
@@ -4079,6 +4179,8 @@ export interface components {
              * @enum {string}
              */
             base_currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Counterparties */
+            counterparties?: components["schemas"]["Counterparty-Output"][];
             /** Created At */
             created_at?: string;
             /** Id */
@@ -7422,6 +7524,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    counterparty_examples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Counterparty-Output"][];
                 };
             };
         };

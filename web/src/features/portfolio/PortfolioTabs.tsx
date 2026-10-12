@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import type { Portfolio, PortfolioSnapshot, PositionMark } from "@/shared/api";
-import { aggregateRisk } from "@/shared/portfolio";
+import { type Ledger, aggregateRisk } from "@/shared/portfolio";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
+import { CounterpartiesTab } from "./CounterpartiesTab";
 import { DeletePositionDialog } from "./DeletePositionDialog";
 import { HoldingsTable } from "./HoldingsTable";
 import { PnlHistory } from "./PnlHistory";
@@ -9,7 +10,10 @@ import { RiskPanel } from "./RiskPanel";
 import type { TradePreset } from "./TradeForm";
 import { TransactionsTable } from "./TransactionsTable";
 
-/** Positions, the journal, the P&L through time, and risk per underlying. */
+/**
+ * Positions, the journal, the P&L through time, risk per underlying, and
+ * the counterparties the over-the-counter trades face.
+ */
 export function PortfolioTabs({
 	pf,
 	snap,
@@ -17,6 +21,7 @@ export function PortfolioTabs({
 	onTrade,
 	onDelete,
 	onDeletePosition,
+	onSave,
 }: {
 	pf: Portfolio;
 	snap: PortfolioSnapshot | undefined;
@@ -25,6 +30,8 @@ export function PortfolioTabs({
 	onTrade: (preset: TradePreset) => void;
 	onDelete: (tradeId: string) => void;
 	onDeletePosition: (instrumentId: string) => void;
+	/** absent for a read-only portfolio */
+	onSave?: (ledger: Ledger) => void;
 }) {
 	const [deleting, setDeleting] = useState<PositionMark | null>(null);
 	const positions = useMemo(() => snap?.positions ?? [], [snap]);
@@ -60,6 +67,9 @@ export function PortfolioTabs({
 				</TabsTrigger>
 				<TabsTrigger value="history">P&L history</TabsTrigger>
 				<TabsTrigger value="risk">Risk</TabsTrigger>
+				<TabsTrigger value="counterparties">
+					Counterparties ({pf.counterparties?.length ?? 0})
+				</TabsTrigger>
 			</TabsList>
 			<TabsContent value="positions">
 				<HoldingsTable
@@ -98,6 +108,9 @@ export function PortfolioTabs({
 			</TabsContent>
 			<TabsContent value="risk">
 				<RiskPanel risk={risk} base={pf.base_currency} />
+			</TabsContent>
+			<TabsContent value="counterparties">
+				<CounterpartiesTab pf={pf} onSave={onSave} />
 			</TabsContent>
 		</Tabs>
 	);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Instrument } from "@/shared/api";
+import type { Counterparty, Instrument } from "@/shared/api";
 import { useTickerClose } from "@/shared/api";
 import {
 	type TradeDraft,
@@ -8,6 +8,7 @@ import {
 } from "@/shared/portfolio";
 import { Button, Input, Label } from "@/shared/ui";
 import { type DerivativeDraft, DerivativeFields } from "./DerivativeFields";
+import { NettingSetSelect } from "./NettingSetSelect";
 import { TickerPicker } from "./TickerPicker";
 
 export type TradePreset = {
@@ -24,14 +25,17 @@ const box =
  * Book a trade. A buy adds to a position, a sale reduces it — and selling
  * more than is held opens a short. From a position's row the instrument is
  * preset; otherwise a stock (market → ticker) or a derivative (catalog
- * product on a listed underlying) is defined here.
+ * product on a listed underlying) is defined here — a derivative with the
+ * netting set it is traded under, if it faces a counterparty.
  */
 export function TradeForm({
 	preset,
+	counterparties,
 	onBook,
 	onCancel,
 }: {
 	preset?: TradePreset;
+	counterparties: Counterparty[];
 	onBook: (instrument: Instrument, draft: TradeDraft) => void;
 	onCancel: () => void;
 }) {
@@ -44,6 +48,7 @@ export function TradeForm({
 	const [note, setNote] = useState("");
 	const [ticker, setTicker] = useState<{ t: string; name?: string }>({ t: "" });
 	const [derivative, setDerivative] = useState<DerivativeDraft | null>(null);
+	const [nettingSet, setNettingSet] = useState<string | null>(null);
 
 	const presetTicker =
 		preset?.instrument.spec.kind === "equity"
@@ -59,7 +64,10 @@ export function TradeForm({
 			? ticker.t
 				? equityInstrument(ticker.t, ticker.name)
 				: null
-			: derivative && derivativeInstrument(derivative.label, derivative.spec);
+			: derivative && {
+					...derivativeInstrument(derivative.label, derivative.spec),
+					netting_set_id: nettingSet,
+				};
 	const qty = Number(quantity);
 	const valid =
 		!!instrument &&
@@ -125,7 +133,21 @@ export function TradeForm({
 				</div>
 			)}
 			{!preset && kind === "derivative" && (
-				<DerivativeFields tradeDate={tradeDate} onChange={setDerivative} />
+				<>
+					<DerivativeFields tradeDate={tradeDate} onChange={setDerivative} />
+					<label className="flex flex-col gap-1">
+						<Label>Counterparty and netting set</Label>
+						<NettingSetSelect
+							label="Counterparty and netting set"
+							counterparties={counterparties}
+							value={nettingSet}
+							onChange={setNettingSet}
+						/>
+						<span className="text-2xs text-ink-muted">
+							Counterparties are created in the Counterparties tab.
+						</span>
+					</label>
+				</>
 			)}
 
 			<div className="grid grid-cols-2 gap-3 sm:grid-cols-5">

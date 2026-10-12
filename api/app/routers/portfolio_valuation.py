@@ -10,6 +10,7 @@ POST /api/portfolio-valuation/history    daily P&L over a window
 POST /api/portfolio-valuation/migrate    a position-based portfolio → ledger
 GET  /api/portfolio-valuation/close      a ticker's close on a date (trade form)
 GET  /api/portfolio-valuation/demos      read-only demo portfolios
+GET  /api/portfolio-valuation/counterparty-examples   example counterparties
 """
 
 from datetime import date, timedelta
@@ -20,11 +21,11 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .. import db
-from .. import portfolio_demos
+from .. import portfolio_counterparties, portfolio_demos
 from .. import portfolio_valuation as pv
 from ..logging_utils import get_logger
 from ..portfolio_ledger import migrate, validate
-from ..portfolio_schemas import Portfolio
+from ..portfolio_schemas import Counterparty, Portfolio
 from ..schemas import MethodologySection
 
 router = APIRouter(prefix="/api/portfolio-valuation", tags=["portfolios"])
@@ -262,3 +263,10 @@ async def portfolio_demos_list() -> List[DemoPortfolio]:
             continue
         out.append(DemoPortfolio(portfolio=pf, description=demo.description))
     return out
+
+
+@router.get("/counterparty-examples", response_model=List[Counterparty])
+async def counterparty_examples() -> List[Counterparty]:
+    """Fictional counterparties with their usual netting and collateral
+    terms, to copy into a portfolio (portfolio_counterparties.py)."""
+    return portfolio_counterparties.examples()
