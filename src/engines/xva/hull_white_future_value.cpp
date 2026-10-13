@@ -154,6 +154,21 @@ namespace quantModeling
                 return flow;
             }
 
+            /// A floating coupon is N (B exp(g x_s) + constant): it moves with
+            /// the state at its fixing, and with nothing once fixed today.
+            bool cashflow_gradient(std::size_t i, const Real *state,
+                                   std::vector<StateDerivative> &out) const override
+            {
+                for (const std::size_t k : dates_[i].floating_paid)
+                {
+                    const FloatingCoupon &c = floating_[k];
+                    if (c.fixing != kFixedToday)
+                        out.push_back(
+                            {c.fixing, c.scale * c.B * c.g * std::exp(c.g * state[c.fixing])});
+                }
+                return true;
+            }
+
             /// Notional × annuity of the fixed coupons after grid[i]: what one
             /// unit of fixed rate is worth.
             Real annuity(std::size_t i, const Real *state) const
@@ -396,6 +411,15 @@ namespace quantModeling
                 return underlying_.cashflow(i, state);
             }
 
+            /// The swap's once exercised, the exercise itself held fixed.
+            bool cashflow_gradient(std::size_t i, const Real *state,
+                                   std::vector<StateDerivative> &out) const override
+            {
+                if (i <= expiry_index_ || !(underlying_.value(expiry_index_, state) > 0.0))
+                    return true;
+                return underlying_.cashflow_gradient(i, state, out);
+            }
+
             /// The underlying's terms, gated at the expiry, and before it the
             /// integral of hull_white_european_swaption() with everything
             /// that does not depend on the state computed here.
@@ -610,6 +634,13 @@ namespace quantModeling
             Real cashflow(std::size_t i, const Real *) const override
             {
                 return i == index_ ? amount_ : 0.0;
+            }
+
+            /// An amount known today moves with nothing.
+            bool cashflow_gradient(std::size_t, const Real *,
+                                   std::vector<StateDerivative> &) const override
+            {
+                return true;
             }
 
             bool compile(xva::ExposureProgram &program) const override

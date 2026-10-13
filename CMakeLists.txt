@@ -85,6 +85,7 @@ target_sources(quantModeling
         src/engines/xva/hull_white_future_value.cpp
         src/engines/xva/hull_white_bermudan_value.cpp
         src/engines/xva/regression_future_value.cpp
+        src/engines/xva/pilot_targets.cpp
         src/engines/xva/script_future_value.cpp
         src/utils/bucketed_regression.cpp
         src/ml/mlp.cpp
@@ -322,6 +323,7 @@ if(QM_BUILD_TESTS)
     tests/testCrossCurrencyExposure.cpp
     tests/testCrossCurrencyXvaRisks.cpp
     tests/testExposureRegression.cpp
+    tests/testPilotTargets.cpp
     tests/testMlp.cpp
     tests/testExposureScript.cpp
     tests/testCollateral.cpp

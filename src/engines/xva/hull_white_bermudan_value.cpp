@@ -138,6 +138,16 @@ namespace quantModeling
                 return k != kNever && exercise_index_[k] < i ? tails_[k]->cashflow(i, state) : 0.0;
             }
 
+            /// The exercised swap's, the exercise date held fixed.
+            bool cashflow_gradient(std::size_t i, const Real *state,
+                                   std::vector<StateDerivative> &out) const override
+            {
+                const std::size_t k = exercised_by(i, state);
+                if (k == kNever || !(exercise_index_[k] < i))
+                    return true;
+                return tails_[k]->cashflow_gradient(i, state, out);
+            }
+
             /// 0 while it is an option; 1 + k once exercised on date k.
             std::size_t regime(std::size_t i, const Real *state) const override
             {
