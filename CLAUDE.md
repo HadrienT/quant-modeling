@@ -2,8 +2,8 @@
 
 Librairie de pricing de dérivés en **C++20**, exposée jusqu'à un produit
 utilisable : `include/quantModeling` + `src` → bindings **pybind11** →
-API **FastAPI** → front **React/Vite**. ~43 000 LOC C++ (`include/` + `src/`),
-~70 fichiers de tests GoogleTest, CI GitHub Actions.
+API **FastAPI** → front **React/Vite**. ~77 000 LOC C++ (`include/` + `src/`),
+~125 fichiers de tests GoogleTest (plus de 1 200 cas), CI GitHub Actions.
 
 Le découpage C++ est celui d'une lib de desk et il faut le préserver :
 **payoff** (`instruments/`), **modèle** (`models/`), **méthode numérique**
