@@ -52,6 +52,12 @@ namespace quantModeling
      * characteristic-function evaluations per pricing call; the truncation
      * range only needs to be roughly right; L already provides a generous
      * margin.
+     *
+     * When |x| exceeds L*sqrt(c2) -- a short maturity or a low variance,
+     * far from the money -- the range does not contain the strike. The put
+     * payoff is integrated over the part of the range below the strike
+     * only, and the price is floored at the intrinsic value, so the result
+     * there is the intrinsic value rather than a meaningless sum.
      */
     Real heston_cos_price(
         Real forward, Real strike, Real ttm, Real discount_factor,
