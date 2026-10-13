@@ -19,7 +19,18 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from api.app import credit, db, rates_derivatives, xva, xva_fx
+from api.app import (
+    auth,
+    credit,
+    db,
+    rates_derivatives,
+    storage,
+    xva,
+    xva_fx,
+    xva_record,
+)
+from api.app import replay as valuation_replay
+from api.app.audit.store import set_store_for_testing
 from api.app.main import app
 from api.app.routers import xva as xva_router
 
@@ -516,6 +527,110 @@ def test_every_run_leaves_an_audit_record_that_can_be_run_again(store):
     store["market"] = False
     client.post("/api/xva/netting-set", json={"paths": PATHS})
     assert store["events"] == []
+
+
+# ── The replay of that record (issue #141) ────────────────────────────────────
+
+
+def _recorded(store, **body) -> dict:
+    """The event a run leaves, as the audit database returns it."""
+    run(**body)
+    event_type, payload = store["events"][-1]
+    return {
+        "event_id": "xva-1",
+        "type": event_type,
+        "payload": payload.model_dump(mode="json"),
+    }
+
+
+def test_a_recorded_xva_is_reproduced_at_its_seed(store):
+    event = _recorded(store, portfolio="balanced", seed=11, counterparty_rating="BB")
+    result = xva_record.replay(event)
+    assert result.outcome == valuation_replay.ReplayOutcome.REPRODUCED
+    assert result.differences == [] and result.drifted_inputs == []
+    assert result.replayed == result.recorded
+    assert result.portfolio == "balanced"
+    assert result.recorded_device == result.replayed_device
+
+
+def test_the_replay_of_an_xva_names_a_revised_market_input(store, monkeypatch):
+    event = _recorded(store, counterparty_rating="BB")
+    by_series = {r.series_id: SPREADS_PCT[r.label] for r in credit.RATINGS}
+    by_series[xva._RATING_SERIES["BB"]] *= 1.1  # data-ingest revised one spread
+    monkeypatch.setattr(
+        db,
+        "rates_curve_snapshot",
+        lambda table, ids: (date.today(), {i: by_series[i] for i in ids}),
+    )
+    result = xva_record.replay(event)
+    assert result.outcome == valuation_replay.ReplayOutcome.DRIFTED_INPUTS
+    assert [d.name for d in result.drifted_inputs] == ["credit_spread:BB"]
+    # The figures that moved are given too. The exposure is not one of them:
+    # it does not read the credit spreads.
+    moved = {d.name for d in result.differences}
+    assert "cva" in moved and not moved & {"epe", "peak_pfe"}
+
+
+def test_the_replay_of_an_xva_reports_a_code_change_or_a_different_result(store):
+    event = _recorded(store)
+    other_build = {**event, "payload": {**event["payload"]}}
+    other_build["payload"]["code"] = {"api_sha": "0ld", "lib_build": "0ld"}
+    changed = xva_record.replay(other_build)
+    assert changed.outcome == valuation_replay.ReplayOutcome.DRIFTED_CODE
+    assert changed.recorded_code.api_sha == "0ld" and changed.differences == []
+
+    # Same inputs, same code, another CVA: never passed silently.
+    tampered = {**event, "payload": {**event["payload"]}}
+    result = dict(event["payload"]["result"])
+    result["cva"] += 1.0
+    tampered["payload"]["result"] = result
+    different = xva_record.replay(tampered)
+    assert different.outcome == valuation_replay.ReplayOutcome.NOT_REPRODUCED
+    assert [d.name for d in different.differences] == ["cva"]
+    assert different.differences[0].replayed - different.differences[0].recorded == (
+        pytest.approx(-1.0)
+    )
+
+
+def test_an_xva_of_a_portfolios_netting_set_is_not_replayable(store):
+    event = _recorded(store)
+    event["payload"]["request"]["portfolio"] = "ledger"
+    with pytest.raises(valuation_replay.NotAValuation, match="ledger"):
+        xva_record.replay(event)
+    # A request the API no longer accepts is refused too, not guessed.
+    event["payload"]["request"] = {"portfolio": "no such portfolio"}
+    with pytest.raises(valuation_replay.NotAValuation, match="no longer valid"):
+        xva_record.replay(event)
+
+
+def test_the_admin_endpoint_replays_an_xva(store, monkeypatch, tmp_path):
+    class FakeStore:
+        def __init__(self, event):
+            self.event = event
+
+        def get(self, event_id):
+            return self.event if event_id == self.event["event_id"] else None
+
+    event = _recorded(store, seed=7)
+    monkeypatch.setenv("QM_ADMIN_USERS", "boss")
+    monkeypatch.setattr(storage, "_INSTANCE", storage.LocalJsonStorage(tmp_path))
+    users = auth._load_users()
+    users["boss"] = auth.UserRecord(username="boss", hashed_password="")
+    auth._save_users(users)
+    headers = {"Authorization": f"Bearer {auth._create_token('boss')}"}
+    set_store_for_testing(FakeStore(event))
+    try:
+        r = client.post("/api/admin/replay/xva-1", headers=headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["outcome"] == "reproduced"
+        assert r.json()["replayed"]["cva"] == event["payload"]["result"]["cva"]
+        # Without the market the xVA needs, the replay says so.
+        store["market"] = False
+        assert (
+            client.post("/api/admin/replay/xva-1", headers=headers).status_code == 503
+        )
+    finally:
+        set_store_for_testing(None)
 
 
 # ── Lot X4: a Bermudan, valued by regression ─────────────────────────────────
