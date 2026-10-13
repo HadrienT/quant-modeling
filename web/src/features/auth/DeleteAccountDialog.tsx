@@ -32,7 +32,7 @@ export function DeleteAccountDialog({
 	const [typed, setTyped] = useState("");
 	const [clearBrowser, setClearBrowser] = useState(true);
 	const del = useDeleteAccount();
-	const { logout } = useSessionActions();
+	const { endSession } = useSessionActions();
 	const navigate = useNavigate();
 
 	const confirm = () =>
@@ -45,7 +45,7 @@ export function DeleteAccountDialog({
 						// storage blocked: nothing of ours is in it then
 					}
 				}
-				logout();
+				endSession();
 				onOpenChange(false);
 				toast.success("Account deleted");
 				void navigate({ to: "/" });

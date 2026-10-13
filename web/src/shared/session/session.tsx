@@ -63,7 +63,10 @@ const initialAuthError: string | null = (() => {
 type Ctx = {
 	login: (u: string, p: string) => Promise<void>;
 	register: (u: string, p: string) => Promise<void>;
+	/** sign out and reload the page, so nothing of the account stays on screen */
 	logout: () => void;
+	/** drop the session without reloading (the caller navigates itself) */
+	endSession: () => void;
 	/** open the auth dialog, e.g. from a 401 interceptor */
 	promptSignIn: () => void;
 	dialogOpen: boolean;
@@ -151,11 +154,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 		[applyToken],
 	);
 
-	const logout = useCallback(() => {
+	const endSession = useCallback(() => {
 		persistToken(null);
 		setAuthToken(null);
 		void qc.invalidateQueries();
 	}, [qc]);
+
+	// A full reload rather than an invalidation: results computed for the
+	// account (portfolios, forms filled from them) must not stay on screen.
+	const logout = useCallback(() => {
+		persistToken(null);
+		setAuthToken(null);
+		window.location.reload();
+	}, []);
 
 	const promptSignIn = useCallback(() => {
 		if (readToken()) {
@@ -192,6 +203,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 				login,
 				register,
 				logout,
+				endSession,
 				promptSignIn,
 				dialogOpen,
 				setDialogOpen,

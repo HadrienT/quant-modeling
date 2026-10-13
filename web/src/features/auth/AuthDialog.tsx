@@ -70,9 +70,12 @@ export function AuthDialog() {
 
 				{providers.data?.google && (
 					<>
-						{/* Full-page navigation: the OAuth dance happens on the API + Google. */}
+						{/* Full-page navigation: the OAuth dance happens on the API + Google,
+						    which sends the visitor back to the page named in `next`. */}
 						<a
-							href={`${getConfig().apiBase}/api/auth/google/login`}
+							href={`${getConfig().apiBase}/api/auth/google/login?next=${encodeURIComponent(
+								window.location.pathname + window.location.search,
+							)}`}
 							aria-label="Sign in with Google"
 							title="Sign in with Google"
 							className="mx-auto flex size-11 items-center justify-center rounded-full border border-hairline bg-surface shadow-sm transition-colors hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-accent"

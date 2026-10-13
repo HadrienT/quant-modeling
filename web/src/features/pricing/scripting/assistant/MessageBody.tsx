@@ -9,8 +9,10 @@ import { splitSegments } from "./segments";
 export function MessageBody({
 	message,
 	onApply,
+	onSignIn,
 }: {
 	message: ChatMessage;
+	onSignIn: () => void;
 	onApply: (script: string) => string; // returns the previous editor content
 }) {
 	const [previous, setPrevious] = useState<string | null>(null);
@@ -49,6 +51,11 @@ export function MessageBody({
 				<p role="alert" className="text-2xs text-critical">
 					{message.error}
 				</p>
+			)}
+			{message.signIn && (
+				<Button size="sm" className="self-start" onClick={onSignIn}>
+					Sign in
+				</Button>
 			)}
 			{script && (
 				<div className="flex flex-wrap items-center gap-2">

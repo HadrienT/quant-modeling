@@ -68,7 +68,9 @@ async def _http_exception_handler(_: Request, exc: HTTPException) -> JSONRespons
     return JSONResponse(
         status_code=exc.status_code,
         content=ApiError(
-            code=codes.get(exc.status_code, "error"),
+            # A route may name its own code (e.g. the assistant's anonymous
+            # quota) when the status alone does not tell the client what to do.
+            code=getattr(exc, "code", None) or codes.get(exc.status_code, "error"),
             message=str(exc.detail) if exc.detail else "Request failed",
         ).model_dump(),
         headers=getattr(exc, "headers", None),

@@ -25,6 +25,12 @@ const ROWS: { what: string; why: string; basis: string; kept: string }[] = [
 		kept: "Not stored: the model runs on the same server and forgets the conversation; only its duration and whether the script was valid are logged",
 	},
 	{
+		what: "A keyed hash of your IP address, when you use the assistant without an account",
+		why: "Count the day's free questions",
+		basis: "Legitimate interest",
+		kept: "In memory until midnight UTC, never written to disk; the address cannot be recovered from the hash",
+	},
+	{
 		what: "Web server logs: IP address, time, page or API route, status, browser user agent",
 		why: "Operate the site, investigate faults and attacks",
 		basis: "Legitimate interest",

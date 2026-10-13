@@ -18,6 +18,8 @@ export type ChatMessage = {
 	repairing?: boolean;
 	/** Assistant only: the request failed (model server down, assistant busy…). */
 	error?: string;
+	/** Assistant only: the failure is lifted by signing in (free questions used up). */
+	signIn?: boolean;
 };
 
 /** What the editor holds right now — sent with every turn so the assistant
@@ -28,10 +30,14 @@ export type EditorContext = Pick<
 >;
 
 const MAX_HISTORY = 20;
+/** Error code of the 429 that ends a visitor's free questions (api routers/assistant.py). */
+const QUOTA_EXHAUSTED = "anonymous_quota_exhausted";
 
 export function useAssistantChat(getContext: () => EditorContext) {
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [busy, setBusy] = useState(false);
+	// Free questions left today; null when signed in or before the first answer.
+	const [remaining, setRemaining] = useState<number | null>(null);
 	const abort = useRef<AbortController | null>(null);
 	const nextId = useRef(1);
 	// Latest transcript for building the request without a stale closure.
@@ -62,6 +68,8 @@ export function useAssistantChat(getContext: () => EditorContext) {
 			const ctrl = new AbortController();
 			abort.current = ctrl;
 			setBusy(true);
+			// Only a visitor's stream opens with a `quota` event.
+			let left: number | null = null;
 			try {
 				const request: ScriptingChatRequest = {
 					messages: history.map(({ role, content: c }) => ({
@@ -71,7 +79,9 @@ export function useAssistantChat(getContext: () => EditorContext) {
 					...getContext(),
 				};
 				for await (const ev of streamScriptingChat(request, ctrl.signal)) {
-					if (ev.type === "delta") {
+					if (ev.type === "quota") {
+						left = ev.remaining;
+					} else if (ev.type === "delta") {
 						patchLast((m) => ({
 							...m,
 							content: m.content + ev.text,
@@ -88,12 +98,14 @@ export function useAssistantChat(getContext: () => EditorContext) {
 				}
 			} catch (e) {
 				const err = ApiError.from(e);
-				if (err.kind !== "abort") {
-					const message =
-						err.status === 401 ? "Sign in to use the assistant." : err.message;
-					patchLast((m) => ({ ...m, error: message }));
+				if (err.code === QUOTA_EXHAUSTED) {
+					left = 0;
+					patchLast((m) => ({ ...m, error: err.message, signIn: true }));
+				} else if (err.kind !== "abort") {
+					patchLast((m) => ({ ...m, error: err.message }));
 				}
 			} finally {
+				setRemaining(left);
 				abort.current = null;
 				setBusy(false);
 				patchLast((m) => ({ ...m, repairing: false }));
@@ -108,5 +120,5 @@ export function useAssistantChat(getContext: () => EditorContext) {
 		setMessages([]);
 	}, []);
 
-	return { messages, busy, send, stop, reset };
+	return { messages, busy, remaining, send, stop, reset };
 }

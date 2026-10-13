@@ -69,8 +69,12 @@ personnel, hors périmètre. Plus de BigQuery — le projet est entièrement hor
 chat de la page `/scripting`) : il parle au `llama-server` de `~/AgenticEnv`, dont
 l'URL est `QM_LLM_BASE_URL` (défaut `http://127.0.0.1:8000/v1` hors Docker ;
 `http://172.17.0.1:8001/v1` dans les fichiers compose, via le socket
-`llama-bridge` d'AgenticEnv). Connexion (JWT) obligatoire : la prod est publique
-et la route consomme le GPU. Tout script écrit par le modèle est vérifié par le
+`llama-bridge` d'AgenticEnv). La prod est publique et la route consomme le GPU :
+un visiteur non connecté a droit à **10 questions par jour** (`assistant/quota.py`,
+compteur en mémoire par hash d'IP, plus un plafond global ; `QM_ASSISTANT_ANON_DAILY`
+et `QM_ASSISTANT_ANON_DAILY_TOTAL`), puis la route répond 429 avec le code
+`anonymous_quota_exhausted` et la page propose de se connecter. Un utilisateur
+connecté (JWT) n'est pas compté, et un des deux slots lui est réservé. Tout script écrit par le modèle est vérifié par le
 vrai parseur avant d'être proposé. `GET /api/assistant/status` (public, mis en
 cache 15 s) dit si le serveur répond et avec quel modèle : la page l'affiche,
 car le `llama-server` est partagé et peut être arrêté ou chargé avec un autre
