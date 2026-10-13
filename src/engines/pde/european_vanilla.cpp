@@ -78,22 +78,24 @@ namespace quantModeling
         // Backward in time (from T to 0)
         for (int n = N_ - 1; n >= 0; --n)
         {
-            // Build RHS: (I + 0.5*dt*L)*V
+            // Build RHS: (I + 0.5*dt*L)*V -- half a step of every term of L,
+            // the mirror image of the left-hand side below.
             for (int j = 1; j < M_; ++j)
             {
-                const Real coeff_jm1 = alpha * lambda - drift * mu;
-                const Real coeff_j = 1.0 - alpha * 2.0 * lambda - 0.5 * r * dt;
-                const Real coeff_jp1 = alpha * lambda + drift * mu;
+                const Real coeff_jm1 = 0.5 * (alpha * lambda - drift * mu);
+                const Real coeff_j = 1.0 - alpha * lambda - 0.5 * r * dt;
+                const Real coeff_jp1 = 0.5 * (alpha * lambda + drift * mu);
 
                 d[j] = coeff_jm1 * V[j - 1] + coeff_j * V[j] + coeff_jp1 * V[j + 1];
             }
 
             // Boundary conditions
-            const Real df = m.discount_curve().discount(T - n * dt);
+            const Real tau = T - n * dt;
+            const Real df = m.discount_curve().discount(tau);
             if (type == OptionType::Call)
             {
                 d[0] = 0.0;
-                d[M_] = S_grid[M_] - K * df;
+                d[M_] = S_grid[M_] * std::exp(-q * tau) - K * df;
             }
             else
             {
@@ -147,122 +149,21 @@ namespace quantModeling
         out.diagnostics = "PDE Crank-Nicolson European vanilla (M=" + std::to_string(M_) +
                           ", N=" + std::to_string(N_) + ")";
 
-        // Greeks via finite differences
-        const Real dS = S0 * 0.01;
-
-        // Delta computation (spot bump)
+        // Delta and gamma from the solved grid: central differences in x at
+        // the two nodes around x0, interpolated like the price. With
+        // S = K e^x: dV/dS = V_x / S and d2V/dS2 = (V_xx - V_x) / S^2.
+        if (x0 > x_min && x0 < x_max)
         {
-            std::vector<Real> V_temp(M_ + 1);
-            std::vector<Real> V_new_temp(M_ + 1);
-            for (int j = 0; j <= M_; ++j)
-            {
-                const Real x = x_min + j * dx;
-                const Real S = (S0 + dS) * std::exp(x - std::log(S0));
-                V_temp[j] = (*opt.payoff)(S);
-            }
-            for (int n = N_ - 1; n >= 0; --n)
-            {
-                for (int j = 1; j < M_; ++j)
-                {
-                    const Real coeff_jm1 = alpha * lambda - drift * mu;
-                    const Real coeff_j = 1.0 - alpha * 2.0 * lambda - 0.5 * r * dt;
-                    const Real coeff_jp1 = alpha * lambda + drift * mu;
-                    d[j] = coeff_jm1 * V_temp[j - 1] + coeff_j * V_temp[j] + coeff_jp1 * V_temp[j + 1];
-                }
-                const Real df = m.discount_curve().discount(T - n * dt);
-                if (type == OptionType::Call)
-                {
-                    d[0] = 0.0;
-                    d[M_] = S_grid[M_] * (S0 + dS) / S0 - K * df;
-                }
-                else
-                {
-                    d[0] = K * df;
-                    d[M_] = 0.0;
-                }
-                for (int j = 1; j < M_; ++j)
-                {
-                    a[j] = -(alpha * lambda - drift * mu) * 0.5;
-                    b[j] = 1.0 + alpha * 2.0 * lambda * 0.5 + 0.5 * r * dt;
-                    c[j] = -(alpha * lambda + drift * mu) * 0.5;
-                }
-                b[0] = 1.0;
-                c[0] = 0.0;
-                a[M_] = 0.0;
-                b[M_] = 1.0;
-                solve_tridiagonal(a, b, c, d, V_new_temp);
-                V_temp = V_new_temp;
-            }
-
-            Real x0_up = std::log((S0 + dS) / K);
-            Real npv_up = 0.0;
-            if (x0_up <= x_min)
-                npv_up = V_temp[0];
-            else if (x0_up >= x_max)
-                npv_up = V_temp[M_];
-            else
-            {
-                int j = static_cast<int>((x0_up - x_min) / dx);
-                Real w = (x0_up - (x_min + j * dx)) / dx;
-                npv_up = (1.0 - w) * V_temp[j] + w * V_temp[j + 1];
-            }
-
-            // Delta for down
-            for (int j = 0; j <= M_; ++j)
-            {
-                const Real x = x_min + j * dx;
-                const Real S = (S0 - dS) * std::exp(x - std::log(S0));
-                V_temp[j] = (*opt.payoff)(S);
-            }
-            for (int n = N_ - 1; n >= 0; --n)
-            {
-                for (int j = 1; j < M_; ++j)
-                {
-                    const Real coeff_jm1 = alpha * lambda - drift * mu;
-                    const Real coeff_j = 1.0 - alpha * 2.0 * lambda - 0.5 * r * dt;
-                    const Real coeff_jp1 = alpha * lambda + drift * mu;
-                    d[j] = coeff_jm1 * V_temp[j - 1] + coeff_j * V_temp[j] + coeff_jp1 * V_temp[j + 1];
-                }
-                const Real df = m.discount_curve().discount(T - n * dt);
-                if (type == OptionType::Call)
-                {
-                    d[0] = 0.0;
-                    d[M_] = S_grid[M_] * (S0 - dS) / S0 - K * df;
-                }
-                else
-                {
-                    d[0] = K * df;
-                    d[M_] = 0.0;
-                }
-                for (int j = 1; j < M_; ++j)
-                {
-                    a[j] = -(alpha * lambda - drift * mu) * 0.5;
-                    b[j] = 1.0 + alpha * 2.0 * lambda * 0.5 + 0.5 * r * dt;
-                    c[j] = -(alpha * lambda + drift * mu) * 0.5;
-                }
-                b[0] = 1.0;
-                c[0] = 0.0;
-                a[M_] = 0.0;
-                b[M_] = 1.0;
-                solve_tridiagonal(a, b, c, d, V_new_temp);
-                V_temp = V_new_temp;
-            }
-
-            Real x0_down = std::log((S0 - dS) / K);
-            Real npv_down = 0.0;
-            if (x0_down <= x_min)
-                npv_down = V_temp[0];
-            else if (x0_down >= x_max)
-                npv_down = V_temp[M_];
-            else
-            {
-                int j = static_cast<int>((x0_down - x_min) / dx);
-                Real w = (x0_down - (x_min + j * dx)) / dx;
-                npv_down = (1.0 - w) * V_temp[j] + w * V_temp[j + 1];
-            }
-
-            out.greeks.delta = opt.notional * (npv_up - npv_down) / (2.0 * dS);
-            out.greeks.gamma = opt.notional * (npv_up - 2.0 * npv + npv_down) / (dS * dS);
+            const int j_left = std::clamp(static_cast<int>((x0 - x_min) / dx), 1, M_ - 2);
+            const Real weight = (x0 - (x_min + j_left * dx)) / dx;
+            const auto v_x = [&](int j)
+            { return (V[j + 1] - V[j - 1]) / (2.0 * dx); };
+            const auto v_xx = [&](int j)
+            { return (V[j + 1] - 2.0 * V[j] + V[j - 1]) / (dx * dx); };
+            const Real dv = (1.0 - weight) * v_x(j_left) + weight * v_x(j_left + 1);
+            const Real d2v = (1.0 - weight) * v_xx(j_left) + weight * v_xx(j_left + 1);
+            out.greeks.delta = opt.notional * dv / S0;
+            out.greeks.gamma = opt.notional * (d2v - dv) / (S0 * S0);
         }
 
         res_ = out;

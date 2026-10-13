@@ -53,17 +53,41 @@ namespace quantModeling
     TEST(PDEVanilla, CallConvergesToBS)
     {
         const Real ana = priceAnalytic(true).npv;
-        // Use moderate grid that stays stable with CN scheme
-        const Real pde = pricePDE(true, 100, 100).npv;
-        EXPECT_NEAR(pde, ana, ana * 0.30)
-            << "PDE call should be a reasonable approximation of BS";
+        EXPECT_NEAR(pricePDE(true, 100, 100).npv, ana, 1e-2);
+        EXPECT_NEAR(pricePDE(true, 400, 400).npv, ana, 1e-3);
     }
 
     TEST(PDEVanilla, PutConvergesToBS)
     {
         const Real ana = priceAnalytic(false).npv;
-        const Real pde = pricePDE(false, 100, 100).npv;
-        EXPECT_NEAR(pde, ana, ana * 0.30);
+        EXPECT_NEAR(pricePDE(false, 100, 100).npv, ana, 1e-2);
+        EXPECT_NEAR(pricePDE(false, 400, 400).npv, ana, 1e-3);
+    }
+
+    TEST(PDEVanilla, ErrorFallsAtSecondOrderAsTheGridIsRefined)
+    {
+        // Crank-Nicolson is second order in time and in space: halving both
+        // steps divides the error by about four. A scheme that applied more
+        // than half a step of the operator on the right-hand side would not
+        // converge at all, and would blow up on the finer grids.
+        const Real ana = priceAnalytic(true).npv;
+        Real previous = std::abs(pricePDE(true, 50, 50).npv - ana);
+        for (const int steps : {100, 200, 400, 800})
+        {
+            const Real error = std::abs(pricePDE(true, steps, steps).npv - ana);
+            const Real order = std::log2(previous / error);
+            EXPECT_GT(order, 1.7) << "steps=" << steps << " error=" << error;
+            EXPECT_LT(order, 2.3) << "steps=" << steps << " error=" << error;
+            previous = error;
+        }
+    }
+
+    TEST(PDEVanilla, StaysStableWhenSpaceIsMuchFinerThanTime)
+    {
+        // dt / dx^2 = 400 here: an explicit step would be far outside its
+        // stability region.
+        const Real ana = priceAnalytic(true).npv;
+        EXPECT_NEAR(pricePDE(true, 2000, 50).npv, ana, 5e-2);
     }
 
     TEST(PDEVanilla, PriceIsFinite)
@@ -82,8 +106,7 @@ namespace quantModeling
         const Real C = pricePDE(true, 100, 100).npv;
         const Real P = pricePDE(false, 100, 100).npv;
         const Real rhs = S0 * std::exp(-q * T) - K * std::exp(-r * T);
-        // PDE may have noticeable discretisation error; allow wider tolerance
-        EXPECT_NEAR(C - P, rhs, 2.0);
+        EXPECT_NEAR(C - P, rhs, 1e-2);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -97,17 +120,15 @@ namespace quantModeling
         EXPECT_TRUE(res.greeks.gamma.has_value());
     }
 
-    TEST(PDEVanilla, CallDeltaInBounds)
+    TEST(PDEVanilla, DeltaAndGammaMatchBS)
     {
-        const auto res = pricePDE(true, 100, 100);
-        // PDE delta may have numerical noise but should be finite
-        EXPECT_TRUE(std::isfinite(*res.greeks.delta));
-    }
-
-    TEST(PDEVanilla, PutDeltaNegative)
-    {
-        const auto res = pricePDE(false, 100, 100);
-        EXPECT_TRUE(std::isfinite(*res.greeks.delta));
+        for (const bool is_call : {true, false})
+        {
+            const auto ana = priceAnalytic(is_call);
+            const auto pde = pricePDE(is_call, 400, 400);
+            EXPECT_NEAR(*pde.greeks.delta, *ana.greeks.delta, 1e-3) << "is_call=" << is_call;
+            EXPECT_NEAR(*pde.greeks.gamma, *ana.greeks.gamma, 1e-4) << "is_call=" << is_call;
+        }
     }
 
     TEST(PDEVanilla, GammaPopulated)
