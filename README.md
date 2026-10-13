@@ -1,8 +1,8 @@
 # Quant Modeling
 
-A derivatives-pricing library written the way a desk would build one — C++20
-core, exposed all the way to a usable product — built solo, end to end:
-pricing engine, API, and front end.
+A derivatives pricing and counterparty-risk library written the way a desk
+would build one — C++20 core, exposed all the way to a usable product — built
+solo, end to end: pricing and xVA engines, API, and front end.
 
 [![CI](https://github.com/HadrienT/quant-modeling/actions/workflows/ci.yml/badge.svg)](https://github.com/HadrienT/quant-modeling/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -20,9 +20,11 @@ pricing engine, API, and front end.
 `include/quantModeling` + `src` is a C++20 pricing library, split the way a
 desk library is split: **instruments** (payoffs) know nothing about market
 data; **models** know nothing about how they're solved; **engines**
-(analytic, tree, PDE, Monte Carlo) know nothing about which product they're
-pricing; a **pricer registry** wires the three together per product. No
-engine branches on a product type; no instrument reads market data.
+(analytic, tree, PDE, Monte Carlo, exposure) know nothing about which product
+they're pricing; a **pricer registry** wires the three together per product.
+No engine branches on a product type; no instrument reads market data. A
+**risk** layer on top turns simulated exposures into xVA and regulatory
+capital.
 
 That library is then carried all the way to something a non-engineer can use:
 
@@ -30,8 +32,8 @@ That library is then carried all the way to something a non-engineer can use:
 C++20 core  →  pybind11 bindings  →  FastAPI service  →  React front end
 ```
 
-Every layer is real, tested, and in the same repo: ~43k lines of C++ behind
-~70 GoogleTest suites (plus an AddressSanitizer/UBSan build), a typed Python
+Every layer is real, tested, and in the same repo: ~77k lines of C++ behind
+1,200+ GoogleTest cases (plus an AddressSanitizer/UBSan build), a typed Python
 API with its own pytest suite, and a React app whose types are generated from
 the API's OpenAPI schema — with CI that fails the build on drift.
 
@@ -56,36 +58,40 @@ real parser before showing it to you. No made-up syntax reaches the screen.
 
 ## Highlights
 
-- **~20 instruments** across vanilla, exotics (Asian, barrier, digital,
-  lookback, basket, rainbow), structured (autocall, mountain/Himalaya),
-  volatility (variance/volatility/dispersion swaps), rates, FX and commodity —
-  deliberately not growing further; the roadmap is depth, not a 21st payoff.
-- **A dozen-plus models**: Black-Scholes, Heston, Bates, SABR (+ SABR-PDE),
-  Dupire local vol (calibrated from an SVI surface via Levenberg-Marquardt),
-  rough Bergomi, Merton and Kou jump-diffusion, Hull-White / Vasicek / CIR
-  short-rate, Garman-Kohlhagen FX.
-- **Four engine families** sharing one interface: closed-form analytic,
-  binomial/trinomial trees, Crank-Nicolson PDE, and Monte Carlo (Heston QE,
-  Heston COS, a rough Bergomi hybrid scheme) with antithetic variates,
-  control variates, Sobol sequences and a Brownian bridge.
-- **Calibrated on real data**: SVI per maturity and Dupire local vol from the
-  stored option chains; Heston fitted to that surface (COS pricing,
-  Levenberg-Marquardt, exact implied-vol error reported); stochastic-local vol
-  whose leverage (particle method) makes Heston reprice every vanilla.
+- **A fixed catalogue, on purpose**: about 25 instruments across vanilla,
+  exotics (Asian, barrier, digital, lookback, basket, rainbow), structured
+  (autocall, mountain/Himalaya), volatility swaps, rates (swaps, swaptions,
+  Bermudans, caps), credit, FX and commodity. The roadmap is depth, not one
+  more payoff.
+- **Models and methods**: Black-Scholes, Heston, Bates, SABR, Dupire local
+  vol, stochastic-local vol, rough Bergomi, Merton and Kou jumps, Hull-White
+  / Vasicek / CIR, Garman-Kohlhagen — priced by closed forms, trees,
+  Crank-Nicolson PDE and Monte Carlo (Heston QE, a rough Bergomi hybrid
+  scheme, Longstaff-Schwartz) with antithetic and control variates, Sobol
+  sequences and a Brownian bridge.
+- **Calibrated on real, traded data**: SVI per maturity and Dupire local vol
+  from stored option chains; Heston fitted to that surface, and a
+  stochastic-local-vol leverage (particle method) on top; multi-curve
+  discounting from traded swaps, and Hull-White fitted to normal vols implied
+  from the swaption trades the DTCC publishes.
 - **A payoff scripting language** (lexer → parser → AST → fuzzy-logic
   evaluator, Andreasen–Savine style): one generic Monte-Carlo engine prices
-  *any* scripted payoff instead of a dedicated code path per product. The
-  model is read off the script (local vol for payoffs on each date's spot,
-  SLV for path-dependent ones, correlated Black-Scholes for several
-  underlyings), announced, and every dynamics can be compared on one seed. A
-  frozen library of 42 structures from Bouzoubaa & Osseiran is priced from a
-  term sheet, each with a computed long/short risk profile.
+  *any* scripted payoff, early exercise included, instead of a dedicated code
+  path per product. The model is read off the script, announced, and every
+  dynamics can be compared on one seed. A frozen library of 42 structures
+  from Bouzoubaa & Osseiran is priced from a term sheet.
 - **Adjoint algorithmic differentiation**: an operator-overloading tape
-  (`Number`, checkpointing, a parallel-AAD path) computing full Greek vectors
-  in roughly the cost of one extra valuation, instead of bumping every input
-  — carried through the calibration (Dupire on the tape, the SVI fits by the
+  computing full Greek vectors in roughly the cost of one extra valuation —
+  carried through the calibration (Dupire on the tape, the SVI fits by the
   implicit function theorem) to **the vega of any scripted product to each
   quoted option of the chain**.
+- **xVA, following Gregory's *The xVA Challenge***: Monte-Carlo exposure of a
+  netting set (one currency, two currencies, or a rate and a share), netting
+  and collateral, initial margin (SIMM), then CVA, DVA, FVA, MVA and KVA with
+  their Monte-Carlo errors, regulatory capital (SA-CCR, the revised CVA
+  framework), and the sensitivities of the CVA by adjoint differentiation. A
+  portfolio's trades are booked against counterparties and netting sets,
+  marked daily, and their xVA computed on stored market data.
 - **Property-based tests over exact-number tests**: call-put parity,
   `in + out = vanilla`, monotonicity bounds, measured log-log convergence
   order — not just "this number equals that number."
@@ -136,8 +142,15 @@ start-up; small runs stay on one. Design, measurements and decisions:
 | Pricing core | C++20, CMake, vcpkg, Eigen, GoogleTest, Google Benchmark, ASan/UBSan |
 | Bindings | pybind11 → a `quantmodeling` wheel |
 | API | FastAPI, Pydantic, PostgreSQL, JWT + Google OAuth (PKCE) |
-| Front end | React 19, TypeScript, Vite, TanStack Query/Router/Table, Zustand, Tailwind, react-three-fiber (WebGL vol surfaces), CodeMirror, Storybook, Vitest, Playwright |
-| Ops | Docker Compose, GitHub Actions, self-hosted behind a Cloudflare Tunnel (no cloud provider) |
+| Front end | React 19, TypeScript, Vite, TanStack Query/Router/Table, Tailwind, react-three-fiber (WebGL vol surfaces), CodeMirror, Storybook, Vitest, Playwright |
+| Ops | Docker Compose, GitHub Actions, OpenTelemetry, an audit trail on Kafka, self-hosted behind a Cloudflare Tunnel (no cloud provider) |
+
+Three sibling repositories carry what is not pricing: `data-ingest` (market
+data into Postgres),
+[`quant-platform`](https://github.com/HadrienT/quant-platform) (audit
+events, logs, metrics and traces) and
+[`quant-backtest`](https://github.com/HadrienT/quant-backtest) (the C++
+backtest engine behind the Backtest page).
 
 ## Quality bar
 
@@ -149,6 +162,8 @@ start-up; small runs stay on one. Design, measurements and decisions:
 - **Front-end discipline enforced by lint, not convention**: features can't
   import each other, `shared/` can't import a feature, and no feature file
   exceeds 230 lines — checked by a dedicated test, not a code-review habit.
+- **Every valuation can be replayed**: each pricing emits an audit event
+  with its inputs, seed and model, and an endpoint re-runs it and compares.
 - **An internal engineering log**: [`CLAUDE.md`](CLAUDE.md) documents the
   actual conventions this repo runs on (build commands, coding conventions,
   deployment model) — written for an AI pair-programming agent, but it's the
@@ -165,9 +180,9 @@ cmake --preset default && cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-The API and front end are real too, but market data (spot, option chains,
-FRED curves) comes from a separate `data-ingest` Postgres this public repo
-doesn't publish — `docker compose up --build` needs `PGPASSWORD` pointed at
+The API and front end are real too, but market data (prices, option chains,
+FRED curves, traded swaps and swaptions, credit spreads) comes from a separate
+`data-ingest` Postgres this public repo doesn't publish — `docker compose up --build` needs `PGPASSWORD` pointed at
 one to fully come up. The live demo above is the fastest way to see the whole
 stack running end to end; the full command reference (wheel build, sanitizer
 preset, Python tests, OpenAPI regeneration) is in [`CLAUDE.md`](CLAUDE.md).
