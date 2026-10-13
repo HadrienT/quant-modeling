@@ -5,6 +5,7 @@ import {
 	Briefcase,
 	Calculator,
 	ChartCandlestick,
+	History,
 	Layers,
 	ShieldAlert,
 	Waves,
@@ -20,6 +21,7 @@ type Feature = {
 		| "/xva"
 		| "/simulation"
 		| "/portfolio"
+		| "/backtest"
 		| "/products";
 	title: string;
 	text: string;
@@ -68,6 +70,12 @@ const FEATURES: Feature[] = [
 		title: "Portfolio",
 		icon: Briefcase,
 		text: "Book trades, mark derivatives every day, and follow P&L, risk, stress tests and value at risk.",
+	},
+	{
+		to: "/backtest",
+		title: "Backtest",
+		icon: History,
+		text: "Run an allocation strategy on real prices, net of costs, with a confidence interval on every figure and tests against overfitting.",
 	},
 	{
 		to: "/products",

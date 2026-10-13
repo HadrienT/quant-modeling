@@ -132,6 +132,25 @@ jobs:
           QM_STORAGE: local
         run: pytest
 
+  # blueprint/wp/25-ml.md: the training side (PyTorch, CPU build). It needs
+  # neither the C++ build nor the API; the C++ side of the same fixture runs
+  # in build-test (tests/testMlp.cpp).
+  pytest-ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the training dependencies
+        run: pip install -r ml/requirements.txt
+
+      - name: pytest ml/tests
+        run: pytest ml/tests
+
   web:
     runs-on: ubuntu-latest
     defaults:

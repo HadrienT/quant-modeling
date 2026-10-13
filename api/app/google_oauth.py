@@ -90,7 +90,33 @@ def _pkce_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
-def start_login() -> tuple[str, str]:
+def safe_next(path: Optional[str]) -> str:
+    """The page to come back to after sign-in, or "/" for anything that is not
+    plainly a path of this app: the value comes from a query string, and an
+    unchecked one would make the callback an open redirect."""
+    if (
+        not path
+        or len(path) > 512
+        or not path.startswith("/")
+        or path.startswith("//")
+        or path.startswith("/api/")
+        or any(c in path for c in "\\#")
+        or any(ord(c) < 0x20 or ord(c) == 0x7F for c in path)
+    ):
+        return "/"
+    return path
+
+
+def return_path(state_cookie: Optional[str]) -> str:
+    """Where the callback sends the visitor: the page recorded in the state
+    cookie at /login, "/" when the cookie is missing or no longer valid."""
+    try:
+        return safe_next(_read_state_cookie(state_cookie).get("next"))
+    except HTTPException:
+        return "/"
+
+
+def start_login(next_path: Optional[str] = None) -> tuple[str, str]:
     """Return (google_authorization_url, signed_state_cookie_value)."""
     _require_enabled()
     state = secrets.token_urlsafe(24)
@@ -102,6 +128,7 @@ def start_login() -> tuple[str, str]:
             "state": state,
             "verifier": verifier,
             "nonce": nonce,
+            "next": safe_next(next_path),
             "exp": datetime.now(timezone.utc) + timedelta(seconds=STATE_TTL_S),
         },
         JWT_SECRET,

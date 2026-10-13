@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Dump the FastAPI OpenAPI schema to a file.
 
-The pybind11 ``quantmodeling`` module is replaced by a recursive stub: the
-OpenAPI *shape* is defined entirely by the Pydantic models and route
-signatures, none of which need the native extension. This keeps the
+The pybind11 modules (``quantmodeling``, ``quantbacktest``) are replaced by a
+recursive stub: the OpenAPI *shape* is defined entirely by the Pydantic models
+and route signatures, none of which need a native extension. This keeps the
 ``api-contract`` CI job fast and independent of the C++ build.
 
 Usage:
@@ -37,9 +37,11 @@ class _Any:
 
 
 def _install_stub() -> None:
-    mod = types.ModuleType("quantmodeling")
-    mod.__getattr__ = lambda _name: _Any()  # type: ignore[attr-defined]
-    sys.modules["quantmodeling"] = mod
+    # Both native wheels: the pricing library and the backtest engine.
+    for name in ("quantmodeling", "quantbacktest"):
+        mod = types.ModuleType(name)
+        mod.__getattr__ = lambda _name: _Any()  # type: ignore[attr-defined]
+        sys.modules[name] = mod
     # auth.py fails fast without a real secret; provide one for the schema dump.
     import os
 

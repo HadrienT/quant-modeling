@@ -1,5 +1,6 @@
 import { HttpResponse, http } from "msw";
 import * as fx from "./fixtures";
+import backtest from "./backtest.fixtures.json";
 import rates from "./rates.fixtures.json";
 import xva from "./xva.fixtures.json";
 
@@ -259,8 +260,14 @@ export const handlers = [
 		});
 	}),
 
-	http.post("*/api/backtest/run", () =>
-		HttpResponse.json(fx.backtestResponse()),
+	http.get("*/api/backtest/universe", () =>
+		HttpResponse.json(backtest.universe),
+	),
+	http.post("*/api/backtest/strategy", () =>
+		HttpResponse.json(backtest.strategy),
+	),
+	http.post("*/api/backtest/validation", () =>
+		HttpResponse.json(backtest.validation),
 	),
 
 	http.post("*/api/auth/login", async ({ request }) => {

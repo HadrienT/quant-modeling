@@ -87,6 +87,7 @@ target_sources(quantModeling
         src/engines/xva/regression_future_value.cpp
         src/engines/xva/script_future_value.cpp
         src/utils/bucketed_regression.cpp
+        src/ml/mlp.cpp
         src/engines/xva/exposure_engine.cpp
         src/engines/xva/cross_currency_exposure_engine.cpp
         src/engines/xva/cross_currency_xva_risks.cpp
@@ -321,6 +322,7 @@ if(QM_BUILD_TESTS)
     tests/testCrossCurrencyExposure.cpp
     tests/testCrossCurrencyXvaRisks.cpp
     tests/testExposureRegression.cpp
+    tests/testMlp.cpp
     tests/testExposureScript.cpp
     tests/testCollateral.cpp
     tests/testInitialMargin.cpp
@@ -389,6 +391,7 @@ if(QM_BUILD_TESTS)
   # The script library (blueprint WP 19 lot G2 prices every product of it).
   target_compile_definitions(quantModeling_tests PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library"
+    QM_TEST_DATA_DIR="${PROJECT_SOURCE_DIR}/tests/data"
   )
 
   target_compile_options(quantModeling_tests PRIVATE

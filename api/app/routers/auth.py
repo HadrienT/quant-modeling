@@ -64,8 +64,9 @@ async def api_providers():
 
 
 @router.get("/google/login", include_in_schema=False)
-def api_google_login():
-    url, state_cookie = google_oauth.start_login()
+def api_google_login(next: Optional[str] = Query(default=None)):
+    """`next` is the page the visitor signs in from; they land back on it."""
+    url, state_cookie = google_oauth.start_login(next)
     resp = RedirectResponse(url, status_code=302)
     resp.set_cookie(
         google_oauth.STATE_COOKIE,
@@ -79,9 +80,10 @@ def api_google_login():
     return resp
 
 
-def _to_app(fragment: str) -> RedirectResponse:
-    """Hand the result to the SPA in the URL fragment (never sent to a server)."""
-    resp = RedirectResponse(f"/#{fragment}", status_code=302)
+def _to_app(fragment: str, path: str = "/") -> RedirectResponse:
+    """Hand the result to the SPA in the URL fragment (never sent to a server),
+    on the page the visitor signed in from."""
+    resp = RedirectResponse(f"{path}#{fragment}", status_code=302)
     resp.delete_cookie(google_oauth.STATE_COOKIE, path="/api/auth/google")
     return resp
 
@@ -93,14 +95,15 @@ def api_google_callback(
     error: Optional[str] = Query(default=None),
     qm_oauth_state: Optional[str] = Cookie(default=None),
 ):
+    back = google_oauth.return_path(qm_oauth_state)
     if error or not code or not state:
         # e.g. the user pressed "Cancel" on Google's consent screen
-        return _to_app("qm_auth_error=" + quote(error or "missing_code"))
+        return _to_app("qm_auth_error=" + quote(error or "missing_code"), back)
     try:
         profile = google_oauth.complete_login(
             code=code, state=state, state_cookie=qm_oauth_state
         )
     except HTTPException as exc:
-        return _to_app("qm_auth_error=" + quote(str(exc.detail)))
+        return _to_app("qm_auth_error=" + quote(str(exc.detail)), back)
     session = login_google(profile.sub, profile.email)
-    return _to_app("qm_auth=" + session.token)
+    return _to_app("qm_auth=" + session.token, back)

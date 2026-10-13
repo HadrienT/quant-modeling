@@ -79,8 +79,18 @@ export type StressBump = Schemas["StressBump"];
 export type StressResult = Schemas["StressResult"];
 export type VaRResult = Schemas["VaRResult"];
 
-export type BacktestRequest = Schemas["BacktestRequest"];
-export type BacktestResponse = Schemas["BacktestResponse"];
+export type BacktestUniverse = Schemas["UniverseResponse"];
+export type BacktestAsset = Schemas["Asset"];
+export type BacktestConfiguration = Schemas["Configuration"];
+export type BacktestStrategyRequest = Schemas["StrategyRequest"];
+export type BacktestStrategy = Schemas["StrategyResponse"];
+export type BacktestValidationRequest = Schemas["ValidationRequest"];
+export type BacktestValidation = Schemas["ValidationResponse"];
+export type BacktestRun = Schemas["Run"];
+export type BacktestReport = Schemas["Report"];
+/** A figure of the backtest engine: never without its interval, the method
+ * that produced the interval, and its convention. */
+export type BacktestMetric = Schemas["Metric"];
 
 export type AuthResponse = Schemas["AuthResponse"];
 

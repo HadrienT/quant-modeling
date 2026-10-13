@@ -309,6 +309,7 @@ Cités par WP 18 (`blueprint/wp/18-observability.md`).
 | Sujet | Référence |
 |---|---|
 | xVA (suite du WP 23 : moteur d'exposition, AMC, sensibilités) | Green, *XVA: Credit, Funding and Capital Valuation Adjustments*, Wiley, 2015 ; Andreasen & Savine (2021), partie xVA ; articles listés dans `blueprint/wp/23-xva.md` §18 |
+| Differential ML (WP 25, partie A) | Huge & Savine, « Differential Machine Learning », arXiv:2005.02347, 2020 ; autres références dans `blueprint/wp/25-ml.md` §9 |
 | Deep hedging | Buehler, Gonon, Teichmann & Wood, « Deep Hedging », *Quantitative Finance* 19(8), 1271–1291, 2019 |
 | Calibration neuronale | Horvath, Muguruza & Tomas, « Deep Learning Volatility », *Quantitative Finance* 21(1), 11–27, 2021 |
 | Arrêt optimal par réseaux | Becker, Cheridito & Jentzen, « Deep Optimal Stopping », *Journal of Machine Learning Research* 20(74), 1–25, 2019 |

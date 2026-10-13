@@ -7,9 +7,13 @@ The model is the llama-server already running on the host (AgenticEnv); this
 route adds what a raw chat lacks: the DSL prompt, and a check of every script
 the model writes against the real parser before the user sees it
 (assistant/agent.py). One GPU serves everything, so concurrent chats are
-capped and the surplus is told to retry rather than queued. Login is required
-(JWT, like the portfolio routes): the production app is public through the
-tunnel, and this route spends the owner's GPU.
+capped and the surplus is told to retry rather than queued.
+
+The production app is public through the tunnel and this route spends the
+owner's GPU, so a visitor who is not signed in only gets a few questions a day
+(assistant/quota.py, issue #175): past them the route answers 429 with the
+code `anonymous_quota_exhausted`, which the page turns into a sign-in prompt.
+Signed-in users are not counted, and one slot is always kept for them.
 """
 
 from __future__ import annotations
@@ -19,24 +23,50 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
 from ..assistant.agent import run_assistant
+from ..assistant import quota
 from ..assistant.llm import LlamaServerClient, LLMError
 from ..assistant.schemas import AssistantStatusResponse, ScriptingChatRequest
 from ..audit import emit
 from ..audit.payloads import AssistantChatPayload, AssistantOutcome
-from ..auth import require_user
+from ..auth import optional_user
 from ..cache import TTLCache
+from ..request_context import current_ip_hash
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 _MAX_CONCURRENT_CHATS = 2
 _slots = threading.BoundedSemaphore(_MAX_CONCURRENT_CHATS)
+# Visitors who are not signed in never hold every slot: one stays free for
+# signed-in users.
+_anonymous_slots = threading.BoundedSemaphore(_MAX_CONCURRENT_CHATS - 1)
+_anonymous_quota = quota.from_env()
+
+ANONYMOUS_QUOTA_CODE = "anonymous_quota_exhausted"
+
+
+class AnonymousQuotaExhausted(HTTPException):
+    """A 429 the page can tell apart from "both slots busy": `code` replaces
+    the generic `rate_limited` in the error body (main.py)."""
+
+    code = ANONYMOUS_QUOTA_CODE
+
+    def __init__(self, scope: str):
+        super().__init__(
+            status_code=429,
+            detail=(
+                "You have used today's free questions. Sign in to continue."
+                if scope == "visitor"
+                else "Today's free questions for visitors are used up. "
+                "Sign in to continue."
+            ),
+        )
 
 
 # The status is public (the page shows it before anyone signs in) and each
@@ -120,12 +150,17 @@ def _once(release: Callable[[], None]) -> Callable[[], None]:
 
 
 def _stream(
-    req: ScriptingChatRequest, release: Callable[[], None], username: str
+    req: ScriptingChatRequest,
+    release: Callable[[], None],
+    username: Optional[str],
+    remaining: Optional[int] = None,
 ) -> Iterator[str]:
     start = time.perf_counter()
     proposed = valid = 0
     failed = False
     try:
+        if remaining is not None:
+            yield _sse({"type": "quota", "remaining": remaining})
         events = run_assistant(
             model=LlamaServerClient.from_env(),
             history=[m.model_dump() for m in req.messages],
@@ -170,21 +205,44 @@ def _stream(
             "description": "text/event-stream of ScriptingChatEvent payloads.",
             "content": {"text/event-stream": {"schema": {"type": "string"}}},
         },
-        401: {"description": "Not signed in."},
-        429: {"description": "Both assistant slots are busy."},
+        429: {
+            "description": (
+                "`rate_limited`: the assistant slots are busy, retry. "
+                "`anonymous_quota_exhausted`: a visitor who is not signed in "
+                "has used the day's free questions, sign in."
+            )
+        },
     },
 )
 def scripting_chat_endpoint(
-    req: ScriptingChatRequest, user: str = Depends(require_user)
+    req: ScriptingChatRequest, user: Optional[str] = Depends(optional_user)
 ) -> StreamingResponse:
-    if not _slots.acquire(blocking=False):
-        raise HTTPException(
-            status_code=429,
-            detail="The assistant is busy with other requests. Retry in a moment.",
-        )
-    release = _once(_slots.release)
+    held = [_slots] if user else [_anonymous_slots, _slots]
+    acquired: list[threading.BoundedSemaphore] = []
+
+    def free() -> None:
+        for slot in acquired:
+            slot.release()
+
+    for slot in held:
+        if not slot.acquire(blocking=False):
+            free()
+            raise HTTPException(
+                status_code=429,
+                detail="The assistant is busy with other requests. Retry in a moment.",
+            )
+        acquired.append(slot)
+    remaining: Optional[int] = None
+    if user is None:
+        # Counted once a slot is held: a "busy" answer costs the visitor nothing.
+        try:
+            remaining = _anonymous_quota.consume(current_ip_hash())
+        except quota.QuotaExhausted as exc:
+            free()
+            raise AnonymousQuotaExhausted(exc.scope) from None
+    release = _once(free)
     return StreamingResponse(
-        _stream(req, release, user),
+        _stream(req, release, user, remaining),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         background=BackgroundTask(release),

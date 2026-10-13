@@ -205,3 +205,54 @@ def test_password_users_cannot_claim_provider_namespace_or_log_in_to_google_acco
     with pytest.raises(HTTPException) as e:
         auth.login_user("google:1234567890", "")  # empty hash must never match
     assert e.value.status_code == 401
+
+
+# ── Coming back to the page the visitor signed in from ───────────────────────
+
+
+def test_sign_in_returns_to_the_page_it_started_from(fake_google):
+    c = TestClient(app, base_url="https://qm.example.com")
+    r = c.get(
+        "/api/auth/google/login",
+        params={"next": "/pricing/vanilla?ticker=SPY"},
+        follow_redirects=False,
+    )
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    cookie = google_oauth._read_state_cookie(r.cookies[google_oauth.STATE_COOKIE])
+    fake_google["claims"]["nonce"] = cookie["nonce"]
+    r = c.get(
+        "/api/auth/google/callback",
+        params={"code": "good-code", "state": state},
+        follow_redirects=False,
+    )
+    assert r.headers["location"].startswith("/pricing/vanilla?ticker=SPY#qm_auth=")
+
+
+def test_cancelling_also_returns_to_that_page():
+    c = TestClient(app, base_url="https://qm.example.com")
+    c.get("/api/auth/google/login", params={"next": "/xva"}, follow_redirects=False)
+    r = c.get(
+        "/api/auth/google/callback",
+        params={"error": "access_denied"},
+        follow_redirects=False,
+    )
+    assert r.headers["location"] == "/xva#qm_auth_error=access_denied"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://evil.example.com/",
+        "//evil.example.com/",
+        "/\\evil.example.com",
+        "pricing",
+        "/api/auth/google/login",
+        "/a#qm_auth=forged",
+        "/a\nSet-Cookie: x=1",
+        "/" + "a" * 600,
+        "",
+        None,
+    ],
+)
+def test_only_a_path_of_this_app_is_accepted_as_return_page(target):
+    assert google_oauth.safe_next(target) == "/"

@@ -15,9 +15,9 @@ export interface paths {
         put?: never;
         /**
          * Replay Valuation Endpoint
-         * @description Re-prices the valuation recorded under `event_id` and compares:
-         *     `reproduced`, `drifted_inputs` (which datum), `drifted_code` (from which
-         *     build to which) or `not_reproduced`.
+         * @description Re-runs the valuation or the backtest recorded under `event_id` and
+         *     compares: `reproduced`, `drifted_inputs` (which datum), `drifted_code`
+         *     (from which build to which) or `not_reproduced`.
          */
         post: operations["replay_valuation"];
         delete?: never;
@@ -155,7 +155,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/backtest/run": {
+    "/api/backtest/strategy": {
         parameters: {
             query?: never;
             header?: never;
@@ -164,13 +164,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Run Backtest
-         * @description Optimise a portfolio of assets over a historical window, then track its
-         *     performance forward. Returns allocation, portfolio value time series,
-         *     performance metrics, and CAPM alpha/beta vs S&P 500.
-         */
-        post: operations["run_backtest"];
+        /** Backtest Strategy */
+        post: operations["backtest_strategy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/universe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backtest Universe */
+        get: operations["backtest_universe"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/validation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backtest Validation */
+        post: operations["backtest_validation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1677,18 +1706,18 @@ export interface components {
              */
             mva_error: number;
         };
-        /** AllocationRow */
-        AllocationRow: {
-            /** End Price */
-            end_price: number;
-            /** Return Pct */
-            return_pct: number;
-            /** Start Price */
-            start_price: number;
-            /** Ticker */
-            ticker: string;
-            /** Weight */
-            weight: number;
+        /** Allocations */
+        Allocations: {
+            /** Dates */
+            dates: string[];
+            /** Eligible */
+            eligible: number[];
+            /** In Sample Sharpe */
+            in_sample_sharpe: (number | null)[];
+            /** Shrinkage */
+            shrinkage: (number | null)[];
+            /** Weights */
+            weights: number[][];
         };
         /**
          * AmericanEngineType
@@ -1769,6 +1798,23 @@ export interface components {
             strike: number;
             /** Vol */
             vol: number;
+        };
+        /** Asset */
+        Asset: {
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+            /** Name */
+            name: string;
+            /** Ticker */
+            ticker: string;
         };
         /**
          * AssistantStatusResponse
@@ -1914,82 +1960,42 @@ export interface components {
             /** Vol */
             vol: number;
         };
-        /** BacktestMetrics */
-        BacktestMetrics: {
-            /** Alpha */
-            alpha?: number | null;
-            /** Annualized Return Pct */
-            annualized_return_pct: number;
-            /** Ath */
-            ath: number;
-            /** Atl */
-            atl: number;
-            /** Beta */
-            beta?: number | null;
-            /** Max Drawdown */
-            max_drawdown: number;
-            /** Optimal Sharpe */
-            optimal_sharpe: number;
-            /** Sharpe Ratio */
-            sharpe_ratio: number;
-            /** Total Return Pct */
-            total_return_pct: number;
+        /**
+         * BacktestEngine
+         * @description The `quantbacktest` wheel that ran: its version, its commit, and the
+         *     commit of quantModeling it prices with (its hedging module).
+         */
+        BacktestEngine: {
+            /** Git Sha */
+            git_sha: string;
+            /** Quantmodeling Sha */
+            quantmodeling_sha: string;
+            /** Version */
+            version: string;
         };
-        /** BacktestRequest */
-        BacktestRequest: {
-            /**
-             * Initial Capital
-             * @default 10000
-             */
-            initial_capital: number;
-            /**
-             * Max Share
-             * @description Maximum weight for any single asset
-             * @default 0.4
-             */
-            max_share: number;
-            /**
-             * Min Share
-             * @description Minimum weight threshold; assets below are dropped
-             * @default 0
-             */
-            min_share: number;
-            /**
-             * Opt End
-             * Format: date
-             * @description End of optimisation window and start of investment
-             */
-            opt_end: string;
-            /**
-             * Opt Start
-             * Format: date
-             * @description Start of look-back / optimisation window
-             */
-            opt_start: string;
-            /**
-             * Rebalance Freq
-             * @description Rebalance every N business days. 0 = static allocation
-             * @default 0
-             */
-            rebalance_freq: number;
-            /** Tickers */
-            tickers: string[];
-        };
-        /** BacktestResponse */
-        BacktestResponse: {
-            /** Allocation */
-            allocation: components["schemas"]["AllocationRow"][];
-            metrics: components["schemas"]["BacktestMetrics"];
-            /** Opt End */
-            opt_end: string;
-            /** Opt Start */
-            opt_start: string;
-            /** Portfolio Values */
-            portfolio_values: components["schemas"]["PortfolioPoint"][];
-            /** Sp500 Values */
-            sp500_values?: components["schemas"]["PortfolioPoint"][] | null;
-            /** Warnings */
-            warnings: string[];
+        /** BacktestReplayResponse */
+        BacktestReplayResponse: {
+            current_code: components["schemas"]["CodeBuild"];
+            current_engine: components["schemas"]["BacktestEngine"];
+            /** Differences */
+            differences: components["schemas"]["DriftedFigure"][];
+            /** Drifted Inputs */
+            drifted_inputs: components["schemas"]["DriftedTable"][];
+            /** Event Id */
+            event_id: string;
+            /** Kind */
+            kind: string;
+            outcome: components["schemas"]["ReplayOutcome"];
+            recorded_code: components["schemas"]["CodeBuild"];
+            recorded_engine: components["schemas"]["BacktestEngine"];
+            /** Recorded Headline */
+            recorded_headline: {
+                [key: string]: number | null;
+            };
+            /** Replayed Headline */
+            replayed_headline: {
+                [key: string]: number | null;
+            };
         };
         /**
          * BarrierKind
@@ -2406,6 +2412,29 @@ export interface components {
              */
             gpus?: string[];
         };
+        /** Configuration */
+        Configuration: {
+            /**
+             * Lookback
+             * @description Trading days
+             */
+            lookback: number;
+            /**
+             * Max Weight
+             * @default 1
+             */
+            max_weight: number;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "minimum_variance" | "maximum_sharpe" | "risk_parity" | "equal_weight";
+            /**
+             * Rebalance
+             * @description "monthly", or a number of trading days
+             */
+            rebalance: "monthly" | number;
+        };
         /** CorrelationEstimate */
         CorrelationEstimate: {
             /** High */
@@ -2422,6 +2451,15 @@ export interface components {
              * @description Weekly changes the estimate rests on
              */
             weeks: number;
+        };
+        /** CostSummary */
+        CostSummary: {
+            /** Annual Cost Bps */
+            annual_cost_bps: number | null;
+            /** Annualized Turnover */
+            annualized_turnover: number | null;
+            break_even_cost: components["schemas"]["Metric"] | null;
+            participation: components["schemas"]["Participation"] | null;
         };
         /**
          * Counterparty
@@ -2630,6 +2668,25 @@ export interface components {
              */
             single_curve: boolean;
         };
+        /** DataRead */
+        DataRead: {
+            /** Days */
+            days: number;
+            /** Fingerprints */
+            fingerprints: {
+                [key: string]: string;
+            };
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+        };
         /**
          * DatedAsianRequest
          * @description Average-price Asian priced from calendar fixing dates through the
@@ -2690,6 +2747,21 @@ export interface components {
             valuation_date?: string;
             /** Vol */
             vol: number;
+        };
+        /** DeflatedSharpe */
+        DeflatedSharpe: {
+            /** Best */
+            best: number;
+            /** Deflated Sharpe Ratio */
+            deflated_sharpe_ratio: number | null;
+            /** Expected Maximum */
+            expected_maximum: number | null;
+            /** Sharpe */
+            sharpe: number | null;
+            /** Sharpe Deviation */
+            sharpe_deviation: number | null;
+            /** Trials */
+            trials: number;
         };
         /**
          * DeltaBucketRow
@@ -2850,6 +2922,15 @@ export interface components {
             /** Weights */
             weights?: number[];
         };
+        /** DriftedFigure */
+        DriftedFigure: {
+            /** Name */
+            name: string;
+            /** Recorded */
+            recorded: number | null;
+            /** Replayed */
+            replayed: number | null;
+        };
         /** DriftedInput */
         DriftedInput: {
             /** Current As Of */
@@ -2862,6 +2943,24 @@ export interface components {
             recorded_as_of: string | null;
             /** Recorded Hash */
             recorded_hash: string | null;
+        };
+        /** DriftedTable */
+        DriftedTable: {
+            /** Current Fingerprint */
+            current_fingerprint: string | null;
+            /** Name */
+            name: string;
+            /** Recorded Fingerprint */
+            recorded_fingerprint: string | null;
+        };
+        /** EngineBuild */
+        EngineBuild: {
+            /** Git Sha */
+            git_sha: string;
+            /** Quantmodeling Sha */
+            quantmodeling_sha: string;
+            /** Version */
+            version: string;
         };
         /**
          * EngineType
@@ -3031,6 +3130,38 @@ export interface components {
             /** Vol */
             vol: number;
         };
+        /** FactorRegression */
+        FactorRegression: {
+            alpha: components["schemas"]["Metric"];
+            /** Alpha T Statistic */
+            alpha_t_statistic: number | null;
+            /** Beta T Statistics */
+            beta_t_statistics: (number | null)[];
+            /** Betas */
+            betas: components["schemas"]["Metric"][];
+            /** Dataset */
+            dataset: string;
+            /** Factors */
+            factors: string[];
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+            /** Newey West Lags */
+            newey_west_lags: number;
+            /** Observations */
+            observations: number;
+            /** R Squared */
+            r_squared: number | null;
+            /** Residual Volatility */
+            residual_volatility: number | null;
+        };
         /** FigureCell */
         FigureCell: {
             /** Formula */
@@ -3092,6 +3223,35 @@ export interface components {
             notional: number;
             /** Rate */
             rate: number;
+        };
+        /** Fold */
+        Fold: {
+            /** Chosen */
+            chosen: number;
+            /** In Sample Sharpe */
+            in_sample_sharpe: number | null;
+            /** Out Of Sample Sharpe */
+            out_of_sample_sharpe: number | null;
+            /**
+             * Test Begin
+             * Format: date
+             */
+            test_begin: string;
+            /**
+             * Test End
+             * Format: date
+             */
+            test_end: string;
+            /**
+             * Train Begin
+             * Format: date
+             */
+            train_begin: string;
+            /**
+             * Train End
+             * Format: date
+             */
+            train_end: string;
         };
         /**
          * ForeignMarket
@@ -4010,6 +4170,27 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * Metric
+         * @description A figure as the engine returns it: never without its interval, the
+         *     method that produced the interval, and its convention.
+         */
+        Metric: {
+            /** Confidence */
+            confidence: number | null;
+            /** Convention */
+            convention: string;
+            /** Lower */
+            lower: number | null;
+            /** Method */
+            method: string;
+            /** Standard Error */
+            standard_error: number | null;
+            /** Upper */
+            upper: number | null;
+            /** Value */
+            value: number | null;
+        };
         /** MigrateRequest */
         MigrateRequest: {
             portfolio: components["schemas"]["Portfolio-Input"];
@@ -4251,6 +4432,28 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** Overfitting */
+        Overfitting: {
+            /** Logits */
+            logits: (number | null)[];
+            /** Mean In Sample Sharpe */
+            mean_in_sample_sharpe: number | null;
+            /** Mean Out Of Sample Sharpe */
+            mean_out_of_sample_sharpe: number | null;
+            /** Probability */
+            probability: number | null;
+            /** Splits */
+            splits: number;
+        };
+        /** Participation */
+        Participation: {
+            /** Executions */
+            executions: number;
+            /** Maximum */
+            maximum: number | null;
+            /** Median */
+            median: number | null;
+        };
         /**
          * Portfolio
          * @description A portfolio, stored as JSON (storage.py). Version 2 is a ledger:
@@ -4338,13 +4541,6 @@ export interface components {
              * @default 1
              */
             version: number;
-        };
-        /** PortfolioPoint */
-        PortfolioPoint: {
-            /** Date */
-            date: string;
-            /** Value */
-            value: number;
         };
         /**
          * PortfolioRiskSummary
@@ -4760,6 +4956,32 @@ export interface components {
         Providers: {
             /** Google */
             google: boolean;
+        };
+        /** PurgedCv */
+        PurgedCv: {
+            /** Chosen */
+            chosen: number[];
+            /** In Sample Sharpes */
+            in_sample_sharpes: (number | null)[];
+            /** Out Of Sample Sharpes */
+            out_of_sample_sharpes: (number | null)[];
+            /** Path Sharpes */
+            path_sharpes: (number | null)[];
+            /** Paths */
+            paths: number;
+            /** Splits */
+            splits: number;
+        };
+        /** QualityFlag */
+        QualityFlag: {
+            /** Count */
+            count: number;
+            /** Message */
+            message: string;
+            /** Severity */
+            severity: string;
+            /** Ticker */
+            ticker: string | null;
         };
         /**
          * QuantoRequest
@@ -5263,6 +5485,27 @@ export interface components {
             /** Replayed Npv */
             replayed_npv: number;
         };
+        /** Report */
+        Report: {
+            /** Metrics */
+            metrics: {
+                [key: string]: components["schemas"]["Metric"];
+            };
+            /** Minimum Track Record Years */
+            minimum_track_record_years: number | null;
+            /** Observations */
+            observations: number;
+            /** Omitted */
+            omitted: {
+                [key: string]: string;
+            };
+            /** Probabilistic Sharpe Ratio */
+            probabilistic_sharpe_ratio: number | null;
+            /** T Statistic */
+            t_statistic: number | null;
+            /** Years */
+            years: number;
+        };
         /**
          * RiskEntry
          * @description One model parameter's AAD sensitivity (blueprint/wp/17-aad.md §13.1).
@@ -5373,6 +5616,24 @@ export interface components {
              * @description Forward variance xi0(t) from the variance-swap curve.
              */
             xi_values: number[];
+        };
+        /**
+         * Rules
+         * @description What a rule would propose for two fields the request sets itself.
+         */
+        Rules: {
+            /** Newey West Lag */
+            newey_west_lag: number;
+            /** Optimal Block Length */
+            optimal_block_length: number | null;
+        };
+        /** Run */
+        Run: {
+            report: components["schemas"]["Report"];
+            /** Returns */
+            returns: (number | null)[] | null;
+            /** Value */
+            value: number[] | null;
         };
         /** SABRPathRequest */
         SABRPathRequest: {
@@ -5897,6 +6158,19 @@ export interface components {
             /** Value */
             value: number | null;
         };
+        /** SharpeDifference */
+        SharpeDifference: {
+            analytical: components["schemas"]["Metric"];
+            bootstrap: components["schemas"]["Metric"] | null;
+            /** Bootstrap P Value */
+            bootstrap_p_value: number | null;
+            /** Correlation */
+            correlation: number | null;
+            /** P Value */
+            p_value: number | null;
+            /** Z Statistic */
+            z_statistic: number | null;
+        };
         /**
          * SimmToday
          * @description Today's ISDA SIMM of the netting set, by margin type.
@@ -6072,6 +6346,98 @@ export interface components {
             unit: string;
             /** Values */
             values: (components["schemas"]["FigureCell"] | null)[];
+        };
+        /** StrategyRequest */
+        StrategyRequest: {
+            /** Bootstrap Replications */
+            bootstrap_replications: number;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Factor Dataset
+             * @default ff3
+             * @enum {string}
+             */
+            factor_dataset: "ff3" | "ff5";
+            /** Initial Capital */
+            initial_capital: number;
+            /**
+             * Lookback
+             * @description Trading days
+             */
+            lookback: number;
+            /**
+             * Max Weight
+             * @default 1
+             */
+            max_weight: number;
+            /** Mean Block Length */
+            mean_block_length: number;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "minimum_variance" | "maximum_sharpe" | "risk_parity" | "equal_weight";
+            /** Newey West Lags */
+            newey_west_lags: number;
+            /**
+             * Proportional Cost Bps
+             * @description Cost of a trade, in basis points of the amount traded
+             */
+            proportional_cost_bps: number;
+            /**
+             * Rebalance
+             * @description "monthly", or a number of trading days
+             */
+            rebalance: "monthly" | number;
+            /** Seed */
+            seed: number;
+            /**
+             * Start
+             * Format: date
+             * @description First day the strategy is invested
+             */
+            start: string;
+            /** Tickers */
+            tickers: string[];
+            /**
+             * Timing
+             * @default next_close
+             * @enum {string}
+             */
+            timing: "next_close" | "next_open";
+        };
+        /** StrategyResponse */
+        StrategyResponse: {
+            allocations: components["schemas"]["Allocations"];
+            benchmark: components["schemas"]["Run"];
+            /** Benchmark Ticker */
+            benchmark_ticker: string;
+            buy_and_hold: components["schemas"]["Run"];
+            /** Compute Ms */
+            compute_ms: number;
+            /** Conventions */
+            conventions: {
+                [key: string]: string;
+            };
+            cost_summary: components["schemas"]["CostSummary"];
+            data: components["schemas"]["DataRead"];
+            /** Dates */
+            dates: string[];
+            engine: components["schemas"]["EngineBuild"];
+            equal_weight: components["schemas"]["Run"];
+            factor_regression: components["schemas"]["FactorRegression"];
+            gross: components["schemas"]["Run"] | null;
+            /** Quality */
+            quality: components["schemas"]["QualityFlag"][];
+            rules: components["schemas"]["Rules"];
+            sharpe_difference: components["schemas"]["SharpeDifference"];
+            strategy: components["schemas"]["Run"];
+            /** Tickers */
+            tickers: string[];
         };
         /**
          * StressBump
@@ -6571,6 +6937,28 @@ export interface components {
              */
             vol_source: string;
         };
+        /** UniverseResponse */
+        UniverseResponse: {
+            /** Benchmark */
+            benchmark: string;
+            /** Cash Series */
+            cash_series: string;
+            engine: components["schemas"]["EngineBuild"];
+            /** Etfs */
+            etfs: components["schemas"]["Asset"][];
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /**
+             * Last
+             * Format: date
+             */
+            last: string;
+            /** Stocks */
+            stocks: components["schemas"]["Asset"][];
+        };
         /** UserInfo */
         UserInfo: {
             /** Created At */
@@ -6631,6 +7019,80 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * ValidationRequest
+         * @description Every configuration tried is in `grid`: the number of columns is the
+         *     number of trials the deflated Sharpe ratio corrects for.
+         */
+        ValidationRequest: {
+            /** Blocks */
+            blocks: number;
+            /** Embargo */
+            embargo: number;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Grid */
+            grid: components["schemas"]["Configuration"][];
+            /** Groups */
+            groups: number;
+            /** Initial Capital */
+            initial_capital: number;
+            /**
+             * Proportional Cost Bps
+             * @description Cost of a trade, in basis points of the amount traded
+             */
+            proportional_cost_bps: number;
+            /** Purge */
+            purge: number;
+            /**
+             * Start
+             * Format: date
+             * @description First day the strategy is invested
+             */
+            start: string;
+            /**
+             * Test
+             * @description Walk-forward: applied period
+             */
+            test: number;
+            /** Test Groups */
+            test_groups: number;
+            /** Tickers */
+            tickers: string[];
+            /**
+             * Timing
+             * @default next_close
+             * @enum {string}
+             */
+            timing: "next_close" | "next_open";
+            /**
+             * Train
+             * @description Walk-forward: choosing window
+             */
+            train: number;
+        };
+        /** ValidationResponse */
+        ValidationResponse: {
+            /** Compute Ms */
+            compute_ms: number;
+            data: components["schemas"]["DataRead"];
+            /** Dates */
+            dates: string[];
+            deflated_sharpe: components["schemas"]["DeflatedSharpe"];
+            /** Descriptions */
+            descriptions: string[];
+            engine: components["schemas"]["EngineBuild"];
+            /** Final Values */
+            final_values: (number | null)[];
+            overfitting: components["schemas"]["Overfitting"];
+            purged_cv: components["schemas"]["PurgedCv"];
+            /** Tickers */
+            tickers: string[];
+            walk_forward: components["schemas"]["WalkForward"];
         };
         /** VanillaRequest */
         VanillaRequest: {
@@ -6773,6 +7235,18 @@ export interface components {
             strike_vol: number;
             /** Vol */
             vol: number;
+        };
+        /** WalkForward */
+        WalkForward: {
+            /**
+             * First
+             * Format: date
+             */
+            first: string;
+            /** Folds */
+            folds: components["schemas"]["Fold"][];
+            /** Returns */
+            returns: (number | null)[];
         };
         /**
          * WrongWayScenario
@@ -7209,7 +7683,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReplayResponse"];
+                    "application/json": components["schemas"]["ReplayResponse"] | components["schemas"]["BacktestReplayResponse"];
                 };
             };
             /** @description Not an administrator. */
@@ -7266,13 +7740,6 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description Not signed in. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -7282,7 +7749,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Both assistant slots are busy. */
+            /** @description `rate_limited`: the assistant slots are busy, retry. `anonymous_quota_exhausted`: a visitor who is not signed in has used the day's free questions, sign in. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -7488,7 +7955,7 @@ export interface operations {
             };
         };
     };
-    run_backtest: {
+    backtest_strategy: {
         parameters: {
             query?: never;
             header?: never;
@@ -7497,7 +7964,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["BacktestRequest"];
+                "application/json": components["schemas"]["StrategyRequest"];
             };
         };
         responses: {
@@ -7507,17 +7974,94 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BacktestResponse"];
+                    "application/json": components["schemas"]["StrategyResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description A datum is missing, or the engine refuses the request. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description The market data store is unreachable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
+            };
+        };
+    };
+    backtest_universe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UniverseResponse"];
+                };
+            };
+            /** @description A datum is missing, or the engine refuses the request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The market data store is unreachable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    backtest_validation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ValidationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationResponse"];
+                };
+            };
+            /** @description A datum is missing, or the engine refuses the request. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The market data store is unreachable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

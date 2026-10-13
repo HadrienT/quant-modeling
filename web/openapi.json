@@ -208,37 +208,70 @@
         "title": "Adjustments",
         "type": "object"
       },
-      "AllocationRow": {
+      "Allocations": {
         "properties": {
-          "end_price": {
-            "title": "End Price",
-            "type": "number"
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
           },
-          "return_pct": {
-            "title": "Return Pct",
-            "type": "number"
+          "eligible": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Eligible",
+            "type": "array"
           },
-          "start_price": {
-            "title": "Start Price",
-            "type": "number"
+          "in_sample_sharpe": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "In Sample Sharpe",
+            "type": "array"
           },
-          "ticker": {
-            "title": "Ticker",
-            "type": "string"
+          "shrinkage": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Shrinkage",
+            "type": "array"
           },
-          "weight": {
-            "title": "Weight",
-            "type": "number"
+          "weights": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Weights",
+            "type": "array"
           }
         },
         "required": [
-          "ticker",
-          "weight",
-          "start_price",
-          "end_price",
-          "return_pct"
+          "dates",
+          "weights",
+          "eligible",
+          "in_sample_sharpe",
+          "shrinkage"
         ],
-        "title": "AllocationRow",
+        "title": "Allocations",
         "type": "object"
       },
       "AmericanEngineType": {
@@ -394,6 +427,36 @@
           "is_call"
         ],
         "title": "AsianRequest",
+        "type": "object"
+      },
+      "Asset": {
+        "properties": {
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "name",
+          "first",
+          "last"
+        ],
+        "title": "Asset",
         "type": "object"
       },
       "AssistantStatusResponse": {
@@ -620,190 +683,112 @@
         "title": "BSPathRequest",
         "type": "object"
       },
-      "BacktestMetrics": {
+      "BacktestEngine": {
+        "description": "The `quantbacktest` wheel that ran: its version, its commit, and the\ncommit of quantModeling it prices with (its hedging module).",
         "properties": {
-          "alpha": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alpha"
+          "git_sha": {
+            "title": "Git Sha",
+            "type": "string"
           },
-          "annualized_return_pct": {
-            "title": "Annualized Return Pct",
-            "type": "number"
+          "quantmodeling_sha": {
+            "title": "Quantmodeling Sha",
+            "type": "string"
           },
-          "ath": {
-            "title": "Ath",
-            "type": "number"
-          },
-          "atl": {
-            "title": "Atl",
-            "type": "number"
-          },
-          "beta": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Beta"
-          },
-          "max_drawdown": {
-            "title": "Max Drawdown",
-            "type": "number"
-          },
-          "optimal_sharpe": {
-            "title": "Optimal Sharpe",
-            "type": "number"
-          },
-          "sharpe_ratio": {
-            "title": "Sharpe Ratio",
-            "type": "number"
-          },
-          "total_return_pct": {
-            "title": "Total Return Pct",
-            "type": "number"
+          "version": {
+            "title": "Version",
+            "type": "string"
           }
         },
         "required": [
-          "ath",
-          "atl",
-          "total_return_pct",
-          "annualized_return_pct",
-          "max_drawdown",
-          "sharpe_ratio",
-          "optimal_sharpe"
+          "version",
+          "git_sha",
+          "quantmodeling_sha"
         ],
-        "title": "BacktestMetrics",
+        "title": "BacktestEngine",
         "type": "object"
       },
-      "BacktestRequest": {
+      "BacktestReplayResponse": {
         "properties": {
-          "initial_capital": {
-            "default": 10000.0,
-            "exclusiveMinimum": 0.0,
-            "title": "Initial Capital",
-            "type": "number"
+          "current_code": {
+            "$ref": "#/components/schemas/CodeBuild"
           },
-          "max_share": {
-            "default": 0.4,
-            "description": "Maximum weight for any single asset",
-            "exclusiveMinimum": 0.0,
-            "maximum": 1.0,
-            "title": "Max Share",
-            "type": "number"
+          "current_engine": {
+            "$ref": "#/components/schemas/BacktestEngine"
           },
-          "min_share": {
-            "default": 0.0,
-            "description": "Minimum weight threshold; assets below are dropped",
-            "exclusiveMaximum": 1.0,
-            "minimum": 0.0,
-            "title": "Min Share",
-            "type": "number"
-          },
-          "opt_end": {
-            "description": "End of optimisation window and start of investment",
-            "format": "date",
-            "title": "Opt End",
-            "type": "string"
-          },
-          "opt_start": {
-            "description": "Start of look-back / optimisation window",
-            "format": "date",
-            "title": "Opt Start",
-            "type": "string"
-          },
-          "rebalance_freq": {
-            "default": 0,
-            "description": "Rebalance every N business days. 0 = static allocation",
-            "minimum": 0.0,
-            "title": "Rebalance Freq",
-            "type": "integer"
-          },
-          "tickers": {
+          "differences": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/DriftedFigure"
             },
-            "maxItems": 30,
-            "minItems": 1,
-            "title": "Tickers",
-            "type": "array"
-          }
-        },
-        "required": [
-          "tickers",
-          "opt_start",
-          "opt_end"
-        ],
-        "title": "BacktestRequest",
-        "type": "object"
-      },
-      "BacktestResponse": {
-        "properties": {
-          "allocation": {
-            "items": {
-              "$ref": "#/components/schemas/AllocationRow"
-            },
-            "title": "Allocation",
+            "title": "Differences",
             "type": "array"
           },
-          "metrics": {
-            "$ref": "#/components/schemas/BacktestMetrics"
-          },
-          "opt_end": {
-            "title": "Opt End",
-            "type": "string"
-          },
-          "opt_start": {
-            "title": "Opt Start",
-            "type": "string"
-          },
-          "portfolio_values": {
+          "drifted_inputs": {
             "items": {
-              "$ref": "#/components/schemas/PortfolioPoint"
+              "$ref": "#/components/schemas/DriftedTable"
             },
-            "title": "Portfolio Values",
+            "title": "Drifted Inputs",
             "type": "array"
           },
-          "sp500_values": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PortfolioPoint"
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ReplayOutcome"
+          },
+          "recorded_code": {
+            "$ref": "#/components/schemas/CodeBuild"
+          },
+          "recorded_engine": {
+            "$ref": "#/components/schemas/BacktestEngine"
+          },
+          "recorded_headline": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
                 },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sp500 Values"
-          },
-          "warnings": {
-            "items": {
-              "type": "string"
+                {
+                  "type": "null"
+                }
+              ]
             },
-            "title": "Warnings",
-            "type": "array"
+            "title": "Recorded Headline",
+            "type": "object"
+          },
+          "replayed_headline": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Replayed Headline",
+            "type": "object"
           }
         },
         "required": [
-          "opt_start",
-          "opt_end",
-          "allocation",
-          "portfolio_values",
-          "metrics",
-          "warnings"
+          "event_id",
+          "kind",
+          "outcome",
+          "recorded_headline",
+          "replayed_headline",
+          "differences",
+          "drifted_inputs",
+          "recorded_engine",
+          "current_engine",
+          "recorded_code",
+          "current_code"
         ],
-        "title": "BacktestResponse",
+        "title": "BacktestReplayResponse",
         "type": "object"
       },
       "BarrierKind": {
@@ -1699,6 +1684,54 @@
         "title": "ComputeDevicesResponse",
         "type": "object"
       },
+      "Configuration": {
+        "properties": {
+          "lookback": {
+            "description": "Trading days",
+            "maximum": 1260.0,
+            "minimum": 20.0,
+            "title": "Lookback",
+            "type": "integer"
+          },
+          "max_weight": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Max Weight",
+            "type": "number"
+          },
+          "method": {
+            "enum": [
+              "minimum_variance",
+              "maximum_sharpe",
+              "risk_parity",
+              "equal_weight"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "rebalance": {
+            "anyOf": [
+              {
+                "const": "monthly",
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "\"monthly\", or a number of trading days",
+            "title": "Rebalance"
+          }
+        },
+        "required": [
+          "method",
+          "lookback",
+          "rebalance"
+        ],
+        "title": "Configuration",
+        "type": "object"
+      },
       "CorrelationEstimate": {
         "properties": {
           "high": {
@@ -1727,6 +1760,60 @@
           "weeks"
         ],
         "title": "CorrelationEstimate",
+        "type": "object"
+      },
+      "CostSummary": {
+        "properties": {
+          "annual_cost_bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annual Cost Bps"
+          },
+          "annualized_turnover": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annualized Turnover"
+          },
+          "break_even_cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Metric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "participation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Participation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "annualized_turnover",
+          "annual_cost_bps",
+          "break_even_cost",
+          "participation"
+        ],
+        "title": "CostSummary",
         "type": "object"
       },
       "Counterparty-Input": {
@@ -2158,6 +2245,39 @@
         "title": "CurvesResult",
         "type": "object"
       },
+      "DataRead": {
+        "properties": {
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "fingerprints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fingerprints",
+            "type": "object"
+          },
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first",
+          "last",
+          "days",
+          "fingerprints"
+        ],
+        "title": "DataRead",
+        "type": "object"
+      },
       "DatedAsianRequest": {
         "description": "Average-price Asian priced from calendar fixing dates through the\ntimeline / day-count architecture (distinct from the legacy AsianRequest,\nwhich takes a single float maturity).",
         "properties": {
@@ -2251,6 +2371,72 @@
           "strike"
         ],
         "title": "DatedAsianRequest",
+        "type": "object"
+      },
+      "DeflatedSharpe": {
+        "properties": {
+          "best": {
+            "title": "Best",
+            "type": "integer"
+          },
+          "deflated_sharpe_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deflated Sharpe Ratio"
+          },
+          "expected_maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Maximum"
+          },
+          "sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe"
+          },
+          "sharpe_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe Deviation"
+          },
+          "trials": {
+            "title": "Trials",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "best",
+          "sharpe",
+          "expected_maximum",
+          "sharpe_deviation",
+          "trials",
+          "deflated_sharpe_ratio"
+        ],
+        "title": "DeflatedSharpe",
         "type": "object"
       },
       "DeltaBucketRow": {
@@ -2629,6 +2815,43 @@
         "title": "DispersionSwapRequest",
         "type": "object"
       },
+      "DriftedFigure": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recorded": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded"
+          },
+          "replayed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replayed"
+          }
+        },
+        "required": [
+          "name",
+          "recorded",
+          "replayed"
+        ],
+        "title": "DriftedFigure",
+        "type": "object"
+      },
       "DriftedInput": {
         "properties": {
           "current_as_of": {
@@ -2688,6 +2911,66 @@
           "current_as_of"
         ],
         "title": "DriftedInput",
+        "type": "object"
+      },
+      "DriftedTable": {
+        "properties": {
+          "current_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Fingerprint"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recorded_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Fingerprint"
+          }
+        },
+        "required": [
+          "name",
+          "recorded_fingerprint",
+          "current_fingerprint"
+        ],
+        "title": "DriftedTable",
+        "type": "object"
+      },
+      "EngineBuild": {
+        "properties": {
+          "git_sha": {
+            "title": "Git Sha",
+            "type": "string"
+          },
+          "quantmodeling_sha": {
+            "title": "Quantmodeling Sha",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "git_sha",
+          "quantmodeling_sha"
+        ],
+        "title": "EngineBuild",
         "type": "object"
       },
       "EngineType": {
@@ -3013,6 +3296,112 @@
         "title": "FXOptionRequest",
         "type": "object"
       },
+      "FactorRegression": {
+        "properties": {
+          "alpha": {
+            "$ref": "#/components/schemas/Metric"
+          },
+          "alpha_t_statistic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alpha T Statistic"
+          },
+          "beta_t_statistics": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Beta T Statistics",
+            "type": "array"
+          },
+          "betas": {
+            "items": {
+              "$ref": "#/components/schemas/Metric"
+            },
+            "title": "Betas",
+            "type": "array"
+          },
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "factors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Factors",
+            "type": "array"
+          },
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          },
+          "newey_west_lags": {
+            "title": "Newey West Lags",
+            "type": "integer"
+          },
+          "observations": {
+            "title": "Observations",
+            "type": "integer"
+          },
+          "r_squared": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Squared"
+          },
+          "residual_volatility": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residual Volatility"
+          }
+        },
+        "required": [
+          "dataset",
+          "factors",
+          "first",
+          "last",
+          "alpha",
+          "betas",
+          "alpha_t_statistic",
+          "beta_t_statistics",
+          "r_squared",
+          "residual_volatility",
+          "observations",
+          "newey_west_lags"
+        ],
+        "title": "FactorRegression",
+        "type": "object"
+      },
       "FigureCell": {
         "properties": {
           "formula": {
@@ -3178,6 +3567,67 @@
           "coupon_rate"
         ],
         "title": "FixedRateBondRequest",
+        "type": "object"
+      },
+      "Fold": {
+        "properties": {
+          "chosen": {
+            "title": "Chosen",
+            "type": "integer"
+          },
+          "in_sample_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Sample Sharpe"
+          },
+          "out_of_sample_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Of Sample Sharpe"
+          },
+          "test_begin": {
+            "format": "date",
+            "title": "Test Begin",
+            "type": "string"
+          },
+          "test_end": {
+            "format": "date",
+            "title": "Test End",
+            "type": "string"
+          },
+          "train_begin": {
+            "format": "date",
+            "title": "Train Begin",
+            "type": "string"
+          },
+          "train_end": {
+            "format": "date",
+            "title": "Train End",
+            "type": "string"
+          }
+        },
+        "required": [
+          "train_begin",
+          "train_end",
+          "test_begin",
+          "test_end",
+          "chosen",
+          "in_sample_sharpe",
+          "out_of_sample_sharpe"
+        ],
+        "title": "Fold",
         "type": "object"
       },
       "ForeignMarket": {
@@ -5382,6 +5832,85 @@
         "title": "MethodologySection",
         "type": "object"
       },
+      "Metric": {
+        "description": "A figure as the engine returns it: never without its interval, the\nmethod that produced the interval, and its convention.",
+        "properties": {
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "convention": {
+            "title": "Convention",
+            "type": "string"
+          },
+          "lower": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "standard_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standard Error"
+          },
+          "upper": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "standard_error",
+          "lower",
+          "upper",
+          "confidence",
+          "method",
+          "convention"
+        ],
+        "title": "Metric",
+        "type": "object"
+      },
       "MigrateRequest": {
         "properties": {
           "portfolio": {
@@ -5938,6 +6467,107 @@
         "title": "NettingSet",
         "type": "object"
       },
+      "Overfitting": {
+        "properties": {
+          "logits": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Logits",
+            "type": "array"
+          },
+          "mean_in_sample_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean In Sample Sharpe"
+          },
+          "mean_out_of_sample_sharpe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Out Of Sample Sharpe"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
+          },
+          "splits": {
+            "title": "Splits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "probability",
+          "splits",
+          "logits",
+          "mean_in_sample_sharpe",
+          "mean_out_of_sample_sharpe"
+        ],
+        "title": "Overfitting",
+        "type": "object"
+      },
+      "Participation": {
+        "properties": {
+          "executions": {
+            "title": "Executions",
+            "type": "integer"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum"
+          },
+          "median": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median"
+          }
+        },
+        "required": [
+          "executions",
+          "maximum",
+          "median"
+        ],
+        "title": "Participation",
+        "type": "object"
+      },
       "Portfolio-Input": {
         "description": "A portfolio, stored as JSON (storage.py). Version 2 is a ledger:\n`instruments` and `transactions`; positions are derived from them\n(portfolio_ledger.py). Version 1 held `positions` directly and is migrated\non read.",
         "properties": {
@@ -6092,24 +6722,6 @@
           "id"
         ],
         "title": "Portfolio",
-        "type": "object"
-      },
-      "PortfolioPoint": {
-        "properties": {
-          "date": {
-            "title": "Date",
-            "type": "string"
-          },
-          "value": {
-            "title": "Value",
-            "type": "number"
-          }
-        },
-        "required": [
-          "date",
-          "value"
-        ],
-        "title": "PortfolioPoint",
         "type": "object"
       },
       "PortfolioRiskSummary": {
@@ -7009,6 +7621,112 @@
           "google"
         ],
         "title": "Providers",
+        "type": "object"
+      },
+      "PurgedCv": {
+        "properties": {
+          "chosen": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Chosen",
+            "type": "array"
+          },
+          "in_sample_sharpes": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "In Sample Sharpes",
+            "type": "array"
+          },
+          "out_of_sample_sharpes": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Out Of Sample Sharpes",
+            "type": "array"
+          },
+          "path_sharpes": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Path Sharpes",
+            "type": "array"
+          },
+          "paths": {
+            "title": "Paths",
+            "type": "integer"
+          },
+          "splits": {
+            "title": "Splits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "splits",
+          "paths",
+          "path_sharpes",
+          "in_sample_sharpes",
+          "out_of_sample_sharpes",
+          "chosen"
+        ],
+        "title": "PurgedCv",
+        "type": "object"
+      },
+      "QualityFlag": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
+          }
+        },
+        "required": [
+          "severity",
+          "ticker",
+          "count",
+          "message"
+        ],
+        "title": "QualityFlag",
         "type": "object"
       },
       "QuantoRequest": {
@@ -8015,6 +8733,76 @@
         "title": "ReplayResponse",
         "type": "object"
       },
+      "Report": {
+        "properties": {
+          "metrics": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Metric"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "minimum_track_record_years": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Track Record Years"
+          },
+          "observations": {
+            "title": "Observations",
+            "type": "integer"
+          },
+          "omitted": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Omitted",
+            "type": "object"
+          },
+          "probabilistic_sharpe_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probabilistic Sharpe Ratio"
+          },
+          "t_statistic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Statistic"
+          },
+          "years": {
+            "title": "Years",
+            "type": "number"
+          }
+        },
+        "required": [
+          "observations",
+          "years",
+          "metrics",
+          "omitted",
+          "t_statistic",
+          "probabilistic_sharpe_ratio",
+          "minimum_track_record_years"
+        ],
+        "title": "Report",
+        "type": "object"
+      },
       "RiskEntry": {
         "description": "One model parameter's AAD sensitivity (blueprint/wp/17-aad.md \u00a713.1).\nPresent only when priced with greeks_method=\"aad\" -- unlike Greeks'\nfive fixed slots, a future model with a local-vol grid or a multi-asset\ncorrelation matrix reports here regardless of how many parameters it\nhas.",
         "properties": {
@@ -8219,6 +9007,81 @@
           "mc_vol_error"
         ],
         "title": "RoughBergomiFit",
+        "type": "object"
+      },
+      "Rules": {
+        "description": "What a rule would propose for two fields the request sets itself.",
+        "properties": {
+          "newey_west_lag": {
+            "title": "Newey West Lag",
+            "type": "integer"
+          },
+          "optimal_block_length": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimal Block Length"
+          }
+        },
+        "required": [
+          "optimal_block_length",
+          "newey_west_lag"
+        ],
+        "title": "Rules",
+        "type": "object"
+      },
+      "Run": {
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/Report"
+          },
+          "returns": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Returns"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "returns",
+          "report"
+        ],
+        "title": "Run",
         "type": "object"
       },
       "SABRPathRequest": {
@@ -9231,6 +10094,77 @@
         "title": "SeriesValue",
         "type": "object"
       },
+      "SharpeDifference": {
+        "properties": {
+          "analytical": {
+            "$ref": "#/components/schemas/Metric"
+          },
+          "bootstrap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Metric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bootstrap_p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bootstrap P Value"
+          },
+          "correlation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "z_statistic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z Statistic"
+          }
+        },
+        "required": [
+          "analytical",
+          "z_statistic",
+          "p_value",
+          "correlation",
+          "bootstrap",
+          "bootstrap_p_value"
+        ],
+        "title": "SharpeDifference",
+        "type": "object"
+      },
       "SimmToday": {
         "description": "Today's ISDA SIMM of the netting set, by margin type.",
         "properties": {
@@ -9754,6 +10688,244 @@
           "values"
         ],
         "title": "StatementRow",
+        "type": "object"
+      },
+      "StrategyRequest": {
+        "properties": {
+          "bootstrap_replications": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Bootstrap Replications",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "factor_dataset": {
+            "default": "ff3",
+            "enum": [
+              "ff3",
+              "ff5"
+            ],
+            "title": "Factor Dataset",
+            "type": "string"
+          },
+          "initial_capital": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000000000.0,
+            "title": "Initial Capital",
+            "type": "number"
+          },
+          "lookback": {
+            "description": "Trading days",
+            "maximum": 1260.0,
+            "minimum": 20.0,
+            "title": "Lookback",
+            "type": "integer"
+          },
+          "max_weight": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Max Weight",
+            "type": "number"
+          },
+          "mean_block_length": {
+            "maximum": 250.0,
+            "minimum": 1.0,
+            "title": "Mean Block Length",
+            "type": "number"
+          },
+          "method": {
+            "enum": [
+              "minimum_variance",
+              "maximum_sharpe",
+              "risk_parity",
+              "equal_weight"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "newey_west_lags": {
+            "maximum": 60.0,
+            "minimum": 0.0,
+            "title": "Newey West Lags",
+            "type": "integer"
+          },
+          "proportional_cost_bps": {
+            "description": "Cost of a trade, in basis points of the amount traded",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Proportional Cost Bps",
+            "type": "number"
+          },
+          "rebalance": {
+            "anyOf": [
+              {
+                "const": "monthly",
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "\"monthly\", or a number of trading days",
+            "title": "Rebalance"
+          },
+          "seed": {
+            "maximum": 2147483647.0,
+            "minimum": 0.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "start": {
+            "description": "First day the strategy is invested",
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "tickers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "minItems": 2,
+            "title": "Tickers",
+            "type": "array"
+          },
+          "timing": {
+            "default": "next_close",
+            "enum": [
+              "next_close",
+              "next_open"
+            ],
+            "title": "Timing",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "lookback",
+          "rebalance",
+          "tickers",
+          "start",
+          "end",
+          "initial_capital",
+          "proportional_cost_bps",
+          "bootstrap_replications",
+          "mean_block_length",
+          "seed",
+          "newey_west_lags"
+        ],
+        "title": "StrategyRequest",
+        "type": "object"
+      },
+      "StrategyResponse": {
+        "properties": {
+          "allocations": {
+            "$ref": "#/components/schemas/Allocations"
+          },
+          "benchmark": {
+            "$ref": "#/components/schemas/Run"
+          },
+          "benchmark_ticker": {
+            "title": "Benchmark Ticker",
+            "type": "string"
+          },
+          "buy_and_hold": {
+            "$ref": "#/components/schemas/Run"
+          },
+          "compute_ms": {
+            "title": "Compute Ms",
+            "type": "number"
+          },
+          "conventions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Conventions",
+            "type": "object"
+          },
+          "cost_summary": {
+            "$ref": "#/components/schemas/CostSummary"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DataRead"
+          },
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineBuild"
+          },
+          "equal_weight": {
+            "$ref": "#/components/schemas/Run"
+          },
+          "factor_regression": {
+            "$ref": "#/components/schemas/FactorRegression"
+          },
+          "gross": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Run"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quality": {
+            "items": {
+              "$ref": "#/components/schemas/QualityFlag"
+            },
+            "title": "Quality",
+            "type": "array"
+          },
+          "rules": {
+            "$ref": "#/components/schemas/Rules"
+          },
+          "sharpe_difference": {
+            "$ref": "#/components/schemas/SharpeDifference"
+          },
+          "strategy": {
+            "$ref": "#/components/schemas/Run"
+          },
+          "tickers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tickers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tickers",
+          "dates",
+          "strategy",
+          "gross",
+          "equal_weight",
+          "buy_and_hold",
+          "benchmark",
+          "benchmark_ticker",
+          "allocations",
+          "cost_summary",
+          "sharpe_difference",
+          "factor_regression",
+          "conventions",
+          "quality",
+          "rules",
+          "data",
+          "engine",
+          "compute_ms"
+        ],
+        "title": "StrategyResponse",
         "type": "object"
       },
       "StressBump": {
@@ -11017,6 +12189,56 @@
         "title": "UnderlyingUsed",
         "type": "object"
       },
+      "UniverseResponse": {
+        "properties": {
+          "benchmark": {
+            "title": "Benchmark",
+            "type": "string"
+          },
+          "cash_series": {
+            "title": "Cash Series",
+            "type": "string"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineBuild"
+          },
+          "etfs": {
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "title": "Etfs",
+            "type": "array"
+          },
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "last": {
+            "format": "date",
+            "title": "Last",
+            "type": "string"
+          },
+          "stocks": {
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "title": "Stocks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "etfs",
+          "stocks",
+          "benchmark",
+          "cash_series",
+          "first",
+          "last",
+          "engine"
+        ],
+        "title": "UniverseResponse",
+        "type": "object"
+      },
       "UserInfo": {
         "properties": {
           "created_at": {
@@ -11164,6 +12386,200 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationRequest": {
+        "description": "Every configuration tried is in `grid`: the number of columns is the\nnumber of trials the deflated Sharpe ratio corrects for.",
+        "properties": {
+          "blocks": {
+            "maximum": 20.0,
+            "minimum": 4.0,
+            "title": "Blocks",
+            "type": "integer"
+          },
+          "embargo": {
+            "maximum": 252.0,
+            "minimum": 0.0,
+            "title": "Embargo",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "grid": {
+            "items": {
+              "$ref": "#/components/schemas/Configuration"
+            },
+            "maxItems": 48,
+            "minItems": 2,
+            "title": "Grid",
+            "type": "array"
+          },
+          "groups": {
+            "maximum": 16.0,
+            "minimum": 3.0,
+            "title": "Groups",
+            "type": "integer"
+          },
+          "initial_capital": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000000000.0,
+            "title": "Initial Capital",
+            "type": "number"
+          },
+          "proportional_cost_bps": {
+            "description": "Cost of a trade, in basis points of the amount traded",
+            "maximum": 500.0,
+            "minimum": 0.0,
+            "title": "Proportional Cost Bps",
+            "type": "number"
+          },
+          "purge": {
+            "maximum": 252.0,
+            "minimum": 0.0,
+            "title": "Purge",
+            "type": "integer"
+          },
+          "start": {
+            "description": "First day the strategy is invested",
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "test": {
+            "description": "Walk-forward: applied period",
+            "maximum": 1260.0,
+            "minimum": 20.0,
+            "title": "Test",
+            "type": "integer"
+          },
+          "test_groups": {
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Test Groups",
+            "type": "integer"
+          },
+          "tickers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "minItems": 2,
+            "title": "Tickers",
+            "type": "array"
+          },
+          "timing": {
+            "default": "next_close",
+            "enum": [
+              "next_close",
+              "next_open"
+            ],
+            "title": "Timing",
+            "type": "string"
+          },
+          "train": {
+            "description": "Walk-forward: choosing window",
+            "maximum": 2520.0,
+            "minimum": 60.0,
+            "title": "Train",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tickers",
+          "start",
+          "end",
+          "initial_capital",
+          "proportional_cost_bps",
+          "grid",
+          "train",
+          "test",
+          "groups",
+          "test_groups",
+          "purge",
+          "embargo",
+          "blocks"
+        ],
+        "title": "ValidationRequest",
+        "type": "object"
+      },
+      "ValidationResponse": {
+        "properties": {
+          "compute_ms": {
+            "title": "Compute Ms",
+            "type": "number"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DataRead"
+          },
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "deflated_sharpe": {
+            "$ref": "#/components/schemas/DeflatedSharpe"
+          },
+          "descriptions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Descriptions",
+            "type": "array"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineBuild"
+          },
+          "final_values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Final Values",
+            "type": "array"
+          },
+          "overfitting": {
+            "$ref": "#/components/schemas/Overfitting"
+          },
+          "purged_cv": {
+            "$ref": "#/components/schemas/PurgedCv"
+          },
+          "tickers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tickers",
+            "type": "array"
+          },
+          "walk_forward": {
+            "$ref": "#/components/schemas/WalkForward"
+          }
+        },
+        "required": [
+          "tickers",
+          "dates",
+          "descriptions",
+          "final_values",
+          "walk_forward",
+          "purged_cv",
+          "deflated_sharpe",
+          "overfitting",
+          "data",
+          "engine",
+          "compute_ms"
+        ],
+        "title": "ValidationResponse",
         "type": "object"
       },
       "VanillaRequest": {
@@ -11399,6 +12815,43 @@
           "strike_vol"
         ],
         "title": "VolatilitySwapRequest",
+        "type": "object"
+      },
+      "WalkForward": {
+        "properties": {
+          "first": {
+            "format": "date",
+            "title": "First",
+            "type": "string"
+          },
+          "folds": {
+            "items": {
+              "$ref": "#/components/schemas/Fold"
+            },
+            "title": "Folds",
+            "type": "array"
+          },
+          "returns": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Returns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "folds",
+          "first",
+          "returns"
+        ],
+        "title": "WalkForward",
         "type": "object"
       },
       "WrongWayScenario": {
@@ -12435,7 +13888,7 @@
   "paths": {
     "/api/admin/replay/{event_id}": {
       "post": {
-        "description": "Re-prices the valuation recorded under `event_id` and compares:\n`reproduced`, `drifted_inputs` (which datum), `drifted_code` (from which\nbuild to which) or `not_reproduced`.",
+        "description": "Re-runs the valuation or the backtest recorded under `event_id` and\ncompares: `reproduced`, `drifted_inputs` (which datum), `drifted_code`\n(from which build to which) or `not_reproduced`.",
         "operationId": "replay_valuation",
         "parameters": [
           {
@@ -12469,7 +13922,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReplayResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReplayResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BacktestReplayResponse"
+                    }
+                  ],
+                  "title": "Response Replay Valuation"
                 }
               }
             },
@@ -12536,9 +13997,6 @@
             },
             "description": "text/event-stream of ScriptingChatEvent payloads."
           },
-          "401": {
-            "description": "Not signed in."
-          },
           "422": {
             "content": {
               "application/json": {
@@ -12550,7 +14008,7 @@
             "description": "Validation Error"
           },
           "429": {
-            "description": "Both assistant slots are busy."
+            "description": "`rate_limited`: the assistant slots are busy, retry. `anonymous_quota_exhausted`: a visitor who is not signed in has used the day's free questions, sign in."
           }
         },
         "summary": "Scripting Chat Endpoint",
@@ -12824,15 +14282,14 @@
         ]
       }
     },
-    "/api/backtest/run": {
+    "/api/backtest/strategy": {
       "post": {
-        "description": "Optimise a portfolio of assets over a historical window, then track its\nperformance forward. Returns allocation, portfolio value time series,\nperformance metrics, and CAPM alpha/beta vs S&P 500.",
-        "operationId": "run_backtest",
+        "operationId": "backtest_strategy",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BacktestRequest"
+                "$ref": "#/components/schemas/StrategyRequest"
               }
             }
           },
@@ -12843,24 +14300,84 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BacktestResponse"
+                  "$ref": "#/components/schemas/StrategyResponse"
                 }
               }
             },
             "description": "Successful Response"
           },
           "422": {
+            "description": "A datum is missing, or the engine refuses the request."
+          },
+          "503": {
+            "description": "The market data store is unreachable."
+          }
+        },
+        "summary": "Backtest Strategy",
+        "tags": [
+          "backtest"
+        ]
+      }
+    },
+    "/api/backtest/universe": {
+      "get": {
+        "operationId": "backtest_universe",
+        "responses": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/UniverseResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "A datum is missing, or the engine refuses the request."
+          },
+          "503": {
+            "description": "The market data store is unreachable."
           }
         },
-        "summary": "Run Backtest",
+        "summary": "Backtest Universe",
+        "tags": [
+          "backtest"
+        ]
+      }
+    },
+    "/api/backtest/validation": {
+      "post": {
+        "operationId": "backtest_validation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "A datum is missing, or the engine refuses the request."
+          },
+          "503": {
+            "description": "The market data store is unreachable."
+          }
+        },
+        "summary": "Backtest Validation",
         "tags": [
           "backtest"
         ]

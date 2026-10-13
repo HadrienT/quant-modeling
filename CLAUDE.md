@@ -17,7 +17,7 @@ de donnée de marché.
 |---|---|---|
 | Cœur C++ | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc / xva : moteur d'exposition à une devise, sur CPU ou sur les deux V100, et à deux devises ou à un taux et une action, sur CPU), `pricers`, `risk` (xVA, WP 23 : métriques d'exposition, netting et profils par netting set, collatéral, intégrales CVA / DVA / FVA / MVA / KVA, capital réglementaire dans `risk/regulatory/`), `utils` (Sobol, pont brownien, control variates, greeks) |
 | Bindings | `bindings/python/` | pybind11 → wheel `quantmodeling` |
-| API | `api/app/` | FastAPI : `routers/` (pricing, market, credit, rates, xva, portfolio, backtest, auth, local-vol, assistant, admin), `credit.py` + `fundamentals.py` (spreads, hazard, Merton, états 10-K / 10-Q), `xva.py` (exposition, CVA / DVA d'un netting set sur données de marché, WP 23), `portfolio_counterparties.py` + `portfolio_rates.py` + `portfolio_xva.py` + `xva_equity.py` (contreparties et netting sets d'un portefeuille, marquage quotidien de ses swaps, swaptions, forwards et swaps de devises, xVA d'un de ses netting sets, options actions comprises ; WP 23 §14.16), `xva_fx.py` + `fx_option_market.py` (seconde devise du netting set : courbe et Hull-White EUR, vol EUR/USD tirée des straddles traités, corrélations historiques), `swaption_market.py` (vols normales ATM tirées des transactions de swaptions DTCC, pour caler Hull-White sur le marché), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), `audit/` (événements d'audit vers le Kafka de `quant-platform`), `valuation.py` + `replay.py` (enregistrement et replay des valorisations), `telemetry.py` (OpenTelemetry), auth JWT, cache |
+| API | `api/app/` | FastAPI : `routers/` (pricing, market, credit, rates, xva, portfolio, backtest, auth, local-vol, assistant, admin), `credit.py` + `fundamentals.py` (spreads, hazard, Merton, états 10-K / 10-Q), `xva.py` (exposition, CVA / DVA d'un netting set sur données de marché, WP 23), `portfolio_counterparties.py` + `portfolio_rates.py` + `portfolio_xva.py` + `xva_equity.py` (contreparties et netting sets d'un portefeuille, marquage quotidien de ses swaps, swaptions, forwards et swaps de devises, xVA d'un de ses netting sets, options actions comprises ; WP 23 §14.16), `xva_fx.py` + `fx_option_market.py` (seconde devise du netting set : courbe et Hull-White EUR, vol EUR/USD tirée des straddles traités, corrélations historiques), `swaption_market.py` (vols normales ATM tirées des transactions de swaptions DTCC, pour caler Hull-White sur le marché), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), `audit/` (événements d'audit vers le Kafka de `quant-platform`), `backtest/` (lectures point-in-time, appels au wheel `quantbacktest`, événement `backtest.run` et son replay : aucun calcul, voir WP 24), `valuation.py` + `replay.py` (enregistrement et replay des valorisations), `telemetry.py` (OpenTelemetry), auth JWT, cache |
 | Front | `web/src/` | React 18 + Vite + TypeScript |
 | CLI | `main.cpp` | binaire de démo |
 
@@ -31,7 +31,7 @@ propre `CLAUDE.md`, portent ce qui n'est pas du pricing :
 | `~/data-ingest` | **Toute l'ingestion des données de marché** (Airflow → Postgres). quant-modeling ne fait que lire cette base (`PGHOST=data-ingest-postgres` via le réseau Docker `dataplatform`). Une donnée manquante se corrige là-bas, pas ici |
 | `~/quant-platform` ([GitHub](https://github.com/HadrienT/quant-platform)) | **Destination des logs, événements d'audit et de la télémétrie** : Kafka, Postgres d'audit append-only, OpenTelemetry Collector → Prometheus / Loki / Tempo, Grafana. Contrat producteur ↔ plateforme : `~/quant-platform/docs/contract.md`. Côté ici, le producteur est `api/app/audit/` (`emit()`, `record_fallback()`), conception dans `blueprint/wp/18-observability.md` |
 | `~/AgenticEnv` | `llama-server` de l'assistant de scripting (voir plus bas) |
-| `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) | **Moteur de backtest** en C++, livré comme wheel `quantbacktest`. Il consomme la lib `quantModeling` à un commit épinglé ; ici ne restent que la lecture en base, le routeur, l'audit et la page `/backtest` (masquée en attendant, `blueprint/wp/24-backtest.md`). Frontière : `~/quant-backtest/docs/contract.md`. Aucun calcul de backtest dans ce dépôt |
+| `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) | **Moteur de backtest** en C++, livré comme wheel `quantbacktest`. Il consomme la lib `quantModeling` à un commit épinglé ; ici ne restent que la lecture en base, le routeur, l'audit et la page `/backtest` (`api/app/backtest/`, `web/src/features/backtest/` ; onglet stratégie en ligne, couverture et modèle de risque à faire, `blueprint/wp/24-backtest.md`). Frontière : `~/quant-backtest/docs/contract.md`. Aucun calcul de backtest dans ce dépôt |
 
 Branchement vers `quant-platform` (WP 18, fait) : en **prod**, les événements
 d'audit partent dans son Kafka (`QM_AUDIT_SINK=kafka`, `kafka:9092`) et les
@@ -69,8 +69,12 @@ personnel, hors périmètre. Plus de BigQuery — le projet est entièrement hor
 chat de la page `/scripting`) : il parle au `llama-server` de `~/AgenticEnv`, dont
 l'URL est `QM_LLM_BASE_URL` (défaut `http://127.0.0.1:8000/v1` hors Docker ;
 `http://172.17.0.1:8001/v1` dans les fichiers compose, via le socket
-`llama-bridge` d'AgenticEnv). Connexion (JWT) obligatoire : la prod est publique
-et la route consomme le GPU. Tout script écrit par le modèle est vérifié par le
+`llama-bridge` d'AgenticEnv). La prod est publique et la route consomme le GPU :
+un visiteur non connecté a droit à **10 questions par jour** (`assistant/quota.py`,
+compteur en mémoire par hash d'IP, plus un plafond global ; `QM_ASSISTANT_ANON_DAILY`
+et `QM_ASSISTANT_ANON_DAILY_TOTAL`), puis la route répond 429 avec le code
+`anonymous_quota_exhausted` et la page propose de se connecter. Un utilisateur
+connecté (JWT) n'est pas compté, et un des deux slots lui est réservé. Tout script écrit par le modèle est vérifié par le
 vrai parseur avant d'être proposé. `GET /api/assistant/status` (public, mis en
 cache 15 s) dit si le serveur répond et avec quel modèle : la page l'affiche,
 car le `llama-server` est partagé et peut être arrêté ou chargé avec un autre
@@ -93,6 +97,7 @@ parseur et échoue s'ils ne passent plus.
 | `scripts/install_quantbacktest.sh` | construit et installe le wheel `quantbacktest` (moteur de backtest, dépôt `~/quant-backtest`) au commit épinglé dans `api/quantbacktest.pin` ; sans effet si ce commit est déjà installé. Lu aussi par les deux images Docker et par la CI : **monter la version du moteur, c'est changer ce seul fichier**. `NPROC=n` borne les compilations (16 par défaut) |
 | `scripts/run_api.sh` | venv + wheel + wheel `quantbacktest` épinglé + `uvicorn --reload` |
 | `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché, piste d'audit, producteur Kafka sur un faux broker, replay des valorisations), depuis la racine (`pytest.ini`). Lancés par la CI (job `pytest`, avec le vrai wheel) |
+| `uv venv .venv-ml && uv pip install --python .venv-ml/bin/python -r ml/requirements.txt`, puis `.venv-ml/bin/python -m pytest ml/tests` | côté entraînement du chantier ML (WP 25) : PyTorch en version CPU, dans un environnement à part — jamais dans celui de l'API ni dans l'image de prod. Le C++ ne fait que lire les fichiers de poids (`ml::Mlp`). Job CI `pytest-ml`. `cd ml && ../.venv-ml/bin/python -m qmml.make_fixture ../tests/data` régénère le jeu de cas partagé avec `tests/testMlp.cpp` |
 | `docker compose up --build` | stack complète (API + front avec HMR) |
 | `cd web && npm run dev` | front seul |
 | `cd web && npx tsc --noEmit` | typecheck du front |

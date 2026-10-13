@@ -9,4 +9,5 @@ export * from "./assistant";
 export * from "./credit";
 export * from "./xva";
 export * from "./rates";
+export * from "./backtest";
 export type * from "./types";
