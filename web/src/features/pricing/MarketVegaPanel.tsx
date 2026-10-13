@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { formatNumber } from "@/shared/format";
-import { Button } from "@/shared/ui";
+import { Button, Methodology } from "@/shared/ui";
 import { SurfaceView } from "@/shared/viz";
 import { type MarketVega, useMarketVega, vegaSurface } from "./marketVega";
+import { MARKET_VEGA_DOC, MARKET_VEGA_LEAD } from "./marketVegaDoc";
 
 const pm = (v: number, se: number) =>
 	`${formatNumber(v, "greek")} ± ${formatNumber(se, "greek")}`;
@@ -29,6 +30,12 @@ export function MarketVegaPanel({ body }: { body: unknown }) {
 					? "Differentiating through the calibration…"
 					: "Vega by listed option (AAD)"}
 			</Button>
+			<p className="max-w-prose text-2xs text-ink-muted">{MARKET_VEGA_LEAD}</p>
+			<Methodology
+				id="market-vega-doc"
+				title="What is the vega by listed option?"
+				sections={MARKET_VEGA_DOC}
+			/>
 			{q.error && <p className="text-sm text-critical">{q.error.message}</p>}
 			{q.data && <Result v={q.data} />}
 		</div>

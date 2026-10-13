@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Badge, Button, copyText } from "@/shared/ui";
 import type { ChatMessage } from "./useAssistantChat";
+import { Markdown } from "./Markdown";
 import { splitSegments } from "./segments";
 
 /** One chat bubble. For an assistant reply that carries a script, shows what
@@ -42,9 +43,7 @@ export function MessageBody({
 						{seg.body}
 					</pre>
 				) : (
-					<p key={i} className="whitespace-pre-wrap">
-						{seg.body.trim()}
-					</p>
+					<Markdown key={i} text={seg.body.trim()} />
 				),
 			)}
 			{message.error && (
