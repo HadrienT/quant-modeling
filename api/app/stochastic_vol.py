@@ -66,6 +66,14 @@ RATES_PREFIX = "calibrations/stochastic-vol-rates"
 REMEMBERED_RATES = 3
 
 HESTON_KEYS = ("v0", "kappa", "theta", "xi", "rho")
+#: Largest implied-vol RMSE of a Heston fit that is used (4 vol points).
+#: Above it the model does not reprice the surface it was fitted to, and a
+#: price under it, or under the leverage built on it, is not a price of this
+#: market. The stored fits of SPY and AAPL fall in two groups with nothing in
+#: between: 0.9 to 2.8 vol points on 32 points or more, and 5.2 to 20 on 27
+#: points or fewer over two to four maturities, parameters on their bounds
+#: (issue #146).
+MAX_IV_RMSE = 0.04
 
 
 class CalibrationUnavailable(RuntimeError):
@@ -140,6 +148,24 @@ def heston_targets(
     return strikes, ttms, vols
 
 
+def _refuse_poor_fit(
+    ticker: str,
+    snapshot: date,
+    iv_rmse: float,
+    iv_worst: float,
+    n_quotes: int,
+    n_maturities: int,
+) -> None:
+    if iv_rmse <= MAX_IV_RMSE:
+        return
+    raise CalibrationUnavailable(
+        f"the Heston fit to the {ticker} surface of {snapshot.isoformat()} does "
+        f"not reprice it: implied-vol RMSE of {iv_rmse * 100:.1f} vol points "
+        f"(worst point {iv_worst * 100:.1f}) over {n_quotes} points on "
+        f"{n_maturities} maturities, above the {MAX_IV_RMSE * 100:g} accepted"
+    )
+
+
 def _calibrate(market: LocalVolMarket) -> StochasticVol:
     start = time.perf_counter()
     strikes, ttms, vols = heston_targets(market)
@@ -151,6 +177,16 @@ def _calibrate(market: LocalVolMarket) -> StochasticVol:
         )
     fit = qm.calibrate_heston(
         strikes, ttms, vols, market.spot, market.rate, market.dividend
+    )
+    # Before the leverage: it is the expensive part, and it is not built on
+    # a Heston that is refused.
+    _refuse_poor_fit(
+        market.ticker,
+        market.valuation_date,
+        float(fit["iv_rmse"]),
+        float(fit["iv_worst"]),
+        int(fit["n_quotes"]),
+        int(fit["n_maturities"]),
     )
     heston = {k: float(fit[k]) for k in HESTON_KEYS}
     lev = qm.calibrate_slv_leverage(
@@ -270,6 +306,15 @@ def calibrate(market: LocalVolMarket) -> StochasticVol:
     def compute() -> StochasticVol:
         stored = _load(key)
         if stored is not None:
+            # A fit stored before the rule existed is refused like a new one.
+            _refuse_poor_fit(
+                stored.ticker,
+                stored.snapshot,
+                stored.iv_rmse,
+                stored.iv_worst,
+                stored.n_quotes,
+                stored.n_maturities,
+            )
             return stored
         with tracer.start_as_current_span(
             "calibration.stochastic_vol",
@@ -292,6 +337,7 @@ def calibrate(market: LocalVolMarket) -> StochasticVol:
 __all__ = [
     "CalibrationUnavailable",
     "HESTON_KEYS",
+    "MAX_IV_RMSE",
     "MIN_TTM",
     "StochasticVol",
     "Z_POINTS",
