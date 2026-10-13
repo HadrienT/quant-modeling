@@ -90,6 +90,7 @@ target_sources(quantModeling
         src/ml/mlp.cpp
         src/engines/xva/exposure_engine.cpp
         src/engines/xva/cross_currency_exposure_engine.cpp
+        src/engines/xva/cross_currency_xva_risks.cpp
         src/engines/xva/xva_risks.cpp
         src/engines/xva/xva_market_risks.cpp
         src/risk/regulatory/sa_ccr.cpp
@@ -319,6 +320,7 @@ if(QM_BUILD_TESTS)
     tests/testXvaIntegrals.cpp
     tests/testExposureEngine.cpp
     tests/testCrossCurrencyExposure.cpp
+    tests/testCrossCurrencyXvaRisks.cpp
     tests/testExposureRegression.cpp
     tests/testMlp.cpp
     tests/testExposureScript.cpp

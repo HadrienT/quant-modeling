@@ -213,6 +213,12 @@ describe("counterparties of a portfolio", () => {
 			screen.getByRole("button", { name: "Compute the sensitivities" }),
 		);
 		expect(await screen.findByText("Par swap rates")).toBeVisible();
+		// With a share: its own sensitivities, for a move that means something.
+		expect(
+			screen.getByRole("rowheader", { name: "price of ^FCHI" }),
+		).toBeVisible();
+		expect(screen.getByText("+1 %")).toBeVisible();
+		expect(screen.getByText(/SA-CVA is not reported/)).toBeVisible();
 	});
 
 	it("says what to do when no trade is under a netting set", async () => {

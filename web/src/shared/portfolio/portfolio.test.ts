@@ -115,6 +115,52 @@ describe("aggregateRisk", () => {
 		);
 	});
 
+	it("adds the greeks up in money, for the same move of every underlying", () => {
+		const r = aggregateRisk(
+			[
+				// 10 shares at 200 in a currency worth 0.9 of the base.
+				mark({ mark: 200, fx_rate: 0.9, greeks: { delta: 1 } }),
+				// Short 2 calls on the same share.
+				mark({
+					instrument_id: "c1",
+					kind: "derivative",
+					quantity: -2,
+					fx_rate: 0.9,
+					inputs: [
+						{ name: "spot AAPL", status: "observed", value: 200, as_of: null },
+					],
+					greeks: { delta: 0.5, gamma: 0.02, vega: 40, theta: -7.3, rho: 50 },
+				}),
+				// A payer swap: 4 500 per basis point, in the base currency.
+				mark({
+					instrument_id: "irs",
+					kind: "rate_fx",
+					quantity: 1,
+					fx_rate: 1,
+					greeks: { pv01_usd: 4500 },
+				}),
+				// No spot said: counted for the vega, not for the delta.
+				mark({
+					instrument_id: "x",
+					kind: "derivative",
+					quantity: 1,
+					fx_rate: 1,
+					inputs: [],
+					greeks: { delta: 0.3, vega: 10 },
+				}),
+			],
+			[equityInstrument("AAPL"), call],
+		);
+		const t = r.totals;
+		expect(t.delta).toBeCloseTo((10 - 2 * 0.5) * 200 * 0.9); // 9 shares' worth
+		expect(t.gamma).toBeCloseTo(-2 * 0.02 * 200 * 200 * 0.01 * 0.9);
+		expect(t.vega).toBeCloseTo(-2 * 40 * 0.01 * 0.9 + 10 * 0.01);
+		expect(t.theta).toBeCloseTo(((-2 * -7.3) / 365) * 0.9);
+		expect(t.rates).toBeCloseTo(-2 * 50 * 1e-4 * 0.9 + 4500);
+		expect(t.counted).toBe(4);
+		expect(t.withoutSpot).toBe(1);
+	});
+
 	it("says how many open positions the aggregate covers", () => {
 		const r = aggregateRisk(
 			[

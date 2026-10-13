@@ -163,6 +163,15 @@ namespace quantModeling
                         cashflows[i] = domestic_.paid(i) + path.spot[i] * foreign_.paid(i);
             }
 
+            bool describe(xva::TwoFactorTerms &terms) const override
+            {
+                for (const Flow &f : domestic_.flows())
+                    terms.domestic.push_back({f.time, f.amount});
+                for (const Flow &f : foreign_.flows())
+                    terms.foreign.push_back({f.time, f.amount});
+                return true;
+            }
+
           private:
             Leg domestic_, foreign_;
             Real spot_;
@@ -258,6 +267,12 @@ namespace quantModeling
                 }
             }
 
+            bool describe(xva::TwoFactorTerms &terms) const override
+            {
+                terms.options.push_back({strike_, expiry_, call_, notional_});
+                return true;
+            }
+
           private:
             Real strike_;
             Time expiry_;
@@ -309,16 +324,24 @@ namespace quantModeling
                     throw InvalidInput("cross-currency swap: maturity must be > 0 and frequency >= 1");
                 if (!(swap.foreign_notional > 0.0) || !(swap.domestic_notional > 0.0))
                     throw InvalidInput("cross-currency swap: both notionals must be > 0");
+                // The coupon dates are counted back from the maturity. A swap
+                // between two of them (one traded some time ago) pays its
+                // coupon in progress in full on the next date: a fixed coupon
+                // does not depend on when one looks at it.
                 const Real coupons = swap.maturity * swap.frequency;
-                const long count = std::lround(coupons);
-                if (count < 1 || std::abs(coupons - static_cast<Real>(count)) > 1e-8)
-                    throw InvalidInput("cross-currency swap: the maturity must be a whole number of "
-                                       "coupon periods");
+                const long count = static_cast<long>(std::ceil(coupons - 1e-8));
+                if (count < 1)
+                    throw InvalidInput("cross-currency swap: no coupon is left");
+                const bool whole = std::abs(coupons - static_cast<Real>(count)) <= 1e-8;
                 const Real side = swap.receive_foreign ? 1.0 : -1.0;
                 const Real period = 1.0 / swap.frequency;
                 for (long k = 1; k <= count; ++k)
                 {
-                    const Time t = k == count ? swap.maturity : static_cast<Real>(k) * period;
+                    // A whole number of periods keeps its dates to the bit.
+                    const Time t = k == count
+                                       ? swap.maturity
+                                   : whole ? static_cast<Real>(k) * period
+                                           : swap.maturity - static_cast<Real>(count - k) * period;
                     foreign.push_back({t, side * swap.foreign_notional * swap.foreign_rate * period});
                     domestic.push_back({t, -side * swap.domestic_notional * swap.domestic_rate * period});
                 }
@@ -381,6 +404,13 @@ namespace quantModeling
                 if (cashflows != nullptr)
                     for (std::size_t i = 0; i < dates; ++i)
                         cashflows[i] *= path.spot[i];
+            }
+
+            /// The one-currency engine's own flat terms; the trade must be
+            /// bound to the grid.
+            bool describe(xva::TwoFactorTerms &terms) const override
+            {
+                return trade_->compile(foreign_ ? terms.foreign_program : terms.domestic_program);
             }
 
           private:

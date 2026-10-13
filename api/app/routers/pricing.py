@@ -9,8 +9,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from .. import telemetry, valuation
+from .. import greeks_fallback, telemetry, valuation
 from ..audit import emit
+from ..logging_utils import get_logger
 from ..pricing_service import validate_script
 from ..rates_derivatives_schemas import (
     SwapPricingRequest,
@@ -57,6 +58,9 @@ from ..schemas import (
 router = APIRouter()
 _PRICING_TIMEOUT_SECONDS = 20
 _T = TypeVar("_T")
+
+
+logger = get_logger()
 
 
 async def _run_with_timeout(func: Callable[..., _T], *args) -> _T:
@@ -115,7 +119,40 @@ async def _price(
         "pricing.valuation",
         valuation.payload(product_id, req, priced, ip_hash=current_ip_hash()),
     )
-    return priced.response.model_copy(update={"compute_ms": priced.duration_s * 1000})
+    response = priced.response.model_copy(
+        update={"compute_ms": priced.duration_s * 1000}
+    )
+    if product_id not in _OWN_GREEKS:
+        response = await _with_every_greek(product, req, response)
+    return response
+
+
+#: Products whose sensitivities are not the five greeks of an option, or come
+#: by another route: rates (PV01, the workbench's own panel) and scripts (the
+#: adjoint risk report, or their own bumps).
+_OWN_GREEKS = frozenset(
+    {"interest_rate_swap", "swaption", "script", "scripted_product", "dated_asian"}
+)
+
+
+async def _with_every_greek(
+    product: valuation.Product, req: BaseModel, response: PricingResponse
+) -> PricingResponse:
+    """The greeks the engine left out, by bumping and revaluing
+    (greeks_fallback.py). They are an addition to the answer: when the bumps
+    fail or run out of time, the pricing is returned as it is."""
+
+    def run() -> PricingResponse:
+        completed, names = greeks_fallback.complete(
+            req, response, lambda r: product.price(r).npv
+        )
+        return completed.model_copy(update={"bumped_greeks": names})
+
+    try:
+        return await _run_with_timeout(run)
+    except Exception:  # noqa: BLE001 — never lose a price to its greeks
+        logger.warning("greeks by bump failed", exc_info=True)
+        return response
 
 
 @router.post("/price/option/vanilla", response_model=PricingResponse)

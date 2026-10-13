@@ -155,12 +155,15 @@ class RateFxSpec(BaseModel):
     |---|---|---|---|---|
     | swap | first day | last payment | pays the fixed rate | the fixed rate |
     | swaption | expiry | end of the swap | on a payer swap | the strike |
+    | bermudan | first exercise | end of the swap | on a payer swap | the strike |
     | fx_forward | trade date | delivery | buys the euros | USD per EUR |
     | cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |
     """
 
     kind: Literal["rate_fx"] = "rate_fx"
-    product: Literal["swap", "swaption", "fx_forward", "cross_currency_swap"]
+    product: Literal[
+        "swap", "swaption", "bermudan", "fx_forward", "cross_currency_swap"
+    ]
     currency: Literal["USD", "EUR"] = Field(
         description="The currency of the notional: EUR for an FX trade"
     )
@@ -197,7 +200,10 @@ class RateFxSpec(BaseModel):
                     "the maturity must be a whole number of years (1 to 30) after "
                     "the start: both legs pay once a year"
                 )
-        if self.product == "swaption" and (self.maturity - self.start).days > 30 * 366:
+        if (
+            self.product in ("swaption", "bermudan")
+            and (self.maturity - self.start).days > 30 * 366
+        ):
             raise ValueError("the swap of a swaption lasts at most 30 years")
         if self.product == "cross_currency_swap" and (
             self.foreign_rate is None or self.domestic_notional is None
@@ -223,8 +229,14 @@ class RateFxSpec(BaseModel):
 
     @property
     def end(self) -> date:
-        """The day after which the trade is no longer valued."""
-        return self.start if self.product == "swaption" else self.maturity
+        """The day after which the trade is no longer valued: the expiry of
+        a swaption, the last exercise date of a Bermudan (a year before the
+        end of its swap)."""
+        if self.product == "swaption":
+            return self.start
+        if self.product == "bermudan":
+            return add_years(self.maturity, -1)
+        return self.maturity
 
 
 class Instrument(BaseModel):

@@ -1274,7 +1274,7 @@ suit les dépendances ; X0 ne demande aucune simulation.
 | **X9 — Page `/xva`** (fait : §14.14) | WP 15 §4 : profils EE / PFE avec enveloppe, surface chemin × temps × exposition en 3D, décomposition par ajustement et par transaction, effet des mitigants superposé, sensibilités | chaque chiffre affiché avec son erreur MC ; convention de signe cash-flow |
 | **X10 — Multi-devise** (fait : §14.15 ; formes fermées, CPU, mesure de pricing ; un seul produit ajouté, le swap de devises) | FX lognormal couplé à deux Hull-White, cross-currency swaps et FX forwards existants (`instruments/fx/forward.hpp`) ; rejoint l'issue #86 (quanto) | parité forward FX retrouvée ; profil de CCS dominé par le notionnel final |
 | **X11 — Contreparties et netting sets du portefeuille** (fait : §14.16) | un portefeuille porte ses contreparties (notation, secteur, recouvrement) et leurs netting sets (CSA ou non) ; un dérivé se traite sous un netting set ; sous-onglet *Counterparties* de la page Portfolio ; contreparties d'exemple | un instrument coté n'a pas de netting set ; un netting set utilisé ne se supprime pas ; le mark d'un dérivé ne dépend pas de qui il fait face |
-| **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans bermudan ni script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
+| **X12 — Transactions de taux et de change dans le registre** (fait : §14.16 ; sans script) | swap, swaption, bermudan, forward de change, swap de devises et script de taux comme instruments du portefeuille, à termes libres, marqués chaque jour sur la courbe du jour | P&L cumulé = valeur − flux ; un swap traité au pair vaut 0 le jour du trade ; une date sans courbe est une erreur dite, pas un mark ancien |
 | **X13 — xVA d'un netting set du portefeuille** (fait : §14.16 ; sans sensibilités, swap entamé simulé depuis son prochain coupon) | `POST` qui prend le registre et un netting set, en tire les transactions (vie résiduelle, taux fixe du contrat) et appelle le moteur existant ; mêmes panneaux que `/xva`, déplacés dans `shared/` | le portefeuille d'exemple `single_swap` recomposé dans un portefeuille donne les chiffres de `/xva` au bit près |
 | **X14 — Dérivés actions dans le moteur d'exposition** (fait : §14.16 ; options européennes, une action par netting set, CPU) | modèle joint taux + action (Hull-White et action lognormale corrélés), options actions du portefeuille dans le netting set ; amélioration A6 du §20 | option achetée : $EE^* = V_0$ ; corrélation nulle et taux déterministe redonnent le profil Black-Scholes fermé |
 
@@ -2516,6 +2516,138 @@ Limites, dites dans les avertissements de la réponse :
 - sous-jacents en dollars seulement ; CPU, mesure de pricing, marge initiale
   par régression (comme à deux devises) ; dividende en rendement continu
   constant.
+
+**Limites levées ensuite (issue #173).**
+
+- *Swap entamé.* Le moteur a une transaction de plus, qui n'est pas un
+  produit : un **flux connu** (`make_cash_flow_future_value`,
+  `engines/xva/hull_white_future_value.hpp`), montant × $P(t, T)$ jusqu'à son
+  paiement. Il se compile dans les termes à plat des swaps, donc il passe sur
+  le GPU et dans les deux adjoints sans code propre. Un swap entamé devient
+  son coupon en cours — fixé au premier jour de la période, lu sur la courbe
+  de ce jour — et le swap qui démarre à la prochaine date de coupon. Vérifié :
+  un swap d'un an est son premier coupon, chemin par chemin ; à une date de
+  coupon, un swap entamé a la valeur, l'exposition, le CVA **et le capital**
+  du swap neuf de ce qui reste. Pour SA-CCR, les deux morceaux doivent
+  redonner le swap entier (une transaction de taux d'aujourd'hui à sa fin,
+  CRE52.34) : le coupon reçoit la fin du swap, donc sa tranche de maturité, et
+  le début $S$ qui lui laisse la durée prudentielle de $(0, t)$,
+  $e^{-0{,}05 S} = e^{-0{,}05\,fin} + 1 - e^{-0{,}05\,t}$.
+- *Swap de devises entre deux coupons.* Les dates de coupon de
+  `CrossCurrencySwap` se comptent depuis l'échéance : une échéance qui n'est
+  pas un nombre entier de périodes est un swap entamé, dont le coupon en cours
+  est payé en entier à la prochaine date (un coupon fixe ne dépend pas du jour
+  où on le regarde). Un nombre entier de périodes garde ses dates au bit près.
+- *Bermudan dans le registre.* `RateFxSpec.product = "bermudan"` : premier
+  exercice, puis chaque anniversaire tant qu'il reste un an de swap. Marqué
+  sur le réseau (`hull_white_bermudan_swaption`) sous un Hull-White calé
+  **ce jour-là** sur les vols de swaptions traitées, une calibration par
+  devise et par date gardée dans `RatesHistory` (pas de mark avec moins de
+  trois points de vol). Si son premier exercice est passé sans trade de
+  clôture, il est valorisé vivant sur les dates qui restent. PV01 à
+  paramètres de modèle fixés, pas de vega (bouger une vol cotée, c'est une
+  calibration). Dans un netting set il est valorisé par régression (lot X4),
+  donc sans sensibilités adjointes ni seconde devise.
+
+Restent ouverts : les scripts de taux dans le registre ; pour les actions,
+plusieurs sous-jacents par netting set, les options non européennes et le
+smile entre options ; SA-CVA avec les classes change et action ; le côté euro
+en cotations ; la marge initiale dans les sensibilités ; un jour sans mark
+coupe la chaîne du P&L quotidien de la position.
+
+### 14.17 L'adjoint à deux facteurs (commencé le 2026-10-12)
+
+Le lot X8 différencie la simulation à un taux. Un netting set qui porte une
+seconde devise ou une action passe par le moteur à deux devises (lots X10 et
+X14), qui n'avait pas d'adjoint : ses sensibilités étaient refusées. Ce lot
+lui en donne un, sur le même plan que X8.
+
+**Ce qui est fait** (`src/engines/xva/cross_currency_xva_risks.cpp`,
+`CrossCurrencyExposureEngine::xva_risks` et `xva_values`) :
+
+- un seul code générique, instancié sur le nombre différentiable pour les
+  risques et sur `double` pour les valeurs contre lesquelles on les vérifie ;
+  mise en place enregistrée une fois avant la marque, chemins après, adjoints
+  d'un lot de 64 chemins redescendus jusqu'aux entrées (Savine, WP 17 §7) ;
+- le modèle en `T` : les transitions gaussiennes exactes de $(x_d, x_f, z)$,
+  leurs intégrales par Gauss-Legendre (`utils/gauss_legendre.hpp`, partagé
+  avec le modèle), la factorisation de Cholesky, la variance restante du
+  forward ; les mêmes tirages Philox que `simulate()` ;
+- les **entrées** : taux zéro des deux courbes (ou le rendement de dividende
+  d'un actif), $a$ et $\sigma$ des deux taux, le cours, sa volatilité, les
+  trois corrélations, les taux de hasard, les pertes en cas de défaut, les
+  spreads de financement (`XvaRiskFactor` étendu) ;
+- les **transactions** : flux connus dans chaque devise (forwards de change,
+  swaps de devises fixe contre fixe), nettés par date de paiement, et options
+  européennes sur le cours ou sur l'actif. Une transaction se décrit à plat
+  par `CrossCurrencyFutureValue::describe` (`xva::TwoFactorTerms`), parce
+  qu'un `evaluate_path` virtuel sur des `double` ne se rejoue pas sur un
+  nombre différentiable ;
+- ce que les deux adjoints partagent (courbe et transition de Hull-White en
+  `T`, lots de chemins, tape par thread) sort de `xva_risks.cpp` vers
+  `src/engines/xva/adjoint_support.hpp`.
+
+Tests (`tests/testCrossCurrencyXvaRisks.cpp`) : les valeurs du passage sur
+`double` sont celles du moteur de pricing à $10^{-9}$ près (CVA bilatéral, DVA,
+FCA, FBA, CVA unilatéral, sur le cube de `simulate()`) ; **chaque sensibilité
+adjointe est la différence centrée du même estimateur sur les mêmes
+scénarios**, à $2 \cdot 10^{-5}$ près, pour un book de forwards et de swaps de
+devises, un book avec options de change, et des options sur un actif ; mêmes
+bits sur un thread ou plusieurs ; signes (delta, vega, dividende) et
+linéarité en LGD.
+
+**Suite, faite le même jour.**
+
+- *Swaps et swaptions d'une devise.* Ils entrent dans cet adjoint par les
+  termes à plat du moteur à un facteur (`FutureValue::compile`, que
+  `SingleCurrency::describe` relaie) : `build_program` en recalcule les
+  coefficients en `T` sur le modèle de taux de leur devise, et `add_program`
+  les lit sur l'état de ce taux, convertis au cours du chemin pour une
+  transaction en devise étrangère. L'exercice d'une swaption est lissé par la
+  même rampe qu'en X8, une largeur par transaction de taux, dans la devise du
+  swap.
+- *Marge de variation.* Comme en X8 : `collateral_plan`, soldes et valeur
+  collatéralisée par chemin, flux de la période de marge (flux connus,
+  règlement des options, coupons des swaps), appel d'aujourd'hui enregistré
+  avant la marque.
+- *Des entrées aux cotations.* `xva_market_risks` repère ses facteurs par
+  type : il s'applique tel quel au côté dollar (taux de swap, vols de
+  swaptions, spreads de crédit). Avant lui, `fold_spot_volatility_calibration`
+  replie la calibration de $\sigma_S$ : le marché cote la volatilité d'une
+  option, pas celle du cours dans le modèle, et celle-ci bouge avec $a$ et
+  $\sigma$ des taux et avec les corrélations. À volatilité de marché fixée,
+  $d/d\theta = \partial/\partial\theta + \partial/\partial\sigma_S \cdot
+  \partial\sigma_S/\partial\theta$ ; $\sigma_S$ est la racine d'une
+  quadratique, dérivée par différences centrées. Vérifié contre un bump à
+  volatilité de marché fixée ($10^{-4}$ près).
+- *Binding, API, page.* `qm.xva_sensitivities(..., foreign=...)` ;
+  `xva.compute_sensitivities` ne refuse plus une action ni une seconde devise
+  (les portefeuilles à deux devises de `/xva` y gagnent aussi leurs
+  sensibilités) ; la réponse porte `second_factor` — cours, volatilité de
+  marché, rendement de dividende ou taux zéro en euros, modèle de taux en
+  euros, corrélations —, chaque ligne avec le mouvement pour lequel elle est
+  affichée (1 % du cours, un point de volatilité, 0,01 de corrélation, un
+  point de base). Côté API, le delta du CVA au cours d'une action est vérifié
+  contre un cours déplacé en base.
+
+Tests : `tests/testCrossCurrencyXvaRisks.cpp` (12 tests : valeurs = moteur de
+pricing avec et sans CSA sur des books mêlant tout ; adjoint = bump partout),
+`test_xva.py`, `test_portfolio_xva.py`.
+
+**Limites, dites dans la réponse :**
+
+- **SA-CVA n'est pas rapporté** pour un netting set à deux facteurs : il
+  faudrait ajouter au capital la classe de risque change ou action de MAR50 ;
+  un chiffre sans elle le sous-estimerait ;
+- la **courbe en euros** est rapportée par taux zéro à chaque pilier, et le
+  modèle de taux en euros par ses deux paramètres, pas encore ramenés aux taux
+  de swap et aux vols de swaptions en euros (il faut porter ces cotations
+  jusqu'au binding, puis appliquer `xva_market_risks` au côté étranger) ;
+- les **corrélations** sont des estimations : leurs sensibilités disent ce que
+  coûte une erreur d'estimation, pas ce qui se couvre ;
+- pas de marge initiale, pas de transaction valorisée par régression, comme
+  en X8 ; le coût adjoint / valorisation est renvoyé par l'API mais pas encore
+  mesuré dans `qm_xva_aad_bench`.
 
 ---
 

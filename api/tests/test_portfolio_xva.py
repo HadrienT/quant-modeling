@@ -97,6 +97,19 @@ def _rate_history() -> pd.Series:
     return pd.Series(values, index=days)
 
 
+def SHARE(ticker, since):
+    """The closes of the two fake shares, ending at 100."""
+    if ticker not in ("AAA", "BBB"):
+        return []
+    salt = 1.0 if ticker == "AAA" else 2.3
+    out, level = [], 100.0
+    for k, d in enumerate(SHARE_DAYS):
+        level *= math.exp(0.012 * math.sin(salt * k * 1.7) * math.cos(k / 7.0))
+        out.append((d, level))
+    scale = 100.0 / out[-1][1]
+    return [(d, v * scale) for d, v in out if d >= since]
+
+
 @pytest.fixture(autouse=True)
 def shares(monkeypatch, store):  # noqa: F811 — after the store it completes
     """Two listed shares around 100, with five years of closes; no option
@@ -105,18 +118,18 @@ def shares(monkeypatch, store):  # noqa: F811 — after the store it completes
         db, "fred_series", lambda series_id, since=None: _rate_history()
     )
 
-    def closes(ticker, since):
-        if ticker not in ("AAA", "BBB"):
-            return []
-        salt = 1.0 if ticker == "AAA" else 2.3
-        out, level = [], 100.0
-        for k, d in enumerate(SHARE_DAYS):
-            level *= math.exp(0.012 * math.sin(salt * k * 1.7) * math.cos(k / 7.0))
-            out.append((d, level))
-        scale = 100.0 / out[-1][1]
-        return [(d, v * scale) for d, v in out if d >= since]
-
-    monkeypatch.setattr(db, "price_history", closes)
+    monkeypatch.setattr(db, "price_history", SHARE)
+    # The swap curve of every day since 2025, for the fixing of a coupon in
+    # progress: the quotes of the day of the valuation, every day.
+    monkeypatch.setattr(
+        db,
+        "dtcc_swap_curves",
+        lambda product, since: {
+            d: [db.SwapRate(t, r, 10) for t, r in test_xva.PAR.items()]
+            for d in SHARE_DAYS
+            if d >= date(2025, 1, 1)
+        },
+    )
     monkeypatch.setattr(db, "ticker_currency", lambda t: "USD")
     monkeypatch.setattr(
         db,
@@ -193,14 +206,85 @@ def test_a_swap_off_the_market_is_worth_what_its_rate_makes_it():
     )
 
 
-def test_a_swap_already_running_is_simulated_from_its_next_coupon_and_says_so():
+def test_a_swap_already_running_is_its_known_coupon_and_the_swap_after_it():
     started = date(2025, 3, 31)  # next coupon 2027-03-31, then 8 more
     body = ledger(_pf(_swap(0.045, years=10, start=started)))
-    (trade,) = body["trades"]
-    assert trade["tenor"] == 8 and 0.4 < trade["start"] < 0.6
-    assert any(
-        "coupon in progress" in w and "2027-03-31" in w for w in body["warnings"]
+    coupon, rest = body["trades"]
+    assert (
+        coupon["kind"] == "cashflow" and "fixed on 2026-03-31" in coupon["description"]
     )
+    assert 0.4 < coupon["maturity"] < 0.6 and coupon["fixed_rate"] is None
+    # The amount is known: its value today is that amount, discounted.
+    par_1y = test_xva.PAR[1]
+    amount = NOTIONAL * (par_1y - 0.045)
+    # (the fixing is a simple rate over 365 days of a 365.25-day year)
+    assert coupon["notional"] == pytest.approx(amount, rel=0.1)
+    assert coupon["value_today"] == pytest.approx(coupon["notional"], rel=0.03)
+    assert rest["kind"] == "swap" and rest["tenor"] == 8 and 0.4 < rest["start"] < 0.6
+    assert not any("left out" in w for w in body["warnings"])
+
+
+def test_on_a_coupon_date_a_running_swap_is_the_swap_of_what_is_left():
+    # Traded a year ago to the day for ten years: nine coupons are left, the
+    # first one fixed today. The same thing as a nine-year swap struck today
+    # at that rate — which the engine holds as one trade.
+    K = 0.045
+    running = ledger(_pf(_swap(K, years=10, start=add_years(AS_OF, -1))))
+    fresh = ledger(_pf(_swap(K, years=9)))
+    assert [t["kind"] for t in running["trades"]] == ["cashflow", "swap"]
+    assert running["value_today"] == pytest.approx(fresh["value_today"], rel=5e-3)
+    assert running["exposure"]["epe"] == pytest.approx(
+        fresh["exposure"]["epe"], rel=1e-2
+    )
+    # The capital sees one swap of nine years too: the coupon and the swap
+    # after it have, together, its supervisory duration.
+    assert running["capital"]["ead_today"] == pytest.approx(
+        fresh["capital"]["ead_today"], rel=1e-2
+    )
+    assert running["adjustments"]["cva"]["value"] == pytest.approx(
+        fresh["adjustments"]["cva"]["value"], rel=1e-2
+    )
+
+
+def test_a_cross_currency_swap_already_running_stays_in_the_netting_set():
+    ccs = RateFxSpec(
+        product="cross_currency_swap",
+        currency="EUR",
+        notional=9_000_000.0,
+        payer=True,
+        start=date(2026, 3, 31),
+        maturity=date(2031, 3, 31),
+        fixed_rate=0.047,
+        foreign_rate=0.025,
+        domestic_notional=10_100_000.0,
+    )
+    body = ledger(_pf(ccs))
+    (trade,) = body["trades"]
+    assert trade["kind"] == "cross_currency_swap" and 4.4 < trade["maturity"] < 4.6
+    assert not any("left out" in w for w in body["warnings"])
+    assert body["adjustments"]["cva"]["value"] < 0
+
+
+def test_a_bermudan_of_the_ledger_is_valued_by_regression():
+    bermudan = RateFxSpec(
+        product="bermudan",
+        currency="USD",
+        notional=NOTIONAL,
+        payer=True,
+        start=add_years(AS_OF, 1),
+        maturity=add_years(AS_OF, 10),
+        fixed_rate=0.048,
+    )
+    body = ledger(_pf(bermudan))
+    (trade,) = body["trades"]
+    assert trade["kind"] == "bermudan" and trade["fixed_rate"] == 0.048
+    assert 0.99 < trade["start"] < 1.01 and trade["tenor"] == 9
+    # Bought: an asset until it is exercised.
+    assert trade["value_today"] > 0 and body["pilot_paths"] > 0
+    assert body["adjustments"]["cva"]["value"] < 0
+    # No formula on a path: no sensitivities, and it says why.
+    r = risks(_pf(bermudan))
+    assert r.status_code == 422 and "valued by regression" in r.text
 
 
 def test_what_the_engine_cannot_hold_is_left_out_and_said():
@@ -417,16 +501,58 @@ def test_adjoint_sensitivities_of_a_trade_off_the_market_match_bumped_quotes():
     assert base["swap_rates"][-1]["cva"]["value"] == 0.0
 
 
+def test_a_netting_set_with_a_share_has_the_sensitivities_of_both_factors():
+    pf = _pf(_swap(0.047), _option(100.0), quantity=1.0)
+    pf.transactions[1].quantity = 3000.0  # 3 000 calls next to the swap
+    r = risks(pf, seed=5)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    by_label = {q["label"]: q for q in body["second_factor"]}
+    assert set(by_label) == {
+        "dividend yield of AAA",
+        "price of AAA",
+        "market volatility of AAA",
+        "correlation of the dollar rate and AAA",
+    }
+    # Bought calls: the bank is owed more when the share rises or moves more
+    # (the CVA, a cost, grows), less when it pays more dividends.
+    assert by_label["price of AAA"]["cva"]["value"] < 0
+    assert by_label["market volatility of AAA"]["cva"]["value"] < 0
+    assert by_label["dividend yield of AAA"]["cva"]["value"] > 0
+    assert by_label["dividend yield of AAA"]["level"] == pytest.approx(0.015)
+    # The delta against the share's price moved in the store, same draws.
+    valued = {}
+    for sign in (+1, -1):
+        scale = 1.0 + sign * 0.001
+
+        def moved(ticker, since, scale=scale):
+            return [(d, v * scale) for d, v in SHARE(ticker, since)]
+
+        original = db.price_history
+        db.price_history = moved
+        try:
+            valued[sign] = risks(pf, seed=5).json()["adjustments"]["cva"]["value"]
+        finally:
+            db.price_history = original
+    finite = (valued[1] - valued[-1]) / (0.002 * by_label["price of AAA"]["level"])
+    reported = by_label["price of AAA"]["cva"]
+    assert reported["value"] == pytest.approx(
+        finite, rel=0.05, abs=3 * reported["error"]
+    )
+    assert body["sa_cva"] is None and "a share" in body["sa_cva_unavailable"]
+    # The swap rates still have theirs.
+    assert any(q["cva"]["value"] != 0.0 for q in body["swap_rates"])
+
+
 def test_sensitivities_say_what_they_do_not_cover():
-    r = risks(_pf(_swap(0.047), _option(100.0)))
-    assert r.status_code == 422 and "equity options" in r.text
     r = risks(_pf(_swap(0.047), netting_set="example-dealer-im"), "example-dealer-im")
     assert r.status_code == 422 and "initial margin" in r.text
     r = risks(_pf(_option(100.0, product="american_vanilla")))
     assert r.status_code == 422 and "no such trade" in r.text
-    # A swap already running: the coupon in progress is said to be left out.
+    # A swap already running has its sensitivities: its coupon in progress
+    # is a known amount, differentiated like any cash flow.
     body = risks(_pf(_swap(0.045, start=date(2025, 3, 31)))).json()
-    assert any("coupon in progress" in w for w in body["warnings"])
+    assert body["adjustments"]["cva"]["value"] < 0
 
 
 def test_the_audit_record_holds_the_trades_and_not_the_portfolio(store):

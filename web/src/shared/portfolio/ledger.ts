@@ -122,9 +122,9 @@ export function underlyingOf(instrument: Instrument | undefined): string {
 	const spec = instrument.spec;
 	if (spec.kind === "equity") return spec.ticker;
 	if (spec.kind === "derivative") return spec.underlying ?? instrument.label;
-	return spec.product === "swap" || spec.product === "swaption"
-		? `${spec.currency} rates`
-		: "EUR/USD";
+	return spec.product === "fx_forward" || spec.product === "cross_currency_swap"
+		? "EUR/USD"
+		: `${spec.currency} rates`;
 }
 
 export function rateFxInstrument(label: string, spec: RateFxSpec): Instrument {

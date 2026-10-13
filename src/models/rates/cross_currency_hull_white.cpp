@@ -1,58 +1,18 @@
 #include "quantModeling/models/rates/cross_currency_hull_white.hpp"
 
+#include "quantModeling/utils/gauss_legendre.hpp"
+
 #include <cmath>
-#include <numbers>
 #include <utility>
 
 namespace quantModeling
 {
     namespace
     {
-        constexpr int kNodes = 16;
-
-        /// Gauss-Legendre nodes and weights on [-1, 1], by Newton on the
-        /// Legendre polynomial. The integrands here are products of
-        /// exponentials over one step of the grid: sixteen nodes integrate
-        /// them to the last digits.
-        struct GaussLegendre
-        {
-            std::array<Real, kNodes> node, weight;
-            GaussLegendre()
-            {
-                for (int i = 0; i < kNodes; ++i)
-                {
-                    Real x = std::cos(std::numbers::pi * (i + 0.75) / (kNodes + 0.5));
-                    Real derivative = 0.0;
-                    for (int iteration = 0; iteration < 100; ++iteration)
-                    {
-                        Real p0 = 1.0, p1 = x;
-                        for (int k = 2; k <= kNodes; ++k)
-                        {
-                            const Real p2 = ((2.0 * k - 1.0) * x * p1 - (k - 1.0) * p0) / k;
-                            p0 = p1;
-                            p1 = p2;
-                        }
-                        derivative = kNodes * (x * p1 - p0) / (x * x - 1.0);
-                        const Real step = p1 / derivative;
-                        x -= step;
-                        if (std::abs(step) < 1e-16)
-                            break;
-                    }
-                    node[i] = x;
-                    weight[i] = 2.0 / ((1.0 - x * x) * derivative * derivative);
-                }
-            }
-        };
-
         template <class F>
         Real integrate(Time from, Time to, F f)
         {
-            static const GaussLegendre rule;
-            const Real half = 0.5 * (to - from), middle = 0.5 * (to + from);
-            Real sum = 0.0;
-            for (int i = 0; i < kNodes; ++i)
-                sum += rule.weight[i] * f(middle + half * rule.node[i]);
-            return half * sum;
+            return gauss_legendre(from, to, f);
         }
     } // namespace
 

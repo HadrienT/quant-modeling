@@ -151,7 +151,23 @@ export const handlers = [
 		}),
 	),
 	http.post("*/api/xva/portfolio/sensitivities", () =>
-		HttpResponse.json({ ...xva.sensitivities, portfolio: "ledger" }),
+		HttpResponse.json({
+			...xva.sensitivities,
+			portfolio: "ledger",
+			// A netting set with a share: its own sensitivities, and no SA-CVA.
+			sa_cva: null,
+			sa_cva_unavailable:
+				"SA-CVA is not reported: this netting set also moves with a share.",
+			second_factor: [
+				{
+					...xva.sensitivities.swap_rates[0],
+					label: "price of ^FCHI",
+					level: 8100,
+					move: 81,
+					move_label: "+1 %",
+				},
+			],
+		}),
 	),
 	http.post("*/api/xva/sensitivities", () =>
 		HttpResponse.json(xva.sensitivities),

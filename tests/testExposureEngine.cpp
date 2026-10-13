@@ -3,6 +3,7 @@
 #include "quantModeling/engines/analytic/hull_white_swaption.hpp"
 #include "quantModeling/engines/analytic/swap.hpp"
 #include "quantModeling/engines/xva/exposure_engine.hpp"
+#include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/engines/xva/hull_white_future_value.hpp"
 #include "quantModeling/instruments/rates/zero_coupon_bond.hpp"
 #include "quantModeling/market/credit_curve.hpp"
@@ -751,6 +752,64 @@ namespace quantModeling
         EXPECT_TRUE(exposure_statistics(paths).value_quantiles.empty());
         EXPECT_THROW(exposure_statistics(paths, {}, 0.95, {0.5, 0.4}), InvalidInput);
         EXPECT_THROW(exposure_statistics(paths, {}, 0.95, {1.0}), InvalidInput);
+    }
+
+    // ── A known cash flow (§14.16: the coupon in progress of a running swap) ─
+
+    TEST(HullWhiteFutureValue, AOneYearSwapIsItsFirstCouponWhichIsKnownToday)
+    {
+        // Both legs pay once, in a year, and the floating coupon is fixed
+        // today: the swap is one known amount. Path by path, to the bit of
+        // the two formulas.
+        const HullWhiteCurveModel m = model();
+        const Real K = 0.035, N = 250.0;
+        const Real fixing = m.projection().discount(0.0) / m.projection().discount(1.0) - 1.0;
+        HullWhiteExposureEngine engine(m);
+        engine.add(make_swap(0.0, 1.0, K, 1, 1, N, true));
+        engine.add(make_cash_flow_future_value(1.0, N * (fixing - K), m));
+        ExposureSimulationSettings settings;
+        settings.paths = 300;
+        settings.keep_cashflows = true;
+        const ExposurePaths cube = engine.simulate(settings);
+        EXPECT_NEAR(cube.trade_values_today[0], cube.trade_values_today[1], 1e-10);
+        EXPECT_NEAR(cube.trade_values_today[1], N * (fixing - K) * m.discount().discount(1.0), 1e-12);
+        for (std::size_t k = 0; k < cube.paths * cube.dates(); ++k)
+        {
+            ASSERT_NEAR(cube.trade_values[0][k], cube.trade_values[1][k], 1e-10);
+            ASSERT_NEAR(cube.trade_cashflows[0][k], cube.trade_cashflows[1][k], 1e-10);
+        }
+        // Paid once, and nothing is left after.
+        const auto paid = static_cast<std::size_t>(
+            std::lower_bound(cube.times.begin(), cube.times.end(), 1.0 - 1e-9) - cube.times.begin());
+        EXPECT_NEAR(cube.trade_cashflows[1][paid], N * (fixing - K), 1e-12);
+        EXPECT_EQ(cube.trade_values[1][paid], 0.0);
+    }
+
+    TEST(HullWhiteFutureValue, ACashFlowCompilesToTheTermsItIsValuedWith)
+    {
+        const HullWhiteCurveModel m = model();
+        const std::vector<Time> grid{0.25, 0.5, 1.0, 1.5, 2.0, 3.0};
+        const std::unique_ptr<FutureValue> flow = make_cash_flow_future_value(2.0, -40.0, m);
+        flow->bind(grid);
+        xva::ExposureProgram program;
+        ASSERT_TRUE(flow->compile(program));
+        const std::vector<Real> state{0.004, -0.007, 0.011, 0.002, -0.015, 0.009};
+        const xva::ProgramView view = program.view();
+        for (int i = 0; i < static_cast<int>(grid.size()); ++i)
+        {
+            EXPECT_DOUBLE_EQ(xva::program_linear_value(view, program.trades[0], i, state.data()),
+                             flow->value(static_cast<std::size_t>(i), state.data()));
+            EXPECT_DOUBLE_EQ(xva::program_linear_cashflow(view, program.trades[0], i, state.data()),
+                             flow->cashflow(static_cast<std::size_t>(i), state.data()));
+        }
+        // Its sensitivity is to the one bond it is.
+        std::vector<BondExposure> bonds;
+        std::vector<VolExposure> vols;
+        ASSERT_TRUE(flow->sensitivities(1, state.data(), bonds, vols));
+        ASSERT_EQ(bonds.size(), 1u);
+        EXPECT_DOUBLE_EQ(bonds[0].maturity, 2.0);
+        EXPECT_DOUBLE_EQ(bonds[0].amount, flow->value(1, state.data()));
+        EXPECT_THROW(make_cash_flow_future_value(0.0, 1.0, m), InvalidInput);
     }
 
 } // namespace quantModeling

@@ -239,6 +239,60 @@ def test_a_swaption_has_a_vega_and_the_position_carries_its_sensitivities(monkey
     assert position.greeks["pv01_usd"] > 0 and position.quantity == -1.0
 
 
+VOLS = [(1.0, 2.0, 0.0117), (1.0, 5.0, 0.0111), (1.0, 10.0, 0.0103), (2.0, 5.0, 0.0114)]
+
+
+def _bermudan(first="2025-10-01", end="2031-10-01", **more) -> RateFxSpec:
+    return RateFxSpec.model_validate(
+        {
+            **_draft("bermudan"),
+            "start": first,
+            "maturity": end,
+            "fixed_rate": 0.042,
+            **more,
+        }
+    )
+
+
+def test_a_bermudan_is_worth_at_least_its_first_european_and_exactly_it_with_one_date(
+    monkeypatch,
+):
+    md = _md()
+    monkeypatch.setattr(md.rates_history, "vols", lambda ccy, obs: VOLS)
+    d = date(2025, 2, 3)
+    m = pr.mark(_bermudan(), d, md)
+    european = next(p.value for p in m.model.params if p.name.startswith("European"))
+    # The right to wait is worth something: six exercise dates against one.
+    assert m.value > european > 0
+    assert m.model.model == "Hull-White, one factor" and m.inputs[-1].value == 6.0
+    # One exercise date: a European swaption, to the lattice's accuracy.
+    one = pr.mark(_bermudan(end="2026-10-01"), d, md)
+    alone = next(p.value for p in one.model.params if p.name.startswith("European"))
+    assert one.value == pytest.approx(alone, rel=2e-2)
+    # A payer gains when rates rise; its PV01 is at fixed model parameters.
+    assert m.greeks["pv01_usd"] > 0 and "normal_vega" not in m.greeks
+    assert "Bermudan payer swaption USD 10M" in pr.label(_bermudan())
+
+
+def test_a_bermudan_lives_on_its_later_dates_and_needs_enough_vols(monkeypatch):
+    md = _md()
+    monkeypatch.setattr(md.rates_history, "vols", lambda ccy, obs: VOLS)
+    spec = _bermudan()
+    # Its first date has passed: five are left.
+    later = pr.mark(spec, date(2025, 11, 14), md)
+    assert later.value > 0 and later.inputs[-1].value == 5.0
+    assert pr.bermudan_exercises(spec, date(2025, 11, 14))[0] == date(2026, 10, 1)
+    # ...until the last one, a year before the end of the swap.
+    assert spec.end == date(2030, 10, 1)
+    gone = pr.mark(spec, date(2030, 10, 1), md)
+    assert gone.value is None and "last exercise date" in gone.note
+    # Two vol points do not calibrate two parameters.
+    monkeypatch.setattr(md.rates_history, "vols", lambda ccy, obs: VOLS[:2])
+    md.rates_history._hull_white.clear()
+    short = pr.mark(spec, date(2025, 2, 4), md)
+    assert short.value is None and "not enough to calibrate" in short.note
+
+
 def test_contracts_the_engine_cannot_hold_are_refused():
     with pytest.raises(ValueError, match="whole number of years"):
         RateFxSpec.model_validate(
@@ -312,3 +366,59 @@ def test_the_quote_endpoint_fills_the_rates_and_refuses_a_day_without_market():
         client.post("/api/portfolio-valuation/rate-fx/quote", json=bad).status_code
         == 422
     )
+
+
+def test_a_demo_with_rate_and_fx_trades_is_struck_at_the_market_and_faces_counterparties():
+    from api.app import portfolio_demos as demos
+    from api.app import portfolio_ledger
+
+    on = date(2025, 6, 2)
+    demo = demos.Demo(
+        id="demo-test-otc",
+        name="Test",
+        description="",
+        base_currency="USD",
+        rate_fx=(
+            demos.RateFx("swap", "swap", "USD", 10e6, True, 5, "example-dealer-vm"),
+            demos.RateFx(
+                "forward", "fx_forward", "EUR", 4e6, True, 2, "example-sovereign-isda"
+            ),
+            demos.RateFx(
+                "ccs", "cross_currency_swap", "EUR", 6e6, False, 5,
+                "example-sovereign-isda",
+            ),
+        ),
+        trades=(
+            demos.Buy(on, "swap", 1),
+            demos.Buy(on, "forward", 1),
+            demos.Buy(date(2025, 7, 1), "ccs", -1),
+        ),
+    )  # fmt: skip
+    pf = demos.build(demo, pv.MarketData(on))
+    portfolio_ledger.validate(pf)
+    by_id = {i.id: i for i in pf.instruments}
+    # Struck at the market of its own trade date: nothing changes hands.
+    assert all(abs(t.price) < 1.0 for t in pf.transactions)
+    assert by_id["ccs"].spec.start == date(2025, 7, 1)
+    assert by_id["swap"].netting_set_id == "example-dealer-vm"
+    assert "Payer swap USD 10M" in by_id["swap"].label
+    assert {c.id for c in pf.counterparties} >= {"example-dealer", "example-sovereign"}
+    # Valued like any portfolio, a year on.
+    snap = pv.snapshot(pf, date(2026, 6, 2))
+    assert [p.kind for p in snap.positions] == ["rate_fx"] * 3
+    assert all(p.mark is not None for p in snap.positions)
+
+    # No swaption traded in the store: the demo is unavailable, not guessed.
+    option = demos.RateFx(
+        "swaption", "swaption", "USD", 5e6, True, 5, "example-dealer-vm", 1
+    )
+    bad = demos.Demo(
+        id="demo-test-swaption",
+        name="Test",
+        description="",
+        base_currency="USD",
+        rate_fx=(option,),
+        trades=(demos.Buy(on, "swaption", 1),),
+    )
+    with pytest.raises(LookupError, match="no volatility"):
+        demos.build(bad, pv.MarketData(on))

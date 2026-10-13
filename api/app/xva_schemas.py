@@ -192,6 +192,7 @@ class XvaTrade(BaseModel):
         "fx_forward",
         "cross_currency_swap",
         "equity_option",
+        "cashflow",
     ]
     currency: str = Field(
         description="The currency of the notional: the trade's own for a rate "
@@ -588,6 +589,13 @@ class AdjustmentRisks(BaseModel):
     cva_unilateral: Estimate = Field(
         description="The regulatory CVA's: the bank assumed default-free"
     )
+    move: Optional[float] = Field(
+        default=None,
+        description="For a quantity that is not a rate: the move the page shows "
+        "the sensitivity for (1 % of a price, a volatility point, 0.01 of a "
+        "correlation). None: a basis point",
+    )
+    move_label: Optional[str] = None
 
 
 class SensitivityAdjustments(BaseModel):
@@ -633,9 +641,18 @@ class XvaSensitivitiesResponse(BaseModel):
     others: List[AdjustmentRisks] = Field(
         description="Losses given default and funding spreads"
     )
+    second_factor: List[AdjustmentRisks] = Field(
+        default_factory=list,
+        description="With a second currency or a share: the exchange rate or the "
+        "share's price, its market volatility, its curve (the dividend yield, or "
+        "the foreign zero rates), the foreign rate model and the correlations",
+    )
     #: To what the model is written in.
     model_risks: List[AdjustmentRisks]
-    sa_cva: SaCvaOut
+    sa_cva: Optional[SaCvaOut] = Field(
+        description="None with a second currency or a share: see `sa_cva_unavailable`"
+    )
+    sa_cva_unavailable: Optional[str] = None
     hull_white: HullWhiteInput
     market_as_of: date
     paths: int

@@ -4,6 +4,7 @@
 #include "quantModeling/engines/xva/xva_risks.hpp"
 #include "quantModeling/market/credit_curve.hpp"
 #include "quantModeling/market/hull_white_calibration.hpp"
+#include "quantModeling/models/rates/cross_currency_hull_white.hpp"
 #include "quantModeling/models/rates/hull_white_curve.hpp"
 #include "quantModeling/risk/regulatory/sa_cva.hpp"
 
@@ -106,6 +107,36 @@ namespace quantModeling
     XvaMarketRisks xva_market_risks(const XvaRisks &risks, const HullWhiteCurveModel &model,
                                     const CreditCurve &counterparty, const CreditCurve &own,
                                     const XvaMarketQuotes &quotes);
+
+    /**
+     * @brief The risks of a two-factor run (CrossCurrencyExposureEngine::
+     *        xva_risks) at a fixed **market** volatility of the exchange rate
+     *        or of the asset, in place (§14.17).
+     *
+     * The run differentiates to σ_S, the volatility of the spot in the
+     * model. A desk does not quote σ_S: it was set so that an option of
+     * `expiry` has its market Black volatility (calibrated_fx_volatility),
+     * and so it moves with everything that volatility's formula holds — a
+     * and σ of both rates, the three correlations. With the market
+     * volatility held fixed,
+     *
+     *   d/dθ = ∂/∂θ + ∂/∂σ_S × ∂σ_S/∂θ,   d/dvol = ∂/∂σ_S × ∂σ_S/∂vol.
+     *
+     * σ_S is the root of a quadratic: its derivatives are taken by central
+     * differences of that closed form. Applied batch by batch, so every risk
+     * keeps a Monte-Carlo error of its own. After the call the factor
+     * SpotVolatility is the market volatility (label and level changed).
+     *
+     * @throws InvalidInput when the risks are not those of a two-factor run,
+     *         or when the model's σ_S is not the calibration to this quote.
+     */
+    void fold_spot_volatility_calibration(XvaRisks &risks, const CrossCurrencyHullWhiteModel &model,
+                                          Time expiry, Real market_volatility);
+
+    /// One factor of a run as a quote risk: what is both an input of the
+    /// model and something read on a market (a spot, a dividend yield), or
+    /// an estimate reported as it is (a correlation).
+    XvaQuoteRisk factor_risk(const XvaRisks &risks, std::size_t factor);
 
     /**
      * @brief The SA-CVA sensitivities of MAR50 from the market risks of the

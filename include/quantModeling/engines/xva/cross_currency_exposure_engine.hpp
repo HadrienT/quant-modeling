@@ -2,7 +2,9 @@
 #define QM_ENGINES_XVA_CROSS_CURRENCY_EXPOSURE_ENGINE_HPP
 
 #include "quantModeling/engines/xva/exposure_engine.hpp"
+#include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/engines/xva/future_value.hpp"
+#include "quantModeling/engines/xva/xva_risks.hpp"
 #include "quantModeling/instruments/base.hpp"
 #include "quantModeling/models/rates/cross_currency_hull_white.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
@@ -13,6 +15,39 @@
 
 namespace quantModeling
 {
+
+    namespace xva
+    {
+        /**
+         * @brief A trade of the two-currency engine in flat terms: the cash
+         *        flows known today in each currency and the European options
+         *        on the exchange rate it is made of, for one unit of it. What
+         *        the adjoint run differentiates (§14.17): it replays the
+         *        valuation on a differentiable number, which a virtual
+         *        `evaluate_path` on doubles cannot do.
+         */
+        struct TwoFactorTerms
+        {
+            struct Flow
+            {
+                Time time;
+                Real amount; ///< > 0 received by the bank
+            };
+            struct Option
+            {
+                Real strike;
+                Time expiry;
+                bool call;
+                Real notional; ///< in units of the foreign currency (or of the asset)
+            };
+            std::vector<Flow> domestic, foreign;
+            std::vector<Option> options;
+            /// The rate trades of one currency (swaps, European swaptions),
+            /// in the terms of the one-currency engine: each is read on its
+            /// own currency's rate, a foreign one converted at the spot.
+            ExposureProgram domestic_program, foreign_program;
+        };
+    } // namespace xva
 
     /// One path of the model on the exposure grid: the state of each rate
     /// and the spot (domestic per foreign), date by date.
@@ -52,6 +87,11 @@ namespace quantModeling
          */
         virtual void evaluate_path(const CrossCurrencyPath &path, std::size_t dates, Real *values,
                                    Real *cashflows) const = 0;
+
+        /// Appends the trade to `terms`, for one unit of it.
+        /// @return false, leaving `terms` untouched, when the trade has no
+        ///         such description: its sensitivities are not computed.
+        virtual bool describe(xva::TwoFactorTerms & /*terms*/) const { return false; }
     };
 
     /**
@@ -141,12 +181,49 @@ namespace quantModeling
                                ThreadPool *pool = nullptr,
                                CrossCurrencyScenarios *scenarios = nullptr);
 
+        /**
+         * @brief CVA, DVA, FCA, FBA and the unilateral CVA of the netting set
+         *        with their sensitivities to every input of the model, by
+         *        adjoint differentiation: the two-factor counterpart of
+         *        HullWhiteExposureEngine::xva_risks (§14.17), on the scenarios
+         *        of simulate().
+         *
+         * The inputs: the zero rates of both curves, a and σ of both rates,
+         * the spot, its volatility, the three correlations, the hazard rates,
+         * the losses given default and the funding spreads. With
+         * make_asset_model the foreign curve is the dividend yield, and the
+         * foreign rate's own a, σ and correlations mean nothing.
+         *
+         * Covered: every trade the engine takes — known cash flows (FX
+         * forwards, fixed-for-fixed cross-currency swaps), European options
+         * on the exchange rate or the asset, swaps and European swaptions of
+         * either currency — with or without variation margin. A swaption's
+         * exercise is smoothed as in the one-currency run
+         * (XvaRiskInputs::exercise_smoothing; one width per rate trade,
+         * domestic ones first).
+         *
+         * @throws InvalidInput when simulate() would throw.
+         */
+        XvaRisks xva_risks(ExposureSimulationSettings settings, const XvaRiskInputs &inputs,
+                           ThreadPool *pool = nullptr);
+
+        /// The same adjustments on plain doubles, without sensitivities: what
+        /// xva_risks() is checked against by finite differences.
+        XvaValues xva_values(ExposureSimulationSettings settings, const XvaRiskInputs &inputs,
+                             ThreadPool *pool = nullptr);
+
       private:
         struct Trade
         {
             std::unique_ptr<CrossCurrencyFutureValue> value;
             Real quantity;
         };
+
+        /// What a run of xva_risks() or xva_values() is set up with
+        /// (src/engines/xva/cross_currency_xva_risks.cpp).
+        struct RiskRun;
+        void prepare_risk_run(ExposureSimulationSettings &settings, const XvaRiskInputs &inputs,
+                              RiskRun &run) const;
 
         const CrossCurrencyHullWhiteModel &model_;
         std::vector<Trade> trades_;

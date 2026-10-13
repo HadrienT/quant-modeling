@@ -81,7 +81,19 @@ namespace quantModeling
         CounterpartyLgd,
         OwnLgd,
         BorrowingSpread,
-        LendingSpread
+        LendingSpread,
+        // The second factor of the two-currency engine (§14.17): the
+        // foreign curve and rate model — or the dividend yield of an asset —,
+        // the exchange rate (or the asset's price), its volatility, and the
+        // three correlations.
+        ForeignZeroRate,
+        ForeignMeanReversion,
+        ForeignSigma,
+        Spot,
+        SpotVolatility,
+        CorrelationDomesticForeign,
+        CorrelationDomesticSpot,
+        CorrelationForeignSpot
     };
 
     struct XvaRiskInputs

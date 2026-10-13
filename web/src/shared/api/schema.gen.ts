@@ -1636,6 +1636,13 @@ export interface components {
              */
             level: number;
             /**
+             * Move
+             * @description For a quantity that is not a rate: the move the page shows the sensitivity for (1 % of a price, a volatility point, 0.01 of a correlation). None: a basis point
+             */
+            move?: number | null;
+            /** Move Label */
+            move_label?: string | null;
+            /**
              * Tenor
              * @description Tenor of the swap, the swaption or the spread
              */
@@ -4904,6 +4911,11 @@ export interface components {
         PricingResponse: {
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
             /**
+             * Bumped Greeks
+             * @description The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.
+             */
+            bumped_greeks?: string[];
+            /**
              * Compute Ms
              * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
              */
@@ -5189,7 +5201,7 @@ export interface components {
              * Product
              * @enum {string}
              */
-            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            product: "swap" | "swaption" | "bermudan" | "fx_forward" | "cross_currency_swap";
             /**
              * Start
              * Format: date
@@ -5233,6 +5245,7 @@ export interface components {
          *     |---|---|---|---|---|
          *     | swap | first day | last payment | pays the fixed rate | the fixed rate |
          *     | swaption | expiry | end of the swap | on a payer swap | the strike |
+         *     | bermudan | first exercise | end of the swap | on a payer swap | the strike |
          *     | fx_forward | trade date | delivery | buys the euros | USD per EUR |
          *     | cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |
          */
@@ -5276,7 +5289,7 @@ export interface components {
              * Product
              * @enum {string}
              */
-            product: "swap" | "swaption" | "fx_forward" | "cross_currency_swap";
+            product: "swap" | "swaption" | "bermudan" | "fx_forward" | "cross_currency_swap";
             /**
              * Start
              * Format: date
@@ -6583,6 +6596,11 @@ export interface components {
         SwapPricingResponse: {
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
             /**
+             * Bumped Greeks
+             * @description The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.
+             */
+            bumped_greeks?: string[];
+            /**
              * Compute Ms
              * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
              */
@@ -6722,6 +6740,11 @@ export interface components {
         /** SwaptionPricingResponse */
         SwaptionPricingResponse: {
             bond_analytics?: components["schemas"]["BondAnalytics"] | null;
+            /**
+             * Bumped Greeks
+             * @description The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.
+             */
+            bumped_greeks?: string[];
             /**
              * Compute Ms
              * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
@@ -7524,7 +7547,15 @@ export interface components {
             portfolio: "single_swap" | "bought_swaption" | "sold_swaption" | "directional" | "balanced" | "bermudan" | "cancellable" | "scripted_swap" | "fx_forward" | "cross_currency" | "two_currencies" | "custom" | "ledger";
             /** Portfolio Label */
             portfolio_label: string;
-            sa_cva: components["schemas"]["SaCvaOut"];
+            /** @description None with a second currency or a share: see `sa_cva_unavailable` */
+            sa_cva: components["schemas"]["SaCvaOut"] | null;
+            /** Sa Cva Unavailable */
+            sa_cva_unavailable?: string | null;
+            /**
+             * Second Factor
+             * @description With a second currency or a share: the exchange rate or the share's price, its market volatility, its curve (the dividend yield, or the foreign zero rates), the foreign rate model and the correlations
+             */
+            second_factor?: components["schemas"]["AdjustmentRisks"][];
             /**
              * Seconds Adjoint
              * @description Wall time of the paths with every sensitivity
@@ -7571,7 +7602,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap" | "equity_option";
+            kind: "swap" | "swaption" | "bermudan" | "script" | "fx_forward" | "cross_currency_swap" | "equity_option" | "cashflow";
             /**
              * Marginal Cva
              * @description Euler share of the CVA; none under a CSA

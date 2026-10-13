@@ -30,7 +30,10 @@ namespace quantModeling
      */
     struct CrossCurrencySwap final : Instrument
     {
-        Time maturity;          ///< final exchange of notionals
+        /// Final exchange of notionals. The coupon dates are counted back
+        /// from it: a maturity that is not a whole number of periods is a
+        /// swap already running, whose next coupon is paid in full.
+        Time maturity;
         Real foreign_notional;  ///< in foreign currency
         Real domestic_notional; ///< in domestic currency
         Real foreign_rate;      ///< fixed coupon rate on the foreign notional

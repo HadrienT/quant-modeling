@@ -77,6 +77,21 @@ namespace quantModeling
                                                    const AmcSettings &settings = {});
 
     /**
+     * @brief An amount known today, paid at `time`: worth amount × P(t, time)
+     *        until then, and nothing after. Not a product: what is left of a
+     *        trade whose next payment is already fixed — the coupon in
+     *        progress of a swap that has started, which the swap's own
+     *        future value refuses for want of its past fixing
+     *        (blueprint/wp/23-xva.md §14.16). A closed form of the state, on
+     *        the device and in the adjoint run like a swap's coupons.
+     *
+     * @param amount > 0 received by the bank.
+     * @throws InvalidInput unless `time` > 0 and both are finite.
+     */
+    std::unique_ptr<FutureValue> make_cash_flow_future_value(Time time, Real amount,
+                                                             const HullWhiteCurveModel &model);
+
+    /**
      * @brief Dispatch on the instrument by the visitor, as the pricing
      *        engines do: closed form for swaps and European swaptions,
      *        regression for Bermudans.

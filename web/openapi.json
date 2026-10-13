@@ -67,6 +67,29 @@
             "title": "Level",
             "type": "number"
           },
+          "move": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a quantity that is not a rate: the move the page shows the sensitivity for (1 % of a price, a volatility point, 0.01 of a correlation). None: a basis point",
+            "title": "Move"
+          },
+          "move_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Label"
+          },
           "tenor": {
             "description": "Tenor of the swap, the swaption or the spread",
             "title": "Tenor",
@@ -7482,6 +7505,14 @@
               }
             ]
           },
+          "bumped_greeks": {
+            "description": "The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Bumped Greeks",
+            "type": "array"
+          },
           "compute_ms": {
             "anyOf": [
               {
@@ -8051,6 +8082,7 @@
             "enum": [
               "swap",
               "swaption",
+              "bermudan",
               "fx_forward",
               "cross_currency_swap"
             ],
@@ -8120,7 +8152,7 @@
         "type": "object"
       },
       "RateFxSpec": {
-        "description": "An over-the-counter rate or FX trade, marked each day on the swap\ncurves of the store (portfolio_rates.py) and simulated by the exposure\nengine (xVA). One contract is the whole notional: a trade's quantity is\n+1 for the side described here, -1 for the other.\n\nThe conventions are the exposure engine's: both legs of a swap pay once a\nyear and it lasts a whole number of years; an FX trade is in euros\nagainst dollars and is valued in dollars.\n\n| product | start | maturity | payer | fixed_rate |\n|---|---|---|---|---|\n| swap | first day | last payment | pays the fixed rate | the fixed rate |\n| swaption | expiry | end of the swap | on a payer swap | the strike |\n| fx_forward | trade date | delivery | buys the euros | USD per EUR |\n| cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |",
+        "description": "An over-the-counter rate or FX trade, marked each day on the swap\ncurves of the store (portfolio_rates.py) and simulated by the exposure\nengine (xVA). One contract is the whole notional: a trade's quantity is\n+1 for the side described here, -1 for the other.\n\nThe conventions are the exposure engine's: both legs of a swap pay once a\nyear and it lasts a whole number of years; an FX trade is in euros\nagainst dollars and is valued in dollars.\n\n| product | start | maturity | payer | fixed_rate |\n|---|---|---|---|---|\n| swap | first day | last payment | pays the fixed rate | the fixed rate |\n| swaption | expiry | end of the swap | on a payer swap | the strike |\n| bermudan | first exercise | end of the swap | on a payer swap | the strike |\n| fx_forward | trade date | delivery | buys the euros | USD per EUR |\n| cross_currency_swap | first day | final exchange | receives the euros | the USD coupon |",
         "properties": {
           "currency": {
             "description": "The currency of the notional: EUR for an FX trade",
@@ -8191,6 +8223,7 @@
             "enum": [
               "swap",
               "swaption",
+              "bermudan",
               "fx_forward",
               "cross_currency_swap"
             ],
@@ -11321,6 +11354,14 @@
               }
             ]
           },
+          "bumped_greeks": {
+            "description": "The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Bumped Greeks",
+            "type": "array"
+          },
           "compute_ms": {
             "anyOf": [
               {
@@ -11685,6 +11726,14 @@
                 "type": "null"
               }
             ]
+          },
+          "bumped_greeks": {
+            "description": "The greeks the engine does not give, computed by bumping an input and revaluing (greeks_fallback.py): finite differences, with no standard error. The others are the engine's own.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Bumped Greeks",
+            "type": "array"
           },
           "compute_ms": {
             "anyOf": [
@@ -13533,7 +13582,34 @@
             "type": "string"
           },
           "sa_cva": {
-            "$ref": "#/components/schemas/SaCvaOut"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SaCvaOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None with a second currency or a share: see `sa_cva_unavailable`"
+          },
+          "sa_cva_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sa Cva Unavailable"
+          },
+          "second_factor": {
+            "description": "With a second currency or a share: the exchange rate or the share's price, its market volatility, its curve (the dividend yield, or the foreign zero rates), the foreign rate model and the correlations",
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentRisks"
+            },
+            "title": "Second Factor",
+            "type": "array"
           },
           "seconds_adjoint": {
             "description": "Wall time of the paths with every sensitivity",
@@ -13650,7 +13726,8 @@
               "script",
               "fx_forward",
               "cross_currency_swap",
-              "equity_option"
+              "equity_option",
+              "cashflow"
             ],
             "title": "Kind",
             "type": "string"

@@ -10,6 +10,7 @@ export {
 	aggregateRisk,
 	type RateSensitivities,
 	type RiskAggregate,
+	type RiskTotals,
 } from "./risk";
 export {
 	DEFAULT_CSA,
