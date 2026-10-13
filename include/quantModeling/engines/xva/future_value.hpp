@@ -40,7 +40,23 @@ namespace quantModeling
         /// T*-forward measure.
         std::vector<Real> deflator;
 
+        // What the pathwise differentials of the pilot are computed from
+        // (engines/xva/pilot_targets.hpp, blueprint/wp/25-ml.md §3.4). Both
+        // are empty when the simulation that drew the paths does not give
+        // them, and one number per date otherwise: a Gaussian state moves
+        // linearly, and the deflator is log-linear in it.
+        /// ∂state(t_i) / ∂state(t_{i-1}) with the path's draws held fixed;
+        /// the first one is from the starting state.
+        std::vector<Real> state_decay;
+        /// ∂ ln deflator(t_i) / ∂state(t_i).
+        std::vector<Real> deflator_slope;
+
         std::size_t dates() const { return times.size(); }
+        bool has_sensitivities() const
+        {
+            return !times.empty() && state_decay.size() == times.size() &&
+                   deflator_slope.size() == times.size();
+        }
         const Real *state_row(std::size_t p) const { return state.data() + p * dates(); }
         const Real *deflator_row(std::size_t p) const { return deflator.data() + p * dates(); }
     };
@@ -52,6 +68,14 @@ namespace quantModeling
     {
         Time maturity;
         Real amount;
+    };
+
+    /// One partial derivative of a cash flow: with respect to the state at
+    /// grid date `date`.
+    struct StateDerivative
+    {
+        std::size_t date;
+        Real value;
     };
 
     /// A dependence on an implied volatility: vega times that volatility
@@ -112,6 +136,25 @@ namespace quantModeling
 
         /// Cash flow at grid[i]: > 0 received by the bank, < 0 paid.
         virtual Real cashflow(std::size_t i, const Real *state) const = 0;
+
+        /**
+         * @brief The partial derivatives of cashflow(i, state) with respect
+         *        to the state at each date it reads (dates <= i), appended to
+         *        `out`: what the pathwise differentials of the pilot are
+         *        built from (engines/xva/pilot_targets.hpp).
+         *
+         * The regime is held fixed: an exercise decision is not
+         * differentiated. At an optimal exercise the value given up and the
+         * value taken are equal, so the term left out has no expectation.
+         *
+         * @return false, leaving `out` untouched, when the trade cannot give
+         *         them (the default).
+         */
+        virtual bool cashflow_gradient(std::size_t /*i*/, const Real * /*state*/,
+                                       std::vector<StateDerivative> & /*out*/) const
+        {
+            return false;
+        }
 
         // ── A whole path at once ────────────────────────────────────────
 
