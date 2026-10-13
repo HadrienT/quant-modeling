@@ -37,10 +37,17 @@ namespace quantModeling
         }
 
         /// Payoff series coefficients U_k for a put (Fang & Oosterlee eq 29,
-        /// K factored out -- multiplied in by the caller).
+        /// K factored out -- multiplied in by the caller). The put pays on
+        /// y = ln(S_T/K) <= 0, so the payoff is integrated over the part of
+        /// [a,b] below zero: [a,0] when the range contains the strike, all of
+        /// [a,b] when it lies below it, nothing when it lies above it. Far
+        /// from the money next to the width of the distribution (a short
+        /// maturity, a low variance) the range does not contain the strike,
+        /// and integrating over [a,0] regardless is not the option's price.
         Real put_u_k(std::size_t k, Real a, Real b)
         {
-            return (2.0 / (b - a)) * (-chi_k(k, a, 0.0, a, b) + psi_k(k, a, 0.0, a, b));
+            const Real d = std::clamp(Real(0.0), a, b);
+            return (2.0 / (b - a)) * (-chi_k(k, a, d, a, b) + psi_k(k, a, d, a, b));
         }
 
         /// First two cumulants of the log-return, estimated by central finite
@@ -109,7 +116,11 @@ namespace quantModeling
 
             const Real put_price = discount_factor * strike * sum;
             const Real price = is_call ? put_price + discount_factor * (forward - strike) : put_price;
-            prices.push_back(std::max(price, Real(0.0))); // guards against small negative numerical noise from the truncated series
+            // The intrinsic value is the no-arbitrage floor: the truncated
+            // series can land a hair below it (below zero out of the money,
+            // below the forward's distance to the strike in the money).
+            const Real intrinsic = discount_factor * std::max(is_call ? forward - strike : strike - forward, Real(0.0));
+            prices.push_back(std::max(price, intrinsic));
         }
         return prices;
     }

@@ -85,6 +85,57 @@ namespace quantModeling
         }
     }
 
+    // ── Strike outside the truncation range ──────────────────────────────────
+    // A short maturity or a low variance makes the distribution narrow next
+    // to |ln(F/K)|: the range [a,b] no longer contains the strike. The price
+    // is then the intrinsic value to machine precision, not a number that
+    // only looks like a price (issue #168, whose cases these are).
+
+    TEST(HestonCOS, IsTheIntrinsicValueWhenTheStrikeIsFarOutsideTheRange)
+    {
+        struct Case
+        {
+            Real ttm, v0, forward;
+        };
+        for (const Case c : {Case{0.02, 0.0005, 80.0}, Case{0.02, 0.0005, 120.0},
+                             Case{1.0 / 126.0, 0.005, 80.0}, Case{1.0 / 252.0, 0.04, 80.0},
+                             Case{1.0 / 252.0, 0.0005, 105.0}})
+        {
+            const HestonParams p{c.v0, 2.0, 0.04, 0.5, -0.7};
+            const Real call = heston_cos_price(c.forward, 100.0, c.ttm, 1.0, p, /*is_call=*/true);
+            const Real put = heston_cos_price(c.forward, 100.0, c.ttm, 1.0, p, /*is_call=*/false);
+            EXPECT_NEAR(call, std::max(c.forward - 100.0, 0.0), 1e-8)
+                << "ttm=" << c.ttm << " v0=" << c.v0 << " forward=" << c.forward;
+            EXPECT_NEAR(put, std::max(100.0 - c.forward, 0.0), 1e-8)
+                << "ttm=" << c.ttm << " v0=" << c.v0 << " forward=" << c.forward;
+        }
+    }
+
+    TEST(HestonCOS, StaysWithinBoundsAndMonotoneAsTheForwardCrossesTheRange)
+    {
+        // One day to expiry: the range is about +-13 % around the forward,
+        // so this sweep starts with the strike above the range, crosses it,
+        // and ends with the strike below it.
+        const HestonParams p{0.04, 2.0, 0.04, 0.5, -0.7};
+        const Real ttm = 1.0 / 252.0;
+        const Real strike = 100.0;
+        Real previous_call = 0.0;
+        Real previous_put = kDiscount * strike;
+        for (Real forward = 50.0; forward <= 200.0; forward += 0.5)
+        {
+            const Real call = heston_cos_price(forward, strike, ttm, kDiscount, p, /*is_call=*/true);
+            const Real put = heston_cos_price(forward, strike, ttm, kDiscount, p, /*is_call=*/false);
+            EXPECT_GE(call, kDiscount * std::max(forward - strike, 0.0) - 1e-8) << "forward=" << forward;
+            EXPECT_LE(call, kDiscount * forward + 1e-8) << "forward=" << forward;
+            EXPECT_GE(put, kDiscount * std::max(strike - forward, 0.0) - 1e-8) << "forward=" << forward;
+            EXPECT_LE(put, kDiscount * strike + 1e-8) << "forward=" << forward;
+            EXPECT_GE(call, previous_call - 1e-8) << "forward=" << forward;
+            EXPECT_LE(put, previous_put + 1e-8) << "forward=" << forward;
+            previous_call = call;
+            previous_put = put;
+        }
+    }
+
     // ── Monotonicity ──────────────────────────────────────────────────────────
 
     TEST(HestonCOS, CallPriceIsDecreasingInStrike)
