@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -127,36 +128,44 @@ namespace quantModeling
         // calling thread also drains the queue instead of sleeping, so a
         // task can genuinely run on the main thread if it wins the race
         // against a worker's own try_pop. What must never happen is a value
-        // outside [0, n_threads], and with 40 tasks over 4 workers, more
-        // than one distinct *worker* id must appear -- otherwise the pool
-        // never actually dispatched in parallel.
+        // outside [0, n_threads], and more than one distinct *worker* id
+        // must appear -- otherwise the pool never actually dispatched in
+        // parallel.
+        //
+        // Each task holds its thread until two workers are inside a task at
+        // once. Counting ids over tasks that return at once would depend on
+        // the scheduler: on a loaded machine one thread drains the whole
+        // queue before the others wake up. The deadline is shared, so a pool
+        // that cannot run two tasks at once fails instead of hanging.
         constexpr std::size_t n_threads = 4;
         constexpr int n_tasks = 40; // several tasks per thread
         ThreadPool pool;
         pool.start(n_threads);
 
         std::mutex mtx;
+        std::condition_variable two_workers_in;
         std::set<std::size_t> seen;
+        std::size_t distinct_workers = 0;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
         std::vector<TaskHandle> handles;
         for (int i = 0; i < n_tasks; ++i)
         {
             handles.push_back(pool.spawn_task([&]
                                               {
                 const std::size_t n = ThreadPool::thread_num();
-                const std::lock_guard<std::mutex> lock(mtx);
-                seen.insert(n);
+                std::unique_lock<std::mutex> lock(mtx);
+                if (seen.insert(n).second && n >= 1)
+                    ++distinct_workers;
+                two_workers_in.notify_all();
+                two_workers_in.wait_until(lock, deadline, [&]
+                                          { return distinct_workers > 1; });
                 return true; }));
         }
         for (auto &h : handles)
             EXPECT_TRUE(pool.active_wait(h));
 
-        std::size_t distinct_workers = 0;
         for (std::size_t n : seen)
-        {
             EXPECT_LE(n, n_threads);
-            if (n >= 1)
-                ++distinct_workers;
-        }
         EXPECT_GT(distinct_workers, 1u);
 
         pool.stop();
