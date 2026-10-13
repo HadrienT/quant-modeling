@@ -571,7 +571,7 @@
 				"trades_used": 168,
 				"rejected": [
 					{
-						"reason": "off the grid (expiry beyond two years, odd tenor)",
+						"reason": "off the grid (expiry beyond ten years, odd tenor)",
 						"trades": 867
 					},
 					{
@@ -592,8 +592,8 @@
 				{
 					"title": "Where the swap curve and the swaption vols come from",
 					"paragraphs": [
-						"This is market data of a particular kind: not quotes but trades. US swap dealers must report every swap to a repository, which publishes its price and size (CFTC public dissemination; DTCC's repository, stored daily). The swap curve is, per tenor, the median fixed rate of the spot-starting swaps traded on the latest day. Each swaption vol is the median, over the last days, of the normal vols implied by the traded premiums: premium / notional = annuity × Bachelier(forward, strike, expiry, σ), solved for σ on the swap curve of the trade's day. The number of trades behind each point is shown.",
-						"What is left out, and why: capped notionals (the premium is published in full, the notional is not); novations and amendments (not prices); trades away from the money (the files do not say whether a call is a payer or a receiver, and only at the money does it not matter); expiries beyond two years (their premium appears to be paid at expiry rather than up front, which the files do not say). A straddle traded on a platform carries the premium of both legs on each leg and counts for half. These are medians of a handful of trades, not a dealer's surface: read the trade counts."
+						"This is market data of a particular kind: not quotes but trades. US swap dealers must report every swap to a repository, which publishes its price and size (CFTC public dissemination; DTCC's repository, stored daily). The swap curve is, per tenor, the median fixed rate of the spot-starting swaps traded on the latest day. Each swaption vol is the median, over the last days, of the normal vols implied by the traded premiums: premium / notional, discounted from the expiry, = annuity × Bachelier(forward, strike, expiry, σ), solved for σ on the swap curve of the trade's day. The number of trades behind each point is shown.",
+						"What is left out, and why: capped notionals (the premium is published in full, the notional is not); novations and amendments (not prices); trades away from the money (the files do not say whether a call is a payer or a receiver, and only at the money does it not matter); expiries beyond ten years. The premium is read as paid at expiry, the convention of the swaption market, which the files do not say: on the trades with long expiries most premiums sit at that level, a few at the level of a premium paid up front. A straddle traded on a platform carries the premium of both legs on each leg and counts for half. These are medians of a handful of trades, not a dealer's surface: read the trade counts."
 					]
 				}
 			]
