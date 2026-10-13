@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSessionActions } from "@/shared/session";
 import { Button } from "@/shared/ui";
 import { AssistantStatus, AssistantStatusNotice } from "./AssistantStatus";
 import { MessageBody } from "./MessageBody";
@@ -38,6 +39,7 @@ export function AssistantPanel({
 		day_count: dayCount,
 	};
 	const chat = useAssistantChat(() => ctx.current);
+	const { setDialogOpen } = useSessionActions();
 	const [draft, setDraft] = useState("");
 	const bottom = useRef<HTMLDivElement>(null);
 	const scriptRef = useRef(script);
@@ -94,7 +96,12 @@ export function AssistantPanel({
 					</div>
 				) : (
 					chat.messages.map((m) => (
-						<MessageBody key={m.id} message={m} onApply={apply} />
+						<MessageBody
+							key={m.id}
+							message={m}
+							onApply={apply}
+							onSignIn={() => setDialogOpen(true)}
+						/>
 					))
 				)}
 				{chat.busy && <p className="text-2xs text-ink-muted">Thinking…</p>}
@@ -120,7 +127,7 @@ export function AssistantPanel({
 						}
 					}}
 				/>
-				<div className="flex gap-2">
+				<div className="flex items-center gap-2">
 					{chat.busy ? (
 						<Button
 							type="button"
@@ -134,6 +141,13 @@ export function AssistantPanel({
 						<Button type="submit" size="sm" disabled={!draft.trim()}>
 							Send
 						</Button>
+					)}
+					{chat.remaining !== null && (
+						<p className="text-2xs text-ink-muted">
+							{chat.remaining === 0
+								? "No free question left today — sign in to continue."
+								: `${chat.remaining} free ${chat.remaining === 1 ? "question" : "questions"} left today without an account.`}
+						</p>
 					)}
 				</div>
 			</form>

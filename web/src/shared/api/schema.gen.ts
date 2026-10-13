@@ -7709,13 +7709,6 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description Not signed in. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -7725,7 +7718,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description Both assistant slots are busy. */
+            /** @description `rate_limited`: the assistant slots are busy, retry. `anonymous_quota_exhausted`: a visitor who is not signed in has used the day's free questions, sign in. */
             429: {
                 headers: {
                     [name: string]: unknown;

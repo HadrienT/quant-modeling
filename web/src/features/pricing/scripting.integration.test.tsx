@@ -10,6 +10,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { makeQueryClient } from "@/shared/api";
 import { pricingResponse } from "@/shared/test/fixtures";
+import { SessionProvider } from "@/shared/session";
 import { server } from "@/shared/test/msw-server";
 import { TooltipProvider } from "@/shared/ui";
 import ScriptingPreview from "./ScriptingPreview";
@@ -58,9 +59,11 @@ function mount(status?: Record<string, unknown>) {
 		);
 	render(
 		<QueryClientProvider client={makeQueryClient()}>
-			<TooltipProvider>
-				<ScriptingPreview />
-			</TooltipProvider>
+			<SessionProvider>
+				<TooltipProvider>
+					<ScriptingPreview />
+				</TooltipProvider>
+			</SessionProvider>
 		</QueryClientProvider>,
 	);
 	return bodies;

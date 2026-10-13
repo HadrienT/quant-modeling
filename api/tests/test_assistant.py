@@ -8,6 +8,7 @@ Run from the repo root:  pytest api/tests
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 import json
 import os
 
@@ -18,7 +19,7 @@ import quantmodeling as qm
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from api.app.assistant import agent
+from api.app.assistant import agent, quota
 from api.app.assistant.agent import (
     MAX_REPAIRS,
     check_script,
@@ -28,7 +29,7 @@ from api.app.assistant.agent import (
 from api.app.assistant.llm import LLMError
 from api.app.assistant.prompt import EXAMPLES, build_system_prompt
 from api.app.assistant.schemas import ScriptingChatEvent, ScriptingChatRequest
-from api.app.auth import require_user
+from api.app.auth import optional_user
 from api.app.main import _validation_exception_handler, app
 from api.app.routers import assistant as route
 from fastapi.exceptions import RequestValidationError
@@ -301,11 +302,92 @@ def test_slot_is_released_once_even_if_the_stream_never_starts(monkeypatch):
         route._slots.release()
 
 
-def test_route_requires_a_signed_in_user():
-    """The prod app is public through the tunnel and this route spends the
-    owner's GPU: it must sit behind the same JWT dependency as portfolios."""
+# ── Visitors who are not signed in: a few questions a day (issue #175) ───────
+
+
+@pytest.fixture
+def anonymous(monkeypatch):
+    """A fresh allowance of three questions, and a model that always answers."""
+    monkeypatch.setattr(
+        route.LlamaServerClient, "from_env", lambda: FakeModel(fenced(GOOD))
+    )
+    allowance = quota.AnonymousQuota(per_visitor=3, total=100)
+    monkeypatch.setattr(route, "_anonymous_quota", allowance)
+    return allowance
+
+
+def _ask(user=None):
+    return route.scripting_chat_endpoint(_request(valuation_date=VALUATION), user=user)
+
+
+def test_route_is_open_to_visitors_but_reads_the_session():
     (r,) = [r for r in route.router.routes if r.path.endswith("/scripting/chat")]
-    assert require_user in [d.call for d in r.dependant.dependencies]
+    assert optional_user in [d.call for d in r.dependant.dependencies]
+
+
+def test_visitor_is_told_what_is_left_then_asked_to_sign_in(anonymous):
+    left = [_drain(_ask())[0] for _ in range(3)]
+    assert left == [{"type": "quota", "remaining": n} for n in (2, 1, 0)]
+    with pytest.raises(HTTPException) as exc:
+        _ask()
+    assert exc.value.status_code == 429
+    assert exc.value.code == route.ANONYMOUS_QUOTA_CODE
+    # The refusal held no slot back.
+    assert route._anonymous_slots.acquire(blocking=False)
+    route._anonymous_slots.release()
+
+
+def test_exhausted_quota_reaches_the_client_under_its_own_code(anonymous):
+    client = TestClient(app)
+    body = {"messages": [{"role": "user", "content": "a call"}]}
+    for _ in range(3):
+        assert (
+            client.post("/api/assistant/scripting/chat", json=body).status_code == 200
+        )
+    r = client.post("/api/assistant/scripting/chat", json=body)
+    assert r.status_code == 429
+    assert r.json()["code"] == "anonymous_quota_exhausted"
+    assert "Sign in" in r.json()["message"]
+
+
+def test_signed_in_user_is_not_counted(anonymous):
+    for _ in range(5):
+        assert types(_drain(_ask(user="alice")))[0] != "quota"
+    assert _drain(_ask())[0] == {"type": "quota", "remaining": 2}
+
+
+def test_each_visitor_has_their_own_allowance_under_a_shared_ceiling():
+    q = quota.AnonymousQuota(per_visitor=2, total=3)
+    assert [q.consume("a"), q.consume("a"), q.consume("b")] == [1, 0, 1]
+    with pytest.raises(quota.QuotaExhausted) as exc:
+        q.consume("a")
+    assert exc.value.scope == "visitor"
+    with pytest.raises(quota.QuotaExhausted) as exc:
+        q.consume("b")
+    assert exc.value.scope == "global"
+
+
+def test_allowance_comes_back_the_next_day():
+    day = [date(2026, 10, 13)]
+    q = quota.AnonymousQuota(per_visitor=1, total=10, today=lambda: day[0])
+    assert q.consume("a") == 0
+    with pytest.raises(quota.QuotaExhausted):
+        q.consume("a")
+    day[0] = date(2026, 10, 14)
+    assert q.consume("a") == 0
+
+
+def test_busy_assistant_does_not_cost_a_visitor_a_question(anonymous):
+    assert route._anonymous_slots.acquire(blocking=False)
+    try:
+        with pytest.raises(HTTPException) as exc:
+            _ask()
+        assert getattr(exc.value, "code", None) is None
+        # The slot kept for signed-in users is still theirs.
+        assert types(_drain(_ask(user="alice")))[-1] == "done"
+    finally:
+        route._anonymous_slots.release()
+    assert _drain(_ask())[0] == {"type": "quota", "remaining": 2}
 
 
 # ── Status: is the model server up, and with which model ─────────────────────

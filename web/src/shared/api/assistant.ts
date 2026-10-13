@@ -34,6 +34,8 @@ export type ScriptingChatRequest =
 /** One `data:` payload of the assistant's event stream — the shape is
  * documented by api/app/assistant/schemas.py (ScriptingChatEvent). */
 export type AssistantEvent =
+	/** Not signed in: free questions left today after this one. */
+	| { type: "quota"; remaining: number }
 	| { type: "delta"; text: string }
 	/** The draft was rejected by the parser; a new one follows. */
 	| { type: "retry"; attempt: number; error: string }
@@ -48,8 +50,9 @@ export type AssistantEvent =
 
 /**
  * Stream one assistant turn. `api` (not a bare fetch) so the bearer token,
- * base URL and ApiError normalisation apply — a 429 "assistant busy" throws
- * an ApiError before the first event. openapi-fetch cannot type an SSE body,
+ * base URL and ApiError normalisation apply — a 429 ("assistant busy", or
+ * the day's free questions of a visitor used up) throws an ApiError before
+ * the first event. openapi-fetch cannot type an SSE body,
  * hence `parseAs: "stream"` and the small parser below.
  */
 export async function* streamScriptingChat(

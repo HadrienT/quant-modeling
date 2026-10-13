@@ -13920,9 +13920,6 @@
             },
             "description": "text/event-stream of ScriptingChatEvent payloads."
           },
-          "401": {
-            "description": "Not signed in."
-          },
           "422": {
             "content": {
               "application/json": {
@@ -13934,7 +13931,7 @@
             "description": "Validation Error"
           },
           "429": {
-            "description": "Both assistant slots are busy."
+            "description": "`rate_limited`: the assistant slots are busy, retry. `anonymous_quota_exhausted`: a visitor who is not signed in has used the day's free questions, sign in."
           }
         },
         "summary": "Scripting Chat Endpoint",

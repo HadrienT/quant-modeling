@@ -43,6 +43,8 @@ class ScriptingChatEvent(BaseModel):
     streams these; FastAPI cannot type a stream, so this model is what a
     client should read.
 
+    - quota:  first event of a visitor who is not signed in: `remaining` free
+              questions left today after this one
     - delta:  `text` — a chunk of the assistant's reply
     - retry:  the draft was rejected by the parser (`error`); a new draft
               follows, the client should discard the text streamed so far
@@ -52,7 +54,8 @@ class ScriptingChatEvent(BaseModel):
     - done:   end of stream
     """
 
-    type: Literal["delta", "retry", "script", "error", "done"]
+    type: Literal["quota", "delta", "retry", "script", "error", "done"]
+    remaining: int | None = None
     text: str | None = None
     attempt: int | None = None
     script: str | None = None
