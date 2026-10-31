@@ -1,195 +1,179 @@
-# quant-modeling — notes pour Claude Code
+# quant-modeling — notes for Claude Code
 
-Librairie de pricing de dérivés en **C++20**, exposée jusqu'à un produit
-utilisable : `include/quantModeling` + `src` → bindings **pybind11** →
-API **FastAPI** → front **React/Vite**. ~43 000 LOC C++ (`include/` + `src/`),
-~70 fichiers de tests GoogleTest, CI GitHub Actions.
+Derivatives pricing library in **C++20**, exposed all the way to a usable product:
+`include/quantModeling` + `src` → **pybind11** bindings → **FastAPI** API →
+**React/Vite** front end. ~43,000 LOC of C++ (`include/` + `src/`), ~70 GoogleTest
+files, GitHub Actions CI.
 
-Le découpage C++ est celui d'une lib de desk et il faut le préserver :
-**payoff** (`instruments/`), **modèle** (`models/`), **méthode numérique**
-(`engines/`), **orchestration** (`pricers/` avec registry + adapters). Aucun
-engine ne doit brancher sur un type de produit ; aucun instrument ne doit lire
-de donnée de marché.
+The C++ split is that of a desk library and must be preserved: **payoff**
+(`instruments/`), **model** (`models/`), **numerical method** (`engines/`),
+**orchestration** (`pricers/` with registry + adapters). No engine may branch on a
+product type; no instrument may read market data.
 
-## La chaîne, couche par couche
+## The chain, layer by layer
 
-| Couche | Où | Ce qu'elle contient |
+| Layer | Where | What it contains |
 |---|---|---|
-| Cœur C++ | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc / xva : moteur d'exposition à une devise, sur CPU ou sur les deux V100, et à deux devises ou à un taux et une action, sur CPU), `pricers`, `risk` (xVA, WP 23 : métriques d'exposition, netting et profils par netting set, collatéral, intégrales CVA / DVA / FVA / MVA / KVA, capital réglementaire dans `risk/regulatory/`), `utils` (Sobol, pont brownien, control variates, greeks) |
-| Bindings | `bindings/python/` | pybind11 → wheel `quantmodeling` |
-| API | `api/app/` | FastAPI : `routers/` (pricing, market, credit, rates, xva, portfolio, backtest, auth, local-vol, assistant, admin), `credit.py` + `fundamentals.py` (spreads, hazard, Merton, états 10-K / 10-Q), `xva.py` (exposition, CVA / DVA d'un netting set sur données de marché, WP 23), `portfolio_counterparties.py` + `portfolio_rates.py` + `portfolio_xva.py` + `xva_equity.py` (contreparties et netting sets d'un portefeuille, marquage quotidien de ses swaps, swaptions, forwards et swaps de devises, xVA d'un de ses netting sets, options actions comprises ; WP 23 §14.16), `xva_fx.py` + `fx_option_market.py` (seconde devise du netting set : courbe et Hull-White EUR, vol EUR/USD tirée des straddles traités, corrélations historiques), `swaption_market.py` (vols normales ATM tirées des transactions de swaptions DTCC, pour caler Hull-White sur le marché), `local_vol/` (nettoyage des quotes, surface IV, Dupire), `assistant/` (chat LLM du scripting, voir plus bas), `audit/` (événements d'audit vers le Kafka de `quant-platform`), `backtest/` (lectures point-in-time, appels au wheel `quantbacktest`, événement `backtest.run` et son replay : aucun calcul, voir WP 24), `valuation.py` + `replay.py` (enregistrement et replay des valorisations), `telemetry.py` (OpenTelemetry), auth JWT, cache |
-| Front | `web/src/` | React 18 + Vite + TypeScript |
-| CLI | `main.cpp` | binaire de démo |
+| C++ core | `include/quantModeling/`, `src/` | `core` (types, timegrid, results), `market`, `instruments`, `models`, `engines` (analytic / tree / pde / mc / xva: single-currency exposure engine, on CPU or on both V100s, and two-currency or rate-plus-equity on CPU), `pricers`, `risk` (xVA, WP 23: exposure metrics, netting and profiles per netting set, collateral, CVA / DVA / FVA / MVA / KVA integrals, regulatory capital in `risk/regulatory/`), `utils` (Sobol, Brownian bridge, control variates, greeks) |
+| Bindings | `bindings/python/` | pybind11 → `quantmodeling` wheel |
+| API | `api/app/` | FastAPI: `routers/` (pricing, market, credit, rates, xva, portfolio, backtest, auth, local-vol, assistant, admin), `credit.py` + `fundamentals.py` (spreads, hazard, Merton, 10-K / 10-Q statements), `xva.py` (exposure, CVA / DVA of a netting set on market data, WP 23), `portfolio_counterparties.py` + `portfolio_rates.py` + `portfolio_xva.py` + `xva_equity.py` (counterparties and netting sets of a portfolio, daily marking of its swaps, swaptions, forwards and currency swaps, xVA of one of its netting sets, equity options included; WP 23 §14.16), `xva_fx.py` + `fx_option_market.py` (second currency of the netting set: EUR curve and Hull-White, EUR/USD vol from traded straddles, historical correlations), `swaption_market.py` (ATM normal vols from DTCC swaption trades, to fit Hull-White to the market), `local_vol/` (quote cleaning, IV surface, Dupire), `assistant/` (scripting LLM chat, see below), `audit/` (audit events to the `quant-platform` Kafka), `backtest/` (point-in-time reads, calls to the `quantbacktest` wheel, `backtest.run` event and its replay: no computation, see WP 24), `valuation.py` + `replay.py` (recording and replay of valuations), `telemetry.py` (OpenTelemetry), JWT auth, cache |
+| Front end | `web/src/` | React 18 + Vite + TypeScript |
+| CLI | `main.cpp` | demo binary |
 
-## Dépôts voisins
+## Neighboring repositories
 
-Ce dépôt n'est pas seul sur le serveur ; quatre dépôts frères, chacun avec son
-propre `CLAUDE.md`, portent ce qui n'est pas du pricing :
+This repository is not alone on the server; four sibling repositories, each with its own
+`CLAUDE.md`, hold what is not pricing:
 
-| Dépôt | Rôle pour quant-modeling |
+| Repository | Role for quant-modeling |
 |---|---|
-| `~/data-ingest` | **Toute l'ingestion des données de marché** (Airflow → Postgres). quant-modeling ne fait que lire cette base (`PGHOST=data-ingest-postgres` via le réseau Docker `dataplatform`). Une donnée manquante se corrige là-bas, pas ici |
-| `~/quant-platform` ([GitHub](https://github.com/HadrienT/quant-platform)) | **Destination des logs, événements d'audit et de la télémétrie** : Kafka, Postgres d'audit append-only, OpenTelemetry Collector → Prometheus / Loki / Tempo, Grafana. Contrat producteur ↔ plateforme : `~/quant-platform/docs/contract.md`. Côté ici, le producteur est `api/app/audit/` (`emit()`, `record_fallback()`), conception dans `blueprint/wp/18-observability.md` |
-| `~/AgenticEnv` | `llama-server` de l'assistant de scripting (voir plus bas) |
-| `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) | **Moteur de backtest** en C++, livré comme wheel `quantbacktest`. Il consomme la lib `quantModeling` à un commit épinglé ; ici ne restent que la lecture en base, le routeur, l'audit et la page `/backtest` (`api/app/backtest/`, `web/src/features/backtest/` ; onglet stratégie en ligne, couverture et modèle de risque à faire, `blueprint/wp/24-backtest.md`). Frontière : `~/quant-backtest/docs/contract.md`. Aucun calcul de backtest dans ce dépôt |
+| `~/data-ingest` | **All market data ingestion** (Airflow → Postgres). quant-modeling only reads this database (`PGHOST=data-ingest-postgres` through the Docker network `dataplatform`). Missing data is fixed there, not here |
+| `~/quant-platform` ([GitHub](https://github.com/HadrienT/quant-platform)) | **Destination of logs, audit events and telemetry**: Kafka, append-only audit Postgres, OpenTelemetry Collector → Prometheus / Loki / Tempo, Grafana. Producer ↔ platform contract: `~/quant-platform/docs/contract.md`. On this side, the producer is `api/app/audit/` (`emit()`, `record_fallback()`), design in `blueprint/wp/18-observability.md` |
+| `~/AgenticEnv` | `llama-server` for the scripting assistant (see below) |
+| `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) | **Backtest engine** in C++, shipped as the `quantbacktest` wheel. It consumes the `quantModeling` library at a pinned commit; only the database reads, the router, the audit and the `/backtest` page remain here (`api/app/backtest/`, `web/src/features/backtest/`; strategy tab live, hedging and risk model to do, `blueprint/wp/24-backtest.md`). Boundary: `~/quant-backtest/docs/contract.md`. No backtest computation in this repository |
 
-Branchement vers `quant-platform` (WP 18, fait) : en **prod**, les événements
-d'audit partent dans son Kafka (`QM_AUDIT_SINK=kafka`, `kafka:9092`) et les
-métriques / traces dans son OTel Collector (`otel-collector:4318`), par le
-réseau `dataplatform` ; si la plateforme est absente, les événements attendent
-dans `LOG_DIR/spool` et repartent seuls, le site n'en dépend jamais. En **dev**,
-le transport reste le spool : `dataplatform` mène à la plateforme **de
-production**, dont la base d'audit est en ajout seul — ne jamais y envoyer
-d'événement de test (un broker jetable pour les essais). Chaque pricing émet un
-`pricing.valuation` (`api/app/valuation.py`) que `POST /api/admin/replay/{id}`
-sait rejouer. Tout nouveau log ou événement métier passe par `api/app/audit/`
-(`emit()`, `record_fallback()`), toute nouvelle métrique par
-`api/app/telemetry.py` — jamais un ticker, un utilisateur ou une IP comme
-étiquette. Les logs applicatifs vont sur stdout et dans `LOG_DIR/api.jsonl`
-(`api/app/logging_utils.py`), avec le `trace_id`. Exploitation :
-`deploy/RUNBOOK.md` §9.
+Connection to `quant-platform` (WP 18, done): in **production**, audit events go to its
+Kafka (`QM_AUDIT_SINK=kafka`, `kafka:9092`) and metrics / traces to its OTel Collector
+(`otel-collector:4318`), through the `dataplatform` network; if the platform is absent,
+events wait in `LOG_DIR/spool` and leave on their own, and the site never depends on it.
+In **dev**, the transport stays the spool: `dataplatform` leads to the **production**
+platform, whose audit database is append-only, so never send a test event there (use a
+disposable broker for experiments). Each pricing emits a `pricing.valuation`
+(`api/app/valuation.py`) that `POST /api/admin/replay/{id}` can replay. Any new log or
+business event goes through `api/app/audit/` (`emit()`, `record_fallback()`), any new
+metric through `api/app/telemetry.py`; never a ticker, a user or an IP as a label.
+Application logs go to stdout and to `LOG_DIR/api.jsonl` (`api/app/logging_utils.py`), with
+the `trace_id`. Operations: `deploy/RUNBOOK.md` §9.
 
-## Données de marché
+## Market data
 
-Les données de marché viennent de **la base Postgres alimentée par
-`~/data-ingest`** (cours, chaînes d'options, rendements de dividende, courbes
-FRED, spreads de crédit ICE BofA, faits XBRL des 10-K / 10-Q du S&P 500, swaps et swaptions traités publiés par la DTCC (SOFR, €STR, Euribor), options de change traitées publiées par la DTCC, taux de défaut historiques par notation publiés par l'ESMA). **Tout nouveau chemin de données passe par la base, sans repli vers Yahoo
-Finance** : une donnée absente ou trop ancienne y est une erreur explicite (les
-chemins de pricing des scripts passent par `api/app/market_snapshot.py`, qui
-n'importe pas `yfinance`). Les replis en direct **déjà en place** dans les
-anciens endpoints (`vol_surface.py`, `routers/local_vol_pricing.py`,
-`routers/simulation.py`) sont **conservés à dessein**, pour ne pas casser l'API
-tant que `data-ingest` n'est pas fiable : ne pas les étendre, ne pas les
-retirer sans décision du mainteneur. Le dossier `notebooks/` est un bac à sable
-personnel, hors périmètre. Plus de BigQuery — le projet est entièrement hors cloud.
+Market data comes from **the Postgres database fed by `~/data-ingest`** (prices, option
+chains, dividend yields, FRED curves, ICE BofA credit spreads, XBRL facts from S&P 500
+10-Ks / 10-Qs, traded swaps and swaptions published by DTCC (SOFR, €STR, Euribor), traded
+FX options published by DTCC, historical default rates by rating published by ESMA). **Any
+new data path goes through the database, with no fallback to Yahoo Finance**: data that is
+absent or too old there is an explicit error (script pricing paths go through
+`api/app/market_snapshot.py`, which does not import `yfinance`). The live fallbacks
+**already in place** in the older endpoints (`vol_surface.py`,
+`routers/local_vol_pricing.py`, `routers/simulation.py`) are **kept on purpose**, so as not
+to break the API while `data-ingest` is not reliable: do not extend them, do not remove
+them without a decision from the maintainer. The `notebooks/` directory is a personal
+sandbox, out of scope. No more BigQuery: the project is entirely off cloud.
 
-## Assistant de scripting
+## Scripting assistant
 
-**Assistant de scripting** (`api/app/assistant/`, route `POST /api/assistant/scripting/chat`,
-chat de la page `/scripting`) : il parle au `llama-server` de `~/AgenticEnv`, dont
-l'URL est `QM_LLM_BASE_URL` (défaut `http://127.0.0.1:8000/v1` hors Docker ;
-`http://172.17.0.1:8001/v1` dans les fichiers compose, via le socket
-`llama-bridge` d'AgenticEnv). La prod est publique et la route consomme le GPU :
-un visiteur non connecté a droit à **10 questions par jour** (`assistant/quota.py`,
-compteur en mémoire par hash d'IP, plus un plafond global ; `QM_ASSISTANT_ANON_DAILY`
-et `QM_ASSISTANT_ANON_DAILY_TOTAL`), puis la route répond 429 avec le code
-`anonymous_quota_exhausted` et la page propose de se connecter. Un utilisateur
-connecté (JWT) n'est pas compté, et un des deux slots lui est réservé. Tout script écrit par le modèle est vérifié par le
-vrai parseur avant d'être proposé. `GET /api/assistant/status` (public, mis en
-cache 15 s) dit si le serveur répond et avec quel modèle : la page l'affiche,
-car le `llama-server` est partagé et peut être arrêté ou chargé avec un autre
-modèle. Le prompt décrit le langage : **quand le
-langage change (nouvelle fonction, nouvelle syntaxe), mettre à jour
-`assistant/prompt.py`** — `pytest` valide ses exemples contre le
-parseur et échoue s'ils ne passent plus.
+**Scripting assistant** (`api/app/assistant/`, route `POST /api/assistant/scripting/chat`,
+chat of the `/scripting` page): it talks to the `llama-server` of `~/AgenticEnv`, whose URL
+is `QM_LLM_BASE_URL` (default `http://127.0.0.1:8000/v1` outside Docker;
+`http://172.17.0.1:8001/v1` in the compose files, through AgenticEnv's `llama-bridge`
+socket). Production is public and the route consumes the GPU: a visitor who is not logged
+in gets **10 questions per day** (`assistant/quota.py`, in-memory counter per IP hash, plus
+a global cap; `QM_ASSISTANT_ANON_DAILY` and `QM_ASSISTANT_ANON_DAILY_TOTAL`), after which
+the route answers 429 with the code `anonymous_quota_exhausted` and the page suggests
+logging in. A logged-in user (JWT) is not counted, and one of the two slots is reserved for
+them. Any script written by the model is checked by the real parser before being offered.
+`GET /api/assistant/status` (public, cached 15 s) says whether the server responds and with
+which model: the page shows it, because the `llama-server` is shared and can be stopped or
+loaded with another model. The prompt describes the language: **when the language changes
+(new function, new syntax), update `assistant/prompt.py`**. `pytest` validates its examples
+against the parser and fails if they no longer pass.
 
-## Commandes
+## Commands
 
 | | |
 |---|---|
-| `cmake --preset default && cmake --build build` | build C++ (Ninja, Release, tests ON) |
-| `ctest --test-dir build --output-on-failure -j16` | tests C++ — ou `scripts/make.sh` qui enchaîne les trois. Chaque `TEST()` tourne dans son propre process (`gtest_discover_tests`), donc `-j` parallélise sans partage d'état ; 16 mesuré à ~1,7 Go au-dessus de ce qui tourne déjà sur la machine (`NPROC=n scripts/make.sh` pour changer) |
-| `cmake --preset asan` puis `ctest --test-dir build-asan -j8` | sanitizers (address + UB) — ou `scripts/make_asan.sh`. ASan triple grosso modo la mémoire par process ; 8 mesuré à ~8,4 Go au-dessus de la ligne de base, une part plus significative de la marge qu'avec le preset par défaut (`NPROC=n scripts/make_asan.sh` pour changer) |
-| `cmake --preset release` | `-march=native` + benchmarks google-benchmark |
-| `build/qm_xva_aad_bench [chemins] [threads]` | coût des sensibilités du CVA par différentiation adjointe contre une valorisation (WP 23, lot X8) |
-| `cmake --preset cuda && cmake --build build-cuda` | backend CUDA (WP 19, les deux V100) dans `build-cuda/` ; nvcc prend `g++-13` comme hôte (CUDA 12.4 refuse gcc 14). `ctest --test-dir build-cuda -L gpu` pour les seuls tests GPU (la CI n'a pas de GPU et ne les construit pas) ; `build-cuda/qm_gpu_bench` pour le benchmark en temps pour une erreur donnée, `qm_gpu_vr_bench` pour la réduction de variance générique, `qm_gpu_risk_bench` pour les risques GPU contre la tape CPU (lot G3), `qm_gpu_exposure_bench` pour l'exposition et le CVA d'un netting set (WP 23, lot X7). Côté Python : `QM_ENABLE_CUDA=1 scripts/run_api.sh` (ou `scripts/dev_install.sh`, `scripts/build_wheel.sh`) pour un module avec GPU ; l'image de prod le fait d'office (`QM_CUDA=ON`) |
-| `scripts/build_wheel.sh` | wheel pybind11 dans `dist/` |
-| `scripts/install_quantbacktest.sh` | construit et installe le wheel `quantbacktest` (moteur de backtest, dépôt `~/quant-backtest`) au commit épinglé dans `api/quantbacktest.pin` ; sans effet si ce commit est déjà installé. Lu aussi par les deux images Docker et par la CI : **monter la version du moteur, c'est changer ce seul fichier**. `NPROC=n` borne les compilations (16 par défaut) |
-| `scripts/run_api.sh` | venv + wheel + wheel `quantbacktest` épinglé + `uvicorn --reload` |
-| `pytest` | tests Python de l'API (`api/tests/` : assistant de scripting avec le vrai parseur et un faux LLM, snapshot de marché, piste d'audit, producteur Kafka sur un faux broker, replay des valorisations), depuis la racine (`pytest.ini`). Lancés par la CI (job `pytest`, avec le vrai wheel) |
-| `uv venv .venv-ml && uv pip install --python .venv-ml/bin/python -r ml/requirements.txt`, puis `.venv-ml/bin/python -m pytest ml/tests` | côté entraînement du chantier ML (WP 25) : PyTorch en version CPU, dans un environnement à part — jamais dans celui de l'API ni dans l'image de prod. Le C++ ne fait que lire les fichiers de poids (`ml::Mlp`). Job CI `pytest-ml`. `cd ml && ../.venv-ml/bin/python -m qmml.make_fixture ../tests/data` régénère le jeu de cas partagé avec `tests/testMlp.cpp` |
-| `docker compose up --build` | stack complète (API + front avec HMR) |
-| `cd web && npm run dev` | front seul |
-| `cd web && npx tsc --noEmit` | typecheck du front |
+| `cmake --preset default && cmake --build build` | C++ build (Ninja, Release, tests ON) |
+| `ctest --test-dir build --output-on-failure -j16` | C++ tests, or `scripts/make.sh`, which chains all three. Each `TEST()` runs in its own process (`gtest_discover_tests`), so `-j` parallelizes with no shared state; 16 measured at ~1.7 GB above what already runs on the machine (`NPROC=n scripts/make.sh` to change) |
+| `cmake --preset asan` then `ctest --test-dir build-asan -j8` | sanitizers (address + UB), or `scripts/make_asan.sh`. ASan roughly triples memory per process; 8 measured at ~8.4 GB above the baseline, a more significant share of the margin than with the default preset (`NPROC=n scripts/make_asan.sh` to change) |
+| `cmake --preset release` | `-march=native` + google-benchmark benchmarks |
+| `build/qm_xva_aad_bench [paths] [threads]` | cost of CVA sensitivities by adjoint differentiation against one valuation (WP 23, work package X8) |
+| `cmake --preset cuda && cmake --build build-cuda` | CUDA backend (WP 19, both V100s) in `build-cuda/`; nvcc uses `g++-13` as host (CUDA 12.4 rejects gcc 14). `ctest --test-dir build-cuda -L gpu` for the GPU tests only (CI has no GPU and does not build them); `build-cuda/qm_gpu_bench` for the time-to-error benchmark, `qm_gpu_vr_bench` for generic variance reduction, `qm_gpu_risk_bench` for GPU risks against the CPU tape (work package G3), `qm_gpu_exposure_bench` for the exposure and CVA of a netting set (WP 23, work package X7). On the Python side: `QM_ENABLE_CUDA=1 scripts/run_api.sh` (or `scripts/dev_install.sh`, `scripts/build_wheel.sh`) for a module with GPU; the production image does so by default (`QM_CUDA=ON`) |
+| `scripts/build_wheel.sh` | pybind11 wheel in `dist/` |
+| `scripts/install_quantbacktest.sh` | builds and installs the `quantbacktest` wheel (backtest engine, repository `~/quant-backtest`) at the commit pinned in `api/quantbacktest.pin`; no effect if that commit is already installed. Also read by both Docker images and by CI: **bumping the engine version means changing this one file**. `NPROC=n` bounds the compilations (16 by default) |
+| `scripts/run_api.sh` | venv + wheel + pinned `quantbacktest` wheel + `uvicorn --reload` |
+| `pytest` | Python tests of the API (`api/tests/`: scripting assistant with the real parser and a fake LLM, market snapshot, audit trail, Kafka producer on a fake broker, valuation replay), from the root (`pytest.ini`). Run by CI (`pytest` job, with the real wheel) |
+| `uv venv .venv-ml && uv pip install --python .venv-ml/bin/python -r ml/requirements.txt`, then `.venv-ml/bin/python -m pytest ml/tests` | training side of the ML project (WP 25): CPU PyTorch, in a separate environment, never in the API's or the production image. The C++ only reads the weight files (`ml::Mlp`). CI job `pytest-ml`. `cd ml && ../.venv-ml/bin/python -m qmml.make_fixture ../tests/data` regenerates the set of cases shared with `tests/testMlp.cpp` |
+| `docker compose up --build` | full stack (API + front end with HMR) |
+| `cd web && npm run dev` | front end only |
+| `cd web && npx tsc --noEmit` | front-end typecheck |
 | `cd web && npm run lint` | eslint |
-| `cd web && npm run build` | build de production Vite |
-| `python scripts/gen_openapi.py web/openapi.json && cd web && npm run api:types:local` | régénère `web/openapi.json` et `schema.gen.ts` après un changement de route/schéma API (ADR-005). `gen_openapi.py` stub le module pybind11 — pas besoin d'une API qui tourne. Les deux fichiers sont commités ; le job CI `api-contract` échoue si le diff n'est pas vide |
+| `cd web && npm run build` | Vite production build |
+| `python scripts/gen_openapi.py web/openapi.json && cd web && npm run api:types:local` | regenerates `web/openapi.json` and `schema.gen.ts` after an API route/schema change (ADR-005). `gen_openapi.py` stubs the pybind11 module, so no running API is needed. Both files are committed; the CI job `api-contract` fails if the diff is not empty |
 
-Les ports hôte du `docker compose` sont paramétrables — `QM_API_PORT` (défaut
-8010) et `QM_WEB_PORT` (défaut 5180) — parce que plusieurs projets tournent sur
-le même serveur auto-hébergé. Copier `.env.placeholder` en `.env`.
+The `docker compose` host ports are configurable, `QM_API_PORT` (default 8010) and
+`QM_WEB_PORT` (default 5180), because several projects run on the same self-hosted server.
+Copy `.env.placeholder` to `.env`.
 
-## Suivi du travail — GitHub Issues, pas de markdown de handoff
+## Tracking work: GitHub Issues, no handoff markdown
 
-Le « JIRA » du projet, ce sont les **GitHub Issues du repo**. `gh` est
-authentifié (compte `HadrienT`).
+The project's "JIRA" is the repository's **GitHub Issues**. `gh` is authenticated (account
+`HadrienT`).
 
-- **Au démarrage d'une session** : `gh issue list --state open`.
-- **Issue traitée** → `gh issue close <n> --comment "fait dans <sha>"`.
-- **Jamais** de fichier markdown de passation entre sessions. Une tâche qui
-  survit à la session est une issue.
-- Les gros morceaux de **conception** vivent dans `blueprint/wp/*.md` ; l'issue
-  y renvoie, elle ne les remplace pas.
-- `blueprint/README.md` porte le graphe de dépendances entre lots de travail :
-  le consulter avant de démarrer un lot, pour vérifier que ses prérequis sont
-  faits.
+- **At the start of a session**: `gh issue list --state open`.
+- **Issue handled** → `gh issue close <n> --comment "done in <sha>"`.
+- **Never** a markdown handoff file between sessions. A task that outlives the session is
+  an issue.
+- Large pieces of **design** live in `blueprint/wp/*.md`; the issue points to them, it does
+  not replace them.
+- `blueprint/README.md` holds the dependency graph between work packages: consult it before
+  starting a work package, to check that its prerequisites are done.
 
-## Documents de référence
+## Reference documents
 
-| Fichier | Rôle |
+| File | Role |
 |---|---|
-| `blueprint/` | Spécification des lots de travail : la réécriture du front (WP 00–14, fusionnée dans `main`), puis les chantiers du cœur C++ (WP 16 scripting, WP 17 AAD). Dépendances, critères d'acceptation. |
-| `etc/roadmap.md` | Stratégie six mois côté quant : vol stochastique calibrée, AAD, Monte-Carlo GPU, capstone xVA. Document de stratégie, pas de spec. |
-| `etc/todo.md` | Checklist « desk grade » — ce qui manque pour ressembler à une lib de production. |
-| `etc/structure.md` | Arborescence cible du module de pricing. |
-| `etc/bytecode-aad-gpu-ordre-2.md` | Explication détaillée de ce qui dépasse les deux livres de Savine : le bytecode des scripts, l'AAD sur GPU (duaux, adjoint par chemin sans tape), l'AAD d'ordre 2. À tenir à jour quand ce code change. |
+| `blueprint/` | Specification of the work packages: the front-end rewrite (WP 00–14, merged into `main`), then the C++ core projects (WP 16 scripting, WP 17 AAD). Dependencies, acceptance criteria. |
+| `etc/roadmap.md` | Six-month quant strategy: calibrated stochastic vol, AAD, GPU Monte Carlo, xVA capstone. A strategy document, not a spec. |
+| `etc/todo.md` | "Desk grade" checklist: what is missing to resemble a production library. |
+| `etc/structure.md` | Target layout of the pricing module. |
+| `etc/bytecode-aad-gpu-ordre-2.md` | Detailed explanation of what goes beyond Savine's two books: script bytecode, AAD on GPU (duals, per-path adjoint without a tape), second-order AAD. Keep it up to date when this code changes. |
 
-**Règle de la roadmap qu'il ne faut pas contourner : arrêter d'ajouter des
-produits.** Le catalogue est déjà plus large que nécessaire ; la valeur
-marginale d'un 25ᵉ payoff est nulle. La profondeur (calibration, greeks
-adjoints, GPU) bat la largeur. Une exception, décidée par le mainteneur le
-2026-10-03 : le swap de devises du lot X10 (WP 23 §14.15).
+**Roadmap rule not to be bypassed: stop adding products.** The catalogue is already wider
+than necessary; the marginal value of a 25th payoff is zero. Depth (calibration, adjoint
+greeks, GPU) beats breadth. One exception, decided by the maintainer on 2026-10-03: the
+currency swap of work package X10 (WP 23 §14.15).
 
 ## Conventions
 
-- **Conversation avec le mainteneur : en français.** Code, identifiants,
-  commentaires, messages de commit : en anglais. `blueprint/` et `etc/` sont en
-  français.
-- **Commits : passer par une branche, jamais directement sur `main`.** Terminer
-  les messages par `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
-- **C++** : `clang-format --style=file`, **version 18** (celle de la CI, job
-  `format-check` ; le pre-commit est épinglé sur la même). Un fichier mal
-  formaté fait échouer la CI ; le hook pre-commit (ci-dessous) l'empêche. Pour
-  tout reformater à la main : `pre-commit run --all-files`.
-  **Python** : `black`.
-- **Le hook pre-commit est installé sur le serveur** (`.git/hooks/pre-commit`,
-  partagé par les deux worktrees) : à chaque `git commit`, clang-format 18 et
-  black reformatent les fichiers indexés. S'il a modifié quelque chose, le
-  commit **s'arrête** (« files were modified by this hook ») : refaire
-  `git add` des mêmes fichiers puis `git commit`, c'est tout. Ne jamais le
-  contourner par `--no-verify`. Sur un autre clone :
-  `uv tool install pre-commit && pre-commit install -t pre-commit`.
-- L'étape pre-push de `.pre-commit-config.yaml` (`cmake + ctest`) **n'est pas
-  installée** : rien n'arrête un push avec des tests rouges hormis la CI.
-  Lancer `scripts/make.sh` avant de pousser du C++.
-- Tout nouvel engine ou instrument arrive avec son test dans `tests/`, et de
-  préférence un test de *propriété* (parité call-put, `in + out = vanille`,
-  bornes de monotonie, ordre de convergence mesuré en log-log) plutôt qu'une
-  simple égalité numérique.
-- Le front réécrit est dans `main` ; l'ancien code a disparu (`web/src/` =
-  `app/`, `features/`, `shared/`). Règles vérifiées par ESLint et
-  `web/tests/discipline.test.ts` : une feature n'importe pas une autre feature,
-  `shared/` n'importe ni `features/` ni `app/`, un fichier de `features/` ne
-  dépasse pas 230 lignes (extraire un composant plutôt que relever le plafond).
+- **Language: English by default.** Everything you produce is in English: code, identifiers, comments, commit messages, PRs, issues, documentation and interface text. The only exception is the conversation: reply in the language the maintainer writes in, so in French when they write in French. `blueprint/` and `etc/` are historically in French: new content there is in English too.
+- **Commits: go through a branch, never directly on `main`.** End messages with
+  `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+- **C++**: `clang-format --style=file`, **version 18** (the one used by CI, job
+  `format-check`; pre-commit is pinned to the same). A badly formatted file fails CI; the
+  pre-commit hook (below) prevents it. To reformat everything by hand:
+  `pre-commit run --all-files`. **Python**: `black`.
+- **The pre-commit hook is installed on the server** (`.git/hooks/pre-commit`, shared by
+  both worktrees): on each `git commit`, clang-format 18 and black reformat the staged files.
+  If it changed anything, the commit **stops** ("files were modified by this hook"): run
+  `git add` on the same files again, then `git commit`, that is all. Never bypass it with
+  `--no-verify`. On another clone: `uv tool install pre-commit && pre-commit install -t pre-commit`.
+- The pre-push stage of `.pre-commit-config.yaml` (`cmake + ctest`) **is not installed**:
+  nothing stops a push with red tests except CI. Run `scripts/make.sh` before pushing C++.
+- Any new engine or instrument comes with its test in `tests/`, preferably a *property* test
+  (call-put parity, `in + out = vanilla`, monotonicity bounds, convergence order measured in
+  log-log) rather than a simple numeric equality.
+- The rewritten front end is in `main`; the old code is gone (`web/src/` = `app/`,
+  `features/`, `shared/`). Rules checked by ESLint and `web/tests/discipline.test.ts`: a
+  feature does not import another feature, `shared/` imports neither `features/` nor `app/`,
+  a file in `features/` does not exceed 230 lines (extract a component rather than raising
+  the cap).
 
-## Déploiement
+## Deployment
 
-Le projet est **auto-hébergé**, pas sur Google Cloud — le coût GCP était le
-motif de la bascule. La cible : `docker-compose.prod.yml` sur le serveur perso,
-exposé en HTTPS par un **tunnel Cloudflare** (aucun port ouvert).
+The project is **self-hosted**, not on Google Cloud: GCP's cost was the reason for the move.
+The target: `docker-compose.prod.yml` on the personal server, exposed over HTTPS by a
+**Cloudflare tunnel** (no open port).
 
-Deux dossiers, un seul dépôt git (`git worktree`) : `~/quant-modeling` est le
-**développement** (branches, commits, PRs — c'est là que travaillent les sessions
-Claude) ; `~/quant-modeling-prod` est **le site en ligne, toujours sur `main`**,
-et ne sert qu'à `./scripts/deploy.sh` (qui fait le `git pull` de `main`, reconstruit
-l'image et redémarre). Circuit normal : branche → PR → merge dans `main` → deploy
-depuis le dossier prod. Il n'y a plus de branche de déploiement (`web/14-deploy` et
-`web/rewrite` ont été supprimées). Ne jamais éditer ni committer depuis
-`~/quant-modeling-prod`. Procédure complète dans `deploy/RUNBOOK.md`, conception
-dans `blueprint/wp/14-deploy-selfhost.md`. `web/Dockerfile.prod` est le socle
-(multi-étage wheel C++ → build Vite → nginx + uvicorn).
+Two directories, one git repository (`git worktree`): `~/quant-modeling` is **development**
+(branches, commits, PRs; this is where Claude sessions work); `~/quant-modeling-prod` is
+**the live site, always on `main`**, and is only used for `./scripts/deploy.sh` (which does
+the `git pull` of `main`, rebuilds the image and restarts). Normal flow: branch → PR → merge
+into `main` → deploy from the production directory. There is no deployment branch any more
+(`web/14-deploy` and `web/rewrite` were deleted). Never edit or commit from
+`~/quant-modeling-prod`. Full procedure in `deploy/RUNBOOK.md`, design in
+`blueprint/wp/14-deploy-selfhost.md`. `web/Dockerfile.prod` is the foundation (multi-stage:
+C++ wheel → Vite build → nginx + uvicorn).
 
-Attention au piège classique de Vite : les variables `VITE_*` sont **inlinées
-au build**, pas lues au runtime. Changer `VITE_API_BASE` impose de rebuilder
-l'image, ou de passer par le mécanisme d'injection runtime décrit dans le lot
-de déploiement.
+Beware of the classic Vite trap: `VITE_*` variables are **inlined at build time**, not read
+at runtime. Changing `VITE_API_BASE` requires rebuilding the image, or going through the
+runtime injection mechanism described in the deployment work package.
