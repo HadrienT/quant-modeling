@@ -4,6 +4,8 @@ A derivatives-pricing library written the way a desk would build one — C++20
 core, exposed all the way to a usable product — built solo, end to end:
 pricing engine, API, and front end.
 
+**[How it works: interactive map](https://hadrient.github.io/atlas-pages/quant-modeling/)**
+
 [![CI](https://github.com/HadrienT/quant-modeling/actions/workflows/ci.yml/badge.svg)](https://github.com/HadrienT/quant-modeling/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
