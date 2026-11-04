@@ -2,8 +2,8 @@
 
 Derivatives pricing library in **C++20**, exposed all the way to a usable product:
 `include/quantModeling` + `src` → **pybind11** bindings → **FastAPI** API →
-**React/Vite** front end. ~43,000 LOC of C++ (`include/` + `src/`), ~70 GoogleTest
-files, GitHub Actions CI.
+**React/Vite** front end. ~77,000 LOC of C++ (`include/` + `src/`), ~125 GoogleTest
+files (over 1,200 cases), GitHub Actions CI.
 
 The C++ split is that of a desk library and must be preserved: **payoff**
 (`instruments/`), **model** (`models/`), **numerical method** (`engines/`),
