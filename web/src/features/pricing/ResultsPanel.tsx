@@ -13,8 +13,13 @@ import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
 import { ConvergenceChart, GreekProfileChart, PayoffChart } from "@/shared/viz";
 import { blackScholes } from "@/shared/payoff";
 import { pricingBody } from "./requestBody";
+import { ScriptGreeks } from "./scripting/ScriptGreeks";
 
 const GREEKS = ["delta", "gamma", "vega", "theta", "rho"] as const;
+
+/** Library scripts fix their levels on spot() at their first date. */
+const STRIKE_DATE_NOTE =
+	"Here the levels are set at the initial fixing, a week after the valuation date: a payoff in % of that level does not depend on today's spot, so its delta is zero until then. The risk profile on the Products page takes the levels as already fixed, the delta a desk quotes once the product is struck.";
 
 /**
  * The panel that carries the screen's credibility (WP 07 §4): price WITH its
@@ -115,44 +120,56 @@ export function ResultsPanel({
 				)}
 			</div>
 
-			<table className="w-full rounded-md border border-hairline bg-surface text-sm">
-				<thead>
-					<tr className="text-2xs text-ink-muted uppercase">
-						<th className="p-2 text-left">Greek</th>
-						<th className="p-2 text-right">Value</th>
-						<th className="p-2 text-right">Std error</th>
-					</tr>
-				</thead>
-				<tbody className="font-mono tabular-nums">
-					{GREEKS.map((name) => {
-						const v = (g as Record<string, number | null | undefined>)[name];
-						if (v == null) return null;
-						return (
-							<tr key={name} className="border-t border-hairline">
-								<td className="p-2 text-left text-ink-secondary">{name}</td>
-								<td className="p-2 text-right">
-									<NumberCell value={v} magnitude="greek" />
-								</td>
-								<td className="p-2 text-right text-ink-muted">
-									{se(name) != null ? (
-										<NumberCell value={se(name)} magnitude="greek" />
-									) : (
-										"—"
-									)}
-								</td>
+			{(r.risks ?? []).length > 0 ? (
+				<ScriptGreeks
+					risks={r.risks ?? []}
+					zeroDeltaNote={descriptor.scripted ? STRIKE_DATE_NOTE : undefined}
+				/>
+			) : (
+				GREEKS.some((n) => (g as Record<string, unknown>)[n] != null) && (
+					<table className="w-full rounded-md border border-hairline bg-surface text-sm">
+						<thead>
+							<tr className="text-2xs text-ink-muted uppercase">
+								<th className="p-2 text-left">Greek</th>
+								<th className="p-2 text-right">Value</th>
+								<th className="p-2 text-right">Std error</th>
 							</tr>
-						);
-					})}
-				</tbody>
-				{(r.bumped_greeks ?? []).length > 0 && (
-					<caption className="caption-bottom p-2 text-left text-2xs text-ink-muted">
-						{(r.bumped_greeks ?? []).join(", ")}: not given by this engine,
-						computed by bumping the input and revaluing
-						{isMc ? " on the same random draws" : ""} (finite differences, no
-						standard error). Per unit of spot, volatility, rate; theta per year.
-					</caption>
-				)}
-			</table>
+						</thead>
+						<tbody className="font-mono tabular-nums">
+							{GREEKS.map((name) => {
+								const v = (g as Record<string, number | null | undefined>)[
+									name
+								];
+								if (v == null) return null;
+								return (
+									<tr key={name} className="border-t border-hairline">
+										<td className="p-2 text-left text-ink-secondary">{name}</td>
+										<td className="p-2 text-right">
+											<NumberCell value={v} magnitude="greek" />
+										</td>
+										<td className="p-2 text-right text-ink-muted">
+											{se(name) != null ? (
+												<NumberCell value={se(name)} magnitude="greek" />
+											) : (
+												"—"
+											)}
+										</td>
+									</tr>
+								);
+							})}
+						</tbody>
+						{(r.bumped_greeks ?? []).length > 0 && (
+							<caption className="caption-bottom p-2 text-left text-2xs text-ink-muted">
+								{(r.bumped_greeks ?? []).join(", ")}: not given by this engine,
+								computed by bumping the input and revaluing
+								{isMc ? " on the same random draws" : ""} (finite differences,
+								no standard error). Per unit of spot, volatility, rate; theta
+								per year.
+							</caption>
+						)}
+					</table>
+				)
+			)}
 
 			{r.bond_analytics && (
 				<div className="grid grid-cols-2 gap-3 rounded-md border border-hairline bg-surface p-4 text-sm sm:grid-cols-4">
