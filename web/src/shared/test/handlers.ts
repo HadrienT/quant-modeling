@@ -284,6 +284,9 @@ export const handlers = [
 			{ status: 201 },
 		);
 	}),
+	// Every page shown, until a test hides some.
+	http.get("*/api/site/pages", () => HttpResponse.json({ hidden: [] })),
+
 	http.get("*/api/auth/me", ({ request }) => {
 		const auth = request.headers.get("Authorization");
 		return auth

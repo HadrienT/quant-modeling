@@ -5,6 +5,7 @@ import { PAGE_TITLES } from "@/app/router";
 import { ChartSkeleton } from "@/shared/ui/states";
 import { Nav } from "./Nav";
 import { Footer } from "./Footer";
+import { PageGate } from "./PageGate";
 
 /**
  * The shell (WP 03). It renders children and loads nothing but /health.
@@ -18,7 +19,9 @@ export function AppLayout() {
 			<Nav />
 			<main className="flex-1 px-4 py-5">
 				<Suspense fallback={<PageFallback />}>
-					<Outlet />
+					<PageGate fallback={<PageFallback />}>
+						<Outlet />
+					</PageGate>
 				</Suspense>
 			</main>
 			<Footer />

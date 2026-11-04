@@ -3,8 +3,8 @@ import { Command } from "cmdk";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Link2, Moon, Sun } from "lucide-react";
-import { ROUTES } from "@/app/router";
 import { toggleTheme, useTheme } from "@/app/theme";
+import { useNavPages } from "@/shared/session";
 import { copyText, toast } from "@/shared/ui";
 
 /**
@@ -21,6 +21,7 @@ export default function CommandPalette({
 }) {
 	const navigate = useNavigate();
 	const theme = useTheme();
+	const { pages } = useNavPages();
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -60,7 +61,7 @@ export default function CommandPalette({
 								heading="Navigate"
 								className="px-1.5 py-1 text-2xs tracking-wide text-ink-muted uppercase"
 							>
-								{ROUTES.map((r) => (
+								{pages.map((r) => (
 									<Item
 										key={r.path}
 										onSelect={() => run(() => navigate({ to: r.path }))}

@@ -7586,6 +7586,22 @@
         "title": "Providers",
         "type": "object"
       },
+      "PublicSitePages": {
+        "properties": {
+          "hidden": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hidden",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "title": "PublicSitePages",
+        "type": "object"
+      },
       "PurgedCv": {
         "properties": {
           "chosen": {
@@ -10429,6 +10445,57 @@
         "title": "SimulationPathsResponse",
         "type": "object"
       },
+      "SitePages": {
+        "properties": {
+          "hidden": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hidden",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "title": "SitePages",
+        "type": "object"
+      },
+      "SitePagesUpdate": {
+        "properties": {
+          "hidden": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Hidden",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hidden"
+        ],
+        "title": "SitePagesUpdate",
+        "type": "object"
+      },
       "SnapshotRequest": {
         "properties": {
           "as_of": {
@@ -12226,6 +12293,11 @@
             ],
             "title": "Email"
           },
+          "is_admin": {
+            "default": false,
+            "title": "Is Admin",
+            "type": "boolean"
+          },
           "provider": {
             "default": "password",
             "enum": [
@@ -14018,6 +14090,119 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/pages": {
+      "get": {
+        "description": "The hidden pages, with who changed them last and when.",
+        "operationId": "get_pages",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SitePages"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not signed in."
+          },
+          "403": {
+            "description": "Not an administrator."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pages",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Replaces the list of pages hidden from visitors.",
+        "operationId": "put_pages",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SitePagesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SitePages"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not signed in."
+          },
+          "403": {
+            "description": "Not an administrator."
+          },
+          "422": {
+            "description": "An unknown page."
+          }
+        },
+        "summary": "Put Pages",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/replay/{event_id}": {
       "post": {
         "description": "Re-runs the valuation, the xVA or the backtest recorded under `event_id`\nand compares: `reproduced`, `drifted_inputs` (which datum), `drifted_code`\n(from which build to which) or `not_reproduced`.",
@@ -16536,6 +16721,28 @@
         "summary": "Simulate Sabr",
         "tags": [
           "simulation"
+        ]
+      }
+    },
+    "/api/site/pages": {
+      "get": {
+        "description": "The pages hidden from visitors. Who hid them, and when, is for admins.",
+        "operationId": "get_site_pages",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSitePages"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Site Pages",
+        "tags": [
+          "site"
         ]
       }
     },

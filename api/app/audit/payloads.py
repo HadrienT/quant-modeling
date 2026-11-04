@@ -214,3 +214,12 @@ class AssistantChatPayload(BaseModel):
     duration_ms: float
     scripts_proposed: int
     scripts_valid: int
+
+
+# ── admin.site_pages ─────────────────────────────────────────────────────────
+
+
+class SitePagesPayload(BaseModel):
+    """The pages an administrator left hidden, after the change."""
+
+    hidden: list[str]
