@@ -717,7 +717,7 @@
           },
           "differences": {
             "items": {
-              "$ref": "#/components/schemas/DriftedFigure"
+              "$ref": "#/components/schemas/api__app__backtest__record__DriftedFigure"
             },
             "title": "Differences",
             "type": "array"
@@ -2813,43 +2813,6 @@
           "maturity"
         ],
         "title": "DispersionSwapRequest",
-        "type": "object"
-      },
-      "DriftedFigure": {
-        "properties": {
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "recorded": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Recorded"
-          },
-          "replayed": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Replayed"
-          }
-        },
-        "required": [
-          "name",
-          "recorded",
-          "replayed"
-        ],
-        "title": "DriftedFigure",
         "type": "object"
       },
       "DriftedInput": {
@@ -13036,6 +12999,77 @@
         "title": "XvaPortfoliosResponse",
         "type": "object"
       },
+      "XvaReplayResponse": {
+        "properties": {
+          "current_code": {
+            "$ref": "#/components/schemas/CodeBuild"
+          },
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/api__app__xva_record__DriftedFigure"
+            },
+            "title": "Differences",
+            "type": "array"
+          },
+          "drifted_inputs": {
+            "items": {
+              "$ref": "#/components/schemas/DriftedInput"
+            },
+            "title": "Drifted Inputs",
+            "type": "array"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ReplayOutcome"
+          },
+          "portfolio": {
+            "title": "Portfolio",
+            "type": "string"
+          },
+          "recorded": {
+            "$ref": "#/components/schemas/XvaResult"
+          },
+          "recorded_code": {
+            "$ref": "#/components/schemas/CodeBuild"
+          },
+          "recorded_device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Device"
+          },
+          "replayed": {
+            "$ref": "#/components/schemas/XvaResult"
+          },
+          "replayed_device": {
+            "title": "Replayed Device",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "portfolio",
+          "outcome",
+          "recorded",
+          "replayed",
+          "differences",
+          "drifted_inputs",
+          "recorded_device",
+          "replayed_device",
+          "recorded_code",
+          "current_code"
+        ],
+        "title": "XvaReplayResponse",
+        "type": "object"
+      },
       "XvaRequest": {
         "properties": {
           "borrowing_spread": {
@@ -13367,6 +13401,44 @@
           "methodology"
         ],
         "title": "XvaResponse",
+        "type": "object"
+      },
+      "XvaResult": {
+        "properties": {
+          "cva": {
+            "title": "Cva",
+            "type": "number"
+          },
+          "cva_std_error": {
+            "title": "Cva Std Error",
+            "type": "number"
+          },
+          "dva": {
+            "title": "Dva",
+            "type": "number"
+          },
+          "dva_std_error": {
+            "title": "Dva Std Error",
+            "type": "number"
+          },
+          "epe": {
+            "title": "Epe",
+            "type": "number"
+          },
+          "peak_pfe": {
+            "title": "Peak Pfe",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cva",
+          "cva_std_error",
+          "dva",
+          "dva_std_error",
+          "epe",
+          "peak_pfe"
+        ],
+        "title": "XvaResult",
         "type": "object"
       },
       "XvaSensitivitiesRequest": {
@@ -13877,6 +13949,66 @@
         ],
         "title": "ZeroCouponBondRequest",
         "type": "object"
+      },
+      "api__app__backtest__record__DriftedFigure": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recorded": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded"
+          },
+          "replayed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replayed"
+          }
+        },
+        "required": [
+          "name",
+          "recorded",
+          "replayed"
+        ],
+        "title": "DriftedFigure",
+        "type": "object"
+      },
+      "api__app__xva_record__DriftedFigure": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "number"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "recorded",
+          "replayed"
+        ],
+        "title": "DriftedFigure",
+        "type": "object"
       }
     }
   },
@@ -13888,7 +14020,7 @@
   "paths": {
     "/api/admin/replay/{event_id}": {
       "post": {
-        "description": "Re-runs the valuation or the backtest recorded under `event_id` and\ncompares: `reproduced`, `drifted_inputs` (which datum), `drifted_code`\n(from which build to which) or `not_reproduced`.",
+        "description": "Re-runs the valuation, the xVA or the backtest recorded under `event_id`\nand compares: `reproduced`, `drifted_inputs` (which datum), `drifted_code`\n(from which build to which) or `not_reproduced`.",
         "operationId": "replay_valuation",
         "parameters": [
           {
@@ -13927,6 +14059,9 @@
                       "$ref": "#/components/schemas/ReplayResponse"
                     },
                     {
+                      "$ref": "#/components/schemas/XvaReplayResponse"
+                    },
+                    {
                       "$ref": "#/components/schemas/BacktestReplayResponse"
                     }
                   ],
@@ -13946,7 +14081,7 @@
             "description": "The event is not a replayable valuation."
           },
           "503": {
-            "description": "The audit database is not configured or unreachable."
+            "description": "The audit database is not configured or unreachable, or the market data an xVA needs is missing."
           }
         },
         "summary": "Replay Valuation Endpoint",
