@@ -4,6 +4,30 @@
  */
 
 export interface paths {
+    "/api/admin/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pages
+         * @description The hidden pages, with who changed them last and when.
+         */
+        get: operations["get_pages"];
+        /**
+         * Put Pages
+         * @description Replaces the list of pages hidden from visitors.
+         */
+        put: operations["put_pages"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/replay/{event_id}": {
         parameters: {
             query?: never;
@@ -15,8 +39,8 @@ export interface paths {
         put?: never;
         /**
          * Replay Valuation Endpoint
-         * @description Re-runs the valuation or the backtest recorded under `event_id` and
-         *     compares: `reproduced`, `drifted_inputs` (which datum), `drifted_code`
+         * @description Re-runs the valuation, the xVA or the backtest recorded under `event_id`
+         *     and compares: `reproduced`, `drifted_inputs` (which datum), `drifted_code`
          *     (from which build to which) or `not_reproduced`.
          */
         post: operations["replay_valuation"];
@@ -793,6 +817,26 @@ export interface paths {
         put?: never;
         /** Simulate Sabr */
         post: operations["simulate_sabr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/site/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Site Pages
+         * @description The pages hidden from visitors. Who hid them, and when, is for admins.
+         */
+        get: operations["get_site_pages"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1978,7 +2022,7 @@ export interface components {
             current_code: components["schemas"]["CodeBuild"];
             current_engine: components["schemas"]["BacktestEngine"];
             /** Differences */
-            differences: components["schemas"]["DriftedFigure"][];
+            differences: components["schemas"]["api__app__backtest__record__DriftedFigure"][];
             /** Drifted Inputs */
             drifted_inputs: components["schemas"]["DriftedTable"][];
             /** Event Id */
@@ -2921,15 +2965,6 @@ export interface components {
             vols: number[];
             /** Weights */
             weights?: number[];
-        };
-        /** DriftedFigure */
-        DriftedFigure: {
-            /** Name */
-            name: string;
-            /** Recorded */
-            recorded: number | null;
-            /** Replayed */
-            replayed: number | null;
         };
         /** DriftedInput */
         DriftedInput: {
@@ -4957,6 +4992,11 @@ export interface components {
             /** Google */
             google: boolean;
         };
+        /** PublicSitePages */
+        PublicSitePages: {
+            /** Hidden */
+            hidden: string[];
+        };
         /** PurgedCv */
         PurgedCv: {
             /** Chosen */
@@ -6269,6 +6309,20 @@ export interface components {
             /** Time Grid */
             time_grid: number[];
         };
+        /** SitePages */
+        SitePages: {
+            /** Hidden */
+            hidden?: string[];
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /** SitePagesUpdate */
+        SitePagesUpdate: {
+            /** Hidden */
+            hidden: string[];
+        };
         /** SnapshotRequest */
         SnapshotRequest: {
             /** As Of */
@@ -6966,6 +7020,11 @@ export interface components {
             /** Email */
             email?: string | null;
             /**
+             * Is Admin
+             * @default false
+             */
+            is_admin: boolean;
+            /**
              * Provider
              * @default password
              * @enum {string}
@@ -7308,6 +7367,26 @@ export interface components {
             /** Wrong Way Scenarios */
             wrong_way_scenarios: components["schemas"]["WrongWayScenario"][];
         };
+        /** XvaReplayResponse */
+        XvaReplayResponse: {
+            current_code: components["schemas"]["CodeBuild"];
+            /** Differences */
+            differences: components["schemas"]["api__app__xva_record__DriftedFigure"][];
+            /** Drifted Inputs */
+            drifted_inputs: components["schemas"]["DriftedInput"][];
+            /** Event Id */
+            event_id: string;
+            outcome: components["schemas"]["ReplayOutcome"];
+            /** Portfolio */
+            portfolio: string;
+            recorded: components["schemas"]["XvaResult"];
+            recorded_code: components["schemas"]["CodeBuild"];
+            /** Recorded Device */
+            recorded_device: string | null;
+            replayed: components["schemas"]["XvaResult"];
+            /** Replayed Device */
+            replayed_device: string;
+        };
         /** XvaRequest */
         XvaRequest: {
             /**
@@ -7438,6 +7517,21 @@ export interface components {
             value_today: number;
             /** Warnings */
             warnings: string[];
+        };
+        /** XvaResult */
+        XvaResult: {
+            /** Cva */
+            cva: number;
+            /** Cva Std Error */
+            cva_std_error: number;
+            /** Dva */
+            dva: number;
+            /** Dva Std Error */
+            dva_std_error: number;
+            /** Epe */
+            epe: number;
+            /** Peak Pfe */
+            peak_pfe: number;
         };
         /**
          * XvaSensitivitiesRequest
@@ -7655,6 +7749,24 @@ export interface components {
             /** Rate */
             rate: number;
         };
+        /** DriftedFigure */
+        api__app__backtest__record__DriftedFigure: {
+            /** Name */
+            name: string;
+            /** Recorded */
+            recorded: number | null;
+            /** Replayed */
+            replayed: number | null;
+        };
+        /** DriftedFigure */
+        api__app__xva_record__DriftedFigure: {
+            /** Name */
+            name: string;
+            /** Recorded */
+            recorded: number;
+            /** Replayed */
+            replayed: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -7664,6 +7776,98 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_pages: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePages"];
+                };
+            };
+            /** @description Not signed in. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not an administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_pages: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SitePagesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePages"];
+                };
+            };
+            /** @description Not signed in. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not an administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An unknown page. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     replay_valuation: {
         parameters: {
             query?: never;
@@ -7683,7 +7887,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReplayResponse"] | components["schemas"]["BacktestReplayResponse"];
+                    "application/json": components["schemas"]["ReplayResponse"] | components["schemas"]["XvaReplayResponse"] | components["schemas"]["BacktestReplayResponse"];
                 };
             };
             /** @description Not an administrator. */
@@ -7707,7 +7911,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The audit database is not configured or unreachable. */
+            /** @description The audit database is not configured or unreachable, or the market data an xVA needs is missing. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -9194,6 +9398,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_site_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicSitePages"];
                 };
             };
         };

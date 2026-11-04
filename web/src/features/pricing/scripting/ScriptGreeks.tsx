@@ -37,7 +37,14 @@ function describe(label: string): [string, string] {
  * not a greek. Parameters whose sensitivity is exactly zero are named apart
  * rather than tabulated as "0".
  */
-export function ScriptGreeks({ risks }: { risks: Risk[] }) {
+export function ScriptGreeks({
+	risks,
+	zeroDeltaNote,
+}: {
+	risks: Risk[];
+	/** why a delta can be exactly zero here, said when it is */
+	zeroDeltaNote?: string;
+}) {
 	const grid = risks.filter((r) => GRID.test(r.label));
 	const scalars = risks.filter((r) => !GRID.test(r.label));
 	const zero = scalars.filter((r) => r.value === 0 && r.std_error === 0);
@@ -95,6 +102,9 @@ export function ScriptGreeks({ risks }: { risks: Risk[] }) {
 					{zero.map((r) => describe(r.label)[0]).join(", ")}. Either the
 					parameter does not enter this price, or the payoff jumps and nothing
 					smooths it (see the warning, if any).
+					{zeroDeltaNote &&
+						zero.some((r) => /^spot(\[\d+\])?$/.test(r.label)) &&
+						` ${zeroDeltaNote}`}
 				</p>
 			)}
 			{grid.length > 0 && (

@@ -74,6 +74,7 @@ class UserInfo(BaseModel):
     email: Optional[str] = None
     provider: Literal["password", "google"] = "password"
     created_at: Optional[str] = None  # ISO 8601, absent for very old accounts
+    is_admin: bool = False  # named in QM_ADMIN_USERS: the front shows the admin panel
 
 
 # ── User store ───────────────────────────────────────────────────────────────
@@ -236,9 +237,10 @@ def login_google(sub: str, email: str) -> AuthResponse:
 def user_info(username: str) -> UserInfo:
     user = _load_users().get(username)
     if user is None:
-        return UserInfo(username=username)
+        return UserInfo(username=username, is_admin=username in _admin_users())
     return UserInfo(
         username=username,
+        is_admin=username in _admin_users(),
         email=user.email or None,
         provider="google" if username.startswith("google:") else "password",
         created_at=user.created_at or None,

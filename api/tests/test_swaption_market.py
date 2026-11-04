@@ -98,9 +98,11 @@ def trade(
     exact = (expiry - day).days / 365.25
     forward, annuity = _forward(exact, tenor)
     strike = forward + offset
+    # Paid at expiry (a forward premium): today's value over the discount.
     premium = (
         notional
         * _bachelier(payer, forward, strike, exact, vol, annuity)
+        / swaption_market._Curve(CURVE).discount(exact)
         * premium_factor
     )
     return SwaptionTrade(
@@ -221,16 +223,51 @@ def test_trades_that_are_not_an_at_the_money_price_are_counted_not_used():
         atm
         + [trade(1.0, 10, offset=0.0100)]  # 100 bp out of the money
         + [trade(1.0, 10, offset=-0.0100)]  # in the money: payer or receiver matters
-        + [trade(5.0, 10)]  # premium convention unknown beyond two years
+        + [trade(15.0, 10)]  # no bucket beyond ten years
         + [trade(1.0, 4)]  # no four-year bucket
         + [trade(1.0, 10, premium_factor=40.0)]  # a premium in the wrong unit
     )
     assert [p.trades for p in g.points] == [3]
     assert g.rejected == {
         "away from the money": 2,
-        "off the grid (expiry beyond two years, odd tenor)": 2,
+        "off the grid (expiry beyond ten years, odd tenor)": 2,
         "implausible premium": 1,
     }
+
+
+def test_the_premium_is_read_as_paid_at_expiry_at_every_expiry():
+    """Issue #142: the same vol comes back from one year to ten, where a
+    premium read as paid up front gave a vol rising like 1 / P(0, expiry)."""
+    expiries = (1.0, 2.0, 3.0, 5.0, 7.0, 10.0)
+    g = grid([trade(e, 10, notional=n) for e in expiries for n in (25e6, 50e6, 100e6)])
+    assert [p.expiry for p in g.points] == list(expiries)
+    for p in g.points:
+        assert p.normal_vol == pytest.approx(VOL, rel=1e-6)
+
+    # A premium paid up front is smaller by the discount factor, and comes
+    # out lower by about as much: the minority the median leaves aside.
+    curve = swaption_market._Curve(CURVE)
+    discount = curve.discount(10.0)
+    assert 0.5 < discount < 0.8
+    upfront = [trade(10.0, 10, premium_factor=discount) for _ in range(3)]
+    (point,) = grid(upfront).points
+    assert point.normal_vol == pytest.approx(VOL * discount, rel=2e-3)
+    mostly_forward = [trade(10.0, 10) for _ in range(7)] + upfront
+    (point,) = grid(mostly_forward).points
+    assert point.normal_vol == pytest.approx(VOL, rel=1e-6)
+
+
+def test_the_discount_factor_follows_the_curve():
+    curve = swaption_market._Curve(CURVE)
+    assert curve.discount(0.0) == 1.0
+    for t, df in zip(curve.times, curve.dfs):
+        assert curve.discount(t) == pytest.approx(df, rel=1e-12)
+    # Between two dates: decreasing, and between its neighbours.
+    a, b = curve.times[2], curve.times[3]
+    assert curve.dfs[3] < curve.discount(0.5 * (a + b)) < curve.dfs[2]
+    assert curve.discount(0.5 * curve.times[0]) == pytest.approx(
+        math.sqrt(curve.dfs[0]), rel=1e-12
+    )
 
 
 def test_small_moneyness_is_tolerated_and_a_percent_strike_understood():

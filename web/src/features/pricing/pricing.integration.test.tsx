@@ -6,7 +6,7 @@ import {
 	createRouter,
 } from "@tanstack/react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { makeQueryClient } from "@/shared/api";
@@ -89,5 +89,33 @@ describe("pricing workbench", () => {
 		renderWorkbench();
 		expect(await screen.findByText("delta")).toBeInTheDocument();
 		expect(await screen.findByText("vega")).toBeInTheDocument();
+	});
+
+	it("shows the adjoint greeks of a scripted product, and why its delta is zero", async () => {
+		const bodies: { greeks_method?: string }[] = [];
+		server.use(
+			http.post("*/price/scripted-product", async ({ request }) => {
+				bodies.push((await request.json()) as { greeks_method?: string });
+				return HttpResponse.json(
+					pricingResponse({
+						risks: [
+							{ label: "spot", value: 0, std_error: 0 },
+							{ label: "vol", value: -812.4, std_error: 3.1 },
+							{ label: "rate", value: -1719.2, std_error: 4.0 },
+						],
+						warnings: [],
+					}),
+				);
+			}),
+		);
+		renderWorkbench("?product=script-athena-autocall&engine=mc");
+		const greeks = await screen.findByRole("region", { name: "Greeks" });
+		expect(bodies[0]!.greeks_method).toBe("aad");
+		expect(
+			within(greeks).getByRole("row", { name: /^Vega/ }),
+		).toHaveTextContent("±");
+		expect(within(greeks).getByText(/Exactly zero/)).toHaveTextContent(
+			/Delta.*levels are set at the initial fixing/,
+		);
 	});
 });

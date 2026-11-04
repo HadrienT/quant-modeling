@@ -2945,7 +2945,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | # | Amélioration | Pourquoi |
 |---|---|---|
 | T1 | Rejeu d'un événement `xva.valuation` (issue #141) | prévu au lot X3, pas branché |
-| T2 | Convention de prime des swaptions au-delà de deux ans (issue #142) | limite la grille de vols à 2 ans d'échéance |
+| T2 | ~~Convention de prime des swaptions au-delà de deux ans (issue #142)~~ **fait** : la prime est lue comme payée à l'échéance, la grille va jusqu'à 10 ans | sur les transactions USD d'août à octobre 2026 d'échéance ≥ 5 ans, 72 % sont au niveau que donne la prime actualisée, 6 % au niveau d'une prime payée comptant, 18 % au double (straddles non reconnus, surtout bilatéraux : à traiter) |
 | T3 | Calage Heston / rough Bergomi dégénéré sur SPY (issue #146) | la page Scripting valorise sous un modèle qui ne redonne pas un forward |
 | T4 | Grecques de la swaption dans le workbench de pricing | le bloc `greeks` est vide |
 | T5 | Temps de réponse de l'API xVA avec régression et marge initiale (5 à 15 s) ; sans régression, 7,6 s à 50 000 chemins après le lot X7 | à surveiller avant la page `/xva` ; voir G1 et G2 |

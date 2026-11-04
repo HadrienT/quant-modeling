@@ -6,6 +6,7 @@ import {
 	redirect,
 } from "@tanstack/react-router";
 import { z } from "zod";
+import { NAV_PAGES } from "@/shared/config";
 import { AppLayout } from "./layout/AppLayout";
 import { RouteError } from "./layout/RouteError";
 import { NotFound } from "./layout/NotFound";
@@ -245,6 +246,14 @@ const profileRoute = createRoute({
 	component: ProfilePage,
 });
 
+// ── Admin panel (from the avatar menu, administrators only) ──────────────
+const AdminPage = lazy(() => import("@/features/admin/AdminPage"));
+const adminRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/admin",
+	component: AdminPage,
+});
+
 const routeTree = rootRoute.addChildren([
 	indexRoute,
 	visualizeRoute,
@@ -264,6 +273,7 @@ const routeTree = rootRoute.addChildren([
 	privacyRoute,
 	termsRoute,
 	profileRoute,
+	adminRoute,
 ]);
 
 export const router = createRouter({
@@ -279,19 +289,8 @@ declare module "@tanstack/react-router" {
 	}
 }
 
-export const ROUTES = [
-	{ path: "/price", label: "Pricing" },
-	{ path: "/scripting", label: "Scripting" },
-	{ path: "/market", label: "Market" },
-	{ path: "/credit", label: "Credit" },
-	{ path: "/xva", label: "xVA" },
-	{ path: "/simulation", label: "Simulation" },
-	{ path: "/portfolio", label: "Portfolio" },
-	{ path: "/backtest", label: "Backtest" },
-	{ path: "/visualize", label: "Strategies" },
-	{ path: "/products", label: "Products" },
-	{ path: "/about", label: "About" },
-] as const;
+/** The navigation's pages; an administrator may hide some (useNavPages). */
+export const ROUTES = NAV_PAGES;
 
 /** Browser-tab titles; a path missing here gets the bare site name. */
 export const PAGE_TITLES: Record<string, string> = {
@@ -301,4 +300,5 @@ export const PAGE_TITLES: Record<string, string> = {
 	"/privacy": "Privacy policy",
 	"/terms": "Terms & disclaimer",
 	"/profile": "Profile",
+	"/admin": "Admin",
 };

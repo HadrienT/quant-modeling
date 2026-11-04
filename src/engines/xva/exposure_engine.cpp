@@ -242,14 +242,87 @@ namespace quantModeling
         return false;
     }
 
+    std::size_t HullWhiteExposureEngine::pilot_paths(const ExposureSimulationSettings &settings)
+    {
+        return settings.pilot_paths > 0
+                   ? settings.pilot_paths
+                   : std::clamp<std::size_t>(4 * settings.paths, 20000, 200000);
+    }
+
+    PilotPaths HullWhiteExposureEngine::draw_pilot(const ExposureSimulationSettings &settings,
+                                                   const Dynamics &dynamics,
+                                                   const std::vector<Time> &times, std::size_t paths)
+    {
+        const std::vector<Real> &q_decay = dynamics.pricing.decay, &q_drift = dynamics.pricing.drift,
+                                &q_sd = dynamics.pricing.sd, &q_scale = dynamics.pricing.weight_scale,
+                                &q_G = dynamics.pricing.weight_G;
+        const std::vector<Real> &decay = dynamics.main.decay, &drift = dynamics.main.drift,
+                                &sd = dynamics.main.sd;
+        const std::size_t n = times.size();
+        PilotPaths pilot;
+        pilot.paths = paths;
+        pilot.times = times;
+        pilot.state_decay = q_decay;
+        pilot.deflator_slope = q_G;
+        pilot_dispersion_ = 0.0;
+        if (settings.pilot_dispersion)
+        {
+            if (!(*settings.pilot_dispersion >= 0.0) || !std::isfinite(*settings.pilot_dispersion))
+                throw InvalidInput("exposure engine: the pilot dispersion must be finite and >= 0");
+            pilot_dispersion_ = *settings.pilot_dispersion;
+        }
+        else if (settings.historical)
+        {
+            // Where the historical scenarios go, the pricing measure's
+            // paths may not: start the pilot from a dispersed state
+            // x(0) ~ N(0, s0²), s0 the smallest for which, at every date,
+            // three standard deviations of the pilot cover four of the
+            // historical scenarios around their own mean. The conditional
+            // law of the future given x(t_i) is untouched, and it is all
+            // a regression estimates.
+            Real mean_q = 0.0, var_q = 0.0, carried = 1.0, mean_p = 0.0, var_p = 0.0, s0_sq = 0.0;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                mean_q = q_decay[i] * mean_q + q_drift[i];
+                var_q = q_decay[i] * q_decay[i] * var_q + q_sd[i] * q_sd[i];
+                carried *= q_decay[i];
+                mean_p = decay[i] * mean_p + drift[i];
+                var_p = decay[i] * decay[i] * var_p + sd[i] * sd[i];
+                const Real needed = (std::abs(mean_p - mean_q) + 4.0 * std::sqrt(var_p)) / 3.0;
+                s0_sq = std::max(s0_sq, (needed * needed - var_q) / (carried * carried));
+            }
+            pilot_dispersion_ = std::sqrt(std::max(s0_sq, 0.0));
+        }
+        pilot.state.resize(pilot.paths * n);
+        pilot.deflator.resize(pilot.paths * n);
+        // A stream the main simulation never draws: the seed's complement.
+        PhiloxGaussianSource gaussian(~settings.seed);
+        for (std::size_t p = 0; p < pilot.paths; ++p)
+        {
+            gaussian.set_path(p);
+            Real x = pilot_dispersion_ * gaussian.next();
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                x = q_decay[i] * x + q_drift[i] + q_sd[i] * gaussian.next();
+                pilot.state[p * n + i] = x;
+                pilot.deflator[p * n + i] = q_scale[i] * std::exp(q_G[i] * x);
+            }
+        }
+        return pilot;
+    }
+
+    PilotPaths HullWhiteExposureEngine::simulate_pilot(const ExposureSimulationSettings &settings)
+    {
+        ExposurePaths out;
+        const Dynamics dynamics = prepare(settings, out);
+        return draw_pilot(settings, dynamics, out.times, pilot_paths(settings));
+    }
+
     ExposurePaths HullWhiteExposureEngine::simulate(const ExposureSimulationSettings &settings,
                                                     ThreadPool *pool)
     {
         ExposurePaths out;
         const Dynamics dynamics = prepare(settings, out);
-        const std::vector<Real> &q_decay = dynamics.pricing.decay, &q_drift = dynamics.pricing.drift,
-                                &q_sd = dynamics.pricing.sd, &q_scale = dynamics.pricing.weight_scale,
-                                &q_G = dynamics.pricing.weight_G;
         const std::vector<Real> &decay = dynamics.main.decay, &drift = dynamics.main.drift,
                                 &sd = dynamics.main.sd, &weight_scale = dynamics.main.weight_scale,
                                 &weight_G = dynamics.main.weight_G;
@@ -276,59 +349,13 @@ namespace quantModeling
                         { return trade.value->needs_pilot(); });
         if (regression)
         {
-            PilotPaths pilot;
-            pilot.paths = settings.pilot_paths > 0
-                              ? settings.pilot_paths
-                              : std::clamp<std::size_t>(4 * N, 20000, 200000);
-            if (pilot.paths > (limit_cells / n - std::min(limit_cells / n, N * matrices)) / 2)
+            const std::size_t pilot_count = pilot_paths(settings);
+            if (pilot_count > (limit_cells / n - std::min(limit_cells / n, N * matrices)) / 2)
                 throw InvalidInput(
-                    "exposure engine: the pilot of " + std::to_string(pilot.paths) +
+                    "exposure engine: the pilot of " + std::to_string(pilot_count) +
                     " paths does not fit in what the cube leaves of the memory limit; reduce "
                     "the paths or raise memory_limit_bytes");
-            pilot.times = out.times;
-            if (settings.pilot_dispersion)
-            {
-                if (!(*settings.pilot_dispersion >= 0.0) || !std::isfinite(*settings.pilot_dispersion))
-                    throw InvalidInput("exposure engine: the pilot dispersion must be finite and >= 0");
-                pilot_dispersion_ = *settings.pilot_dispersion;
-            }
-            else if (settings.historical)
-            {
-                // Where the historical scenarios go, the pricing measure's
-                // paths may not: start the pilot from a dispersed state
-                // x(0) ~ N(0, s0²), s0 the smallest for which, at every date,
-                // three standard deviations of the pilot cover four of the
-                // historical scenarios around their own mean. The conditional
-                // law of the future given x(t_i) is untouched, and it is all
-                // a regression estimates.
-                Real mean_q = 0.0, var_q = 0.0, carried = 1.0, mean_p = 0.0, var_p = 0.0, s0_sq = 0.0;
-                for (std::size_t i = 0; i < n; ++i)
-                {
-                    mean_q = q_decay[i] * mean_q + q_drift[i];
-                    var_q = q_decay[i] * q_decay[i] * var_q + q_sd[i] * q_sd[i];
-                    carried *= q_decay[i];
-                    mean_p = decay[i] * mean_p + drift[i];
-                    var_p = decay[i] * decay[i] * var_p + sd[i] * sd[i];
-                    const Real needed = (std::abs(mean_p - mean_q) + 4.0 * std::sqrt(var_p)) / 3.0;
-                    s0_sq = std::max(s0_sq, (needed * needed - var_q) / (carried * carried));
-                }
-                pilot_dispersion_ = std::sqrt(std::max(s0_sq, 0.0));
-            }
-            pilot.state.resize(pilot.paths * n);
-            pilot.deflator.resize(pilot.paths * n);
-            // A stream the main simulation never draws: the seed's complement.
-            PhiloxGaussianSource gaussian(~settings.seed);
-            for (std::size_t p = 0; p < pilot.paths; ++p)
-            {
-                gaussian.set_path(p);
-                Real x = pilot_dispersion_ * gaussian.next();
-                for (std::size_t i = 0; i < n; ++i)
-                {
-                    x = q_decay[i] * x + q_drift[i] + q_sd[i] * gaussian.next();
-                    pilot.state[p * n + i] = x;
-                    pilot.deflator[p * n + i] = q_scale[i] * std::exp(q_G[i] * x);
-                }
-            }
+            const PilotPaths pilot = draw_pilot(settings, dynamics, out.times, pilot_count);
             for (Trade &trade : trades_)
                 if (trade.value->needs_pilot())
                     trade.value->fit(pilot);

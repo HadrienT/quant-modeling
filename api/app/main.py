@@ -22,6 +22,7 @@ from .routers.auth import router as auth_router
 from .routers.backtest import router as backtest_router
 from .routers.assistant import router as assistant_router
 from .routers.admin import router as admin_router
+from .routers.site import router as site_router
 from .routers.credit import router as credit_router
 from .routers.rates_derivatives import router as rates_derivatives_router
 from .routers.xva import router as xva_router
@@ -193,6 +194,7 @@ app.include_router(auth_router)
 app.include_router(backtest_router)
 app.include_router(assistant_router)
 app.include_router(admin_router)
+app.include_router(site_router)
 app.include_router(credit_router)
 app.include_router(rates_derivatives_router)
 app.include_router(xva_router)
