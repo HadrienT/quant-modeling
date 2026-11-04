@@ -8,7 +8,7 @@ and the day's SOFR par swap curve built from the swaps of the same file
 (`rates.dtcc_swaptions`, `rates.dtcc_swap_rates`). This module turns them
 into a grid of at-the-money normal vols:
 
-    premium / notional = annuity × Bachelier(forward, strike, expiry, σ)
+    premium / notional × P(0, expiry) = annuity × Bachelier(forward, strike, expiry, σ)
 
 inverted for σ, trade by trade, on the swap curve of the trade's own day;
 then the median per (expiry, tenor) bucket over a rolling window, with the
@@ -31,9 +31,17 @@ The rules, found on the real files (blueprint/wp/23-xva.md §13.7, issue #137):
   readings give the same vol within `READING_TOLERANCE` — which is the case
   when the strike is at the forward, where payer and receiver are worth the
   same;
-- **expiries up to two years**: beyond, premiums look paid at expiry rather
-  than up front, which the files do not say either, and the vols would be
-  overstated by the discount factor to the expiry.
+- **the premium is paid at expiry** (a forward premium, the convention of
+  the swaption market), which the files do not say either: it is discounted
+  to today before the inversion. Read as paid up front, the vols rise with
+  the expiry like 1 / P(0, expiry) (135 bp at 10Y into 10Y where the
+  discounted premium gives 86, flat from 2Y to 10Y). Measured on the USD
+  trades of August to October 2026 with an expiry of five years or more
+  (issue #142): 72 % sit at the level the discounted premium gives, 6 % at
+  that level times P(0, expiry) (premiums paid up front, mostly bilateral
+  trades), 18 % at twice it (straddles not recognised as such). No field
+  tells them apart trade by trade; the median does not move with the two
+  minorities.
 
 What this is not: a dealer's surface. It is the median of a handful of trades
 per point, on a curve that is itself a median of trades; the count and the
@@ -42,6 +50,8 @@ quartiles are returned so that the reader can see what each number rests on.
 
 from __future__ import annotations
 
+import bisect
+import math
 import statistics
 from collections import defaultdict
 from dataclasses import dataclass
@@ -53,7 +63,7 @@ import quantmodeling as qm
 from .db import SwapRate, SwaptionTrade
 
 #: The grid: option expiries and swap tenors, in years.
-EXPIRIES: Tuple[float, ...] = (0.25, 0.5, 1.0, 2.0)
+EXPIRIES: Tuple[float, ...] = (0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0)
 TENORS: Tuple[int, ...] = (1, 2, 5, 10, 30)
 #: A trade belongs to a bucket if its expiry is within this fraction of the
 #: bucket's and its tenor within TENOR_TOLERANCE years.
@@ -132,6 +142,15 @@ class _Curve:
         self.times, self.dfs = curve["times"], curve["discount_factors"]
         self.last = float(rates[-1].tenor_years)
 
+    def discount(self, t: float) -> float:
+        """P(0, t), log-linear between the curve's dates and from P(0, 0) = 1."""
+        times, dfs = [0.0, *self.times], [1.0, *self.dfs]
+        i = min(bisect.bisect_left(times, t), len(times) - 1)
+        if i == 0:
+            return 1.0
+        w = (t - times[i - 1]) / (times[i] - times[i - 1])
+        return math.exp((1.0 - w) * math.log(dfs[i - 1]) + w * math.log(dfs[i]))
+
     def forward_swap(self, start: float, tenor: int) -> Tuple[float, float]:
         """(forward par rate, annuity) of the annual swap starting at `start`."""
         swap = qm.price_swap(
@@ -171,7 +190,7 @@ def atm_normal_vols(
         )
         tenor_bucket = _bucket(tenor_years, TENORS, TENOR_TOLERANCE, relative=False)
         if expiry_bucket is None or tenor_bucket is None:
-            rejected["off the grid (expiry beyond two years, odd tenor)"] += 1
+            rejected["off the grid (expiry beyond ten years, odd tenor)"] += 1
             continue
 
         if trade.report_date not in built:
@@ -188,7 +207,13 @@ def atm_normal_vols(
         strike = trade.strike / 100.0 if trade.strike > 0.3 else trade.strike
         forward, annuity = curve.forward_swap(expiry, int(tenor_bucket))
         both_legs = i in straddle or trade.option_type == "other"
-        price = trade.premium / trade.notional * (0.5 if both_legs else 1.0)
+        # Paid at expiry: its value today is the premium discounted.
+        price = (
+            trade.premium
+            / trade.notional
+            * (0.5 if both_legs else 1.0)
+            * curve.discount(expiry)
+        )
         payer = qm.bachelier_implied_vol(True, price, forward, strike, expiry, annuity)
         receiver = qm.bachelier_implied_vol(
             False, price, forward, strike, expiry, annuity
