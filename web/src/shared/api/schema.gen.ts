@@ -4,6 +4,30 @@
  */
 
 export interface paths {
+    "/api/admin/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pages
+         * @description The hidden pages, with who changed them last and when.
+         */
+        get: operations["get_pages"];
+        /**
+         * Put Pages
+         * @description Replaces the list of pages hidden from visitors.
+         */
+        put: operations["put_pages"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/replay/{event_id}": {
         parameters: {
             query?: never;
@@ -793,6 +817,26 @@ export interface paths {
         put?: never;
         /** Simulate Sabr */
         post: operations["simulate_sabr"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/site/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Site Pages
+         * @description The pages hidden from visitors. Who hid them, and when, is for admins.
+         */
+        get: operations["get_site_pages"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4957,6 +5001,11 @@ export interface components {
             /** Google */
             google: boolean;
         };
+        /** PublicSitePages */
+        PublicSitePages: {
+            /** Hidden */
+            hidden: string[];
+        };
         /** PurgedCv */
         PurgedCv: {
             /** Chosen */
@@ -6269,6 +6318,20 @@ export interface components {
             /** Time Grid */
             time_grid: number[];
         };
+        /** SitePages */
+        SitePages: {
+            /** Hidden */
+            hidden?: string[];
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /** SitePagesUpdate */
+        SitePagesUpdate: {
+            /** Hidden */
+            hidden: string[];
+        };
         /** SnapshotRequest */
         SnapshotRequest: {
             /** As Of */
@@ -6965,6 +7028,11 @@ export interface components {
             created_at?: string | null;
             /** Email */
             email?: string | null;
+            /**
+             * Is Admin
+             * @default false
+             */
+            is_admin: boolean;
             /**
              * Provider
              * @default password
@@ -7664,6 +7732,98 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_pages: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePages"];
+                };
+            };
+            /** @description Not signed in. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not an administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_pages: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SitePagesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitePages"];
+                };
+            };
+            /** @description Not signed in. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not an administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An unknown page. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     replay_valuation: {
         parameters: {
             query?: never;
@@ -9194,6 +9354,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_site_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicSitePages"];
                 };
             };
         };

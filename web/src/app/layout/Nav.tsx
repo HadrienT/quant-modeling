@@ -3,7 +3,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Command, Menu, Moon, Sun, X } from "lucide-react";
 import { Button, cn } from "@/shared/ui";
 import { setTheme, useTheme } from "@/app/theme";
-import { ROUTES } from "@/app/router";
+import { useNavPages } from "@/shared/session";
 import { SessionMenu } from "@/features/auth";
 
 const CommandPalette = lazy(() => import("@/app/command/CommandPalette"));
@@ -111,9 +111,13 @@ export function Nav() {
 	);
 }
 
-/** The pages, as links: one line on wide screens, a column in the menu. */
+/**
+ * The pages, as links: one line on wide screens, a column in the menu. A page
+ * hidden from visitors shows to an administrator, faded and struck through.
+ */
 function NavLinks() {
-	return ROUTES.map((r) => (
+	const { pages } = useNavPages();
+	return pages.map((r) => (
 		<Link
 			key={r.path}
 			to={r.path}
@@ -122,8 +126,16 @@ function NavLinks() {
 				"rounded-sm px-2.5 py-1 text-sm text-ink-secondary transition-colors hover:bg-surface-raised hover:text-ink",
 			)}
 			activeProps={{ className: "bg-surface-raised !text-ink" }}
+			title={r.hidden ? "Hidden from visitors" : undefined}
 		>
-			{r.label}
+			{r.hidden ? (
+				<span className="line-through opacity-60">
+					<span className="sr-only">hidden from visitors: </span>
+					{r.label}
+				</span>
+			) : (
+				r.label
+			)}
 		</Link>
 	));
 }

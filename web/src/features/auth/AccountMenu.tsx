@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Briefcase, LogOut, UserRound } from "lucide-react";
+import { Briefcase, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -15,11 +15,12 @@ export type AccountUser = {
 	username: string;
 	email?: string | null;
 	provider?: "password" | "google";
+	is_admin?: boolean;
 };
 
 /**
  * The signed-in account menu: avatar → name, sign-in method, Profile, My
- * portfolios, Sign out. Loaded lazily by SessionMenu: Radix's DropdownMenu is
+ * portfolios, Admin panel (administrators only), Sign out. Loaded lazily by SessionMenu: Radix's DropdownMenu is
  * only needed once someone is signed in, and the shell every visitor
  * downloads has a size budget (.size-limit.json).
  */
@@ -68,6 +69,14 @@ export default function AccountMenu({
 						My portfolios
 					</Link>
 				</DropdownMenuItem>
+				{user.is_admin && (
+					<DropdownMenuItem asChild>
+						<Link to="/admin">
+							<ShieldCheck />
+							Admin panel
+						</Link>
+					</DropdownMenuItem>
+				)}
 				<DropdownMenuSeparator />
 				<DropdownMenuItem onSelect={logout}>
 					<LogOut />

@@ -97,4 +97,11 @@ export const queryKeys = {
 		validation: (request: unknown) =>
 			["backtest", "validation", request] as const,
 	},
+
+	site: {
+		/** the pages hidden from visitors, as everyone reads them */
+		pages: () => ["site", "pages"] as const,
+		/** the same, with who changed them last (administrators only) */
+		adminPages: () => ["site", "pages", "admin"] as const,
+	},
 } as const;

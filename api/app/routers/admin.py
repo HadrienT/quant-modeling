@@ -1,6 +1,6 @@
-"""Router — administration. Today: the replay of a recorded valuation
-(blueprint WP 18e, `replay.py`) or of a recorded backtest
-(`backtest/record.py`)."""
+"""Router — administration: the replay of a recorded valuation (blueprint
+WP 18e, `replay.py`) or of a recorded backtest (`backtest/record.py`), and the
+pages shown to visitors (`site_pages.py`)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,9 @@ from typing import Union
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.concurrency import run_in_threadpool
 
+from .. import site_pages
+from ..audit import emit
+from ..audit.payloads import SitePagesPayload
 from ..audit.store import AuditStoreUnavailable, get_store
 from ..auth import require_admin
 from ..backtest import record as backtest_record
@@ -48,3 +51,32 @@ async def replay_valuation_endpoint(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except NotAValuation as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+_ADMIN_ONLY = {
+    401: {"description": "Not signed in."},
+    403: {"description": "Not an administrator."},
+}
+
+
+@router.get("/pages", response_model=site_pages.SitePages, responses=_ADMIN_ONLY)
+async def get_pages(_admin: str = Depends(require_admin)) -> site_pages.SitePages:
+    """The hidden pages, with who changed them last and when."""
+    return await run_in_threadpool(site_pages.load)
+
+
+@router.put(
+    "/pages",
+    response_model=site_pages.SitePages,
+    responses={**_ADMIN_ONLY, 422: {"description": "An unknown page."}},
+)
+async def put_pages(
+    body: site_pages.SitePagesUpdate, admin: str = Depends(require_admin)
+) -> site_pages.SitePages:
+    """Replaces the list of pages hidden from visitors."""
+    try:
+        pages = await run_in_threadpool(site_pages.save, body.hidden, by=admin)
+    except site_pages.UnknownPage as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    emit("admin.site_pages", SitePagesPayload(hidden=pages.hidden))
+    return pages
