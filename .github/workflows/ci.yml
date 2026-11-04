@@ -55,10 +55,15 @@ jobs:
             vcpkg-${{ runner.os }}-
 
       - name: Ensure vcpkg is present
+        # vcpkg.json pins the port versions (builtin-baseline); vcpkg reads
+        # them from its own git history, so a clone restored from an older
+        # cache must hold that commit.
         run: |
           if [ ! -d "vcpkg/.git" ]; then
             git clone https://github.com/microsoft/vcpkg.git vcpkg
           fi
+          baseline=$(python3 -c "import json; print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git -C vcpkg cat-file -e "$baseline^{commit}" 2>/dev/null || git -C vcpkg fetch origin
 
       - name: Bootstrap vcpkg
         run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
@@ -100,10 +105,15 @@ jobs:
             vcpkg-${{ runner.os }}-
 
       - name: Ensure vcpkg is present
+        # vcpkg.json pins the port versions (builtin-baseline); vcpkg reads
+        # them from its own git history, so a clone restored from an older
+        # cache must hold that commit.
         run: |
           if [ ! -d "vcpkg/.git" ]; then
             git clone https://github.com/microsoft/vcpkg.git vcpkg
           fi
+          baseline=$(python3 -c "import json; print(json.load(open('vcpkg.json'))['builtin-baseline'])")
+          git -C vcpkg cat-file -e "$baseline^{commit}" 2>/dev/null || git -C vcpkg fetch origin
 
       - name: Bootstrap vcpkg
         run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
