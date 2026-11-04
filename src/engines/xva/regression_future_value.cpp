@@ -100,6 +100,12 @@ namespace quantModeling
                 return trade_->cashflow(i, state);
             }
 
+            bool cashflow_gradient(std::size_t i, const Real *state,
+                                   std::vector<StateDerivative> &out) const override
+            {
+                return trade_->cashflow_gradient(i, state, out);
+            }
+
             std::size_t regime(std::size_t i, const Real *state) const override
             {
                 return trade_->regime(i, state);

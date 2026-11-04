@@ -270,6 +270,14 @@ namespace quantModeling
         XvaValues xva_values(ExposureSimulationSettings settings, const XvaRiskInputs &inputs,
                              ThreadPool *pool = nullptr);
 
+        /**
+         * @brief The pilot paths simulate() would fit its regressions on,
+         *        with the sensitivities their pathwise differentials need
+         *        (engines/xva/pilot_targets.hpp): the same paths, bit for
+         *        bit. The trades are bound to the grid; none is fitted.
+         */
+        PilotPaths simulate_pilot(const ExposureSimulationSettings &settings = {});
+
         /// Standard deviation of the pilot's starting state in the last
         /// simulate(): 0 unless the main simulation ran under the historical
         /// measure with a trade valued by regression.
@@ -293,6 +301,15 @@ namespace quantModeling
         /// The grid, the trades bound to it, and the dynamics: fills the
         /// dates, the measure and the discount factors of `out`.
         Dynamics prepare(const ExposureSimulationSettings &settings, ExposurePaths &out);
+
+        /// Paths of the pilot: settings.pilot_paths, or four times the main
+        /// simulation's, between 20 000 and 200 000.
+        static std::size_t pilot_paths(const ExposureSimulationSettings &settings);
+
+        /// Draws the pilot under the pricing measure and sets
+        /// pilot_dispersion_.
+        PilotPaths draw_pilot(const ExposureSimulationSettings &settings, const Dynamics &dynamics,
+                              const std::vector<Time> &times, std::size_t paths);
 
         /// True when the run goes to the device, with the trades compiled in
         /// `program`. Otherwise `note` says why — or, for a run that insisted
