@@ -1,5 +1,6 @@
 {
   "name": "quant-modeling",
   "version-string": "0.0.1",
+  "builtin-baseline": "abc3a32cf9e4813d19b50cf3898676324f5fe5fb",
   "dependencies": ["eigen3", "gtest", "pybind11", "benchmark"]
 }
