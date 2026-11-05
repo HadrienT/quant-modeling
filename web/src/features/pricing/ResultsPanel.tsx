@@ -10,8 +10,9 @@ import {
 	Uncertainty,
 } from "@/shared/ui";
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
-import { ConvergenceChart, GreekProfileChart, PayoffChart } from "@/shared/viz";
+import { GreekProfileChart, PayoffChart } from "@/shared/viz";
 import { blackScholes } from "@/shared/payoff";
+import { ConvergencePanel } from "./ConvergencePanel";
 import { pricingBody } from "./requestBody";
 import { ScriptGreeks } from "./scripting/ScriptGreeks";
 
@@ -185,19 +186,10 @@ export function ResultsPanel({
 			)}
 
 			{isMc && (
-				<ConvergenceChart
-					title="Convergence (reference 1/√N)"
-					series={[
-						{
-							label: "this run",
-							points: [0.1, 0.25, 0.5, 1].map((frac) => ({
-								paths: Math.round(
-									Number(body ? (values.n_paths ?? 200000) : 200000) * frac,
-								),
-								error: r.mc_std_error / Math.sqrt(frac),
-							})),
-						},
-					]}
+				<ConvergencePanel
+					endpoint={descriptor.endpoint ?? null}
+					body={body}
+					priced={r}
 				/>
 			)}
 

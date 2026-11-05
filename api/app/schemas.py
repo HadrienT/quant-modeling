@@ -788,6 +788,32 @@ class PricingResponse(BaseModel):
     )
 
 
+class ConvergencePoint(BaseModel):
+    """One pricing of a convergence study (convergence.py)."""
+
+    paths: int
+    seed: int = Field(..., description="Each point has its own: they are independent.")
+    npv: float
+    std_error: float = Field(..., description="The engine's own standard error.")
+    compute_ms: float
+
+
+class ConvergenceResponse(BaseModel):
+    """The engine's standard error measured at N/32 ... N/2 paths
+    (POST <pricing route>/convergence). The point at N paths is the pricing
+    route's own answer to the same request: the caller adds it, rather than
+    the server pricing it a second time."""
+
+    n_paths: int = Field(
+        ...,
+        description="The request's path count, defaults applied: that of the "
+        "pricing that is the study's last point.",
+    )
+    points: List[ConvergencePoint] = Field(
+        ..., description="Smallest path count first; empty below 2 000 paths."
+    )
+
+
 class ComputeDevicesResponse(BaseModel):
     """What the server can price on (GET /price/devices)."""
 

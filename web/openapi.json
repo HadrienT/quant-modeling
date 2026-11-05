@@ -1732,6 +1732,66 @@
         "title": "Configuration",
         "type": "object"
       },
+      "ConvergencePoint": {
+        "description": "One pricing of a convergence study (convergence.py).",
+        "properties": {
+          "compute_ms": {
+            "title": "Compute Ms",
+            "type": "number"
+          },
+          "npv": {
+            "title": "Npv",
+            "type": "number"
+          },
+          "paths": {
+            "title": "Paths",
+            "type": "integer"
+          },
+          "seed": {
+            "description": "Each point has its own: they are independent.",
+            "title": "Seed",
+            "type": "integer"
+          },
+          "std_error": {
+            "description": "The engine's own standard error.",
+            "title": "Std Error",
+            "type": "number"
+          }
+        },
+        "required": [
+          "paths",
+          "seed",
+          "npv",
+          "std_error",
+          "compute_ms"
+        ],
+        "title": "ConvergencePoint",
+        "type": "object"
+      },
+      "ConvergenceResponse": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths\n(POST <pricing route>/convergence). The point at N paths is the pricing\nroute's own answer to the same request: the caller adds it, rather than\nthe server pricing it a second time.",
+        "properties": {
+          "n_paths": {
+            "description": "The request's path count, defaults applied: that of the pricing that is the study's last point.",
+            "title": "N Paths",
+            "type": "integer"
+          },
+          "points": {
+            "description": "Smallest path count first; empty below 2 000 paths.",
+            "items": {
+              "$ref": "#/components/schemas/ConvergencePoint"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "n_paths",
+          "points"
+        ],
+        "title": "ConvergenceResponse",
+        "type": "object"
+      },
       "CorrelationEstimate": {
         "properties": {
           "high": {
@@ -17834,6 +17894,45 @@
         "summary": "Price Asian Endpoint"
       }
     },
+    "/price/option/asian/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_asian",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsianRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Asian"
+      }
+    },
     "/price/option/barrier": {
       "post": {
         "operationId": "price_barrier",
@@ -17870,6 +17969,45 @@
           }
         },
         "summary": "Price Barrier Endpoint"
+      }
+    },
+    "/price/option/barrier/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_barrier",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BarrierRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Barrier"
       }
     },
     "/price/option/basket": {
@@ -17910,6 +18048,45 @@
         "summary": "Price Basket Endpoint"
       }
     },
+    "/price/option/basket/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_basket",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BasketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Basket"
+      }
+    },
     "/price/option/dated-asian": {
       "post": {
         "operationId": "price_dated_asian",
@@ -17946,6 +18123,45 @@
           }
         },
         "summary": "Price Dated Asian Endpoint"
+      }
+    },
+    "/price/option/dated-asian/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_dated_asian",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatedAsianRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Dated Asian"
       }
     },
     "/price/option/digital": {
@@ -18024,6 +18240,45 @@
         "summary": "Price Lookback Endpoint"
       }
     },
+    "/price/option/lookback/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_lookback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LookbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Lookback"
+      }
+    },
     "/price/option/quanto": {
       "post": {
         "description": "A foreign asset paid in the domestic currency at a fixed rate: Black-Scholes\nwith the quanto drift adjustment. `rho` in the greeks is the domestic-rate rho;\nthe model's inputs (rates, vols, correlation) are the caller's.",
@@ -18061,6 +18316,45 @@
           }
         },
         "summary": "Price Quanto Endpoint"
+      }
+    },
+    "/price/option/quanto/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_quanto",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuantoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Quanto"
       }
     },
     "/price/option/rainbow": {
@@ -18101,6 +18395,45 @@
         "summary": "Price Rainbow Endpoint"
       }
     },
+    "/price/option/rainbow/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_rainbow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RainbowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Rainbow"
+      }
+    },
     "/price/option/vanilla": {
       "post": {
         "operationId": "price_vanilla",
@@ -18137,6 +18470,45 @@
           }
         },
         "summary": "Price Vanilla Endpoint"
+      }
+    },
+    "/price/option/vanilla/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_vanilla",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VanillaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Vanilla"
       }
     },
     "/price/rates/swap": {
@@ -18332,6 +18704,84 @@
         "summary": "Price Scripted Product Endpoint"
       }
     },
+    "/price/scripted-product/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_scripted_product",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptedProductRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Scripted Product"
+      }
+    },
+    "/price/scripted/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_script",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Script"
+      }
+    },
     "/price/scripted/validate": {
       "post": {
         "description": "Parse-only companion to /price/scripted: no market inputs, no\nsimulation \u2014 an editor's \"Validate\" action against this is instant.",
@@ -18409,6 +18859,45 @@
         "summary": "Price Autocall Endpoint"
       }
     },
+    "/price/structured/autocall/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_autocall",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutocallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Autocall"
+      }
+    },
     "/price/structured/mountain": {
       "post": {
         "operationId": "price_mountain",
@@ -18445,6 +18934,45 @@
           }
         },
         "summary": "Price Mountain Endpoint"
+      }
+    },
+    "/price/structured/mountain/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_mountain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MountainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Mountain"
       }
     },
     "/price/volatility/dispersion-swap": {
@@ -18485,6 +19013,45 @@
         "summary": "Price Dispersion Swap Endpoint"
       }
     },
+    "/price/volatility/dispersion-swap/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_dispersion_swap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispersionSwapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Dispersion Swap"
+      }
+    },
     "/price/volatility/variance-swap": {
       "post": {
         "operationId": "price_variance_swap",
@@ -18523,6 +19090,45 @@
         "summary": "Price Variance Swap Endpoint"
       }
     },
+    "/price/volatility/variance-swap/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_variance_swap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VarianceSwapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Variance Swap"
+      }
+    },
     "/price/volatility/volatility-swap": {
       "post": {
         "operationId": "price_volatility_swap",
@@ -18559,6 +19165,45 @@
           }
         },
         "summary": "Price Volatility Swap Endpoint"
+      }
+    },
+    "/price/volatility/volatility-swap/convergence": {
+      "post": {
+        "description": "The engine's standard error measured at N/32 ... N/2 paths, each\npoint its own pricing: about the cost of the pricing itself. The\npoint at N is the pricing route's own answer.",
+        "operationId": "convergence_volatility_swap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolatilitySwapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConvergenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Convergence Volatility Swap"
       }
     }
   }

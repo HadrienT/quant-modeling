@@ -194,6 +194,9 @@ export const handlers = [
 		);
 	}),
 
+	http.post("*/price/*/convergence", () =>
+		HttpResponse.json(fx.convergenceStudy()),
+	),
 	http.post("*/price/*", () => HttpResponse.json(fx.pricingResponse())),
 
 	http.get("*/api/portfolios", () =>

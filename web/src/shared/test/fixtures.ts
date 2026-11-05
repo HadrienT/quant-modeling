@@ -242,6 +242,22 @@ export function pricingResponse(overrides?: Record<string, unknown>) {
 	};
 }
 
+/** A convergence study (POST <route>/convergence): plain Monte Carlo,
+ *  N/32 … N/2 of pricingResponse()'s 128 000 paths and 0.0231 error. */
+export function convergenceStudy() {
+	const paths = [4000, 8000, 16000, 32000, 64000];
+	return {
+		n_paths: 128000,
+		points: paths.map((n, k) => ({
+			paths: n,
+			seed: 1 + paths.length - k,
+			npv: 12.4187 + (k % 2 ? 0.01 : -0.01),
+			std_error: 0.0231 * Math.sqrt(128000 / n),
+			compute_ms: n / 40000,
+		})),
+	};
+}
+
 let pfSeq = 1;
 /** A ledger (portfolio v2): 100 MC.PA bought, 30 sold; 2 CAC 40 calls. */
 export function portfolio(name = "Desk book") {

@@ -3,17 +3,26 @@ import { LONG_TIMEOUT_MS, api, signalWithTimeout } from "./client";
 import { ApiError } from "./errors";
 import { queryKeys } from "./queryKeys";
 import type { paths } from "./schema.gen";
-import type { PricingResponse } from "./types";
+import type { ConvergenceResponse, PricingResponse } from "./types";
 
 /** Every pricing route: a POST under /price/** returning a pricing response
- *  (GET /price/devices is under /price/ too, and is not one). */
+ *  (GET /price/devices is under /price/ too, and is not one; nor is the
+ *  convergence study a Monte-Carlo route has next to it). */
 export type PricingPath = {
-	[K in keyof paths]: K extends `/price/${string}`
-		? [NonNullable<paths[K]["post"]>] extends [never]
-			? never
-			: K
-		: never;
+	[K in keyof paths]: K extends `/price/${string}/convergence`
+		? never
+		: K extends `/price/${string}`
+			? [NonNullable<paths[K]["post"]>] extends [never]
+				? never
+				: K
+			: never;
 }[keyof paths];
+
+/** The convergence study next to a Monte-Carlo pricing route. */
+export type ConvergencePath = Extract<
+	keyof paths,
+	`/price/${string}/convergence`
+>;
 
 /**
  * A pricing response plus the round trip the browser measured (request sent
@@ -101,6 +110,72 @@ export function usePricing<P extends PricingPath>(args: {
 					...(data as PricingResponse),
 					round_trip_ms: performance.now() - sent,
 				};
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/**
+ * The engine's standard error measured at N/32 ... N/2 paths, each point its
+ * own pricing (api/app/convergence.py); the point at N is the pricing itself. `null` for a pricing route that has
+ * no Monte Carlo (no `<route>/convergence`).
+ */
+export function convergencePath(endpoint: PricingPath | null) {
+	if (endpoint === null) return null;
+	const path = `${endpoint}/convergence`;
+	return (CONVERGENCE_PATHS as readonly string[]).includes(path)
+		? (path as ConvergencePath)
+		: null;
+}
+
+/** Kept in step with schema.gen.ts by the type below: a route added or
+ *  removed on the API side fails the typecheck until it is listed here. */
+const CONVERGENCE_PATHS = [
+	"/price/option/vanilla/convergence",
+	"/price/option/asian/convergence",
+	"/price/option/dated-asian/convergence",
+	"/price/scripted/convergence",
+	"/price/scripted-product/convergence",
+	"/price/option/barrier/convergence",
+	"/price/option/lookback/convergence",
+	"/price/option/basket/convergence",
+	"/price/structured/autocall/convergence",
+	"/price/structured/mountain/convergence",
+	"/price/volatility/variance-swap/convergence",
+	"/price/volatility/volatility-swap/convergence",
+	"/price/volatility/dispersion-swap/convergence",
+	"/price/option/quanto/convergence",
+	"/price/option/rainbow/convergence",
+] as const satisfies readonly ConvergencePath[];
+type _AllListed = ConvergencePath extends (typeof CONVERGENCE_PATHS)[number]
+	? true
+	: never;
+const _allListed: _AllListed = true;
+void _allListed;
+
+export function useConvergence(args: {
+	path: ConvergencePath | null;
+	body: unknown;
+	enabled?: boolean;
+}) {
+	const { path, body, enabled = true } = args;
+	// N/32 ... N/2 only: the point at N is the caller's own pricing.
+	return useQuery<ConvergenceResponse, ApiError>({
+		queryKey: queryKeys.pricing.convergence(path ?? "", body),
+		enabled: enabled && path !== null,
+		staleTime: 0,
+		retry: false,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal, LONG_TIMEOUT_MS);
+			try {
+				const { data, error } = await api.POST(path as ConvergencePath, {
+					body: body as never,
+					signal: s,
+				});
+				if (error !== undefined) throw ApiError.from(error);
+				return data as ConvergenceResponse;
 			} finally {
 				s.cleanup();
 			}

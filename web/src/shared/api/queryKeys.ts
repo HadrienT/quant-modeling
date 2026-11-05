@@ -69,6 +69,8 @@ export const queryKeys = {
 		option: (endpoint: string, params: unknown) =>
 			["pricing", endpoint, params] as const,
 		devices: () => ["pricing", "devices"] as const,
+		convergence: (path: string, params: unknown) =>
+			["pricing", "convergence", path, params] as const,
 	},
 
 	portfolio: {
