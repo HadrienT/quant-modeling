@@ -4,6 +4,7 @@ import type { components } from "./schema.gen";
 export type Schemas = components["schemas"];
 
 export type PricingResponse = Schemas["PricingResponse"];
+export type ConvergenceResponse = Schemas["ConvergenceResponse"];
 export type ModelChoice = Schemas["ModelChoice"];
 export type ModelRecommendation = Schemas["ModelRecommendation"];
 /** The model a scripted payoff is requested under ("auto" = chosen for it). */

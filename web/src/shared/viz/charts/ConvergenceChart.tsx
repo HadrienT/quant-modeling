@@ -1,8 +1,8 @@
-import { LinePath, Line } from "@visx/shape";
+import { Circle, LinePath, Line } from "@visx/shape";
 import { scaleLog } from "@visx/scale";
 import { Group } from "@visx/group";
 import { AxisBottom, AxisLeft } from "@visx/axis";
-import { ChartFrame } from "../ChartFrame";
+import { ChartFrame, type TableView } from "../ChartFrame";
 import { useChartTheme } from "../theme";
 import { useMeasure } from "../useMeasure";
 
@@ -10,17 +10,23 @@ export type ConvergencePoint = { paths: number; error: number };
 
 /**
  * MC error vs number of paths on log–log axes, with the theoretical 1/√N
- * reference slope drawn (blueprint WP 06 §2). This is the chart that shows the
- * estimator behaves — and that QMC beats it.
+ * reference slope drawn dashed from the first point (blueprint WP 06 §2).
+ * The points are measured ones (api/app/convergence.py): this is the chart
+ * that shows the estimator behaves — and that QMC beats it.
  */
 export function ConvergenceChart({
 	series,
 	title = "Monte-Carlo convergence",
+	subtitle = "log–log · reference slope ∝ 1/√N",
+	table: tableOverride,
 	isLoading,
 	error,
 }: {
 	series?: { label: string; points: ConvergencePoint[]; color?: string }[];
 	title?: string;
+	subtitle?: string;
+	/** The data-table view, when the caller has more columns to show. */
+	table?: TableView;
 	isLoading?: boolean;
 	error?: unknown;
 }) {
@@ -65,7 +71,7 @@ export function ConvergenceChart({
 	return (
 		<ChartFrame
 			title={title}
-			subtitle="log–log · reference slope ∝ 1/√N"
+			subtitle={subtitle}
 			isLoading={isLoading}
 			error={error}
 			isEmpty={isEmpty}
@@ -78,7 +84,8 @@ export function ConvergenceChart({
 				{ label: "1/√N", color: t.inkMuted },
 			]}
 			table={
-				series?.[0]
+				tableOverride ??
+				(series?.[0]
 					? {
 							columns: ["Paths", ...series.map((s) => s.label)],
 							rows: series[0].points.map((p, i) => [
@@ -88,7 +95,7 @@ export function ConvergenceChart({
 								),
 							]),
 						}
-					: undefined
+					: undefined)
 			}
 		>
 			<div ref={ref} className="w-full">
@@ -105,16 +112,29 @@ export function ConvergenceChart({
 								strokeDasharray="4 3"
 							/>
 						)}
-						{series?.map((s, i) => (
-							<LinePath
-								key={s.label}
-								data={s.points}
-								x={(d) => xs(d.paths)}
-								y={(d) => ys(d.error)}
-								stroke={s.color ?? t.series[i % t.series.length]}
-								strokeWidth={1.75}
-							/>
-						))}
+						{series?.map((s, i) => {
+							const color = s.color ?? t.series[i % t.series.length];
+							return (
+								<Group key={s.label}>
+									<LinePath
+										data={s.points}
+										x={(d) => xs(d.paths)}
+										y={(d) => ys(d.error)}
+										stroke={color}
+										strokeWidth={1.75}
+									/>
+									{s.points.map((p) => (
+										<Circle
+											key={p.paths}
+											cx={xs(p.paths)}
+											cy={ys(p.error)}
+											r={3}
+											fill={color}
+										/>
+									))}
+								</Group>
+							);
+						})}
 						<AxisBottom
 							top={ih}
 							scale={xs}

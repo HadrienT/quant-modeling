@@ -1290,6 +1290,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/asian/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Asian
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_asian"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/barrier": {
         parameters: {
             query?: never;
@@ -1301,6 +1323,28 @@ export interface paths {
         put?: never;
         /** Price Barrier Endpoint */
         post: operations["price_barrier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/barrier/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Barrier
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_barrier"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1324,6 +1368,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/basket/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Basket
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_basket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/dated-asian": {
         parameters: {
             query?: never;
@@ -1335,6 +1401,28 @@ export interface paths {
         put?: never;
         /** Price Dated Asian Endpoint */
         post: operations["price_dated_asian"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/dated-asian/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Dated Asian
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_dated_asian"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1375,6 +1463,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/lookback/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Lookback
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_lookback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/quanto": {
         parameters: {
             query?: never;
@@ -1391,6 +1501,28 @@ export interface paths {
          *     the model's inputs (rates, vols, correlation) are the caller's.
          */
         post: operations["price_quanto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/quanto/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Quanto
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_quanto"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1414,6 +1546,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/rainbow/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Rainbow
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_rainbow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/vanilla": {
         parameters: {
             query?: never;
@@ -1425,6 +1579,28 @@ export interface paths {
         put?: never;
         /** Price Vanilla Endpoint */
         post: operations["price_vanilla"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/option/vanilla/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Vanilla
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_vanilla"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1535,6 +1711,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/scripted-product/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Scripted Product
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_scripted_product"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/scripted/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Script
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_script"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/scripted/validate": {
         parameters: {
             query?: never;
@@ -1573,6 +1793,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/structured/autocall/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Autocall
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_autocall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/structured/mountain": {
         parameters: {
             query?: never;
@@ -1584,6 +1826,28 @@ export interface paths {
         put?: never;
         /** Price Mountain Endpoint */
         post: operations["price_mountain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/structured/mountain/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Mountain
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_mountain"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1607,6 +1871,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/volatility/dispersion-swap/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Dispersion Swap
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_dispersion_swap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/volatility/variance-swap": {
         parameters: {
             query?: never;
@@ -1624,6 +1910,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/volatility/variance-swap/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Variance Swap
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_variance_swap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/volatility/volatility-swap": {
         parameters: {
             query?: never;
@@ -1635,6 +1943,28 @@ export interface paths {
         put?: never;
         /** Price Volatility Swap Endpoint */
         post: operations["price_volatility_swap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/price/volatility/volatility-swap/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence Volatility Swap
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_volatility_swap"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2478,6 +2808,47 @@ export interface components {
              * @description "monthly", or a number of trading days
              */
             rebalance: "monthly" | number;
+        };
+        /**
+         * ConvergencePoint
+         * @description One pricing of a convergence study (convergence.py).
+         */
+        ConvergencePoint: {
+            /** Compute Ms */
+            compute_ms: number;
+            /** Npv */
+            npv: number;
+            /** Paths */
+            paths: number;
+            /**
+             * Seed
+             * @description Each point has its own: they are independent.
+             */
+            seed: number;
+            /**
+             * Std Error
+             * @description The engine's own standard error.
+             */
+            std_error: number;
+        };
+        /**
+         * ConvergenceResponse
+         * @description The engine's standard error measured at N/32 ... N/2 paths
+         *     (POST <pricing route>/convergence). The point at N paths is the pricing
+         *     route's own answer to the same request: the caller adds it, rather than
+         *     the server pricing it a second time.
+         */
+        ConvergenceResponse: {
+            /**
+             * N Paths
+             * @description The request's path count, defaults applied: that of the pricing that is the study's last point.
+             */
+            n_paths: number;
+            /**
+             * Points
+             * @description Smallest path count first; empty below 2 000 paths.
+             */
+            points: components["schemas"]["ConvergencePoint"][];
         };
         /** CorrelationEstimate */
         CorrelationEstimate: {
@@ -10194,6 +10565,39 @@ export interface operations {
             };
         };
     };
+    convergence_asian: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AsianRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     price_barrier: {
         parameters: {
             query?: never;
@@ -10214,6 +10618,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_barrier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BarrierRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10260,6 +10697,39 @@ export interface operations {
             };
         };
     };
+    convergence_basket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BasketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     price_dated_asian: {
         parameters: {
             query?: never;
@@ -10280,6 +10750,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_dated_asian: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatedAsianRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10359,6 +10862,39 @@ export interface operations {
             };
         };
     };
+    convergence_lookback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LookbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     price_quanto: {
         parameters: {
             query?: never;
@@ -10379,6 +10915,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_quanto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuantoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10425,6 +10994,39 @@ export interface operations {
             };
         };
     };
+    convergence_rainbow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RainbowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     price_vanilla: {
         parameters: {
             query?: never;
@@ -10445,6 +11047,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_vanilla: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VanillaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10623,6 +11258,72 @@ export interface operations {
             };
         };
     };
+    convergence_scripted_product: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptedProductRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_script: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     validate_script: {
         parameters: {
             query?: never;
@@ -10689,6 +11390,39 @@ export interface operations {
             };
         };
     };
+    convergence_autocall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutocallRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     price_mountain: {
         parameters: {
             query?: never;
@@ -10709,6 +11443,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_mountain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MountainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10755,6 +11522,39 @@ export interface operations {
             };
         };
     };
+    convergence_dispersion_swap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispersionSwapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     price_variance_swap: {
         parameters: {
             query?: never;
@@ -10788,6 +11588,39 @@ export interface operations {
             };
         };
     };
+    convergence_variance_swap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VarianceSwapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     price_volatility_swap: {
         parameters: {
             query?: never;
@@ -10808,6 +11641,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_volatility_swap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VolatilitySwapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */

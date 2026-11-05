@@ -46,7 +46,17 @@ describe("pricing workbench", () => {
 		expect(
 			await screen.findByRole("heading", { name: /european option/i }),
 		).toBeInTheDocument();
-		expect(await screen.findByText(/±/)).toBeInTheDocument();
+		// the price's own "± <std error>", not the convergence chart's slope
+		expect(await screen.findByText(/^± \d/)).toBeInTheDocument();
+	});
+
+	it("shows the measured convergence, not a curve drawn from the result", async () => {
+		// The fixture's five halvings and the pricing's own 128 000 paths lie
+		// on one 1/√N line: the slope is fitted with the pricing as last point.
+		renderWorkbench();
+		expect(
+			await screen.findByText(/slope −0\.500 ± 0\.000 · consistent with 1\/√N/),
+		).toBeInTheDocument();
 	});
 
 	it("says how long the pricing took on the server", async () => {

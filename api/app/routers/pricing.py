@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from .. import greeks_fallback, telemetry, valuation
+from .. import convergence, greeks_fallback, telemetry, valuation
 from ..audit import emit
 from ..logging_utils import get_logger
 from ..pricing_service import validate_script
@@ -22,6 +22,7 @@ from ..rates_derivatives_schemas import (
 from ..request_context import current_ip_hash
 from ..schemas import (
     ComputeDevicesResponse,
+    ConvergenceResponse,
     AmericanVanillaRequest,
     AsianRequest,
     AutocallRequest,
@@ -388,3 +389,54 @@ async def price_commodity_option_endpoint(
 @router.post("/price/option/rainbow", response_model=PricingResponse)
 async def price_rainbow_endpoint(req: RainbowRequest) -> PricingResponse:
     return await _price("rainbow", req)
+
+
+#: The Monte-Carlo pricing routes, each with a sibling `<route>/convergence`
+#: taking the same request (convergence.py). A test checks that this covers
+#: every product with a path count.
+MC_ROUTES = {
+    "/price/option/vanilla": "vanilla",
+    "/price/option/asian": "asian",
+    "/price/option/dated-asian": "dated_asian",
+    "/price/scripted": "script",
+    "/price/scripted-product": "scripted_product",
+    "/price/option/barrier": "barrier",
+    "/price/option/lookback": "lookback",
+    "/price/option/basket": "basket",
+    "/price/structured/autocall": "autocall",
+    "/price/structured/mountain": "mountain",
+    "/price/volatility/variance-swap": "variance_swap",
+    "/price/volatility/volatility-swap": "volatility_swap",
+    "/price/volatility/dispersion-swap": "dispersion_swap",
+    "/price/option/quanto": "quanto",
+    "/price/option/rainbow": "rainbow",
+}
+
+
+def _convergence_route(product_id: str):
+    request_model = valuation.PRODUCTS[product_id].request
+
+    async def endpoint(req: request_model) -> ConvergenceResponse:  # type: ignore[valid-type]
+        """The engine's standard error measured at N/32 ... N/2 paths, each
+        point its own pricing: about the cost of the pricing itself. The
+        point at N is the pricing route's own answer."""
+        try:
+            return await _run_with_timeout(convergence.study, product_id, req)
+        except (convergence.NotMonteCarlo, qm.GpuUnavailable) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            if product_id in ("script", "scripted_product"):
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise
+
+    endpoint.__name__ = f"convergence_{product_id}"
+    return endpoint
+
+
+for _path, _product_id in MC_ROUTES.items():
+    router.add_api_route(
+        f"{_path}/convergence",
+        _convergence_route(_product_id),
+        methods=["POST"],
+        response_model=ConvergenceResponse,
+    )
