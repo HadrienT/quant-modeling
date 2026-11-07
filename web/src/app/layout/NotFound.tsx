@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { EmptyState } from "@/shared/ui/states";
+import { useNavPages } from "@/shared/session";
 import { Button } from "@/shared/ui";
 
 export function NotFound() {
+	const { isShown } = useNavPages();
 	return (
 		<div className="mx-auto max-w-lg py-12">
 			<EmptyState
@@ -11,7 +13,11 @@ export function NotFound() {
 				description="That route does not exist."
 				action={
 					<Button asChild size="sm" variant="secondary">
-						<Link to="/visualize">Go to Strategies</Link>
+						{isShown("/visualize") ? (
+							<Link to="/visualize">Go to Strategies</Link>
+						) : (
+							<Link to="/">Go to the home page</Link>
+						)}
 					</Button>
 				}
 			/>

@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { SITE } from "@/shared/config";
+import { useNavPages } from "@/shared/session";
 import { Disclaimer, buttonVariants } from "@/shared/ui";
 import { ChartSkeleton } from "@/shared/ui/states";
 import { FeatureGrid } from "./FeatureGrid";
@@ -22,8 +23,13 @@ const DEPTH = [
 	"Every valuation logged with its inputs, and replayable exactly.",
 ];
 
-/** The front door: what the site is, why it is different, where to start. */
+/**
+ * The front door: what the site is, why it is different, where to start.
+ * Every link to a page follows the admin panel, like the navigation: a page
+ * hidden from visitors is not offered to them here either.
+ */
 export default function HomePage() {
+	const { isShown } = useNavPages();
 	return (
 		<div className="mx-auto flex max-w-6xl flex-col gap-14 py-4 sm:py-8">
 			<section className="grid grid-cols-1 items-center gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -40,18 +46,28 @@ export default function HomePage() {
 						Carlo — each one usable here, with the model and its inputs shown
 						next to every number.
 					</p>
-					<div className="flex flex-wrap gap-2">
-						<Link to="/price" className={buttonVariants({ size: "lg" })}>
-							Price an option
-							<ArrowRight className="size-4" />
-						</Link>
-						<Link
-							to="/scripting"
-							className={buttonVariants({ size: "lg", variant: "secondary" })}
-						>
-							Script a payoff
-						</Link>
-					</div>
+					{(isShown("/price") || isShown("/scripting")) && (
+						<div className="flex flex-wrap gap-2">
+							{isShown("/price") && (
+								<Link to="/price" className={buttonVariants({ size: "lg" })}>
+									Price an option
+									<ArrowRight className="size-4" />
+								</Link>
+							)}
+							{isShown("/scripting") && (
+								<Link
+									to="/scripting"
+									className={buttonVariants({
+										size: "lg",
+										variant: isShown("/price") ? "secondary" : "primary",
+									})}
+								>
+									Script a payoff
+									{!isShown("/price") && <ArrowRight className="size-4" />}
+								</Link>
+							)}
+						</div>
+					)}
 					<p className="text-xs text-ink-muted">
 						No account needed. Signing in only keeps portfolios on the server.
 					</p>
@@ -63,10 +79,7 @@ export default function HomePage() {
 				</Suspense>
 			</section>
 
-			<section className="flex flex-col gap-4">
-				<h2 className="text-lg font-semibold text-ink">What you can do</h2>
-				<FeatureGrid />
-			</section>
+			<FeatureGrid />
 
 			<section className="grid grid-cols-1 gap-8 lg:grid-cols-2">
 				<div className="flex flex-col gap-3">
@@ -111,10 +124,14 @@ export default function HomePage() {
 						>
 							read it on GitHub
 						</a>
-						, or see{" "}
-						<Link to="/about" className="text-accent hover:underline">
-							how it is built
-						</Link>
+						{isShown("/about") && (
+							<>
+								, or see{" "}
+								<Link to="/about" className="text-accent hover:underline">
+									how it is built
+								</Link>
+							</>
+						)}
 						.
 					</p>
 				</div>

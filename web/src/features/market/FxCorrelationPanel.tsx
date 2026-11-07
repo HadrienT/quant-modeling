@@ -8,6 +8,7 @@ import {
 	useTickers,
 } from "@/shared/api";
 import { encodeParams } from "@/shared/products";
+import { useNavPages } from "@/shared/session";
 import { Metric, MetricRow } from "@/shared/ui";
 import { MarketTickerPicker } from "./MarketTickerPicker";
 
@@ -64,6 +65,7 @@ export function FxCorrelationPanel({
 	const [window, setWindow] = useState<(typeof WINDOWS)[number]>("3Y");
 	const [frequency, setFrequency] = useState<(typeof FREQS)[number]>("weekly");
 	const markets = useMarkets();
+	const { isShown } = useNavPages();
 	const members = useTickers(market).data?.members ?? [];
 	const chosen = ticker ?? members[0]?.ticker ?? "";
 	const corr = useFxCorrelation(
@@ -144,17 +146,19 @@ export function FxCorrelationPanel({
 						/>
 					</MetricRow>
 					{quantoReady ? (
-						<p className="text-xs text-ink-muted">
-							<Link
-								to="/price"
-								search={{ product: "quanto", p: quantoParams }}
-								className="text-accent underline"
-							>
-								Price a quanto on {c.ticker} paid in {quote}
-							</Link>{" "}
-							with these historical estimates (at-the-money, fixed rate = last
-							fixing; set the two rates and the maturity there).
-						</p>
+						isShown("/price") && (
+							<p className="text-xs text-ink-muted">
+								<Link
+									to="/price"
+									search={{ product: "quanto", p: quantoParams }}
+									className="text-accent underline"
+								>
+									Price a quanto on {c.ticker} paid in {quote}
+								</Link>{" "}
+								with these historical estimates (at-the-money, fixed rate = last
+								fixing; set the two rates and the maturity there).
+							</p>
+						)
 					) : (
 						<p className="text-xs text-ink-muted">
 							For a quanto, use the pair quoted as payment currency per unit of
