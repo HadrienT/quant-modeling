@@ -57,6 +57,10 @@ Un timer `systemd` (utilisateur) lance `scripts/auto-deploy.sh` dans
    est redéployé (son image, étiquetée par son SHA, est encore là), et l'unité
    finit en `failed`.
 
+After a healthy deploy, `deploy.sh` removes the older commit-tagged images and keeps
+only the deployed one and the previous one (the rollback target), so they no longer
+pile up at ~1 GB per deploy.
+
 Un commit qui a échoué n'est pas retenté : pousser un correctif. Chaque
 tentative apparaît dans *Deployments* sur la page GitHub du dépôt.
 
