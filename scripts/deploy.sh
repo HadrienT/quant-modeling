@@ -47,6 +47,24 @@ else
   echo "⚠ CLOUDFLARE_TUNNEL_TOKEN not set in .env — deploying 'app' only (see deploy/RUNBOOK.md §3)"
 fi
 
+# The commit deployed before this one: its image is kept for auto-deploy.sh's rollback.
+previous="$(grep -E '^COMMIT_SHA=' .env | tail -1 | cut -d= -f2)"
+
+# Each deploy tags its image with its commit, and `docker image prune` only removes
+# untagged images, so old deploys piled up (~1 GB each). After a healthy deploy, keep
+# this image and the previous one, remove the other commit-tagged ones. `docker rmi`
+# without -f refuses any image a container still uses.
+IMAGE=ghcr.io/hadrient/quant-modeling
+remove_old_images() {
+  [[ "$COMMIT_SHA" =~ ^[0-9a-f]{7,40}$ ]] || return 0
+  local tag
+  docker image ls "$IMAGE" --format '{{.Tag}}' | while read -r tag; do
+    [[ "$tag" =~ ^[0-9a-f]{7,40}$ ]] || continue
+    [[ "$tag" == "$COMMIT_SHA" || "$tag" == "$previous" ]] && continue
+    docker rmi "$IMAGE:$tag" >/dev/null 2>&1 && echo "→ removed old image $tag" || true
+  done
+}
+
 "${COMPOSE[@]}" build
 "${COMPOSE[@]}" up -d --remove-orphans
 
@@ -66,6 +84,7 @@ for _ in $(seq 1 60); do
     echo "ok"
     curl -s "http://127.0.0.1:${port}/health"; echo
     docker image prune -f >/dev/null
+    remove_old_images
     echo "✓ deployed $COMMIT_SHA"
     exit 0
   fi
