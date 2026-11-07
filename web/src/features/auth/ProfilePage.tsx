@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { LogOut } from "lucide-react";
 import { usePortfolios } from "@/shared/api";
 import { formatDate } from "@/shared/format";
-import { useMe, useSessionActions } from "@/shared/session";
+import { useMe, useNavPages, useSessionActions } from "@/shared/session";
 import { Button, Card } from "@/shared/ui";
 import { AccountDataCard } from "./AccountDataCard";
 import { displayName } from "./account";
@@ -24,6 +24,7 @@ export default function ProfilePage() {
 	const { logout, setDialogOpen } = useSessionActions();
 	const user = me.data;
 	const portfolios = usePortfolios();
+	const { isShown } = useNavPages();
 
 	if (me.isLoading) return null;
 
@@ -61,12 +62,18 @@ export default function ProfilePage() {
 					<Row label="Sign-in method">{google ? "Google" : "Password"}</Row>
 					<Row label="Member since">{formatDate(user.created_at)}</Row>
 					<Row label="Server-side portfolios">
-						<Link
-							to="/portfolio"
-							className="underline-offset-2 hover:underline"
-						>
-							{portfolios.data ? portfolios.data.length : "—"}
-						</Link>
+						{isShown("/portfolio") ? (
+							<Link
+								to="/portfolio"
+								className="underline-offset-2 hover:underline"
+							>
+								{portfolios.data ? portfolios.data.length : "—"}
+							</Link>
+						) : portfolios.data ? (
+							portfolios.data.length
+						) : (
+							"—"
+						)}
 					</Row>
 				</dl>
 			</Card>

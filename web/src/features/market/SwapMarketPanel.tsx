@@ -4,6 +4,7 @@ import { useRatesCurves, useRatesQuoteSet } from "@/shared/api";
 import { rateBp, ratePct, tenorLabel } from "@/shared/format";
 import { Badge, Methodology } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
+import { useNavPages } from "@/shared/session";
 import { RatesCurveChart } from "@/shared/viz";
 
 /**
@@ -17,6 +18,7 @@ import { RatesCurveChart } from "@/shared/viz";
 export function SwapMarketPanel() {
 	const set = useRatesQuoteSet("usd-sofr");
 	const built = useRatesCurves(set.data?.curves);
+	const { isShown } = useNavPages();
 	const trades = set.data?.trades;
 	const period = tenorLabel(1 / (set.data?.curves.float_frequency ?? 1));
 	return (
@@ -25,14 +27,16 @@ export function SwapMarketPanel() {
 				<h2 className="text-sm font-semibold text-ink">
 					SOFR swaps and swaptions, as traded
 				</h2>
-				<Link
-					to="/price"
-					search={{ product: "swap" }}
-					className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-				>
-					Price a swap or a swaption on this curve
-					<ArrowUpRight className="size-3.5" />
-				</Link>
+				{isShown("/price") && (
+					<Link
+						to="/price"
+						search={{ product: "swap" }}
+						className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+					>
+						Price a swap or a swaption on this curve
+						<ArrowUpRight className="size-3.5" />
+					</Link>
+				)}
 			</div>
 			{set.error ? (
 				<ErrorState error={set.error} onRetry={() => set.refetch()} />

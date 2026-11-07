@@ -8,6 +8,7 @@ import {
 	type ProductDescriptor,
 	type Reference,
 } from "@/shared/products";
+import { useNavPages } from "@/shared/session";
 import { Badge } from "@/shared/ui";
 import { RiskProfileTable } from "./RiskProfileTable";
 import { ScriptedReference } from "./ScriptedReference";
@@ -25,6 +26,7 @@ export function ProductReference({
 }) {
 	const doc = descriptor.docKey ? PRODUCT_DOCS[descriptor.docKey] : undefined;
 	const scripted = descriptor.scripted;
+	const { isShown } = useNavPages();
 	const payoffs = doc
 		? Array.isArray(doc.payoff)
 			? doc.payoff
@@ -54,7 +56,7 @@ export function ProductReference({
 						</p>
 					)
 				)}
-				{descriptor.enabled && (
+				{descriptor.enabled && isShown("/price") && (
 					<Link
 						to="/price"
 						search={{ product: descriptor.key }}

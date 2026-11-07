@@ -23,6 +23,8 @@ export function useNavPages() {
 		pages,
 		isAdmin,
 		isHidden: (path: string) => hidden.has(path),
+		/** whether a link to this page should show to this visitor */
+		isShown: (path: string) => isAdmin || !hidden.has(path),
 		/** both the list and the session have answered (or failed) */
 		settled: !hiddenQuery.isPending && !me.isPending,
 	};

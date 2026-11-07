@@ -8,6 +8,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
+import { useNavPages } from "@/shared/session";
 import { displayName } from "./account";
 import { Avatar } from "./Avatar";
 
@@ -31,6 +32,7 @@ export default function AccountMenu({
 	user: AccountUser;
 	logout: () => void;
 }) {
+	const { isShown } = useNavPages();
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
@@ -63,12 +65,14 @@ export default function AccountMenu({
 						Profile
 					</Link>
 				</DropdownMenuItem>
-				<DropdownMenuItem asChild>
-					<Link to="/portfolio">
-						<Briefcase />
-						My portfolios
-					</Link>
-				</DropdownMenuItem>
+				{isShown("/portfolio") && (
+					<DropdownMenuItem asChild>
+						<Link to="/portfolio">
+							<Briefcase />
+							My portfolios
+						</Link>
+					</DropdownMenuItem>
+				)}
 				{user.is_admin && (
 					<DropdownMenuItem asChild>
 						<Link to="/admin">

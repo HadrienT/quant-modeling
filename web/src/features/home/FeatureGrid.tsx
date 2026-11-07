@@ -5,12 +5,15 @@ import {
 	Briefcase,
 	Calculator,
 	ChartCandlestick,
+	EyeOff,
 	History,
 	Layers,
 	ShieldAlert,
 	Waves,
 	type LucideIcon,
 } from "lucide-react";
+import { useNavPages } from "@/shared/session";
+import { cn } from "@/shared/ui";
 
 type Feature = {
 	to:
@@ -85,25 +88,58 @@ const FEATURES: Feature[] = [
 	},
 ];
 
+/**
+ * The tiles follow the admin panel like the navigation does: a page hidden
+ * from visitors has no tile for them, and an administrator sees its tile
+ * faded and labelled. Nothing renders when every page is hidden.
+ */
 export function FeatureGrid() {
+	const { isShown, isHidden } = useNavPages();
+	const features = FEATURES.filter((f) => isShown(f.to));
+	if (features.length === 0) return null;
 	return (
-		<ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-			{FEATURES.map((f) => (
-				<li key={f.to}>
-					<Link
-						to={f.to}
-						className="group flex h-full flex-col gap-2 rounded-md border border-hairline bg-surface p-4 transition-colors hover:border-accent/60"
-					>
-						<span className="flex items-center gap-2 text-sm font-semibold text-ink">
-							<f.icon className="size-4 text-accent" aria-hidden="true" />
-							{f.title}
+		<section className="flex flex-col gap-4">
+			<h2 className="text-lg font-semibold text-ink">What you can do</h2>
+			<ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+				{features.map((f) => (
+					<FeatureTile key={f.to} feature={f} hidden={isHidden(f.to)} />
+				))}
+			</ul>
+		</section>
+	);
+}
+
+function FeatureTile({
+	feature: f,
+	hidden,
+}: {
+	feature: Feature;
+	hidden: boolean;
+}) {
+	return (
+		<li>
+			<Link
+				to={f.to}
+				title={hidden ? "Hidden from visitors" : undefined}
+				className={cn(
+					"group flex h-full flex-col gap-2 rounded-md border border-hairline bg-surface p-4 transition-colors hover:border-accent/60",
+					hidden && "border-dashed opacity-60",
+				)}
+			>
+				<span className="flex items-center gap-2 text-sm font-semibold text-ink">
+					<f.icon className="size-4 text-accent" aria-hidden="true" />
+					{f.title}
+					{hidden && (
+						<span className="ml-auto flex items-center gap-1 text-2xs font-normal text-ink-muted">
+							<EyeOff className="size-3" aria-hidden="true" />
+							Hidden from visitors
 						</span>
-						<span className="text-xs leading-relaxed text-ink-secondary">
-							{f.text}
-						</span>
-					</Link>
-				</li>
-			))}
-		</ul>
+					)}
+				</span>
+				<span className="text-xs leading-relaxed text-ink-secondary">
+					{f.text}
+				</span>
+			</Link>
+		</li>
 	);
 }

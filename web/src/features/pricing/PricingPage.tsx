@@ -8,6 +8,7 @@ import {
 	ProductPicker,
 } from "@/shared/products";
 import { Button, Disclaimer, cn, copyText, toast } from "@/shared/ui";
+import { useNavPages } from "@/shared/session";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
 import { DeviceRace } from "./DeviceRace";
 import { RatesForm } from "./rates/RatesForm";
@@ -19,6 +20,7 @@ import { useWorkbench } from "./useWorkbench";
 /** The pricing workbench (WP 07). Files in this feature stay under ~200 lines. */
 export default function PricingPage() {
 	const wb = useWorkbench();
+	const { isShown } = useNavPages();
 	const [showCompare, setShowCompare] = useState(!!wb.compare);
 	// A rates product is priced on a quote set: its own form and results.
 	const rates = wb.descriptor.rates;
@@ -35,15 +37,17 @@ export default function PricingPage() {
 						{wb.descriptor.label}
 					</h1>
 					<ProductInfo docKey={wb.descriptor.docKey} />
-					<Link
-						to="/products"
-						search={{ product: wb.productKey }}
-						title="Full reference: payoff, assumptions, sources"
-						className="ml-auto inline-flex items-center gap-1 text-2xs text-ink-muted transition-colors hover:text-accent"
-					>
-						<BookText className="size-3.5" />
-						Reference
-					</Link>
+					{isShown("/products") && (
+						<Link
+							to="/products"
+							search={{ product: wb.productKey }}
+							title="Full reference: payoff, assumptions, sources"
+							className="ml-auto inline-flex items-center gap-1 text-2xs text-ink-muted transition-colors hover:text-accent"
+						>
+							<BookText className="size-3.5" />
+							Reference
+						</Link>
+					)}
 				</header>
 
 				{wb.descriptor.engines.length > 1 && (
