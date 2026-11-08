@@ -104,9 +104,19 @@ export function useMe() {
 		queryKey: ["session"],
 		queryFn: async () => {
 			if (!readToken()) return null;
-			const { data, error } = await api.GET("/api/auth/me", {});
-			if (error) throw ApiError.from(error);
-			return data ?? null;
+			try {
+				const { data, error } = await api.GET("/api/auth/me", {});
+				if (error) throw ApiError.from(error);
+				return data ?? null;
+			} catch (e) {
+				// The client throws on non-2xx. A 401 means the token expired or
+				// was revoked: the visitor is signed out, not in error, and the
+				// dead token is not sent again.
+				if (!(e instanceof ApiError) || e.status !== 401) throw e;
+				persistToken(null);
+				setAuthToken(null);
+				return null;
+			}
 		},
 		staleTime: 5 * 60_000,
 		retry: false,
