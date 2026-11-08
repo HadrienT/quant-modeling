@@ -10,7 +10,7 @@ import { render, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeQueryClient } from "@/shared/api";
-import { SessionProvider, __TOKEN_KEY } from "@/shared/session";
+import { SessionProvider, __TOKEN_KEY, useNavPages } from "@/shared/session";
 import { server } from "@/shared/test/msw-server";
 import { TooltipProvider } from "@/shared/ui";
 import { AppLayout } from "./layout/AppLayout";
@@ -20,13 +20,19 @@ import { AppLayout } from "./layout/AppLayout";
  * navigation and lands on "not available"; an administrator keeps them, under
  * a banner.
  */
+/** A page that, like Pricing, reads the visibility itself to hide its links. */
+function PageReadingVisibility({ path }: { path: string }) {
+	useNavPages();
+	return <p>content of {path}</p>;
+}
+
 function renderAt(path: string) {
 	const root = createRootRoute({ component: AppLayout });
-	const pages = ["/xva", "/credit"].map((p) =>
+	const pages = ["/xva", "/credit", "/price"].map((p) =>
 		createRoute({
 			getParentRoute: () => root,
 			path: p,
-			component: () => <p>content of {p}</p>,
+			component: () => <PageReadingVisibility path={p} />,
 		}),
 	);
 	const router = createRouter({
@@ -84,5 +90,26 @@ describe("pages hidden by an administrator", () => {
 		expect(
 			screen.getByRole("link", { name: /hidden from visitors: xVA/ }),
 		).toBeInTheDocument();
+	});
+
+	it("render once an expired session is answered, without asking again", async () => {
+		// An expired token: /me answers 401. The page used to flip back to its
+		// fallback on every refetch, remount, refetch again: a white page
+		// asking /me hundreds of times a second.
+		localStorage.setItem(__TOKEN_KEY, "expired.jwt.token");
+		let calls = 0;
+		server.use(
+			http.get("*/api/auth/me", () => {
+				calls += 1;
+				return HttpResponse.json({ detail: "expired" }, { status: 401 });
+			}),
+		);
+		renderAt("/price");
+		expect(await screen.findByText("content of /price")).toBeInTheDocument();
+		await new Promise((r) => setTimeout(r, 300));
+		expect(screen.getByText("content of /price")).toBeInTheDocument();
+		expect(calls).toBeLessThanOrEqual(2);
+		// The dead token is dropped: the visitor is simply signed out.
+		expect(localStorage.getItem(__TOKEN_KEY)).toBeNull();
 	});
 });

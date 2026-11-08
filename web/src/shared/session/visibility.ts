@@ -25,7 +25,13 @@ export function useNavPages() {
 		isHidden: (path: string) => hidden.has(path),
 		/** whether a link to this page should show to this visitor */
 		isShown: (path: string) => isAdmin || !hidden.has(path),
-		/** both the list and the session have answered (or failed) */
-		settled: !hiddenQuery.isPending && !me.isPending,
+		/**
+		 * both the list and the session have answered (or failed) at least
+		 * once. Not `!isPending`: a query that failed with no data goes back to
+		 * pending on its next fetch, and every page mounting it refetches, so a
+		 * gate waiting on `isPending` would hide the page, remount it, refetch,
+		 * and loop.
+		 */
+		settled: hiddenQuery.isFetched && me.isFetched,
 	};
 }
