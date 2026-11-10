@@ -331,8 +331,8 @@ def mountain(n):
         CORR3,
     )
     i.observation_dates, i.strike, i.rate, i.is_call, i.notional = (
-        QUARTERS,
-        1.0,
+        [1 / 3, 2 / 3, 1.0],  # one date per asset
+        0.0,  # strike on the average return
         R,
         True,
         100.0,
@@ -370,7 +370,7 @@ def var_swap(n):
         Q,
         VOL,
         100.0,
-        0.04,
+        0.03,  # off-market: a relative error needs a non-zero value
     )
     i.observation_dates, i.n_paths, i.seed = [k / 52 for k in range(1, 53)], n, 1
     return i
@@ -385,7 +385,7 @@ def vol_swap(n):
         Q,
         VOL,
         100.0,
-        0.2,
+        0.15,  # off-market
     )
     i.observation_dates, i.n_paths, i.seed = [k / 52 for k in range(1, 53)], n, 1
     return i
@@ -515,7 +515,7 @@ def products() -> list[Product]:
         ),
         Product(
             "mountain",
-            "Mountain range, 3 assets, 4 dates (BS)",
+            "Mountain range, 3 assets, 3 dates (BS)",
             hand(q.price_mountain_bs_mc, mountain),
             "",
         ),
