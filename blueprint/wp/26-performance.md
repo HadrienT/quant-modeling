@@ -162,18 +162,26 @@ and on GPU, with the same bits as today's interpreter.
 
 ### P1a — Batched interpreter on the CPU
 
-The bytecode interpreter runs a batch of W paths (W = 8 or 16, one AVX-512 or
-two AVX2 registers of doubles) per decoded instruction: one dispatch for W
-paths instead of one, and the arithmetic vectorised across paths. Variables,
+The bytecode interpreter runs a batch of W paths (W = 8 or 16: two to four
+AVX2 registers of four doubles; the server's Xeon E5-2680 v4 has no AVX-512)
+per decoded instruction: one dispatch for W paths instead of one, and the
+arithmetic vectorised across paths. Variables,
 the stack and the scenario become structure-of-arrays of width W. Conditions
 become masks (both branches evaluated, results blended), which is also what
 the GPU does within a warp.
 
 Same bits as the scalar interpreter: same operations, same order, per path.
 Masked evaluation must not evaluate a branch's side effects for a masked-out
-path (a `pays` statement, a variable assignment).
+path (a `pays` statement, a variable assignment). Transcendentals (`exp`,
+`log`, `erfc`) stay scalar libm calls unless the maintainer accepts the
+ulp-level difference of a vector library (SLEEF), which would break the
+same-bits rule: see the skill's `libraries.md`.
 
 ### P1b — Scripts compiled for the GPU
+
+Approved by the maintainer on 2026-11-10, as is compiling scripts for the CPU
+if P1a falls short (decision point below: what remains open is only how a
+compiler gets into the production image).
 
 The script's tree is turned into CUDA source (one straight-line function per
 event), compiled at run time with NVRTC and cached by a hash of the script
@@ -189,7 +197,26 @@ compilation failure) and as the oracle in tests.
 - AAD on the GPU (forward duals, per-path adjoint) gets the same treatment in
   a second step: generated code for the tangent and adjoint sweeps.
 
-### P1c — Streaming state
+### P1c — Faster Sobol points
+
+Measured on 2026-11-10 (`qm_gpu_rng_bench`, V100, 2^20 points × 128 dims):
+our random-access `sobol_point_bits` fills memory at 249 GB/s; the same bits
+computed branchless, with a dimension's 32 directions in shared memory, at
+456–500 GB/s; cuRAND's Sobol at ~820 GB/s, thanks to Gray-code stepping (one
+XOR from a point to the next). cuRAND itself is not adopted (no Owen
+scrambling, no inline per-path use, no CPU-only build: skill
+`libraries.md`); its algorithm is.
+
+- Branchless `sobol_point_bits` with the directions in shared memory in every
+  kernel that draws Sobol points: same bits, no decision needed.
+- Gray-code stepping where a thread walks consecutive points. The logical
+  blocks give thread t the units t, t + 256, t + 512…: stepping needs
+  consecutive units per thread, which changes the reduction order, so the CPU
+  emulation changes with it (same bits CPU = GPU kept) and the prices move
+  within their error. Measured in the fused kernels before deciding: the
+  generator is only part of a path's cost.
+
+### P1d — Streaming state
 
 The script analyser already knows which samples each event reads. Where the
 script allows it (no look-back to an earlier date's sample), the model hands
@@ -199,9 +226,10 @@ stored: the daily barrier keeps `alive` and the spot, like a hand-written loop.
 ### Decision point
 
 If P1a misses the 1.5× target on the CPU, the next step is compiling scripts
-to C++ at run time (as P1b does for CUDA). It needs a C++ compiler in the
-production image, which today has none (`web/Dockerfile.prod`): decided with
-the maintainer, with the measurement in hand.
+to C++ at run time (as P1b does for CUDA), approved in principle. It needs a
+C++ compiler in the production image, which today has none
+(`web/Dockerfile.prod`): how to ship it (full toolchain, or a JIT library
+such as LLVM ORC) is decided with the measurement in hand.
 
 Acceptance: §11's P1 column; every script of the library prices to the same
 bits through the batched interpreter and the compiled GPU kernel as through
