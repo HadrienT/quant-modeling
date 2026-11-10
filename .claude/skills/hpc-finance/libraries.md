@@ -11,7 +11,7 @@ a measurement.
 1. **Look for the reference library** (table below, then the CUDA toolkit,
    Boost, Eigen, the literature's own code). Say in the pull request which
    one exists and what was decided.
-2. **Features.** Does it do what the engine needs? (Owen scrambling, inline
+2. **Features.** Does it do what the engine needs? (our randomisations, inline
    per-path generation inside our kernels, AAD number types, our dimensions.)
 3. **CPU parity and the CPU-only build.** The library must not make the
    CPU-only wheel and CI (no CUDA) impossible, and must not break CPU = GPU
@@ -30,7 +30,7 @@ on speed, **adopt its algorithm** in our code and cite it.
 
 | Component | Library | Decision | Why |
 |---|---|---|---|
-| Sobol on the GPU | cuRAND (`CURAND_RNG_QUASI_*SOBOL*`) | **not adopted; its algorithm is** | Measured 2026-11-10 (`qm_gpu_rng_bench`): cuRAND ~820 GB/s, ours 249 GB/s (random access), 456–500 GB/s branchless with the directions in shared memory, same bits. cuRAND gets the rest from Gray-code stepping (one XOR from a point to the next). It has no Owen scrambling, its host API writes to memory where our kernels draw inline, its device API needs one state per dimension per thread, and the CPU-only build could not use it. To do: branchless `sobol_point_bits` in the kernels; Gray-code stepping where a thread walks consecutive points (the logical-block mapping gives a thread units t, t + 256, …: changing it changes the reduction order on CPU and GPU together) |
+| Sobol on the GPU | cuRAND (`CURAND_RNG_QUASI_*SOBOL*`) | **not adopted; its algorithm is** | Measured 2026-11-10 (`qm_gpu_rng_bench`): cuRAND ~820 GB/s, ours 249 GB/s (random access), 456–500 GB/s branchless with the directions in shared memory, same bits. cuRAND gets the rest from Gray-code stepping (one XOR from a point to the next). It has no Owen scrambling (evaluated in WP 19 §12, not enabled: the digital shift is the current decision, Owen a lead to measure again), its host API writes to memory where our kernels draw inline, its device API needs one state per dimension per thread, and the CPU-only build could not use it. To do: branchless `sobol_point_bits` in the kernels; Gray-code stepping where a thread walks consecutive points (the logical-block mapping gives a thread units t, t + 256, …: changing it changes the reduction order on CPU and GPU together) |
 | Philox | cuRAND (`CURAND_RNG_PSEUDO_PHILOX4_32_10`) | not adopted | Ours 426–470 GB/s against cuRAND's 300 GB/s, both 64 bits a double; ours is validated against the Random123 test vectors and runs on the CPU bit for bit |
 | Runtime compilation of scripts for the GPU | NVRTC | **adopted** (WP 26 P1b, approved 2026-11-10) | Removes the interpreter's dispatch and register pressure; link `libnvrtc_static` (runtime image has no toolkit) |
 | CPU linear algebra | Eigen | in use | `find_package(Eigen3)`, correlation factors, multi-asset models |
