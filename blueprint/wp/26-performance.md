@@ -5,7 +5,7 @@
 | **Depends on** | Scripting (WP 16: parser, visitors, bytecode), AAD (WP 17), GPU Monte-Carlo (WP 19: Philox, Sobol, Brownian bridge, logical blocks, bytecode on the device). All done |
 | **Unlocks** | Removal of the hand-written Monte-Carlo engines (`src/engines/mc/{asian,barrier,lookback,basket,autocall,…}.cpp`); MLMC for every model with a discretisation bias (local vol, Heston, SLV, rough Bergomi); faster xVA scenarios (WP 23) |
 | **Branches** | one per lot: `perf/p0-baseline`, `perf/p1-batched-interpreter`, … (§4–§10) |
-| **Issues** | P0 #206, P1 #207 (P1c Sobol: #214), P2 #208, P3 #209, P4 #210, P5 #211, P6 #212 |
+| **Issues** | tracking #217; P0 #206, P1 #207 (P1c Sobol: #214), P2 #208, P3 #209, P4 #210, P5 #211, P6 #212 |
 | **Starting point** | tag `v1-pedagogical` (`7d21573`, 2026-11-10): the code before this work package, kept as a reference, never maintained |
 | **Main reading** | Giles, *Multilevel Monte Carlo path simulation*, Operations Research 56(3), 2008; Giles, *Multilevel Monte Carlo methods*, Acta Numerica 24, 2015; Giles & Szpruch, *Multilevel Monte Carlo methods for applications in finance*, 2012 ([arXiv:1212.1377](https://arxiv.org/abs/1212.1377), in `kbase`); Giles & Waterhouse, *Multilevel quasi-Monte Carlo path simulation*, Radon Series on Computational and Applied Mathematics 8, 2009 |
 | **Implementation reading** | Savine & Andreasen, *Modern Computational Finance: Scripting for Derivatives and xVA*, Wiley 2021; Owen, *Scrambled net variance for integrals of smooth functions*, Annals of Statistics 25(4), 1997; Burley, *Practical Hash-based Owen Scrambling*, JCGT 9(4), 2020 (already in `utils/sobol.hpp`) |
