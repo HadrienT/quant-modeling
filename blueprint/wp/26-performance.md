@@ -197,9 +197,54 @@ compilation failure) and as the oracle in tests.
 - AAD on the GPU (forward duals, per-path adjoint) gets the same treatment in
   a second step: generated code for the tangent and adjoint sweeps.
 
-### P1c — Faster Sobol points
+### P1c — Sobol, the default sampler, as fast and as good as it can be
 
-Measured on 2026-11-10 (`qm_gpu_rng_bench`, V100, 2^20 points × 128 dims):
+Decided by the maintainer on 2026-11-10: **Sobol (randomised QMC with the
+Brownian bridge) becomes the default sampler everywhere**, and is improved
+until it is the best it can be, in speed and in variance.
+
+**Where the default is set today.** Scripts priced through the API already
+default to Sobol (`api/app/schemas.py`, the scripting page's
+`VarianceReductionFields.tsx`; PR #120). Everything else still defaults to
+pseudo-random: `PricingSettings::mc_sampler` (C++), `price_script`'s
+`sampler="pseudo"` (binding, `src/module.cpp`), the dated Asian request
+(`schemas.py`) and its preview (`DatedAsianPreview.tsx`), and the hand-written
+engines, which only know PCG32. The switch:
+
+- every layer above defaults to `sobol`, in the same pull request, with
+  `web/openapi.json` and `schema.gen.ts` regenerated;
+- the catalogue products get Sobol when they become scripts (P3); until then
+  the hand-written engines stay pseudo-random and say so in their
+  diagnostics;
+- pseudo-random stays where Sobol brings nothing measurable or cannot apply,
+  and the engine says which sampler it used and why (as the model choice is
+  announced): models whose draws are not Brownian increments (jumps: Merton,
+  Kou, Bates) until measured, and the dimensions beyond the generator's
+  21 201 (padded with pseudo-random draws).
+
+**What the displayed error means.** With Sobol the standard error comes from
+the dispersion of R = 16 independent replicates: 15 degrees of freedom, so the
+error estimate itself is uncertain by about ±18 % (1/√(2·15)). Either R goes
+to 32, or the interval uses the Student quantile; decided with the numbers of
+P0, since a displayed figure must be defensible.
+
+**Quality**, each measured with WP 19 §12's protocol (the 42 library scripts,
+200 seeds, 95 % interval of the variance ratio) before it becomes a default:
+
+- point counts: a Sobol net is balanced at N = 2^m points per replicate;
+  check what the engine does with other path counts, round to a power of two
+  if it does not;
+- path construction: Brownian bridge (today) against PCA of the Brownian
+  increments (`etc/ROADMAP.md` §1.1 lists it), and, for several factors, which
+  factor's coarse coordinates take the first Sobol dimensions;
+- randomisation: digital shift (today's decision, WP 19 §12) against a true
+  Owen scrambling, random bits per node of the tree, which the hash of
+  Burley only approximates;
+- discontinuous payoffs lose most of QMC's edge: P2's smoothed indicators and
+  bridge survival probabilities are what gives it back (barriers, digitals,
+  autocalls).
+
+**Speed.** Measured on 2026-11-10 (`qm_gpu_rng_bench`, V100, 2^20 points × 128 dims):
 our random-access `sobol_point_bits` fills memory at 249 GB/s; the same bits
 computed branchless, with a dimension's 32 directions in shared memory, at
 456–500 GB/s; cuRAND's Sobol at ~820 GB/s, thanks to Gray-code stepping (one
@@ -377,9 +422,14 @@ independent scramblings (R = 16 to 32) so that each level's variance can be
 estimated. N_l grows by doubling the level with the largest V_l / C_l
 (Giles & Waterhouse 2009).
 
-**Owen scrambling rather than the digital shift**: nested scrambling has a
-better variance rate on smooth integrands (Owen 1997), and is already
-implemented on CPU and GPU (`owen_scramble`, `mc_sobol_owen`).
+**Randomisation: the digital shift, unless a measurement says otherwise.**
+Owen's nested scrambling has a better variance rate on smooth integrands in
+theory (Owen 1997), but its hash-based version (Burley 2020, `owen_scramble`,
+`mc_sobol_owen`) was measured against the digital shift on the 42 library
+scripts over 200 seeds (WP 19 §12): no consistent gain, and the verdict
+flipped with the number of points for the same product. P5 measures both on
+the multilevel estimator with the same protocol, and a true Owen scrambling
+(random bits per tree node) if §5's P1c gets to it.
 
 What to expect, from Giles & Szpruch 2012 §8: QMC cuts the variance on the
 coarse, low-dimensional levels; the finest levels have little low-dimensional
