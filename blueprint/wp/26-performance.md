@@ -65,16 +65,18 @@ Inventory read from `src/engines/mc/` and `src/pricers/registry.cpp` on
 
 | Product (model) | Generator | Variance reduction | Threads | GPU | Greeks |
 |---|---|---|---|---|---|
-| Vanilla (BS) | PCG32, Philox, Sobol | antithetic, stratification, importance sampling | logical blocks | yes (`src/gpu/vanilla_bs.cu`) | bump |
+| Vanilla (BS) | PCG32, Philox, Sobol | antithetic, stratification, importance sampling | 1 (logical blocks, CPU emulation of the GPU tree) | yes (`src/gpu/vanilla_bs.cu`) | pathwise |
 | Asian (BS, local vol) | PCG32, Sobol | antithetic; geometric-Asian control (BS) | 1 | no | bump |
-| Barrier (BS, local vol) | PCG32 | Brownian-bridge crossing test, conditional MC | 1 | no | bump, 9 simulations a path |
+| Barrier (BS, local vol) | PCG32 | Brownian-bridge crossing test, conditional MC | 1 | no | bump, 9 simulations a path (P0: `compute_greeks = false` prices only) |
 | Lookback (BS, local vol) | PCG32 | antithetic, extrema drawn on the bridge | 1 | no | bump |
 | Basket (BS) | PCG32 | antithetic | 1 | no | bump, common numbers |
 | Autocall, mountain, best-of, worst-of, dispersion, variance and volatility swaps (BS); quanto vanilla; caplet, cap/floor, bond option (short rate) | PCG32 | none | 1 | no | bump |
-| **Script, generic engine** (`SimulationMCEngine`) | PCG32, Philox, Sobol + bridge, Owen | antithetic, generic controls, stratification, importance sampling (GHS drift), spot control | logical blocks | yes, 2 V100 | AAD (CPU tape; GPU duals and per-path adjoint) |
+| **Script, generic engine** (`SimulationMCEngine`) | PCG32, Philox, Sobol + bridge, Owen | antithetic, generic controls, stratification, importance sampling (GHS drift), spot control | **1** for pricing (threads only for AAD: `simulation_engine_parallel_aad.hpp`) | yes, 2 V100 | AAD (CPU tape; GPU duals and per-path adjoint) |
 
 All the depth is in the generic engine. The hand-written engines stayed at the
-teaching stage.
+teaching stage. **No Monte-Carlo pricing uses more than one CPU thread**, on
+any path: the server's 56 hardware threads only serve the AAD, the xVA and
+the rough Bergomi surface pricer today.
 
 The timeline architecture of Savine & Andreasen is already the generic
 engine's: `ISimulatableProduct` (timeline, defline, payoffs),
@@ -82,26 +84,53 @@ engine's: `ISimulatableProduct` (timeline, defline, payoffs),
 `SimulationMCEngine`. Only `ScriptedProduct` and a demonstration Asian
 (`instruments/equity/simulatable_asian.hpp`) implement the product side.
 
-### 2.2 The cost of genericity, measured
+### 2.2 The cost of genericity, measured (P0)
 
-Up-and-out call, BS, barrier 130 monitored daily for one year, 200 000 paths,
-one CPU thread unless stated (2026-11-10, Python wheel):
+From the v1 matrix (§11, `benchmarks/results/2026-11-11-f2a4a48.json`): time
+to reach a relative standard error of 1e-3, one CPU thread.
 
-| Path | Time | Std error |
-|---|---|---|
-| Hand-written (`price_barrier_bs_mc`), price **and** 4 bump greeks | 5.21 s | 0.0141 |
-| Script, PCG32, CPU, price only | 2.40 s | 0.0142 |
-| Script, Sobol + bridge, CPU | 4.36 s | 0.0041 |
-| Script, Philox, 1 V100 | 0.048 s | 0.0118 |
-| Script, Sobol + bridge, 1 V100 | 0.034 s | 0.0041 |
+**At equal technique (pseudo-random, antithetic), a path costs about the
+same** in the script engine and in the hand-written ones, not several times
+more as first estimated:
 
-The hand-written engine runs 9 simulations a path (price and 8 bumped
-revaluations, `barrier.cpp:196-204`): its price alone is **estimated** at
-~0.6 s, so the generic engine is about 4× slower a path on the CPU at equal
-technique. At equal **error** it wins by far (Sobol + bridge, GPU). P0
-replaces the estimate by a measurement.
+| Product | Hand-written | Script, PCG32 | Ratio |
+|---|---|---|---|
+| Up-and-out, 52 weekly dates (BS), price only | 5.64 s | 8.25 s | 1.46 |
+| Up-and-out, 52 weekly dates (local vol), price only | 9.31 s | 12.2 s | 1.31 |
+| Vanilla call (BS) | 0.085 s | 0.176 s | 2.1 |
+| Worst-of call, 3 assets (BS) | 0.83 s | 1.42 s | 1.7 |
+| Lookback, basket, Asian (hand-written timed with their Greeks) | | | 0.6 to 1.0 |
 
-The 4× comes from execution, not from what the engine can do:
+The first estimate (~4×, 2026-11-10) divided the barrier's time with Greeks
+by its 9 simulations a path; the draws are shared, and the price alone costs
+a quarter of the time with Greeks (5.64 s against 23.8 s), not a ninth.
+
+**At equal error the script engine wins by one to three orders of
+magnitude**, through Sobol + bridge (one CPU thread: 3.8× on the barriers,
+28 to 130× on the Asians, lookbacks, basket and worst-of; upper bounds where
+the first 16 384 points already reach the target) and the GPU (one V100 with
+Sobol against one CPU thread with PCG32: 180× on the vanilla, 600 to 750× on
+the path-dependent products).
+
+**Against hand-written reference paths on the GPU** (`qm_gpu_reference_bench`,
+the same products, Philox, antithetic): the script engine takes 2.0× (barrier
+BS), 3.4× (barrier local vol), 4.5× (Asian BS) and 4.8× (Asian local vol) the
+reference's time. This is the interpreter's cost that P1b removes.
+
+**On the CPU the gaussians dominate a path.** The reference paths draw
+Philox + Φ⁻¹, as the GPU does: on one thread they are *slower* than the
+hand-written barrier (6.99 s against 5.64 s), which draws PCG32 +
+Box-Muller. Sobol needs Φ⁻¹, so its cost is what P1 must make cheap on the
+CPU.
+
+**What P0 also found.** The hand-written local-vol barrier priced every model
+at the flat vol σ_loc(S₀, 0), ignoring the Dupire surface (fixed in `f2a4a48`,
+with a test that fails on the old engine). The script engine and the
+reference paths agreed with each other (4.13, 4.14) and not with it (3.63):
+the cross-engine comparison is the oracle P3 relies on. The qmharness base
+holds 9 cases, all on the Black-Scholes vanilla: it could not have seen it.
+
+Where the script engine's execution costs, what P1 attacks:
 
 | Cost | Cause |
 |---|---|
@@ -267,6 +296,26 @@ The script analyser already knows which samples each event reads. Where the
 script allows it (no look-back to an earlier date's sample), the model hands
 each event its samples as it simulates them, and the full scenario is never
 stored: the daily barrier keeps `alive` and the spot, like a hand-written loop.
+
+### P1e — Every CPU thread (added after P0)
+
+No CPU Monte-Carlo pricing uses more than one thread (§2.1). The generic
+engine already reduces through logical blocks (WP 19 G4) whose partials fold
+in block order: running blocks on a thread pool gives the same bits on 1 or
+56 threads. First the script engine's `simulate_impl` and `price_script`
+(a `threads` argument, default the available CPUs capped as the xVA does),
+then nothing else: the hand-written engines are retired by P3, not threaded.
+Expected gain close to the thread count on the server's 28 cores; measured,
+with the bits checked on 1, 16 and 56 threads.
+
+### P1f — Cheap gaussians on the CPU (added after P0)
+
+A path's CPU cost is dominated by its gaussians (§2.2): Philox + Φ⁻¹ costs
+more than PCG32 + Box-Muller, and Sobol needs Φ⁻¹. Measure where a path's
+time goes (`perf record` on the reference and the script runs), then make
+Φ⁻¹ cheap on the CPU without changing its bits: branch-light evaluation of
+the same rational approximation, batched by P1a's paths so that AVX2 runs
+four at once.
 
 ### Decision point
 
@@ -457,12 +506,41 @@ Acceptance: §11's P6 column; `GpuTwoCardsTest`-style test for MLMC.
 
 ## 11. Results
 
-Time to reach a relative standard error of 1e-3, filled lot by lot
-(`qm_perf_bench`). "v1" is the tag `v1-pedagogical`.
+Time to reach a relative standard error of 1e-3 (`benchmarks/perf_matrix.py`;
+pseudo-random runs at the number of paths that reaches it, Sobol runs at the
+first power of two that does, "≤" when the first try of 16 384 points already
+did). "v1" is the tag `v1-pedagogical` plus P0's fixes (`f2a4a48`):
+`benchmarks/results/2026-11-11-f2a4a48.json`. CPU rows on one thread. The
+reference column is `qm_gpu_reference_bench` (hand-written paths, Philox).
 
-| Product (model) | v1 hand-written | v1 script CPU 16 thr. | v1 script 1 V100 | P1 | P3 | P4 MLMC | P5 MLQMC | P6 GPU |
-|---|---|---|---|---|---|---|---|---|
-| (filled by P0) | | | | | | | | |
+| Product (model) | v1 hand-written, CPU | v1 script, CPU PCG32 | v1 script, CPU Sobol | v1 script, 1 V100 Philox | v1 script, 1 V100 Sobol | Reference, 1 V100 |
+|---|---|---|---|---|---|---|
+| Vanilla call (BS) | 0.085 s | 0.176 s | ≤ 0.002 s | 0.002 s | ≤ 0.001 s | |
+| Arithmetic Asian, 252 fixings (BS) | 29.5 s ¹ | 30.7 s ² | ≤ 0.404 s ² | 0.103 s ² | ≤ 0.050 s ² | 0.023 s |
+| Arithmetic Asian, 252 fixings (local vol) | 60.3 s ¹ | 42.7 s ² | ≤ 0.544 s ² | 0.125 s ² | ≤ 0.050 s ² | 0.026 s |
+| Up-and-out call, 52 weekly dates (BS) | 5.64 s (23.8 s with Greeks) | 8.25 s | 2.19 s | 0.020 s | 0.011 s | 0.010 s |
+| Up-and-out call, 52 weekly dates (local vol) | 9.31 s | 12.2 s | 3.20 s | 0.041 s | 0.010 s | 0.012 s |
+| Fixed-strike lookback, 52 weekly dates (BS) | 2.29 s ¹ | 1.96 s | ≤ 0.070 s | 0.009 s | ≤ 0.003 s | |
+| Fixed-strike lookback, 52 weekly dates (local vol) | 4.66 s ¹ | 2.91 s | ≤ 0.094 s | 0.010 s | ≤ 0.003 s | |
+| Basket call, 3 assets (BS) | 0.724 s ¹ | 0.482 s | ≤ 0.005 s | 0.003 s | ≤ 0.001 s | |
+| Worst-of call, 3 assets (BS) | 0.827 s | 1.42 s | 0.011 s | 0.006 s | 0.002 s | |
+| Best-of call, 3 assets (BS) | 0.163 s | | | | | |
+| Autocall, 4 quarterly dates (BS) | ≤ 0.001 s | | | | | |
+| Mountain range, 3 assets, 3 dates (BS) | 0.939 s | | | | | |
+| Dispersion swap, 3 assets, 52 dates (BS) | 0.168 s | | | | | |
+| Variance swap, 52 dates (BS) | 0.686 s | | | | | |
+| Volatility swap, 52 dates (BS) | 0.178 s | | | | | |
+| Quanto call (BS) | 0.072 s | | | | | |
+
+¹ timed with the Greeks the engine always computes (pathwise; the Asian also
+resimulates for theta). ² daily TARGET dates (~256), not the engine's 252
+equal steps. Empty script cells: no script equivalent written yet (P3).
+
+The CPU columns of the reference are not in the table: on one thread its
+Philox + Φ⁻¹ gaussians make it slower than PCG32 + Box-Muller engines (§2.2),
+so it is not a ceiling there until P1f.
+
+Later lots add their columns (P1, P3, P4 MLMC, P5 MLQMC, P6 GPU).
 
 ## 12. Risks and open decisions
 
