@@ -181,6 +181,8 @@ namespace quantModeling
         };
 
         // ── Monte Carlo loop ──────────────────────────────────────────────────
+        // GreeksMethod::None prices only: one simulation a path, not nine.
+        const bool with_greeks = settings.greeks != GreeksMethod::None;
         const int N = settings.mc_paths;
         for (int i = 0; i < N; ++i)
         {
@@ -194,6 +196,8 @@ namespace quantModeling
             ++cnt;
             // Centre (base) + 8 bumped variants (CRN: all share zs and us)
             wf_push(w_base, sim_one(S0, vol_base, r, T), cnt);
+            if (!with_greeks)
+                continue;
             wf_push(w_Su, sim_one(S0 + dS, vol_base, r, T), cnt);
             wf_push(w_Sd, sim_one(S0 - dS, vol_base, r, T), cnt);
             wf_push(w_vu, sim_one(S0, vol_u, r, T), cnt);
@@ -225,23 +229,26 @@ namespace quantModeling
         out.npv = w_base.mean;
         out.mc_std_error = se(w_base);
 
-        // Central FD Greeks
-        // delta / gamma — bump spot
-        out.greeks.delta = (w_Su.mean - w_Sd.mean) / (2.0 * dS);
-        out.greeks.gamma = (w_Su.mean - 2.0 * w_base.mean + w_Sd.mean) / (dS * dS);
-        // vega  — bump vol, report as dP/dσ (per unit vol)
-        out.greeks.vega = (w_vu.mean - w_vd.mean) / (2.0 * dv);
-        // theta — bump time, report as -dP/dT (value decay per unit time)
-        out.greeks.theta = -(w_Tu.mean - w_Td.mean) / (2.0 * dT);
-        // rho   — bump rate, report as dP/dr (per unit rate)
-        out.greeks.rho = (w_ru.mean - w_rd.mean) / (2.0 * dr);
+        if (with_greeks)
+        {
+            // Central FD Greeks
+            // delta / gamma — bump spot
+            out.greeks.delta = (w_Su.mean - w_Sd.mean) / (2.0 * dS);
+            out.greeks.gamma = (w_Su.mean - 2.0 * w_base.mean + w_Sd.mean) / (dS * dS);
+            // vega  — bump vol, report as dP/dσ (per unit vol)
+            out.greeks.vega = (w_vu.mean - w_vd.mean) / (2.0 * dv);
+            // theta — bump time, report as -dP/dT (value decay per unit time)
+            out.greeks.theta = -(w_Tu.mean - w_Td.mean) / (2.0 * dT);
+            // rho   — bump rate, report as dP/dr (per unit rate)
+            out.greeks.rho = (w_ru.mean - w_rd.mean) / (2.0 * dr);
 
-        // Standard errors on Greeks (propagated from MC noise)
-        out.greeks.delta_std_error = fd_se(w_Su, w_Sd, dS);
-        out.greeks.gamma_std_error = fd_se(w_Su, w_Sd, dS);
-        out.greeks.vega_std_error = fd_se(w_vu, w_vd, dv);
-        out.greeks.theta_std_error = fd_se(w_Tu, w_Td, dT);
-        out.greeks.rho_std_error = fd_se(w_ru, w_rd, dr);
+            // Standard errors on Greeks (propagated from MC noise)
+            out.greeks.delta_std_error = fd_se(w_Su, w_Sd, dS);
+            out.greeks.gamma_std_error = fd_se(w_Su, w_Sd, dS);
+            out.greeks.vega_std_error = fd_se(w_vu, w_vd, dv);
+            out.greeks.theta_std_error = fd_se(w_Tu, w_Td, dT);
+            out.greeks.rho_std_error = fd_se(w_ru, w_rd, dr);
+        }
 
         // Diagnostics string
         const auto bt_str = [&]() -> std::string
@@ -260,7 +267,8 @@ namespace quantModeling
             return "?";
         };
 
-        out.diagnostics = "Barrier MC (BS): " + bt_str() + ", H=" + std::to_string(H) + ", K=" + std::to_string(K) + ", T=" + std::to_string(T) + ", paths=" + std::to_string(N) + ", steps/path=" + std::to_string(n_steps) + (use_cmc ? " [CMC survival probability]" : (opt.brownian_bridge ? " [BB corrected]" : " [discrete]"));
+        out.diagnostics = "Barrier MC (BS): " + bt_str() + ", H=" + std::to_string(H) + ", K=" + std::to_string(K) + ", T=" + std::to_string(T) + ", paths=" + std::to_string(N) + ", steps/path=" + std::to_string(n_steps) + (use_cmc ? " [CMC survival probability]" : (opt.brownian_bridge ? " [BB corrected]" : " [discrete]")) +
+                          (with_greeks ? "" : " [price only]");
 
         res_ = out;
     }
