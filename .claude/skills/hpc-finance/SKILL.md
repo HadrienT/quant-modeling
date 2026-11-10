@@ -34,12 +34,20 @@ not move. A change with only one of them is not done.
 6. **Ownership:** RAII for every device and host buffer (`DeviceArray`-style or
    `std::unique_ptr` with a deleter); no raw `cudaMalloc` whose `cudaFree` an
    exception can skip.
+7. **The best existing library before our own code.** Before writing or
+   keeping a component, look for the reference library (cuRAND, CUB, NVRTC,
+   cuBLAS, Eigen, SLEEF, Boost.Math…) and run the checks of
+   [libraries.md](libraries.md): features, CPU-only build and CPU = GPU,
+   reproducibility, **measured** speed on our workload, deployment. Adopt it
+   when it passes; when it only wins on speed, adopt its algorithm. Record the
+   decision in libraries.md's table.
 
 ## The loop (every optimization, no shortcut)
 
 1. **Measure the baseline** on the real workload, and keep the output:
    - GPU: `build-cuda/qm_gpu_bench`, `qm_gpu_exposure_bench`, `qm_gpu_vr_bench`,
-     `qm_gpu_risk_bench`, `qm_gpu_table_bench`, `qm_gpu_owen_bench`.
+     `qm_gpu_risk_bench`, `qm_gpu_table_bench`, `qm_gpu_owen_bench`,
+     `qm_gpu_rng_bench` (our generators against cuRAND).
    - CPU: `quantModeling_bench` (google-benchmark, `cmake --preset release`),
      `build/qm_xva_aad_bench`. The `cppdev` MCP's `cpp_bench` compares a run
      against a reference.

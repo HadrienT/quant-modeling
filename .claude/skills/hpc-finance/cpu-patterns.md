@@ -2,6 +2,8 @@
 
 ## Build flags
 
+- The server's CPUs are Xeon E5-2680 v4 (Broadwell): **AVX2 and FMA, no
+  AVX-512**. Four doubles a vector register; size SIMD batches for that.
 - `cmake --preset release` for measurements: Release, `-march=native`
   (`QM_NATIVE_ARCH`), google-benchmark. The `default` preset (CI) has no
   `-march=native`: a speed-up that only exists with it must say so.
