@@ -308,6 +308,16 @@ then nothing else: the hand-written engines are retired by P3, not threaded.
 Expected gain close to the thread count on the server's 28 cores; measured,
 with the bits checked on 1, 16 and 56 threads.
 
+**Done (PR #216, 2026-11-11).** Same bits on 1, 2, 16 and 56 threads
+(`tests/testSimulationThreads.cpp`, also under ASan). Through the wheel, 2 M
+paths: local-vol barrier, Philox, 10.46 s on one thread, 0.89 s on 16
+(×11.7), 0.54 s on 56 (×19.4); Asian under BS, Philox, 18.8 s, 1.53 s
+(×12.3), 0.82 s (×22.8). Sobol caps near ×12: one task per replicate, 16
+replicates. Chunking the replicates (fixed chunk size, merged in order)
+lifts the cap but changes the bits once: P1c (#214). PCG32, early exercise
+and AAD stay on one thread. The C++ default is no pool, so the tests run
+as before; `price_script(threads=0)` uses the available CPUs, at most 16.
+
 ### P1f — Cheap gaussians on the CPU (added after P0)
 
 A path's CPU cost is dominated by its gaussians (§2.2): Philox + Φ⁻¹ costs
