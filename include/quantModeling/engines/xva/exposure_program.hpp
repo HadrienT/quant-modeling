@@ -269,8 +269,12 @@ namespace quantModeling::xva
         return T(0.0);
     }
 
-    template <class T>
-    QM_HOST_DEVICE inline T program_coupon(const BasicProgramCoupon<T> &c, const T *state)
+    // `state` below is the path's state x(t_i), indexed by grid date: a plain
+    // pointer on the host, a Strided view on the device (core/strided.hpp),
+    // where the paths are stored date-major so that a warp reads one line.
+
+    template <class T, class State>
+    QM_HOST_DEVICE inline T program_coupon(const BasicProgramCoupon<T> &c, const State &state)
     {
         using std::exp;
         if (c.fixing < 0)
@@ -279,9 +283,9 @@ namespace quantModeling::xva
     }
 
     /// The part of a trade that is a sum of bonds, at grid date i.
-    template <class T>
+    template <class T, class State>
     QM_HOST_DEVICE inline T program_linear_value(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
-                                                 const T *state)
+                                                 const State &state)
     {
         using std::exp;
         const ProgramDate &date = p.dates[trade.date_begin + i];
@@ -301,9 +305,9 @@ namespace quantModeling::xva
         return v;
     }
 
-    template <class T>
+    template <class T, class State>
     QM_HOST_DEVICE inline T program_linear_cashflow(const BasicProgramView<T> &p, const ProgramTrade &trade,
-                                                    int i, const T *state)
+                                                    int i, const State &state)
     {
         const ProgramDate &date = p.dates[trade.date_begin + i];
         T flow(date.fixed_cashflow);
@@ -350,18 +354,18 @@ namespace quantModeling::xva
     }
 
     /// The option at grid date i < expiry.
-    template <class T>
+    template <class T, class State>
     QM_HOST_DEVICE inline T program_option_value(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
-                                                 const T *state)
+                                                 const State &state)
     {
         return program_option_integral(p, trade, p.option_dates[trade.option_date_begin + i], state[i]);
     }
 
     /// What the option became at its expiry: true when it was exercised, and
     /// for a trade that is not an option.
-    template <class T>
+    template <class T, class State>
     QM_HOST_DEVICE inline bool program_exercised(const BasicProgramView<T> &p, const ProgramTrade &trade,
-                                                 const T *state)
+                                                 const State &state)
     {
         return trade.expiry < 0 || program_linear_value(p, trade, trade.expiry, state) > 0.0;
     }
@@ -369,9 +373,9 @@ namespace quantModeling::xva
     /// Value of one unit of the trade at grid date i, of the cash flows
     /// strictly after that date. `exercised` is program_exercised(), read
     /// once per path (it only matters from the expiry on).
-    template <class T>
+    template <class T, class State>
     QM_HOST_DEVICE inline T program_value(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
-                                          const T *state, bool exercised)
+                                          const State &state, bool exercised)
     {
         if (i < trade.expiry)
             return program_option_value(p, trade, i, state);
@@ -381,9 +385,9 @@ namespace quantModeling::xva
     }
 
     /// Cash flow of one unit of the trade at grid date i.
-    template <class T>
+    template <class T, class State>
     QM_HOST_DEVICE inline T program_cashflow(const BasicProgramView<T> &p, const ProgramTrade &trade, int i,
-                                             const T *state, bool exercised)
+                                             const State &state, bool exercised)
     {
         if (trade.expiry >= 0 && (i <= trade.expiry || !exercised))
             return T(0.0);
