@@ -386,6 +386,7 @@ if(QM_BUILD_TESTS)
     tests/testScriptAdjoint.cpp
     tests/testSobolAndImportance.cpp
     tests/testSobolOwen.cpp
+    tests/testSimulationThreads.cpp
   )
 
   target_link_libraries(quantModeling_tests

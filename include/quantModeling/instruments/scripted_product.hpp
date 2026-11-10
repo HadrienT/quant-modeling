@@ -214,11 +214,11 @@ namespace quantModeling
             if (settings.bytecode && !has_exercise_)
             {
                 program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy);
-                vars_.assign(static_cast<std::size_t>(program_.n_vars), T(0));
-                stack_.assign(static_cast<std::size_t>(program_.max_stack), T(0));
-                degrees_.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
-                if_slots_.assign(static_cast<std::size_t>(program_.n_if_slots), T(0));
-                if_mode_.assign(static_cast<std::size_t>(program_.n_if_modes), 0);
+                buffers_.vars.assign(static_cast<std::size_t>(program_.n_vars), T(0));
+                buffers_.stack.assign(static_cast<std::size_t>(program_.max_stack), T(0));
+                buffers_.degrees.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
+                buffers_.if_slots.assign(static_cast<std::size_t>(program_.n_if_slots), T(0));
+                buffers_.if_mode.assign(static_cast<std::size_t>(program_.n_if_modes), 0);
                 compiled_ = true;
             }
         }
@@ -318,8 +318,33 @@ namespace quantModeling
         void payoffs(const Scenario<T> &path, std::vector<T> &out) const override
         {
             if (compiled_)
-                return payoffs_compiled(path, out);
+                return payoffs_compiled(path, out, buffers_);
             out.assign(1, run_tree(path));
+        }
+
+        /// The bytecode machine's per-path buffers.
+        struct MachineBuffers final : ISimulatableProduct<T>::PayoffState
+        {
+            std::vector<T> vars, stack, degrees, if_slots;
+            std::vector<int> if_mode;
+        };
+
+        /// Concurrent payoffs on the bytecode path (hard or fuzzy): its
+        /// state is five buffers. The tree evaluator (bytecode off, or early
+        /// exercise) keeps one evaluator per product and stays on one thread.
+        std::unique_ptr<typename ISimulatableProduct<T>::PayoffState> make_payoff_state() const override
+        {
+            if (!compiled_)
+                return nullptr;
+            return std::make_unique<MachineBuffers>(buffers_);
+        }
+
+        void payoffs_with_state(const Scenario<T> &path, std::vector<T> &out,
+                                typename ISimulatableProduct<T>::PayoffState &state) const override
+        {
+            if (!compiled_)
+                return payoffs(path, out);
+            payoffs_compiled(path, out, static_cast<MachineBuffers &>(state));
         }
 
         /**
@@ -373,14 +398,14 @@ namespace quantModeling
 
         /// The bytecode path: the tree evaluator's semantics, including its
         /// run-time checks on what the model supplies.
-        void payoffs_compiled(const Scenario<T> &path, std::vector<T> &out) const
+        void payoffs_compiled(const Scenario<T> &path, std::vector<T> &out, MachineBuffers &b) const
         {
             if (baseline_.empty())
-                std::fill(vars_.begin(), vars_.end(), T(0));
+                std::fill(b.vars.begin(), b.vars.end(), T(0));
             else
-                vars_ = baseline_;
-            scripting::Machine<T> m{vars_.data(), stack_.data(), degrees_.data(), if_slots_.data(),
-                                    if_mode_.data(), T(0)};
+                b.vars = baseline_;
+            scripting::Machine<T> m{b.vars.data(), b.stack.data(), b.degrees.data(), b.if_slots.data(),
+                                    b.if_mode.data(), T(0)};
             const scripting::ProgramView view = program_.view();
             for (std::size_t i = 0; i < events_.size(); ++i)
             {
@@ -475,9 +500,9 @@ namespace quantModeling
         std::vector<T> baseline_;
         scripting::Program program_;
         bool compiled_ = false;
-        // The machine's per-path buffers (one product per thread, like evaluator_).
-        mutable std::vector<T> vars_, stack_, degrees_, if_slots_;
-        mutable std::vector<int> if_mode_;
+        // The machine's per-path buffers for payoffs(); payoffs_with_state()
+        // runs on a thread's own copy (make_payoff_state()).
+        mutable MachineBuffers buffers_;
         bool has_exercise_ = false;
         scripting::ExercisePolicy policy_;
     };

@@ -28,7 +28,7 @@ namespace quantModeling
      * on either side, with the same estimators.
      */
     SimulationMCResult simulate_script(const ScriptedProduct<Real> &product, ISimulationModel<Real> &model,
-                                       const PricingSettings &settings);
+                                       const PricingSettings &settings, ThreadPool *pool = nullptr);
 
     /**
      * @brief A script's model risks on the GPU (blueprint/wp/19-gpu.md §6,
