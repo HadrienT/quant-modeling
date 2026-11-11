@@ -107,6 +107,7 @@ int main(int argc, char **argv)
         s.mc_seed = 1;
         s.mc_antithetic = true;
         s.mc_rng = RngKind::Philox;
+        s.mc_sampler = SamplerKind::PseudoRandom; // explicit: Sobol is the default
         s.mc_device = ComputeDevice::Cpu;
         double npv = 0.0;
         const double script_ms = median_ms([&]

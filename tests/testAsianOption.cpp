@@ -256,8 +256,12 @@ namespace quantModeling
         Real mcPrice = mcResult.npv;
         Real mcStdErr = mcResult.mc_std_error;
 
-        // MC should converge to analytic within 2 standard errors
-        EXPECT_LT(std::abs(mcPrice - analyticPrice), 2.0 * mcStdErr);
+        // The "analytic" arithmetic Asian is Turnbull-Wakeman's moment
+        // matching, an approximation: Monte-Carlo converges to the exact price,
+        // not to it. Under pseudo-random noise the 2 standard errors hid the
+        // gap; with Sobol (the default) they are 1e-4, and the approximation's
+        // own error (7.5e-4 here) shows. Allow 0.05 % of the price for it.
+        EXPECT_LT(std::abs(mcPrice - analyticPrice), 2.0 * mcStdErr + 5e-4 * analyticPrice);
     }
 
     TEST_F(AsianOptionTest, ArithmeticGeometricOrdering)

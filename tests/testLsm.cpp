@@ -160,7 +160,11 @@ namespace quantModeling
                                                       "        pays max(spot() - 100, 0)\n    endIf\n";
         const Priced r = price(script, black_scholes(100.0, 0.05, 0.25));
         const double european = bs(true, 100.0, 100.0, (dates.back() - kToday) / 365.0, 0.05, 0.0, 0.25);
-        EXPECT_NEAR(r.mc.npv(), european, 4.0 * r.mc.std_error() + 0.02);
+        // The fitted rule is a lower bound: it loses about 1 % here (measured
+        // 12.119 +- 0.009 against 12.236 with 4 M pseudo-random paths,
+        // 2026-11-11), which the old 0.02 slack hid under pseudo-random noise.
+        // Issue #228.
+        EXPECT_NEAR(r.mc.npv(), european, 4.0 * r.mc.std_error() + 0.015 * european);
     }
 
     TEST(Lsm, SimpleChooserMatchesRubinstein)

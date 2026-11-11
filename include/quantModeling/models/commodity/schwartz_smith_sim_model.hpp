@@ -152,7 +152,9 @@ namespace quantModeling
                     const T var_xi = sigma_xi_ * sigma_xi_ * s.dt;
                     const T cov = rho_ * sigma_chi_ * sigma_xi_ * (T(1.0) - s.exp_k_dt) / kappa_;
                     s.chol21 = cov / s.sd_chi;
-                    s.sd_xi_given_chi = sqrt(var_xi - s.chol21 * s.chol21 * var_chi);
+                    // Var[xi | chi] = Var[xi] - Cov^2 / Var[chi] = Var[xi] - chol21^2
+                    // (the same fix as VasicekSimModel's, 2026-11-11).
+                    s.sd_xi_given_chi = sqrt(var_xi - s.chol21 * s.chol21);
                     sim_dim_ += 2;
                 }
                 steps_.push_back(s);
@@ -219,7 +221,7 @@ namespace quantModeling
             T exp_k_dt{};        // e^{-kappa*dt}
             T sd_chi{};          // sqrt(Var[chi_{t+dt} | chi_t])
             T chol21{};          // Cov(chi, xi) / sd_chi
-            T sd_xi_given_chi{}; // sqrt(Var[xi] - chol21^2 * Var[chi])
+            T sd_xi_given_chi{}; // sqrt(Var[xi] - chol21^2) = sqrt(Var[xi | chi])
         };
 
         void set_param_pointers()

@@ -2,6 +2,8 @@
 #define UTILS_SOBOL_HPP
 
 #include <bit>
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -26,12 +28,38 @@ namespace quantModeling
      */
     QM_HOST_DEVICE inline uint32_t sobol_point_bits(const uint32_t *V, uint32_t p)
     {
-        uint32_t g = p ^ (p >> 1);
+        // Branchless: 32 fixed steps, each direction masked in or out, so
+        // the threads of a warp never diverge (WP 26 §5, P1c). Same XORs,
+        // same bits.
+        const uint32_t g = p ^ (p >> 1);
         uint32_t x = 0;
-        for (int b = 0; g != 0; ++b, g >>= 1)
-            if (g & 1u)
-                x ^= V[b];
+        for (int b = 0; b < 32; ++b)
+            x ^= V[b] & (0u - ((g >> b) & 1u));
         return x;
+    }
+
+    /**
+     * @brief Points per Sobol RQMC replicate for `paths` paths over
+     *        `replicates` replicates: the power of two nearest to
+     *        paths / replicates on a log scale (WP 26 §5, P1c).
+     *
+     * A digitally shifted Sobol net is balanced at 2^m points; a truncated
+     * one (12 500 points, 200 000 paths over 16) was measured 1.2-2.9x less
+     * efficient per path on smooth payoffs (call, Asian, autocall, worst-of;
+     * a barrier is indifferent), 2026-11-11, issue #214. Nearest on a log
+     * scale keeps the work within [1/sqrt 2, sqrt 2] of the request.
+     */
+    inline std::size_t sobol_points_per_replicate(std::size_t paths, std::size_t replicates)
+    {
+        const double nd = static_cast<double>(paths) / static_cast<double>(std::max<std::size_t>(1, replicates));
+        if (nd <= 1.0)
+            return 1;
+        std::size_t lower = 1;
+        while (static_cast<double>(lower * 2) <= nd)
+            lower *= 2;
+        // nd >= lower * sqrt(2), i.e. nd^2 >= 2 lower^2: the upper power is nearer.
+        const double ld = static_cast<double>(lower);
+        return nd * nd >= 2.0 * ld * ld ? lower * 2 : lower;
     }
 
     /// The uniform in (0,1) of a shifted coordinate -- same half-ulp offset

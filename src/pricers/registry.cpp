@@ -46,7 +46,16 @@ namespace quantModeling
         {
             throw UnsupportedInstrument("No pricer registered for the requested instrument/model/engine.");
         }
-        return it->second(request);
+        PricingResult result = it->second(request);
+        // Sobol is the default sampler (WP 26 §5, P1c): the hand-written
+        // Monte-Carlo engines that have no Sobol path run pseudo-random, and
+        // say so -- the catalogue gets Sobol by becoming scripts (P3).
+        if (request.engine == EngineKind::MonteCarlo && result.diagnostics.find("Sobol") == std::string::npos &&
+            result.diagnostics.find("pseudo-random") == std::string::npos)
+            result.diagnostics += (result.diagnostics.empty() ? "" : " | ") +
+                                  std::string("pseudo-random: this engine has no Sobol path yet (Sobol is the "
+                                              "default; the catalogue products get it as scripts)");
+        return result;
     }
 
     const PricingRegistry &default_registry()

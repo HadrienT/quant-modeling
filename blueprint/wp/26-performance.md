@@ -514,6 +514,32 @@ engines, which only know PCG32. The switch:
   Kou, Bates) until measured, and the dimensions beyond the generator's
   21 201 (padded with pseudo-random draws).
 
+**Default switch done (2026-11-11, option (a) chosen by the maintainer:
+every layer, C++ included).** `PricingSettings::mc_sampler`,
+`price_script`, the dated Asian request and its preview default to Sobol.
+The hand-written BS vanilla and Asian engines have a Sobol path and take
+it; the others run pseudo-random and the registry's diagnostics say so
+(`PricingRegistry::price`); a path of more draws than the generator's
+21 201 dimensions runs pseudo-random with a note instead of failing. Jump
+models keep Sobol: randomised QMC with a digital shift is unbiased for any
+function of the uniforms (measured on Merton below); whether it gains there
+is in #226. Pseudo-random noise had been hiding five things, which Sobol's
+tighter errors showed in the CPU suite -- each checked against
+pseudo-random at 4-16 M paths before deciding which side was wrong:
+
+| Test | What it was | Done |
+|---|---|---|
+| Merton call against the closed form | **the test's formula**: Poisson weights of λ instead of λ(1+k) (0.34 % low) | fixed: 10.663048 against Sobol 10.662981 ± 0.000109 |
+| Vasicek bond from the simulated integral | **a model bug**: Var[∫r \| r] subtracted Cov² instead of Cov²/Var[r] (4e-4 high at 7 years); the same in Schwartz-Smith's (χ, ξ) draw | fixed both; the Schwartz-Smith test's 5 % tolerance, which could not see its 4.6 %, is now 1 % |
+| SLV against the local vol it was calibrated to | the calibration's own error, 4.4 % on a 90 put | tolerance at the measured error, #227 |
+| LSM American call without dividends | the fitted rule exercises early, ~1 % low | tolerance at the measured loss, #228 |
+| Turnbull-Wakeman arithmetic Asian | an approximation, 7.5e-4 off the exact price | tolerance allows it |
+
+Four tests about pseudo-random itself (Philox, Sobol-vs-pseudo, the bridge's
+convergence slope, the hard digital's bump noise) pin their sampler. The
+vanilla convergence ladder of the site now falls at slope −0.86, not −1/2
+(the page already says "faster than 1/√N").
+
 **What the displayed error means.** With Sobol the standard error comes from
 the dispersion of R = 16 independent replicates: 15 degrees of freedom, so the
 error estimate itself is uncertain by about ±18 % (1/√(2·15)). Either R goes
@@ -535,6 +561,24 @@ P0, since a displayed figure must be defensible.
 - discontinuous payoffs lose most of QMC's edge: P2's smoothed indicators and
   bridge survival probabilities are what gives it back (barriers, digitals,
   autocalls).
+
+**Decided and done (2026-11-11, measurements in #214).** R stays 16: at
+equal total paths, R = 32 costs 1.4-2.3x in variance on smooth payoffs, and
+with R = 16 the displayed error already covers the true price 92-98 % of
+the time at ±1.96 (it overstates the true RMSE by 4-30 %). Points per
+replicate are now the power of two nearest to paths / R on a log scale
+(`sobol_points_per_replicate`, every Sobol path of the library: the generic
+engine CPU and GPU, AAD CPU and GPU, the hand-written BS vanilla and Asian):
+a truncated net (12 500 points at 200 000 paths) was 1.2-2.9x less
+efficient per path on smooth payoffs, a barrier indifferent. The work stays
+within [1/√2, √2] of the request; the diagnostics give the count. GPU
+scratch per launch is capped at 1 GiB (it was 4.8 GB at once for the daily
+Asian, 89 ms of a 131 ms call to allocate: compiled 134 -> 43 ms) and
+`sobol_point_bits` is branchless (-2 to -5 % of the kernel). Not done, by
+measurement: chunked replicates beyond 16 threads (the production container
+has 2 CPUs) and Gray-code stepping on the GPU (a thread computes one point
+since P1g). Left: the scratch's memory traffic, which a bridge built in time
+order with O(log n) memory per path would remove.
 
 **Speed.** Measured on 2026-11-10 (`qm_gpu_rng_bench`, V100, 2^20 points × 128 dims):
 our random-access `sobol_point_bits` fills memory at 249 GB/s; the same bits

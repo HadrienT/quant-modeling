@@ -126,10 +126,10 @@ namespace quantModeling
 
         EXPECT_NEAR(mc_mean, expected_mean, 4.0 * res.std_errors[0]);
         // Var[X]'s own Monte-Carlo standard error isn't res.std_errors[1]
-        // (that one is for E[X^2]) -- a modest relative-plus-absolute
-        // tolerance stands in, the same style SABRSimModel's own
-        // closed-form cross-check test uses.
-        EXPECT_NEAR(mc_var, expected_var, 0.05 * expected_var + 0.01);
+        // (that one is for E[X^2]): a relative tolerance stands in. 1 %, not
+        // the 5 % + 0.01 it had: the conditional draw's variance was wrong by
+        // 4.6 % here (fixed 2026-11-11, WP 26 P1c), inside the old tolerance.
+        EXPECT_NEAR(mc_var, expected_var, 0.01 * expected_var);
     }
 
     TEST(SchwartzSmithSimModel, CloneKeepsItsOwnParameterPointers)

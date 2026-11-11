@@ -44,6 +44,9 @@ namespace quantModeling
             s.mc_paths = paths;
             s.mc_seed = seed;
             s.mc_antithetic = true;
+            // Pseudo-random: these tests measure the hard indicator's bump noise
+            // across seeds, which Sobol (the default) all but removes.
+            s.mc_sampler = SamplerKind::PseudoRandom;
             return simulate<Real>(product, model, s).npv();
         }
 

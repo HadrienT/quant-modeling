@@ -125,7 +125,13 @@ namespace quantModeling
                                     (T(s.dt) - T(2.0) * s.Bdt + half_life_term);
                     const T cov_rI = (sigma_ * sigma_ / a_) * (s.Bdt - half_life_term);
                     s.chol21 = cov_rI / s.sd_r;
-                    s.sd_I_given_r = sqrt(var_I - s.chol21 * s.chol21 * var_r);
+                    // Var[I | r] = Var[I] - Cov^2 / Var[r] = Var[I] - chol21^2
+                    // (chol21 already carries the 1 / sd_r). It subtracted
+                    // chol21^2 Var[r] = Cov^2 until 2026-11-11, which left the
+                    // integral's variance too large: E[exp(-I)] sat 4e-4 above
+                    // the bond price at 7 years. Hidden by pseudo-random noise,
+                    // seen once Sobol became the default (WP 26 P1c).
+                    s.sd_I_given_r = sqrt(var_I - s.chol21 * s.chol21);
                     sim_dim_ += 2;
                 }
                 steps_.push_back(s);
@@ -194,7 +200,7 @@ namespace quantModeling
             T Bdt{};          // B(dt) = (1 - e^{-a*dt}) / a
             T sd_r{};         // sqrt(Var[r(t+dt) | r(t)])
             T chol21{};       // Cov(r, I) / sd_r
-            T sd_I_given_r{}; // sqrt(Var[I] - chol21^2 * Var[r])
+            T sd_I_given_r{}; // sqrt(Var[I] - chol21^2) = sqrt(Var[I | r])
         };
 
         void set_param_pointers() { params_ = {&r0_, &a_, &b_, &sigma_}; }

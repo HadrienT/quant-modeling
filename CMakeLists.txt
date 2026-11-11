@@ -434,6 +434,7 @@ if(QM_BUILD_TESTS)
     tests/testScriptBytecode.cpp
     tests/testScriptCudaCodegen.cpp
     tests/testScriptBatch.cpp
+    tests/testSamplerDefault.cpp
     tests/testDual.cpp
     tests/testMultiControl.cpp
     tests/testVarianceReduction.cpp
