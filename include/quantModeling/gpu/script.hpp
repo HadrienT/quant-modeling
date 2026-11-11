@@ -93,6 +93,11 @@ namespace quantModeling::gpu
         /// Importance sampling: the drift of each Brownian factor (empty:
         /// none); every path is weighted by its likelihood ratio.
         std::vector<double> is_theta;
+        /// Run the script's generated code, compiled at run time (lot P1b of
+        /// blueprint/wp/26-performance.md), where it covers the request:
+        /// prices without spot controls. False, or QM_SCRIPT_JIT=0: the
+        /// bytecode interpreter. The two give the same bits.
+        bool compile = true;
     };
 
     /// Per replicate (one entry when not stratified): the payoff statistics,
@@ -103,6 +108,11 @@ namespace quantModeling::gpu
         std::vector<WelfordAccumulator> plain;
         std::vector<MultiControlAccumulator> controlled;
         std::vector<StratifiedControlAccumulator> stratified_controlled; ///< stratified and controlled
+        /// The script ran its compiled code (else the interpreter).
+        bool compiled = false;
+        /// How the events ran, for the diagnostics: "compiled script (...)"
+        /// or "interpreted bytecode (why not compiled)".
+        std::string events_note;
     };
 
     /// Throws GpuUnavailable without a device, InvalidInput when

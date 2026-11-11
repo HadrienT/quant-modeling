@@ -135,7 +135,8 @@ namespace quantModeling
                             (tables->bridged() ? " + Brownian bridge" : "") +
                             (tables->owen ? " + Owen scrambling" : "");
             }
-            res.diagnostics = note + (req.antithetic ? " + antithetic" : "") + cv_note + cv_off;
+            res.diagnostics = note + (req.antithetic ? " + antithetic" : "") + cv_note + cv_off +
+                              (st.events_note.empty() ? "" : " + " + st.events_note);
             res.device = "gpu";
             res.gpus = gpu::gpus_used(req);
             return res;

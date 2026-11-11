@@ -24,7 +24,7 @@ Scripting et du workbench de pricing.
 
 ## Sommaire
 
-- [Partie I — Le bytecode](#partie-i--le-bytecode)
+- [Partie I — Le bytecode](#partie-i--le-bytecode) (I.10: compiled for the GPU)
 - [Partie II — L'AAD sur GPU](#partie-ii--laad-sur-gpu)
 - [Partie III — L'AAD d'ordre 2](#partie-iii--laad-dordre-2)
 - [Annexe A — Vocabulaire du GPU](#annexe-a--vocabulaire-du-gpu)
@@ -293,6 +293,31 @@ Une réserve consignée dans l'ADR-G1 : le livre évalue l'arbre ; qu'il décriv
 ou non le principe d'une forme compilée n'a pas pu être vérifié à la rédaction
 du lot, le livre n'étant pas dans le dépôt. C'est à confirmer par qui l'a sous
 les yeux.
+
+## I.10 Beyond the interpreter: the bytecode compiled for the GPU (WP 26, P1b)
+
+*(New content, in English as the repository's convention now asks.)*
+
+On the GPU the interpreter is no longer the last word. For prices, the
+bytecode of each event is turned into straight-line CUDA
+(`scripting/cuda_codegen.*`): the stack depth is known at every instruction,
+so `S[sp++] = a - b` becomes `s0 = __dsub_rn(s0, s1)` on named locals, and
+a jump becomes a `goto`. NVRTC compiles that source at run time, nvJitLink
+links it into the kernel with link-time optimisation, and the events are
+inlined into the path loop: no dispatch, no stack in local memory, and a
+kernel specialised for the request's model and sampler (128 registers down
+to 60–70).
+
+The interpreter keeps both of its roles: it is the fallback (spot controls,
+duals and adjoint, a compilation failure) and the oracle. The compiled
+script must give its bits exactly, on every library script; this is why both
+are built without FMA contraction (`--fmad=false`): with contraction, whether
+`a * b + c` fuses depends on how the optimiser sees the code, and the
+specialised Heston kernel moved in the last bit. Details and measurements:
+`blueprint/wp/26-performance.md` §5, P1b.
+
+The AAD of Part II does not use the compiled path yet; how to make the GPU
+AAD fast is an open question of WP 26.
 
 ---
 

@@ -100,9 +100,8 @@ namespace quantModeling::gpu::detail
      * of them fill the device at once.
      */
     template <class Stats, class UnitFn>
-    __global__ void __launch_bounds__(mc::LogicalBlocks::kThreadsPerBlock)
-        logical_block_kernel(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, UnitFn fn,
-                             Stats *partials)
+    __device__ __forceinline__ void logical_block_body(uint64_t first_block, uint64_t blocks_per_segment,
+                                                       uint64_t n_units, const UnitFn &fn, Stats *partials)
     {
         using L = mc::LogicalBlocks;
         const uint64_t g = first_block + blockIdx.x;
@@ -148,19 +147,35 @@ namespace quantModeling::gpu::detail
         }
     }
 
+    /// The kernel of logical_block_body. The GPU's compiled scripts (lot
+    /// P1b of blueprint/wp/26-performance.md) launch the same body from a
+    /// kernel linked at run time (script_jit_kernel.cu).
+    template <class Stats, class UnitFn>
+    __global__ void __launch_bounds__(mc::LogicalBlocks::kThreadsPerBlock)
+        logical_block_kernel(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, UnitFn fn,
+                             Stats *partials)
+    {
+        logical_block_body<Stats>(first_block, blocks_per_segment, n_units, fn, partials);
+    }
+
     /// Called after each launch with its first logical block and block count,
     /// before the next launch reuses any per-thread scratch.
     using AfterLaunch = std::function<void(uint64_t first_block, uint64_t count)>;
+
+    /// Launches `count` logical blocks from `first_block` (a global index),
+    /// their partials to `d_partials`.
+    template <class Stats>
+    using LaunchBlocks = std::function<void(uint64_t first_block, uint64_t count, Stats *d_partials)>;
 
     /**
      * @brief The partials of logical blocks [first, last) -- global indices
      *        over `blocks_per_segment`-block segments of n_units units -- on
      *        `device`, in block order, in as few launches as memory allows.
      */
-    template <class Stats, class UnitFn>
-    std::vector<Stats> run_block_range(int device, uint64_t first, uint64_t last, uint64_t blocks_per_segment,
-                                       uint64_t n_units, const UnitFn &fn, uint64_t max_blocks_per_launch,
-                                       const AfterLaunch &after_launch = {})
+    template <class Stats>
+    std::vector<Stats> run_block_range_with(int device, uint64_t first, uint64_t last,
+                                            uint64_t max_blocks_per_launch, const LaunchBlocks<Stats> &launch,
+                                            const AfterLaunch &after_launch = {})
     {
         require_device(device);
         check(cudaSetDevice(device), "cudaSetDevice");
@@ -184,9 +199,7 @@ namespace quantModeling::gpu::detail
             for (uint64_t b = first; b < last; b += per_launch)
             {
                 const uint64_t count = std::min(per_launch, last - b);
-                logical_block_kernel<Stats, UnitFn><<<static_cast<unsigned>(count), mc::LogicalBlocks::kThreadsPerBlock>>>(
-                    b, blocks_per_segment, n_units, fn, d_partials);
-                check(cudaGetLastError(), "kernel launch");
+                launch(b, count, d_partials);
                 check(cudaMemcpy(&partials[static_cast<size_t>(b - first)], d_partials, count * sizeof(Stats),
                                  cudaMemcpyDeviceToHost),
                       "cudaMemcpy");
@@ -201,6 +214,21 @@ namespace quantModeling::gpu::detail
         }
         check(cudaFree(d_partials), "cudaFree");
         return partials;
+    }
+
+    /// run_block_range_with, launching logical_block_kernel on `fn`.
+    template <class Stats, class UnitFn>
+    std::vector<Stats> run_block_range(int device, uint64_t first, uint64_t last, uint64_t blocks_per_segment,
+                                       uint64_t n_units, const UnitFn &fn, uint64_t max_blocks_per_launch,
+                                       const AfterLaunch &after_launch = {})
+    {
+        const LaunchBlocks<Stats> launch = [&](uint64_t b, uint64_t count, Stats *d_partials)
+        {
+            logical_block_kernel<Stats, UnitFn><<<static_cast<unsigned>(count), mc::LogicalBlocks::kThreadsPerBlock>>>(
+                b, blocks_per_segment, n_units, fn, d_partials);
+            check(cudaGetLastError(), "kernel launch");
+        };
+        return run_block_range_with<Stats>(device, first, last, max_blocks_per_launch, launch, after_launch);
     }
 
     /// Fold each segment's partials (blocks_per_segment consecutive ones) in
