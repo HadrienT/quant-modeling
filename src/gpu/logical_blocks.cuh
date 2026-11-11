@@ -99,9 +99,15 @@ namespace quantModeling::gpu::detail
      * segment is reduced by exactly the tree of a launch of its own, and all
      * of them fill the device at once.
      */
-    template <class Stats, class UnitFn>
-    __device__ __forceinline__ void logical_block_body(uint64_t first_block, uint64_t blocks_per_segment,
-                                                       uint64_t n_units, const UnitFn &fn, Stats *partials)
+    /**
+     * The reduction of one logical block (blockIdx.x of the launch), the
+     * order that fixes the bits: thread t adds the samples of units t,
+     * t + 256, ... in that order (`sample(segment, u, l)`, l = u's index in
+     * the block), then the warp tree, then the warps in order.
+     */
+    template <class Stats, class Sample>
+    __device__ __forceinline__ void logical_block_reduce(uint64_t first_block, uint64_t blocks_per_segment,
+                                                         uint64_t n_units, const Sample &sample, Stats *partials)
     {
         using L = mc::LogicalBlocks;
         const uint64_t g = first_block + blockIdx.x;
@@ -112,9 +118,10 @@ namespace quantModeling::gpu::detail
         Stats acc;
         for (int k = 0; k < L::kUnitsPerThread; ++k)
         {
-            const uint64_t u = base + t + static_cast<uint64_t>(k) * L::kThreadsPerBlock;
+            const unsigned l = t + static_cast<unsigned>(k) * L::kThreadsPerBlock;
+            const uint64_t u = base + l;
             if (u < n_units)
-                acc.add(call_unit(fn, segment, u));
+                acc.add(sample(segment, u, l));
         }
 
         // Warp: lane i merges lane i + offset, offsets 16..1.
@@ -145,6 +152,60 @@ namespace quantModeling::gpu::detail
             }
             partials[blockIdx.x] = out;
         }
+    }
+
+    /// One logical block: each thread runs its 16 units one after the other
+    /// and reduces them (the units computed where they are added).
+    template <class Stats, class UnitFn>
+    __device__ __forceinline__ void logical_block_body(uint64_t first_block, uint64_t blocks_per_segment,
+                                                       uint64_t n_units, const UnitFn &fn, Stats *partials)
+    {
+        logical_block_reduce<Stats>(
+            first_block, blocks_per_segment, n_units,
+            [&](uint64_t segment, uint64_t u, unsigned) { return call_unit(fn, segment, u); }, partials);
+    }
+
+    /**
+     * Parallel units (lot P1g of blueprint/wp/26-performance.md): one thread
+     * per unit of the launch's logical blocks, whatever the grid -- thread i
+     * computes unit l = i % 4096 of logical block i / 4096 and stores its
+     * sample at samples[i]. logical_block_reduce then adds the stored samples
+     * in the order above: the same additions, the same bits, sixteen times
+     * the threads in flight.
+     */
+    template <class UnitFn, class Out>
+    __device__ __forceinline__ void logical_block_units(uint64_t first_block, uint64_t blocks_per_segment,
+                                                        uint64_t n_units, uint64_t n_blocks, const UnitFn &fn,
+                                                        Out *samples)
+    {
+        using L = mc::LogicalBlocks;
+        const uint64_t i = static_cast<uint64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+        if (i >= n_blocks * L::kUnitsPerBlock)
+            return;
+        const uint64_t g = first_block + i / L::kUnitsPerBlock;
+        const uint64_t u = (g % blocks_per_segment) * L::kUnitsPerBlock + i % L::kUnitsPerBlock;
+        if (u < n_units)
+            samples[i] = call_unit(fn, g / blocks_per_segment, u);
+    }
+
+    template <class UnitFn, class Out>
+    __global__ void __launch_bounds__(mc::LogicalBlocks::kThreadsPerBlock)
+        logical_units_kernel(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, uint64_t n_blocks,
+                             UnitFn fn, Out *samples)
+    {
+        logical_block_units(first_block, blocks_per_segment, n_units, n_blocks, fn, samples);
+    }
+
+    /// The reduction of stored samples, one CUDA block per logical block.
+    template <class Stats, class Out>
+    __global__ void __launch_bounds__(mc::LogicalBlocks::kThreadsPerBlock)
+        logical_reduce_kernel(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units,
+                              const Out *samples, Stats *partials)
+    {
+        const Out *block = samples + static_cast<uint64_t>(blockIdx.x) * mc::LogicalBlocks::kUnitsPerBlock;
+        logical_block_reduce<Stats>(
+            first_block, blocks_per_segment, n_units, [&](uint64_t, uint64_t, unsigned l) { return block[l]; },
+            partials);
     }
 
     /// The kernel of logical_block_body. The GPU's compiled scripts (lot
@@ -214,6 +275,102 @@ namespace quantModeling::gpu::detail
         }
         check(cudaFree(d_partials), "cudaFree");
         return partials;
+    }
+
+    /// Launches the units of `count` logical blocks from `first_block` (one
+    /// thread per unit, logical_block_units), their samples to `d_samples`.
+    template <class Out>
+    using LaunchUnits = std::function<void(uint64_t first_block, uint64_t count, Out *d_samples)>;
+
+    /// The CUDA blocks of 256 threads that cover `count` logical blocks' units.
+    inline unsigned unit_grid(uint64_t count)
+    {
+        return static_cast<unsigned>(count * mc::LogicalBlocks::kUnitsPerThread);
+    }
+
+    /**
+     * @brief run_block_range_with, the units in parallel (lot P1g): per
+     *        launch, `launch_units` computes every unit's sample, then
+     *        logical_reduce_kernel reduces them in logical-block order --
+     *        the partials, bit for bit, of the serial kernel.
+     *
+     * The launch size comes from free memory (the samples and partials, at
+     * most half of what is free) and from `max_blocks_per_launch` (the
+     * caller's per-unit scratch).
+     */
+    template <class Stats, class Out>
+    std::vector<Stats> run_block_range_units(int device, uint64_t first, uint64_t last, uint64_t blocks_per_segment,
+                                             uint64_t n_units, uint64_t max_blocks_per_launch,
+                                             const LaunchUnits<Out> &launch_units)
+    {
+        using L = mc::LogicalBlocks;
+        require_device(device);
+        check(cudaSetDevice(device), "cudaSetDevice");
+        std::vector<Stats> partials(static_cast<size_t>(last > first ? last - first : 0));
+        if (last <= first)
+            return partials;
+
+        const std::size_t per_block = sizeof(Stats) + static_cast<std::size_t>(L::kUnitsPerBlock) * sizeof(Out);
+        uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / per_block);
+        per_launch = std::min<uint64_t>(per_launch, uint64_t{1} << 16); // a grid of at most 2^20 CUDA blocks
+        if (max_blocks_per_launch > 0)
+            per_launch = std::min(per_launch, max_blocks_per_launch);
+        per_launch = std::min(per_launch, last - first);
+
+        Stats *d_partials = nullptr;
+        Out *d_samples = nullptr;
+        check(cudaMalloc(&d_partials, per_launch * sizeof(Stats)), "cudaMalloc");
+        if (cudaMalloc(&d_samples, per_launch * L::kUnitsPerBlock * sizeof(Out)) != cudaSuccess)
+        {
+            cudaFree(d_partials);
+            check(cudaErrorMemoryAllocation, "cudaMalloc");
+        }
+        try
+        {
+            for (uint64_t b = first; b < last; b += per_launch)
+            {
+                const uint64_t count = std::min(per_launch, last - b);
+                launch_units(b, count, d_samples);
+                logical_reduce_kernel<Stats, Out><<<static_cast<unsigned>(count), L::kThreadsPerBlock>>>(
+                    b, blocks_per_segment, n_units, d_samples, d_partials);
+                check(cudaGetLastError(), "reduce launch");
+                check(cudaMemcpy(&partials[static_cast<size_t>(b - first)], d_partials, count * sizeof(Stats),
+                                 cudaMemcpyDeviceToHost),
+                      "cudaMemcpy");
+            }
+        }
+        catch (...)
+        {
+            cudaFree(d_samples);
+            cudaFree(d_partials);
+            throw;
+        }
+        cudaFree(d_samples);
+        check(cudaFree(d_partials), "cudaFree");
+        return partials;
+    }
+
+    /// The sample type of a unit functor: its `Out` (declared, not deduced
+    /// from the __device__ call, which nvcc's host and device passes may see
+    /// differently -- the kernel would then not exist on the device).
+    template <class UnitFn>
+    using UnitSample = typename UnitFn::Out;
+
+    /// run_block_range_units on an nvcc-compiled functor.
+    template <class Stats, class UnitFn>
+    std::vector<Stats> run_block_range_parallel(int device, uint64_t first, uint64_t last,
+                                                uint64_t blocks_per_segment, uint64_t n_units, const UnitFn &fn,
+                                                uint64_t max_blocks_per_launch)
+    {
+        using Out = UnitSample<UnitFn>;
+        const LaunchUnits<Out> launch = [&](uint64_t b, uint64_t count, Out *d_samples)
+        {
+            logical_units_kernel<UnitFn, Out><<<unit_grid(count), mc::LogicalBlocks::kThreadsPerBlock>>>(
+                b, blocks_per_segment, n_units, count, fn, d_samples);
+            check(cudaGetLastError(), "units launch");
+        };
+        return run_block_range_units<Stats, Out>(device, first, last, blocks_per_segment, n_units,
+                                                 max_blocks_per_launch, launch);
     }
 
     /// run_block_range_with, launching logical_block_kernel on `fn`.

@@ -465,6 +465,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuPaths.cpp
       tests/gpu/testGpuScripts.cpp
       tests/gpu/testGpuScriptJit.cpp
+      tests/gpu/testGpuParallelUnits.cpp
       tests/gpu/testGpuRisks.cpp
       tests/gpu/testGpuSobolIs.cpp
       tests/gpu/testGpuTwoCards.cpp
