@@ -628,21 +628,7 @@ namespace quantModeling
         }
         // Wait for every task before leaving, even if one failed: they all
         // write into `out`.
-        std::exception_ptr failure;
-        for (TaskHandle &h : handles)
-        {
-            try
-            {
-                pool->active_wait(h);
-            }
-            catch (...)
-            {
-                if (!failure)
-                    failure = std::current_exception();
-            }
-        }
-        if (failure)
-            std::rethrow_exception(failure);
+        pool->active_wait_all(handles);
         return out;
     }
 

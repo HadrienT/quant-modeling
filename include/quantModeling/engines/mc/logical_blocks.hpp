@@ -133,21 +133,7 @@ namespace quantModeling::mc
         }
         // Every task finishes before an error leaves: they all read
         // `partials` and `reduce_one`, which live in this frame.
-        std::exception_ptr error;
-        for (auto &h : handles)
-        {
-            try
-            {
-                pool->active_wait(h);
-            }
-            catch (...)
-            {
-                if (!error)
-                    error = std::current_exception();
-            }
-        }
-        if (error)
-            std::rethrow_exception(error);
+        pool->active_wait_all(handles);
         return merge_in_order(partials);
     }
 

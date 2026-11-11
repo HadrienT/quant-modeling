@@ -182,21 +182,7 @@ namespace quantModeling::xva_adjoint
         for (std::size_t b = 0; b < batches; ++b)
             handles.push_back(pool->spawn_task([&one, b]
                                                { return one(b); }));
-        std::exception_ptr failure;
-        for (TaskHandle &h : handles)
-        {
-            try
-            {
-                pool->active_wait(h);
-            }
-            catch (...)
-            {
-                if (!failure)
-                    failure = std::current_exception();
-            }
-        }
-        if (failure)
-            std::rethrow_exception(failure);
+        pool->active_wait_all(handles);
     }
     /// The coefficients of an exposure program (engines/xva/exposure_program.hpp)
     /// as functions of the inputs of one rate model.

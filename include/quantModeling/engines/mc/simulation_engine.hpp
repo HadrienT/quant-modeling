@@ -297,21 +297,7 @@ namespace quantModeling
                                                    {
                     task(i);
                     return true; }));
-            std::exception_ptr error;
-            for (auto &h : handles)
-            {
-                try
-                {
-                    pool->active_wait(h);
-                }
-                catch (...)
-                {
-                    if (!error)
-                        error = std::current_exception();
-                }
-            }
-            if (error)
-                std::rethrow_exception(error);
+            pool->active_wait_all(handles);
         };
 
         /// The worker's path from its draws, then its payoffs.

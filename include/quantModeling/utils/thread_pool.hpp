@@ -75,6 +75,11 @@ namespace quantModeling
         /// threads started -- the calling thread then does all the work.
         bool active_wait(TaskHandle &handle);
 
+        /// active_wait() on every handle, then rethrows the first exception
+        /// any task raised. Every task has finished when it returns or
+        /// throws, so tasks may safely reference the caller's frame.
+        void active_wait_all(std::vector<TaskHandle> &handles);
+
       private:
         static std::size_t default_thread_count();
         void worker_loop(std::size_t index);
