@@ -94,6 +94,9 @@ namespace quantModeling
         // Barrier uses 9 FD path variants per MC path (CRN Greeks),
         // so a lower default keeps latency manageable.
         int n_paths = 50000;
+        /// false: price only, one simulation a path instead of nine (the
+        /// bumped variants of the Greeks are skipped; Greeks come back empty).
+        bool compute_greeks = true;
         int seed = 1;
         Real mc_epsilon = 0.0;
     };
@@ -207,6 +210,8 @@ namespace quantModeling
         LocalVolSurface surface;
 
         int n_paths = 50000;
+        /// false: price only (see BarrierBSInput::compute_greeks).
+        bool compute_greeks = true;
         int seed = 1;
     };
 

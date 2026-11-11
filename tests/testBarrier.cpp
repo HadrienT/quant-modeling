@@ -24,7 +24,8 @@ namespace quantModeling
                                    Real rebate = 0.0,
                                    int n_paths = 200000,
                                    int seed = 42,
-                                   bool brownian_bridge = true)
+                                   bool brownian_bridge = true,
+                                   bool compute_greeks = true)
         {
             BarrierBSInput in{};
             in.spot = S0;
@@ -40,6 +41,7 @@ namespace quantModeling
             in.n_paths = n_paths;
             in.seed = seed;
             in.brownian_bridge = brownian_bridge;
+            in.compute_greeks = compute_greeks;
 
             PricingRequest request{
                 InstrumentKind::EquityBarrierOption,
@@ -208,6 +210,26 @@ namespace quantModeling
         EXPECT_GT(priceBarrier(true, BarrierType::DownAndIn, 80.0).npv, 0.0);
         EXPECT_GT(priceBarrier(true, BarrierType::UpAndOut, 120.0).npv, 0.0);
         EXPECT_GT(priceBarrier(true, BarrierType::UpAndIn, 120.0).npv, 0.0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Price only: the bumped variants share the base path's draws, so
+    //  skipping them leaves the price's bits unchanged
+    // ─────────────────────────────────────────────────────────────────────────
+
+    TEST(BarrierMC, PriceOnlyHasTheSameBitsAndNoGreeks)
+    {
+        for (const bool bridge : {false, true})
+        {
+            const PricingResult full = priceBarrier(true, BarrierType::UpAndOut, 130.0, 0.0, 20000, 7, bridge, true);
+            const PricingResult only = priceBarrier(true, BarrierType::UpAndOut, 130.0, 0.0, 20000, 7, bridge, false);
+            EXPECT_EQ(only.npv, full.npv);
+            EXPECT_EQ(only.mc_std_error, full.mc_std_error);
+            ASSERT_TRUE(full.greeks.delta.has_value());
+            EXPECT_FALSE(only.greeks.delta.has_value());
+            EXPECT_FALSE(only.greeks.vega.has_value());
+            EXPECT_NE(only.diagnostics.find("price only"), std::string::npos);
+        }
     }
 
 } // namespace quantModeling

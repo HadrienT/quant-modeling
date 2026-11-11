@@ -242,4 +242,78 @@ namespace quantModeling
         EXPECT_GT(res.npv, 0.0);
     }
 
+    // ── The barrier engine prices on the local-vol surface ────────────────
+    // Until 2026-11-10 it priced every model at the flat vol vol_sigma()
+    // (sigma_loc(S0, 0) for Dupire): found by the WP 26 P0 benchmark.
+
+    namespace
+    {
+        PricingResult up_and_out_lv(const std::vector<Real> &T_grid, const std::vector<Real> &sigma_flat)
+        {
+            BarrierLocalVolInput in{};
+            in.spot = S0;
+            in.strike = K;
+            in.maturity = T;
+            in.rate = r;
+            in.dividend = q;
+            in.is_call = true;
+            in.barrier_type = BarrierType::UpAndOut;
+            in.barrier_level = 130.0;
+            in.n_steps = 52;
+            in.brownian_bridge = false;
+            in.compute_greeks = false;
+            in.surface.K_grid = {50.0, 200.0};
+            in.surface.T_grid = T_grid;
+            in.surface.sigma_loc_flat = sigma_flat;
+            in.n_paths = 100000;
+            in.seed = 3;
+            return default_registry().price(
+                {InstrumentKind::EquityBarrierOption, ModelKind::DupireLocalVol, EngineKind::MonteCarlo, PricingInput{in}});
+        }
+
+        PricingResult up_and_out_bs(Real vol)
+        {
+            BarrierBSInput in{};
+            in.spot = S0;
+            in.strike = K;
+            in.maturity = T;
+            in.rate = r;
+            in.dividend = q;
+            in.vol = vol;
+            in.is_call = true;
+            in.barrier_type = BarrierType::UpAndOut;
+            in.barrier_level = 130.0;
+            in.n_steps = 52;
+            in.brownian_bridge = false;
+            in.compute_greeks = false;
+            in.n_paths = 100000;
+            in.seed = 3;
+            return default_registry().price(
+                {InstrumentKind::EquityBarrierOption, ModelKind::BlackScholes, EngineKind::MonteCarlo, PricingInput{in}});
+        }
+    } // namespace
+
+    TEST(LocalVolMC, BarrierOnAFlatGridIsTheBlackScholesBarrier)
+    {
+        // Same draws (same seed, same engine): equal up to the rounding of
+        // the bilinear interpolation of a constant grid.
+        const PricingResult lv = up_and_out_lv({0.01, 2.0}, {0.25, 0.25, 0.25, 0.25});
+        const PricingResult bs = up_and_out_bs(0.25);
+        EXPECT_NEAR(lv.npv, bs.npv, 1e-10 * bs.npv);
+    }
+
+    TEST(LocalVolMC, BarrierSeesTheVolatilityAfterTimeZero)
+    {
+        // sigma_loc = 20 % at T = 0, 35 % from T = 0.25 on. vol_sigma() reads
+        // 20 %; the paths live mostly at 35 %. An up-and-out call loses value
+        // with the volatility here (vega < 0), so its price must sit strictly
+        // between the flat-35 % and the flat-20 % prices.
+        const std::vector<Real> T_grid = {0.0, 0.25, 2.0};
+        const PricingResult lv = up_and_out_lv(T_grid, {0.20, 0.35, 0.35, 0.20, 0.35, 0.35});
+        const PricingResult low = up_and_out_bs(0.20), high = up_and_out_bs(0.35);
+        ASSERT_GT(low.npv, high.npv);
+        EXPECT_LT(lv.npv, low.npv - 5.0 * low.mc_std_error);
+        EXPECT_GT(lv.npv, high.npv + 5.0 * high.mc_std_error);
+    }
+
 } // namespace quantModeling

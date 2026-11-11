@@ -10,6 +10,21 @@
 
 namespace quantModeling
 {
+    namespace
+    {
+        /// A volatility shifted in parallel by dv, floored like the scalar
+        /// vega bump (max(1e-8, sigma - dv)).
+        struct ShiftedVol final : public IVolatility
+        {
+            ShiftedVol(const IVolatility &base, Real dv)
+                : base_(base), dv_(dv) {}
+            Real value(Real S, Real t) const noexcept override { return std::max(1e-8, base_.value(S, t) + dv_); }
+
+          private:
+            const IVolatility &base_;
+            Real dv_;
+        };
+    } // namespace
 
     // ─── validation ────────────────────────────────────────────────────────────
 
@@ -36,7 +51,6 @@ namespace quantModeling
         const Real S0 = m.spot0();
         const Real r = m.rate_r();
         const Real q = m.yield_q();
-        const Real sigma = m.vol_sigma();
 
         const Real T = opt.exercise->dates().front();
         const Real H = opt.barrier;
@@ -70,8 +84,6 @@ namespace quantModeling
         const Real dv = bumps.vega_bump;
         const Real dT = bumps.theta_bump;
         const Real dr = bumps.rho_bump;
-        const Real sig_u = sigma + dv;
-        const Real sig_d = std::max(1e-8, sigma - dv);
         const Real r_up = r + dr;
         const Real r_dn = r - dr;
         const Real T_up = T + dT;
@@ -157,12 +169,17 @@ namespace quantModeling
                          : raw_pv * survival + reb_pv * (1.0 - survival);
         };
 
-        // FlatVol objects for the 9 CRN variants.
-        // FlatVol::value(S, t) is a constant lookup that gives identical
-        // numerics to the old scalar-sigma path for BlackScholesModel.
-        const FlatVol vol_base(sigma);
-        const FlatVol vol_u(sig_u);
-        const FlatVol vol_d(sig_d);
+        // The model's own surface: a FlatVol under Black-Scholes, the Dupire
+        // grid under local vol. The vega variants shift it in parallel, with
+        // the floor of the scalar bump. Under Black-Scholes this is the old
+        // FlatVol(sigma +/- dv) to the bit. (Until 2026-11-10 the engine used
+        // FlatVol(vol_sigma()) for every model, so a local-vol barrier was
+        // priced at the flat vol sigma_loc(S0, 0): found by the WP 26 P0
+        // benchmark, where the script engine and the reference paths agreed
+        // with each other and not with this engine.)
+        const IVolatility &vol_base = m.vol();
+        const ShiftedVol vol_u(vol_base, dv);
+        const ShiftedVol vol_d(vol_base, -dv);
 
         struct WelfordStat
         {
@@ -181,6 +198,8 @@ namespace quantModeling
         };
 
         // ── Monte Carlo loop ──────────────────────────────────────────────────
+        // GreeksMethod::None prices only: one simulation a path, not nine.
+        const bool with_greeks = settings.greeks != GreeksMethod::None;
         const int N = settings.mc_paths;
         for (int i = 0; i < N; ++i)
         {
@@ -194,6 +213,8 @@ namespace quantModeling
             ++cnt;
             // Centre (base) + 8 bumped variants (CRN: all share zs and us)
             wf_push(w_base, sim_one(S0, vol_base, r, T), cnt);
+            if (!with_greeks)
+                continue;
             wf_push(w_Su, sim_one(S0 + dS, vol_base, r, T), cnt);
             wf_push(w_Sd, sim_one(S0 - dS, vol_base, r, T), cnt);
             wf_push(w_vu, sim_one(S0, vol_u, r, T), cnt);
@@ -225,23 +246,26 @@ namespace quantModeling
         out.npv = w_base.mean;
         out.mc_std_error = se(w_base);
 
-        // Central FD Greeks
-        // delta / gamma — bump spot
-        out.greeks.delta = (w_Su.mean - w_Sd.mean) / (2.0 * dS);
-        out.greeks.gamma = (w_Su.mean - 2.0 * w_base.mean + w_Sd.mean) / (dS * dS);
-        // vega  — bump vol, report as dP/dσ (per unit vol)
-        out.greeks.vega = (w_vu.mean - w_vd.mean) / (2.0 * dv);
-        // theta — bump time, report as -dP/dT (value decay per unit time)
-        out.greeks.theta = -(w_Tu.mean - w_Td.mean) / (2.0 * dT);
-        // rho   — bump rate, report as dP/dr (per unit rate)
-        out.greeks.rho = (w_ru.mean - w_rd.mean) / (2.0 * dr);
+        if (with_greeks)
+        {
+            // Central FD Greeks
+            // delta / gamma — bump spot
+            out.greeks.delta = (w_Su.mean - w_Sd.mean) / (2.0 * dS);
+            out.greeks.gamma = (w_Su.mean - 2.0 * w_base.mean + w_Sd.mean) / (dS * dS);
+            // vega  — bump vol, report as dP/dσ (per unit vol)
+            out.greeks.vega = (w_vu.mean - w_vd.mean) / (2.0 * dv);
+            // theta — bump time, report as -dP/dT (value decay per unit time)
+            out.greeks.theta = -(w_Tu.mean - w_Td.mean) / (2.0 * dT);
+            // rho   — bump rate, report as dP/dr (per unit rate)
+            out.greeks.rho = (w_ru.mean - w_rd.mean) / (2.0 * dr);
 
-        // Standard errors on Greeks (propagated from MC noise)
-        out.greeks.delta_std_error = fd_se(w_Su, w_Sd, dS);
-        out.greeks.gamma_std_error = fd_se(w_Su, w_Sd, dS);
-        out.greeks.vega_std_error = fd_se(w_vu, w_vd, dv);
-        out.greeks.theta_std_error = fd_se(w_Tu, w_Td, dT);
-        out.greeks.rho_std_error = fd_se(w_ru, w_rd, dr);
+            // Standard errors on Greeks (propagated from MC noise)
+            out.greeks.delta_std_error = fd_se(w_Su, w_Sd, dS);
+            out.greeks.gamma_std_error = fd_se(w_Su, w_Sd, dS);
+            out.greeks.vega_std_error = fd_se(w_vu, w_vd, dv);
+            out.greeks.theta_std_error = fd_se(w_Tu, w_Td, dT);
+            out.greeks.rho_std_error = fd_se(w_ru, w_rd, dr);
+        }
 
         // Diagnostics string
         const auto bt_str = [&]() -> std::string
@@ -260,7 +284,8 @@ namespace quantModeling
             return "?";
         };
 
-        out.diagnostics = "Barrier MC (BS): " + bt_str() + ", H=" + std::to_string(H) + ", K=" + std::to_string(K) + ", T=" + std::to_string(T) + ", paths=" + std::to_string(N) + ", steps/path=" + std::to_string(n_steps) + (use_cmc ? " [CMC survival probability]" : (opt.brownian_bridge ? " [BB corrected]" : " [discrete]"));
+        out.diagnostics = "Barrier MC (BS): " + bt_str() + ", H=" + std::to_string(H) + ", K=" + std::to_string(K) + ", T=" + std::to_string(T) + ", paths=" + std::to_string(N) + ", steps/path=" + std::to_string(n_steps) + (use_cmc ? " [CMC survival probability]" : (opt.brownian_bridge ? " [BB corrected]" : " [discrete]")) +
+                          (with_greeks ? "" : " [price only]");
 
         res_ = out;
     }

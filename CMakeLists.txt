@@ -249,6 +249,10 @@ if(QM_BUILD_CLI)
   # adjoint differentiation, against one valuation.
   add_executable(qm_xva_aad_bench benchmarks/xva_aad_cost.cpp)
   target_link_libraries(qm_xva_aad_bench PRIVATE quantModeling)
+  # WP 26 lot P0: hand-written reference paths, the ceiling of the script
+  # engine's CPU rows in benchmarks/perf_matrix.py.
+  add_executable(qm_reference_bench benchmarks/reference/reference_cpu.cpp)
+  target_link_libraries(qm_reference_bench PRIVATE quantModeling)
   add_executable(qm_price_script examples/scripting/price_script.cpp)
   target_link_libraries(qm_price_script PRIVATE quantModeling)
   target_compile_options(qm_price_script PRIVATE
@@ -472,6 +476,9 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   target_compile_definitions(qm_gpu_table_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
   # Owen scrambling vs the digital shift on every library script.
+  # WP 26 lot P0: the same reference paths on one GPU.
+  add_executable(qm_gpu_reference_bench benchmarks/reference/reference_gpu.cu)
+  target_link_libraries(qm_gpu_reference_bench PRIVATE quantModeling)
   add_executable(qm_gpu_owen_bench benchmarks/sobol_owen.cpp)
   target_link_libraries(qm_gpu_owen_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_owen_bench PRIVATE

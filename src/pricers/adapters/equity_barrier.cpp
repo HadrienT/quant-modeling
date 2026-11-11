@@ -43,6 +43,7 @@ namespace quantModeling
         settings.mc_paths = in.n_paths;
         settings.mc_seed = in.seed;
         settings.mc_antithetic = false; // CRN Greek scheme; antithetic handled separately
+        settings.greeks = in.compute_greeks ? GreeksMethod::Bump : GreeksMethod::None;
 
         MarketView market = {};
         PricingContext ctx{market, settings, model};
