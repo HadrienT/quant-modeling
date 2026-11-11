@@ -1,6 +1,7 @@
 #ifndef QM_SCRIPTING_BYTECODE_HPP
 #define QM_SCRIPTING_BYTECODE_HPP
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -596,6 +597,246 @@ namespace quantModeling::scripting
         run_event_impl(p, begin, end, m, spots, discounts, numeraire, none);
     }
 
+    // ── Batched interpreter (blueprint/wp/26-performance.md §5, P1a) ──────
+
+    /// Paths per batch of the CPU's batched interpreter: one decode of an
+    /// instruction for kBatch paths.
+    inline constexpr int kBatch = 8;
+    /// Deepest nesting of hard ifs a batched event may have.
+    inline constexpr int kMaxBatchDepth = 32;
+
+    /// kBatch paths' machine state, lane-minor: variable a of lane l at
+    /// vars[a * kBatch + l], stack slot k at stack[k * kBatch + l].
+    struct BatchMachine
+    {
+        double *vars = nullptr;
+        double *stack = nullptr;
+        double payoff[kBatch] = {};
+    };
+
+    /**
+     * @brief code[begin, end) on up to kBatch paths at once (prices, hard
+     *        ifs only): each instruction is decoded once and applied to every
+     *        lane, with the scalar interpreter's operations on each -- the
+     *        same bits, per path.
+     *
+     * A hard `if` is a mask (the compiler emits JumpIfFalse a; then; Jump b;
+     * else; b:): the then-block runs for the lanes whose condition holds,
+     * the else-block for the others, each skipped when no lane is in it.
+     * Every lane computes every value of a block it runs; only `Assign` and
+     * `Pays` look at the mask, and they leave a masked lane untouched (no
+     * `+ 0`, which would turn a -0 payoff into +0). `lanes` marks the lanes
+     * in use; the others must point at valid inputs (a copy of lane 0).
+     */
+    inline void run_event_batch(const ProgramView &p, int begin, int end, BatchMachine &m,
+                                const double *const *spots, const double *const *discounts, const double *numeraire,
+                                unsigned lanes)
+    {
+        constexpr int W = kBatch;
+        struct Frame
+        {
+            unsigned parent, cond;
+            int end; // -1 until the then-block's Jump is reached
+            bool in_else;
+        };
+        Frame frames[kMaxBatchDepth];
+        int depth = 0;
+        unsigned active = lanes;
+        double *S = m.stack;
+        int sp = 0;
+        int pc = begin;
+        auto on = [&](int l)
+        { return ((active >> l) & 1u) != 0u; };
+        for (;;)
+        {
+            while (depth > 0 && frames[depth - 1].end == pc)
+                active = frames[--depth].parent;
+            if (pc >= end)
+                break;
+            const Instr &in = p.code[pc++];
+            double *a = S + (sp - 2) * W; // the two top slots, when they exist
+            double *b = S + (sp - 1) * W;
+            double *push = S + sp * W;
+            switch (in.op)
+            {
+                case Op::Const:
+                    for (int l = 0; l < W; ++l)
+                        push[l] = in.x;
+                    ++sp;
+                    break;
+                case Op::Var:
+                    for (int l = 0; l < W; ++l)
+                        push[l] = m.vars[in.a * W + l];
+                    ++sp;
+                    break;
+                case Op::Spot:
+                    for (int l = 0; l < W; ++l)
+                        push[l] = spots[l][in.a];
+                    ++sp;
+                    break;
+                case Op::Df:
+                    for (int l = 0; l < W; ++l)
+                        push[l] = discounts[l][in.a];
+                    ++sp;
+                    break;
+                case Op::Add:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] + b[l];
+                    --sp;
+                    break;
+                case Op::Sub:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] - b[l];
+                    --sp;
+                    break;
+                case Op::Mul:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] * b[l];
+                    --sp;
+                    break;
+                case Op::Div:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] / b[l];
+                    --sp;
+                    break;
+                case Op::Pow:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = std::pow(a[l], b[l]);
+                    --sp;
+                    break;
+                case Op::Uplus:
+                    break;
+                case Op::Neg:
+                    for (int l = 0; l < W; ++l)
+                        b[l] = -b[l];
+                    break;
+                case Op::Min:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = std::min(a[l], b[l]);
+                    --sp;
+                    break;
+                case Op::Max:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = std::max(a[l], b[l]);
+                    --sp;
+                    break;
+                case Op::Log:
+                    for (int l = 0; l < W; ++l)
+                        b[l] = std::log(b[l]);
+                    break;
+                case Op::Exp:
+                    for (int l = 0; l < W; ++l)
+                        b[l] = std::exp(b[l]);
+                    break;
+                case Op::Sqrt:
+                    for (int l = 0; l < W; ++l)
+                        b[l] = std::sqrt(b[l]);
+                    break;
+                case Op::Abs:
+                    for (int l = 0; l < W; ++l)
+                        b[l] = std::fabs(b[l]);
+                    break;
+                case Op::Smooth: // as run_event_impl, on double
+                    for (int l = 0; l < W; ++l)
+                    {
+                        const double h = b[l], x = a[l];
+                        if (h <= 0.0)
+                            a[l] = x > 0.0 ? 1.0 : 0.0;
+                        else
+                        {
+                            const double ramp = (x + h) / (h + h);
+                            a[l] = ramp <= 0.0 ? 0.0 : (ramp >= 1.0 ? 1.0 : ramp);
+                        }
+                    }
+                    --sp;
+                    break;
+                case Op::Eq:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] == b[l] ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::Ne:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] != b[l] ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::Gt:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] > b[l] ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::Ge:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] >= b[l] ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::Lt:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] < b[l] ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::Le:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = a[l] <= b[l] ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::And:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = (a[l] != 0.0) && (b[l] != 0.0) ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::Or:
+                    for (int l = 0; l < W; ++l)
+                        a[l] = (a[l] != 0.0) || (b[l] != 0.0) ? 1.0 : 0.0;
+                    --sp;
+                    break;
+                case Op::Not:
+                    for (int l = 0; l < W; ++l)
+                        b[l] = (b[l] != 0.0) ? 0.0 : 1.0;
+                    break;
+
+                case Op::Assign:
+                    for (int l = 0; l < W; ++l)
+                        if (on(l))
+                            m.vars[in.a * W + l] = b[l];
+                    --sp;
+                    break;
+                case Op::Pays:
+                    for (int l = 0; l < W; ++l)
+                        if (on(l))
+                            m.payoff[l] += b[l] / numeraire[l];
+                    --sp;
+                    break;
+                case Op::JumpIfFalse: // then-block for the lanes whose condition holds
+                {
+                    unsigned cond = 0u;
+                    for (int l = 0; l < W; ++l)
+                        if (b[l] != 0.0)
+                            cond |= 1u << l;
+                    --sp;
+                    cond &= active;
+                    frames[depth++] = {active, cond, -1, false};
+                    active = cond;
+                    if (active == 0u)
+                        pc = in.a - 1; // straight to the then-block's Jump
+                    break;
+                }
+                case Op::Jump: // end of the then-block: the else-block's lanes
+                {
+                    Frame &f = frames[depth - 1];
+                    f.in_else = true;
+                    f.end = in.a;
+                    active = f.parent & ~f.cond;
+                    if (active == 0u)
+                        pc = in.a;
+                    break;
+                }
+                default: // fuzzy instructions: batch_depth() refuses such events
+                    break;
+            }
+        }
+    }
+
     /// A compiled script (host memory).
     struct Program
     {
@@ -614,6 +855,42 @@ namespace quantModeling::scripting
         bool fuzzy = false;
 
         ProgramView view() const { return {code.data(), ifs.data(), aff.data()}; }
+
+        /// Whether run_event_batch can run every event (P1a): hard ifs only,
+        /// nested at most kMaxBatchDepth deep, the compiler's if layout.
+        bool batchable() const
+        {
+            if (fuzzy || code.empty() || event_begin.size() < 2)
+                return false;
+            for (std::size_t e = 0; e + 1 < event_begin.size(); ++e)
+            {
+                const int begin = event_begin[e], end = event_begin[e + 1];
+                std::vector<int> ends; // open ifs' end pcs
+                for (int pc = begin; pc < end; ++pc)
+                {
+                    while (!ends.empty() && ends.back() == pc)
+                        ends.pop_back();
+                    const Instr &in = code[static_cast<std::size_t>(pc)];
+                    if (in.op >= Op::FCmpEq && in.op <= Op::FNot)
+                        return false;
+                    if (in.op >= Op::FIfBegin)
+                        return false;
+                    if (in.op == Op::JumpIfFalse)
+                    {
+                        // JumpIfFalse a; then; Jump b at a - 1; else; b:
+                        if (in.a <= pc + 1 || in.a > end)
+                            return false;
+                        const Instr &j = code[static_cast<std::size_t>(in.a - 1)];
+                        if (j.op != Op::Jump || j.a < in.a || j.a > end)
+                            return false;
+                        ends.push_back(j.a);
+                        if (static_cast<int>(ends.size()) > kMaxBatchDepth)
+                            return false;
+                    }
+                }
+            }
+            return true;
+        }
         std::size_t n_events() const { return event_begin.empty() ? 0 : event_begin.size() - 1; }
     };
 

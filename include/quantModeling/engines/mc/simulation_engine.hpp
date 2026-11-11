@@ -216,7 +216,21 @@ namespace quantModeling
             mc::PathDraws draws;
             std::vector<Real> out;
             std::vector<CvSample> out_cv;
+            // The batched interpreter's (P1a): its paths, their weights and
+            // payoffs, and one logical block's samples.
+            std::unique_ptr<PayoffState> batch_state;
+            std::vector<Scenario<T>> batch_paths;
+            std::vector<const Scenario<T> *> batch_ptrs;
+            std::vector<double> batch_weight;
+            std::vector<T> batch_pay;
+            int batch_fill = 0; ///< paths waiting in batch_paths
+            std::vector<std::vector<Real>> block_samples;
         };
+        // P1a: several paths per call of the product, where it can (one
+        // payoff, double, no control variates); the same bits as path by path.
+        const int batch = std::is_same_v<T, Real> && settings.mc_batch && n_labels == 1 && !cv
+                              ? product.batch_width()
+                              : 0;
         bool parallel = pool != nullptr && pool->num_threads() > 0 && std::is_same_v<T, Real> &&
                         ThreadPool::thread_num() == 0;
         std::unique_ptr<PayoffState> first_state = parallel ? product.make_payoff_state() : nullptr;
@@ -240,6 +254,17 @@ namespace quantModeling
             w.gauss.assign(std::max<std::size_t>(dim, 1), 0.0);
             w.out.resize(n_labels);
             w.out_cv.resize(cv ? n_labels : 0);
+            if (batch > 0)
+            {
+                w.batch_state = product.make_batch_state();
+                w.batch_paths.resize(static_cast<std::size_t>(batch));
+                for (Scenario<T> &path : w.batch_paths)
+                    allocate_scenario(path, product.defline(), w.model->n_underlyings());
+                for (const Scenario<T> &path : w.batch_paths)
+                    w.batch_ptrs.push_back(&path);
+                w.batch_weight.assign(static_cast<std::size_t>(batch), 1.0);
+                w.batch_pay.assign(static_cast<std::size_t>(batch), T(0));
+            }
         }
         auto me = [&]() -> Worker &
         { return workers[parallel ? ThreadPool::thread_num() : 0]; };
@@ -352,6 +377,29 @@ namespace quantModeling
             for (std::size_t l = 0; l < n_labels; ++l)
                 acc[l].add(theta ? static_cast<Real>(w.pay[l]) * w.path_weight : static_cast<Real>(w.pay[l]));
         };
+        // P1a: the paths of a sequence (Sobol points) in batches; their
+        // payoffs added in the same order as run_payoff would.
+        auto flush_batch = [&](Worker &w, std::vector<WelfordAccumulator> &acc)
+        {
+            const int np = w.batch_fill;
+            if (np == 0)
+                return;
+            w.batch_fill = 0; // first: a payoff that throws leaves no stale count for the next task
+            product.payoffs_batch(w.batch_ptrs.data(), np, w.batch_pay.data(), *w.batch_state);
+            for (int i = 0; i < np; ++i)
+            {
+                const Real p = static_cast<Real>(w.batch_pay[static_cast<std::size_t>(i)]);
+                acc[0].add(theta ? p * w.batch_weight[static_cast<std::size_t>(i)] : p);
+            }
+        };
+        auto batch_path = [&](Worker &w, std::vector<WelfordAccumulator> &acc)
+        {
+            w.model->generate_path(std::span<const double>(w.gauss.data(), dim),
+                                   w.batch_paths[static_cast<std::size_t>(w.batch_fill)]);
+            w.batch_weight[static_cast<std::size_t>(w.batch_fill++)] = w.path_weight;
+            if (w.batch_fill == batch)
+                flush_batch(w, acc);
+        };
         auto run_payoff_cv = [&](Worker &w, std::vector<MultiControlAccumulator> &acc)
         {
             evaluate(w);
@@ -401,6 +449,7 @@ namespace quantModeling
                           SobolSequence sobol(static_cast<int>(dim), batch_seed, settings.mc_sobol_owen);
                           std::vector<WelfordAccumulator> inner(n_labels);
                           std::vector<MultiControlAccumulator> inner_cv(cv ? n_labels : 0);
+                          w.batch_fill = 0;
                           for (int p = 0; p < per_batch; ++p)
                           {
                               if (w.bridge)
@@ -415,9 +464,13 @@ namespace quantModeling
                               shift_gauss(w);
                               if (cv)
                                   run_payoff_cv(w, inner_cv);
+                              else if (batch > 0)
+                                  batch_path(w, inner);
                               else
                                   run_payoff(w, inner);
                           }
+                          if (batch > 0)
+                              flush_batch(w, inner);
                           // A controlled replicate is its own regression
                           // estimate; the replicates stay i.i.d.
                           for (std::size_t l = 0; l < n_labels; ++l)
@@ -535,6 +588,50 @@ namespace quantModeling
                     w.out[l] = 0.5 * (w.out[l] + weighted(w, w.pay[l]));
                 return w.out;
             };
+            // P1a: a logical block's units, `batch` paths per call of the
+            // product (a unit and its mirror side by side); each unit's
+            // sample computed as `unit` computes it.
+            auto fill_block = [&](uint64_t base, uint64_t count) -> const std::vector<Real> *
+            {
+                Worker &w = me();
+                if (w.block_samples.size() < mc::LogicalBlocks::kUnitsPerBlock)
+                    w.block_samples.assign(mc::LogicalBlocks::kUnitsPerBlock, std::vector<Real>(1));
+                const int per_call = anti ? batch / 2 : batch;
+                for (uint64_t u0 = 0; u0 < count; u0 += static_cast<uint64_t>(per_call))
+                {
+                    const int nu = static_cast<int>(std::min<uint64_t>(static_cast<uint64_t>(per_call), count - u0));
+                    int np = 0;
+                    auto generate = [&]()
+                    {
+                        w.model->generate_path(std::span<const double>(w.gauss.data(), dim),
+                                               w.batch_paths[static_cast<std::size_t>(np)]);
+                        w.batch_weight[static_cast<std::size_t>(np++)] = w.path_weight;
+                    };
+                    for (int j = 0; j < nu; ++j)
+                    {
+                        const uint64_t u = base + u0 + static_cast<uint64_t>(j);
+                        fill(w, rep_first + u, stratum(u), 1.0);
+                        generate();
+                        if (anti)
+                        {
+                            mirror(w, u);
+                            generate();
+                        }
+                    }
+                    product.payoffs_batch(w.batch_ptrs.data(), np, w.batch_pay.data(), *w.batch_state);
+                    auto value = [&](int i)
+                    {
+                        const Real p = static_cast<Real>(w.batch_pay[static_cast<std::size_t>(i)]);
+                        return theta ? p * w.batch_weight[static_cast<std::size_t>(i)] : p;
+                    };
+                    for (int j = 0; j < nu; ++j)
+                    {
+                        Real &out = w.block_samples[static_cast<std::size_t>(u0) + static_cast<std::size_t>(j)][0];
+                        out = anti ? 0.5 * (value(2 * j) + value(2 * j + 1)) : value(j);
+                    }
+                }
+                return w.block_samples.data();
+            };
             auto unit_cv = [&](uint64_t u) -> std::vector<CvSample>
             {
                 Worker &w = me();
@@ -576,7 +673,8 @@ namespace quantModeling
                 else
                 {
                     const detail::LabelStats stats =
-                        mc::reduce_logical_blocks<detail::LabelStats>(n_units, unit, task_pool);
+                        batch > 0 ? mc::reduce_logical_blocks_filled<detail::LabelStats>(n_units, fill_block, task_pool)
+                                  : mc::reduce_logical_blocks<detail::LabelStats>(n_units, unit, task_pool);
                     for (std::size_t l = 0; l < n_labels && l < stats.acc.size(); ++l)
                     {
                         res.values[l] = stats.acc[l].mean;
@@ -601,7 +699,9 @@ namespace quantModeling
                     }
                     else
                     {
-                        const auto st = mc::reduce_logical_blocks<detail::LabelStats>(per_rep, unit, task_pool);
+                        const auto st =
+                            batch > 0 ? mc::reduce_logical_blocks_filled<detail::LabelStats>(per_rep, fill_block, task_pool)
+                                      : mc::reduce_logical_blocks<detail::LabelStats>(per_rep, unit, task_pool);
                         for (std::size_t l = 0; l < n_labels && l < st.acc.size(); ++l)
                             reps[l].add(st.acc[l].mean);
                     }

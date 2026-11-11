@@ -97,6 +97,11 @@ namespace quantModeling
         /// regressed out of the payoff. Generic engine and GPU scripts; off
         /// by default so that no existing number moves.
         bool mc_spot_control = false;
+        /// The CPU's batched interpreter (blueprint/wp/26-performance.md §5,
+        /// P1a): several paths per decoded instruction where the product
+        /// allows it (a compiled script with hard ifs). The same bits as path
+        /// by path; false runs path by path (the oracle in tests).
+        bool mc_batch = true;
         /// Generic importance sampling (blueprint/wp/19-gpu.md §2.5): a drift
         /// per Brownian factor at the mode of payoff x density (Glasserman,
         /// Heidelberger & Shahabuddin), kept only when a pilot shows it

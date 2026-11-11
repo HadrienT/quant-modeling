@@ -100,19 +100,19 @@ namespace quantModeling::mc
     }
 
     /**
-     * @brief Reduce all n_units on the host. With a pool, logical blocks are
-     *        spread over its threads; the partials are still folded in block
-     *        order, so the result is bit-identical with or without the pool.
+     * @brief reduce_one(b) for every logical block b, folded in block order.
+     *        With a pool, blocks are spread over its threads; the partials are
+     *        still folded in block order, so the result is bit-identical with
+     *        or without the pool.
      */
-    template <class Stats, class UnitFn>
-    Stats reduce_logical_blocks(uint64_t n_units, const UnitFn &fn, ThreadPool *pool = nullptr)
+    template <class Stats, class ReduceOne>
+    Stats reduce_blocks(uint64_t n_blocks, const ReduceOne &reduce_one, ThreadPool *pool)
     {
-        const uint64_t n_blocks = LogicalBlocks::count(n_units);
         std::vector<Stats> partials(static_cast<size_t>(n_blocks));
         if (pool == nullptr || pool->num_threads() == 0 || n_blocks < 2)
         {
             for (uint64_t b = 0; b < n_blocks; ++b)
-                partials[static_cast<size_t>(b)] = reduce_logical_block<Stats>(b, n_units, fn);
+                partials[static_cast<size_t>(b)] = reduce_one(b);
             return merge_in_order(partials);
         }
 
@@ -128,11 +128,11 @@ namespace quantModeling::mc
             handles.push_back(pool->spawn_task([&, first, last]()
                                                {
                 for (uint64_t b = first; b < last; ++b)
-                    partials[static_cast<size_t>(b)] = reduce_logical_block<Stats>(b, n_units, fn);
+                    partials[static_cast<size_t>(b)] = reduce_one(b);
                 return true; }));
         }
         // Every task finishes before an error leaves: they all read
-        // `partials` and `fn`, which live in this frame.
+        // `partials` and `reduce_one`, which live in this frame.
         std::exception_ptr error;
         for (auto &h : handles)
         {
@@ -149,6 +149,41 @@ namespace quantModeling::mc
         if (error)
             std::rethrow_exception(error);
         return merge_in_order(partials);
+    }
+
+    /// Reduce all n_units on the host, unit by unit (fn(u)).
+    template <class Stats, class UnitFn>
+    Stats reduce_logical_blocks(uint64_t n_units, const UnitFn &fn, ThreadPool *pool = nullptr)
+    {
+        return reduce_blocks<Stats>(
+            LogicalBlocks::count(n_units), [&](uint64_t b)
+            { return reduce_logical_block<Stats>(b, n_units, fn); },
+            pool);
+    }
+
+    /**
+     * @brief Reduce all n_units, each block's samples computed first and
+     *        then reduced in the order above (blueprint/wp/26-performance.md
+     *        §5, P1a): `fill(base, count)` computes units base .. base +
+     *        count - 1 in any order -- in batches of paths -- and returns a
+     *        pointer to their samples, valid on the calling thread until its
+     *        next call. Same additions as reduce_logical_blocks: the same bits.
+     */
+    template <class Stats, class Fill>
+    Stats reduce_logical_blocks_filled(uint64_t n_units, const Fill &fill, ThreadPool *pool = nullptr)
+    {
+        using L = LogicalBlocks;
+        return reduce_blocks<Stats>(
+            L::count(n_units),
+            [&](uint64_t b)
+            {
+                const uint64_t base = b * L::kUnitsPerBlock;
+                const uint64_t count = std::min<uint64_t>(L::kUnitsPerBlock, n_units - base);
+                const auto *samples = fill(base, count);
+                return reduce_logical_block<Stats>(b, n_units, [&](uint64_t u) -> const auto &
+                                                   { return samples[u - base]; });
+            },
+            pool);
     }
 
 } // namespace quantModeling::mc
