@@ -576,7 +576,7 @@ void register_scripting(py::module_ &m)
           py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
           py::arg("fuzzy") = false, py::arg("default_eps") = 0.01,
           py::arg("n_paths") = 200000, py::arg("seed") = 1,
-          py::arg("sampler") = "pseudo", py::arg("greeks_method") = "none",
+          py::arg("sampler") = "sobol", py::arg("greeks_method") = "none",
           py::arg("model") = "black_scholes",
           py::arg("K_grid") = std::vector<double>{},
           py::arg("T_grid") = std::vector<double>{},
@@ -614,7 +614,8 @@ void register_scripting(py::module_ &m)
           "regardless of how many; on the GPU (device 'gpu' or 'auto') by "
           "forward-mode duals or the per-path adjoint (blueprint/wp/19-gpu.md "
           "§6). 'bump' is not offered for scripted payoffs. sampler: "
-          "'pseudo', 'sobol' or 'stratified' (terminal value stratified, "
+          "'sobol' (the default: randomised QMC, Brownian bridge), 'pseudo' "
+          "or 'stratified' (terminal value stratified, "
           "path by Brownian bridge); control_variate: regress the deflated "
           "spots out of the payoff (blueprint/wp/19-gpu.md §2.5); antithetic: "
           "pair each path with its mirror (price only; the default); "
