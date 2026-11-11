@@ -133,11 +133,11 @@ namespace quantModeling
         EXPECT_NEAR(a.npv, b.npv, 1e-12);
     }
 
-    // WP 26 §5, P1i: Wichura's AS 241 against Φ⁻¹ at 45+ digits (mpmath),
-    // 7 374 points from 1e-300 to 1 - 2^-53. The current Acklam + Halley
-    // reaches ~1e-9 only in the upper tail (Halley's 0.5 erfc(-x/√2) - p
-    // cancels for p near 1); AS 241 stays within a few ulps everywhere.
-    TEST(InverseNormal, As241MatchesHighPrecisionReference)
+    // WP 26 §5, P1i: Φ⁻¹ (Wichura's AS 241) against values at 45+ digits
+    // (mpmath), 7 374 points from 1e-300 to 1 - 2^-53, both tails. The
+    // Acklam + Halley it replaced failed this in the upper tail (~1e-9:
+    // Halley's 0.5 erfc(-x/√2) - p cancels for p near 1).
+    TEST(InverseNormal, MatchesHighPrecisionReference)
     {
         std::ifstream in(std::string(QM_TEST_DATA_DIR) + "/inverse_normal_reference.txt");
         ASSERT_TRUE(in.good());
@@ -151,16 +151,16 @@ namespace quantModeling
             const double p = std::strtod(ph.c_str(), nullptr);
             const double ref = std::strtod(xs.c_str(), nullptr);
             const double ulp = std::nextafter(std::fabs(ref), INFINITY) - std::fabs(ref);
-            const double err = std::fabs(inverse_normal_cdf_as241(p) - ref) / ulp;
+            const double err = std::fabs(inverse_normal_cdf(p) - ref) / ulp;
             worst = std::max(worst, err);
             EXPECT_LE(err, 8.0) << "p = " << ph;
             ++n;
         }
         EXPECT_GT(n, 7000);
         EXPECT_LE(worst, 8.0);
-        EXPECT_EQ(inverse_normal_cdf_as241(0.0), -INFINITY);
-        EXPECT_EQ(inverse_normal_cdf_as241(1.0), INFINITY);
-        EXPECT_TRUE(std::isnan(inverse_normal_cdf_as241(NAN)));
+        EXPECT_EQ(inverse_normal_cdf(0.0), -INFINITY);
+        EXPECT_EQ(inverse_normal_cdf(1.0), INFINITY);
+        EXPECT_TRUE(std::isnan(inverse_normal_cdf(NAN)));
     }
 
 } // namespace quantModeling
