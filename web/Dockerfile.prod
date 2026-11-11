@@ -38,6 +38,9 @@ FROM build-base AS cpp-builder
 
 ARG QM_CUDA=ON
 COPY pyproject.toml CMakeLists.txt README.md ./
+# cmake/: build scripts CMakeLists.txt runs (embed_binary.cmake embeds the
+# compiled-script kernel's LTO-IR, WP 26 P1b).
+COPY cmake ./cmake
 COPY bindings ./bindings
 COPY include ./include
 COPY src ./src
