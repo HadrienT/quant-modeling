@@ -2265,7 +2265,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &xi_values,
                              const std::map<std::string, double> &hull_white,
                              const std::vector<double> &curve_times,
-                             const std::vector<double> &curve_dfs)
+                             const std::vector<double> &curve_dfs, std::size_t threads)
 {
     using namespace quantModeling;
 
@@ -2517,7 +2517,15 @@ static py::dict price_script(const std::string &script, double spot, double rate
 
         if (product.has_exercise())
             lsm_note = " | " + fit_exercise_policy(product, *sim_model, paths, seed_value).note();
-        mc = simulate_script(product, *sim_model, settings);
+        // blueprint/wp/26-performance.md, P1e: the CPU run on several
+        // threads, the same bits on any number of them (the default, as the
+        // xVA's: the available CPUs, at most 16).
+        ThreadPool pool;
+        const std::size_t workers =
+            threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
+        if (workers > 0)
+            pool.start(workers);
+        mc = simulate_script(product, *sim_model, settings, workers > 0 ? &pool : nullptr);
         n_events = product.timeline().size();
         advice = scripting::advise(product.analysis(), kind, product.timeline().back(),
                                    surface_T);
@@ -2840,9 +2848,13 @@ PYBIND11_MODULE(quantmodeling, m)
           py::arg("xi_values") = std::vector<double>{},
           py::arg("hull_white") = std::map<std::string, double>{},
           py::arg("curve_times") = std::vector<double>{},
-          py::arg("curve_dfs") = std::vector<double>{},
+          py::arg("curve_dfs") = std::vector<double>{}, py::arg("threads") = 0,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
-          "timeline simulation engine. Raises on a malformed script, with "
+          "timeline simulation engine. threads: CPU threads of a CPU run "
+          "(0, the default: the available CPUs, at most 16); Philox, Sobol and "
+          "stratified runs give the same bits on any number of them, a PCG32 "
+          "run and a script with early exercise stay on one thread "
+          "(blueprint/wp/26-performance.md, P1e). Raises on a malformed script, with "
           "the offending line and column in the message. greeks_method: "
           "'none' (default) or 'aad' -- every model parameter's sensitivity "
           "(blueprint/wp/17-aad.md), at roughly 3-5x one price's cost "

@@ -143,12 +143,12 @@ namespace quantModeling
     } // namespace
 
     SimulationMCResult simulate_script(const ScriptedProduct<Real> &product, ISimulationModel<Real> &model,
-                                       const PricingSettings &settings)
+                                       const PricingSettings &settings, ThreadPool *pool)
     {
         const bool explicit_gpu = settings.mc_device == ComputeDevice::Gpu;
         const bool want_gpu = explicit_gpu || (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0);
         if (!want_gpu)
-            return simulate<Real>(product, model, settings);
+            return simulate<Real>(product, model, settings, pool);
 
         // Why the GPU cannot take this request, if it cannot.
         std::string why;
@@ -173,7 +173,7 @@ namespace quantModeling
         {
             if (explicit_gpu)
                 throw InvalidInput("GPU: " + why);
-            SimulationMCResult res = simulate<Real>(product, model, settings);
+            SimulationMCResult res = simulate<Real>(product, model, settings, pool);
             res.diagnostics += " (on the CPU: " + why + ")";
             return res;
         }

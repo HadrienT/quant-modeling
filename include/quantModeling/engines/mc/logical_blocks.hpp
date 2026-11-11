@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <exception>
 #include <vector>
 
 #include "quantModeling/core/platform.hpp"
@@ -130,8 +131,23 @@ namespace quantModeling::mc
                     partials[static_cast<size_t>(b)] = reduce_logical_block<Stats>(b, n_units, fn);
                 return true; }));
         }
+        // Every task finishes before an error leaves: they all read
+        // `partials` and `fn`, which live in this frame.
+        std::exception_ptr error;
         for (auto &h : handles)
-            pool->active_wait(h);
+        {
+            try
+            {
+                pool->active_wait(h);
+            }
+            catch (...)
+            {
+                if (!error)
+                    error = std::current_exception();
+            }
+        }
+        if (error)
+            std::rethrow_exception(error);
         return merge_in_order(partials);
     }
 

@@ -5,6 +5,7 @@
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,27 @@ namespace quantModeling
         /// (discounted to the valuation date).
         virtual void payoffs(const Scenario<T> &path,
                              std::vector<T> &out) const = 0;
+
+        /// Per-path working state of payoffs(), one per thread.
+        struct PayoffState
+        {
+            virtual ~PayoffState() = default;
+        };
+
+        /**
+         * @brief Several threads at once (blueprint/wp/26-performance.md,
+         *        P1e): a fresh working state for one thread, or null when
+         *        payoffs() cannot run concurrently (the default) -- the engine
+         *        then stays on one thread.
+         */
+        virtual std::unique_ptr<PayoffState> make_payoff_state() const { return nullptr; }
+
+        /// payoffs() with the calling thread's own state (from
+        /// make_payoff_state()): same values, safe to call concurrently.
+        virtual void payoffs_with_state(const Scenario<T> &path, std::vector<T> &out, PayoffState & /*state*/) const
+        {
+            payoffs(path, out);
+        }
     };
 
 } // namespace quantModeling

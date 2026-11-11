@@ -21,9 +21,12 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace quantModeling
@@ -160,9 +163,19 @@ namespace quantModeling
 
     /// One simulation run; `theta` (per Brownian factor) is an importance-
     /// sampling drift, or null. simulate() below decides whether to use one.
+    ///
+    /// With a `pool` (blueprint/wp/26-performance.md, P1e), the Sobol
+    /// replicates and the counter-based logical blocks run as tasks, each
+    /// thread on its own clone of the model, its own payoff state and its own
+    /// buffers; the results are folded in replicate or block order, so they
+    /// are the same bits on any number of threads. The pseudo-random PCG32
+    /// run is one stream and stays on the calling thread, as does a product
+    /// whose payoffs() cannot run concurrently (make_payoff_state() null) and
+    /// a differentiable run (T != Real).
     template <class T>
     SimulationMCResult simulate_impl(const ISimulatableProduct<T> &product, ISimulationModel<T> &model,
-                                     const PricingSettings &settings, const std::vector<double> *theta)
+                                     const PricingSettings &settings, const std::vector<double> *theta,
+                                     ThreadPool *pool = nullptr)
     {
         model.init(product.timeline(), product.defline());
 
@@ -175,11 +188,6 @@ namespace quantModeling
         res.values.assign(n_labels, Real(0));
         res.std_errors.assign(n_labels, Real(0));
 
-        Scenario<T> path;
-        allocate_scenario(path, product.defline(), model.n_underlyings());
-        std::vector<T> pay(n_labels);
-        std::vector<double> gauss(std::max<std::size_t>(dim, 1));
-
         const int requested = settings.mc_paths > 0 ? settings.mc_paths : 100000;
         const auto seed =
             static_cast<uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1);
@@ -191,12 +199,100 @@ namespace quantModeling
         const int k = controls.sel.n;
         const bool cv = k > 0;
         using CvSample = MultiControlAccumulator::Sample;
+        using PayoffState = typename ISimulatableProduct<T>::PayoffState;
+
+        // ── Workers: worker 0 is the calling thread, on `model` itself;
+        // worker n (1..pool threads) on a clone of it.
+        struct Worker
+        {
+            std::unique_ptr<ISimulationModel<T>> clone;
+            ISimulationModel<T> *model = nullptr;
+            std::unique_ptr<PayoffState> state;
+            Scenario<T> path;
+            std::vector<T> pay;
+            std::vector<double> gauss, point;
+            double path_weight = 1.0;
+            std::optional<BridgedGaussians> bridge;
+            mc::PathDraws draws;
+            std::vector<Real> out;
+            std::vector<CvSample> out_cv;
+        };
+        bool parallel = pool != nullptr && pool->num_threads() > 0 && std::is_same_v<T, Real> &&
+                        ThreadPool::thread_num() == 0;
+        std::unique_ptr<PayoffState> first_state = parallel ? product.make_payoff_state() : nullptr;
+        if (!first_state)
+            parallel = false;
+        std::vector<Worker> workers(parallel ? pool->num_threads() + 1 : 1);
+        for (std::size_t i = 0; i < workers.size(); ++i)
+        {
+            Worker &w = workers[i];
+            if (i == 0)
+                w.model = &model;
+            else
+            {
+                w.clone = model.clone();
+                w.clone->init(product.timeline(), product.defline());
+                w.model = w.clone.get();
+            }
+            w.state = i == 0 ? std::move(first_state) : product.make_payoff_state();
+            allocate_scenario(w.path, product.defline(), w.model->n_underlyings());
+            w.pay.resize(n_labels);
+            w.gauss.assign(std::max<std::size_t>(dim, 1), 0.0);
+            w.out.resize(n_labels);
+            w.out_cv.resize(cv ? n_labels : 0);
+        }
+        auto me = [&]() -> Worker &
+        { return workers[parallel ? ThreadPool::thread_num() : 0]; };
+        ThreadPool *task_pool = parallel ? pool : nullptr;
+        /// task(i) for i in [0, n): on the pool, every task finished before
+        /// the first error is rethrown.
+        auto run_tasks = [&](int n, const auto &task)
+        {
+            if (!parallel)
+            {
+                for (int i = 0; i < n; ++i)
+                    task(i);
+                return;
+            }
+            std::vector<TaskHandle> handles;
+            handles.reserve(static_cast<std::size_t>(n));
+            for (int i = 0; i < n; ++i)
+                handles.push_back(pool->spawn_task([&task, i]()
+                                                   {
+                    task(i);
+                    return true; }));
+            std::exception_ptr error;
+            for (auto &h : handles)
+            {
+                try
+                {
+                    pool->active_wait(h);
+                }
+                catch (...)
+                {
+                    if (!error)
+                        error = std::current_exception();
+                }
+            }
+            if (error)
+                std::rethrow_exception(error);
+        };
+
+        /// The worker's path from its draws, then its payoffs.
+        auto evaluate = [&](Worker &w)
+        {
+            w.model->generate_path(std::span<const double>(w.gauss.data(), dim), w.path);
+            if (w.state)
+                product.payoffs_with_state(w.path, w.pay, *w.state);
+            else
+                product.payoffs(w.path, w.pay);
+        };
         /// The path just generated: controls into s.v[1..k].
-        auto read_controls = [&](CvSample &s)
+        auto read_controls = [&](const Worker &w, CvSample &s)
         {
             for (int c = 0; c < k; ++c)
             {
-                const Sample<T> &smp = path[static_cast<std::size_t>(controls.sel.event[c])];
+                const Sample<T> &smp = w.path[static_cast<std::size_t>(controls.sel.event[c])];
                 s.v[1 + c] = static_cast<Real>(smp.spots[static_cast<std::size_t>(controls.sel.asset[c])]) /
                              static_cast<Real>(smp.numeraire);
             }
@@ -216,6 +312,8 @@ namespace quantModeling
         };
         const std::string cv_off =
             settings.mc_spot_control && !cv ? " (no spot control: " + controls.why_none + ")" : "";
+        auto threads_note = [&]()
+        { return parallel ? " on " + std::to_string(workers.size()) + " threads" : std::string(); };
 
         // ── Importance sampling (mc/importance_sampling.hpp): Brownian factor
         // f drifts by theta_f; each path carries its likelihood ratio, which
@@ -227,9 +325,8 @@ namespace quantModeling
             if (!is_layout.covers(dim) || theta->size() > is_layout.factors)
                 throw InvalidInput("importance sampling needs a model that describes its Brownian increments");
         }
-        double path_weight = 1.0;
-        /// gauss holds a path's unshifted draws: shift them, set path_weight.
-        auto shift_gauss = [&]()
+        /// w.gauss holds a path's unshifted draws: shift them, set w.path_weight.
+        auto shift_gauss = [&](Worker &w)
         {
             if (!theta)
                 return;
@@ -240,34 +337,32 @@ namespace quantModeling
                 prev = is_layout.times[d];
                 for (std::size_t f = 0; f < theta->size(); ++f)
                 {
-                    double &z = gauss[d * is_layout.stride + f];
+                    double &z = w.gauss[d * is_layout.stride + f];
                     const double mu = (*theta)[f] * sq;
                     log_w += -mu * z - 0.5 * mu * mu;
                     z += mu;
                 }
             }
-            path_weight = std::exp(log_w);
+            w.path_weight = std::exp(log_w);
         };
 
-        auto run_payoff = [&](std::vector<WelfordAccumulator> &acc)
+        auto run_payoff = [&](Worker &w, std::vector<WelfordAccumulator> &acc)
         {
-            model.generate_path(std::span<const double>(gauss.data(), dim), path);
-            product.payoffs(path, pay);
+            evaluate(w);
             for (std::size_t l = 0; l < n_labels; ++l)
-                acc[l].add(theta ? static_cast<Real>(pay[l]) * path_weight : static_cast<Real>(pay[l]));
+                acc[l].add(theta ? static_cast<Real>(w.pay[l]) * w.path_weight : static_cast<Real>(w.pay[l]));
         };
-        auto run_payoff_cv = [&](std::vector<MultiControlAccumulator> &acc)
+        auto run_payoff_cv = [&](Worker &w, std::vector<MultiControlAccumulator> &acc)
         {
-            model.generate_path(std::span<const double>(gauss.data(), dim), path);
-            product.payoffs(path, pay);
+            evaluate(w);
             CvSample smp;
-            read_controls(smp);
+            read_controls(w, smp);
             if (theta)
                 for (int c = 0; c < k; ++c)
-                    smp.v[1 + c] *= path_weight;
+                    smp.v[1 + c] *= w.path_weight;
             for (std::size_t l = 0; l < n_labels; ++l)
             {
-                smp.v[0] = theta ? static_cast<Real>(pay[l]) * path_weight : static_cast<Real>(pay[l]);
+                smp.v[0] = theta ? static_cast<Real>(w.pay[l]) * w.path_weight : static_cast<Real>(w.pay[l]);
                 acc[l].add(smp);
             }
         };
@@ -276,49 +371,63 @@ namespace quantModeling
         {
             const int B = std::max(2, settings.mc_rqmc_batches);
             const int per_batch = std::max(1, requested / B);
-            std::vector<WelfordAccumulator> batch_means(n_labels);
 
             // Brownian bridge (blueprint/wp/19-gpu.md §2.4): the point's
             // leading coordinates -- Sobol's best -- go to the terminal values.
-            std::optional<BridgedGaussians> bridge;
+            bool bridged = false;
             if (settings.mc_brownian_bridge)
             {
                 const BrownianLayout layout = model.brownian_layout();
                 if (layout.covers(dim))
-                    bridge.emplace(layout.times, layout.factors, layout.stride);
-            }
-            std::vector<double> point(bridge ? dim : 0);
-
-            for (int b = 0; b < B; ++b)
-            {
-                const uint64_t batch_seed =
-                    (static_cast<uint64_t>(static_cast<uint32_t>(seed)) << 32) |
-                    static_cast<uint64_t>(b);
-                SobolSequence sobol(static_cast<int>(dim), batch_seed, settings.mc_sobol_owen);
-                std::vector<WelfordAccumulator> inner(n_labels);
-                std::vector<MultiControlAccumulator> inner_cv(cv ? n_labels : 0);
-                for (int p = 0; p < per_batch; ++p)
                 {
-                    if (bridge)
+                    bridged = true;
+                    for (Worker &w : workers)
                     {
-                        sobol.next_gaussian(std::span<double>(point.data(), dim));
-                        bridge->map(point, std::span<double>(gauss.data(), dim));
+                        w.bridge.emplace(layout.times, layout.factors, layout.stride);
+                        w.point.assign(dim, 0.0);
                     }
-                    else
-                    {
-                        sobol.next_gaussian(std::span<double>(gauss.data(), dim));
-                    }
-                    shift_gauss();
-                    if (cv)
-                        run_payoff_cv(inner_cv);
-                    else
-                        run_payoff(inner);
                 }
-                // A controlled replicate is its own regression estimate;
-                // the replicates stay i.i.d.
-                for (std::size_t l = 0; l < n_labels; ++l)
-                    batch_means[l].add(cv ? inner_cv[l].estimate(controls.mean, k).value : inner[l].mean);
             }
+
+            // Replicate b's estimate, label by label; folded in b order.
+            std::vector<std::vector<Real>> estimates(static_cast<std::size_t>(B), std::vector<Real>(n_labels));
+            run_tasks(B,
+                      [&](int b)
+                      {
+                          Worker &w = me();
+                          const uint64_t batch_seed =
+                              (static_cast<uint64_t>(static_cast<uint32_t>(seed)) << 32) |
+                              static_cast<uint64_t>(b);
+                          SobolSequence sobol(static_cast<int>(dim), batch_seed, settings.mc_sobol_owen);
+                          std::vector<WelfordAccumulator> inner(n_labels);
+                          std::vector<MultiControlAccumulator> inner_cv(cv ? n_labels : 0);
+                          for (int p = 0; p < per_batch; ++p)
+                          {
+                              if (w.bridge)
+                              {
+                                  sobol.next_gaussian(std::span<double>(w.point.data(), dim));
+                                  w.bridge->map(w.point, std::span<double>(w.gauss.data(), dim));
+                              }
+                              else
+                              {
+                                  sobol.next_gaussian(std::span<double>(w.gauss.data(), dim));
+                              }
+                              shift_gauss(w);
+                              if (cv)
+                                  run_payoff_cv(w, inner_cv);
+                              else
+                                  run_payoff(w, inner);
+                          }
+                          // A controlled replicate is its own regression
+                          // estimate; the replicates stay i.i.d.
+                          for (std::size_t l = 0; l < n_labels; ++l)
+                              estimates[static_cast<std::size_t>(b)][l] =
+                                  cv ? inner_cv[l].estimate(controls.mean, k).value : inner[l].mean;
+                      });
+            std::vector<WelfordAccumulator> batch_means(n_labels);
+            for (int b = 0; b < B; ++b)
+                for (std::size_t l = 0; l < n_labels; ++l)
+                    batch_means[l].add(estimates[static_cast<std::size_t>(b)][l]);
 
             for (std::size_t l = 0; l < n_labels; ++l)
             {
@@ -329,8 +438,8 @@ namespace quantModeling
             res.diagnostics = "SimulationMCEngine + Sobol RQMC (" +
                               std::to_string(B) + " batches, dim=" +
                               std::to_string(dim) + ")" +
-                              (bridge ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? " + Owen scrambling" : "") +
-                              (cv ? " + spot control" : "") + cv_off;
+                              (bridged ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? " + Owen scrambling" : "") +
+                              (cv ? " + spot control" : "") + cv_off + threads_note();
             return res;
         }
 
@@ -377,98 +486,97 @@ namespace quantModeling
                 draws.theta = theta->data();
                 draws.n_theta = static_cast<int>(theta->size());
             }
+            for (Worker &w : workers)
+                w.draws = draws; // PathDraws keeps the unit being drawn
             /// The unit's draws; sign = -1 is its antithetic mirror (with a
             /// drift mu: mu - x, not -(mu + x)).
-            auto fill = [&](uint64_t u, uint64_t stratum, double sign)
+            auto fill = [&](Worker &w, uint64_t u, uint64_t stratum, double sign)
             {
                 if (!shaped)
                 {
                     for (std::size_t j = 0; j < dim; ++j)
-                        gauss[j] = sign * inverse_normal_cdf(philox_uniform(seed, u, static_cast<uint32_t>(j)));
+                        w.gauss[j] = sign * inverse_normal_cdf(philox_uniform(seed, u, static_cast<uint32_t>(j)));
                     return;
                 }
-                draws.begin(u, stratum);
-                for (int d = 0; d < draws.n_steps; ++d)
-                    for (int f = 0; f < draws.stride; ++f)
-                        gauss[static_cast<std::size_t>(d * draws.stride + f)] = draws.draw(d, f, sign);
-                path_weight = std::exp(draws.log_weight);
+                w.draws.begin(u, stratum);
+                for (int d = 0; d < w.draws.n_steps; ++d)
+                    for (int f = 0; f < w.draws.stride; ++f)
+                        w.gauss[static_cast<std::size_t>(d * w.draws.stride + f)] = w.draws.draw(d, f, sign);
+                w.path_weight = std::exp(w.draws.log_weight);
             };
 
-            std::vector<Real> out(n_labels);
-            std::vector<CvSample> out_cv(cv ? n_labels : 0);
             uint64_t rep_first = 0; // replicate b covers units [b m, (b + 1) m)
             // Stratified: unit u of the replicate is in stratum_of(u) -- each
             // reducing thread's successive paths in neighbouring strata.
             auto stratum = [&](uint64_t u)
             { return stratified ? mc::stratum_of(u, per_rep) : u; };
             // The mirror: -z, or with a drift the draws redone with sign -1.
-            auto mirror = [&](uint64_t u)
+            auto mirror = [&](Worker &w, uint64_t u)
             {
                 if (theta)
-                    return fill(rep_first + u, stratum(u), -1.0);
+                    return fill(w, rep_first + u, stratum(u), -1.0);
                 for (std::size_t j = 0; j < dim; ++j)
-                    gauss[j] = -gauss[j];
+                    w.gauss[j] = -w.gauss[j];
             };
-            auto weighted = [&](const T &p)
-            { return theta ? static_cast<Real>(p) * path_weight : static_cast<Real>(p); };
+            auto weighted = [&](const Worker &w, const T &p)
+            { return theta ? static_cast<Real>(p) * w.path_weight : static_cast<Real>(p); };
             auto unit = [&](uint64_t u) -> std::vector<Real>
             {
-                fill(rep_first + u, stratum(u), 1.0);
-                model.generate_path(std::span<const double>(gauss.data(), dim), path);
-                product.payoffs(path, pay);
+                Worker &w = me();
+                fill(w, rep_first + u, stratum(u), 1.0);
+                evaluate(w);
                 for (std::size_t l = 0; l < n_labels; ++l)
-                    out[l] = weighted(pay[l]);
+                    w.out[l] = weighted(w, w.pay[l]);
                 if (!anti)
-                    return out;
-                mirror(u);
-                model.generate_path(std::span<const double>(gauss.data(), dim), path);
-                product.payoffs(path, pay);
+                    return w.out;
+                mirror(w, u);
+                evaluate(w);
                 for (std::size_t l = 0; l < n_labels; ++l)
-                    out[l] = 0.5 * (out[l] + weighted(pay[l]));
-                return out;
+                    w.out[l] = 0.5 * (w.out[l] + weighted(w, w.pay[l]));
+                return w.out;
             };
             auto unit_cv = [&](uint64_t u) -> std::vector<CvSample>
             {
-                fill(rep_first + u, stratum(u), 1.0);
-                model.generate_path(std::span<const double>(gauss.data(), dim), path);
-                product.payoffs(path, pay);
+                Worker &w = me();
+                fill(w, rep_first + u, stratum(u), 1.0);
+                evaluate(w);
                 CvSample base;
-                read_controls(base);
+                read_controls(w, base);
                 if (theta)
                     for (int c = 0; c < k; ++c)
-                        base.v[1 + c] *= path_weight;
+                        base.v[1 + c] *= w.path_weight;
                 for (std::size_t l = 0; l < n_labels; ++l)
                 {
-                    out_cv[l] = base;
-                    out_cv[l].v[0] = weighted(pay[l]);
+                    w.out_cv[l] = base;
+                    w.out_cv[l].v[0] = weighted(w, w.pay[l]);
                 }
                 if (!anti)
-                    return out_cv;
-                mirror(u);
-                model.generate_path(std::span<const double>(gauss.data(), dim), path);
-                product.payoffs(path, pay);
+                    return w.out_cv;
+                mirror(w, u);
+                evaluate(w);
                 CvSample other;
-                read_controls(other);
+                read_controls(w, other);
                 if (theta)
                     for (int c = 0; c < k; ++c)
-                        other.v[1 + c] *= path_weight;
+                        other.v[1 + c] *= w.path_weight;
                 for (std::size_t l = 0; l < n_labels; ++l)
                 {
-                    other.v[0] = weighted(pay[l]);
+                    other.v[0] = weighted(w, w.pay[l]);
                     for (int i = 0; i <= k; ++i)
-                        out_cv[l].v[i] = 0.5 * (out_cv[l].v[i] + other.v[i]);
+                        w.out_cv[l].v[i] = 0.5 * (w.out_cv[l].v[i] + other.v[i]);
                 }
-                return out_cv;
+                return w.out_cv;
             };
 
             std::string note = "SimulationMCEngine + Philox";
             if (!stratified)
             {
                 if (cv)
-                    finish_cv(mc::reduce_logical_blocks<detail::ControlStats>(n_units, unit_cv).acc);
+                    finish_cv(mc::reduce_logical_blocks<detail::ControlStats>(n_units, unit_cv, task_pool).acc);
                 else
                 {
-                    const detail::LabelStats stats = mc::reduce_logical_blocks<detail::LabelStats>(n_units, unit);
+                    const detail::LabelStats stats =
+                        mc::reduce_logical_blocks<detail::LabelStats>(n_units, unit, task_pool);
                     for (std::size_t l = 0; l < n_labels && l < stats.acc.size(); ++l)
                     {
                         res.values[l] = stats.acc[l].mean;
@@ -486,13 +594,14 @@ namespace quantModeling
                     if (cv)
                     {
                         // The within-stratum slope (StratifiedControlAccumulator).
-                        const auto st = mc::reduce_logical_blocks<detail::StratControlStats>(per_rep, unit_cv);
+                        const auto st =
+                            mc::reduce_logical_blocks<detail::StratControlStats>(per_rep, unit_cv, task_pool);
                         for (std::size_t l = 0; l < n_labels && l < st.acc.size(); ++l)
                             reps[l].add(st.acc[l].estimate(controls.mean, k));
                     }
                     else
                     {
-                        const auto st = mc::reduce_logical_blocks<detail::LabelStats>(per_rep, unit);
+                        const auto st = mc::reduce_logical_blocks<detail::LabelStats>(per_rep, unit, task_pool);
                         for (std::size_t l = 0; l < n_labels && l < st.acc.size(); ++l)
                             reps[l].add(st.acc[l].mean);
                     }
@@ -507,11 +616,12 @@ namespace quantModeling
                         " strata)";
                 cv_note = cv ? " + spot control (within-stratum slope)" : "";
             }
-            res.diagnostics = note + (anti ? " + antithetic" : "") + cv_note + cv_off;
+            res.diagnostics = note + (anti ? " + antithetic" : "") + cv_note + cv_off + threads_note();
             return res;
         }
 
-        // ── Pseudo-random ────────────────────────────────────────────────
+        // ── Pseudo-random: one PCG32 stream, on the calling thread ────────
+        Worker &w = workers[0];
         std::vector<WelfordAccumulator> acc(n_labels);
         std::vector<MultiControlAccumulator> acc_cv(cv ? n_labels : 0);
         Pcg32 rng = RngFactory(seed).make(0);
@@ -525,20 +635,20 @@ namespace quantModeling
             if (antithetic && (p & 1))
             {
                 for (std::size_t d = 0; d < dim; ++d)
-                    gauss[d] = -mirror[d];
+                    w.gauss[d] = -mirror[d];
             }
             else
             {
                 for (std::size_t d = 0; d < dim; ++d)
-                    gauss[d] = inv_normal ? inverse_normal_cdf(uniform01(rng))
-                                          : bm(rng);
+                    w.gauss[d] = inv_normal ? inverse_normal_cdf(uniform01(rng))
+                                            : bm(rng);
                 if (antithetic)
-                    std::copy_n(gauss.data(), dim, mirror.data());
+                    std::copy_n(w.gauss.data(), dim, mirror.data());
             }
             if (cv)
-                run_payoff_cv(acc_cv);
+                run_payoff_cv(w, acc_cv);
             else
-                run_payoff(acc);
+                run_payoff(w, acc);
         }
 
         if (cv)
@@ -584,29 +694,29 @@ namespace quantModeling
      */
     template <class T = Real>
     SimulationMCResult simulate(const ISimulatableProduct<T> &product, ISimulationModel<T> &model,
-                                const PricingSettings &settings)
+                                const PricingSettings &settings, ThreadPool *pool = nullptr)
     {
         if (!settings.mc_importance_drift)
-            return simulate_impl<T>(product, model, settings, nullptr);
+            return simulate_impl<T>(product, model, settings, nullptr, pool);
 
         model.init(product.timeline(), product.defline());
         const mc::ImportanceDrift drift = mc::find_importance_drift(product, model);
         if (drift.theta.empty())
         {
-            SimulationMCResult res = simulate_impl<T>(product, model, settings, nullptr);
+            SimulationMCResult res = simulate_impl<T>(product, model, settings, nullptr, pool);
             res.diagnostics += " (no importance sampling: " + drift.why_none + ")";
             return res;
         }
         const PricingSettings pilot = detail::importance_pilot(settings);
-        const Real plain_se = simulate_impl<T>(product, model, pilot, nullptr).std_error();
-        const Real is_se = simulate_impl<T>(product, model, pilot, &drift.theta).std_error();
+        const Real plain_se = simulate_impl<T>(product, model, pilot, nullptr, pool).std_error();
+        const Real is_se = simulate_impl<T>(product, model, pilot, &drift.theta, pool).std_error();
         if (!mc::importance_sampling_pays(plain_se, is_se))
         {
-            SimulationMCResult res = simulate_impl<T>(product, model, settings, nullptr);
+            SimulationMCResult res = simulate_impl<T>(product, model, settings, nullptr, pool);
             res.diagnostics += " (no importance sampling: the drift did not lower the pilot's variance)";
             return res;
         }
-        SimulationMCResult res = simulate_impl<T>(product, model, settings, &drift.theta);
+        SimulationMCResult res = simulate_impl<T>(product, model, settings, &drift.theta, pool);
         res.diagnostics += mc::importance_note(drift, plain_se, is_se);
         return res;
     }
