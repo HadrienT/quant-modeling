@@ -11,7 +11,17 @@ set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 CONFIG REQUIRED)
 
 # Module Python (generates .so / .pyd importable)
-pybind11_add_module(quantmodeling ${PROJECT_SOURCE_DIR}/src/module.cpp)
+# One translation unit per domain (common.hpp): a header change recompiles only
+# the bindings that use it, and the units compile in parallel.
+pybind11_add_module(quantmodeling
+  module.cpp
+  bind_core.cpp
+  bind_pricing.cpp
+  bind_rates.cpp
+  bind_market.cpp
+  bind_xva.cpp
+  bind_scripting.cpp
+)
 
 target_include_directories(quantmodeling PRIVATE
   ${PROJECT_SOURCE_DIR}/include
