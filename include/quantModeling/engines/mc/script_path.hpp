@@ -109,16 +109,33 @@ namespace quantModeling::mc
         return in;
     }
 
+    /// How script_path runs an event: the bytecode interpreter, on the
+    /// view's program. The GPU's compiled scripts (lot P1b of
+    /// blueprint/wp/26-performance.md) pass their own generated code instead.
+    struct InterpretedEvents
+    {
+        scripting::ProgramView prog;
+        const std::int32_t *event_begin = nullptr;
+
+        template <class T>
+        QM_HOST_DEVICE void operator()(int e, scripting::Machine<T> &m, const T *spots, const T *disc,
+                                       const T &numeraire) const
+        {
+            scripting::run_event(prog, event_begin[e], event_begin[e + 1], m, spots, disc, numeraire);
+        }
+    };
+
     /**
      * @brief Simulate one path and run the script on it; return its
      *        (numeraire-deflated) payoff.
      *
      * `draws` must have been begun on the path's unit; `sign` = -1 is the
      * antithetic mirror. `x`, when not null, receives the spot controls.
+     * `events(e, machine, spots, discounts, numeraire)` runs event e.
      */
-    template <class T>
+    template <class T, class Events>
     QM_HOST_DEVICE T script_path(const ScriptPathView &v, const ScriptModelInputs<T> &in, PathDraws &draws,
-                                 double sign, Real *x)
+                                 double sign, Real *x, const Events &events)
     {
         using L = ScriptLimits;
         using std::exp;
@@ -219,13 +236,21 @@ namespace quantModeling::mc
             for (int i = v.disc_begin[e]; i < v.disc_begin[e + 1]; ++i)
                 disc[nd++] = exp(-in.r * (v.disc_mats[i] - ts));
             const T numeraire = exp(in.r * ts);
-            scripting::run_event(v.prog, v.event_begin[e], v.event_begin[e + 1], m, spots, disc, numeraire);
+            events(e, m, static_cast<const T *>(spots), static_cast<const T *>(disc), numeraire);
             if (x)
                 for (int c = 0; c < v.controls.n; ++c)
                     if (v.controls.event[c] == e)
                         x[c] = value_of(S[v.controls.asset[c]]) / value_of(numeraire);
         }
         return m.payoff;
+    }
+
+    /// script_path with the bytecode interpreter.
+    template <class T>
+    QM_HOST_DEVICE T script_path(const ScriptPathView &v, const ScriptModelInputs<T> &in, PathDraws &draws,
+                                 double sign, Real *x)
+    {
+        return script_path<T>(v, in, draws, sign, x, InterpretedEvents{v.prog, v.event_begin});
     }
 
 } // namespace quantModeling::mc

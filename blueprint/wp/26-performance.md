@@ -226,6 +226,64 @@ compilation failure) and as the oracle in tests.
 - AAD on the GPU (forward duals, per-path adjoint) gets the same treatment in
   a second step: generated code for the tangent and adjoint sweeps.
 
+**Step 1 done (prices, 2026-11-11).** What was built, and what the
+measurements changed in the design above:
+
+- *Generator* (`scripting/cuda_codegen.*`, tested on the CPU by
+  `tests/testScriptCudaCodegen.cpp`): from the bytecode, not the tree. The
+  stack depth is static at every instruction, so each stack slot becomes a
+  named local and each jump a `goto`; the source has no include and no user
+  text (constants as hexadecimal literals). Events with the same statements
+  share one `case`: a daily schedule is three bodies, not 252.
+- *Linking, not compiling the kernel.* NVRTC has no standard library, and the
+  kernel's headers use `<vector>`, `<string>`, `std::function`. So NVRTC
+  compiles only the events, to LTO-IR; the kernel (`src/gpu/script_jit_kernel.cu`,
+  the interpreter's kernel with `CompiledEvents` in place of the interpreter)
+  is compiled by nvcc to LTO-IR at build time and embedded; **nvJitLink**
+  links both with link-time optimisation, so the events are inlined.
+  NVRTC and nvJitLink are linked statically (Debian's `nvidia-cuda-dev`,
+  already in the image's build stage); the driver's functions come from
+  `cudaGetDriverEntryPoint`, so the wheel does not link `libcuda.so`.
+- *Specialisation.* The first version gained only 1.0–1.3×: `ncu` showed
+  `no_instruction` at 9 of 16 cycles per instruction, the instruction cache
+  thrashing on a 30 000-instruction kernel carrying every model and sampler.
+  The generated source now also defines the request (model kind, assets,
+  Sobol, stratification, importance sampling, antithetic) as `qm_spec_*`
+  functions the kernel reads in place of its arguments; link-time
+  optimisation drops the rest. Registers went from 128 to 60–70.
+- *FMA.* With contraction on (nvcc's default, which the interpreter used),
+  the specialised Heston kernel moved in the last bit: whether a multiply and
+  an add fuse depends on how the optimiser sees the code. The script kernels
+  are now built with `--fmad=false` on both sides (`script.cu`, the LTO-IR,
+  NVRTC, nvJitLink `-fma=0`): the compiled script gives the interpreter's bits
+  on every library script, crisp and fuzzy, on Black-Scholes, local vol,
+  Heston and SLV, Philox and Sobol (`tests/gpu/testGpuScriptJit.cpp`). It
+  costs 5–7 % on both paths and moves the GPU script results by an ulp
+  against v1 (closer to the CPU, which does not fuse either).
+- *Scope.* Prices without spot controls, which is the default; with spot
+  controls, and for the duals and the adjoint, the interpreter runs and the
+  diagnostics say so. `QM_SCRIPT_JIT=0` turns compilation off.
+- *Cost.* 30–450 ms to compile a library script (NVRTC 75 %, link 25 %), then
+  cached for the life of the process by its source.
+
+Measured (`build-cuda/qm_script_jit_bench`, one V100, Philox + antithetic,
+the reference's path counts; medians of five):
+
+| Product | Interpreter | Compiled | Gain | Reference | Compiled / reference |
+|---|---|---|---|---|---|
+| Up-and-out, 52 weekly dates (BS) | 33.6 ms | 13.2 ms | 2.55× | 9.3 ms | 1.42 |
+| Up-and-out, 52 weekly dates (local vol) | 39.1 ms | 16.7 ms | 2.34× | 11.6 ms | 1.44 |
+| Arithmetic Asian, 252 dates (BS) | 65.3 ms | 35.1 ms | 1.86× | 22.3 ms | 1.57 |
+| Arithmetic Asian, 252 dates (local vol) | 86.7 ms | 58.6 ms | 1.48× | 25.5 ms | 2.30 |
+
+(The reference kernels are built with FMA on.) What remains is not the
+script: at these path counts a launch has few logical blocks (Asian local
+vol: 116 blocks of 256 threads for 80 SMs, 18 % of warps active), because a
+thread runs its 16 units one after the other to keep the reduction tree.
+Running the units in parallel and reducing them in the same order would keep
+the bits; it is the next lever, for the interpreter as much as for compiled
+scripts.
+
 ### P1c — Sobol, the default sampler, as fast and as good as it can be
 
 Decided by the maintainer on 2026-11-10: **Sobol (randomised QMC with the
@@ -559,7 +617,13 @@ Later lots add their columns (P1, P3, P4 MLMC, P5 MLQMC, P6 GPU).
   `nvidia-cuda-toolkit` 12.4 ships it). A CPU code generator would need a C++
   compiler in the image: decided at P1's decision point.
 - **Bits and FMA.** Generated code must not contract across operations the
-  interpreter keeps separate (`--fmad=false`, `-ffp-contract=off`).
+  interpreter keeps separate (`--fmad=false`, `-ffp-contract=off`). Done for
+  the GPU script kernels in P1b, both sides: allowing FMA again (5–7 %) means
+  giving up the same-bits test between compiled and interpreted scripts.
+- **Wheel size.** NVRTC and nvJitLink are linked statically (P1b): the GPU
+  wheel grows by their size. Loading them with `dlopen` from the toolkit's
+  shared libraries would avoid it, at the price of shipping those in the
+  image.
 - **Greeks.** Moving products to scripts moves their greeks from bump to AAD:
   the displayed values change within their error. Said in every P3 pull
   request.

@@ -42,6 +42,7 @@ target_sources(quantModeling
         src/scripting/parser.cpp
         src/scripting/domain.cpp
         src/scripting/exercise.cpp
+        src/scripting/cuda_codegen.cpp
         src/market/conventions.cpp
         src/market/calendars.cpp
         src/market/schedule.cpp
@@ -212,6 +213,52 @@ if(QM_ENABLE_CUDA)
   target_compile_options(quantModeling PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -Xcompiler=-Wall>
   )
+
+  # The script kernels never contract a multiply and an add into an FMA: with
+  # contraction, the bits depend on how the optimiser sees the code, and a
+  # compiled script (below) could not give the interpreter's bits
+  # (blueprint/wp/26-performance.md §5, P1b; measured on Heston).
+  set_source_files_properties(src/gpu/script.cu PROPERTIES COMPILE_OPTIONS --fmad=false)
+
+  # Scripts compiled at run time (blueprint/wp/26-performance.md §5, lot P1b).
+  # script_jit_kernel.cu is the script kernel with the events left external:
+  # nvcc compiles it to LTO-IR, embedded here; at run time NVRTC compiles a
+  # script's events and nvJitLink links both. Same options as the library's
+  # CUDA sources, so that the kernel code is the interpreter's.
+  set(_qm_jit_fatbin ${CMAKE_CURRENT_BINARY_DIR}/qm_script_jit_kernel.fatbin)
+  set(_qm_jit_embed ${CMAKE_CURRENT_BINARY_DIR}/qm_script_jit_kernel_fatbin.cpp)
+  set(_qm_jit_gencode)
+  foreach(_arch IN LISTS CMAKE_CUDA_ARCHITECTURES)
+    string(REGEX REPLACE "-.*$" "" _arch "${_arch}")
+    list(APPEND _qm_jit_gencode -gencode arch=compute_${_arch},code=lto_${_arch})
+  endforeach()
+  string(TOUPPER "${CMAKE_BUILD_TYPE}" _qm_bt)
+  separate_arguments(_qm_jit_flags UNIX_COMMAND "${CMAKE_CUDA_FLAGS} ${CMAKE_CUDA_FLAGS_${_qm_bt}}")
+  set(_qm_jit_ccbin)
+  if(CMAKE_CUDA_HOST_COMPILER)
+    set(_qm_jit_ccbin -ccbin ${CMAKE_CUDA_HOST_COMPILER})
+  endif()
+  add_custom_command(
+    OUTPUT ${_qm_jit_fatbin}
+    COMMAND ${CMAKE_CUDA_COMPILER} ${_qm_jit_ccbin} ${_qm_jit_flags} -std=c++20 --expt-relaxed-constexpr --fmad=false
+            ${_qm_jit_gencode} -rdc=true -fatbin
+            -I${PROJECT_SOURCE_DIR}/include
+            -MD -MF ${_qm_jit_fatbin}.d
+            -o ${_qm_jit_fatbin} ${PROJECT_SOURCE_DIR}/src/gpu/script_jit_kernel.cu
+    DEPENDS ${PROJECT_SOURCE_DIR}/src/gpu/script_jit_kernel.cu
+    DEPFILE ${_qm_jit_fatbin}.d
+    COMMENT "LTO-IR of the compiled-script kernel"
+    VERBATIM)
+  add_custom_command(
+    OUTPUT ${_qm_jit_embed}
+    COMMAND ${CMAKE_COMMAND} -DINPUT=${_qm_jit_fatbin} -DOUTPUT=${_qm_jit_embed}
+            -DSYMBOL=qm_script_jit_fatbin -P ${PROJECT_SOURCE_DIR}/cmake/embed_binary.cmake
+    DEPENDS ${_qm_jit_fatbin} ${PROJECT_SOURCE_DIR}/cmake/embed_binary.cmake
+    VERBATIM)
+  target_sources(quantModeling PRIVATE src/gpu/script_jit.cpp ${_qm_jit_embed})
+  # Static: the wheel carries the compiler, the image needs no CUDA library
+  # beyond the driver (whose functions script_jit.cpp takes from cudart).
+  target_link_libraries(quantModeling PRIVATE CUDA::nvrtc_static CUDA::nvJitLink_static)
 else()
   target_sources(quantModeling PRIVATE src/gpu/cpu_only.cpp)
 endif()
@@ -380,6 +427,7 @@ if(QM_BUILD_TESTS)
     tests/testPhilox.cpp
     tests/testLogicalBlocks.cpp
     tests/testScriptBytecode.cpp
+    tests/testScriptCudaCodegen.cpp
     tests/testDual.cpp
     tests/testMultiControl.cpp
     tests/testVarianceReduction.cpp
@@ -416,6 +464,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuVanilla.cpp
       tests/gpu/testGpuPaths.cpp
       tests/gpu/testGpuScripts.cpp
+      tests/gpu/testGpuScriptJit.cpp
       tests/gpu/testGpuRisks.cpp
       tests/gpu/testGpuSobolIs.cpp
       tests/gpu/testGpuTwoCards.cpp
@@ -480,6 +529,10 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   # WP 26 lot P0: the same reference paths on one GPU.
   add_executable(qm_gpu_reference_bench benchmarks/reference/reference_gpu.cu)
   target_link_libraries(qm_gpu_reference_bench PRIVATE quantModeling)
+  # Lot P1b of blueprint/wp/26-performance.md: compiled scripts against the
+  # interpreter, on the reference products.
+  add_executable(qm_script_jit_bench benchmarks/script_jit_bench.cpp)
+  target_link_libraries(qm_script_jit_bench PRIVATE quantModeling)
   add_executable(qm_gpu_owen_bench benchmarks/sobol_owen.cpp)
   target_link_libraries(qm_gpu_owen_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_owen_bench PRIVATE
