@@ -296,7 +296,7 @@ scripts.
   Φ⁻¹'s polynomials as `horner(q, c1, ..., c6) / horner(q, d1, ..., d4, 1.0)`.
   About 20 lines added and 6–8 changed; the interpreter and the compiled
   scripts fuse at the same places, so the bit test stands. Profile first.
-- *P1i, expensive functions*, after P1g and P1h, one at a time: Φ⁻¹ (Acklam
+- *P1i, expensive functions* (first part done, AS 241 adopted, see below), after P1g and P1h, one at a time: Φ⁻¹ (Acklam
   plus a Halley step with an `erfc` and an `exp` on every draw: probably the
   largest single cost), the `exp` of each log-Euler step, the numeraire and
   discount `exp`s recomputed per event and per path though path-independent
@@ -385,6 +385,70 @@ End to end (`qm_script_jit_bench`, P1g → P1h): compiled 11.7 → 10.2 ms
 (up-and-out BS), 15.0 → 12.7 (local vol), 26.6 → 23.9 (Asian BS), 32.0 →
 28.2 (Asian local vol): **1.07–1.11× the hand-written reference paths**.
 Compiled = interpreted bits on the whole library, as before.
+
+### P1i — Expensive functions on the path (added after P1b; first part done)
+
+Ablations first, to know what each function weighs (kernel time, `ncu`,
+clocks locked, one V100, on P1h; the ablated code is never committed):
+
+| Removed | Compiled, up-and-out BS | Compiled, Asian local vol | Interpreter, up-and-out BS | Interpreter, Asian local vol |
+|---|---|---|---|---|
+| The numeraire's `exp` per event | −7.6 % | −1 % | −5 % | −2 % |
+| Φ⁻¹'s Halley step (`erfc` + `exp`) | **−37 %** | **−27 %** | −17 % | −16 % |
+
+**Per-event tables (done, same bits).** `exp(r t)` for the numeraire and
+`exp(-r (T - t))` for each `df()` do not depend on the path; script_path
+computed them on every path at every event. `event_tables_kernel`
+(`src/gpu/script.cu`) computes them once per request, with the same
+expressions and the same device `exp`; prices read them
+(`ScriptPathView::event_numeraire`, `event_disc`), the duals keep computing
+them (they differentiate r). 48 GPU prices (eight scripts, BS, local vol,
+Heston, Philox and Sobol) are identical to 17 digits. Compiled up-and-out
+BS: 10.42 → 9.76 ms; the Asian local vol, without `df()` and dominated by its
+local-vol step, does not move.
+
+**Φ⁻¹: Wichura's AS 241, adopted by the maintainer on 2026-11-11.** The
+rule of §12 allows another full-precision algorithm after a check against
+high-precision values. Checked (`scripts/gen_inverse_normal_reference.py`:
+45 289 points at 45+ digits with mpmath, from 1e-300 to 1 − 2⁻⁵³; a 7 374
+point sample in `tests/data`):
+
+| Algorithm | Region | Max error | Mean | Max relative |
+|---|---|---|---|---|
+| Acklam + Halley (before P1i) | \|x\| ≤ 3 | 36 225 ulp | 5.2 ulp | 6.2e-12 |
+| Acklam + Halley (before P1i) | 3 < \|x\| ≤ 8.3 | 9.4 M ulp | 4.4 M ulp | **1.1e-9** |
+| Acklam + Halley (before P1i) | \|x\| > 8.3 | 2 ulp | 0.4 ulp | 2.9e-16 |
+| AS 241 | \|x\| ≤ 3 | 5 ulp | 0.8 ulp | 7.0e-16 |
+| AS 241 | 3 < \|x\| ≤ 8.3 | 3 ulp | 0.7 ulp | 6.4e-16 |
+| AS 241 | \|x\| > 8.3 | 6 ulp | 1.0 ulp | 7.5e-16 |
+
+(The device versions, with their FMAs, measure the same.) **The current Φ⁻¹
+is accurate to ~1e-9 only in its upper tail**: for p near 1 the Halley
+correction `0.5 erfc(-x/√2) - p` subtracts two numbers close to 1 and
+cancels, so the step adds nothing to Acklam's 1.15e-9; the lower tail is
+fine. A defect, small on prices (about 0.13 % of the draws, at 1e-9), and
+an asymmetry. AS 241 (`inverse_normal_cdf_as241`, transcription checked by
+the paper's hash sums, accuracy pinned by
+`InverseNormal.As241MatchesHighPrecisionReference`) is within a few ulps
+everywhere, in one pass.
+
+Its speed, measured before adoption by plugging it in place of the old Φ⁻¹:
+compiled 9.76 → **6.23 ms** (up-and-out BS) and 29.95 → **21.64 ms** (Asian
+local vol); interpreter 26.87 → 14.60 and 59.91 → 41.05. End to end the
+compiled scripts would run at 7.1, 9.0, 16.3 and 20.8 ms on the four
+products, under the hand-written reference paths (which use the same Φ⁻¹ and
+would speed up as well).
+
+Adopted: `inverse_normal_cdf` is AS 241, the Acklam + Halley code is gone.
+What moved (the CPU's 54 reference prices of P1h): PCG32 none; Philox 13 of
+18, by at most 5.3e-13 relative (7e-11 of a standard error: the old upper
+tail's 1e-9 errors); Sobol 9 of 18, by at most 2.7e-15. The reference paths
+share Φ⁻¹ and speed up too (`qm_gpu_reference_bench`: 9.3 → 6.0 ms, 11.6 →
+7.5, 22.3 → 14.5, 25.5 → 15.9); against them the compiled scripts
+(`qm_script_jit_bench`: 6.46, 8.84, 16.50, 20.59 ms) are at **1.08, 1.18,
+1.14 and 1.29×**, P1's goal still met against a faster ceiling. CPU suite
+1271/1271, GPU suite 61/61. Everything else that calls Φ⁻¹ (IRB capital,
+SIMM, exposure quantiles) moves at the same level, towards the exact value.
 
 ### P1c — Sobol, the default sampler, as fast and as good as it can be
 

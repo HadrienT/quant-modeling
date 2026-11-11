@@ -199,7 +199,8 @@ Reprise exacte des `references` de `web/src/shared/products/docs.ts`.
 | O'Neill, « PCG: A Family of Simple Fast Space-Efficient Statistically Good Algorithms for Random Number Generation », Harvey Mudd College, HMC-CS-2014-0905, 2014 | `utils/rng.hpp` (PCG32, saut « advance ») |
 | Salmon, Moraes, Dror & Shaw, « Parallel Random Numbers: As Easy as 1, 2, 3 », *SC'11*, 2011 | `utils/philox.hpp`, générateur GPU |
 | Box & Muller, « A Note on the Generation of Random Normal Deviates », *Annals of Mathematical Statistics* 29(2), 610–611, 1958 | `utils/gaussian_source.hpp` |
-| Acklam, « An Algorithm for Computing the Inverse Normal Cumulative Distribution Function », note en ligne, ~2003 | `utils/inverse_normal.hpp` |
+| Wichura, « Algorithm AS 241: The Percentage Points of the Normal Distribution », *Applied Statistics* 37(3), 477–484, 1988 | `utils/inverse_normal.hpp` (since WP 26 P1i, 2026-11-11) |
+| Acklam, « An Algorithm for Computing the Inverse Normal Cumulative Distribution Function », note en ligne, ~2003 | `utils/inverse_normal.hpp` until WP 26 P1i (replaced by AS 241: ~1e-9 in its upper tail) |
 | Sobol', « On the Distribution of Points in a Cube and the Approximate Evaluation of Integrals », *USSR Comput. Math. Math. Phys.* 7(4), 86–112, 1967 | `utils/sobol.hpp` |
 | Joe & Kuo, « Constructing Sobol Sequences with Better Two-Dimensional Projections », *SIAM J. Sci. Comput.* 30(5), 2635–2654, 2008 | `utils/sobol_directions.hpp` (fichier `new-joe-kuo-6.21201`) |
 | Owen, « Randomly Permuted (t,m,s)-Nets and (t,s)-Sequences », *Monte Carlo and Quasi-Monte Carlo Methods in Scientific Computing*, Springer, 1995 | Brouillage d'Owen, `utils/sobol.hpp` |

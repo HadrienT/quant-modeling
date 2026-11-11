@@ -77,6 +77,12 @@ namespace quantModeling::mc
 
         const int *disc_begin = nullptr; ///< event e: disc_mats[disc_begin[e] .. disc_begin[e + 1])
         const Time *disc_mats = nullptr;
+        /// Optional, prices only (T = double): exp(r t_e) per event and
+        /// exp(-r (T_i - t_e)) per df() slot, computed once instead of on
+        /// every path, with the same expressions (event_tables_kernel in
+        /// src/gpu/script.cu). Null: computed on the path.
+        const Real *event_numeraire = nullptr;
+        const Real *event_disc = nullptr;
 
         SpotControls controls;
     };
@@ -233,9 +239,21 @@ namespace quantModeling::mc
             for (int k = 0; k < v.n_assets; ++k)
                 spots[k] = S[k];
             int nd = 0;
-            for (int i = v.disc_begin[e]; i < v.disc_begin[e + 1]; ++i)
-                disc[nd++] = exp(-in.r * (v.disc_mats[i] - ts));
-            const T numeraire = exp(in.r * ts);
+            T numeraire;
+            if (kPlain && v.event_numeraire)
+            {
+                // Path-independent: tabulated once on the device with the
+                // same expressions, so the same bits (WP 26 P1i).
+                for (int i = v.disc_begin[e]; i < v.disc_begin[e + 1]; ++i)
+                    disc[nd++] = T(v.event_disc[i]);
+                numeraire = T(v.event_numeraire[e]);
+            }
+            else
+            {
+                for (int i = v.disc_begin[e]; i < v.disc_begin[e + 1]; ++i)
+                    disc[nd++] = exp(-in.r * (v.disc_mats[i] - ts));
+                numeraire = exp(in.r * ts);
+            }
             events(e, m, static_cast<const T *>(spots), static_cast<const T *>(disc), numeraire);
             if (x)
                 for (int c = 0; c < v.controls.n; ++c)
