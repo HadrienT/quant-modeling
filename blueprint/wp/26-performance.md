@@ -284,6 +284,25 @@ Running the units in parallel and reducing them in the same order would keep
 the bits; it is the next lever, for the interpreter as much as for compiled
 scripts.
 
+**Leads noted after P1b** (checklist in issue #207):
+
+- *P1g, parallel units, same reduction*: the launch shape above.
+- *P1h, explicit FMA*: the script kernels stay `--fmad=false`, and the hot
+  spots fuse where the source says so, through a `mul_add(a, b, c)` helper (a
+  device `fma` for `double`; `a * b + c` on the host and for `Dual` and
+  `aad::Number`) and a `horner(...)` built on it. For example
+  `S *= exp(mul_add(vol_sqrt_dt, z, drift))` in the local-vol step, and
+  Φ⁻¹'s polynomials as `horner(q, c1, ..., c6) / horner(q, d1, ..., d4, 1.0)`.
+  About 20 lines added and 6–8 changed; the interpreter and the compiled
+  scripts fuse at the same places, so the bit test stands. Profile first.
+- *P1i, expensive functions*, after P1g and P1h, one at a time: Φ⁻¹ (Acklam
+  plus a Halley step with an `erfc` and an `exp` on every draw: probably the
+  largest single cost), the `exp` of each log-Euler step, the numeraire and
+  discount `exp`s recomputed per event and per path though path-independent
+  (a per-event table on the device keeps the bits), the `log`/`pow`/`sqrt`
+  scripts write, and on the CPU the SLEEF decision. Changing Φ⁻¹'s
+  algorithm changes the bits: the maintainer decides.
+
 ### P1c — Sobol, the default sampler, as fast and as good as it can be
 
 Decided by the maintainer on 2026-11-10: **Sobol (randomised QMC with the
