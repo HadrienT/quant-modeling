@@ -26,11 +26,13 @@ namespace quantModeling
      */
     QM_HOST_DEVICE inline uint32_t sobol_point_bits(const uint32_t *V, uint32_t p)
     {
-        uint32_t g = p ^ (p >> 1);
+        // Branchless: 32 fixed steps, each direction masked in or out, so
+        // the threads of a warp never diverge (WP 26 §5, P1c). Same XORs,
+        // same bits.
+        const uint32_t g = p ^ (p >> 1);
         uint32_t x = 0;
-        for (int b = 0; g != 0; ++b, g >>= 1)
-            if (g & 1u)
-                x ^= V[b];
+        for (int b = 0; b < 32; ++b)
+            x ^= V[b] & (0u - ((g >> b) & 1u));
         return x;
     }
 
