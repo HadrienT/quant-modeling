@@ -104,6 +104,7 @@ namespace quantModeling
             s.mc_paths = 400000;
             s.mc_seed = 20240101;
             s.mc_antithetic = true;
+            s.mc_sampler = SamplerKind::PseudoRandom; // these tests are about pseudo-random; Sobol is the default
             return s;
         }
     } // namespace
@@ -420,6 +421,7 @@ namespace quantModeling
             pseudo.mc_seed = 7;
             pseudo.mc_antithetic = false;
             pseudo.mc_gaussian = GaussianKind::InverseNormal;
+            pseudo.mc_sampler = SamplerKind::PseudoRandom;
             se_pseudo.push_back(simulate<Real>(prod, model, pseudo).std_error());
         }
         const double slope_bridge = loglog_slope(n, se_bridge);

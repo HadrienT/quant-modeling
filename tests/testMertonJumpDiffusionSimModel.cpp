@@ -69,8 +69,14 @@ namespace quantModeling
         double merton_call(double S, double K, double r, double q, double sigma,
                            double T, double lambda, double jump_mean, double jump_vol)
         {
+            // Merton (1976): each term is a Black-Scholes price at rate r_n, so
+            // the Poisson weights are those of lambda (1 + k), not lambda --
+            // the factor e^{(r_n - r) T} = e^{-lambda k T} (1 + k)^n of
+            // discounting at r folds into them. With lambda the reference sat
+            // 0.34 % below the simulator here, unseen under pseudo-random
+            // noise; Sobol showed it (WP 26 P1c, 2026-11-11).
             const double k = std::exp(jump_mean + 0.5 * jump_vol * jump_vol) - 1.0;
-            const double lambda_t = lambda * T;
+            const double lambda_t = lambda * (1.0 + k) * T;
             double price = 0.0;
             double poisson_pmf = std::exp(-lambda_t); // n = 0 term
             for (int n = 0; n < 30; ++n)

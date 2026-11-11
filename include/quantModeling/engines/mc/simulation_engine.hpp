@@ -180,6 +180,17 @@ namespace quantModeling
         model.init(product.timeline(), product.defline());
 
         const std::size_t dim = model.sim_dim();
+        // Sobol is the default (WP 26 P1c); beyond the generator's dimensions
+        // the path runs pseudo-random, and says so.
+        if (settings.mc_sampler == SamplerKind::Sobol && dim > static_cast<std::size_t>(sobol_detail::kMaxDimension))
+        {
+            PricingSettings pseudo = settings;
+            pseudo.mc_sampler = SamplerKind::PseudoRandom;
+            SimulationMCResult res = simulate_impl<T>(product, model, pseudo, theta, pool);
+            res.diagnostics += " (pseudo-random: " + std::to_string(dim) + " draws per path, more than the " +
+                               std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions)";
+            return res;
+        }
         const auto &labels = product.payoff_labels();
         const std::size_t n_labels = labels.size();
 

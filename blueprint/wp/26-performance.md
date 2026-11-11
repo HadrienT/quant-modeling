@@ -514,6 +514,32 @@ engines, which only know PCG32. The switch:
   Kou, Bates) until measured, and the dimensions beyond the generator's
   21 201 (padded with pseudo-random draws).
 
+**Default switch done (2026-11-11, option (a) chosen by the maintainer:
+every layer, C++ included).** `PricingSettings::mc_sampler`,
+`price_script`, the dated Asian request and its preview default to Sobol.
+The hand-written BS vanilla and Asian engines have a Sobol path and take
+it; the others run pseudo-random and the registry's diagnostics say so
+(`PricingRegistry::price`); a path of more draws than the generator's
+21 201 dimensions runs pseudo-random with a note instead of failing. Jump
+models keep Sobol: randomised QMC with a digital shift is unbiased for any
+function of the uniforms (measured on Merton below); whether it gains there
+is in #226. Pseudo-random noise had been hiding five things, which Sobol's
+tighter errors showed in the CPU suite -- each checked against
+pseudo-random at 4-16 M paths before deciding which side was wrong:
+
+| Test | What it was | Done |
+|---|---|---|
+| Merton call against the closed form | **the test's formula**: Poisson weights of λ instead of λ(1+k) (0.34 % low) | fixed: 10.663048 against Sobol 10.662981 ± 0.000109 |
+| Vasicek bond from the simulated integral | **a model bug**: Var[∫r \| r] subtracted Cov² instead of Cov²/Var[r] (4e-4 high at 7 years); the same in Schwartz-Smith's (χ, ξ) draw | fixed both; the Schwartz-Smith test's 5 % tolerance, which could not see its 4.6 %, is now 1 % |
+| SLV against the local vol it was calibrated to | the calibration's own error, 4.4 % on a 90 put | tolerance at the measured error, #227 |
+| LSM American call without dividends | the fitted rule exercises early, ~1 % low | tolerance at the measured loss, #228 |
+| Turnbull-Wakeman arithmetic Asian | an approximation, 7.5e-4 off the exact price | tolerance allows it |
+
+Four tests about pseudo-random itself (Philox, Sobol-vs-pseudo, the bridge's
+convergence slope, the hard digital's bump noise) pin their sampler. The
+vanilla convergence ladder of the site now falls at slope −0.86, not −1/2
+(the page already says "faster than 1/√N").
+
 **What the displayed error means.** With Sobol the standard error comes from
 the dispersion of R = 16 independent replicates: 15 degrees of freedom, so the
 error estimate itself is uncertain by about ±18 % (1/√(2·15)). Either R goes

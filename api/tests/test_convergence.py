@@ -58,7 +58,10 @@ def test_the_study_prices_the_halvings_not_the_pricing_itself():
     assert sum(p["paths"] for p in points) < 64_000
 
 
-def test_with_the_pricing_as_last_point_plain_monte_carlo_has_slope_minus_one_half():
+def test_with_the_pricing_as_last_point_the_sobol_default_beats_one_half():
+    # Sobol RQMC is the default sampler (WP 26 P1c): the ladder's error falls
+    # faster than plain Monte-Carlo's 1/sqrt(N) (measured: slope -0.86 +- 0.07
+    # on 2026-11-11); the page says "faster than 1/√N".
     body = {**BS, "engine": "mc", "n_paths": 320_000, "seed": 1}
     priced = post("/price/option/vanilla", body).json()
     points = post("/price/option/vanilla/convergence", body).json()["points"]
@@ -67,7 +70,7 @@ def test_with_the_pricing_as_last_point_plain_monte_carlo_has_slope_minus_one_ha
     assert [n for n, _ in ladder] == [10_000, 20_000, 40_000, 80_000, 160_000, 320_000]
     slope, se = fit(ladder)
     assert se > 0
-    assert abs(slope + 0.5) < 4 * se + 0.02
+    assert slope < -0.6
     # Each estimate is within a few of its own standard errors of the price.
     for p in points:
         assert abs(p["npv"] - priced["npv"]) < 5 * p["std_error"]
