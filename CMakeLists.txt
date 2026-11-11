@@ -13,6 +13,19 @@ option(QM_BUILD_BENCHMARKS "Build benchmarks (google-benchmark)" OFF)
 option(QM_NATIVE_ARCH "Optimize for the host CPU (-march=native)" OFF)
 option(QM_ENABLE_CUDA "Build the CUDA Monte-Carlo backend (blueprint/wp/19-gpu.md)" OFF)
 
+# Link with mold when it is installed (the server: `apt install mold`). GNU ld
+# links on one core: about 9 s for the Python module, as much for each test
+# executable, after every change. Without mold nothing changes -- the CI and
+# the production image keep GNU ld. QM_USE_MOLD=OFF forces GNU ld.
+option(QM_USE_MOLD "Link with mold when it is installed" ON)
+if(QM_USE_MOLD AND NOT DEFINED CMAKE_LINKER_TYPE)
+  find_program(QM_MOLD_PROGRAM mold)
+  if(QM_MOLD_PROGRAM)
+    set(CMAKE_LINKER_TYPE MOLD)
+    message(STATUS "Linking with mold (${QM_MOLD_PROGRAM})")
+  endif()
+endif()
+
 # ---- Global Options  ----
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
