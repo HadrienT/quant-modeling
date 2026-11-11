@@ -54,6 +54,29 @@ namespace quantModeling::gpu
             }
         };
 
+        /**
+         * The path-independent factors of each event, once instead of on every
+         * path (lot P1i of blueprint/wp/26-performance.md): exp(r t) for the
+         * numeraire and exp(-r (T - t)) for each df(), with script_path's
+         * expressions and the same device exp -- the same bits. Measured on
+         * one V100 (ncu, 2026-11-11): see the commit and WP 26 §5, P1i.
+         */
+        __global__ void event_tables_kernel(const Time *t, const int *event, int n_steps, double r,
+                                            const int *disc_begin, const Time *disc_mats, double *numeraire,
+                                            double *disc)
+        {
+            const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+            if (s >= n_steps)
+                return;
+            const int e = event[s];
+            if (e < 0)
+                return;
+            const Time ts = t[s];
+            for (int i = disc_begin[e]; i < disc_begin[e + 1]; ++i)
+                disc[i] = exp(-r * (disc_mats[i] - ts));
+            numeraire[e] = exp(r * ts);
+        }
+
         /// Check the request, select the device and copy the script and
         /// model: the view every kernel below runs.
         mc::ScriptPathView device_view(const ScriptGpuRequest &req, DeviceArrays &mem, int device)
@@ -105,6 +128,20 @@ namespace quantModeling::gpu
             v.disc_begin = mem.put(disc_begin);
             v.disc_mats = mem.put(disc_mats);
             v.controls = req.controls;
+
+            // The per-event tables (prices; the duals differentiate r and
+            // compute them on the path).
+            if (v.n_steps > 0 && p.n_events() > 0)
+            {
+                double *num = mem.alloc<double>(p.n_events());
+                double *disc = disc_mats.empty() ? nullptr : mem.alloc<double>(disc_mats.size());
+                const unsigned threads = 256;
+                event_tables_kernel<<<static_cast<unsigned>((v.n_steps + threads - 1) / threads), threads>>>(
+                    v.t, v.event, v.n_steps, v.r, v.disc_begin, v.disc_mats, num, disc);
+                detail::check(cudaGetLastError(), "event tables launch");
+                v.event_numeraire = num;
+                v.event_disc = disc;
+            }
             return v;
         }
 
