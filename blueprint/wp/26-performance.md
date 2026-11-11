@@ -288,7 +288,7 @@ scripts.
 
 - *P1g, parallel units, same reduction*: the launch shape above. **Done**,
   see below.
-- *P1h, explicit FMA*: the script kernels stay `--fmad=false`, and the hot
+- *P1h, explicit FMA* (**done**, see below): the script kernels stay `--fmad=false`, and the hot
   spots fuse where the source says so, through a `mul_add(a, b, c)` helper (a
   device `fma` for `double`; `a * b + c` on the host and for `Dual` and
   `aad::Number`) and a `horner(...)` built on it. For example
@@ -302,7 +302,10 @@ scripts.
   discount `exp`s recomputed per event and per path though path-independent
   (a per-event table on the device keeps the bits), the `log`/`pow`/`sqrt`
   scripts write, and on the CPU the SLEEF decision. Changing Φ⁻¹'s
-  algorithm changes the bits: the maintainer decides.
+  algorithm changes the bits: the maintainer decides. P1h adds a lever: the
+  script kernels are bound by the instruction cache, so a large body called
+  from several places (an `erfc`, a model step) may gain more by being called
+  than by being made cheaper.
 
 ### P1g — Parallel units, same reduction (added after P1b; done)
 
@@ -340,6 +343,48 @@ Measured (`qm_script_jit_bench`, as in P1b):
 eight times the paths the time grows linearly (barrier BS: 89 ms for 18 M
 paths): the gain is at the path counts where the launch was short of
 threads, and nothing is lost above.
+
+### P1h — Explicit FMA, and Φ⁻¹ called rather than inlined (added after P1b; done)
+
+The script kernels stay `--fmad=false` (P1b). `utils/fused.hpp` gives
+`mul_add(a, b, c)` (an FMA on the device, `a * b + c` on the host) and
+`horner(...)` built on it; Φ⁻¹'s polynomials and its Halley step use them.
+On the host they are the expressions they replace: 54 CPU prices (three
+models, PCG32, Philox, Sobol) are identical to 17 digits.
+
+Measured at kernel level (`ncu`, clocks locked, one V100), changing one thing
+at a time:
+
+| Kernel | Base | Φ⁻¹ fused | Φ⁻¹ called, not fused | **Φ⁻¹ fused and called** | `--fmad=true` (ceiling of P1b) |
+|---|---|---|---|---|---|
+| Compiled, up-and-out BS | 12.09 ms | 11.39 | 11.00 | **10.42** | ~11.1 ¹ |
+| Compiled, Asian local vol | 34.12 | 31.92 | 31.51 | **29.96** | ~30.3 ¹ |
+| Interpreter, up-and-out BS | 29.29 | 29.26 | 25.62 | **27.00** | |
+| Interpreter, Asian local vol | 61.30 | 62.86 | 57.16 | **60.21** | |
+
+¹ from the end-to-end bench, not `ncu`.
+
+What the measurements said:
+
+- **The instruction cache, again.** Φ⁻¹, with its `erfc` and `exp`, was
+  inlined at every draw site. Calling it instead (`QM_DEVICE_NOINLINE`, one
+  copy of the code) gains 8–12 % on every script kernel by itself, more than
+  automatic FMA did.
+- **FMA on top** gains a further 5 % on the compiled scripts and costs 5 % on
+  the interpreter. Fused and called beats the base on every kernel, and the
+  compiled scripts serve prices by default: kept. Not fusing (called only)
+  would keep v1's GPU bits and favour the interpreter (duals, controls,
+  fallback); the measurements are here if that trade is ever preferred.
+- **The model steps' multiply-adds** (BS, multi-asset, local vol, Heston)
+  gained under 1 % on the compiled scripts and cost 3 % on the interpreter:
+  not kept.
+- Duals and the local-vol adjoint (`qm_gpu_risk_bench` kernels): within
+  noise (−4 %, +6 %, −3 % on the duals; ±1 % on the adjoint).
+
+End to end (`qm_script_jit_bench`, P1g → P1h): compiled 11.7 → 10.2 ms
+(up-and-out BS), 15.0 → 12.7 (local vol), 26.6 → 23.9 (Asian BS), 32.0 →
+28.2 (Asian local vol): **1.07–1.11× the hand-written reference paths**.
+Compiled = interpreted bits on the whole library, as before.
 
 ### P1c — Sobol, the default sampler, as fast and as good as it can be
 

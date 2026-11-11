@@ -11,6 +11,16 @@
 #define QM_HOST_DEVICE
 #endif
 
+// A function the GPU calls rather than inlines: one copy of a large body
+// (Φ⁻¹ with its erfc and exp) instead of one per call site, for kernels
+// bound by the instruction cache (blueprint/wp/26-performance.md §5, P1h).
+// The host build inlines as it likes.
+#if defined(__CUDA_ARCH__)
+#define QM_DEVICE_NOINLINE __noinline__
+#else
+#define QM_DEVICE_NOINLINE
+#endif
+
 #if defined(__GNUC__) || defined(__clang__)
 #define QM_RESTRICT __restrict__
 #else
