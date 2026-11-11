@@ -614,6 +614,21 @@ C++ compiler in the production image, which today has none
 (`web/Dockerfile.prod`): how to ship it (full toolchain, or a JIT library
 such as LLVM ORC) is decided with the measurement in hand.
 
+**WP 19 §9.1 measured again (2026-11-11, `ncu`, one V100, P1a's tree):**
+
+| Kernel | Registers | Occupancy, theoretical / achieved | `no_instruction` stall (cycles per issued instruction) |
+|---|---|---|---|
+| Interpreter, up-and-out BS | 126 | 25 % / 24 % | 2.6 |
+| Compiled, up-and-out BS | 64 | 50 % / 49 % | 0.4 |
+| Interpreter, Asian local vol | 126 | 25 % / 25 % | 0.6 |
+| Compiled, Asian local vol | 62 | 50 % / 48 % | 0.9 |
+
+WP 19 §9.1 had 128 registers, 25 % occupancy and 12–15 cycles of
+`no_instruction` per issued instruction; P1b's first compiled kernel still
+had 9. Compilation with specialisation halved the registers, and Φ⁻¹ called
+rather than inlined (P1h) then AS 241 (P1i) emptied the instruction-cache
+stalls.
+
 Acceptance: §11's P1 column; every script of the library prices to the same
 bits through the batched interpreter and the compiled GPU kernel as through
 today's interpreter; the WP 19 §9.1 table measured again (occupancy,
