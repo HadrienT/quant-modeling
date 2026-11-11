@@ -84,7 +84,7 @@ against the parser and fails if they no longer pass.
 
 | | |
 |---|---|
-| `cmake --preset default && cmake --build build` | C++ build (Ninja, Release, tests ON) |
+| `cmake --preset default && cmake --build build` | C++ build (Ninja, Release, tests ON). Links with `mold` when it is installed (it is on the server; `QM_USE_MOLD=OFF` forces GNU ld); the CI and the production image keep GNU ld |
 | `ctest --test-dir build --output-on-failure -j16` | C++ tests, or `scripts/make.sh`, which chains all three. Each `TEST()` runs in its own process (`gtest_discover_tests`), so `-j` parallelizes with no shared state; 16 measured at ~1.7 GB above what already runs on the machine (`NPROC=n scripts/make.sh` to change) |
 | `cmake --preset asan` then `ctest --test-dir build-asan -j8` | sanitizers (address + UB), or `scripts/make_asan.sh`. ASan roughly triples memory per process; 8 measured at ~8.4 GB above the baseline, a more significant share of the margin than with the default preset (`NPROC=n scripts/make_asan.sh` to change) |
 | `cmake --preset release` | `-march=native` + google-benchmark benchmarks |
