@@ -126,7 +126,7 @@ def python_selection(changed: list[str], level2: bool) -> tuple[list[str], bool]
     library = [c for c in changed if c.startswith(("src/", "include/", "bindings/"))]
     if level2 and (api or library):
         return [], True
-    if any(c.startswith("bindings/") or c == "src/module.cpp" for c in changed):
+    if any(c.startswith("bindings/") for c in changed):
         return [], True
     tests = ROOT / "api" / "tests"
     picked = set()
