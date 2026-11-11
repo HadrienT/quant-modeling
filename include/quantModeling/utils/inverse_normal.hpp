@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "quantModeling/core/platform.hpp"
+#include "quantModeling/utils/fused.hpp"
 
 namespace quantModeling
 {
@@ -25,7 +26,16 @@ namespace quantModeling
      * @param p probability in (0, 1). Values outside return ±infinity/NaN
      *          consistent with the mathematical limit.
      */
-    QM_HOST_DEVICE inline double inverse_normal_cdf(double p)
+    // On the GPU: called, not inlined, and its multiply-adds fused
+    // (blueprint/wp/26-performance.md §5, P1h). The script kernels are bound
+    // by the instruction cache, and Φ⁻¹ with its erfc and exp was inlined at
+    // every draw. Measured on one V100 (ncu, 2026-11-11), kernel time:
+    // compiled scripts 12.09 -> 10.42 ms (up-and-out BS, 2.26 M paths) and
+    // 34.12 -> 29.96 ms (Asian local vol, 0.95 M); the interpreter 29.29 ->
+    // 27.00 and 61.30 -> 60.21; duals and adjoint within noise. Not inlining
+    // alone gives most of it (11.00, 31.51); the FMA adds 5 % to the compiled
+    // scripts and costs 5 % to the interpreter. CPU bits unchanged.
+    QM_HOST_DEVICE QM_DEVICE_NOINLINE inline double inverse_normal_cdf(double p)
     {
         // Coefficients for the central region rational approximation
         constexpr double a1 = -3.969683028665376e+01;
@@ -62,31 +72,31 @@ namespace quantModeling
         {
             // Lower tail
             const double q = std::sqrt(-2.0 * std::log(p));
-            x = (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
-                ((((d1 * q + d2) * q + d3) * q + d4) * q + 1.0);
+            x = horner(q, c1, c2, c3, c4, c5, c6) / horner(q, d1, d2, d3, d4, 1.0);
         }
         else if (p <= p_high)
         {
             // Central region
             const double q = p - 0.5;
             const double r = q * q;
-            x = (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q /
-                (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1.0);
+            x = horner(r, a1, a2, a3, a4, a5, a6) * q / horner(r, b1, b2, b3, b4, b5, 1.0);
         }
         else
         {
             // Upper tail
             const double q = std::sqrt(-2.0 * std::log(1.0 - p));
-            x = -(((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) /
-                ((((d1 * q + d2) * q + d3) * q + d4) * q + 1.0);
+            x = -horner(q, c1, c2, c3, c4, c5, c6) / horner(q, d1, d2, d3, d4, 1.0);
         }
 
         // One Halley refinement step: brings the result to ~full double precision.
         constexpr double sqrt_2pi = 2.506628274631000502415765284811;
         constexpr double inv_sqrt2 = 0.70710678118654752440084436210485;
-        const double e = 0.5 * std::erfc(-x * inv_sqrt2) - p;
+        // The polynomials and the multiply-adds below fuse on the device
+        // (utils/fused.hpp, WP 26 P1h); on the host they are the expressions
+        // they replace.
+        const double e = mul_add(0.5, std::erfc(-x * inv_sqrt2), -p);
         const double u = e * sqrt_2pi * std::exp(0.5 * x * x);
-        x = x - u / (1.0 + 0.5 * x * u);
+        x = x - u / mul_add(0.5 * x, u, 1.0);
 
         return x;
     }
