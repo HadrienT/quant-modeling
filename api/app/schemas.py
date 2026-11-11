@@ -144,7 +144,7 @@ class DatedAsianRequest(BaseModel):
     is_call: bool = True
     geometric: bool = False
     day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"
-    sampler: Literal["pseudo", "sobol"] = "pseudo"
+    sampler: Literal["pseudo", "sobol"] = "sobol"
     n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
     seed: int = 1
 

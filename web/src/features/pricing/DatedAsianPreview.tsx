@@ -29,7 +29,7 @@ export default function DatedAsianPreview() {
 	const [geometric, setGeometric] = useState(false);
 	const [dayCount, setDayCount] =
 		useState<(typeof DAY_COUNTS)[number]>("ACT/365F");
-	const [sampler, setSampler] = useState<"pseudo" | "sobol">("pseudo");
+	const [sampler, setSampler] = useState<"pseudo" | "sobol">("sobol");
 	const [nPaths, setNPaths] = useState("200000");
 	const [seed, setSeed] = useState("1");
 	const [fixingsText, setFixingsText] = useState(() =>

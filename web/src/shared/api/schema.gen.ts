@@ -3141,7 +3141,7 @@ export interface components {
             rate: number;
             /**
              * Sampler
-             * @default pseudo
+             * @default sobol
              * @enum {string}
              */
             sampler: "pseudo" | "sobol";

@@ -180,6 +180,17 @@ namespace quantModeling
         model.init(product.timeline(), product.defline());
 
         const std::size_t dim = model.sim_dim();
+        // Sobol is the default (WP 26 P1c); beyond the generator's dimensions
+        // the path runs pseudo-random, and says so.
+        if (settings.mc_sampler == SamplerKind::Sobol && dim > static_cast<std::size_t>(sobol_detail::kMaxDimension))
+        {
+            PricingSettings pseudo = settings;
+            pseudo.mc_sampler = SamplerKind::PseudoRandom;
+            SimulationMCResult res = simulate_impl<T>(product, model, pseudo, theta, pool);
+            res.diagnostics += " (pseudo-random: " + std::to_string(dim) + " draws per path, more than the " +
+                               std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions)";
+            return res;
+        }
         const auto &labels = product.payoff_labels();
         const std::size_t n_labels = labels.size();
 
@@ -418,7 +429,8 @@ namespace quantModeling
         if (settings.mc_sampler == SamplerKind::Sobol && dim > 0)
         {
             const int B = std::max(2, settings.mc_rqmc_batches);
-            const int per_batch = std::max(1, requested / B);
+            const int per_batch = static_cast<int>(sobol_points_per_replicate(static_cast<std::size_t>(requested),
+                                                                              static_cast<std::size_t>(B)));
 
             // Brownian bridge (blueprint/wp/19-gpu.md §2.4): the point's
             // leading coordinates -- Sobol's best -- go to the terminal values.
@@ -489,7 +501,7 @@ namespace quantModeling
             }
             res.n_paths = static_cast<long long>(per_batch) * B;
             res.diagnostics = "SimulationMCEngine + Sobol RQMC (" +
-                              std::to_string(B) + " batches, dim=" +
+                              std::to_string(B) + " batches of " + std::to_string(per_batch) + " points, dim=" +
                               std::to_string(dim) + ")" +
                               (bridged ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? " + Owen scrambling" : "") +
                               (cv ? " + spot control" : "") + cv_off + threads_note();

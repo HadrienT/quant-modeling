@@ -209,6 +209,15 @@ namespace quantModeling::gpu
                 // at most half of what is free (the cards are shared).
                 const uint64_t n_blocks = LB::count(req.n_units) * s.replicates;
                 uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / per_block);
+                // And at most kScratchBytes: one thread per unit (P1g) made a
+                // Sobol launch's scratch 4 096 rows a block -- 4.8 GB for the
+                // daily Asian's 1.16 M paths, whose allocation after the last
+                // call's free cost 89 ms of a 131 ms call (one V100,
+                // 2026-11-11). 1 GiB is still 60 blocks of 4 096 threads at
+                // 256 dimensions, more than the card holds at once; the
+                // result does not depend on the launch size.
+                constexpr std::size_t kScratchBytes = std::size_t{1} << 30;
+                per_launch = std::min<uint64_t>(per_launch, std::max<uint64_t>(1, kScratchBytes / per_block));
                 if (s.blocks_per_launch > 0)
                     per_launch = std::min(per_launch, s.blocks_per_launch);
                 s.blocks_per_launch = std::min<uint64_t>(per_launch, std::max<uint64_t>(n_blocks, 1));

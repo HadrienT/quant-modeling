@@ -9,7 +9,7 @@
 // median of five timed runs after a warm-up (the warm-up pays the
 // compilation, reported separately).
 //
-//   build-cuda/qm_script_jit_bench [paths_scale=1] [device=0] [only=<case>]
+//   build-cuda/qm_script_jit_bench [paths_scale=1] [device=0] [only=<case>] [sampler=philox|sobol]
 //
 // Default path counts: those qm_gpu_reference_bench reaches a relative
 // standard error of 1e-3 with, so that the times compare to its own.
@@ -88,6 +88,8 @@ namespace
         std::string diagnostics;
     };
 
+    bool g_sobol = false; // Sobol RQMC (16 replicates, Brownian bridge) instead of Philox + antithetic
+
     Timing run(const Case &c, bool compiled, int paths, int device)
     {
         setenv("QM_SCRIPT_JIT", compiled ? "1" : "0", 1);
@@ -98,6 +100,7 @@ namespace
         s.mc_seed = 1;
         s.mc_antithetic = true;
         s.mc_rng = RngKind::Philox;
+        s.mc_sampler = g_sobol ? SamplerKind::Sobol : SamplerKind::PseudoRandom; // explicit: Sobol is the default
         s.mc_device = ComputeDevice::Gpu;
         s.mc_gpus = 1; // one V100, as the reference
         (void)device;
@@ -127,6 +130,7 @@ int main(int argc, char **argv)
     const double scale = argc > 1 ? std::atof(argv[1]) : 1.0;
     const int device = argc > 2 ? std::atoi(argv[2]) : 0;
     const std::string only = argc > 3 ? argv[3] : "";
+    g_sobol = argc > 4 && std::string(argv[4]) == "sobol";
     if (gpu::device_count() == 0)
     {
         std::puts("no CUDA device");
@@ -138,7 +142,8 @@ int main(int argc, char **argv)
         {"asian_bs", kDailyAsian, false, 1163724},
         {"asian_lv", kDailyAsian, true, 950442},
     };
-    std::printf("Script engine on one V100, Philox + antithetic: interpreter vs compiled script\n");
+    std::printf("Script engine on one V100, %s: interpreter vs compiled script\n",
+                g_sobol ? "Sobol RQMC (16 replicates, bridge)" : "Philox + antithetic");
     std::printf("%-11s %9s  %12s %12s %8s  %10s  %s\n", "case", "paths", "interp (ms)", "compiled (ms)", "speedup",
                 "compile ms", "same bits");
     for (const Case &c : cases)

@@ -125,6 +125,7 @@ namespace quantModeling
             s.mc_antithetic = antithetic;
             s.mc_importance_sampling = is;
             s.mc_rng = RngKind::Philox;
+            s.mc_sampler = SamplerKind::PseudoRandom; // Philox is the pseudo-random generator; Sobol is the default
             return s;
         }
     };

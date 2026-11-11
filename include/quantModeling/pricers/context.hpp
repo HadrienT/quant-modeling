@@ -70,7 +70,10 @@ namespace quantModeling
         int pde_time_steps = 0;
         // New fields last: keeps aggregate initialization of the fields above intact.
         GaussianKind mc_gaussian = GaussianKind::BoxMuller;
-        SamplerKind mc_sampler = SamplerKind::PseudoRandom;
+        /// Sobol RQMC by default, everywhere (decided 2026-11-10, WP 26 §5
+        /// P1c): the engines that have no Sobol path run pseudo-random and
+        /// say so in their diagnostics.
+        SamplerKind mc_sampler = SamplerKind::Sobol;
         int mc_rqmc_batches = 16;            ///< RQMC replicates when mc_sampler == Sobol
         bool mc_control_variate = true;      ///< use analytic controls where available
         bool mc_importance_sampling = false; ///< drift-shift IS (OTM vanillas)

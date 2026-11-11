@@ -2388,7 +2388,7 @@
             "type": "number"
           },
           "sampler": {
-            "default": "pseudo",
+            "default": "sobol",
             "enum": [
               "pseudo",
               "sobol"
