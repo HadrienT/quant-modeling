@@ -31,7 +31,7 @@ given error, and the **proof** that the prices did not move. The method is the
 5. [P1 — Fast script execution](#5-p1--fast-script-execution)
 6. [P2 — Model-aware primitives in the language](#6-p2--model-aware-primitives-in-the-language)
 7. [P3 — Catalogue products as scripts](#7-p3--catalogue-products-as-scripts)
-8. [P4 — Multilevel Monte-Carlo](#8-p4--multilevel-monte-carlo)
+8. [P4 — Multilevel Monte-Carlo](#8-p4--multilevel-monte-carlo) (8.7: approximate random variables)
 9. [P5 — Multilevel quasi-Monte Carlo](#9-p5--multilevel-quasi-monte-carlo)
 10. [P6 — Multilevel on the GPU](#10-p6--multilevel-on-the-gpu)
 11. [Results](#11-results)
@@ -697,6 +697,58 @@ Milstein for them is a later decision.
   within ε.
 - MLMC = plain MC on the finest grid, within error.
 
+### 8.7 A second axis: approximate random variables (nested MLMC)
+
+Added 2026-11-11, after P1h. The levels above differ by their time step. They
+can also differ by **how the gaussians are made**: Φ⁻¹ exact on the fine
+level, a cheap approximation on the coarse one, both applied to **the same
+uniform** (Sheridan-Methven & Giles, *Approximating inverse cumulative
+distribution functions to produce approximate random variables*, ACM TOMS
+49(3), 2023, arXiv:2012.09715; analysis in Giles & Sheridan-Methven,
+*Analysis of nested multilevel Monte Carlo using approximate Normal random
+variables*, arXiv:2102.08164). The telescoping sum
+
+```latex
+\mathbb{E}[P^{\text{exact}}] = \mathbb{E}[P^{\text{approx}}]
+  + \mathbb{E}[P^{\text{exact}} - P^{\text{approx}}]
+```
+
+is unbiased; the correction's variance is small because both payoffs share
+their uniforms, so few paths pay for it. Their approximations are far coarser
+than ours (piecewise constant or piecewise linear Φ⁻¹) and they report 5–7×
+with Euler-Maruyama. The same telescoping idea with reduced *arithmetic*
+precision corrected by a double-precision level: Brugger, de Schryver, Wehn,
+Omland, Hefter, Ritter et al., *Mixed precision multilevel Monte Carlo on
+hybrid computing systems*, IEEE CIFEr 2014; Omland et al. in *FPGA Based
+Accelerators for Financial Applications* (Springer, 2015); Haas & Giles,
+*A nested MLMC framework for efficient simulations on FPGAs*,
+arXiv:2502.07123 (2025).
+
+What it changes in §8.2: this axis does not need a discretisation bias, so it
+applies **where time-step MLMC brings nothing** -- Black-Scholes products on
+their dates, daily-monitored barriers. With a time-stepped model the two axes
+combine (nested MLMC).
+
+| Case | Time-step MLMC (§8.2) | Approximate Φ⁻¹ (this section) |
+|---|---|---|
+| BS, any product on its event dates | no gain | **candidate** |
+| Local vol, Heston, SLV, rough Bergomi | yes | yes, nested with the time step |
+| Discontinuous payoffs (digitals, barriers, autocalls) | variance decays more slowly | same: paths near the threshold flip between the two Φ⁻¹, smaller gain (the case the analysis paper treats) |
+| Early exercise (LSM) | known in the literature, much harder | same; no bytecode for `exercise()` yet anyway |
+| Jumps | out of P4's first cut | out |
+| AAD greeks | per level | Φ⁻¹ acts on the uniforms, not the parameters: no obstacle in principle, to check |
+
+The script analyser already knows a product's dates, discontinuities and
+exercise: the engine should choose for itself whether a product goes through
+MLMC (either axis) and say so in the diagnostics, as it announces its model
+choice; the products it does not suit stay on plain Monte-Carlo.
+
+Experiment for P4 (issue #210): approximate Φ⁻¹ plus its correction level,
+measured on a BS vanilla (where time-step MLMC gains nothing) and on a BS
+digital (the hard case), against plain Monte-Carlo at equal RMS error; the
+estimator must equal plain Monte-Carlo within error, and the correction
+level's variance decay must be measured, not assumed.
+
 ## 9. P5 — Multilevel quasi-Monte Carlo
 
 Each level's paths are Sobol points (Brownian bridge on the level's fine grid,
@@ -778,6 +830,16 @@ Later lots add their columns (P1, P3, P4 MLMC, P5 MLQMC, P6 GPU).
 
 ## 12. Risks and open decisions
 
+- **Precision and bias (decided 2026-11-11).** More paths reduce the
+  statistical error, never a bias: an approximation that shifts every draw
+  (a cheaper Φ⁻¹, reduced precision) is not paid back by simulating more.
+  Rule: what changes neither precision nor bits is free (not inlining,
+  per-event tables, compilation); another *full-precision* algorithm (e.g.
+  Wichura's AS 241 PPND16 for Φ⁻¹) is allowed after a check against
+  high-precision reference values; a genuinely approximate function enters
+  only inside MLMC with its correction level (§8.7), never in the main
+  estimator alone. The maintainer wants it explored there: MLMC exists to
+  make such experiments safe.
 - **Runtime compilation in production.** NVRTC must be in the runtime image
   (static `libnvrtc_static` exists since CUDA 11.5: check Debian's
   `nvidia-cuda-toolkit` 12.4 ships it). A CPU code generator would need a C++
