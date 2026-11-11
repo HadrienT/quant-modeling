@@ -220,6 +220,7 @@ namespace quantModeling
                 buffers_.if_slots.assign(static_cast<std::size_t>(program_.n_if_slots), T(0));
                 buffers_.if_mode.assign(static_cast<std::size_t>(program_.n_if_modes), 0);
                 compiled_ = true;
+                batchable_ = program_.batchable();
             }
         }
 
@@ -347,6 +348,73 @@ namespace quantModeling
             payoffs_compiled(path, out, static_cast<MachineBuffers &>(state));
         }
 
+        /// The batched interpreter's buffers (P1a): kBatch lanes of
+        /// variables and stack.
+        struct BatchBuffers final : ISimulatableProduct<T>::PayoffState
+        {
+            std::vector<double> vars, stack;
+        };
+
+        /// kBatch for a compiled script with hard ifs only, priced in
+        /// double; 0 otherwise (fuzzy, the tree evaluator, AAD).
+        int batch_width() const override
+        {
+            if constexpr (std::is_same_v<T, double>)
+                return compiled_ && batchable_ ? scripting::kBatch : 0;
+            else
+                return 0;
+        }
+
+        std::unique_ptr<typename ISimulatableProduct<T>::PayoffState> make_batch_state() const override
+        {
+            if (batch_width() == 0)
+                return nullptr;
+            auto b = std::make_unique<BatchBuffers>();
+            b->vars.assign(static_cast<std::size_t>(program_.n_vars) * scripting::kBatch, 0.0);
+            b->stack.assign(static_cast<std::size_t>(std::max(1, program_.max_stack)) * scripting::kBatch, 0.0);
+            return b;
+        }
+
+        /**
+         * @brief payoffs() for up to kBatch paths at once: each event's
+         *        bytecode decoded once for all of them (WP 26 §5, P1a), the
+         *        values of payoffs() bit for bit.
+         */
+        void payoffs_batch(const Scenario<T> *const *paths, int count, T *out,
+                           typename ISimulatableProduct<T>::PayoffState &state) const override
+        {
+            if constexpr (std::is_same_v<T, double>)
+            {
+                constexpr int W = scripting::kBatch;
+                auto &b = static_cast<BatchBuffers &>(state);
+                for (int v = 0; v < program_.n_vars; ++v)
+                    for (int l = 0; l < W; ++l)
+                        b.vars[static_cast<std::size_t>(v * W + l)] =
+                            baseline_.empty() ? 0.0 : baseline_[static_cast<std::size_t>(v)];
+                scripting::BatchMachine m{b.vars.data(), b.stack.data(), {}};
+                const scripting::ProgramView view = program_.view();
+                const unsigned lanes = count >= W ? (1u << W) - 1u : (1u << count) - 1u;
+                const double *spots[W];
+                const double *discounts[W];
+                double numeraire[W];
+                for (std::size_t i = 0; i < events_.size(); ++i)
+                {
+                    for (int l = 0; l < W; ++l)
+                    {
+                        const Sample<T> &smp = (*paths[l < count ? l : 0])[i];
+                        spots[l] = smp.spots.data();
+                        discounts[l] = smp.discounts.data();
+                        numeraire[l] = smp.numeraire;
+                    }
+                    check_event_sizes((*paths[0])[i], i);
+                    scripting::run_event_batch(view, program_.event_begin[i], program_.event_begin[i + 1], m, spots,
+                                               discounts, numeraire, lanes);
+                }
+                for (int l = 0; l < count; ++l)
+                    out[l] = m.payoff[l];
+            }
+        }
+
         /**
          * @brief One path, event by event: after each event, the payoff
          *        accumulated so far — each `pays` divided by the scenario's
@@ -398,6 +466,21 @@ namespace quantModeling
 
         /// The bytecode path: the tree evaluator's semantics, including its
         /// run-time checks on what the model supplies.
+        /// The sample of event i carries what the event's bytecode reads.
+        void check_event_sizes(const Sample<T> &smp, std::size_t i) const
+        {
+            const std::int32_t max_spot = program_.event_max_spot[i];
+            if (max_spot >= 0 && static_cast<std::size_t>(max_spot) >= smp.spots.size())
+                throw InvalidInput("spot(" + std::to_string(max_spot) + "): the model only carries " +
+                                   std::to_string(smp.spots.size()) +
+                                   " underlying(s) -- ScriptedProduct::n_underlyings() reports "
+                                   "what the script actually needs");
+            const std::int32_t max_df = program_.event_max_df[i];
+            if (max_df >= 0 && static_cast<std::size_t>(max_df) >= smp.discounts.size())
+                throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
+                                   "DiscountLookupResolver must run before this product is priced");
+        }
+
         void payoffs_compiled(const Scenario<T> &path, std::vector<T> &out, MachineBuffers &b) const
         {
             if (baseline_.empty())
@@ -410,16 +493,7 @@ namespace quantModeling
             for (std::size_t i = 0; i < events_.size(); ++i)
             {
                 const Sample<T> &smp = path[i];
-                const std::int32_t max_spot = program_.event_max_spot[i];
-                if (max_spot >= 0 && static_cast<std::size_t>(max_spot) >= smp.spots.size())
-                    throw InvalidInput("spot(" + std::to_string(max_spot) + "): the model only carries " +
-                                       std::to_string(smp.spots.size()) +
-                                       " underlying(s) -- ScriptedProduct::n_underlyings() reports "
-                                       "what the script actually needs");
-                const std::int32_t max_df = program_.event_max_df[i];
-                if (max_df >= 0 && static_cast<std::size_t>(max_df) >= smp.discounts.size())
-                    throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
-                                       "DiscountLookupResolver must run before this product is priced");
+                check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
                                      smp.spots.data(), smp.discounts.data(), smp.numeraire);
             }
@@ -500,6 +574,7 @@ namespace quantModeling
         std::vector<T> baseline_;
         scripting::Program program_;
         bool compiled_ = false;
+        bool batchable_ = false; ///< run_event_batch can run it (P1a)
         // The machine's per-path buffers for payoffs(); payoffs_with_state()
         // runs on a thread's own copy (make_payoff_state()).
         mutable MachineBuffers buffers_;

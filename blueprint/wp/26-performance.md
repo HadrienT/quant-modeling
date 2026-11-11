@@ -206,6 +206,45 @@ path (a `pays` statement, a variable assignment). Transcendentals (`exp`,
 ulp-level difference of a vector library (SLEEF), which would break the
 same-bits rule: see the skill's `libraries.md`.
 
+**Done (2026-11-11).** Measured first, by ablation (no profiler on the
+server without root): on one thread, a unit of the daily Asian under BS (two
+paths, ~256 dates) cost 31.0 µs -- 7.1 for its draws (Philox + Φ⁻¹), 13.3
+for the model's steps, 10.6 for interpreting its events (21 ns an event).
+The hand-written reference spends 19.6 µs in all: the draws and the model
+already cost what it costs, the gap was the interpreter.
+
+`scripting::run_event_batch` runs an event on kBatch = 8 paths per decoded
+instruction: the stack and the variables lane-minor, each lane through the
+scalar interpreter's operations (`std::max`, the scalar libm, `if` rather
+than `+ 0` for masked lanes), so the same bits. A hard `if` is a mask over
+the compiler's layout (JumpIfFalse a; then; Jump b; else; b:), each branch
+skipped when no lane is in it. `Program::batchable()` admits hard ifs nested
+at most 32 deep; fuzzy scripts, the tree evaluator and AAD stay path by path.
+`ISimulatableProduct::batch_width / payoffs_batch` carry it to the engine;
+`ScriptedProduct` implements them. In the engine, a logical block's samples
+are computed first, a unit and its mirror side by side in a batch, and then
+reduced in the serial order (`reduce_logical_blocks_filled`); Sobol batches
+its points in sequence. Philox (plain, antithetic, stratified, importance
+sampling) and Sobol, one thread or a pool; not with spot controls yet.
+`PricingSettings::mc_batch = false` keeps the path-by-path engine as the
+oracle: `tests/testScriptBatch.cpp` compares the two bit for bit on the
+whole library (a mask removed from `Assign` makes 36 cases fail), CI runs
+it.
+
+Measured (`build/qm_script_cpu_bench`, one thread, Philox + antithetic,
+100 000 units, against the reference paths at the same units):
+
+| Product | Path by path | Batched | Reference | Batched / reference |
+|---|---|---|---|---|
+| Up-and-out, 52 weekly dates (BS) | 568 ms | 500 ms | 373 ms | **1.34** |
+| Up-and-out (local vol) | 909 ms | 834 ms | 779 ms | **1.07** |
+| Arithmetic Asian, ~256 dates (BS) | 3 096 ms | 2 420 ms | 1 953 ms | **1.24** |
+| Arithmetic Asian (local vol) | 4 666 ms | 3 939 ms | 3 563 ms | **1.11** |
+
+The interpretation share of the BS Asian goes from 10.6 to ~3.8 µs a unit.
+**P1's goal is met on the CPU too**; the decision point below is settled
+without compiling scripts to C++ (no compiler in the production image).
+
 ### P1b — Scripts compiled for the GPU
 
 Approved by the maintainer on 2026-11-10, as is compiling scripts for the CPU
@@ -521,6 +560,13 @@ script allows it (no look-back to an earlier date's sample), the model hands
 each event its samples as it simulates them, and the full scenario is never
 stored: the daily barrier keeps `alive` and the spot, like a hand-written loop.
 
+**Measured, not done (2026-11-11).** By the ablations of P1a, a unit's
+draws and model steps cost 20.4 µs on the daily Asian against 19.5 µs for
+the whole hand-written reference: storing the scenario costs at most about
+5 %, and on the GPU script_path already streams (it keeps only the current
+spots). Not worth reworking the models' interface for now; to revisit if a
+model with heavier samples (many assets, forwards) shows otherwise.
+
 ### P1e — Every CPU thread (added after P0)
 
 No CPU Monte-Carlo pricing uses more than one thread (§2.1). The generic
@@ -551,7 +597,16 @@ time goes (`perf record` on the reference and the script runs), then make
 the same rational approximation, batched by P1a's paths so that AVX2 runs
 four at once.
 
+**Done by P1i (2026-11-11).** Φ⁻¹ is Wichura's AS 241 on the CPU as on
+the GPU: no erfc, no exp, no refinement, a log and a sqrt in the tails only.
+The draws of a daily Asian unit then cost 7.1 µs (28 ns a gaussian, Philox
+included), less than a quarter of the unit: not the bottleneck any more.
+Batching Φ⁻¹ over P1a's lanes (AVX2) is left: the wheel is built without
+-march=native, and the draws are no longer where the time goes.
+
 ### Decision point
+
+**Settled (2026-11-11): P1a meets the target, no runtime C++ compilation.**
 
 If P1a misses the 1.5× target on the CPU, the next step is compiling scripts
 to C++ at run time (as P1b does for CUDA), approved in principle. It needs a

@@ -300,6 +300,11 @@ if(QM_BUILD_CLI)
   # engine's CPU rows in benchmarks/perf_matrix.py.
   add_executable(qm_reference_bench benchmarks/reference/reference_cpu.cpp)
   target_link_libraries(qm_reference_bench PRIVATE quantModeling)
+  # Lots P1a / P1f: the script engine against the reference paths, one
+  # CPU thread, same paths.
+  add_executable(qm_script_cpu_bench benchmarks/script_cpu_bench.cpp)
+  target_link_libraries(qm_script_cpu_bench PRIVATE quantModeling)
+  target_include_directories(qm_script_cpu_bench PRIVATE ${PROJECT_SOURCE_DIR}/benchmarks)
   add_executable(qm_price_script examples/scripting/price_script.cpp)
   target_link_libraries(qm_price_script PRIVATE quantModeling)
   target_compile_options(qm_price_script PRIVATE
@@ -428,6 +433,7 @@ if(QM_BUILD_TESTS)
     tests/testLogicalBlocks.cpp
     tests/testScriptBytecode.cpp
     tests/testScriptCudaCodegen.cpp
+    tests/testScriptBatch.cpp
     tests/testDual.cpp
     tests/testMultiControl.cpp
     tests/testVarianceReduction.cpp

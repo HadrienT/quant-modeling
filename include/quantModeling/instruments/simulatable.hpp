@@ -60,6 +60,23 @@ namespace quantModeling
         {
             payoffs(path, out);
         }
+
+        /**
+         * @brief Several paths per call (blueprint/wp/26-performance.md, P1a):
+         *        up to batch_width() paths whose single payoff goes to
+         *        out[i], with the values payoffs() gives path by path, bit
+         *        for bit. 0 (the default): not available; the engine calls
+         *        payoffs() per path.
+         */
+        virtual int batch_width() const { return 0; }
+
+        /// A fresh batch state for one thread (batch_width() > 0 only).
+        virtual std::unique_ptr<PayoffState> make_batch_state() const { return nullptr; }
+
+        virtual void payoffs_batch(const Scenario<T> *const * /*paths*/, int /*count*/, T * /*out*/,
+                                   PayoffState & /*state*/) const
+        {
+        }
     };
 
 } // namespace quantModeling
