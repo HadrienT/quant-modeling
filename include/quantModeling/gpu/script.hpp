@@ -98,6 +98,11 @@ namespace quantModeling::gpu
         /// prices without spot controls. False, or QM_SCRIPT_JIT=0: the
         /// bytecode interpreter. The two give the same bits.
         bool compile = true;
+        /// One thread per unit, the samples reduced in logical-block order
+        /// (lot P1g): the serial kernel's bits, more threads in flight.
+        /// False: each thread runs its 16 units in turn (the oracle in tests;
+        /// the compiled kernel is parallel only, so the interpreter runs).
+        bool parallel_units = true;
     };
 
     /// Per replicate (one entry when not stratified): the payoff statistics,

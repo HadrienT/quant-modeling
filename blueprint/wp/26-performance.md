@@ -286,7 +286,8 @@ scripts.
 
 **Leads noted after P1b** (checklist in issue #207):
 
-- *P1g, parallel units, same reduction*: the launch shape above.
+- *P1g, parallel units, same reduction*: the launch shape above. **Done**,
+  see below.
 - *P1h, explicit FMA*: the script kernels stay `--fmad=false`, and the hot
   spots fuse where the source says so, through a `mul_add(a, b, c)` helper (a
   device `fma` for `double`; `a * b + c` on the host and for `Dual` and
@@ -302,6 +303,43 @@ scripts.
   (a per-event table on the device keeps the bits), the `log`/`pow`/`sqrt`
   scripts write, and on the CPU the SLEEF decision. Changing Φ⁻¹'s
   algorithm changes the bits: the maintainer decides.
+
+### P1g — Parallel units, same reduction (added after P1b; done)
+
+A logical block is 4 096 units on 256 threads; each thread ran its 16 units
+in turn and added them as it went, which fixes the bits (ADR-G5) but leaves
+a V100 under-occupied at the path counts that matter: about a million paths
+is 116 to 280 blocks for 80 SMs.
+
+Now two kernels (`src/gpu/logical_blocks.cuh`): `logical_units_kernel`, one
+thread per unit, stores each unit's sample (a payoff, a control sample, a
+dual); `logical_reduce_kernel` adds the stored samples in exactly the serial
+kernel's order -- thread t, units t, t + 256, ... -- then the same warp tree
+and warp order (`logical_block_reduce`, shared by both). Same additions,
+same bits, sixteen times the threads in flight. It serves every script
+request but the per-path adjoint (whose threads each accumulate a gradient
+row over their 16 paths): plain, Sobol, stratified, spot controls, duals,
+and the compiled scripts. The samples buffer is 4 096 samples per logical
+block, the Sobol scratch 4 096 rows instead of 256; the launch size comes
+from free memory as before. `ScriptGpuRequest::parallel_units = false` keeps
+the serial kernel as the oracle: `tests/gpu/testGpuParallelUnits.cpp`
+compares the two bit for bit (the GPU-vs-CPU tests compare to 1e-9 and could
+not see a change of summation order; a deliberate swap of two samples in the
+reduction makes it fail).
+
+Measured (`qm_script_jit_bench`, as in P1b):
+
+| Product | Interpreter, P1b → P1g | Compiled, P1b → P1g | Compiled / reference |
+|---|---|---|---|
+| Up-and-out, 52 weekly dates (BS) | 33.6 → 30.9 ms | 13.2 → 11.8 ms | 1.27 |
+| Up-and-out (local vol) | 39.1 → 29.5 ms | 16.7 → 15.1 ms | 1.30 |
+| Arithmetic Asian, 252 dates (BS) | 65.3 → 55.1 ms | 35.1 → 26.5 ms | 1.19 |
+| Arithmetic Asian (local vol) | 86.7 → 57.6 ms | 58.6 → 32.1 ms | 1.26 |
+
+**P1's GPU goal (within 1.5× of the reference) is met on all four.** At
+eight times the paths the time grows linearly (barrier BS: 89 ms for 18 M
+paths): the gain is at the path counts where the launch was short of
+threads, and nothing is lost above.
 
 ### P1c — Sobol, the default sampler, as fast and as good as it can be
 

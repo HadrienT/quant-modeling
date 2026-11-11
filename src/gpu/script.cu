@@ -117,9 +117,13 @@ namespace quantModeling::gpu
             uint64_t blocks_per_launch = 0;
         };
 
+        /// `parallel_units`: one thread per unit (lot P1g), so a logical
+        /// block's Sobol scratch is 4 096 rows, not 256.
         DrawSetup draw_setup(const ScriptGpuRequest &req, const mc::ScriptPathView &v, DeviceArrays &mem, int device,
-                             std::size_t other_bytes_per_block = 0)
+                             std::size_t other_bytes_per_block = 0, bool parallel_units = false)
         {
+            const std::size_t threads_per_block =
+                static_cast<std::size_t>(parallel_units ? LB::kUnitsPerBlock : LB::kThreadsPerBlock);
             DrawSetup s;
             s.draws.base.seed = req.seed;
             s.draws.base.stride = v.stride;
@@ -160,8 +164,7 @@ namespace quantModeling::gpu
                 sv.std_dev = mem.put(t.std_dev);
                 sv.inv_sqrt_dt = mem.put(t.inv_sqrt_dt);
                 s.replicates = static_cast<uint64_t>(std::max(1, t.replicates));
-                per_block += static_cast<std::size_t>(LB::kThreadsPerBlock) * 2u * static_cast<std::size_t>(t.dim) *
-                             sizeof(double);
+                per_block += threads_per_block * 2u * static_cast<std::size_t>(t.dim) * sizeof(double);
             }
             if (per_block > 0)
             {
@@ -175,7 +178,7 @@ namespace quantModeling::gpu
             }
             if (req.sobol)
             {
-                s.draws.rows = static_cast<long>(s.blocks_per_launch) * LB::kThreadsPerBlock;
+                s.draws.rows = static_cast<long>(s.blocks_per_launch * threads_per_block);
                 s.draws.scratch = mem.alloc<double>(static_cast<std::size_t>(s.draws.rows) * 2u *
                                                     static_cast<std::size_t>(req.sobol->dim));
             }
@@ -211,6 +214,8 @@ namespace quantModeling::gpu
             mc::ScriptPathView view;
             UnitDraws draws;
             uint64_t per_replicate;
+
+            using Out = Dual<N>;
 
             __device__ Dual<N> operator()(uint64_t rep, uint64_t u) const
             {
@@ -304,10 +309,13 @@ namespace quantModeling::gpu
                 DeviceArrays mem;
                 const mc::ScriptPathView v = device_view(req, mem, device);
                 const detail::StackLimitRestore release_stack;
-                const DrawSetup s = draw_setup(req, v, mem, device);
+                const DrawSetup s = draw_setup(req, v, mem, device, 0, req.parallel_units);
                 const auto unit = make_unit(v, s);
-                return detail::run_block_range<Stats>(device, first, last, bps, req.n_units, unit,
-                                                      s.blocks_per_launch);
+                if (!req.parallel_units)
+                    return detail::run_block_range<Stats>(device, first, last, bps, req.n_units, unit,
+                                                          s.blocks_per_launch);
+                return detail::run_block_range_parallel<Stats>(device, first, last, bps, req.n_units, unit,
+                                                               s.blocks_per_launch);
             };
             return detail::merge_segments(detail::run_on_devices<Stats>(devices_of(req), bps * reps, job), reps, bps);
         }
@@ -326,19 +334,19 @@ namespace quantModeling::gpu
                 DeviceArrays mem;
                 const mc::ScriptPathView v = device_view(req, mem, device);
                 const detail::StackLimitRestore release_stack;
-                const DrawSetup s = draw_setup(req, v, mem, device);
+                const DrawSetup s = draw_setup(req, v, mem, device, 0, true);
                 Unit unit{v, s.draws, req.antithetic, req.n_units, {}};
                 void *fn = fns[static_cast<std::size_t>(
                     std::find(devices.begin(), devices.end(), device) - devices.begin())];
                 uint64_t n_units = req.n_units, per_segment = bps;
-                const detail::LaunchBlocks<WelfordAccumulator> launch =
-                    [&](uint64_t b, uint64_t count, WelfordAccumulator *d_partials)
+                const detail::LaunchUnits<double> launch = [&](uint64_t b, uint64_t count, double *d_samples)
                 {
-                    void *args[] = {&b, &per_segment, &n_units, &unit, &d_partials};
-                    jit::launch(fn, static_cast<unsigned>(count), LB::kThreadsPerBlock, args);
+                    void *args[] = {&b, &per_segment, &n_units, &count, &unit, &d_samples};
+                    jit::launch(fn, detail::unit_grid(count), LB::kThreadsPerBlock, args);
                 };
-                return detail::run_block_range_with<WelfordAccumulator>(device, first, last, s.blocks_per_launch,
-                                                                        launch);
+                return detail::run_block_range_units<WelfordAccumulator, double>(device, first, last, bps,
+                                                                                 req.n_units, s.blocks_per_launch,
+                                                                                 launch);
             };
             return detail::merge_segments(detail::run_on_devices<WelfordAccumulator>(devices, bps * reps, job), reps,
                                           bps);
@@ -361,6 +369,11 @@ namespace quantModeling::gpu
             if (req.controls.n > 0)
             {
                 note = "interpreted bytecode (spot controls are not compiled yet)";
+                return {};
+            }
+            if (!req.parallel_units)
+            {
+                note = "interpreted bytecode (serial units)";
                 return {};
             }
             const scripting::CudaSource src = scripting::cuda_event_source(*req.program);

@@ -34,11 +34,13 @@ namespace quantModeling::gpu::detail
 } // namespace quantModeling::gpu::detail
 
 /// Prices without controls: Philox, stratified or Sobol, antithetic or not,
-/// importance sampling -- simulate_script's `plain` statistics.
+/// importance sampling -- simulate_script's `plain` statistics. One thread
+/// per unit (lot P1g): each stores its payoff in `samples`, which the
+/// library's logical_reduce_kernel reduces in logical-block order.
 extern "C" __global__ void __launch_bounds__(quantModeling::mc::LogicalBlocks::kThreadsPerBlock)
-    qm_script_plain(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units,
+    qm_script_plain(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, uint64_t n_blocks,
                     quantModeling::gpu::detail::ScriptUnit<false, quantModeling::gpu::detail::CompiledEvents> fn,
-                    quantModeling::WelfordAccumulator *partials)
+                    double *samples)
 {
     using namespace quantModeling;
     // The unit with the spec's constants in place of the arguments they
@@ -54,5 +56,5 @@ extern "C" __global__ void __launch_bounds__(quantModeling::mc::LogicalBlocks::k
         unit.draws.base.strata = 0;
     if (!qm_spec_importance())
         unit.draws.base.n_theta = 0;
-    gpu::detail::logical_block_body<WelfordAccumulator>(first_block, blocks_per_segment, n_units, unit, partials);
+    gpu::detail::logical_block_units(first_block, blocks_per_segment, n_units, n_blocks, unit, samples);
 }
