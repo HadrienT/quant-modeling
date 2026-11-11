@@ -427,26 +427,7 @@ namespace quantModeling
             build_program(f.program_d, side_d, s.program_d);
             build_program(f.program_f, side_f, s.program_f);
 
-            // Default and funding weights of each reporting date
-            // (risk/xva.hpp: first to default, and the running funding cost).
-            T sc_before(1.0), si_before(1.0);
-            previous = 0.0;
-            for (const int i : f.plan.reporting)
-            {
-                const Time t = f.times[static_cast<std::size_t>(i)];
-                const T sc = exp(log_survival(f.hazard_times_c, p.hazard_c, t));
-                const T si = exp(log_survival(f.hazard_times_i, p.hazard_i, t));
-                const auto push = [&s](XvaOutput o, const T &w)
-                { s.weights[static_cast<std::size_t>(o)].push_back(w); };
-                push(XvaOutput::Cva, T(-p.lgd_c * si_before * (sc_before - sc)));
-                push(XvaOutput::Dva, T(-p.lgd_i * sc_before * (si_before - si)));
-                push(XvaOutput::Fca, T(-p.spread_b * sc * si * (t - previous)));
-                push(XvaOutput::Fba, T(-p.spread_l * sc * si * (t - previous)));
-                push(XvaOutput::CvaUnilateral, T(-p.lgd_c * (sc_before - sc)));
-                sc_before = sc;
-                si_before = si;
-                previous = t;
-            }
+            push_default_and_funding_weights<T>(f, p, s);
 
             // The collateral held today is the call on today's value, in
             // domestic currency: every trade seen from today.
@@ -632,28 +613,8 @@ namespace quantModeling
                                  ? collateralised_value(plan, static_cast<int>(r), ws.value.data(), ws.flow.data(),
                                                         ws.held.data(), s.held_today)
                                  : ws.value[i]);
-                if (v > 0.0)
-                {
-                    out[0] += s.weights[0][r] * v;
-                    out[2] += s.weights[2][r] * v;
-                    out[4] += s.weights[4][r] * v;
-                }
-                else if (v < 0.0)
-                {
-                    out[1] += s.weights[1][r] * v;
-                    out[3] += s.weights[3][r] * v;
-                }
+                accumulate_outputs(v, r, s.weights, out);
             }
-        }
-
-        std::string years(Time t)
-        {
-            char buffer[32];
-            if (std::abs(t - std::round(t)) < 1e-9)
-                std::snprintf(buffer, sizeof buffer, "%.0fY", t);
-            else
-                std::snprintf(buffer, sizeof buffer, "%.2fY", t);
-            return buffer;
         }
 
         /// The flows of one currency, netted by payment date and sorted.
@@ -828,29 +789,7 @@ namespace quantModeling
         add(XvaRiskFactor::CorrelationDomesticForeign, 0.0, "correlation of the two rates");
         add(XvaRiskFactor::CorrelationDomesticSpot, 0.0, "correlation of the domestic rate and the spot");
         add(XvaRiskFactor::CorrelationForeignSpot, 0.0, "correlation of the foreign rate and the spot");
-        const auto hazards = [&add](const CreditCurve &c, std::vector<Time> &times, std::vector<Real> &values,
-                                    XvaRiskFactor factor, const char *who)
-        {
-            times = c.times();
-            values = c.hazards();
-            const bool flat = values.size() == 1;
-            for (std::size_t j = 0; j < values.size(); ++j)
-                add(factor, flat || j >= times.size() ? 0.0 : times[j],
-                    std::string(who) + " hazard rate" +
-                        (flat ? std::string() : j < times.size() ? " to " + years(times[j])
-                                                                 : " beyond"));
-        };
-        hazards(inputs.counterparty, f.hazard_times_c, p.hazard_c, XvaRiskFactor::CounterpartyHazard,
-                "counterparty");
-        hazards(inputs.own, f.hazard_times_i, p.hazard_i, XvaRiskFactor::OwnHazard, "own");
-        p.lgd_c = inputs.lgd_counterparty;
-        p.lgd_i = inputs.lgd_own;
-        p.spread_b = inputs.borrowing_spread;
-        p.spread_l = inputs.lending_spread;
-        add(XvaRiskFactor::CounterpartyLgd, 0.0, "counterparty loss given default");
-        add(XvaRiskFactor::OwnLgd, 0.0, "own loss given default");
-        add(XvaRiskFactor::BorrowingSpread, 0.0, "borrowing spread");
-        add(XvaRiskFactor::LendingSpread, 0.0, "lending spread");
+        add_credit_and_funding(add, inputs, f, p);
 
         // The ramp of each swaption: a fraction of the standard deviation of
         // its swap's value at the expiry, |dV/dx| sd(x) at the mean state of
@@ -920,37 +859,13 @@ namespace quantModeling
         Setup<Real> setup;
         build(f, run.params, setup);
 
-        const std::size_t N = settings.paths;
-        const std::size_t batches = (N + kBatch - 1) / kBatch;
-        std::vector<std::array<Real, kXvaOutputs>> means(batches);
-        const auto started = std::chrono::steady_clock::now();
-        for_each_batch(N, pool,
-                       [&](std::size_t b, std::size_t first, std::size_t size)
-                       {
-                           Workspace<Real> ws(f.times.size());
-                           std::array<Real, kXvaOutputs> out{}, sum{};
-                           for (std::size_t p = 0; p < size; ++p)
-                           {
-                               evaluate_path(f, setup, first + p, ws, out);
-                               for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                                   sum[o] += out[o];
-                           }
-                           for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                               means[b][o] = sum[o] / static_cast<Real>(size);
-                       });
-        XvaValues result;
-        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        result.paths = N;
-        result.batches = batches;
+        XvaValues result = xva_values_over_batches(
+            settings.paths, pool, [&f]
+            { return Workspace<Real>(f.times.size()); },
+            [&](Workspace<Real> &ws, std::size_t path, std::array<Real, kXvaOutputs> &out)
+            { evaluate_path(f, setup, path, ws, out); });
         result.smoothing_widths = f.widths_d;
         result.smoothing_widths.insert(result.smoothing_widths.end(), f.widths_f.begin(), f.widths_f.end());
-        for (std::size_t o = 0; o < kXvaOutputs; ++o)
-        {
-            std::vector<Real> column(batches);
-            for (std::size_t b = 0; b < batches; ++b)
-                column[b] = means[b][o];
-            result.values[o] = over_batches(column, N);
-        }
         return result;
     }
 

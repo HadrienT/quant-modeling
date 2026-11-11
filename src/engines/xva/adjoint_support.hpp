@@ -16,8 +16,12 @@
 #include "quantModeling/utils/thread_pool.hpp"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <exception>
+#include <string>
 #include <vector>
 
 namespace quantModeling::xva_adjoint
@@ -302,6 +306,133 @@ namespace quantModeling::xva_adjoint
             value += prog.trades[k].quantity * v;
         }
         return value;
+    }
+
+    /// A tenor written for a risk label: "5Y", or "2.50Y" off whole years.
+    inline std::string years(Time t)
+    {
+        char buffer[32];
+        if (std::abs(t - std::round(t)) < 1e-9)
+            std::snprintf(buffer, sizeof buffer, "%.0fY", t);
+        else
+            std::snprintf(buffer, sizeof buffer, "%.2fY", t);
+        return buffer;
+    }
+
+    /// The default and funding weights of each reporting date (risk/xva.hpp:
+    /// first to default, and the running funding cost), appended to
+    /// `s.weights`. `F` holds the reporting plan, the time grid and the hazard
+    /// times; `P` the hazards, losses given default and funding spreads in T.
+    template <class T, class F, class P, class S>
+    void push_default_and_funding_weights(const F &f, const P &p, S &s)
+    {
+        using std::exp;
+        T sc_before(1.0), si_before(1.0);
+        Time previous = 0.0;
+        for (const int i : f.plan.reporting)
+        {
+            const Time t = f.times[static_cast<std::size_t>(i)];
+            const T sc = exp(log_survival(f.hazard_times_c, p.hazard_c, t));
+            const T si = exp(log_survival(f.hazard_times_i, p.hazard_i, t));
+            const auto push = [&s](XvaOutput o, const T &w)
+            { s.weights[static_cast<std::size_t>(o)].push_back(w); };
+            push(XvaOutput::Cva, T(-p.lgd_c * si_before * (sc_before - sc)));
+            push(XvaOutput::Dva, T(-p.lgd_i * sc_before * (si_before - si)));
+            push(XvaOutput::Fca, T(-p.spread_b * sc * si * (t - previous)));
+            push(XvaOutput::Fba, T(-p.spread_l * sc * si * (t - previous)));
+            push(XvaOutput::CvaUnilateral, T(-p.lgd_c * (sc_before - sc)));
+            sc_before = sc;
+            si_before = si;
+            previous = t;
+        }
+    }
+
+    /// Adds the discounted exposure `v` of reporting date `r` to the outputs:
+    /// a positive one to the CVA, the FCA and the unilateral CVA, a negative
+    /// one to the DVA and the FBA (the order of XvaOutput).
+    template <class T, class W, class Out>
+    void accumulate_outputs(const T &v, std::size_t r, const W &weights, Out &out)
+    {
+        if (v > 0.0)
+        {
+            out[0] += weights[0][r] * v;
+            out[2] += weights[2][r] * v;
+            out[4] += weights[4][r] * v;
+        }
+        else if (v < 0.0)
+        {
+            out[1] += weights[1][r] * v;
+            out[3] += weights[3][r] * v;
+        }
+    }
+
+    /// Registers the credit and funding inputs as risk factors, through `add`
+    /// (factor, tenor, label), and copies them into the parameters `p` and the
+    /// hazard times of `f`.
+    template <class Add, class F, class P>
+    void add_credit_and_funding(const Add &add, const XvaRiskInputs &inputs, F &f, P &p)
+    {
+        const auto hazards = [&add](const CreditCurve &c, std::vector<Time> &times, std::vector<Real> &values,
+                                    XvaRiskFactor factor, const char *who)
+        {
+            times = c.times();
+            values = c.hazards();
+            // One period is a flat curve, whatever date it is written to.
+            const bool flat = values.size() == 1;
+            for (std::size_t j = 0; j < values.size(); ++j)
+                add(factor, flat || j >= times.size() ? 0.0 : times[j],
+                    std::string(who) + " hazard rate" +
+                        (flat ? std::string() : j < times.size() ? " to " + years(times[j])
+                                                                 : " beyond"));
+        };
+        hazards(inputs.counterparty, f.hazard_times_c, p.hazard_c, XvaRiskFactor::CounterpartyHazard, "counterparty");
+        hazards(inputs.own, f.hazard_times_i, p.hazard_i, XvaRiskFactor::OwnHazard, "own");
+        p.lgd_c = inputs.lgd_counterparty;
+        p.lgd_i = inputs.lgd_own;
+        p.spread_b = inputs.borrowing_spread;
+        p.spread_l = inputs.lending_spread;
+        add(XvaRiskFactor::CounterpartyLgd, 0.0, "counterparty loss given default");
+        add(XvaRiskFactor::OwnLgd, 0.0, "own loss given default");
+        add(XvaRiskFactor::BorrowingSpread, 0.0, "borrowing spread");
+        add(XvaRiskFactor::LendingSpread, 0.0, "lending spread");
+    }
+
+    /// The xVA values alone, in doubles: `evaluate(ws, path, out)` writes the
+    /// outputs of one path, with a workspace `make_workspace()` builds once per
+    /// batch. Batches of kBatch paths, spread over `pool`.
+    template <class MakeWorkspace, class Evaluate>
+    XvaValues xva_values_over_batches(std::size_t paths, ThreadPool *pool, const MakeWorkspace &make_workspace,
+                                      const Evaluate &evaluate)
+    {
+        const std::size_t batches = (paths + kBatch - 1) / kBatch;
+        std::vector<std::array<Real, kXvaOutputs>> means(batches);
+        const auto started = std::chrono::steady_clock::now();
+        for_each_batch(paths, pool,
+                       [&](std::size_t b, std::size_t first, std::size_t size)
+                       {
+                           auto ws = make_workspace();
+                           std::array<Real, kXvaOutputs> out{}, sum{};
+                           for (std::size_t q = 0; q < size; ++q)
+                           {
+                               evaluate(ws, first + q, out);
+                               for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                                   sum[o] += out[o];
+                           }
+                           for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                               means[b][o] = sum[o] / static_cast<Real>(size);
+                       });
+        XvaValues result;
+        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        result.paths = paths;
+        result.batches = batches;
+        for (std::size_t o = 0; o < kXvaOutputs; ++o)
+        {
+            std::vector<Real> column(batches);
+            for (std::size_t b = 0; b < batches; ++b)
+                column[b] = means[b][o];
+            result.values[o] = over_batches(column, paths);
+        }
+        return result;
     }
 
 } // namespace quantModeling::xva_adjoint
