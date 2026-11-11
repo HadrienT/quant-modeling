@@ -77,7 +77,8 @@ namespace quantModeling
             if (sobol)
             {
                 B = rqmc_replicates(settings);
-                req.n_units = static_cast<uint64_t>(std::max(1, requested / B));
+                req.n_units = static_cast<uint64_t>(
+                    sobol_points_per_replicate(static_cast<std::size_t>(requested), static_cast<std::size_t>(B)));
                 tables = mc::sobol_tables(model.sim_dim(), req.seed, B, model.brownian_layout(),
                                           settings.mc_brownian_bridge, settings.mc_sobol_owen);
                 req.sobol = &*tables;
@@ -130,7 +131,8 @@ namespace quantModeling
                         cv_note = " + spot control (within-stratum slope)";
                 }
                 else
-                    note += " + Sobol RQMC (" + std::to_string(B) + " batches, dim=" +
+                    note += " + Sobol RQMC (" + std::to_string(B) + " batches of " + std::to_string(req.n_units) +
+                            " points, dim=" +
                             std::to_string(model.sim_dim()) + ")" +
                             (tables->bridged() ? " + Brownian bridge" : "") +
                             (tables->owen ? " + Owen scrambling" : "");
@@ -262,7 +264,8 @@ namespace quantModeling
         std::optional<mc::SobolTables> tables;
         if (sobol)
         {
-            req.n_units = static_cast<uint64_t>(std::max<std::size_t>(1, n_paths / kAadRqmcReplicates));
+            req.n_units = static_cast<uint64_t>(
+                sobol_points_per_replicate(n_paths, static_cast<std::size_t>(kAadRqmcReplicates)));
             tables = mc::sobol_tables(model.sim_dim(), seed, kAadRqmcReplicates, model.brownian_layout(), true);
             req.sobol = &*tables;
         }

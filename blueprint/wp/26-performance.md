@@ -562,6 +562,24 @@ P0, since a displayed figure must be defensible.
   bridge survival probabilities are what gives it back (barriers, digitals,
   autocalls).
 
+**Decided and done (2026-11-11, measurements in #214).** R stays 16: at
+equal total paths, R = 32 costs 1.4-2.3x in variance on smooth payoffs, and
+with R = 16 the displayed error already covers the true price 92-98 % of
+the time at ±1.96 (it overstates the true RMSE by 4-30 %). Points per
+replicate are now the power of two nearest to paths / R on a log scale
+(`sobol_points_per_replicate`, every Sobol path of the library: the generic
+engine CPU and GPU, AAD CPU and GPU, the hand-written BS vanilla and Asian):
+a truncated net (12 500 points at 200 000 paths) was 1.2-2.9x less
+efficient per path on smooth payoffs, a barrier indifferent. The work stays
+within [1/√2, √2] of the request; the diagnostics give the count. GPU
+scratch per launch is capped at 1 GiB (it was 4.8 GB at once for the daily
+Asian, 89 ms of a 131 ms call to allocate: compiled 134 -> 43 ms) and
+`sobol_point_bits` is branchless (-2 to -5 % of the kernel). Not done, by
+measurement: chunked replicates beyond 16 threads (the production container
+has 2 CPUs) and Gray-code stepping on the GPU (a thread computes one point
+since P1g). Left: the scratch's memory traffic, which a bridge built in time
+order with O(log n) memory per path would remove.
+
 **Speed.** Measured on 2026-11-10 (`qm_gpu_rng_bench`, V100, 2^20 points × 128 dims):
 our random-access `sobol_point_bits` fills memory at 249 GB/s; the same bits
 computed branchless, with a dimension's 32 directions in shared memory, at

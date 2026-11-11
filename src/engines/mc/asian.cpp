@@ -58,7 +58,8 @@ namespace quantModeling
 
             // Randomized QMC: each digital shift is one i.i.d. replicate.
             const int B = std::max(2, settings.mc_rqmc_batches);
-            const int per_batch = std::max(1, settings.mc_paths / B);
+            const int per_batch = static_cast<int>(
+                sobol_points_per_replicate(static_cast<std::size_t>(settings.mc_paths), static_cast<std::size_t>(B)));
 
             WelfordAccumulator price_acc;
             WelfordAccumulator delta_acc;

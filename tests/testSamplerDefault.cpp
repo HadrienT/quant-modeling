@@ -9,6 +9,7 @@
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/pricers/registry.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
+#include "quantModeling/utils/sobol.hpp"
 
 // Lot P1c of blueprint/wp/26-performance.md: Sobol RQMC is the default
 // sampler everywhere (decided 2026-11-10). What runs Sobol says so; what
@@ -24,6 +25,24 @@ namespace quantModeling
             return diagnostics.find(what) != std::string::npos;
         }
     } // namespace
+
+    // A Sobol net is balanced at 2^m points: per replicate, the power of two
+    // nearest to paths / replicates on a log scale (WP 26 P1c, #214).
+    TEST(SamplerDefault, SobolReplicatesHoldAPowerOfTwoPoints)
+    {
+        EXPECT_EQ(sobol_points_per_replicate(200000, 16), 16384u);  // 12 500 -> 2^14 (12 500 > 8 192 sqrt 2)
+        EXPECT_EQ(sobol_points_per_replicate(100000, 16), 8192u);   // 6 250 -> 2^13 (6 250 > 4 096 sqrt 2 = 5 793)
+        EXPECT_EQ(sobol_points_per_replicate(1 << 20, 16), 65536u); // already a power of two
+        EXPECT_EQ(sobol_points_per_replicate(5, 16), 1u);           // at least one point
+        for (std::size_t paths = 16; paths < 2000000; paths = paths * 3 / 2 + 1)
+        {
+            const std::size_t n = sobol_points_per_replicate(paths, 16);
+            EXPECT_EQ(n & (n - 1), 0u) << paths; // a power of two
+            const double ratio = static_cast<double>(n * 16) / static_cast<double>(std::max<std::size_t>(16, paths));
+            EXPECT_GT(ratio, 0.70) << paths; // within [1/sqrt 2, sqrt 2] of the request
+            EXPECT_LT(ratio, 1.42) << paths;
+        }
+    }
 
     TEST(SamplerDefault, SobolIsTheDefault)
     {

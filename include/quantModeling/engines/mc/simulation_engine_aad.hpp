@@ -172,7 +172,7 @@ namespace quantModeling
         // the replicates' spread.
         const bool sobol = sampler == SamplerKind::Sobol && dim > 0;
         const std::size_t per_rep =
-            sobol ? std::max<std::size_t>(1, n_paths / static_cast<std::size_t>(kAadRqmcReplicates)) : 0;
+            sobol ? sobol_points_per_replicate(n_paths, static_cast<std::size_t>(kAadRqmcReplicates)) : 0;
         const std::size_t total = sobol ? per_rep * static_cast<std::size_t>(kAadRqmcReplicates) : n_paths;
         std::optional<SobolSequence> sequence;
         std::optional<BridgedGaussians> bridge;

@@ -429,7 +429,8 @@ namespace quantModeling
         if (settings.mc_sampler == SamplerKind::Sobol && dim > 0)
         {
             const int B = std::max(2, settings.mc_rqmc_batches);
-            const int per_batch = std::max(1, requested / B);
+            const int per_batch = static_cast<int>(sobol_points_per_replicate(static_cast<std::size_t>(requested),
+                                                                              static_cast<std::size_t>(B)));
 
             // Brownian bridge (blueprint/wp/19-gpu.md §2.4): the point's
             // leading coordinates -- Sobol's best -- go to the terminal values.
@@ -500,7 +501,7 @@ namespace quantModeling
             }
             res.n_paths = static_cast<long long>(per_batch) * B;
             res.diagnostics = "SimulationMCEngine + Sobol RQMC (" +
-                              std::to_string(B) + " batches, dim=" +
+                              std::to_string(B) + " batches of " + std::to_string(per_batch) + " points, dim=" +
                               std::to_string(dim) + ")" +
                               (bridged ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? " + Owen scrambling" : "") +
                               (cv ? " + spot control" : "") + cv_off + threads_note();

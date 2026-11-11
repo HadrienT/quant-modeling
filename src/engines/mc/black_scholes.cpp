@@ -176,7 +176,9 @@ namespace quantModeling
             // unbiased standard error. Antithetic is redundant here and ignored.
             const bool sobol = (settings.mc_sampler == SamplerKind::Sobol);
             const int B = std::max(2, settings.mc_rqmc_batches);
-            const int per_batch = std::max(1, settings.mc_paths / B);
+            const int per_batch = sobol ? static_cast<int>(sobol_points_per_replicate(
+                                              static_cast<std::size_t>(settings.mc_paths), static_cast<std::size_t>(B)))
+                                        : std::max(1, settings.mc_paths / B);
             for (int b = 0; b < B; ++b)
             {
                 const uint64_t batch_seed =
