@@ -90,6 +90,7 @@ against the parser and fails if they no longer pass.
 | `cmake --preset release` | `-march=native` + google-benchmark benchmarks |
 | `build/qm_xva_aad_bench [paths] [threads]` | cost of CVA sensitivities by adjoint differentiation against one valuation (WP 23, work package X8) |
 | `cmake --preset cuda && cmake --build build-cuda` | CUDA backend (WP 19, both V100s) in `build-cuda/`; nvcc uses `g++-13` as host (CUDA 12.4 rejects gcc 14). `ctest --test-dir build-cuda -L gpu` for the GPU tests only (CI has no GPU and does not build them); `build-cuda/qm_gpu_bench` for the time-to-error benchmark, `qm_gpu_vr_bench` for generic variance reduction, `qm_gpu_risk_bench` for GPU risks against the CPU tape (work package G3), `qm_gpu_exposure_bench` for the exposure and CVA of a netting set (WP 23, work package X7), `qm_script_jit_bench` for scripts compiled at run time (NVRTC + nvJitLink) against the interpreter (WP 26, P1b; `QM_SCRIPT_JIT=0` turns the compilation off). On the Python side: `QM_ENABLE_CUDA=1 scripts/run_api.sh` (or `scripts/dev_install.sh`, `scripts/build_wheel.sh`) for a module with GPU; the production image does so by default (`QM_CUDA=ON`) |
+| `scripts/test_affected.py` | the tests a change can affect (level 1, below); `--pr` for level 2; `--dry-run` prints the selection; `--files f1 f2` or `--range A..B` to check what a change would run |
 | `scripts/build_wheel.sh` | pybind11 wheel in `dist/` |
 | `scripts/install_quantbacktest.sh` | builds and installs the `quantbacktest` wheel (backtest engine, repository `~/quant-backtest`) at the commit pinned in `api/quantbacktest.pin`; no effect if that commit is already installed. Also read by both Docker images and by CI: **bumping the engine version means changing this one file**. `NPROC=n` bounds the compilations (16 by default) |
 | `scripts/run_api.sh` | venv + wheel + pinned `quantbacktest` wheel + `uvicorn --reload` |
@@ -105,6 +106,30 @@ against the parser and fails if they no longer pass.
 The `docker compose` host ports are configurable, `QM_API_PORT` (default 8010) and
 `QM_WEB_PORT` (default 5180), because several projects run on the same self-hosted server.
 Copy `.env.placeholder` to `.env`.
+
+## Tests: three levels
+
+Running everything after every change is slow (the GPU suite alone takes 4 to 7
+minutes, pytest 2.5, and each run rebuilds), and the CI runs everything anyway.
+
+1. **While developing**: `scripts/test_affected.py`. From the files changed
+   against `origin/main` it runs the C++ tests whose sources depend on them
+   (Ninja's recorded dependencies, plus the header named like a changed `.cpp`),
+   the GPU tests that depend on them (all of them when the change reaches
+   `src/gpu/` or the compiled-script kernel), the API tests that import a changed
+   module (all of them when none does, as for a router), and the front end's
+   typecheck, lint and vitest when `web/` changed. A build file change runs the
+   whole CPU suite.
+2. **Before opening a PR**: `scripts/test_affected.py --pr`: the whole CPU suite,
+   the whole GPU suite when the change reaches the GPU code -- **the CI has no
+   GPU, nothing else will run those tests** --, the whole pytest when the API,
+   the bindings or the library changed. ASan (`scripts/make_asan.sh`) when memory
+   handling changed.
+3. **The CI**: everything but the GPU, unchanged.
+
+One build tree on the server: `build-cuda/` holds the CPU tests too, and the
+script uses it when it exists, so the library is not compiled twice; the
+CPU-only build is the CI's.
 
 ## Tracking work: GitHub Issues, no handoff markdown
 
