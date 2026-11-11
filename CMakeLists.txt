@@ -476,6 +476,9 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   target_link_libraries(qm_gpu_owen_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_owen_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
+  # Our Sobol and Philox against cuRAND's (.claude/skills/hpc-finance/libraries.md).
+  add_executable(qm_gpu_rng_bench benchmarks/gpu_rng_vs_curand.cu)
+  target_link_libraries(qm_gpu_rng_bench PRIVATE quantModeling CUDA::curand)
 endif()
 
 # ---- Python binding (pybind11) ----

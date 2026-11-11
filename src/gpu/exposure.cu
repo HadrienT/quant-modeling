@@ -1,3 +1,4 @@
+#include "quantModeling/core/strided.hpp"
 #include "quantModeling/gpu/exposure.hpp"
 #include "quantModeling/utils/philox.hpp"
 
@@ -7,6 +8,14 @@
 // One thread per path: it simulates the Hull-White state on the grid, then
 // values every trade of the program at every date with the functions of
 // engines/xva/exposure_program.hpp -- the ones the host runs.
+//
+// The per-path rows a kernel keeps on the device (state, netted value and
+// flow, collateral, discounted exposure) are stored date-major: date i of the
+// path in row slot `local` sits at `i * rows + local`, `rows` being the
+// launch's capacity. A warp's 32 consecutive paths then read and write one
+// contiguous line per date (Strided, core/strided.hpp). Path-major rows made
+// half of the kernel's memory sectors wasted and its warps stall on L1TEX for
+// half their cycles (Nsight Compute, V100, 2026-11-10).
 
 namespace quantModeling::gpu
 {
@@ -115,7 +124,8 @@ namespace quantModeling::gpu
 
         /// The state of path `path` at every date: the recursion of the CPU
         /// engine, on the same draws.
-        __device__ inline void simulate_state(const DynamicsView &d, int n, uint64_t seed, uint64_t path, Real *x)
+        __device__ inline void simulate_state(const DynamicsView &d, int n, uint64_t seed, uint64_t path,
+                                              const Strided<Real> &x)
         {
             PhiloxGaussianSource gaussian(seed, path);
             Real s = 0.0;
@@ -126,16 +136,19 @@ namespace quantModeling::gpu
             }
         }
 
-        /// Matrices are (trade, path of the launch, date): each trade's block
-        /// of `count` rows goes to the host in one copy.
+        /// The state is date-major scratch (`rows` slots a date). The output
+        /// matrices are (trade, path of the launch, date), the host cube's
+        /// order: each trade's block of `count` rows goes to the host in one
+        /// copy.
         __global__ void cube_kernel(xva::ProgramView p, DynamicsView d, uint64_t seed, uint64_t first_path,
-                                    uint32_t count, Real *state, Real *weight, Real *values, Real *cashflows)
+                                    uint32_t count, size_t rows, Real *state, Real *weight, Real *values,
+                                    Real *cashflows)
         {
             const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
             if (local >= count)
                 return;
             const int n = p.n_dates;
-            Real *x = state + static_cast<size_t>(local) * n;
+            const Strided<Real> x{state + local, rows};
             simulate_state(d, n, seed, first_path + local, x);
             Real *w = weight + static_cast<size_t>(local) * n;
             for (int i = 0; i < n; ++i)
@@ -163,19 +176,21 @@ namespace quantModeling::gpu
             const Real *im_received, *im_posted, *positive_weights, *negative_weights;
         };
 
-        /// Scratch: four rows of n per path (state, netted value, netted
-        /// flow, collateral balance). Out: the discounted collateralised
-        /// value per reporting date, and the two weighted sums of the path.
+        /// Scratch: four date-major blocks of n dates x `rows` slots (state,
+        /// netted value, netted flow, collateral balance). Out: the
+        /// discounted collateralised value, date-major over the reporting
+        /// dates, and the two weighted sums of each path.
         __global__ void netting_kernel(xva::ProgramView p, DynamicsView d, NettingView ns, uint64_t seed,
-                                       uint64_t first_path, uint32_t count, Real *scratch, Real *discounted,
-                                       Real *weighted)
+                                       uint64_t first_path, uint32_t count, size_t rows, Real *scratch,
+                                       Real *discounted, Real *weighted)
         {
             const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
             if (local >= count)
                 return;
             const int n = p.n_dates;
-            Real *x = scratch + static_cast<size_t>(local) * 4 * n;
-            Real *value = x + n, *flow = value + n, *held = flow + n;
+            const size_t block = static_cast<size_t>(n) * rows;
+            const Strided<Real> x{scratch + local, rows}, value{x.base + block, rows}, flow{value.base + block, rows},
+                held{flow.base + block, rows};
             simulate_state(d, n, seed, first_path + local, x);
             for (int i = 0; i < n; ++i)
             {
@@ -198,7 +213,7 @@ namespace quantModeling::gpu
                 collateral_balances(ns.plan, value, held, ns.plan.held_today);
 
             const int m = ns.plan.reporting_dates;
-            Real *out = discounted + static_cast<size_t>(local) * m;
+            const Strided<Real> out{discounted + local, rows};
             Real positive = 0.0, negative = 0.0;
             for (int r = 0; r < m; ++r)
             {
@@ -225,15 +240,16 @@ namespace quantModeling::gpu
         /// date, its two weighted sums.
         struct ReduceUnit
         {
-            const Real *discounted;
+            const Real *discounted; // date-major, `rows` slots a reporting date
             const Real *weighted;
             uint64_t m;
+            uint64_t rows;
 
             __device__ ExposureSample operator()(uint64_t segment, uint64_t u) const
             {
                 if (segment >= m)
                     return {weighted[2 * u], weighted[2 * u + 1], 0.0};
-                const Real v = discounted[u * m + segment];
+                const Real v = discounted[segment * rows + u];
                 return {v > 0.0 ? v : 0.0, v < 0.0 ? v : 0.0, v};
             }
         };
@@ -338,10 +354,12 @@ namespace quantModeling::gpu
                 cashflows(flows ? K * rows * n : 0);
             for (uint64_t b = first; b < last; b += per_launch)
             {
+                // Never past `last`: the blocks after it are another device's.
+                const uint64_t launch_blocks = std::min(per_launch, last - b);
                 const uint64_t first_path = b * L::kUnitsPerBlock;
-                const uint64_t count = std::min(N, (b + per_launch) * L::kUnitsPerBlock) - first_path;
+                const uint64_t count = std::min(N, (b + launch_blocks) * L::kUnitsPerBlock) - first_path;
                 cube_kernel<<<grid_of(count), L::kThreadsPerBlock>>>(program.view(), dynamics.view(), req.seed,
-                                                                     first_path, static_cast<uint32_t>(count),
+                                                                     first_path, static_cast<uint32_t>(count), rows,
                                                                      state.get(), weight.get(), values.get(),
                                                                      cashflows.get());
                 detail::check(cudaGetLastError(), "kernel launch");
@@ -426,7 +444,7 @@ namespace quantModeling::gpu
                 blocks_per_launch(device, bytes_per_path, last - first, req.max_blocks_per_launch);
             const std::size_t rows = static_cast<std::size_t>(per_launch) * L::kUnitsPerBlock;
             const DeviceArray<Real> scratch(rows * 4 * n), discounted(rows * m), weighted(rows * 2);
-            const ReduceUnit unit{discounted.get(), weighted.get(), m};
+            const ReduceUnit unit{discounted.get(), weighted.get(), m, rows};
             for (uint64_t b = first; b < last; b += per_launch)
             {
                 const uint64_t launch_blocks = std::min(per_launch, last - b);
@@ -434,7 +452,7 @@ namespace quantModeling::gpu
                 const uint64_t count = std::min(N, (b + launch_blocks) * L::kUnitsPerBlock) - first_path;
                 netting_kernel<<<grid_of(count), L::kThreadsPerBlock>>>(program.view(), dynamics.view(), ns,
                                                                         req.seed, first_path,
-                                                                        static_cast<uint32_t>(count), scratch.get(),
+                                                                        static_cast<uint32_t>(count), rows, scratch.get(),
                                                                         discounted.get(), weighted.get());
                 detail::check(cudaGetLastError(), "kernel launch");
                 // The paths of the launch are `launch_blocks` whole logical

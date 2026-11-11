@@ -181,10 +181,13 @@ namespace quantModeling
      *                   (CollateralPlan::held_today; its own argument because
      *                   a differentiable run carries it as a number that
      *                   depends on the curve).
+     *
+     * `value` and `held` are any rows indexed by date: plain pointers on the
+     * host, Strided views on the device (core/strided.hpp).
      */
-    template <class T>
-    QM_HOST_DEVICE inline void collateral_balances(const CollateralPlanView &plan, const T *value, T *held,
-                                                   const T &held_today)
+    template <class T, class Value, class Held>
+    QM_HOST_DEVICE inline void collateral_balances(const CollateralPlanView &plan, const Value &value,
+                                                   const Held &held, const T &held_today)
     {
         T balance = held_today;
         for (int i = 0; i < plan.dates; ++i)
@@ -205,9 +208,9 @@ namespace quantModeling
      * @param flow the netted cash flows of the path; read only when the plan
      *             needs them.
      */
-    template <class T>
-    QM_HOST_DEVICE inline T collateralised_value(const CollateralPlanView &plan, int r, const T *value,
-                                                 const T *flow, const T *held, const T &held_today)
+    template <class T, class Value, class Flow, class Held>
+    QM_HOST_DEVICE inline T collateralised_value(const CollateralPlanView &plan, int r, const Value &value,
+                                                 const Flow &flow, const Held &held, const T &held_today)
     {
         const int i = plan.reporting[r];
         const int lagged = plan.lagged[i];
