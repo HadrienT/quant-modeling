@@ -56,26 +56,10 @@ namespace quantModeling
     Real HullWhiteModel::bond_option_price(bool is_call, Real K,
                                            Time T_option, Time T_bond) const
     {
-        if (T_option <= 0.0)
-            throw InvalidInput("HullWhiteModel::bond_option_price: T_option must be > 0");
-        if (T_bond <= T_option)
-            throw InvalidInput("HullWhiteModel::bond_option_price: T_bond must be > T_option");
-        if (K <= 0.0)
-            throw InvalidInput("HullWhiteModel::bond_option_price: strike K must be > 0");
-
+        check_bond_option_terms("HullWhiteModel", K, T_option, T_bond);
         const Real P0S = zcb_price(T_bond);
         const Real P0T = zcb_price(T_option);
-
-        const Real sigma_p = (sigma_ / a_) *
-                             (1.0 - std::exp(-a_ * (T_bond - T_option))) *
-                             std::sqrt((1.0 - std::exp(-2.0 * a_ * T_option)) / (2.0 * a_));
-
-        const Real h = (1.0 / sigma_p) * std::log(P0S / (K * P0T)) + 0.5 * sigma_p;
-
-        if (is_call)
-            return P0S * norm_cdf(h) - K * P0T * norm_cdf(h - sigma_p);
-        else
-            return K * P0T * norm_cdf(-h + sigma_p) - P0S * norm_cdf(-h);
+        return gaussian_bond_option_price(is_call, K, T_option, T_bond, P0T, P0S, a_, sigma_);
     }
 
     // ── Euler step ───────────────────────────────────────────────────────────

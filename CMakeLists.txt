@@ -152,6 +152,7 @@ target_sources(quantModeling
         src/engines/mc/script_engine.cpp
         src/models/rates/flat_rate.cpp
         src/models/rates/vasicek.cpp
+        src/models/rates/gaussian_bond_option.cpp
         src/models/rates/cir.cpp
         src/models/rates/hull_white.cpp
         src/instruments/rates/bond_option.cpp
