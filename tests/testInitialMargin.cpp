@@ -296,9 +296,11 @@ namespace quantModeling
         const std::vector<MarginPeriod> periods = margin_periods(paths.times, kMpor);
         for (std::size_t r = 0; r < times.size(); r += 5)
             if (periods[r].lagged != MarginPeriod::kToday)
+            {
                 EXPECT_NEAR(held[r], open.discounted_efv[periods[r].lagged],
                             0.01 * paths.trade_values_today[0] +
                                 4.0 * open.discounted_efv_error[periods[r].lagged]);
+            }
         EXPECT_GT(held.front(), 0.0);
 
         const CreditCurve safe(0.0);

@@ -24,7 +24,7 @@ namespace quantModeling
         if (llt.info() == Eigen::Success)
             return llt.matrixL();
         const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(corr);
-        if (es.info() != Eigen::Success || es.eigenvalues().minCoeff() < -1e-10 * corr.rows())
+        if (es.info() != Eigen::Success || es.eigenvalues().minCoeff() < -1e-10 * static_cast<double>(corr.rows()))
             throw InvalidInput(who + ": correlation matrix is not positive semi-definite");
         return es.eigenvectors() * es.eigenvalues().cwiseMax(0.0).cwiseSqrt().asDiagonal();
     }

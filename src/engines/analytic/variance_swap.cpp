@@ -18,7 +18,6 @@ namespace quantModeling
             throw InvalidInput("VarianceSwap: notional must be non-zero");
 
         const Real sigma = m.vol_sigma();
-        const Real r = m.rate_r();
         const Real T = vs.maturity;
 
         // Under BS (constant vol), fair variance = σ²

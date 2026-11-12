@@ -215,8 +215,7 @@ TEST(VasicekBondOption, ATMOption)
 {
     VasicekModel m(0.3, 0.06, 0.015, 0.05);
     const Real T = 1.0, S = 5.0;
-    const Real K_atm = m.zcb_price(T, S, m.r0()); // forward ZCB price
-    // Actually K_atm = P(0,S)/P(0,T) for "forward" ATM
+    // The forward ATM strike: P(0,S)/P(0,T)
     const Real K_fwd = m.zcb_price(S) / m.zcb_price(T);
     const Real call = m.bond_option_price(true, K_fwd, T, S);
     const Real put = m.bond_option_price(false, K_fwd, T, S);

@@ -66,7 +66,7 @@ namespace quantModeling
                 // A = V diag(sqrt(max(lambda, 0))).
                 const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(corr);
                 if (es.info() != Eigen::Success ||
-                    es.eigenvalues().minCoeff() < -1e-10 * corr.rows())
+                    es.eigenvalues().minCoeff() < -1e-10 * static_cast<double>(corr.rows()))
                     throw InvalidInput("MultiAssetBSModel: correlation matrix is not positive semi-definite");
                 chol = es.eigenvectors() *
                        es.eigenvalues().cwiseMax(0.0).cwiseSqrt().asDiagonal();

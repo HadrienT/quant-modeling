@@ -29,15 +29,15 @@ namespace quantModeling
         std::mt19937 gen(5);
         for (int trial = 0; trial < 20; ++trial)
         {
-            const uint32_t seed = gen();
+            const uint32_t seed = static_cast<uint32_t>(gen());
             for (int k = 1; k <= 12; ++k)
             {
                 const uint32_t top = ~0u << (32 - k);
                 // same top-k bits in -> same top-k bits out
                 for (int i = 0; i < 50; ++i)
                 {
-                    const uint32_t x = gen();
-                    const uint32_t y = (x & top) | (gen() & ~top);
+                    const uint32_t x = static_cast<uint32_t>(gen());
+                    const uint32_t y = (x & top) | (static_cast<uint32_t>(gen()) & ~top);
                     ASSERT_EQ(owen_scramble(x, seed) & top, owen_scramble(y, seed) & top) << k;
                 }
                 // the 2^k prefixes are permuted

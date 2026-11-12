@@ -256,10 +256,12 @@ namespace quantModeling
         {
             EXPECT_TRUE(std::binary_search(grid.begin(), grid.end(), t)) << t;
             if (t - kTenDays > kEps)
+            {
                 EXPECT_TRUE(std::any_of(grid.begin(), grid.end(),
                                         [t](Time g)
                                         { return std::abs(g - (t - kTenDays)) < kEps; }))
                     << t;
+            }
         }
         // Every date of the base grid becomes a reporting date.
         const ExposurePaths cube = simulate(m, kTenDays, 16);

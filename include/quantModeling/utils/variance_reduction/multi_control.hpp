@@ -160,11 +160,11 @@ namespace quantModeling
                 L[i][i] = std::sqrt(s);
                 for (int j = i + 1; j < k; ++j)
                 {
-                    Real c = co[idx(i + 1, j + 1)];
+                    Real cij = co[idx(i + 1, j + 1)];
                     for (int p = 0; p < i; ++p)
                         if (keep[p])
-                            c -= L[j][p] * L[i][p];
-                    L[j][i] = c / L[i][i];
+                            cij -= L[j][p] * L[i][p];
+                    L[j][i] = cij / L[i][i];
                 }
             }
 

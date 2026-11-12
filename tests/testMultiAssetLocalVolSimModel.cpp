@@ -59,7 +59,7 @@ namespace quantModeling
         {
             const ScriptedProduct<Real> product(script, kCtx);
             PricingSettings set;
-            set.mc_paths = paths;
+            set.mc_paths = static_cast<int>(paths);
             set.mc_seed = 5;
             return simulate_script(product, model, set);
         }

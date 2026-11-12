@@ -97,7 +97,7 @@ namespace quantModeling
         // All spot paths scale linearly with S0, so ST -> ST*c, path_min -> path_min*c, path_max -> path_max*c.
         // For float: d(pv)/dS0 = pv/S0.
         // For fixed ITM: d(extreme - K)/dS0 = extreme/S0.
-        auto compute_pathwise_delta = [&](Real ST, Real path_min, Real path_max, Real pv) -> Real
+        auto compute_pathwise_delta = [&](Real /*ST*/, Real path_min, Real path_max, Real pv) -> Real
         {
             if (is_float)
                 return df * pv / S0;

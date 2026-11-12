@@ -344,7 +344,7 @@ namespace quantModeling
                     irb::capital_requirement(0.01, 0.40, std::min(today.effective_maturity, 5.0)) *
                         capital.ead_today,
                     1e-9 * capital.default_capital_today);
-        ba_cva::Counterparty c{ba_cva::Sector::Financial, ba_cva::CreditQuality::InvestmentGrade, {}};
+        ba_cva::Counterparty c{ba_cva::Sector::Financial, ba_cva::CreditQuality::InvestmentGrade, {}, {}};
         c.netting_sets.push_back({capital.ead_today, today.effective_maturity, true});
         EXPECT_NEAR(capital.cva_capital_today, ba_cva::capital_reduced({c}),
                     1e-9 * capital.cva_capital_today);
