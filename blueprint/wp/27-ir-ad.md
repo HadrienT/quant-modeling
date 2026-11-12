@@ -217,6 +217,60 @@ parameters): §8 is what makes it so.
   than a price. Measured per model, with the occupancy lever of #130 if
   needed.
 
+### 6.1 What is code and what is data
+
+A compiled kernel is specialised to what it is built from; everything else
+is an argument. Today (P1b) the cache key is (GPU architecture, generated
+source), and the source holds:
+
+- the script's operations, **with the numbers written in the script as
+  literals** (exact hexadecimal floats);
+- the request's shape (`CudaKernelSpec`): the model kind, the number of
+  assets, the sampling options.
+
+The market inputs (spot, rate, dividend, vols, a local-vol grid, Heston's
+parameters, correlations), the event times, the discount maturities, the
+number of paths and the seed are arguments: changing them reuses the kernel.
+
+Three things keep the catalogue from being compiled once and for all:
+
+1. **Product terms are literals.** WP 26 P3's builders write the strike, the
+   barriers, the coupons, the notional and, for the lookback, the autocall,
+   the worst-of and the mountain, the initial spot into the script: every new
+   set of terms is a new kernel (about 0.5 s on a V100).
+2. **The number of dates is code.** The generated function dispatches on the
+   event index; identical events share their code, but an Asian on 252
+   fixings and one on 253, or an autocall on 8 dates and one on 12, are two
+   kernels.
+3. **The cache lives in the API process.** It is empty after every restart
+   and every deployment: the first user of each product pays the compile.
+
+Lot L1b removes the three:
+
+1. **Terms as kernel parameters.** A term becomes an IR input (`param`, like
+   a market input) rather than a constant: the builders mark the numbers that
+   are terms, and the backend passes them as arguments. Scripts written by
+   users keep their numbers as literals (they are the script).
+2. **Dates as data.** The kernel reads the events' kinds and order from an
+   array and runs each distinct event's code from it, instead of a `switch`
+   over every index: one kernel per product *shape* ("autocall, memory
+   coupon, terminal knock-in"), whatever its number of dates.
+3. **A cache on disk.** The compiled binary (cubin) stored under the hash of
+   its source, the GPU architecture and the library's version: it survives
+   restarts, and deployments that leave the generated code unchanged.
+4. **A warm-up at start.** The API compiles the catalogue's shapes when it
+   starts (as `calibration_warmup.py` warms the calibrations), before the
+   first request.
+
+The bits do not move: a term read from an argument is the same double as the
+literal it replaces, and the operations stay in the same order (checked
+against the literal kernels).
+
+Then a catalogue product never waits for a compile, whatever its terms and
+its dates; a script written live on the scripting page compiles once, at its
+first use, and is cached like the rest. The CPU interprets and compiles
+nothing.
+
 ## 7. CPU specifics
 
 The CPU keeps its tape for the oracle and for what the IR does not cover yet.
@@ -267,6 +321,7 @@ diagnostics say which.
 | Lot | Content | Acceptance |
 |---|---|---|
 | **L1** IR and lowering | The IR's data structures, the lowering from the AST, the passes, a printer; the CUDA backend for prices | Every library script prices **to the same bits** as P1b's compiled kernels, on BS, local vol, Heston |
+| **L1b** Compiled once | Terms as kernel parameters, dates as data, a cache on disk, a warm-up of the catalogue's shapes at start (§6.1) | Same bits as the literal kernels; one kernel per product shape; no catalogue request compiles after start (measured: the first request after a restart at the warm cache's latency) |
 | **L2** Model steps in the IR | BS, local vol, Heston written with the IR builder; the price kernels generated from model + script together | Same bits as the current kernels; the hand-written GPU step code no longer used for scripts |
 | **L3** Tangent | The forward transformation; replaces the GPU duals | Same risks as the duals to 1e-14; no direction limit of 8 |
 | **L4** Adjoint | The reverse transformation, checkpoints at dates, branch bits | Gradient = CPU tape per path to 1e-12 on every library script and model; local vol faster than today's hand-written per-path adjoint; the hand-written instruction adjoints deleted |
@@ -295,8 +350,8 @@ oracle), the logical-block reduction and its bits.
 ## 13. Risks
 
 - **Compile time:** an adjoint kernel is several times a price's; NVRTC's
-  cost per new script grows. Mitigation: the cache by hash, and the numbers
-  as kernel arguments rather than constants where they change per request.
+  cost per new script grows. Mitigation: lot L1b (terms and dates as data,
+  one kernel per product shape, a cache on disk, a warm-up at start).
 - **Registers:** see §6.
 - **Bits:** the passes must not reorder floating-point operations (§4).
 - **Scope:** L1–L4 replace what exists; L5–L8 extend it. The lots are
