@@ -89,6 +89,32 @@ namespace quantModeling
         static thread_local std::size_t tls_num_;
     };
 
+    /// Runs `run(first, last)` over [0, n): in one call on the caller without
+    /// a pool or workers, otherwise one task per chunk of `chunk` items, all
+    /// finished before it returns or rethrows (ThreadPool::active_wait_all).
+    template <class Run>
+    void run_in_chunks(ThreadPool *pool, std::size_t n, std::size_t chunk, const Run &run)
+    {
+        if (pool == nullptr || pool->num_threads() == 0)
+        {
+            run(std::size_t{0}, n);
+            return;
+        }
+        std::vector<TaskHandle> handles;
+        handles.reserve(n / chunk + 1);
+        for (std::size_t first = 0; first < n; first += chunk)
+        {
+            const std::size_t last = first + chunk < n ? first + chunk : n;
+            handles.push_back(pool->spawn_task(
+                [&run, first, last]
+                {
+                    run(first, last);
+                    return true;
+                }));
+        }
+        pool->active_wait_all(handles);
+    }
+
 } // namespace quantModeling
 
 #endif // QM_UTILS_THREAD_POOL_HPP

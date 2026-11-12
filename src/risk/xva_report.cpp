@@ -62,6 +62,18 @@ namespace quantModeling
             return out;
         }
 
+        /// The mean of N path values and its standard error, from their sum
+        /// and the sum of their squares.
+        Estimate estimate_from_sums(Real sum, Real sum2, std::size_t N)
+        {
+            const Real count = static_cast<Real>(N);
+            Estimate e;
+            e.value = sum / count;
+            if (N > 1)
+                e.error = std::sqrt(std::max(sum2 / count - e.value * e.value, 0.0) / (count - 1.0));
+            return e;
+        }
+
         /// CVA and DVA of a single-trade cube, path by path: the mean of the
         /// per-path losses is the integral of the mean exposure, and their
         /// dispersion gives the Monte-Carlo error, correlations between
@@ -89,17 +101,8 @@ namespace quantModeling
                 d += gain;
                 d2 += gain * gain;
             }
-            const Real count = static_cast<Real>(N);
-            const auto estimate = [count, N](Real sum, Real sum2)
-            {
-                Estimate e;
-                e.value = sum / count;
-                if (N > 1)
-                    e.error = std::sqrt(std::max(sum2 / count - e.value * e.value, 0.0) / (count - 1.0));
-                return e;
-            };
-            cva = estimate(c, c2);
-            dva = estimate(d, d2);
+            cva = estimate_from_sums(c, c2, N);
+            dva = estimate_from_sums(d, d2, N);
         }
 
         /**
@@ -253,17 +256,8 @@ namespace quantModeling
                 d += gain;
                 d2 += gain * gain;
             }
-            const Real count = static_cast<Real>(N);
-            const auto estimate = [count, N](Real sum, Real sum2)
-            {
-                Estimate e;
-                e.value = sum / count;
-                if (N > 1)
-                    e.error = std::sqrt(std::max(sum2 / count - e.value * e.value, 0.0) / (count - 1.0));
-                return e;
-            };
-            cva = estimate(c, c2);
-            dva = estimate(d, d2);
+            cva = estimate_from_sums(c, c2, N);
+            dva = estimate_from_sums(d, d2, N);
         }
 
         /// Bilateral CVA of a subset of the trades, under the same CSA and,

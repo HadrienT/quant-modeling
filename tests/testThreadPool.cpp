@@ -226,4 +226,28 @@ namespace quantModeling
         EXPECT_EQ(sum, 10);
     }
 
+    TEST(ThreadPool, RunInChunksCoversTheRangeOnceWithOrWithoutWorkers)
+    {
+        for (const std::size_t workers : {std::size_t{0}, std::size_t{3}})
+        {
+            ThreadPool pool;
+            if (workers > 0)
+                pool.start(workers);
+            std::vector<std::atomic<int>> hits(1000);
+            std::atomic<int> calls{0};
+            run_in_chunks(&pool, hits.size(), 64,
+                          [&](std::size_t first, std::size_t last)
+                          {
+                              calls.fetch_add(1);
+                              for (std::size_t i = first; i < last; ++i)
+                                  hits[i].fetch_add(1);
+                          });
+            for (const auto &h : hits)
+                EXPECT_EQ(h.load(), 1);
+            // Without workers, one call over the whole range; with them, one per chunk.
+            EXPECT_EQ(calls.load(), workers == 0 ? 1 : 16);
+            pool.stop();
+        }
+    }
+
 } // namespace quantModeling
