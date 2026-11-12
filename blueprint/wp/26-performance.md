@@ -833,6 +833,60 @@ Milstein for them is a later decision.
   within ε.
 - MLMC = plain MC on the finest grid, within error.
 
+### 8.6a P4a: time-step MLMC in the generic engine (done, 2026-11-12)
+
+Sub-lots of P4: **P4a** the engine (this section); **P4b** Milstein for local
+vol and the complexity slope; **P4c** scripts and registry routes through
+MLMC when the product suits it, announced in the diagnostics; **P4d** the
+approximate-Φ⁻¹ axis (§8.7).
+
+`engines/mc/mlmc.hpp`: `simulate_mlmc` (Giles's adaptive algorithm, §8.4,
+M = 2) and `simulate_mlmc_fixed` (given paths per level, for tests and
+measurements), CPU, one thread, PCG32 + Box-Muller, the payoff of the
+product's first label.
+
+**Departure from §8.3.** The model does not generate the coupled fine and
+coarse paths. It only accepts a refinement (`ISimulationModel::
+set_refinement(r)`: every step of its own grid split into r equal steps,
+`refine_steps` in `core/timegrid`), and the engine holds two clones, at 2^l
+and 2^(l-1), and sums the fine Brownian increments over each coarse step,
+through `brownian_layout()`. Why: the model stays unaware of MLMC, any model
+that describes its increments couples without a line of its own, and r = 1
+leaves every existing bit as it was. The grids nest exactly (a step divided
+by a power of two), so the coupling matches dates with a 1e-12 tolerance,
+not `TIMELINE_EPS` (an hour, longer than a fine level's step);
+`event_indices` now takes the closest step to an event for the same reason
+(no change on grids whose steps are a day or more). Models that accept a
+refinement: local vol (log-Euler). Black-Scholes refuses (no time-step
+bias); Heston, SLV and the multi-asset models come with P4b/P4c.
+
+Tests (`tests/testMlmc.cpp`): nested grids; a flat surface's correction
+levels are zero to rounding (the coupling's sharpest check); the telescoping
+sum equals plain Monte Carlo on the finest grid within error; the §8.6
+Euler-GBM test bed (Euler on S, E[S_T] = S0 (1 + r h)^n known): alpha
+= 1 ± 0.15, beta = 1 ± 0.25, each level's mean the analytic difference of
+biases, the adaptive run reprices the forward within 3 eps; local vol:
+beta ~ 1, gamma = 1. The weak error of log-Euler under the test's skewed
+surface is too small (~0.009 on level 1) to measure alpha without ~1e8
+paths: the test bed measures it.
+
+Measured (one thread, skewed local vol, one-year call K = 95, monthly level
+0; cost in model steps; plain = 2 V_0 / eps^2 paths on the finest grid
+MLMC chose):
+
+| eps | Finest level | MLMC cost | Plain cost | Gain | Time |
+|---|---|---|---|---|---|
+| 0.04 | 2 | 5.9e6 | 1.3e7 | 2.2× | 0.38 s |
+| 0.02 | 4 | 3.6e7 | 2.1e8 | 5.8× | 2.2 s |
+| 0.01 | 4 | 1.4e8 | 8.3e8 | 5.8× | 9.0 s |
+| 0.005 | 7 | 9.5e8 | 2.7e10 | 28× | 58 s |
+
+Open for P4b: alpha estimated by regression over noisy level means swings
+(0.66 to 2.2 in the runs above), and the bias test divides by 2^alpha - 1; a
+large estimate stops adding levels early (eps = 0.01 stopped at level 4 with
+alpha 2.2). Giles's code has the same estimator; Milstein (beta = 2) and a
+floor or prior on alpha are the candidates, decided on measurements.
+
 ### 8.7 A second axis: approximate random variables (nested MLMC)
 
 Added 2026-11-11, after P1h. The levels above differ by their time step. They

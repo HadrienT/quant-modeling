@@ -329,6 +329,7 @@ if(QM_BUILD_TESTS)
     tests/testMultiAssetBSSimModel.cpp
     tests/testMultiAssetLocalVolSimModel.cpp
     tests/testLocalVolSimModel.cpp
+    tests/testMlmc.cpp
     tests/testMertonJumpDiffusionSimModel.cpp
     tests/testKouJumpDiffusionSimModel.cpp
     tests/testBatesSimModel.cpp
