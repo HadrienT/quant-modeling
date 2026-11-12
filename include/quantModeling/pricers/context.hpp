@@ -118,6 +118,15 @@ namespace quantModeling
         /// Sobol only: randomise each replicate by Owen's nested scrambling
         /// (hash-based, utils/sobol.hpp) instead of the digital shift.
         bool mc_sobol_owen = false;
+        /// Multilevel Monte Carlo over the time step (blueprint/wp/26-
+        /// performance.md §8, WP 26 P4c), opt-in: the target root-mean-square
+        /// error, absolute (0: off). A script runs through it when it suits
+        /// it -- one payoff, no early exercise, a model that refines its
+        /// time grid (local vol) -- and through the plain engine otherwise,
+        /// the diagnostics saying why. CPU, pseudo-random: slower than the
+        /// Sobol/GPU route until P5/P6, but its discretisation bias is
+        /// controlled (below eps / sqrt(2)).
+        double mc_mlmc_eps = 0.0;
     };
 
     struct MarketView

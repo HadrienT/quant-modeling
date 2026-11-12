@@ -1,8 +1,10 @@
 #include "quantModeling/engines/mc/script_engine.hpp"
 
 #include <algorithm>
+#include <sstream>
 
 #include "quantModeling/engines/mc/importance_sampling.hpp"
+#include "quantModeling/engines/mc/mlmc.hpp"
 #include "quantModeling/engines/mc/script_adjoint.hpp"
 #include "quantModeling/engines/mc/sobol_bridge_host.hpp"
 #include "quantModeling/engines/mc/spot_controls.hpp"
@@ -168,9 +170,63 @@ namespace quantModeling
         }
     } // namespace
 
+    namespace
+    {
+        /// Why multilevel Monte Carlo cannot take this script (WP 26 P4c),
+        /// empty if it can.
+        std::string mlmc_unsuitable(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model)
+        {
+            if (product.has_exercise())
+                return "early exercise";
+            if (product.payoff_labels().size() != 1)
+                return "several payoff labels (the estimator takes one)";
+            if (!model.clone()->set_refinement(2))
+                return "the model has no time-step bias to remove (or cannot refine its grid yet: MLMC runs "
+                       "under local vol)";
+            return {};
+        }
+
+        SimulationMCResult run_mlmc(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model,
+                                    const PricingSettings &settings)
+        {
+            MlmcSettings s;
+            s.eps = settings.mc_mlmc_eps;
+            s.seed = static_cast<std::uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1);
+            const MlmcResult r = simulate_mlmc(product, model, s);
+            SimulationMCResult res;
+            res.labels = product.payoff_labels();
+            res.values = {r.value};
+            res.std_errors = {r.std_error};
+            res.n_paths = 0;
+            for (const MlmcLevel &l : r.levels)
+                res.n_paths += l.n;
+            std::ostringstream os;
+            os << "SimulationMCEngine, " << r.diagnostics << "; target RMS error " << s.eps
+               << ", estimated remaining bias " << r.bias << " (CPU, pseudo-random)";
+            res.diagnostics = os.str();
+            return res;
+        }
+    } // namespace
+
     SimulationMCResult simulate_script(const ScriptedProduct<Real> &product, ISimulationModel<Real> &model,
                                        const PricingSettings &settings, ThreadPool *pool)
     {
+        // Multilevel Monte Carlo, opt-in (WP 26 P4c): when the script suits
+        // it, otherwise the usual route, saying why.
+        if (settings.mc_mlmc_eps < 0.0)
+            throw InvalidInput("mc_mlmc_eps must be >= 0 (0: no multilevel Monte Carlo)");
+        if (settings.mc_mlmc_eps > 0.0)
+        {
+            const std::string why = mlmc_unsuitable(product, model);
+            if (why.empty())
+                return run_mlmc(product, model, settings);
+            PricingSettings plain = settings;
+            plain.mc_mlmc_eps = 0.0;
+            SimulationMCResult res = simulate_script(product, model, plain, pool);
+            res.diagnostics += " (no multilevel Monte Carlo: " + why + ")";
+            return res;
+        }
+
         const bool explicit_gpu = settings.mc_device == ComputeDevice::Gpu;
         const bool want_gpu = explicit_gpu || (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0);
         if (!want_gpu)
