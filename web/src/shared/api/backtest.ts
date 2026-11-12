@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { LONG_TIMEOUT_MS, api, signalWithTimeout } from "./client";
-import { ApiError } from "./errors";
+import { api } from "./client";
+import type { ApiError } from "./errors";
+import { longCall as call } from "./longCall";
 import { queryKeys } from "./queryKeys";
 import type {
 	BacktestStrategy,
@@ -16,20 +17,6 @@ import type {
  * a day: a request is its own key, a result stays fresh for the session, and
  * nothing is retried, since a refusal of the engine is an answer.
  */
-
-async function call<T>(
-	signal: AbortSignal | undefined,
-	run: (s: AbortSignal) => Promise<{ data?: unknown; error?: unknown }>,
-): Promise<T> {
-	const s = signalWithTimeout(signal, LONG_TIMEOUT_MS);
-	try {
-		const { data, error } = await run(s);
-		if (error !== undefined) throw ApiError.from(error);
-		return data as T;
-	} finally {
-		s.cleanup();
-	}
-}
 
 /** What can be backtested, and the build of the engine that runs it. */
 export function useBacktestUniverse() {
