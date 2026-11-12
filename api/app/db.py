@@ -245,18 +245,6 @@ def fred_series(series_id: str, since: Optional[date] = None) -> "pd.Series":
     return s
 
 
-def fred_latest_value(series_id: str) -> Optional[float]:
-    with _cursor() as cur:
-        cur.execute(
-            "SELECT value FROM macro.fred_series_latest "
-            "WHERE series_id = %s AND value IS NOT NULL "
-            "ORDER BY date DESC LIMIT 1",
-            (series_id,),
-        )
-        row = cur.fetchone()
-        return float(row[0]) if row else None
-
-
 # ── Rates: macro.fred_series_latest (USD) and macro.intl_rates (EUR/GBP/CHF/JPY) ─
 
 #: The two tables of rate series, both shaped (series_id, date, value in %).

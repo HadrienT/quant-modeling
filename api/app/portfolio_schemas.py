@@ -375,10 +375,6 @@ class PortfolioRiskSummary(BaseModel):
     positions_total: int
 
 
-class BatchPriceRequest(BaseModel):
-    portfolio_id: str
-
-
 class BatchPriceResponse(BaseModel):
     portfolio: Portfolio
     risk_summary: PortfolioRiskSummary

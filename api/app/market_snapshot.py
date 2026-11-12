@@ -20,7 +20,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import quantmodeling as qm
 

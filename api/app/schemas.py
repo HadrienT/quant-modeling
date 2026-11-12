@@ -965,31 +965,6 @@ class RatesHistoryResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Local-volatility pricing
-# ---------------------------------------------------------------------------
-
-
-class LocalVolRequest(BaseModel):
-    """Query parameters for the Dupire local-vol pricing endpoint."""
-
-    ticker: str = Field(..., description="Stock ticker, e.g. 'AAPL'")
-    strike: float = Field(..., gt=0)
-    maturity: float = Field(..., gt=0, description="Time to maturity in years")
-    is_call: bool = True
-    rate: float = Field(0.05, description="Risk-free rate (continuous)")
-    n_paths: int = Field(50_000, ge=1000, le=500_000)
-    n_steps_per_year: int = Field(252, ge=12, le=2520)
-    seed: int = 1
-    compute_greeks: bool = True
-    # Cleaning thresholds
-    min_open_interest: int = Field(10, ge=1)
-    min_bid: float = Field(0.05, ge=0.0)
-    max_spread_ratio: float = Field(0.50, gt=0.0, le=1.0)
-    min_moneyness: float = Field(0.70, gt=0.0)
-    max_moneyness: float = Field(1.40, gt=0.0)
-
-
-# ---------------------------------------------------------------------------
 # Autocall
 # ---------------------------------------------------------------------------
 
