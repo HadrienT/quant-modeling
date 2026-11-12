@@ -159,8 +159,10 @@ def _read_state_cookie(cookie: Optional[str]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Missing OAuth state")
     try:
         claims = jwt.decode(cookie, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except JWTError:
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=400, detail="Invalid or expired OAuth state"
+        ) from exc
     if claims.get("typ") != "oauth_state":
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
     return claims
@@ -196,8 +198,8 @@ def _exchange_code(code: str, verifier: str) -> dict[str, Any]:
             },
             timeout=_HTTP_TIMEOUT_S,
         )
-    except requests.RequestException:
-        raise HTTPException(status_code=502, detail="Could not reach Google")
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail="Could not reach Google") from exc
     if resp.status_code != 200:
         raise HTTPException(status_code=400, detail="Google rejected the sign-in code")
     return resp.json()
@@ -224,8 +226,8 @@ def _verify_id_token(tokens: dict[str, Any], nonce: str) -> GoogleProfile:
         except JWTError:
             # Google rotates its keys: retry once against a fresh set.
             claims = _decode(_google_keys(force=True))
-    except (JWTError, requests.RequestException):
-        raise HTTPException(status_code=400, detail="Invalid Google ID token")
+    except (JWTError, requests.RequestException) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Google ID token") from exc
 
     if claims.get("iss") not in ISSUERS or claims.get("nonce") != nonce:
         raise HTTPException(status_code=400, detail="Invalid Google ID token")

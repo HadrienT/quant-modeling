@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <exception>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -418,6 +419,107 @@ namespace quantModeling::xva_adjoint
                 column[b] = means[b][o];
             result.values[o] = over_batches(column, paths);
         }
+        return result;
+    }
+
+    /**
+     * The xVA values and their adjoint risks to every input, batch by batch:
+     * one tape per thread, on which `record(params, setup)` writes the
+     * inputs as leaves (in the order of `levels`) and the set-up once,
+     * before the mark, and returns the thread's workspace; then
+     * `evaluate(setup, path, workspace, out)` is replayed after the mark for
+     * each path. The caller fills in what names the factors.
+     */
+    template <class NumberParams, class NumberSetup, class Record, class Evaluate>
+    XvaRisks xva_risks_over_batches(std::size_t paths, ThreadPool *pool, const std::vector<const Real *> &levels,
+                                    const Record &record, const Evaluate &evaluate)
+    {
+        const std::size_t N = paths;
+        const std::size_t batches = (N + kBatch - 1) / kBatch;
+        const std::size_t P = levels.size();
+        using WorkspacePtr = decltype(record(std::declval<NumberParams &>(), std::declval<NumberSetup &>()));
+
+        // One tape per thread, with the set-up recorded on it once.
+        struct ThreadState
+        {
+            aad::Tape tape;
+            NumberParams params;
+            NumberSetup setup;
+            WorkspacePtr workspace;
+            bool initialised = false;
+        };
+        const std::size_t threads = (pool != nullptr ? pool->num_threads() : 0) + 1;
+        std::vector<std::unique_ptr<ThreadState>> states(threads);
+        for (auto &state : states)
+            state = std::make_unique<ThreadState>();
+
+        std::vector<std::array<Real, kXvaOutputs>> means(batches);
+        std::vector<Real> batch_risks(batches * kXvaOutputs * P, 0.0);
+        const auto started = std::chrono::steady_clock::now();
+        for_each_batch(
+            N, pool,
+            [&](std::size_t b, std::size_t first, std::size_t size)
+            {
+                ThreadState &st = *states[ThreadPool::thread_num()];
+                const TapeScope scope(&st.tape);
+                if (!st.initialised)
+                {
+                    st.tape.rewind();
+                    st.workspace = record(st.params, st.setup);
+                    st.tape.mark();
+                    st.initialised = true;
+                }
+                std::array<Number, kXvaOutputs> out;
+                std::array<Real, kXvaOutputs> sum{};
+                for (std::size_t p = 0; p < size; ++p)
+                {
+                    st.tape.rewind_to_mark();
+                    evaluate(st.setup, first + p, *st.workspace, out);
+                    for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                    {
+                        sum[o] += out[o].value();
+                        out[o].adjoint(o) = 1.0; // this output's own component
+                    }
+                    Number::propagate_to_mark_multi();
+                }
+                // What accumulated at the mark goes down to the inputs: the
+                // risks of this batch.
+                Number::propagate_mark_to_start_multi();
+                const std::vector<const Number *> leaves = st.params.all();
+                for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                {
+                    means[b][o] = sum[o] / static_cast<Real>(size);
+                    for (std::size_t j = 0; j < P; ++j)
+                        batch_risks[(b * kXvaOutputs + o) * P + j] =
+                            const_cast<Number *>(leaves[j])->adjoint(o) / static_cast<Real>(size);
+                }
+                st.tape.reset_adjoints_before_mark();
+            });
+
+        XvaRisks result;
+        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        result.paths = N;
+        result.batches = batches;
+        for (const Real *x : levels)
+            result.levels.push_back(*x);
+        result.risks.resize(kXvaOutputs * P);
+        result.errors.resize(kXvaOutputs * P);
+        std::vector<Real> column(batches);
+        for (std::size_t o = 0; o < kXvaOutputs; ++o)
+        {
+            for (std::size_t b = 0; b < batches; ++b)
+                column[b] = means[b][o];
+            result.values[o] = over_batches(column, N);
+            for (std::size_t j = 0; j < P; ++j)
+            {
+                for (std::size_t b = 0; b < batches; ++b)
+                    column[b] = batch_risks[(b * kXvaOutputs + o) * P + j];
+                const Estimate e = over_batches(column, N);
+                result.risks[o * P + j] = e.value;
+                result.errors[o * P + j] = e.error;
+            }
+        }
+        result.batch_risks = std::move(batch_risks);
         return result;
     }
 

@@ -598,111 +598,35 @@ namespace quantModeling
         RiskRun run;
         prepare_risk_run(settings, inputs, run);
         const Fixed &f = run.fixed;
-        const std::size_t N = settings.paths;
-        const std::size_t batches = (N + kBatch - 1) / kBatch;
-        const std::size_t P = run.factors.size();
-
-        // One tape per thread, with the set-up recorded on it once.
-        struct ThreadState
-        {
-            aad::Tape tape;
-            Params<Number> params;
-            Setup<Number> setup;
-            std::unique_ptr<Workspace<Number>> workspace;
-            bool initialised = false;
-        };
-        const std::size_t threads = (pool != nullptr ? pool->num_threads() : 0) + 1;
-        std::vector<std::unique_ptr<ThreadState>> states(threads);
-        for (auto &state : states)
-            state = std::make_unique<ThreadState>();
-
-        std::vector<std::array<Real, kXvaOutputs>> means(batches);
-        std::vector<Real> batch_risks(batches * kXvaOutputs * P, 0.0);
-        const auto started = std::chrono::steady_clock::now();
-        for_each_batch(
-            N, pool,
-            [&](std::size_t b, std::size_t first, std::size_t size)
+        XvaRisks result = xva_risks_over_batches<Params<Number>, Setup<Number>>(
+            settings.paths, pool, run.params.all(),
+            [&](Params<Number> &q, Setup<Number> &setup)
             {
-                ThreadState &st = *states[ThreadPool::thread_num()];
-                const TapeScope scope(&st.tape);
-                if (!st.initialised)
-                {
-                    st.tape.rewind();
-                    // The inputs are the leaves; the set-up is recorded once,
-                    // before the mark.
-                    const Params<Real> &p = run.params;
-                    for (const Real z : p.zero)
-                        st.params.zero.emplace_back(z);
-                    st.params.a = Number(p.a);
-                    st.params.sigma = Number(p.sigma);
-                    for (const Real h : p.hazard_c)
-                        st.params.hazard_c.emplace_back(h);
-                    for (const Real h : p.hazard_i)
-                        st.params.hazard_i.emplace_back(h);
-                    st.params.lgd_c = Number(p.lgd_c);
-                    st.params.lgd_i = Number(p.lgd_i);
-                    st.params.spread_b = Number(p.spread_b);
-                    st.params.spread_l = Number(p.spread_l);
-                    build(f, st.params, st.setup);
-                    st.tape.mark();
-                    st.workspace = std::make_unique<Workspace<Number>>(f.times.size());
-                    st.initialised = true;
-                }
-                std::array<Number, kXvaOutputs> out;
-                std::array<Real, kXvaOutputs> sum{};
-                for (std::size_t p = 0; p < size; ++p)
-                {
-                    st.tape.rewind_to_mark();
-                    evaluate_path(f, st.setup, first + p, *st.workspace, out);
-                    for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                    {
-                        sum[o] += out[o].value();
-                        out[o].adjoint(o) = 1.0; // this output's own component
-                    }
-                    Number::propagate_to_mark_multi();
-                }
-                // What accumulated at the mark goes down to the inputs: the
-                // risks of this batch.
-                Number::propagate_mark_to_start_multi();
-                const std::vector<const Number *> leaves = st.params.all();
-                for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                {
-                    means[b][o] = sum[o] / static_cast<Real>(size);
-                    for (std::size_t j = 0; j < P; ++j)
-                        batch_risks[(b * kXvaOutputs + o) * P + j] =
-                            const_cast<Number *>(leaves[j])->adjoint(o) / static_cast<Real>(size);
-                }
-                st.tape.reset_adjoints_before_mark();
-            });
-
-        XvaRisks result;
-        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        result.paths = N;
-        result.batches = batches;
+                // The inputs are the leaves, in the order of Params::all();
+                // the set-up is recorded once, before the mark.
+                const Params<Real> &p = run.params;
+                for (const Real z : p.zero)
+                    q.zero.emplace_back(z);
+                q.a = Number(p.a);
+                q.sigma = Number(p.sigma);
+                for (const Real h : p.hazard_c)
+                    q.hazard_c.emplace_back(h);
+                for (const Real h : p.hazard_i)
+                    q.hazard_i.emplace_back(h);
+                q.lgd_c = Number(p.lgd_c);
+                q.lgd_i = Number(p.lgd_i);
+                q.spread_b = Number(p.spread_b);
+                q.spread_l = Number(p.spread_l);
+                build(f, q, setup);
+                return std::make_unique<Workspace<Number>>(f.times.size());
+            },
+            [&f](const Setup<Number> &setup, std::size_t path, Workspace<Number> &ws,
+                 std::array<Number, kXvaOutputs> &out)
+            { evaluate_path(f, setup, path, ws, out); });
         result.smoothing_widths = f.widths;
         result.factors = run.factors;
         result.tenors = run.tenors;
         result.labels = run.labels;
-        for (const Real *x : run.params.all())
-            result.levels.push_back(*x);
-        result.risks.resize(kXvaOutputs * P);
-        result.errors.resize(kXvaOutputs * P);
-        std::vector<Real> column(batches);
-        for (std::size_t o = 0; o < kXvaOutputs; ++o)
-        {
-            for (std::size_t b = 0; b < batches; ++b)
-                column[b] = means[b][o];
-            result.values[o] = over_batches(column, N);
-            for (std::size_t j = 0; j < P; ++j)
-            {
-                for (std::size_t b = 0; b < batches; ++b)
-                    column[b] = batch_risks[(b * kXvaOutputs + o) * P + j];
-                const Estimate e = over_batches(column, N);
-                result.risks[o * P + j] = e.value;
-                result.errors[o * P + j] = e.error;
-            }
-        }
-        result.batch_risks = std::move(batch_risks);
         return result;
     }
 
