@@ -607,23 +607,26 @@ namespace quantModeling::scripting
     /// Paths per batch of the CPU's batched interpreter: one decode of an
     /// instruction for kBatch paths.
     inline constexpr int kBatch = 8;
-    /// Deepest nesting of hard ifs a batched event may have.
+    /// Deepest nesting of ifs (hard or fuzzy) a batched event may have.
     inline constexpr int kMaxBatchDepth = 32;
 
     /// kBatch paths' machine state, lane-minor: variable a of lane l at
-    /// vars[a * kBatch + l], stack slot k at stack[k * kBatch + l].
+    /// vars[a * kBatch + l], stack slot k at stack[k * kBatch + l], and
+    /// likewise the degree stack and the fuzzy ifs' slots (fuzzy scripts).
     struct BatchMachine
     {
         double *vars = nullptr;
         double *stack = nullptr;
+        double *degrees = nullptr;  ///< max_degrees * kBatch (fuzzy)
+        double *if_slots = nullptr; ///< n_if_slots * kBatch (fuzzy)
         double payoff[kBatch] = {};
     };
 
     /**
-     * @brief code[begin, end) on up to kBatch paths at once (prices, hard
-     *        ifs only): each instruction is decoded once and applied to every
-     *        lane, with the scalar interpreter's operations on each -- the
-     *        same bits, per path.
+     * @brief code[begin, end) on up to kBatch paths at once (prices): each
+     *        instruction is decoded once and applied to every lane, with the
+     *        scalar interpreter's operations on each -- the same bits, per
+     *        path.
      *
      * A hard `if` is a mask (the compiler emits JumpIfFalse a; then; Jump b;
      * else; b:): the then-block runs for the lanes whose condition holds,
@@ -632,6 +635,13 @@ namespace quantModeling::scripting
      * `Pays` look at the mask, and they leave a masked lane untouched (no
      * `+ 0`, which would turn a -0 payoff into +0). `lanes` marks the lanes
      * in use; the others must point at valid inputs (a copy of lane 0).
+     *
+     * A fuzzy `if` (WP 26 P2; FIfBegin; then; FIfMid; else; FIfEnd) splits
+     * the active lanes by their degree, as the scalar interpreter splits
+     * one path: degree <= 0 runs the else-block only, >= 1 the then-block
+     * only, and a degree in between runs both, saving and restoring its
+     * state in its own lane of the if's slots and blending at FIfEnd with
+     * the scalar formulas.
      */
     inline void run_event_batch(const ProgramView &p, int begin, int end, BatchMachine &m,
                                 const double *const *spots, const double *const *discounts, const double *numeraire,
@@ -646,9 +656,18 @@ namespace quantModeling::scripting
         };
         Frame frames[kMaxBatchDepth];
         int depth = 0;
+        // Fuzzy ifs: the lanes that run each branch, and those that blend.
+        struct FuzzyFrame
+        {
+            unsigned parent, then_lanes, else_lanes, blend;
+        };
+        FuzzyFrame fuzzy[kMaxBatchDepth];
+        int fdepth = 0;
         unsigned active = lanes;
         double *S = m.stack;
         int sp = 0;
+        double *D = m.degrees;
+        int dp = 0;
         int pc = begin;
         auto on = [&](int l)
         { return ((active >> l) & 1u) != 0u; };
@@ -841,8 +860,135 @@ namespace quantModeling::scripting
                         pc = in.a;
                     break;
                 }
-                default: // fuzzy instructions: batch_depth() refuses such events
+                case Op::FCmpEq:
+                case Op::FCmpNe:
+                case Op::FCmpGt:
+                case Op::FCmpGe:
+                case Op::FCmpLt:
+                case Op::FCmpLe:
+                {
+                    double *d = D + dp * W;
+                    for (int l = 0; l < W; ++l)
+                    {
+                        const double x = a[l] - b[l]; // condition is x ⋈ 0
+                        d[l] = in.a != 0 ? (bytecode_detail::hard(x, in.op) ? 1.0 : 0.0)
+                                         : bytecode_detail::call_spread<double>(x, in.x, in.op);
+                    }
+                    sp -= 2;
+                    ++dp;
                     break;
+                }
+                case Op::FConst:
+                    for (int l = 0; l < W; ++l)
+                        D[dp * W + l] = in.x;
+                    ++dp;
+                    break;
+                case Op::FAnd:
+                {
+                    double *da = D + (dp - 2) * W;
+                    const double *db = D + (dp - 1) * W;
+                    for (int l = 0; l < W; ++l)
+                        da[l] = std::min(da[l], db[l]);
+                    --dp;
+                    break;
+                }
+                case Op::FOr:
+                {
+                    double *da = D + (dp - 2) * W;
+                    const double *db = D + (dp - 1) * W;
+                    for (int l = 0; l < W; ++l)
+                        da[l] = std::max(da[l], db[l]);
+                    --dp;
+                    break;
+                }
+                case Op::FNot:
+                {
+                    double *db = D + (dp - 1) * W;
+                    for (int l = 0; l < W; ++l)
+                        db[l] = 1.0 - db[l];
+                    break;
+                }
+                case Op::FIfBegin: // run_event_impl's FIfBegin, per lane
+                {
+                    const FuzzyIf &f = p.ifs[in.a];
+                    double *slots = m.if_slots + f.slot * W;
+                    const double *deg = D + (--dp) * W;
+                    unsigned then_only = 0u, else_only = 0u, blend = 0u;
+                    for (int l = 0; l < W; ++l)
+                    {
+                        if (!on(l))
+                            continue;
+                        const double d = deg[l];
+                        if (d <= 0.0)
+                            else_only |= 1u << l;
+                        else if (d >= 1.0)
+                            then_only |= 1u << l;
+                        else
+                        {
+                            blend |= 1u << l;
+                            slots[l] = d;
+                            slots[W + l] = m.payoff[l];
+                            for (int i = 0; i < f.n; ++i)
+                                slots[(3 + i) * W + l] = m.vars[p.aff[f.first + i] * W + l];
+                        }
+                    }
+                    fuzzy[fdepth++] = {active, then_only | blend, else_only | blend, blend};
+                    active = then_only | blend;
+                    if (active == 0u) // no lane in the then-block: straight to the else-block
+                    {
+                        active = else_only;
+                        pc = in.b;
+                    }
+                    break;
+                }
+                case Op::FIfMid: // end of the then-block: the blending lanes start over
+                {
+                    const FuzzyIf &f = p.ifs[in.a];
+                    double *slots = m.if_slots + f.slot * W;
+                    FuzzyFrame &fr = fuzzy[fdepth - 1];
+                    for (int l = 0; l < W; ++l)
+                    {
+                        if (((fr.blend >> l) & 1u) == 0u)
+                            continue;
+                        for (int i = 0; i < f.n; ++i)
+                            slots[(3 + f.n + i) * W + l] = m.vars[p.aff[f.first + i] * W + l];
+                        slots[2 * W + l] = m.payoff[l];
+                        for (int i = 0; i < f.n; ++i)
+                            m.vars[p.aff[f.first + i] * W + l] = slots[(3 + i) * W + l];
+                        m.payoff[l] = slots[W + l];
+                    }
+                    active = fr.else_lanes;
+                    if (active == 0u) // no lane in the else-block: past FIfEnd
+                    {
+                        active = fr.parent;
+                        --fdepth;
+                        pc = in.b;
+                    }
+                    break;
+                }
+                case Op::FIfEnd: // the blend, as run_event_impl writes it
+                {
+                    const FuzzyIf &f = p.ifs[in.a];
+                    const double *slots = m.if_slots + f.slot * W;
+                    const FuzzyFrame fr = fuzzy[--fdepth];
+                    for (int l = 0; l < W; ++l)
+                    {
+                        if (((fr.blend >> l) & 1u) == 0u)
+                            continue;
+                        const double degree = slots[l];
+                        const double payoff0 = slots[W + l];
+                        const double payoff_else = m.payoff[l];
+                        const double w1 = 1.0 - degree;
+                        for (int i = 0; i < f.n; ++i)
+                        {
+                            double &v = m.vars[p.aff[f.first + i] * W + l];
+                            v = degree * slots[(3 + f.n + i) * W + l] + w1 * v;
+                        }
+                        m.payoff[l] = payoff0 + degree * (slots[2 * W + l] - payoff0) + w1 * (payoff_else - payoff0);
+                    }
+                    active = fr.parent;
+                    break;
+                }
             }
         }
     }
@@ -871,24 +1017,32 @@ namespace quantModeling::scripting
 
         ProgramView view() const { return {code.data(), ifs.data(), aff.data()}; }
 
-        /// Whether run_event_batch can run every event (P1a): hard ifs only,
-        /// nested at most kMaxBatchDepth deep, the compiler's if layout.
+        /// Whether run_event_batch can run every event (P1a; fuzzy ifs since
+        /// WP 26 P2): ifs nested at most kMaxBatchDepth deep, in the
+        /// compiler's layout.
         bool batchable() const
         {
-            if (fuzzy || code.empty() || event_begin.size() < 2)
+            if (code.empty() || event_begin.size() < 2)
                 return false;
             for (std::size_t e = 0; e + 1 < event_begin.size(); ++e)
             {
                 const int begin = event_begin[e], end = event_begin[e + 1];
-                std::vector<int> ends; // open ifs' end pcs
+                std::vector<int> ends; // open hard ifs' end pcs
+                int fuzzy_depth = 0;   // open fuzzy ifs
                 for (int pc = begin; pc < end; ++pc)
                 {
                     while (!ends.empty() && ends.back() == pc)
                         ends.pop_back();
                     const Instr &in = code[static_cast<std::size_t>(pc)];
-                    if (in.op >= Op::FCmpEq && in.op <= Op::FNot)
-                        return false;
-                    if (in.op >= Op::FIfBegin)
+                    if (in.op == Op::FIfBegin || in.op == Op::FIfMid)
+                    {
+                        // FIfBegin b: the else-block; FIfMid b: past FIfEnd.
+                        if (in.b <= pc || in.b > end)
+                            return false;
+                        if (in.op == Op::FIfBegin && ++fuzzy_depth > kMaxBatchDepth)
+                            return false;
+                    }
+                    if (in.op == Op::FIfEnd && --fuzzy_depth < 0)
                         return false;
                     if (in.op == Op::JumpIfFalse)
                     {
@@ -903,6 +1057,8 @@ namespace quantModeling::scripting
                             return false;
                     }
                 }
+                if (fuzzy_depth != 0)
+                    return false;
             }
             return true;
         }

@@ -360,14 +360,14 @@ namespace quantModeling
         }
 
         /// The batched interpreter's buffers (P1a): kBatch lanes of
-        /// variables and stack.
+        /// variables, stack, and for a fuzzy script degrees and if slots.
         struct BatchBuffers final : ISimulatableProduct<T>::PayoffState
         {
-            std::vector<double> vars, stack;
+            std::vector<double> vars, stack, degrees, if_slots;
         };
 
-        /// kBatch for a compiled script with hard ifs only, priced in
-        /// double; 0 otherwise (fuzzy, the tree evaluator, AAD).
+        /// kBatch for a compiled script (hard or fuzzy) priced in double;
+        /// 0 otherwise (the tree evaluator, early exercise, AAD).
         int batch_width() const override
         {
             if constexpr (std::is_same_v<T, double>)
@@ -383,6 +383,8 @@ namespace quantModeling
             auto b = std::make_unique<BatchBuffers>();
             b->vars.assign(static_cast<std::size_t>(program_.n_vars) * scripting::kBatch, 0.0);
             b->stack.assign(static_cast<std::size_t>(std::max(1, program_.max_stack)) * scripting::kBatch, 0.0);
+            b->degrees.assign(static_cast<std::size_t>(std::max(1, program_.max_degrees)) * scripting::kBatch, 0.0);
+            b->if_slots.assign(static_cast<std::size_t>(std::max(1, program_.n_if_slots)) * scripting::kBatch, 0.0);
             return b;
         }
 
@@ -402,7 +404,7 @@ namespace quantModeling
                     for (int l = 0; l < W; ++l)
                         b.vars[static_cast<std::size_t>(v * W + l)] =
                             baseline_.empty() ? 0.0 : baseline_[static_cast<std::size_t>(v)];
-                scripting::BatchMachine m{b.vars.data(), b.stack.data(), {}};
+                scripting::BatchMachine m{b.vars.data(), b.stack.data(), b.degrees.data(), b.if_slots.data(), {}};
                 const scripting::ProgramView view = program_.view();
                 const unsigned lanes = count >= W ? (1u << W) - 1u : (1u << count) - 1u;
                 const double *spots[W];
