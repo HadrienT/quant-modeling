@@ -997,9 +997,33 @@ case, a Black-Scholes vanilla (one draw per path, an exact step):
 A free Φ⁻¹ would save 13.5 % of the path, the table 6 %, before paying the
 correction level. The papers' 5–7× came from an Euler step whose inverse CDF
 dominated the cost; AS 241 (P1i) removed that on the CPU, and on the GPU the
-Halley step it replaced was the 37 % of the P1i ablations. Proposed: closed
-as measured, not done (as P1d); to revisit if a path where draws dominate
-again appears (reduced precision on the GPU, many factors).
+Halley step it replaced was the 37 % of the P1i ablations.
+
+**The full experiment, run anyway at the maintainer's request (2026-11-12).**
+`engines/mc/approx_inverse_cdf.hpp`: `PiecewiseLinearInverseCdf` (equal cells
+of p in [1/2, 1), mirrored; the last cell calls the exact Φ⁻¹, so the
+approximation stays bounded) and `simulate_approx_inverse_cdf` (the
+approximate level, the correction on the same uniforms, and plain exact
+paths, each timed). Gain = plain cost over two-level cost at equal RMS
+error with the optimal split, costs in wall time per sample (one thread,
+Black-Scholes, PCG32 uniforms):
+
+| Product | 256 cells | 1024 cells | 4096 cells | Correction variance, 256 → 4096 |
+|---|---|---|---|---|
+| Vanilla call | 1.15× | 1.17× | 1.12× | 4.2e-4 → 2.8e-5 (price variance 217) |
+| Digital (the "hard" case) | 1.17× | 1.24× | 1.19× | 0: no path flipped in 1e6 |
+| Arithmetic Asian, 52 weekly dates | 1.06× | 1.08× | 1.09× | 6.7e-5 → 3.0e-6 (price variance 65) |
+
+The two-level estimator equals plain Monte Carlo within error (tested). The
+digital is not hard here: the table's error near the threshold is ~1e-7, so
+paths do not flip; the correction is free, and the gain still stops at the
+13.5 % bound. Tests (`tests/testMlmc.cpp`): the table's accuracy and exact
+tail, the estimator unbiased, the correction's variance falling with the
+cells; no timing assertion (#223 is a flaky one).
+
+Conclusion: **8–24 %, not 5–7×**. Not wired into any route. To revisit only
+where draws dominate a path again (reduced precision on the GPU, many
+factors).
 
 ## 9. P5 — Multilevel quasi-Monte Carlo
 

@@ -2,6 +2,7 @@
 
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/core/timegrid.hpp"
+#include "quantModeling/engines/mc/approx_inverse_cdf.hpp"
 #include "quantModeling/engines/mc/mlmc.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
@@ -417,6 +418,59 @@ namespace quantModeling
         PricingSettings negative;
         negative.mc_mlmc_eps = -1.0;
         EXPECT_THROW(simulate_script(product, *m, negative), InvalidInput);
+    }
+
+    // ── WP 26 P4d: approximate random variables (§8.7) ──────────────────
+
+    TEST(Mlmc, ThePiecewiseLinearInverseCdfIsCloseAndExactInTheTail)
+    {
+        double err256 = 0.0, err4096 = 0.0;
+        const PiecewiseLinearInverseCdf a256(256), a4096(4096);
+        for (int i = 1; i < 100000; ++i)
+        {
+            const double p = i / 100000.0;
+            err256 = std::max(err256, std::fabs(a256(p) - inverse_normal_cdf(p)));
+            err4096 = std::max(err4096, std::fabs(a4096(p) - inverse_normal_cdf(p)));
+        }
+        EXPECT_LT(err4096, err256);
+        EXPECT_LT(err256, 0.05);
+        EXPECT_EQ(a256(1e-6), inverse_normal_cdf(1e-6)); // the extreme tail is exact
+        EXPECT_EQ(a256(0.3), -a256(0.7));                // symmetric
+    }
+
+    TEST(Mlmc, TheApproximateLevelPlusItsCorrectionIsUnbiased)
+    {
+        // E[P_exact] = E[P_approx] + E[P_exact - P_approx] whatever the
+        // approximation: a coarse table, a Black-Scholes call.
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        auto m = make_script_model<Real>(bs);
+        const ApproxRvResult r =
+            simulate_approx_inverse_cdf(product, *m, PiecewiseLinearInverseCdf(16), 400000, 100000, 400000, 41);
+        const double exact_se = std::sqrt(r.exact.stats.variance() / static_cast<double>(r.exact.stats.n));
+        EXPECT_NEAR(r.value, r.exact.stats.mean(), 4.0 * std::hypot(r.std_error, exact_se));
+        // The correction is small against the price's own variance.
+        EXPECT_LT(r.correction.stats.variance(), 1e-3 * r.exact.stats.variance());
+    }
+
+    TEST(Mlmc, TheCorrectionVarianceFallsWithTheTablesResolution)
+    {
+        // Measured, not assumed (§8.7): 256 -> 4096 cells.
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        double v[2];
+        int i = 0;
+        for (const int cells : {256, 4096})
+        {
+            auto m = make_script_model<Real>(bs);
+            v[i++] = simulate_approx_inverse_cdf(product, *m, PiecewiseLinearInverseCdf(cells), 1000, 200000, 1000, 43)
+                         .correction.stats.variance();
+        }
+        EXPECT_LT(v[1], v[0] / 4.0) << v[0] << " -> " << v[1];
     }
 
 } // namespace quantModeling
