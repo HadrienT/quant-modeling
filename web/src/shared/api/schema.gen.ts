@@ -6244,11 +6244,11 @@ export interface components {
             milstein: boolean;
             /**
              * Mlmc
-             * @description 'auto' (the default): multilevel Monte Carlo over the time step whenever the script suits it -- model local_vol, one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'off': the usual engine (blueprint WP 26 §9.4).
+             * @description 'auto' (the default): multilevel Monte Carlo over the time step for a local_vol script that suits it -- one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'on': also under heston and slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU against about 2 s for the usual engine with its bias estimated; blueprint WP 26 §9.5). 'off': the usual engine (§9.4).
              * @default auto
              * @enum {string}
              */
-            mlmc: "auto" | "off";
+            mlmc: "auto" | "on" | "off";
             /**
              * Mlmc Eps
              * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.
@@ -6496,11 +6496,11 @@ export interface components {
             milstein: boolean;
             /**
              * Mlmc
-             * @description 'auto' (the default): multilevel Monte Carlo over the time step whenever the script suits it -- model local_vol, one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'off': the usual engine (blueprint WP 26 §9.4).
+             * @description 'auto' (the default): multilevel Monte Carlo over the time step for a local_vol script that suits it -- one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'on': also under heston and slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU against about 2 s for the usual engine with its bias estimated; blueprint WP 26 §9.5). 'off': the usual engine (§9.4).
              * @default auto
              * @enum {string}
              */
-            mlmc: "auto" | "off";
+            mlmc: "auto" | "on" | "off";
             /**
              * Mlmc Eps
              * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.

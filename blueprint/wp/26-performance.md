@@ -1253,6 +1253,43 @@ five to twenty times larger, which the page shows. Left: MLQMC on the GPU
 (P6), which would make the default as fast as the plain GPU route; Heston and
 SLV refinement, so that their bias is estimated too.
 
+### 9.5 The stochastic-volatility models refine; multilevel stays for local vol (2026-11-13)
+
+- `set_refinement` on Bates (Heston is Bates with lambda = 0; with jumps it
+  refuses any r > 1: their draws would couple poorly, §8.3), SLV and SABR.
+  Rough Bergomi does not refine: its hybrid scheme has a Volterra kernel on a
+  fixed daily grid, and coupling two of its levels is a research question,
+  not a refinement.
+- The coupling now carries a step's non-Brownian draws (Bates's jump count
+  and size, unused at lambda = 0): the coarse step takes its last fine
+  step's, which keeps every level's law exact.
+- `ISimulationModel::exact_between_dates()`, true for Black-Scholes (one and
+  several assets) only: the bias reported as 0 is now a model's declaration,
+  not inferred from its grid (rough Bergomi exposes the product's dates but
+  steps on a grid of its own; the inference reported it exact).
+
+Measured on SPY through the API (16 threads), one-year contracts:
+
+| | Multilevel (MLQMC, 0.2 %) | Plain, bias estimated |
+|---|---|---|
+| Call, Heston | 62.343 ± 0.085, bias ~0.054, 12.5 s | 62.200 ± 0.063, bias ~0.174, 1.8 s |
+| Call, SLV | 54.948 ± 0.071, bias ~0.052, 59.5 s | 55.358 ± 0.089, bias ~0.428, 2.0 s |
+| Weekly up-and-out call, auto (SLV) | 23.270 ± 0.030, bias ~0.031, 163 s | 23.320 ± 0.072, bias ~0.174, 1.8 s |
+
+The two agree (SLV call: 55.36 − 0.43 ≈ 54.93 against 54.95), and the
+plain run's bias is large -- five times its standard error on the SLV call.
+But MLQMC is far too slow on these models: its correction levels keep as
+many points as level 0, so their variance hardly decays -- the variance's
+full truncation and the leverage's staircase in T couple fine and coarse
+paths poorly. Hence `ScriptRequest.mlmc`: "auto" (the default) runs
+multilevel under local vol only, where it was measured fast; Heston and SLV
+get the plain engine with their bias estimated and shown; "on" forces
+multilevel on any model that refines.
+
+Left: a better-coupled scheme for the variance (an implicit or QE step whose
+levels' differences shrink with h) and a leverage interpolated in T would
+make multilevel pay under Heston and SLV; P6 for speed.
+
 ## 10. P6 — Multilevel on the GPU
 
 Levels map onto the segments of `run_logical_block_segments` (WP 19, lot G3):

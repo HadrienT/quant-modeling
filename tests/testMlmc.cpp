@@ -11,7 +11,9 @@
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/models/device_model.hpp"
+#include "quantModeling/models/equity/bates_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
+#include "quantModeling/models/equity/sabr_sim_model.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 
 #include <cmath>
@@ -616,7 +618,7 @@ namespace quantModeling
         EXPECT_GT(*r.discretisation_bias, 0.0);
     }
 
-    TEST(Mlmc, BlackScholesHasNoDiscretisationBiasAndHestonsIsNotEstimated)
+    TEST(Mlmc, BlackScholesHasNoDiscretisationBiasAndRoughBergomisIsNotEstimated)
     {
         ScriptedProduct<Real> product(kCall, ctx());
         PricingSettings s;
@@ -630,13 +632,83 @@ namespace quantModeling
         ASSERT_TRUE(exact.discretisation_bias.has_value());
         EXPECT_EQ(*exact.discretisation_bias, 0.0);
 
-        ScriptModelSpec heston = local_vol(true);
-        heston.model = "heston";
-        heston.heston = HestonParams{0.04, 2.0, 0.04, 0.5, -0.7};
-        auto h = make_script_model<Real>(heston);
-        const SimulationMCResult unknown = simulate_script(product, *h, s);
+        // The hybrid scheme's grid does not refine (WP 26 §9.5).
+        ScriptModelSpec rb = local_vol(true);
+        rb.model = "rough_bergomi";
+        rb.xi_times = {0.5, 2.0};
+        rb.xi_values = {0.04, 0.04};
+        auto r = make_script_model<Real>(rb);
+        const SimulationMCResult unknown = simulate_script(product, *r, s);
         EXPECT_FALSE(unknown.discretisation_bias.has_value());
         EXPECT_NE(unknown.diagnostics.find("not estimated"), std::string::npos) << unknown.diagnostics;
+    }
+
+    // ── WP 26 §9.5: the stochastic-volatility models refine ──────────────
+
+    namespace
+    {
+        ScriptModelSpec heston()
+        {
+            ScriptModelSpec h = local_vol(true);
+            h.model = "heston";
+            h.heston = HestonParams{0.04, 2.0, 0.04, 0.5, -0.7};
+            return h;
+        }
+    } // namespace
+
+    TEST(Mlmc, StochasticVolatilityModelsRefineTheirGrids)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto check = [&](std::unique_ptr<ISimulationModel<Real>> m, const char *name)
+        {
+            m->init(product.timeline(), product.defline());
+            const std::size_t base = m->sim_dim();
+            auto r = m->clone();
+            ASSERT_TRUE(r->set_refinement(4)) << name;
+            r->init(product.timeline(), product.defline());
+            EXPECT_EQ(r->sim_dim(), 4 * base) << name;
+        };
+        check(make_script_model<Real>(heston()), "heston");
+        check(std::make_unique<SABRSimModel<Real>>(100.0, 0.03, 0.3, 0.7, -0.3, 0.4, 1.0 / 12.0), "sabr");
+        ScriptModelSpec slv = heston();
+        slv.model = "slv";
+        slv.K_grid = {50.0, 200.0};
+        slv.T_grid = {0.0, 2.0};
+        slv.leverage_flat = {1.0, 1.0, 1.0, 1.0};
+        check(make_script_model<Real>(slv), "slv");
+    }
+
+    TEST(Mlmc, JumpsStayOutOfTheLevels)
+    {
+        // Bates with jumps: their draws would couple poorly (WP 26 §8.3).
+        BatesSimModel<Real> bates(100.0, 0.03, 0.0, 0.04, 2.0, 0.04, 0.5, -0.7, 0.5, -0.1, 0.1, 1.0 / 12.0);
+        EXPECT_FALSE(bates.set_refinement(2));
+        EXPECT_TRUE(bates.set_refinement(1));
+    }
+
+    TEST(Mlmc, UnderHestonTheTelescopingSumIsPlainMonteCarloOnTheFinestGrid)
+    {
+        // The jump draws a Heston step carries (Bates with lambda = 0) are
+        // copied to the coarse step: unused, the levels stay exact.
+        ScriptedProduct<Real> product(kPut, ctx());
+        auto m = make_script_model<Real>(heston());
+        const MlmcResult ml = simulate_mlmc_fixed(product, *m, {200000, 40000, 20000}, 47);
+        const SimulationMCResult pl = plain(kPut, heston(), 2, 200000);
+        EXPECT_NEAR(ml.value, pl.npv(), 4.0 * std::hypot(ml.std_error, pl.std_error())) << ml.diagnostics;
+        EXPECT_GT(ml.levels[1].variance(), 0.0);
+        EXPECT_LT(ml.levels[2].variance(), ml.levels[1].variance()) << ml.diagnostics;
+    }
+
+    TEST(Mlmc, AHestonRunNowEstimatesItsBias)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(heston());
+        PricingSettings s;
+        s.mc_paths = 1 << 14;
+        s.mc_bias_estimate = true;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        ASSERT_TRUE(r.discretisation_bias.has_value()) << r.diagnostics;
+        EXPECT_GT(*r.discretisation_bias, 0.0);
     }
 
     TEST(Mlmc, TheMultilevelRouteReportsItsBiasAndAimsAtAShareOfThePrice)

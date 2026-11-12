@@ -345,14 +345,16 @@ class ScriptPricingInputs(BaseModel):
         description="CPU runs only; a GPU run always uses Philox, the generator "
         "with which a CPU run gives the GPU's price.",
     )
-    mlmc: Literal["auto", "off"] = Field(
+    mlmc: Literal["auto", "on", "off"] = Field(
         "auto",
         description="'auto' (the default): multilevel Monte Carlo over the time "
-        "step whenever the script suits it -- model local_vol, one payoff, no "
-        "early exercise, no AAD greeks -- to a root-mean-square error of "
+        "step for a local_vol script that suits it -- one payoff, no early "
+        "exercise, no AAD greeks -- to a root-mean-square error of "
         "mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine "
-        "otherwise, the diagnostics saying why. 'off': the usual engine "
-        "(blueprint WP 26 §9.4).",
+        "otherwise, the diagnostics saying why. 'on': also under heston and "
+        "slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU "
+        "against about 2 s for the usual engine with its bias estimated; "
+        "blueprint WP 26 §9.5). 'off': the usual engine (§9.4).",
     )
     mlmc_rel_eps: float = Field(
         0.002,

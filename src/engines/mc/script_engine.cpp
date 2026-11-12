@@ -247,8 +247,8 @@ namespace quantModeling
         /// A plain run with its discretisation bias (WP 26 §9.4): a model
         /// that refines its grid is priced with every step halved, the bias
         /// estimated as the difference from the unhalved run on the same
-        /// seed (weak order one: bias(h/2) ~ P(h/2) - P(h)); a model whose
-        /// grid is the product's own dates is exact between them, bias 0.
+        /// seed (weak order one: bias(h/2) ~ P(h/2) - P(h)); a model exact
+        /// between the product's dates (exact_between_dates) has bias 0.
         SimulationMCResult run_with_bias(const ScriptedProduct<Real> &product, ISimulationModel<Real> &model,
                                          const PricingSettings &settings, ThreadPool *pool)
         {
@@ -264,9 +264,8 @@ namespace quantModeling
                 return fine;
             }
             SimulationMCResult res = simulate_script(product, model, plain, pool);
-            model.init(product.timeline(), product.defline());
-            if (canonical_timeline(model.sim_timeline()).size() == canonical_timeline(product.timeline()).size())
-                res.discretisation_bias = 0.0; // simulated exactly between the product's dates
+            if (model.exact_between_dates())
+                res.discretisation_bias = 0.0;
             else
                 res.diagnostics += " | discretisation bias not estimated (the model cannot refine its grid)";
             return res;

@@ -42,14 +42,19 @@ def test_off_runs_the_usual_engine_and_estimates_its_bias_by_halving(store):
     assert resp.npv == pytest.approx(ml.npv, abs=0.15)
 
 
-def test_black_scholes_falls_back_says_why_and_has_no_bias():
+def test_black_scholes_has_no_bias_and_on_says_why_it_cannot_run():
     resp = pricing_service.price_script(
         _req(VANILLA, spot=100.0, vol=0.2, model="black_scholes")
     )
-    assert (
-        "no multilevel Monte Carlo: the model has no time-step bias" in resp.diagnostics
-    )
+    assert "multilevel" not in resp.diagnostics
     assert resp.discretisation_bias == 0.0
+    forced = pricing_service.price_script(
+        _req(VANILLA, spot=100.0, vol=0.2, model="black_scholes", mlmc="on")
+    )
+    assert (
+        "no multilevel Monte Carlo: the model has no time-step bias"
+        in forced.diagnostics
+    )
 
 
 def test_no_bias_without_the_estimate(store):
@@ -64,3 +69,19 @@ def test_bad_targets_are_refused():
         _req(VANILLA, spot=100.0, vol=0.2, mlmc_eps=-1.0)
     with pytest.raises(ValidationError):
         _req(VANILLA, spot=100.0, vol=0.2, mlmc_rel_eps=0.0)
+
+
+def test_heston_keeps_the_usual_engine_by_default_with_its_bias(store):
+    # WP 26 §9.5: its levels couple poorly, so 'auto' leaves it out; its
+    # grid refines, so its bias is now estimated.
+    resp = pricing_service.price_script(_req(VANILLA, ticker="TEST", model="heston"))
+    assert "multilevel" not in resp.diagnostics
+    assert resp.discretisation_bias is not None and resp.discretisation_bias > 0.0
+
+
+def test_on_runs_multilevel_under_heston(store):
+    resp = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="heston", mlmc="on", mlmc_eps=0.5)
+    )
+    assert "multilevel QMC" in resp.diagnostics
+    assert resp.discretisation_bias is not None

@@ -137,11 +137,12 @@ namespace quantModeling
                 cost_ += static_cast<double>(coarse_->sim_dim());
 
                 const BrownianLayout lf = fine_->brownian_layout(), lc = coarse_->brownian_layout();
-                if (!lf.covers(fine_->sim_dim()) || !lc.covers(coarse_->sim_dim()) || lf.stride != lf.factors ||
-                    lc.stride != lc.factors || lf.factors != lc.factors)
-                    throw InvalidInput("multilevel Monte Carlo: the model's draws are not all Brownian increments "
-                                       "(jumps?), the levels cannot be coupled");
+                if (!lf.covers(fine_->sim_dim()) || !lc.covers(coarse_->sim_dim()) || lf.factors != lc.factors ||
+                    lf.stride != lc.stride)
+                    throw InvalidInput("multilevel Monte Carlo: the model does not describe its draws "
+                                       "(brownian_layout), the levels cannot be coupled");
                 factors_ = lf.factors;
+                stride_ = lf.stride;
                 // Each fine step's coarse step, and the sqrt(dt) weights. The
                 // coarse dates are fine dates exactly (refine_steps), hence
                 // the tight tolerance: TIMELINE_EPS (an hour) is longer than
@@ -199,8 +200,18 @@ namespace quantModeling
                 {
                     std::fill(gauss_coarse_.begin(), gauss_coarse_.end(), 0.0);
                     for (std::size_t k = 0; k < coarse_of_.size(); ++k)
+                    {
+                        const std::size_t c = coarse_of_[k] * stride_, fk = k * stride_;
                         for (std::size_t f = 0; f < factors_; ++f)
-                            gauss_coarse_[coarse_of_[k] * factors_ + f] += weight_[k] * gauss_fine_[k * factors_ + f];
+                            gauss_coarse_[c + f] += weight_[k] * gauss_fine_[fk + f];
+                        // A step's other draws (jump counts and sizes): the
+                        // coarse step takes its last fine step's, which keeps
+                        // every level's law exact (WP 26 §9.5). Their
+                        // coupling is poor, so a model only accepts a
+                        // refinement where they do not act (Bates: lambda = 0).
+                        for (std::size_t e = factors_; e < stride_; ++e)
+                            gauss_coarse_[c + e] = gauss_fine_[fk + e];
+                    }
                     coarse_->generate_path(gauss_coarse_, coarse_path_);
                     payoffs(coarse_path_);
                     y -= out_.at(0);
@@ -230,7 +241,7 @@ namespace quantModeling
             Scenario<Real> fine_path_, coarse_path_;
             std::vector<double> gauss_fine_, gauss_coarse_;
             std::vector<Real> out_;
-            std::size_t factors_ = 0;
+            std::size_t factors_ = 0, stride_ = 0;
             std::vector<std::size_t> coarse_of_;
             std::vector<double> weight_;
             double cost_ = 0.0;

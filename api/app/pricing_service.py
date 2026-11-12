@@ -47,12 +47,13 @@ from .schemas import (
 from .telemetry import tracer
 
 
-def _multilevel(req) -> Dict:
+def _multilevel(req, model: str) -> Dict:
     """price_script's multilevel and bias arguments for a script request
-    (WP 26 §9.4): MLMC by default when the script suits it, to a share of the
-    price unless an absolute target is given; the plain run's bias estimated
-    either way."""
-    on = req.mlmc == "auto"
+    (WP 26 §9.4, §9.5): MLMC by default under local vol, where it was
+    measured fast, and under any model that refines its grid with
+    mlmc="on"; to a share of the price unless an absolute target is given;
+    the plain run's bias estimated either way."""
+    on = req.mlmc == "on" or (req.mlmc == "auto" and model == "local_vol")
     return dict(
         mlmc_eps=req.mlmc_eps if on else 0.0,
         mlmc_rel_eps=req.mlmc_rel_eps if on and req.mlmc_eps == 0.0 else 0.0,
@@ -433,7 +434,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             antithetic=req.antithetic,
             importance_sampling=req.importance_sampling,
             milstein=req.milstein,
-            **_multilevel(req),
+            **_multilevel(req, model if n > 1 else "black_scholes"),
             **grids,
         )
     result["warnings"] = (
@@ -609,7 +610,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             curve_times=curve_times,
             curve_dfs=curve_dfs,
             milstein=req.milstein,
-            **_multilevel(req),
+            **_multilevel(req, model),
         )
     result["warnings"] = (
         _hard_threshold_greeks(req, valuation_date)
