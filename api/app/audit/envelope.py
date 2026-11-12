@@ -50,6 +50,11 @@ def lib_build_sha() -> str:
         return "unknown"
 
 
+def api_sha() -> str:
+    """The API's commit, from the image's COMMIT_SHA ("dev" outside one)."""
+    return os.getenv("COMMIT_SHA", "dev")
+
+
 class Producer(BaseModel):
     service: str = "quant-modeling-api"
     git_sha: str
@@ -85,7 +90,7 @@ class Event(BaseModel):
             trace_id=trace_id,
             username=username,
             producer=Producer(
-                git_sha=os.getenv("COMMIT_SHA", "dev"),
+                git_sha=api_sha(),
                 lib_build=lib_build_sha(),
             ),
             payload=payload.model_dump(mode="json"),

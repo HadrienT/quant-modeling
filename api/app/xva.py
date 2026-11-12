@@ -538,6 +538,25 @@ def _cashflow(s: _Spec) -> dict:
     return out
 
 
+def _rate_trade(s, par: float, currency: Optional[str] = None) -> dict:
+    """The engine's dict of a swap or European swaption struck at `par`, with
+    annual fixed and floating legs; `currency` only in a two-currency set."""
+    trade = {"kind": s.kind}
+    if currency is not None:
+        trade["currency"] = currency
+    trade.update(
+        tenor=s.tenor,
+        fixed_rate=par,
+        notional=s.notional,
+        payer=s.payer,
+        quantity=s.quantity,
+        fixed_frequency=1,
+        float_frequency=1,
+    )
+    trade["start" if s.kind == "swap" else "expiry"] = s.start
+    return trade
+
+
 def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
     """The trades at the market: each fixed rate is the par rate of its swap
     on today's curve (the forward par rate for a swaption)."""
@@ -586,18 +605,7 @@ def _trades(specs: List[_Spec], rates: _Rates) -> List[dict]:
                 }
             )
             continue
-        trade = {
-            "kind": s.kind,
-            "tenor": s.tenor,
-            "fixed_rate": par,
-            "notional": s.notional,
-            "payer": s.payer,
-            "quantity": s.quantity,
-            "fixed_frequency": 1,
-            "float_frequency": 1,
-        }
-        trade["start" if s.kind == "swap" else "expiry"] = s.start
-        out.append(trade)
+        out.append(_rate_trade(s, par))
     return out
 
 
@@ -701,19 +709,7 @@ def _asset_trades(
                     0.0,
                 )["par_rate"]
             )
-            trade = {
-                "kind": s.kind,
-                "currency": "domestic",
-                "tenor": s.tenor,
-                "fixed_rate": par,
-                "notional": s.notional,
-                "payer": s.payer,
-                "quantity": s.quantity,
-                "fixed_frequency": 1,
-                "float_frequency": 1,
-            }
-            trade["start" if s.kind == "swap" else "expiry"] = s.start
-            out.append(trade)
+            out.append(_rate_trade(s, par, currency="domestic"))
         else:
             raise XvaInputError(
                 f"Next to equity options the engine takes dollar swaps and European "
@@ -801,19 +797,9 @@ def _two_currency_trades(
                     times, dfs, times, dfs, s.start, s.tenor, 0.0, 1, 1, 1.0, True, 0.0
                 )["par_rate"]
             )
-            trade = {
-                "kind": s.kind,
-                "currency": "foreign" if in_euros else "domestic",
-                "tenor": s.tenor,
-                "fixed_rate": par,
-                "notional": s.notional,
-                "payer": s.payer,
-                "quantity": s.quantity,
-                "fixed_frequency": 1,
-                "float_frequency": 1,
-            }
-            trade["start" if s.kind == "swap" else "expiry"] = s.start
-            out.append(trade)
+            out.append(
+                _rate_trade(s, par, currency="foreign" if in_euros else "domestic")
+            )
         else:
             raise XvaInputError(
                 f"A {s.kind} is valued by regression, which the two-currency "

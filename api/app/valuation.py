@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -36,7 +35,6 @@ from . import pricing_service as ps
 from . import rates_derivatives as rd
 from . import rates_derivatives_schemas as rs
 from . import schemas as s
-from .audit.envelope import lib_build_sha
 from .audit.payloads import (
     CodeVersion,
     EngineSpec,
@@ -377,8 +375,6 @@ def payload(
             greeks=resp.greeks.model_dump(mode="json"),
         ),
         timing=ValuationTiming(duration_ms=priced.duration_s * 1000),
-        code=CodeVersion(
-            api_sha=os.getenv("COMMIT_SHA", "dev"), lib_build=lib_build_sha()
-        ),
+        code=CodeVersion.current(),
         ip_hash=ip_hash,
     )

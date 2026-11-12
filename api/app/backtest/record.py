@@ -10,13 +10,11 @@ fingerprint moved, `drifted_code` the builds.
 
 from __future__ import annotations
 
-import os
 from typing import Any, Callable
 
 from pydantic import BaseModel, ValidationError
 
 from .. import replay as valuation_replay
-from ..audit.envelope import lib_build_sha
 from ..audit.payloads import (
     BacktestEngine,
     BacktestRunPayload,
@@ -68,12 +66,6 @@ KINDS: dict[str, tuple[type[BaseModel], Callable, Callable]] = {
 }
 
 
-def _code() -> CodeVersion:
-    return CodeVersion(
-        api_sha=os.getenv("COMMIT_SHA", "dev"), lib_build=lib_build_sha()
-    )
-
-
 def payload(kind: str, req: BaseModel, response: Any) -> BacktestRunPayload:
     request = req.model_dump(mode="json")
     return BacktestRunPayload(
@@ -84,7 +76,7 @@ def payload(kind: str, req: BaseModel, response: Any) -> BacktestRunPayload:
         engine=BacktestEngine(**response.engine.model_dump()),
         headline=KINDS[kind][2](response),
         timing=ValuationTiming(duration_ms=response.compute_ms),
-        code=_code(),
+        code=CodeVersion.current(),
         ip_hash=current_ip_hash(),
     )
 
@@ -160,15 +152,7 @@ def replay(event: dict[str, Any]) -> BacktestReplayResponse:
     ]
     recorded_engine = BacktestEngine(**body["engine"])
     current_engine = BacktestEngine(**response.engine.model_dump())
-    code = body.get("code", {})
-    recorded_code = valuation_replay.CodeBuild(
-        api_sha=str(code.get("api_sha", "unknown")),
-        lib_build=str(code.get("lib_build", "unknown")),
-    )
-    current = _code()
-    current_code = valuation_replay.CodeBuild(
-        api_sha=current.api_sha, lib_build=current.lib_build
-    )
+    recorded_code, current_code = valuation_replay.code_builds(body)
 
     # The engine's build decides the figures; the API's only reshapes them.
     if drifted:
