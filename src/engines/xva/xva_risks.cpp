@@ -196,51 +196,15 @@ namespace quantModeling
         /// Everything the paths read, as functions of the inputs: recorded
         /// before the mark in a differentiable run.
         template <class T>
-        struct Setup
+        struct Setup : ProgramSetup<T>
         {
-            std::vector<xva::BasicProgramExp<T>> exps;
-            std::vector<xva::BasicProgramCoupon<T>> coupons;
-            std::vector<xva::BasicProgramAccrued<T>> accrued;
-            std::vector<xva::BasicProgramOptionDate<T>> option_dates;
-            std::vector<xva::BasicProgramOptionBond<T>> option_bonds;
             xva::BasicStateDynamics<T> dynamics;
             /// The netted terms of Fixed::netted, as amount × exp(-G x).
             std::vector<xva::BasicProgramExp<T>> netted;
             /// Per output, the weight of each reporting date.
             std::array<std::vector<T>, kXvaOutputs> weights;
             T held_today;
-
-            xva::BasicProgramView<T> view(const xva::ExposureProgram &p) const
-            {
-                return {p.trades.data(),
-                        p.date_records.data(),
-                        exps.data(),
-                        coupons.data(),
-                        accrued.data(),
-                        p.paid.data(),
-                        option_dates.data(),
-                        option_bonds.data(),
-                        p.intervals.data(),
-                        static_cast<int>(p.trades.size()),
-                        static_cast<int>(p.dates)};
-            }
         };
-
-        template <class T>
-        xva::BasicProgramOptionDate<T> option_date(Model<T> &m, Time from, Time expiry)
-        {
-            using std::exp;
-            using std::sqrt;
-            const auto tr = m.transition(from, expiry, expiry);
-            const T G = m.G(from, expiry);
-            return {tr.decay,
-                    tr.drift,
-                    tr.variance,
-                    T(sqrt(tr.variance)),
-                    T(0.5 * (tr.variance - m.y(expiry))),
-                    T(exp(m.log_discount(expiry) - m.log_discount(from) - 0.5 * G * G * m.y(from))),
-                    G};
-        }
 
         template <class T>
         void build(const Fixed &f, const Params<T> &p, Setup<T> &s)
@@ -310,7 +274,7 @@ namespace quantModeling
             }
             s.option_dates.reserve(prog.option_dates.size());
             for (const xva::OptionDateSource &o : prog.option_date_sources)
-                s.option_dates.push_back(option_date(m, o.from, o.expiry));
+                s.option_dates.push_back(program_option_date<T>(m, o.from, o.expiry));
             s.option_bonds.reserve(prog.option_bonds.size());
             for (const xva::OptionBondSource &b : prog.option_bond_sources)
                 s.option_bonds.push_back(
@@ -340,24 +304,7 @@ namespace quantModeling
             s.held_today = T(0.0);
             if (f.collateralised)
             {
-                const xva::BasicProgramView<T> view = s.view(prog);
-                T value(0.0);
-                for (std::size_t k = 0; k < prog.trades.size(); ++k)
-                {
-                    const xva::TodaySource &today = prog.today[k];
-                    T v(0.0);
-                    if (today.expiry > 0.0)
-                    {
-                        const T x(0.0);
-                        v = xva::program_option_integral(view, prog.trades[k],
-                                                         option_date(m, 0.0, today.expiry), x);
-                    }
-                    else
-                        for (int j = today.term_begin; j < today.term_end; ++j)
-                            v += prog.today_terms[static_cast<std::size_t>(j)].raw *
-                                 exp(m.log_discount(prog.today_terms[static_cast<std::size_t>(j)].to));
-                    value += prog.trades[k].quantity * v;
-                }
+                const T value = program_value_today(prog, s, m);
                 s.held_today =
                     balance_after_call(T(0.0), variation_margin_required(value, f.plan.terms), f.plan.terms);
             }
