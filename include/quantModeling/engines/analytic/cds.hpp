@@ -53,14 +53,6 @@ namespace quantModeling
         using EngineBase::EngineBase;
 
         void visit(const CreditDefaultSwap &cds) override;
-
-        void visit(const VanillaOption &) override { unsupported("vanilla option"); }
-        void visit(const AsianOption &) override { unsupported("Asian option"); }
-        void visit(const BarrierOption &) override { unsupported("barrier option"); }
-        void visit(const DigitalOption &) override { unsupported("digital option"); }
-        void visit(const EquityFuture &) override { unsupported("equity future"); }
-        void visit(const ZeroCouponBond &) override { unsupported("zero-coupon bond"); }
-        void visit(const FixedRateBond &) override { unsupported("fixed-rate bond"); }
     };
 
 } // namespace quantModeling

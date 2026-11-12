@@ -23,14 +23,6 @@ namespace quantModeling
 
         void visit(const WorstOfOption &opt) override;
         void visit(const BestOfOption &opt) override;
-
-        void visit(const VanillaOption &) override;
-        void visit(const AsianOption &) override;
-        void visit(const BarrierOption &) override;
-        void visit(const DigitalOption &) override;
-        void visit(const EquityFuture &) override;
-        void visit(const ZeroCouponBond &) override;
-        void visit(const FixedRateBond &) override;
     };
 
 } // namespace quantModeling

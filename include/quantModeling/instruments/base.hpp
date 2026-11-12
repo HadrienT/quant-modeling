@@ -68,13 +68,15 @@ namespace quantModeling
         const std::vector<Time> &dates() const override { return d_; }
     };
 
+    /// Every product defaults to UnsupportedInstrument: an engine overrides
+    /// only the products it prices.
     struct IInstrumentVisitor
     {
         virtual ~IInstrumentVisitor() = default;
-        virtual void visit(const VanillaOption &) = 0;
-        virtual void visit(const AsianOption &) = 0;
-        virtual void visit(const BarrierOption &) = 0;
-        virtual void visit(const DigitalOption &) = 0;
+        virtual void visit(const VanillaOption &) { throw UnsupportedInstrument("Vanilla option is not supported by this engine."); }
+        virtual void visit(const AsianOption &) { throw UnsupportedInstrument("Asian option is not supported by this engine."); }
+        virtual void visit(const BarrierOption &) { throw UnsupportedInstrument("Barrier option is not supported by this engine."); }
+        virtual void visit(const DigitalOption &) { throw UnsupportedInstrument("Digital option is not supported by this engine."); }
         virtual void visit(const LookbackOption &) { throw UnsupportedInstrument("Lookback option is not supported by this engine."); }
         virtual void visit(const BasketOption &) { throw UnsupportedInstrument("Basket option is not supported by this engine."); }
         virtual void visit(const BondOption &) { throw UnsupportedInstrument("Bond option is not supported by this engine."); }
@@ -96,9 +98,9 @@ namespace quantModeling
         virtual void visit(const InterestRateSwap &) { throw UnsupportedInstrument("Interest-rate swap is not supported by this engine."); }
         virtual void visit(const Swaption &) { throw UnsupportedInstrument("Swaption is not supported by this engine."); }
         virtual void visit(const BermudanSwaption &) { throw UnsupportedInstrument("Bermudan swaption is not supported by this engine."); }
-        virtual void visit(const EquityFuture &) = 0;
-        virtual void visit(const ZeroCouponBond &) = 0;
-        virtual void visit(const FixedRateBond &) = 0;
+        virtual void visit(const EquityFuture &) { throw UnsupportedInstrument("Equity future is not supported by this engine."); }
+        virtual void visit(const ZeroCouponBond &) { throw UnsupportedInstrument("Zero-coupon bond is not supported by this engine."); }
+        virtual void visit(const FixedRateBond &) { throw UnsupportedInstrument("Fixed-rate bond is not supported by this engine."); }
     };
 
     struct Instrument
