@@ -258,8 +258,8 @@ namespace quantModeling::script_builders
                           put = number(t.put_barrier * t.s0), s0 = number(t.s0);
         const std::string periods = t.memory_coupon ? "(miss + 1)" : "1";
         std::string obs = "    if alive = 1 then\n";
-        if (t.ki_on_every_date)
-            obs += "        if spot() < " + put + " then ki = 1 endIf\n";
+        if (t.ki_continuous) // no knock-in since the previous date, given the path
+            obs += "        nki = nki * survivalAbove(" + put + ")\n";
         obs += "        if spot() >= " + ac + " then\n"
                                               "            pays " +
                N + " * (1 + " + c + " * " + periods + ")\n"
@@ -275,12 +275,14 @@ namespace quantModeling::script_builders
                                                  "            endIf\n"
                                                  "        endIf\n"
                                                  "    endIf\n";
-        const std::string init = "    alive = 1\n    miss = 0\n    ki = 0\n";
+        const std::string init = "    alive = 1\n    miss = 0\n    nki = 1\n";
         std::string last = "    if alive = 1 then\n";
-        if (!t.ki_on_every_date)
-            last += "        if spot() < " + put + " then ki = 1 endIf\n";
-        last += "        if ki = 1 then\n            pays " + N + " * spot() / " + s0 +
-                "\n        else\n            pays " + N + "\n        endIf\n    endIf\n";
+        if (t.ki_continuous)
+            last += "        pays " + N + " * (nki + (1 - nki) * spot() / " + s0 + ")\n";
+        else
+            last += "        if spot() < " + put + " then\n            pays " + N + " * spot() / " + s0 +
+                    "\n        else\n            pays " + N + "\n        endIf\n";
+        last += "    endIf\n";
         if (dates.size() == 1)
             return iso(dates.front()) + "\n" + init + obs + last;
         return three_events(dates, init + obs, obs, last);

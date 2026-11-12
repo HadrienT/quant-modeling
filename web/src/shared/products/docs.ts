@@ -711,7 +711,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			},
 		],
 		notes: [
-			'The "continuous knock-in" flag does NOT apply a Brownian-bridge correction — it only checks the knock-in at every observation date instead of only the last. Read "continuous" as "checked more often".',
+			"With the continuous knock-in, the barrier is monitored at every instant, not only on the observation dates: the redemption at maturity is weighted by the probability that the spot never touched it, the Brownian-bridge survival probability between dates (exact under Black-Scholes; Glasserman 2004, §6.4). Without it, the knock-in is the spot at maturity below the barrier.",
 			"Economically the investor is short a knock-in put struck at $B_{ki}S_0$ dressed with a coupon — the coupon can make the product look lower-risk than the downside it carries.",
 		],
 		references: [
@@ -729,6 +729,10 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 				kind: "book",
 				label: "Overhaus et al. (2007)",
 				cite: "Equity Hybrid Derivatives, Wiley.",
+			},
+			{
+				...GLASSERMAN,
+				cite: "Monte Carlo Methods in Financial Engineering, Springer — §6.4 (the Brownian-bridge correction of a continuously monitored barrier).",
 			},
 		],
 

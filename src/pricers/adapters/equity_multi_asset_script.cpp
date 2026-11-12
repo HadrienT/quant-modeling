@@ -161,7 +161,7 @@ namespace quantModeling
                 t.coupon_rate = in.coupon_rate;
                 t.notional = in.notional;
                 t.memory_coupon = in.memory_coupon;
-                t.ki_on_every_date = in.ki_continuous;
+                t.ki_continuous = in.ki_continuous;
                 std::vector<int> d = dates;
                 d.back() += shift;
                 return script_builders::autocall(t, d);

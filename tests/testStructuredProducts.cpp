@@ -285,9 +285,57 @@ TEST(AutocallMC, ContinuousKI)
                       /*memory=*/false, /*ki_cont=*/true);
     auto res = price(note, engine);
 
-    // KI is checked at obs dates only (S is simulated to obs dates, not continuously).
-    // With very low vol, S≈100 < 150, so KI triggers.  PV ≈ 1000 × 1.0 = 1000
+    // The spot starts below the knock-in barrier: the survival above it is
+    // 0, the knock-in certain. With very low vol, S(T) ≈ 100: PV ≈ 1000 ×
+    // S(T)/S0 ≈ 1000.
     EXPECT_NEAR(res.npv, 1000.0, 5.0);
+}
+
+// A note never called and paying no coupon redeems N (1 - 1_KI (1 - S_T/S0))
+// at T. With a continuously monitored knock-in at H, its value is
+// N e^{-rT} - (N/S0) (P_di - C_di), the down-and-in put and call struck at
+// S0 with the barrier H (Hull, Options, Futures and Other Derivatives,
+// §26.9, H < K). The script's survival probabilities make it exact under
+// Black-Scholes, whatever the observation dates.
+TEST(AutocallMC, ContinuousKnockInIsTheDownAndInClosedForm)
+{
+    const double S = 100.0, r = 0.05, q = 0.02, v = 0.25, T = 1.0, N = 1000.0, H = 60.0, K = S;
+    auto Phi = [](double x)
+    { return 0.5 * std::erfc(-x / std::sqrt(2.0)); };
+    const double sd = v * std::sqrt(T), lam = (r - q + 0.5 * v * v) / (v * v);
+    const double y = std::log(H * H / (S * K)) / sd + lam * sd;
+    const double x1 = std::log(S / H) / sd + lam * sd, y1 = std::log(H / S) / sd + lam * sd;
+    const double c_di = S * std::exp(-q * T) * std::pow(H / S, 2 * lam) * Phi(y) -
+                        K * std::exp(-r * T) * std::pow(H / S, 2 * lam - 2) * Phi(y - sd);
+    const double p_di = -S * std::exp(-q * T) * Phi(-x1) + K * std::exp(-r * T) * Phi(-x1 + sd) +
+                        S * std::exp(-q * T) * std::pow(H / S, 2 * lam) * (Phi(y) - Phi(y1)) -
+                        K * std::exp(-r * T) * std::pow(H / S, 2 * lam - 2) * (Phi(y - sd) - Phi(y1 - sd));
+    const double exact = N * std::exp(-r * T) - N / S * (p_di - c_di);
+
+    AutocallBSInput in{};
+    in.spot = S;
+    in.rate = r;
+    in.dividend = q;
+    in.vol = v;
+    in.observation_dates = {0.25, 0.5, 0.75, 1.0};
+    in.autocall_barrier = 100.0; // never called
+    in.coupon_barrier = 100.0;   // no coupon
+    in.put_barrier = H / S;
+    in.coupon_rate = 0.0;
+    in.notional = N;
+    in.ki_continuous = true;
+    in.n_paths = 1 << 17;
+    in.seed = 5;
+    const PricingResult cont = price_equity_autocall_bs_mc(in);
+    EXPECT_NEAR(cont.npv, exact, 4.0 * cont.mc_std_error) << "closed form " << exact;
+
+    // Monitoring at every instant knocks in more often than at expiry only.
+    in.ki_continuous = false;
+    const PricingResult terminal = price_equity_autocall_bs_mc(in);
+    RecordProperty("exact", std::to_string(exact));
+    RecordProperty("continuous", std::to_string(cont.npv) + " +- " + std::to_string(cont.mc_std_error));
+    RecordProperty("terminal", std::to_string(terminal.npv) + " +- " + std::to_string(terminal.mc_std_error));
+    EXPECT_LT(cont.npv, terminal.npv - 4.0 * std::hypot(cont.mc_std_error, terminal.mc_std_error));
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

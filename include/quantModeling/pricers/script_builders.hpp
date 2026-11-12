@@ -111,15 +111,20 @@ namespace quantModeling::script_builders
         Real coupon_rate = 0.0; ///< per period, a fraction of the notional
         Real notional = 1000.0;
         bool memory_coupon = true;
-        /// The knock-in checked on every observation date; otherwise on the
-        /// last one only (the hand-written engine's two modes).
-        bool ki_on_every_date = false;
+        /// A continuously monitored knock-in: the probability that the spot
+        /// stayed above the knock-in barrier at every instant up to the
+        /// expiry, by survivalAbove (WP 26 P2), the payoff weighted by it.
+        /// Otherwise the knock-in is the spot at the expiry below the
+        /// barrier.
+        bool ki_continuous = false;
     };
 
     /// Phoenix autocall on observation `dates`: called at par plus coupon(s)
     /// on the first date at or above the autocall barrier; a coupon (with
     /// the missed ones, memory) on a date at or above the coupon barrier;
-    /// at the last date, par, or notional * spot() / s0 after a knock-in.
+    /// at the last date, par, or notional * spot() / s0 after a knock-in --
+    /// with a continuous knock-in, notional * (q + (1 - q) spot() / s0), q
+    /// the probability of no knock-in given the path (conditional MC).
     std::string autocall(const AutocallTerms &t, const std::vector<int> &dates);
 
     /// Variance (or volatility) swap: realised variance (1/T) Σ ln²(S_i /
