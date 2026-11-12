@@ -25,6 +25,7 @@ from ..xva_schemas import (
     XvaSensitivitiesRequest,
     XvaSensitivitiesResponse,
 )
+from .errors import store_unavailable
 
 router = APIRouter()
 
@@ -52,9 +53,7 @@ async def _computed(fn, *args):
     try:
         return await run_in_threadpool(fn, *args)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     except xva.XvaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (xva.XvaInputError, RuntimeError) as exc:

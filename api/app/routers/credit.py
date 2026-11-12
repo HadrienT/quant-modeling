@@ -38,6 +38,7 @@ from ..credit_schemas import (
 )
 from ..request_context import set_cache_hit
 from ..schemas import MethodologySection
+from .errors import store_unavailable
 
 router = APIRouter()
 
@@ -48,6 +49,7 @@ _COMPANIES_CACHE = TTLCache[str, CompaniesResponse](max_size=1, ttl_seconds=3600
 _FUNDAMENTALS_CACHE = TTLCache[str, FundamentalsResponse](
     max_size=200, ttl_seconds=3600
 )
+
 _STRUCTURAL_CACHE = TTLCache[str, StructuralResponse](max_size=200, ttl_seconds=3600)
 
 TickerParam = Path(..., pattern=r"^[A-Za-z0-9.\-]{1,10}$")
@@ -68,10 +70,6 @@ def _company(c: db.SecCompany) -> CompanySummary:
     )
 
 
-def _store_error(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=503, detail="Market data store unavailable")
-
-
 @router.get("/api/credit/spreads/overview", response_model=CreditSpreadsResponse)
 def credit_spreads_overview(
     recovery: float = Query(
@@ -86,7 +84,7 @@ def credit_spreads_overview(
     try:
         o = credit.spreads_overview(recovery)
     except db.StoreUnavailable as exc:
-        raise _store_error(exc) from exc
+        raise store_unavailable() from exc
     except credit.CreditUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -142,7 +140,7 @@ def credit_spread_history(
             status_code=404, detail=f"Unknown series {series_id}"
         ) from exc
     except db.StoreUnavailable as exc:
-        raise _store_error(exc) from exc
+        raise store_unavailable() from exc
     spec = credit.HISTORY_SERIES[series_id]
     response = SpreadHistoryResponse(
         series_id=series_id,
@@ -163,7 +161,7 @@ def credit_companies() -> CompaniesResponse:
     try:
         companies = db.sec_companies()
     except db.StoreUnavailable as exc:
-        raise _store_error(exc) from exc
+        raise store_unavailable() from exc
     response = CompaniesResponse(
         companies=sorted((_company(c) for c in companies), key=lambda c: c.tickers[0])
     )
@@ -225,7 +223,7 @@ def credit_company_fundamentals(
             status_code=404, detail=f"No filings stored for {ticker}"
         ) from exc
     except db.StoreUnavailable as exc:
-        raise _store_error(exc) from exc
+        raise store_unavailable() from exc
     response = FundamentalsResponse(
         company=_company(s.company),
         frequency=frequency,
@@ -255,7 +253,7 @@ def credit_company_structural(ticker: str = TickerParam) -> StructuralResponse:
             status_code=404, detail=f"No filings stored for {ticker}"
         ) from exc
     except db.StoreUnavailable as exc:
-        raise _store_error(exc) from exc
+        raise store_unavailable() from exc
     except credit.CreditUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
