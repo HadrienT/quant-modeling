@@ -56,6 +56,24 @@ namespace quantModeling
         EXPECT_THROW(event_indices({0.1, 0.2, 0.3}, {0.25}), InvalidInput);
     }
 
+    TEST(TimeLine, EventIndexOfStepInvertsEventIndices)
+    {
+        const TimeLine events{0.25, 1.0};
+        const TimeLine sim = add_monitoring_steps(events, 0.1);
+        const auto idx = event_indices(sim, events);
+        const auto of_step = event_index_of_step(sim, events);
+        ASSERT_EQ(of_step.size(), sim.size());
+        std::size_t marked = 0;
+        for (std::size_t i = 0; i < sim.size(); ++i)
+        {
+            if (of_step[i] < 0)
+                continue;
+            ++marked;
+            EXPECT_EQ(idx[static_cast<std::size_t>(of_step[i])], i);
+        }
+        EXPECT_EQ(marked, events.size());
+    }
+
     TEST(Sample, AllocateAndInitialize)
     {
         std::vector<SampleDef> defline(2);

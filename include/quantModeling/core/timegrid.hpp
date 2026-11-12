@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/types.hpp"
 
+#include <cstddef>
 #include <vector>
 
 namespace quantModeling
@@ -38,6 +39,12 @@ namespace quantModeling
     /// entry of `events`. `sim` must be canonical and contain every event.
     std::vector<std::size_t> event_indices(const TimeLine &sim,
                                            const TimeLine &events);
+
+    /// For each step of `sim`, the index of the event it carries, or -1 for
+    /// a monitoring step that is not an event: event_indices read the other
+    /// way, for models that walk the simulation timeline step by step.
+    std::vector<std::ptrdiff_t> event_index_of_step(const TimeLine &sim,
+                                                    const TimeLine &events);
 
 } // namespace quantModeling
 
