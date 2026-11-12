@@ -41,6 +41,12 @@ namespace quantModeling
         std::string diagnostics;
         std::string device = "cpu"; ///< where the paths ran: "cpu" or "gpu"
         int gpus = 0;               ///< GPUs the paths were shared between
+        /// Sobol RQMC on the CPU: the first label's estimate in each
+        /// digital-shift replicate, in replicate order (empty otherwise).
+        /// Two runs with the same seed share their points replicate by
+        /// replicate, so the spread of their replicate-wise differences is
+        /// the error of a finite difference with common random numbers.
+        std::vector<Real> replicates;
 
         Real npv() const { return values.empty() ? Real(0) : values.front(); }
         Real std_error() const
@@ -506,6 +512,9 @@ namespace quantModeling
             for (int b = 0; b < B; ++b)
                 for (std::size_t l = 0; l < n_labels; ++l)
                     batch_means[l].add(estimates[static_cast<std::size_t>(b)][l]);
+            res.replicates.clear();
+            for (int b = 0; b < B && n_labels > 0; ++b)
+                res.replicates.push_back(estimates[static_cast<std::size_t>(b)][0]);
 
             for (std::size_t l = 0; l < n_labels; ++l)
             {

@@ -1,10 +1,8 @@
 #include <gtest/gtest.h>
 #include "quantModeling/engines/analytic/black_scholes.hpp"
 #include "quantModeling/engines/analytic/digital.hpp"
-#include "quantModeling/engines/mc/barrier.hpp"
 #include "quantModeling/engines/mc/black_scholes.hpp"
 #include "quantModeling/engines/mc/lookback.hpp"
-#include "quantModeling/instruments/equity/barrier.hpp"
 #include "quantModeling/instruments/equity/digital.hpp"
 #include "quantModeling/instruments/equity/lookback.hpp"
 #include "quantModeling/instruments/equity/vanilla.hpp"
@@ -20,7 +18,7 @@ namespace quantModeling
     // ============================================================================
     // Phase 3 — payoff smoothing:
     //  - conditional MC for digitals (indicator -> Phi),
-    //  - CMC survival probabilities for barriers (Bernoulli knock -> product),
+    //  (the barriers' survival probabilities moved to the scripts: tests/testBarrierMonitoring.cpp),
     //  - bridge-sampled extrema for lookbacks (discretisation bias removal).
     // ============================================================================
 
@@ -71,20 +69,6 @@ namespace quantModeling
             auto exercise = std::make_shared<EuropeanExercise>(T);
             DigitalOption option(payoff, exercise, pt, /*cash=*/1.0);
             BSDigitalAnalyticEngine engine(ctx);
-            option.accept(engine);
-            return engine.results();
-        }
-
-        // --- barriers ---
-        PricingResult price_barrier_mc(BarrierType bt, Real H, int paths,
-                                       int seed, bool cmc, int n_steps = 0) const
-        {
-            const PricingContext ctx = make_ctx(paths, seed, cmc);
-            auto payoff = std::make_shared<PlainVanillaPayoff>(OptionType::Call, K);
-            auto exercise = std::make_shared<EuropeanExercise>(T);
-            BarrierOption option(payoff, exercise, bt, H);
-            option.n_steps = n_steps;
-            BSEuroBarrierMCEngine engine(ctx);
             option.accept(engine);
             return engine.results();
         }
@@ -174,79 +158,6 @@ namespace quantModeling
                                                    DigitalPayoffType::AssetOrNothing,
                                                    1 << 17, 42, /*cmc=*/true);
         EXPECT_NEAR(res.npv, exact, std::max(4.0 * res.mc_std_error, 1e-3));
-    }
-
-    // ---- Barriers --------------------------------------------------------------
-
-    TEST_F(SmoothingTest, CMCBarrierUnbiasedVsSampledBridge)
-    {
-        // Same estimand (continuously monitored barrier via BB on the same
-        // grid) — the two estimators must agree within combined error bars.
-        const int paths = 50'000;
-        const PricingResult sampled = price_barrier_mc(BarrierType::DownAndOut, 80.0,
-                                                       paths, 42, /*cmc=*/false);
-        const PricingResult cmc = price_barrier_mc(BarrierType::DownAndOut, 80.0,
-                                                   paths, 42, /*cmc=*/true);
-        const Real tol = 4.0 * std::sqrt(sampled.mc_std_error * sampled.mc_std_error +
-                                         cmc.mc_std_error * cmc.mc_std_error);
-        EXPECT_NEAR(cmc.npv, sampled.npv, std::max(tol, 1e-3));
-    }
-
-    TEST_F(SmoothingTest, CMCBarrierReducesVariance)
-    {
-        // Regime where the Bernoulli crossing noise dominates: barrier close
-        // to the spot and coarse (quarterly) monitoring, so the per-interval
-        // crossing probability exp(-2 ln(S_i/H) ln(S_{i+1}/H) / (sigma^2 dt))
-        // is near 1/2 for typical paths. CMC integrates that coin flip out.
-        const int paths = 50'000;
-        const PricingResult sampled = price_barrier_mc(BarrierType::DownAndOut, 95.0,
-                                                       paths, 42, false, /*n_steps=*/4);
-        const PricingResult cmc = price_barrier_mc(BarrierType::DownAndOut, 95.0,
-                                                   paths, 42, true, /*n_steps=*/4);
-        EXPECT_GT(sampled.mc_std_error, 0.0);
-        EXPECT_GT(cmc.mc_std_error, 0.0);
-        // The vanilla payoff variance is an irreducible floor, so the gain is
-        // bounded; ~25% variance reduction observed (se ratio ~0.86).
-        EXPECT_LT(cmc.mc_std_error, 0.9 * sampled.mc_std_error)
-            << "sampled se=" << sampled.mc_std_error << " CMC se=" << cmc.mc_std_error;
-    }
-
-    TEST_F(SmoothingTest, CMCBarrierVanillaLimit)
-    {
-        // A down-and-out barrier far below the spot is a plain vanilla call.
-        const PricingContext ctx = make_ctx(0, 0);
-        auto payoff = std::make_shared<PlainVanillaPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        VanillaOption vanilla(payoff, exercise);
-        BSEuroVanillaAnalyticEngine ana(ctx);
-        vanilla.accept(ana);
-        const Real exact = ana.results().npv;
-
-        const PricingResult res = price_barrier_mc(BarrierType::DownAndOut, 40.0,
-                                                   50'000, 42, /*cmc=*/true);
-        EXPECT_NEAR(res.npv, exact, std::max(4.0 * res.mc_std_error, 1e-3));
-    }
-
-    TEST_F(SmoothingTest, CMCBarrierInOutParity)
-    {
-        // Knock-in + knock-out (same H, no rebate) = vanilla, path by path —
-        // the CMC weights survival and 1-survival, so parity is exact.
-        const int paths = 20'000;
-        const PricingResult out_ = price_barrier_mc(BarrierType::DownAndOut, 90.0,
-                                                    paths, 7, true);
-        const PricingResult in_ = price_barrier_mc(BarrierType::DownAndIn, 90.0,
-                                                   paths, 7, true);
-
-        const PricingContext ctx = make_ctx(0, 0);
-        auto payoff = std::make_shared<PlainVanillaPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<EuropeanExercise>(T);
-        VanillaOption vanilla(payoff, exercise);
-        BSEuroVanillaAnalyticEngine ana(ctx);
-        vanilla.accept(ana);
-
-        const Real tol = 4.0 * std::sqrt(out_.mc_std_error * out_.mc_std_error +
-                                         in_.mc_std_error * in_.mc_std_error);
-        EXPECT_NEAR(out_.npv + in_.npv, ana.results().npv, std::max(tol, 1e-3));
     }
 
     // ---- Lookbacks -------------------------------------------------------------

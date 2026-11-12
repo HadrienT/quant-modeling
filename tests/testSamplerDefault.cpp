@@ -59,8 +59,26 @@ namespace quantModeling
         EXPECT_TRUE(says(r.diagnostics, "Sobol")) << r.diagnostics;
     }
 
-    // The hand-written barrier has none: pseudo-random, and it says so.
+    // A hand-written engine not yet a script (WP 26 P3) has none:
+    // pseudo-random, and it says so.
     TEST(SamplerDefault, AnEngineWithoutSobolSaysItRunsPseudoRandom)
+    {
+        LookbackBSInput in{};
+        in.spot = 100.0;
+        in.strike = 100.0;
+        in.maturity = 1.0;
+        in.rate = 0.03;
+        in.dividend = 0.0;
+        in.vol = 0.2;
+        in.is_call = true;
+        in.n_paths = 20000;
+        const PricingResult r = default_registry().price(
+            {InstrumentKind::EquityLookbackOption, ModelKind::BlackScholes, EngineKind::MonteCarlo, PricingInput{in}});
+        EXPECT_TRUE(says(r.diagnostics, "pseudo-random: this engine has no Sobol path yet")) << r.diagnostics;
+    }
+
+    // The barrier became a script (WP 26 P3): Sobol.
+    TEST(SamplerDefault, TheBarrierScriptRunsSobol)
     {
         BarrierBSInput in{};
         in.spot = 100.0;
@@ -74,7 +92,7 @@ namespace quantModeling
         in.n_paths = 20000;
         const PricingResult r = default_registry().price(
             {InstrumentKind::EquityBarrierOption, ModelKind::BlackScholes, EngineKind::MonteCarlo, PricingInput{in}});
-        EXPECT_TRUE(says(r.diagnostics, "pseudo-random: this engine has no Sobol path yet")) << r.diagnostics;
+        EXPECT_TRUE(says(r.diagnostics, "Sobol")) << r.diagnostics;
     }
 
     // A path of more draws than Sobol's dimensions: pseudo-random, said.

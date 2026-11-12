@@ -92,7 +92,7 @@ namespace quantModeling
     {
         throw UnsupportedInstrument(
             "BSEuroVanillaAnalyticEngine does not support barrier options. "
-            "Use BSEuroBarrierMCEngine instead.");
+            "They are priced as scripts (WP 26 P3).");
     }
 
     void BSEuroVanillaAnalyticEngine::visit(const DigitalOption &)

@@ -295,11 +295,12 @@ namespace quantModeling
 
     TEST(LocalVolMC, BarrierOnAFlatGridIsTheBlackScholesBarrier)
     {
-        // Same draws (same seed, same engine): equal up to the rounding of
-        // the bilinear interpolation of a constant grid.
+        // Since WP 26 P3 both are scripts, on two simulation models (the
+        // Black-Scholes one draws per date, local vol per Euler step, exact
+        // for a constant volatility): the same price within error.
         const PricingResult lv = up_and_out_lv({0.01, 2.0}, {0.25, 0.25, 0.25, 0.25});
         const PricingResult bs = up_and_out_bs(0.25);
-        EXPECT_NEAR(lv.npv, bs.npv, 1e-10 * bs.npv);
+        EXPECT_NEAR(lv.npv, bs.npv, 4.0 * std::hypot(lv.mc_std_error, bs.mc_std_error));
     }
 
     TEST(LocalVolMC, BarrierSeesTheVolatilityAfterTimeZero)

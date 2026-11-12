@@ -65,7 +65,6 @@ target_sources(quantModeling
         src/engines/analytic/bonds.cpp
         src/engines/mc/black_scholes.cpp
         src/engines/mc/asian.cpp
-        src/engines/mc/barrier.cpp
         src/engines/mc/basket.cpp
         src/engines/mc/lookback.cpp
         src/engines/mc/local_vol.cpp
@@ -169,13 +168,14 @@ target_sources(quantModeling
         src/engines/analytic/fx.cpp
         src/engines/analytic/commodity.cpp
         src/pricers/registry.cpp
+        src/pricers/script_route.cpp
+        src/pricers/script_builders.cpp
+        src/pricers/adapters/equity_barrier.cpp
         src/pricers/adapters/equity_vanilla.cpp
         src/pricers/adapters/equity_quanto.cpp
         src/pricers/adapters/equity_vanilla_american.cpp
         src/pricers/adapters/equity_asian.cpp
         src/pricers/adapters/equity_asian_lv.cpp
-        src/pricers/adapters/equity_barrier.cpp
-        src/pricers/adapters/equity_barrier_lv.cpp
         src/pricers/adapters/equity_basket.cpp
         src/pricers/adapters/equity_lookback.cpp
         src/pricers/adapters/equity_lookback_lv.cpp

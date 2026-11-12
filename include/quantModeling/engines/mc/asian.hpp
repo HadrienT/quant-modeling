@@ -48,7 +48,7 @@ namespace quantModeling
         }
         void visit(const BarrierOption &) override
         {
-            throw UnsupportedInstrument("BSEuroAsianMCEngine: use BSEuroBarrierMCEngine for barrier options.");
+            throw UnsupportedInstrument("BSEuroAsianMCEngine: barrier options are priced as scripts (WP 26 P3).");
         }
         void visit(const DigitalOption &) override
         {
