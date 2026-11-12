@@ -121,6 +121,20 @@ namespace quantModeling::script_builders
     /// at the last date, par, or notional * spot() / s0 after a knock-in.
     std::string autocall(const AutocallTerms &t, const std::vector<int> &dates);
 
+    /// Variance (or volatility) swap: realised variance (1/T) Σ ln²(S_i /
+    /// S_{i-1}) over the observation `dates`, from the initial spot `s0`;
+    /// at `pay_day`, notional * (variance - K) or notional * (sqrt(variance)
+    /// - K). `T` is the annualisation of the hand-written engine (the
+    /// maturity in years).
+    std::string realised_swap(bool volatility, Real s0, Real strike, Real notional, Real T,
+                              const std::vector<int> &dates, int pay_day);
+
+    /// Dispersion swap: notional * (Σ w_i var_i - var_index - K) at
+    /// `pay_day`, each realised variance as in realised_swap(), the index
+    /// Σ w_i spot(i) starting at Σ w_i s0_i.
+    std::string dispersion(const std::vector<Real> &s0, const std::vector<Real> &weights, Real strike_spread,
+                           Real notional, Real T, const std::vector<int> &dates, int pay_day);
+
 } // namespace quantModeling::script_builders
 
 #endif // QM_PRICERS_SCRIPT_BUILDERS_HPP

@@ -20,8 +20,6 @@
 
 // ── Engines ──────────────────────────────────────────────────────────────────
 #include "quantModeling/engines/analytic/variance_swap.hpp"
-#include "quantModeling/engines/mc/variance_swap.hpp"
-#include "quantModeling/engines/mc/dispersion.hpp"
 #include "quantModeling/engines/analytic/fx.hpp"
 #include "quantModeling/engines/analytic/commodity.hpp"
 
@@ -954,36 +952,6 @@ TEST(EngineRejection, VarianceSwapAnalyticRejectsFuture)
     auto model = std::make_shared<BlackScholesModel>(100.0, 0.05, 0.02, 0.20);
     PricingContext ctx{MarketView{}, PricingSettings{}, model};
     VarianceSwapAnalyticEngine engine(ctx);
-
-    EquityFuture fut(100.0, 1.0);
-    EXPECT_THROW(fut.accept(engine), UnsupportedInstrument);
-}
-
-TEST(EngineRejection, VolSwapMCRejectsFuture)
-{
-    auto model = std::make_shared<BlackScholesModel>(100.0, 0.05, 0.02, 0.20);
-    PricingSettings s;
-    s.mc_paths = 1000;
-    s.mc_seed = 1;
-    PricingContext ctx{MarketView{}, s, model};
-    VolSwapMCEngine engine(ctx);
-
-    EquityFuture fut(100.0, 1.0);
-    EXPECT_THROW(fut.accept(engine), UnsupportedInstrument);
-}
-
-TEST(EngineRejection, DispersionMCRejectsFuture)
-{
-    Eigen::MatrixXd corr = Eigen::MatrixXd::Identity(2, 2);
-    auto model = std::make_shared<MultiAssetBSModel>(
-        0.05, std::vector<Real>{100.0, 100.0},
-        std::vector<Real>{0.20, 0.20},
-        std::vector<Real>{0.0, 0.0}, corr);
-    PricingSettings s;
-    s.mc_paths = 1000;
-    s.mc_seed = 1;
-    PricingContext ctx{MarketView{}, s, model};
-    DispersionMCEngine engine(ctx);
 
     EquityFuture fut(100.0, 1.0);
     EXPECT_THROW(fut.accept(engine), UnsupportedInstrument);

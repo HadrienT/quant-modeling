@@ -286,4 +286,57 @@ namespace quantModeling::script_builders
         return three_events(dates, init + obs, obs, last);
     }
 
+    namespace
+    {
+        /// The observation dates, each running `step` (the first `init` +
+        /// `step`), and `pay` at `pay_day`: on the last date when it is
+        /// that day, in an event of its own when later.
+        std::string observed(const std::vector<int> &dates, const std::string &init, const std::string &step,
+                             const std::string &pay, int pay_day)
+        {
+            const bool same = dates.back() == pay_day;
+            std::string s;
+            if (dates.size() == 1)
+                s = iso(dates.front()) + "\n" + init + step + (same ? pay : "");
+            else
+                s = three_events(dates, init + step, step, same ? pay : "");
+            if (!same)
+                s += "\n" + iso(pay_day) + "\n" + pay;
+            return s;
+        }
+    } // namespace
+
+    std::string realised_swap(bool volatility, Real s0, Real strike, Real notional, Real T,
+                              const std::vector<int> &dates, int pay_day)
+    {
+        const std::string init = "    prev = " + number(s0) + "\n    acc = 0\n";
+        const std::string step = "    l = log(spot() / prev)\n    acc = acc + l * l\n    prev = spot()\n";
+        const std::string var = "acc / " + number(T);
+        const std::string measure = volatility ? "sqrt(" + var + ")" : var;
+        const std::string pay = "    pays " + number(notional) + " * (" + measure + " - " + number(strike) + ")\n";
+        return observed(dates, init, step, pay, pay_day);
+    }
+
+    std::string dispersion(const std::vector<Real> &s0, const std::vector<Real> &weights, Real strike_spread,
+                           Real notional, Real T, const std::vector<int> &dates, int pay_day)
+    {
+        std::string init, step, index, idx0, weighted;
+        for (std::size_t i = 0; i < s0.size(); ++i)
+        {
+            const std::string I = std::to_string(i), w = number(weights[i]);
+            init += "    p" + I + " = " + number(s0[i]) + "\n    a" + I + " = 0\n";
+            step += "    l = log(spot(" + I + ") / p" + I + ")\n    a" + I + " = a" + I + " + l * l\n    p" + I +
+                    " = spot(" + I + ")\n";
+            index += (i ? " + " : "") + w + " * spot(" + I + ")";
+            idx0 += (i ? " + " : "") + w + " * " + number(s0[i]);
+            weighted += (i ? " + " : "") + w + " * a" + I;
+        }
+        init += "    pidx = " + idx0 + "\n    aidx = 0\n";
+        step += "    nidx = " + index + "\n    l = log(nidx / pidx)\n    aidx = aidx + l * l\n    pidx = nidx\n";
+        const std::string t = number(T);
+        const std::string pay = "    pays " + number(notional) + " * ((" + weighted + ") / " + t + " - aidx / " + t +
+                                " - " + number(strike_spread) + ")\n";
+        return observed(dates, init, step, pay, pay_day);
+    }
+
 } // namespace quantModeling::script_builders
