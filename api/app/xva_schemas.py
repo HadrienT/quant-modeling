@@ -1,4 +1,4 @@
-"""Request and response models of the xVA endpoint (xva.py). Rates, spreads
+"""Request and response models of the xVA endpoint (the xva package). Rates, spreads
 and vols are decimals; times in years; money in the portfolio's currency, with
 the cash-flow sign convention: a cost to the bank is negative."""
 
