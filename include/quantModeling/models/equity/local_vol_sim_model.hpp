@@ -191,20 +191,6 @@ namespace quantModeling
         const std::vector<Real> &T_grid() const { return T_grid_; }
 
       private:
-        /// Bilinear lookup -- same bracketing as models/volatility.hpp's
-        /// GridLocalVol::value(), generalised so the corners can be Number.
-        /// The cell is chosen on the double value of the spot, but the strike
-        /// weight is a function of the spot itself (T): sigma_loc(S_t) moves
-        /// with S_t, and S_t with every earlier vol, so dropping that
-        /// dependence would lose the part of a local vega (and of the delta)
-        /// that flows through the path -- measured at ~19 % of the vega on a
-        /// skewed SPY surface before this was fixed. Outside the grid the vol
-        /// is flat in S, so the weight is then a constant.
-        T local_vol_at(const T &S_t, double t) const
-        {
-            return mc::local_vol_bilinear(grid(), S_t, t);
-        }
-
         /// The grid as the shared step functors take it (path_steps.hpp).
         mc::GridView<T> grid() const
         {

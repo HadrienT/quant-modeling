@@ -199,28 +199,6 @@ namespace quantModeling
       private:
         static constexpr double kVarianceFloor = 1e-10;
 
-        /// Bilinear in K, but *staircase* in T -- not the smooth bilinear
-        /// bracketing LocalVolSimModel::local_vol_at() uses. This has to
-        /// match market/slv_calibration.hpp's own convention exactly, not
-        /// just look plausible: column j there was calibrated by stepping
-        /// particles *from* column j-1's leverage held constant across the
-        /// whole interval (T_grid[j-1], T_grid[j]], and reading off the
-        /// resulting distribution at T_grid[j] -- so column j-1, not a
-        /// blend of j-1 and j, is what is actually valid on that interval.
-        /// Smoothly blending toward column j partway through the interval
-        /// was tried first and measurably biased option prices (caught by
-        /// SLVSimModel.CalibratedToFlatVolReproducesBlackScholes, off by
-        /// ~6% at one strike -- more than Monte Carlo noise could explain).
-        /// t <= T_grid.front() uses column 0 itself: the calibration's
-        /// bootstrap step uses a single scalar leverage (every particle
-        /// starts exactly at s0, so there is no S-dependence to speak of
-        /// yet), which column 0 already approximates closely for a short
-        /// first interval, and is not otherwise stored anywhere to look up.
-        T leverage_at(const T &S_t, double t) const
-        {
-            return mc::leverage_staircase(leverage_grid(), S_t, t);
-        }
-
         mc::GridView<T> leverage_grid() const
         {
             return {K_grid_.data(), static_cast<int>(K_grid_.size()), T_grid_.data(),

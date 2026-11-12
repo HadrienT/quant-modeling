@@ -13,7 +13,7 @@ namespace quantModeling
         /// Piecewise-linear interpolation of one T-column of the local-vol
         /// (or leverage) grid, flat-extrapolated at the ends -- same
         /// bracketing convention as GridLocalVol::value() and
-        /// LocalVolSimModel::local_vol_at(), collapsed to one dimension
+        /// mc::local_vol_bilinear() (models/equity/path_steps.hpp), collapsed to one dimension
         /// because a column is exactly what this calibration ever looks up
         /// (K at a fixed, already-selected T index).
         Real interp_1d(const std::vector<Real> &K_grid, const std::vector<Real> &column, Real S)

@@ -78,7 +78,8 @@ namespace quantModeling
      * output, passed straight through (same K-major layout).
      *
      * The returned grid's *last* T column is computed but structurally
-     * unused by SLVSimModel::leverage_at() (see that method's doc comment):
+     * unused by SLVSimModel's lookup, mc::leverage_staircase() (see its doc
+     * comment in models/equity/path_steps.hpp):
      * it is only ever read for t > T_grid.back(), which never happens once
      * a lookup time is clamped to the grid. Pricing is unaffected -- the
      * final interval is fully covered by the second-to-last column -- but

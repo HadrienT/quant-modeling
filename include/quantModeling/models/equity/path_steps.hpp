@@ -104,7 +104,15 @@ namespace quantModeling::mc
     };
 
     /// Local vol: bilinear in (K, T), floored at 1e-6 -- LocalVolSimModel's
-    /// lookup (models/volatility.hpp's GridLocalVol bracketing).
+    /// lookup, the same bracketing as models/volatility.hpp's
+    /// GridLocalVol::value(), generalised so the corners can be Number.
+    /// The cell is chosen on the double value of the spot, but the strike
+    /// weight is a function of the spot itself (T): sigma_loc(S_t) moves
+    /// with S_t, and S_t with every earlier vol, so dropping that
+    /// dependence would lose the part of a local vega (and of the delta)
+    /// that flows through the path -- measured at ~19 % of the vega on a
+    /// skewed SPY surface before this was fixed. Outside the grid the vol
+    /// is flat in S, so the weight is then a constant.
     template <class T>
     QM_HOST_DEVICE T local_vol_bilinear(const GridView<T> &g, const T &S_t, double t)
     {
@@ -123,9 +131,24 @@ namespace quantModeling::mc
         return max(sigma, 1e-6);
     }
 
-    /// SLV leverage: bilinear in K, staircase in T (column j-1 on
-    /// (T_{j-1}, T_j], the calibration's own convention -- see
-    /// SLVSimModel::leverage_at), floored at 1e-4.
+    /// SLV leverage (SLVSimModel), floored at 1e-4.
+    /// Bilinear in K, but *staircase* in T -- not the smooth bilinear
+    /// bracketing mc::local_vol_bilinear() uses. This has to
+    /// match market/slv_calibration.hpp's own convention exactly, not
+    /// just look plausible: column j there was calibrated by stepping
+    /// particles *from* column j-1's leverage held constant across the
+    /// whole interval (T_grid[j-1], T_grid[j]], and reading off the
+    /// resulting distribution at T_grid[j] -- so column j-1, not a
+    /// blend of j-1 and j, is what is actually valid on that interval.
+    /// Smoothly blending toward column j partway through the interval
+    /// was tried first and measurably biased option prices (caught by
+    /// SLVSimModel.CalibratedToFlatVolReproducesBlackScholes, off by
+    /// ~6% at one strike -- more than Monte Carlo noise could explain).
+    /// t <= T_grid.front() uses column 0 itself: the calibration's
+    /// bootstrap step uses a single scalar leverage (every particle
+    /// starts exactly at s0, so there is no S-dependence to speak of
+    /// yet), which column 0 already approximates closely for a short
+    /// first interval, and is not otherwise stored anywhere to look up.
     template <class T>
     QM_HOST_DEVICE T leverage_staircase(const GridView<T> &g, const T &S_t, double t)
     {
