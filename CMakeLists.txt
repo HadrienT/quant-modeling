@@ -44,7 +44,6 @@ target_sources(quantModeling
         src/aad/tape.cpp
         src/aad/number.cpp
         src/utils/stats.cpp
-        src/utils/greeks.cpp
         src/utils/sobol_directions.cpp
         src/core/date.cpp
         src/core/period.cpp
