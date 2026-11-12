@@ -117,10 +117,7 @@ async def list_markets() -> MarketsResponse:
     if cached:
         set_cache_hit()
         return cached
-    try:
-        found = {m: (n, d) for m, n, d in await run_in_threadpool(db.equity_markets)}
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
+    found = {m: (n, d) for m, n, d in await run_in_threadpool(db.equity_markets)}
     response = MarketsResponse(
         markets=[
             MarketInfo(
@@ -170,10 +167,7 @@ async def _market_tickers(market: str) -> TickersResponse:
     if cached:
         set_cache_hit()
         return cached
-    try:
-        members = await run_in_threadpool(db.market_members, market)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
+    members = await run_in_threadpool(db.market_members, market)
     if not members:
         raise HTTPException(status_code=404, detail=f"No members for {market}")
     extra = _INDEX_ETF_PROXIES if market == "SP500" else []

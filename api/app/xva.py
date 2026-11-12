@@ -24,7 +24,7 @@ import math
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
 import quantmodeling as qm
 
@@ -1029,23 +1029,56 @@ Book = Callable[
 ]
 
 
+def _netting_set(
+    req: Union[XvaRequest, XvaSensitivitiesRequest],
+    book: Optional[Book],
+    rates: _Rates,
+    warnings: List[str],
+) -> Tuple[str, str, List[_Spec], Optional["AssetMarket"]]:
+    """Label, lesson, trades and share market of the netting set: a
+    portfolio's (`book`, whose notes join `warnings`) or a demonstration one."""
+    if book is not None:
+        label, lesson, specs, said, asset = book(rates.as_of)
+        warnings.extend(said)
+        return label, lesson, specs, asset
+    if req.portfolio not in PORTFOLIOS:
+        raise XvaInputError(
+            "A netting set of a portfolio is computed from the Portfolio page, "
+            "which sends its trades."
+        )
+    label, lesson, specs = PORTFOLIOS[req.portfolio]
+    return label, lesson, specs, None
+
+
+def _two_currency_market(rates: _Rates) -> xva_fx.TwoCurrencyMarket:
+    try:
+        return xva_fx.market(
+            rates.as_of, rates.times, rates.dfs, (rates.mean_reversion, rates.sigma)
+        )
+    except xva_fx.TwoCurrencyUnavailable as exc:
+        raise XvaUnavailable(str(exc)) from exc
+
+
+def _csa_argument(req: Union[XvaRequest, XvaSensitivitiesRequest]) -> Optional[dict]:
+    """The CSA as the library reads it: margin period of risk in years."""
+    if req.csa is None:
+        return None
+    return {
+        "threshold_counterparty": req.csa.threshold_counterparty,
+        "threshold_bank": req.csa.threshold_bank,
+        "minimum_transfer_amount": req.csa.minimum_transfer_amount,
+        "margin_period_of_risk": req.csa.margin_period_of_risk_days / _BUSINESS_DAYS,
+        "cashflows": req.csa.cashflows,
+    }
+
+
 def compute(
     req: XvaRequest, today: Optional[date] = None, book: Optional[Book] = None
 ) -> XvaResponse:
     started = time.perf_counter()
     warnings: List[str] = []
     rates = _rates_market(today)
-    asset: Optional["AssetMarket"] = None
-    if book is not None:
-        label, lesson, specs, said, asset = book(rates.as_of)
-        warnings.extend(said)
-    elif req.portfolio not in PORTFOLIOS:
-        raise XvaInputError(
-            "A netting set of a portfolio is computed from the Portfolio page, "
-            "which sends its trades."
-        )
-    else:
-        label, lesson, specs = PORTFOLIOS[req.portfolio]
+    label, lesson, specs, asset = _netting_set(req, book, rates, warnings)
     if req.scripts and _two_currencies(specs):
         raise XvaInputError(
             "A scripted trade is valued by regression, which the two-currency "
@@ -1079,27 +1112,13 @@ def compute(
             raise XvaInputError(
                 "The two-currency simulation runs on the CPU: ask for `auto` or `cpu`."
             )
-        try:
-            foreign = xva_fx.market(
-                rates.as_of, rates.times, rates.dfs, (rates.mean_reversion, rates.sigma)
-            )
-        except xva_fx.TwoCurrencyUnavailable as exc:
-            raise XvaUnavailable(str(exc)) from exc
+        foreign = _two_currency_market(rates)
         trades = _two_currency_trades(specs, rates, foreign)
     else:
         historical = _historical(req)
         trades = _trades(specs, rates)
 
-    csa = None
-    if req.csa is not None:
-        csa = {
-            "threshold_counterparty": req.csa.threshold_counterparty,
-            "threshold_bank": req.csa.threshold_bank,
-            "minimum_transfer_amount": req.csa.minimum_transfer_amount,
-            "margin_period_of_risk": req.csa.margin_period_of_risk_days
-            / _BUSINESS_DAYS,
-            "cashflows": req.csa.cashflows,
-        }
+    csa = _csa_argument(req)
     lgd = 1.0 - req.recovery
     horizon = [max(s.start + s.tenor for s in specs)]
     margin = None
@@ -1430,17 +1449,7 @@ def compute_sensitivities(
     started = time.perf_counter()
     warnings: List[str] = []
     rates = _rates_market(today)
-    if book is not None:
-        label, _, specs, said, asset = book(rates.as_of)
-        warnings.extend(said)
-    elif req.portfolio not in PORTFOLIOS:
-        raise XvaInputError(
-            "A netting set of a portfolio is computed from the Portfolio page, "
-            "which sends its trades."
-        )
-    else:
-        label, _, specs = PORTFOLIOS[req.portfolio]
-        asset = None
+    label, _, specs, asset = _netting_set(req, book, rates, warnings)
     closed = {
         "swap",
         "swaption",
@@ -1492,12 +1501,7 @@ def compute_sensitivities(
             "index": asset.index,
         }
     elif _two_currencies(specs):
-        try:
-            foreign = xva_fx.market(
-                rates.as_of, rates.times, rates.dfs, (rates.mean_reversion, rates.sigma)
-            )
-        except xva_fx.TwoCurrencyUnavailable as exc:
-            raise XvaUnavailable(str(exc)) from exc
+        foreign = _two_currency_market(rates)
         trades = _two_currency_trades(specs, rates, foreign)
         second_name = "EUR/USD"
         quoted = min(
@@ -1512,16 +1516,7 @@ def compute_sensitivities(
         second.pop("fx_volatility")
     else:
         trades = _trades(specs, rates)
-    csa = None
-    if req.csa is not None:
-        csa = {
-            "threshold_counterparty": req.csa.threshold_counterparty,
-            "threshold_bank": req.csa.threshold_bank,
-            "minimum_transfer_amount": req.csa.minimum_transfer_amount,
-            "margin_period_of_risk": req.csa.margin_period_of_risk_days
-            / _BUSINESS_DAYS,
-            "cashflows": req.csa.cashflows,
-        }
+    csa = _csa_argument(req)
     lgd = 1.0 - req.recovery
     horizon = [max(s.start + s.tenor for s in specs)]
     investment_grade = counterparty.rating in _INVESTMENT_GRADE

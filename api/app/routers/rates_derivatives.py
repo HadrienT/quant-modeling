@@ -13,14 +13,13 @@ methodology live in `rates_derivatives.py`.
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
 
-from .. import db, rates_derivatives
+from .. import rates_derivatives
 from ..rates_derivatives_schemas import (
     QuoteSetId,
     RatesCurveQuotes,
     RatesCurvesResponse,
     RatesQuoteSetResponse,
 )
-from .errors import store_unavailable
 
 router = APIRouter()
 
@@ -29,8 +28,6 @@ router = APIRouter()
 def rates_quote_set(set_id: QuoteSetId) -> RatesQuoteSetResponse:
     try:
         return rates_derivatives.quote_set(set_id)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     except rates_derivatives.RatesMarketUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

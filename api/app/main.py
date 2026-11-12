@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
+from . import db
 from .audit.middleware import AuditMiddleware
 from .audit.sinks import close_sink, get_sink
 from .logging_utils import LOGGER_NAME, configure_logging
@@ -25,6 +26,7 @@ from .routers.admin import router as admin_router
 from .routers.site import router as site_router
 from .routers.credit import router as credit_router
 from .routers.rates_derivatives import router as rates_derivatives_router
+from .routers.errors import store_unavailable
 from .routers.xva import router as xva_router
 from .telemetry import setup_telemetry, shutdown_telemetry
 
@@ -76,6 +78,15 @@ async def _http_exception_handler(_: Request, exc: HTTPException) -> JSONRespons
         ).model_dump(),
         headers=getattr(exc, "headers", None),
     )
+
+
+@app.exception_handler(db.StoreUnavailable)
+async def _store_unavailable_handler(
+    request: Request, _: db.StoreUnavailable
+) -> JSONResponse:
+    """The market data store cannot be reached: 503, wherever it surfaces.
+    The cause stays in the logs, not in the response."""
+    return await _http_exception_handler(request, store_unavailable())
 
 
 @app.exception_handler(RequestValidationError)
