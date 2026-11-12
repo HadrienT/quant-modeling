@@ -19,12 +19,6 @@ namespace quantModeling
         return res_;
     }
 
-    [[noreturn]] void EngineBase::unsupported(const char *instName)
-    {
-        throw UnsupportedInstrument(
-            std::string("Engine does not support instrument: ") + instName);
-    }
-
     void validate_single_maturity_vanilla(const VanillaOption &opt, const char *european_only)
     {
         if (!opt.payoff)

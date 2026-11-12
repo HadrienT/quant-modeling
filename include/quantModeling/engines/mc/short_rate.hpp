@@ -43,14 +43,6 @@ namespace quantModeling
         void visit(const BondOption &opt) override;
         void visit(const CapFloor &cf) override;
         void visit(const Caplet &cap) override;
-
-        // ── Equity instruments — unsupported ─────────────────────────────────
-
-        void visit(const VanillaOption &) override { unsupported("VanillaOption"); }
-        void visit(const AsianOption &) override { unsupported("AsianOption"); }
-        void visit(const BarrierOption &) override { unsupported("BarrierOption"); }
-        void visit(const DigitalOption &) override { unsupported("DigitalOption"); }
-        void visit(const EquityFuture &) override { unsupported("EquityFuture"); }
     };
 
 } // namespace quantModeling

@@ -570,23 +570,9 @@ namespace quantModeling
                 result = make_future_value(bermudan, model_);
             }
 
-            void visit(const VanillaOption &) override { unsupported("vanilla option"); }
-            void visit(const AsianOption &) override { unsupported("Asian option"); }
-            void visit(const BarrierOption &) override { unsupported("barrier option"); }
-            void visit(const DigitalOption &) override { unsupported("digital option"); }
-            void visit(const EquityFuture &) override { unsupported("equity future"); }
-            void visit(const ZeroCouponBond &) override { unsupported("zero-coupon bond"); }
-            void visit(const FixedRateBond &) override { unsupported("fixed-rate bond"); }
-
             std::unique_ptr<FutureValue> result;
 
           private:
-            [[noreturn]] static void unsupported(const char *name)
-            {
-                throw UnsupportedInstrument(std::string("No future value under Hull-White for: ") +
-                                            name);
-            }
-
             const HullWhiteCurveModel &model_;
         };
     } // namespace

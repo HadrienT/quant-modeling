@@ -12,7 +12,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import db, fx
+from .. import fx
 from ..cache import TTLCache
 from ..request_context import set_cache_hit
 from ..schemas import (
@@ -24,7 +24,6 @@ from ..schemas import (
     FxOverviewResponse,
     MethodologySection,
 )
-from .errors import store_unavailable
 
 router = APIRouter()
 
@@ -71,8 +70,6 @@ def fx_overview(
             vols[window] = fx.realised_vol(history[history.index >= since])
     except fx.FxUnavailable as exc:
         raise _unavailable(exc) from exc
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     response = FxOverviewResponse(
         base=base,
         quote=quote,
@@ -108,8 +105,6 @@ def fx_history(
         )
     except fx.FxUnavailable as exc:
         raise _unavailable(exc) from exc
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     response = FxHistoryResponse(
         base=base,
         quote=quote,
@@ -142,8 +137,6 @@ def fx_correlation(
         )
     except fx.FxUnavailable as exc:
         raise _unavailable(exc) from exc
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     response = FxCorrelationResponse(
         ticker=ticker,
         base=base,

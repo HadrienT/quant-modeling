@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import os
 import threading
-from datetime import date, datetime, timezone
+from datetime import date
+
+from ..util import today_utc
 from typing import Callable
 
 # A request whose address could not be hashed (no client, no secret) shares
@@ -34,16 +36,12 @@ class QuotaExhausted(Exception):
         self.scope = scope
 
 
-def _today_utc() -> date:
-    return datetime.now(timezone.utc).date()
-
-
 class AnonymousQuota:
     def __init__(
         self,
         per_visitor: int,
         total: int,
-        today: Callable[[], date] = _today_utc,
+        today: Callable[[], date] = today_utc,
     ):
         self.per_visitor = per_visitor
         self.total = total

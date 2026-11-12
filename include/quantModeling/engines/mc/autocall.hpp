@@ -37,15 +37,6 @@ namespace quantModeling
         void visit(const AutocallNote &note) override;
 
         /* ── reject all other instrument types ────────────────────────── */
-        void visit(const VanillaOption &) override { unsupported("AutocallNote"); }
-        void visit(const AsianOption &) override { unsupported("AutocallNote"); }
-        void visit(const BarrierOption &) override { unsupported("AutocallNote"); }
-        void visit(const DigitalOption &) override { unsupported("AutocallNote"); }
-        void visit(const LookbackOption &) override { unsupported("AutocallNote"); }
-        void visit(const BasketOption &) override { unsupported("AutocallNote"); }
-        void visit(const EquityFuture &) override { unsupported("AutocallNote"); }
-        void visit(const ZeroCouponBond &) override { unsupported("AutocallNote"); }
-        void visit(const FixedRateBond &) override { unsupported("AutocallNote"); }
     };
 
 } // namespace quantModeling

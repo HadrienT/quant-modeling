@@ -38,7 +38,6 @@ from ..credit_schemas import (
 )
 from ..request_context import set_cache_hit
 from ..schemas import MethodologySection
-from .errors import store_unavailable
 
 router = APIRouter()
 
@@ -83,8 +82,6 @@ def credit_spreads_overview(
         return cached
     try:
         o = credit.spreads_overview(recovery)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     except credit.CreditUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -139,8 +136,6 @@ def credit_spread_history(
         raise HTTPException(
             status_code=404, detail=f"Unknown series {series_id}"
         ) from exc
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     spec = credit.HISTORY_SERIES[series_id]
     response = SpreadHistoryResponse(
         series_id=series_id,
@@ -158,10 +153,7 @@ def credit_companies() -> CompaniesResponse:
     if cached is not None:
         set_cache_hit()
         return cached
-    try:
-        companies = db.sec_companies()
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
+    companies = db.sec_companies()
     response = CompaniesResponse(
         companies=sorted((_company(c) for c in companies), key=lambda c: c.tickers[0])
     )
@@ -222,8 +214,6 @@ def credit_company_fundamentals(
         raise HTTPException(
             status_code=404, detail=f"No filings stored for {ticker}"
         ) from exc
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     response = FundamentalsResponse(
         company=_company(s.company),
         frequency=frequency,
@@ -252,8 +242,6 @@ def credit_company_structural(ticker: str = TickerParam) -> StructuralResponse:
         raise HTTPException(
             status_code=404, detail=f"No filings stored for {ticker}"
         ) from exc
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     except credit.CreditUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

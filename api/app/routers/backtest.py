@@ -18,7 +18,6 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
 
-from .. import db
 from ..audit import emit
 from ..backtest import engine, market, record, universe
 from ..backtest.schemas import (
@@ -28,7 +27,6 @@ from ..backtest.schemas import (
     ValidationRequest,
     ValidationResponse,
 )
-from .errors import store_unavailable
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
@@ -42,8 +40,6 @@ async def _guarded(call: Callable[..., Any], *args: Any) -> Any:
     try:
         # The engine releases the GIL: off the event loop.
         return await run_in_threadpool(call, *args)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     except (market.MissingData, engine.Error) as exc:
         # Both carry an English message meant to be shown as it is.
         raise HTTPException(status_code=422, detail=str(exc)) from exc

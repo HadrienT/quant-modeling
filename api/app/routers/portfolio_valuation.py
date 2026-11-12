@@ -28,7 +28,6 @@ from ..logging_utils import get_logger
 from ..portfolio_ledger import migrate, validate
 from ..portfolio_schemas import Counterparty, Portfolio, RateFxSpec
 from ..schemas import MethodologySection
-from .errors import store_unavailable
 
 router = APIRouter(prefix="/api/portfolio-valuation", tags=["portfolios"])
 logger = get_logger()
@@ -158,10 +157,7 @@ def _checked(pf: Portfolio) -> Portfolio:
 async def portfolio_snapshot(req: SnapshotRequest) -> SnapshotResponse:
     pf = _checked(req.portfolio)
     as_of = req.as_of or date.today()
-    try:
-        s = await run_in_threadpool(pv.snapshot, pf, as_of)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
+    s = await run_in_threadpool(pv.snapshot, pf, as_of)
     return SnapshotResponse(
         as_of=s.as_of,
         base_currency=s.base_currency,
@@ -197,10 +193,7 @@ async def portfolio_history(req: HistoryRequest) -> HistoryResponse:
     pf = _checked(req.portfolio)
     end = req.end or date.today()
     start = end - timedelta(days=WINDOWS[req.window])
-    try:
-        points, warnings = await run_in_threadpool(pv.history, pf, start, end)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
+    points, warnings = await run_in_threadpool(pv.history, pf, start, end)
     return HistoryResponse(
         base_currency=pf.base_currency,
         points=[HistoryPointView(**vars(p)) for p in points],
@@ -220,13 +213,8 @@ async def ticker_close(
 ) -> CloseResponse:
     """The close on or before a date — the default price of a trade form."""
     ticker = ticker.strip().upper()
-    try:
-        rows = await run_in_threadpool(
-            db.price_history, ticker, on - timedelta(days=14)
-        )
-        ccy = await run_in_threadpool(db.ticker_currency, ticker)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
+    rows = await run_in_threadpool(db.price_history, ticker, on - timedelta(days=14))
+    ccy = await run_in_threadpool(db.ticker_currency, ticker)
     rows = [r for r in rows if r[0] <= on]
     if not rows:
         raise HTTPException(
@@ -246,10 +234,7 @@ async def portfolio_demos_list() -> List[DemoPortfolio]:
     """Demo ledgers, each trade priced from the stored market on its date
     (portfolio_demos.py). Built once a day; a demo whose data is missing is
     left out and logged."""
-    try:
-        built = await run_in_threadpool(portfolio_demos.demos)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
+    built = await run_in_threadpool(portfolio_demos.demos)
     out = []
     for demo, pf, error in built:
         if pf is None:
@@ -321,8 +306,6 @@ async def rate_fx_quote(req: RateFxQuoteRequest) -> RateFxQuote:
 
     try:
         return await run_in_threadpool(run)
-    except db.StoreUnavailable as exc:
-        raise store_unavailable() from exc
     except portfolio_rates.NoMark as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:

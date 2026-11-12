@@ -92,19 +92,10 @@ class MultiAssetMarket:
     warnings: List[Dict[str, str]] = field(default_factory=list)
 
 
-def _store(fn, *args):
-    try:
-        return fn(*args)
-    except db.StoreUnavailable as exc:
-        raise MarketDataUnavailable(
-            f"the market database is unavailable ({exc}); no live fallback is used"
-        ) from exc
-
-
 def _asset(
     ticker: str, rate: float, valuation_date: date, horizon: float, warnings: list
 ) -> AssetInput:
-    spot_row = _store(db.price_on_or_before, ticker, valuation_date)
+    spot_row = market_snapshot.read_store(db.price_on_or_before, ticker, valuation_date)
     gap = (valuation_date - spot_row[0]).days if spot_row else None
     if spot_row is None or gap > market_snapshot.MAX_SPOT_GAP_DAYS:
         have = f"latest is {spot_row[0].isoformat()}" if spot_row else "none stored"
@@ -122,7 +113,9 @@ def _asset(
         spot,
     )
 
-    div_row = _store(db.dividend_yield_on_or_before, ticker, valuation_date)
+    div_row = market_snapshot.read_store(
+        db.dividend_yield_on_or_before, ticker, valuation_date
+    )
     if (
         div_row is None
         or (valuation_date - div_row[0]).days > market_snapshot.MAX_DIVIDEND_GAP_DAYS
@@ -150,7 +143,7 @@ def _asset(
         from .portfolio_valuation import _OnOrBefore, realised_vol_of
 
         since = valuation_date - timedelta(days=CORR_DAYS)
-        hist = _OnOrBefore(_store(db.price_history, ticker, since))
+        hist = _OnOrBefore(market_snapshot.read_store(db.price_history, ticker, since))
         got = realised_vol_of(hist, valuation_date)
         if got is None:
             raise MarketDataUnavailable(
@@ -183,7 +176,7 @@ def _asset(
 
 def _correlation(tickers: List[str], valuation_date: date, warnings: list) -> tuple:
     since = valuation_date - timedelta(days=CORR_DAYS)
-    wide = _store(db.prices_wide, tickers, since)
+    wide = market_snapshot.read_store(db.prices_wide, tickers, since)
     missing = [t for t in tickers if t not in getattr(wide, "columns", [])]
     if missing:
         raise MarketDataUnavailable(
@@ -377,7 +370,9 @@ def multi_asset_market(
     rates_fx = [u.currency.upper() for u in underlyings if isinstance(u, FxRate)]
     if len(set(tickers)) != len(tickers) or len(set(rates_fx)) != len(rates_fx):
         raise ValueError("each underlying must be a different ticker or currency")
-    ccy = {t: _store(db.ticker_currency, t) or "USD" for t in tickers}
+    ccy = {
+        t: market_snapshot.read_store(db.ticker_currency, t) or "USD" for t in tickers
+    }
     if currency is None and not tickers:
         raise ValueError("give the payment currency of a script on exchange rates only")
     pay = (currency or ccy[tickers[0]]).upper()
@@ -418,7 +413,7 @@ def multi_asset_market(
             names.append(f"{a.fx}{pay}")
             series.append(_fx_series(a.fx, pay, since, valuation_date))
         else:
-            rows = _store(db.price_history, a.ticker, since)
+            rows = market_snapshot.read_store(db.price_history, a.ticker, since)
             names.append(a.ticker)
             series.append(
                 pd.Series(

@@ -34,7 +34,6 @@ namespace quantModeling
                     " requires model interface: " + ctx_.model->model_name());
             return *p;
         }
-        [[noreturn]] void unsupported(const char *instName);
     };
 
     struct VanillaOption;

@@ -1,13 +1,10 @@
-from datetime import date, datetime, timezone
+from datetime import date
 from enum import Enum
 from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-
-def _today_utc() -> date:
-    """Today's date in UTC — matches the C++ Date::today()."""
-    return datetime.now(timezone.utc).date()
+from .util import today_utc
 
 
 class EngineType(str, Enum):
@@ -136,7 +133,7 @@ class DatedAsianRequest(BaseModel):
     dividend: float = 0.0
     vol: float = Field(..., gt=0.0)
     valuation_date: date = Field(
-        default_factory=_today_utc,
+        default_factory=today_utc,
         description="Time 0. Defaults to today (UTC) when omitted.",
     )
     fixing_dates: List[date] = Field(..., min_length=1)
@@ -291,7 +288,7 @@ class ScriptPricingInputs(BaseModel):
         description="Required for model='black_scholes' (and 'auto' without a ticker).",
     )
     valuation_date: date = Field(
-        default_factory=_today_utc,
+        default_factory=today_utc,
         description="Time 0. Defaults to today (UTC) when omitted.",
     )
     day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"
@@ -444,7 +441,7 @@ class ScriptValidateRequest(BaseModel):
 
     script: str = Field(..., min_length=1, description="The script source text.")
     valuation_date: date = Field(
-        default_factory=_today_utc,
+        default_factory=today_utc,
         description="Time 0. Defaults to today (UTC) when omitted.",
     )
     day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"

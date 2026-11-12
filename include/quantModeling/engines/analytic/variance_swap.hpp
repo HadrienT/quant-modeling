@@ -18,15 +18,6 @@ namespace quantModeling
       public:
         using EngineBase::EngineBase;
         void visit(const VarianceSwap &vs) override;
-
-        // reject everything else
-        void visit(const VanillaOption &) override;
-        void visit(const AsianOption &) override;
-        void visit(const BarrierOption &) override;
-        void visit(const DigitalOption &) override;
-        void visit(const EquityFuture &) override;
-        void visit(const ZeroCouponBond &) override;
-        void visit(const FixedRateBond &) override;
     };
 
 } // namespace quantModeling

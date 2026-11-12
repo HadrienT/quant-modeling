@@ -142,7 +142,8 @@ def _chain_row_key(r: "db.OptionChainRow") -> tuple:
     )
 
 
-def _store(fn, *args):
+def read_store(fn, *args):
+    """Call a store reader; an unreachable database is MarketDataUnavailable."""
     try:
         return fn(*args)
     except db.StoreUnavailable as exc:
@@ -162,7 +163,7 @@ def local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVol
 def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVolMarket:
     ticker = ticker.upper().strip()
 
-    snap = _store(db.options_snapshot_date_on_or_before, ticker, valuation_date)
+    snap = read_store(db.options_snapshot_date_on_or_before, ticker, valuation_date)
     if snap is None:
         raise MarketDataUnavailable(
             f"no option-chain snapshot for '{ticker}' on or before "
@@ -180,7 +181,7 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
             f"or value on the stored market date: valuation_date={snap.isoformat()}."
         )
 
-    spot_row = _store(db.price_on_or_before, ticker, snap)
+    spot_row = read_store(db.price_on_or_before, ticker, snap)
     if spot_row is None or (snap - spot_row[0]).days > MAX_SPOT_GAP_DAYS:
         have = f"latest is {spot_row[0].isoformat()}" if spot_row else "none stored"
         raise MarketDataUnavailable(
@@ -190,7 +191,7 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         )
     spot_date, spot = spot_row
 
-    div_row = _store(db.dividend_yield_on_or_before, ticker, snap)
+    div_row = read_store(db.dividend_yield_on_or_before, ticker, snap)
     if div_row is None or (snap - div_row[0]).days > MAX_DIVIDEND_GAP_DAYS:
         raise MarketDataUnavailable(
             f"no recent dividend yield for '{ticker}' in prices.dividend_yields "
@@ -200,7 +201,7 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         )
     dividend = div_row[1]
 
-    rows = _store(db.options_chain_snapshot, ticker, snap)
+    rows = read_store(db.options_chain_snapshot, ticker, snap)
     quotes = []
     for r in rows:
         ttm = _ttm(r.expiry, snap)

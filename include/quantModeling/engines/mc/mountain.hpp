@@ -35,15 +35,6 @@ namespace quantModeling
         void visit(const MountainOption &opt) override;
 
         /* ── reject all other instrument types ────────────────────────── */
-        void visit(const VanillaOption &) override { unsupported("MountainOption"); }
-        void visit(const AsianOption &) override { unsupported("MountainOption"); }
-        void visit(const BarrierOption &) override { unsupported("MountainOption"); }
-        void visit(const DigitalOption &) override { unsupported("MountainOption"); }
-        void visit(const LookbackOption &) override { unsupported("MountainOption"); }
-        void visit(const BasketOption &) override { unsupported("MountainOption"); }
-        void visit(const EquityFuture &) override { unsupported("MountainOption"); }
-        void visit(const ZeroCouponBond &) override { unsupported("MountainOption"); }
-        void visit(const FixedRateBond &) override { unsupported("MountainOption"); }
     };
 
 } // namespace quantModeling

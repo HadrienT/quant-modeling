@@ -30,9 +30,6 @@ import quantmodeling as qm
 
 from . import db, fundamentals, rates
 
-#: A spread snapshot older than this (calendar days) carries a warning.
-STALE_AFTER_DAYS = 7
-
 
 @dataclass(frozen=True)
 class SpreadSeries:
@@ -96,8 +93,9 @@ class CreditUnavailable(RuntimeError):
 def staleness_warning(
     as_of: date, what: str, today: Optional[date] = None
 ) -> Optional[str]:
-    age = ((today or date.today()) - as_of).days
-    if age > STALE_AFTER_DAYS:
+    """A warning when the snapshot is older than ``rates.STALE_AFTER_DAYS``."""
+    age = rates.stale_age(as_of, today)
+    if age is not None:
         return (
             f"The latest {what} is from {as_of.isoformat()}, {age} days ago: FRED has "
             "not published since, or data-ingest has not run."

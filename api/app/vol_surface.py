@@ -30,6 +30,7 @@ import yfinance as yf
 from . import db
 from .audit.fallback import record_fallback
 from .audit.payloads import FallbackKind
+from .util import norm_cdf
 
 logger = logging.getLogger(__name__)
 
@@ -385,10 +386,6 @@ def svi_iv_at_k(k: float, slc: dict) -> float:
     return math.sqrt(max(w, 0.0) / slc["ttm"])
 
 
-def _norm_cdf(x: float) -> float:
-    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
-
-
 def _bs_forward_delta(k: float, ttm: float, vol: float, is_call: bool) -> float:
     """Black-76 forward delta (no discounting -- consistent with this
     project's forward-based convention, e.g. models/equity/sabr.hpp's
@@ -399,7 +396,7 @@ def _bs_forward_delta(k: float, ttm: float, vol: float, is_call: bool) -> float:
     if vol <= 0.0 or ttm <= 0.0:
         return 0.0
     d1 = (-k + 0.5 * vol * vol * ttm) / (vol * math.sqrt(ttm))
-    nd1 = _norm_cdf(d1)
+    nd1 = norm_cdf(d1)
     return nd1 if is_call else nd1 - 1.0
 
 

@@ -350,22 +350,7 @@ namespace quantModeling
                 domestic.push_back({swap.maturity, -side * swap.domestic_notional});
             }
 
-            // The visitor's pure virtuals: path-dependent equity products and
-            // bonds have no closed form here.
-            void visit(const AsianOption &) override { unsupported(); }
-            void visit(const BarrierOption &) override { unsupported(); }
-            void visit(const DigitalOption &) override { unsupported(); }
-            void visit(const EquityFuture &) override { unsupported(); }
-            void visit(const ZeroCouponBond &) override { unsupported(); }
-            void visit(const FixedRateBond &) override { unsupported(); }
-
           private:
-            [[noreturn]] static void unsupported()
-            {
-                throw UnsupportedInstrument("This instrument has no future value in the two-currency "
-                                            "exposure engine.");
-            }
-
             const CrossCurrencyHullWhiteModel &model_;
         };
 
