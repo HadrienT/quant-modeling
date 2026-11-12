@@ -2,7 +2,12 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/engines/analytic/short_rate.hpp"
-#include "quantModeling/engines/mc/short_rate.hpp"
+#include "quantModeling/core/date.hpp"
+#include "quantModeling/engines/mc/simulation_engine.hpp"
+#include "quantModeling/instruments/scripted_product.hpp"
+#include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/models/rates/short_rate_sim_model.hpp"
+#include "quantModeling/scripting/script_model_factory.hpp"
 #include "quantModeling/instruments/rates/bond_option.hpp"
 #include "quantModeling/instruments/rates/capfloor.hpp"
 #include "quantModeling/instruments/rates/fixed_rate_bond.hpp"
@@ -422,109 +427,90 @@ TEST(ShortRateAnalyticEngine, CapFloorParity)
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  MC engine — ZCB convergence to analytic
+//  Monte Carlo as scripts (WP 26 P3): ShortRateSimModel, the hand-written
+//  short-rate engine's dynamics, converges to the closed forms
 // ═════════════════════════════════════════════════════════════════════════════
 
-TEST(ShortRateMCEngine, VasicekZCBConvergence)
+namespace
+{
+    const Date kValuation = Date::from_iso("2026-01-01");
+
+    /// A date `years` whole 365-day years on (ACT/365F, the scripts' day count).
+    std::string on(int years)
+    {
+        return (kValuation + 365 * years).to_iso();
+    }
+
+    SimulationMCResult short_rate_script(std::shared_ptr<const IShortRateModel> m, const std::string &script,
+                                         int paths = 1 << 17, int seed = 42)
+    {
+        const ScriptedProduct<Real> product(script, ValuationContext{kValuation});
+        ShortRateSimModel sim(std::move(m));
+        PricingSettings s;
+        s.mc_paths = paths;
+        s.mc_seed = seed;
+        return simulate<Real>(product, sim, s);
+    }
+} // namespace
+
+// The zero-coupon bond: 100 paid at T, deflated by exp(∫r). The Euler and
+// trapeze discretisation at 1/252 a year leaves a bias of a few 1e-5.
+TEST(ShortRateScript, VasicekZCBConvergence)
 {
     auto model = std::make_shared<VasicekModel>(0.5, 0.05, 0.01, 0.03);
-    PricingSettings settings;
-    settings.mc_paths = 100000;
-    settings.mc_seed = 42;
-    PricingContext ctx{MarketView{}, settings, model};
-    ShortRateMCEngine engine(ctx);
-
-    ZeroCouponBond bond(2.0, 100.0);
-    auto res = price(bond, engine);
-
+    const auto res = short_rate_script(model, on(2) + "\n    pays 100\n");
     const Real analytic = 100.0 * model->zcb_price(2.0);
-    // Allow 1% relative error for MC
-    EXPECT_NEAR(res.npv, analytic, analytic * 0.01);
-    EXPECT_GT(res.mc_std_error, 0.0);
+    EXPECT_NEAR(res.npv(), analytic, 4.0 * res.std_error() + 1e-4 * analytic);
+    EXPECT_GT(res.std_error(), 0.0);
 }
 
-TEST(ShortRateMCEngine, CIRZCBConvergence)
+TEST(ShortRateScript, CIRZCBConvergence)
 {
     auto model = std::make_shared<CIRModel>(0.5, 0.05, 0.01, 0.04);
-    PricingSettings settings;
-    settings.mc_paths = 100000;
-    settings.mc_seed = 42;
-    PricingContext ctx{MarketView{}, settings, model};
-    ShortRateMCEngine engine(ctx);
-
-    ZeroCouponBond bond(2.0, 100.0);
-    auto res = price(bond, engine);
-
+    const auto res = short_rate_script(model, on(2) + "\n    pays 100\n");
     const Real analytic = 100.0 * model->zcb_price(2.0);
-    EXPECT_NEAR(res.npv, analytic, analytic * 0.01);
+    EXPECT_NEAR(res.npv(), analytic, 4.0 * res.std_error() + 1e-4 * analytic);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  MC engine — BondOption convergence
-// ═════════════════════════════════════════════════════════════════════════════
-
-TEST(ShortRateMCEngine, VasicekBondOptionConvergence)
+// df() reads the model's closed-form bond P(t, S, r_t) at the event.
+TEST(ShortRateScript, VasicekBondOptionConvergence)
 {
     auto model = std::make_shared<VasicekModel>(0.3, 0.06, 0.015, 0.05);
-    PricingSettings settings;
-    settings.mc_paths = 200000;
-    settings.mc_seed = 123;
-    PricingContext ctx{MarketView{}, settings, model};
-    ShortRateMCEngine engine(ctx);
-
-    BondOption opt(1.0, 5.0, 0.8, true, 100.0);
-    auto res = price(opt, engine);
-
+    const auto res = short_rate_script(model, on(1) + "\n    pays 100 * max(df(" + on(5) + ") - 0.8, 0)\n", 1 << 18, 123);
     const Real analytic = 100.0 * model->bond_option_price(true, 0.8, 1.0, 5.0);
-    // MC on bond options is less precise — allow 5% relative error
-    EXPECT_NEAR(res.npv, analytic, std::max(analytic * 0.05, 0.001));
+    EXPECT_NEAR(res.npv(), analytic, 4.0 * res.std_error() + 1e-3 * analytic);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  MC engine — CIR BondOption (no analytic, just check it runs)
-// ═════════════════════════════════════════════════════════════════════════════
-
-TEST(ShortRateMCEngine, CIRBondOptionRuns)
+TEST(ShortRateScript, CIRBondOptionThroughTheRoute)
 {
-    auto model = std::make_shared<CIRModel>(0.5, 0.05, 0.01, 0.04);
-    PricingSettings settings;
-    settings.mc_paths = 50000;
-    settings.mc_seed = 42;
-    PricingContext ctx{MarketView{}, settings, model};
-    ShortRateMCEngine engine(ctx);
-
-    BondOption opt(1.0, 5.0, 0.8, true, 100.0);
-    auto res = price(opt, engine);
-
-    // Just check it produces a non-negative price
+    ShortRateBondOptionInput in{"cir", 0.5, 0.05, 0.01, 0.04, 1.0, 5.0, 0.8, true, 100.0, 50000, 42};
+    const PricingResult res = price_bond_option_short_rate_mc(in);
     EXPECT_GE(res.npv, 0.0);
     EXPECT_GT(res.mc_std_error, 0.0);
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  MC engine — FixedRateBond
-// ═════════════════════════════════════════════════════════════════════════════
-
-TEST(ShortRateMCEngine, VasicekFixedBondConvergence)
+TEST(ShortRateScript, VasicekFixedBondConvergence)
 {
     auto model = std::make_shared<VasicekModel>(0.5, 0.05, 0.01, 0.03);
-
-    // Analytic
     PricingContext ctx_a{MarketView{}, PricingSettings{}, model};
     ShortRateAnalyticEngine eng_a(ctx_a);
     FixedRateBond bond(0.04, 3.0, 1, 100.0);
-    auto res_a = price(bond, eng_a);
+    const auto res_a = price(bond, eng_a);
+    const auto res = short_rate_script(
+        model, on(1) + "\n    pays 4\n\n" + on(2) + "\n    pays 4\n\n" + on(3) + "\n    pays 104\n");
+    EXPECT_NEAR(res.npv(), res_a.npv, 4.0 * res.std_error() + 1e-4 * res_a.npv);
+}
 
-    // MC
-    PricingSettings settings;
-    settings.mc_paths = 100000;
-    settings.mc_seed = 42;
-    PricingContext ctx_mc{MarketView{}, settings, model};
-    ShortRateMCEngine eng_mc(ctx_mc);
-    FixedRateBond bond2(0.04, 3.0, 1, 100.0);
-    auto res_mc = price(bond2, eng_mc);
-
-    EXPECT_NEAR(res_mc.npv, res_a.npv, res_a.npv * 0.02);
+TEST(ShortRateScript, TheModelRefusesWhatItCannotDo)
+{
+    ShortRateSimModel sim(std::make_shared<VasicekModel>(0.5, 0.05, 0.01, 0.03));
+    EXPECT_FALSE(sim.monitors_barriers());
+    const ScriptedProduct<Real> barrier(on(1) + "\n    pays survivalAbove(0.01)\n", ValuationContext{kValuation});
+    EXPECT_THROW(sim.init(barrier.timeline(), barrier.defline()), InvalidInput);
+    scripting::ScriptModelSpec spec;
+    spec.model = "short_rate";
+    spec.short_rate_type = "vasicek";
+    EXPECT_THROW(scripting::make_script_model<aad::Number>(spec), std::invalid_argument);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

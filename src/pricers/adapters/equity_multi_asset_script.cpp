@@ -59,15 +59,17 @@ namespace quantModeling
         {
             std::vector<int> d;
             for (Time t : times)
-                d.push_back(days_for(t));
+                d.push_back(ticks_for(t));
             return d;
         }
 
         ScriptRoute route_of(std::string name, scripting::ScriptModelSpec model,
-                             std::function<std::string(const scripting::ScriptModelSpec &, int)> script)
+                             std::function<std::string(const scripting::ScriptModelSpec &, int)> script,
+                             Time maturity)
         {
             ScriptRoute r;
             r.valuation = script_builders::valuation();
+            r.maturity = maturity;
             r.model = std::move(model);
             r.name = std::move(name);
             r.script = std::move(script);
@@ -76,13 +78,14 @@ namespace quantModeling
 
         PricingResult rainbow(const RainbowBSInput &in, bool worst)
         {
-            const int days = days_for(in.maturity);
+            const int days = ticks_for(in.maturity);
             const ScriptRoute route = route_of(
                 std::string(worst ? "worst-of " : "best-of ") + (in.is_call ? "call" : "put") + " on " +
                     std::to_string(in.spots.size()) + " assets",
                 multi_bs(in.rate, in.spots, in.vols, in.dividends, in.correlations),
                 [in, worst, days](const scripting::ScriptModelSpec &m, int shift)
-                { return script_builders::rainbow(worst, in.is_call, in.strike, in.notional, m.spots, days + shift); });
+                { return script_builders::rainbow(worst, in.is_call, in.strike, in.notional, m.spots, days + shift); },
+                in.maturity);
             return price_by_script(route, mc_settings(in.n_paths, in.seed), false);
         }
     } // namespace
@@ -100,13 +103,13 @@ namespace quantModeling
     {
         if (in.weights.size() != in.spots.size())
             throw InvalidInput("BasketBSInput: weights.size() != spots.size()");
-        const int days = days_for(in.maturity);
+        const int days = ticks_for(in.maturity);
         ScriptRoute route = route_of(
             std::string("basket ") + (in.is_call ? "call" : "put") + " on " + std::to_string(in.spots.size()) +
                 " assets",
             multi_bs(in.rate, in.spots, in.vols, in.dividends, in.correlations),
             [in, days](const scripting::ScriptModelSpec &, int shift)
-            { return script_builders::basket(in.is_call, in.strike, in.weights, days + shift); });
+            { return script_builders::basket(in.is_call, in.strike, in.weights, days + shift); }, in.maturity);
         // Delta and gamma per unit of the basket's initial value, every spot
         // scaled (the hand-written engine's convention).
         Real b0 = 0.0;
@@ -130,7 +133,8 @@ namespace quantModeling
                 std::vector<int> d = dates;
                 d.back() += shift;
                 return script_builders::mountain(in.is_call, in.strike, in.notional, m.spots, d);
-            });
+            },
+            in.observation_dates.back());
         return price_by_script(route, mc_settings(in.n_paths, in.seed), false);
     }
 
@@ -161,7 +165,8 @@ namespace quantModeling
                 std::vector<int> d = dates;
                 d.back() += shift;
                 return script_builders::autocall(t, d);
-            });
+            },
+            in.observation_dates.back());
         return price_by_script(route, mc_settings(in.n_paths, in.seed), false);
     }
 

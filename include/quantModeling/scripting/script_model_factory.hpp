@@ -11,6 +11,10 @@
 #include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
 #include "quantModeling/models/equity/multi_asset_local_vol_sim_model.hpp"
 #include "quantModeling/models/equity/slv_sim_model.hpp"
+#include "quantModeling/models/rates/cir.hpp"
+#include "quantModeling/models/rates/hull_white.hpp"
+#include "quantModeling/models/rates/short_rate_sim_model.hpp"
+#include "quantModeling/models/rates/vasicek.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
 #include <Eigen/Core>
@@ -19,6 +23,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -69,6 +74,11 @@ namespace quantModeling::scripting
         double hw_rho = 0.0;
         std::vector<double> curve_times;
         std::vector<double> curve_dfs;
+        /// short_rate (WP 26 P3, the catalogue's rate products; prices only):
+        /// "vasicek", "cir" or "hull_white" and their parameters, as the
+        /// short-rate adapters read them; Euler steps of at most max_dt.
+        std::string short_rate_type;
+        double sr_a = 0.0, sr_b = 0.0, sr_sigma = 0.0, sr_r0 = 0.0;
     };
 
     /**
@@ -194,6 +204,24 @@ namespace quantModeling::scripting
             return std::make_unique<HullWhiteEquitySimModel<T>>(
                 T(s.spot), T(s.dividend), T(s.vol), HullWhiteCurveModel(s.hw_mean_reversion, s.hw_sigma, curve),
                 s.hw_rho);
+        }
+        if (s.model == "short_rate")
+        {
+            if constexpr (!std::is_same_v<T, Real>)
+                throw std::invalid_argument("price_script: the short-rate model prices only (no adjoint form)");
+            else
+            {
+                std::shared_ptr<const IShortRateModel> m;
+                if (s.short_rate_type == "vasicek")
+                    m = std::make_shared<VasicekModel>(s.sr_a, s.sr_b, s.sr_sigma, s.sr_r0);
+                else if (s.short_rate_type == "cir")
+                    m = std::make_shared<CIRModel>(s.sr_a, s.sr_b, s.sr_sigma, s.sr_r0);
+                else if (s.short_rate_type == "hull_white")
+                    m = std::make_shared<HullWhiteModel>(s.sr_a, s.sr_sigma, s.sr_r0, /*theta=*/s.sr_a * s.sr_b);
+                else
+                    throw std::invalid_argument("price_script: unknown short-rate model '" + s.short_rate_type + "'");
+                return std::make_unique<ShortRateSimModel>(std::move(m), s.max_dt);
+            }
         }
         if (s.model == "slv")
             return std::make_unique<SLVSimModel<T>>(

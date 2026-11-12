@@ -19,7 +19,6 @@
 // ── Engines ──────────────────────────────────────────────────────────────────
 #include "quantModeling/engines/base.hpp"
 #include "quantModeling/engines/analytic/short_rate.hpp"
-#include "quantModeling/engines/mc/short_rate.hpp"
 
 // ── Pricer / Adapters / Registry ─────────────────────────────────────────────
 #include "quantModeling/pricers/pricer.hpp"
@@ -631,13 +630,9 @@ TEST(CapletMC, ConvergesToAnalytic)
     Caplet cap(0.5, 1.0, 0.05, true, 100.0);
     auto res_a = price(cap, eng_a);
 
-    // MC
-    PricingSettings s;
-    s.mc_paths = 200000;
-    s.mc_seed = 42;
-    PricingContext ctx_mc{MarketView{}, s, model};
-    ShortRateMCEngine eng_mc(ctx_mc);
-    auto res_mc = price(cap, eng_mc);
+    // MC: the caplet route, a script since WP 26 P3
+    ShortRateCapletInput in{"vasicek", 0.3, 0.06, 0.015, 0.05, 0.5, 1.0, 0.05, true, 100.0, 200000, 42};
+    auto res_mc = price_caplet_short_rate_mc(in);
 
     // Should be within 3 standard errors
     EXPECT_NEAR(res_mc.npv, res_a.npv,

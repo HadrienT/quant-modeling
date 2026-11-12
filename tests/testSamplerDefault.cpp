@@ -59,25 +59,6 @@ namespace quantModeling
         EXPECT_TRUE(says(r.diagnostics, "Sobol")) << r.diagnostics;
     }
 
-    // A hand-written engine not yet a script (WP 26 P3) has none:
-    // pseudo-random, and it says so.
-    TEST(SamplerDefault, AnEngineWithoutSobolSaysItRunsPseudoRandom)
-    {
-        ShortRateCapletInput in{};
-        in.model_type = "vasicek";
-        in.a = 0.5;
-        in.b = 0.04;
-        in.sigma = 0.01;
-        in.r0 = 0.03;
-        in.start = 1.0;
-        in.end = 1.5;
-        in.strike = 0.035;
-        in.n_paths = 20000;
-        const PricingResult r = default_registry().price(
-            {InstrumentKind::Caplet, ModelKind::Vasicek, EngineKind::MonteCarlo, PricingInput{in}});
-        EXPECT_TRUE(says(r.diagnostics, "pseudo-random: this engine has no Sobol path yet")) << r.diagnostics;
-    }
-
     // The barrier became a script (WP 26 P3): Sobol.
     TEST(SamplerDefault, TheBarrierScriptRunsSobol)
     {

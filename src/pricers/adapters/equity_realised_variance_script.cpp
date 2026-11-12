@@ -35,12 +35,12 @@ namespace quantModeling
             std::set<int> days;
             if (!observations.empty())
                 for (Time t : observations)
-                    days.insert(std::max(1, days_for(t)));
+                    days.insert(std::max(1, ticks_for(t)));
             else
             {
                 const int n = std::max(1, static_cast<int>(252.0 * maturity));
                 for (int i = 0; i < n; ++i)
-                    days.insert(std::max(1, days_for(maturity * static_cast<Real>(i + 1) / static_cast<Real>(n))));
+                    days.insert(std::max(1, ticks_for(maturity * static_cast<Real>(i + 1) / static_cast<Real>(n))));
             }
             return {days.begin(), days.end()};
         }
@@ -53,13 +53,14 @@ namespace quantModeling
                                    ": maturity must be positive");
             ScriptRoute route;
             route.valuation = script_builders::valuation();
+            route.maturity = maturity;
             route.model.model = "black_scholes";
             route.model.spot = spot;
             route.model.rate = rate;
             route.model.dividend = dividend;
             route.model.vol = vol;
             const std::vector<int> dates = schedule(maturity, observations);
-            const int pay = days_for(maturity);
+            const int pay = ticks_for(maturity);
             route.name = std::string(volatility ? "volatility swap, " : "variance swap, ") +
                          std::to_string(dates.size()) + " observations";
             route.script = [=](const scripting::ScriptModelSpec &m, int shift)
@@ -94,6 +95,7 @@ namespace quantModeling
             throw InvalidInput("DispersionBSInput: correlations dimension mismatch");
         ScriptRoute route;
         route.valuation = script_builders::valuation();
+        route.maturity = in.maturity;
         scripting::ScriptModelSpec &m = route.model;
         m.model = "black_scholes";
         m.rate = in.rate;
@@ -109,7 +111,7 @@ namespace quantModeling
                 m.correlation.push_back(in.correlations.empty() ? (i == j ? 1.0 : 0.0) : in.correlations[i][j]);
         }
         const std::vector<int> dates = schedule(in.maturity, in.observation_dates);
-        const int pay = days_for(in.maturity);
+        const int pay = ticks_for(in.maturity);
         route.name = "dispersion swap on " + std::to_string(n) + " assets, " + std::to_string(dates.size()) +
                      " observations";
         route.script = [in, dates, pay](const scripting::ScriptModelSpec &spec, int shift)

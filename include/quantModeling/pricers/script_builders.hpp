@@ -16,8 +16,9 @@
  *        family; the adapters (pricers/adapters/) pair it with a model and
  *        price it with price_by_script().
  *
- * Dates count from the route's valuation date in calendar days (ACT/365F,
- * the scripts' day count): `days` is the maturity, as days_for() gives it.
+ * Dates count from the route's valuation date in ticks of the routes' time
+ * grid (pricers/script_route.hpp: one hour, ACT/8760): `days` is the
+ * maturity, as ticks_for() gives it.
  * Numbers are written with 17 significant digits, so the script prices the
  * terms it was given to the bit.
  */
@@ -49,8 +50,8 @@ namespace quantModeling::script_builders
      */
     std::string barrier(const BarrierTerms &t, int days, int observations = 0);
 
-    /// `observations` calendar days evenly spread over (0, days], the last
-    /// on `days`, one per day at most: the fixing dates of the routes whose
+    /// `observations` ticks evenly spread over (0, days], the last on
+    /// `days`, one per tick at most: the fixing dates of the routes whose
     /// hand-written engines used n evenly spaced steps.
     std::vector<int> evenly(int days, int observations);
 
@@ -132,6 +133,18 @@ namespace quantModeling::script_builders
     /// Dispersion swap: notional * (Σ w_i var_i - var_index - K) at
     /// `pay_day`, each realised variance as in realised_swap(), the index
     /// Σ w_i spot(i) starting at Σ w_i s0_i.
+    /// Option on the zero-coupon bond maturing at `bond_day`, exercised at
+    /// `expiry_day`: notional * max(P(T, S) - K, 0) for a call, the bond
+    /// price read with df() from the model.
+    std::string bond_option(bool is_call, Real strike, Real notional, int expiry_day, int bond_day);
+
+    /// Caplets (floorlets) on [reset_i, end_i], fixed at their reset: each
+    /// pays, at its reset, notional * max(1 - (1 + K δ_i) P(reset, end), 0)
+    /// (the floorlet the other way round) -- the put on the bond of the
+    /// hand-written engine. `deltas` are the accrual fractions δ_i.
+    std::string caplets(bool is_cap, Real strike, Real notional, const std::vector<int> &resets,
+                        const std::vector<int> &ends, const std::vector<Real> &deltas);
+
     std::string dispersion(const std::vector<Real> &s0, const std::vector<Real> &weights, Real strike_spread,
                            Real notional, Real T, const std::vector<int> &dates, int pay_day);
 

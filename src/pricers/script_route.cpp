@@ -3,10 +3,12 @@
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
+#include "quantModeling/market/conventions.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/greeks.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -14,13 +16,47 @@
 namespace quantModeling
 {
 
-    int days_for(Time t)
+    int ticks_for(Time t)
     {
-        return static_cast<int>(std::lround(t * 365.0));
+        return static_cast<int>(std::lround(t * static_cast<double>(kTicksPerYear)));
     }
 
     namespace
     {
+        /// ACT/D, D chosen so that the route's maturity date is exactly its
+        /// maturity in years (ScriptRoute::maturity).
+        class RouteDays final : public DayCounter
+        {
+          public:
+            RouteDays(int days, Time maturity)
+                : days_(days), maturity_(maturity) {}
+            const char *name() const noexcept override { return "Actual/D (script route)"; }
+            long day_count(const Date &s, const Date &e) const override { return e - s; }
+            Time year_fraction(const Date &s, const Date &e) const override
+            {
+                const long n = e - s;
+                return n == days_ ? maturity_ : static_cast<Time>(n) * (maturity_ / static_cast<Time>(days_));
+            }
+            /// One day, in years.
+            Time day() const { return maturity_ / static_cast<Time>(days_); }
+
+          private:
+            int days_;
+            Time maturity_;
+        };
+
+        RouteDays counter_for(const ScriptRoute &route)
+        {
+            if (route.maturity > 0.0)
+                return RouteDays(std::max(1, ticks_for(route.maturity)), route.maturity);
+            return RouteDays(kTicksPerYear, 1.0);
+        }
+
+        ValuationContext route_context(const ScriptRoute &route, const RouteDays &counter)
+        {
+            return ValuationContext{route.valuation, &counter};
+        }
+
         /// Which greek an adjoint risk label feeds: the model's spot(s),
         /// volatility (a flat vol, or every point of a local-vol grid: a
         /// parallel shift) and rate. Dividends are not a greek here.
@@ -57,7 +93,8 @@ namespace quantModeling
         SimulationMCResult run(const ScriptRoute &route, const scripting::ScriptModelSpec &spec, int days,
                                const PricingSettings &settings)
         {
-            const ScriptedProduct<Real> product(route.script(spec, days), ValuationContext{route.valuation},
+            const RouteDays counter = counter_for(route);
+            const ScriptedProduct<Real> product(route.script(spec, days), route_context(route, counter),
                                                 script_settings(route, spec, days));
             auto model = scripting::make_script_model<Real>(spec);
             return simulate_script(product, *model, settings);
@@ -109,6 +146,7 @@ namespace quantModeling
 
     PricingResult price_by_script(const ScriptRoute &route, const PricingSettings &settings, bool greeks)
     {
+        const RouteDays counter = counter_for(route);
         const SimulationMCResult base = run(route, route.model, 0, settings);
         PricingResult res;
         res.npv = base.npv();
@@ -140,7 +178,7 @@ namespace quantModeling
             std::optional<AADSimulResults> gpu;
             if (settings.mc_device != ComputeDevice::Cpu)
             {
-                const ScriptedProduct<Real> product(route.script(route.model, 0), ValuationContext{route.valuation},
+                const ScriptedProduct<Real> product(route.script(route.model, 0), route_context(route, counter),
                                                     ScriptSettings{route.fuzzy});
                 auto model = scripting::make_script_model<Real>(route.model);
                 std::string why;
@@ -169,7 +207,7 @@ namespace quantModeling
             else
             {
                 const ScriptedProduct<aad::Number> product(route.script(route.model, 0),
-                                                           ValuationContext{route.valuation},
+                                                           route_context(route, counter),
                                                            ScriptSettings{route.fuzzy});
                 auto model = scripting::make_script_model<aad::Number>(route.model);
                 std::vector<std::vector<Real>> batches;
@@ -237,9 +275,9 @@ namespace quantModeling
             res.greeks.delta_std_error = delta.std_error;
         }
 
-        const SimulationMCResult later = run(route, route.model, 1, settings),
-                                 sooner = run(route, route.model, -1, settings);
-        const Difference theta = difference({&later, &sooner}, {-1.0, 1.0}, 2.0 / 365.0);
+        const SimulationMCResult later = run(route, route.model, kTicksPerDay, settings),
+                                 sooner = run(route, route.model, -kTicksPerDay, settings);
+        const Difference theta = difference({&later, &sooner}, {-1.0, 1.0}, 2.0 * kTicksPerDay * counter.day());
         res.greeks.theta = theta.value;
         res.greeks.theta_std_error = theta.std_error;
 

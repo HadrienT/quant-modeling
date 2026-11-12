@@ -34,6 +34,7 @@ namespace quantModeling
                 bridge ? 0 : (n_steps > 0 ? n_steps : std::max(1, static_cast<int>(std::lround(per_year * maturity))));
             ScriptRoute route;
             route.valuation = script_builders::valuation();
+            route.maturity = maturity;
             route.model = std::move(model);
             const char *kind[] = {"down-and-out", "down-and-in", "up-and-out", "up-and-in"};
             const int k = terms.type == BarrierType::DownAndOut  ? 0
@@ -44,7 +45,7 @@ namespace quantModeling
                          script_builders::number(terms.level) +
                          (bridge ? ", continuous" : ", " + std::to_string(observations) + " dates");
             route.fd_greeks = !bridge; // a hard knock on dates: pathwise derivatives miss the jump
-            const int days = days_for(maturity);
+            const int days = ticks_for(maturity);
             route.script = [terms, days, observations](const scripting::ScriptModelSpec &, int shift)
             { return script_builders::barrier(terms, days + shift, observations); };
             PricingSettings settings;

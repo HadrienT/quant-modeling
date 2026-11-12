@@ -26,11 +26,16 @@ namespace quantModeling
         /// The script under a model (a product whose script carries a model
         /// input, as the lookback's initial spot, reads it here, so that the
         /// bumped runs see the bumped input), its maturity moved by `days`
-        /// calendar days (theta's bumps; 0 for the price). Every other term
-        /// stays.
+        /// ticks (theta's bumps, one day each way: ±kTicksPerDay; 0 for the
+        /// price). Every other term stays.
         std::function<std::string(const scripting::ScriptModelSpec &, int days)> script;
         /// The valuation date the script's dates count from.
         Date valuation;
+        /// The product's maturity in years, when it has one: its date,
+        /// ticks_for(maturity) ticks on, is then exactly that year fraction
+        /// (the day count is ACT/D with D = ticks / maturity, every other date
+        /// scaled with it, a relative change below 6e-5 a year). 0: ACT/8760.
+        Time maturity = 0.0;
         /// The model at the request's inputs.
         scripting::ScriptModelSpec model;
         /// The expectation of the script's controlPays cash flows under a
@@ -57,10 +62,17 @@ namespace quantModeling
         Real spot_reference = 0.0;
     };
 
-    /// The calendar days from `valuation` that put a date at year fraction
-    /// `t` under ACT/365F, the scripts' day count: exact for a maturity the
-    /// API computed from dates, rounded to the nearest day otherwise.
-    int days_for(Time t);
+    /// The script routes' time grid (WP 26 P3): a script date is one hour
+    /// after the previous one, kTicksPerYear of them a year (ACT/8760), so
+    /// that a product's times -- 1.5, 1/12 or 1/3 year, which whole days
+    /// would round -- fall on the grid exactly or within half an hour. The
+    /// dates are therefore not calendar dates: they only carry times.
+    inline constexpr int kTicksPerYear = 8760;
+    inline constexpr int kTicksPerDay = 24;
+
+    /// The ticks from the valuation date that put a date at year fraction
+    /// `t`, rounded to the nearest one.
+    int ticks_for(Time t);
 
     /**
      * @brief Price a route; with `greeks`, its five greeks.

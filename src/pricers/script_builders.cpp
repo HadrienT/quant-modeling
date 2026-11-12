@@ -339,4 +339,24 @@ namespace quantModeling::script_builders
         return observed(dates, init, step, pay, pay_day);
     }
 
+    std::string bond_option(bool is_call, Real strike, Real notional, int expiry_day, int bond_day)
+    {
+        const std::string p = "df(" + iso(bond_day) + ")", k = number(strike);
+        return iso(expiry_day) + "\n    pays " + number(notional) + " * " +
+               (is_call ? "max(" + p + " - " + k + ", 0)" : "max(" + k + " - " + p + ", 0)") + "\n";
+    }
+
+    std::string caplets(bool is_cap, Real strike, Real notional, const std::vector<int> &resets,
+                        const std::vector<int> &ends, const std::vector<Real> &deltas)
+    {
+        std::string s;
+        for (std::size_t i = 0; i < resets.size(); ++i)
+        {
+            const std::string fp = number(1.0 + strike * deltas[i]) + " * df(" + iso(ends[i]) + ")";
+            s += (i ? "\n" : "") + iso(resets[i]) + "\n    pays " + number(notional) + " * " +
+                 (is_cap ? "max(1 - " + fp + ", 0)" : "max(" + fp + " - 1, 0)") + "\n";
+        }
+        return s;
+    }
+
 } // namespace quantModeling::script_builders

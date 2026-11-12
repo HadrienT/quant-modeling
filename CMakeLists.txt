@@ -155,7 +155,6 @@ target_sources(quantModeling
         src/instruments/rates/capfloor.cpp
         src/instruments/rates/caplet.cpp
         src/engines/analytic/short_rate.cpp
-        src/engines/mc/short_rate.cpp
         src/engines/analytic/variance_swap.cpp
         src/engines/analytic/fx.cpp
         src/engines/analytic/commodity.cpp
@@ -166,6 +165,7 @@ target_sources(quantModeling
         src/pricers/adapters/equity_asian_lookback_script.cpp
         src/pricers/adapters/equity_multi_asset_script.cpp
         src/pricers/adapters/equity_realised_variance_script.cpp
+        src/pricers/adapters/rates_short_rate_script.cpp
         src/pricers/adapters/equity_vanilla.cpp
         src/pricers/adapters/equity_quanto.cpp
         src/pricers/adapters/equity_vanilla_american.cpp

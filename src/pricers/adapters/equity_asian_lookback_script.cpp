@@ -64,11 +64,14 @@ namespace quantModeling
             return m;
         }
 
-        std::vector<double> times_of(const std::vector<int> &days)
+        /// The fixings' year fractions under the route's day count
+        /// (ScriptRoute::maturity: one day is maturity / ticks_for(maturity)).
+        std::vector<double> times_of(const std::vector<int> &days, Time maturity)
         {
+            const double day = maturity / static_cast<double>(std::max(1, ticks_for(maturity)));
             std::vector<double> t;
             for (int d : days)
-                t.push_back(static_cast<double>(d) / 365.0);
+                t.push_back(d == ticks_for(maturity) ? maturity : static_cast<double>(d) * day);
             return t;
         }
 
@@ -77,18 +80,19 @@ namespace quantModeling
         {
             ScriptRoute route;
             route.valuation = script_builders::valuation();
+            route.maturity = maturity;
             route.model = std::move(model);
-            const int days = days_for(maturity);
+            const int days = ticks_for(maturity);
             route.script = [terms, days, n](const scripting::ScriptModelSpec &, int shift)
             { return script_builders::asian(terms, script_builders::evenly(days + shift, n)); };
             route.name = std::string(terms.geometric ? "geometric" : "arithmetic") + " Asian " +
                          (terms.is_call ? "call" : "put") + ", " + std::to_string(n) + " fixings";
             if (terms.geometric_control)
-                route.control_mean = [terms, days, n](const scripting::ScriptModelSpec &m, int shift)
+                route.control_mean = [terms, days, n, maturity](const scripting::ScriptModelSpec &m, int shift)
                 {
                     return std::optional<double>(script_builders::geometric_asian_bs(
                         m.spot, m.rate, m.dividend, m.vol, terms.strike, terms.is_call,
-                        times_of(script_builders::evenly(days + shift, n))));
+                        times_of(script_builders::evenly(days + shift, n), maturity)));
                 };
             return route;
         }
@@ -98,8 +102,9 @@ namespace quantModeling
         {
             ScriptRoute route;
             route.valuation = script_builders::valuation();
+            route.maturity = maturity;
             route.model = std::move(model);
-            const int days = days_for(maturity);
+            const int days = ticks_for(maturity);
             // The extremum starts at the initial spot, a number in the script:
             // the greeks are central differences, so that the bumped runs see
             // the bumped spot.
