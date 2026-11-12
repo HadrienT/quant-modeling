@@ -348,10 +348,11 @@ class ScriptPricingInputs(BaseModel):
         "(0, the default: off). Applied when the script suits it -- model "
         "local_vol, one payoff, no early exercise -- the levels refined until "
         "the estimated discretisation bias is below mlmc_eps / sqrt(2); "
-        "otherwise the usual engine runs and the diagnostics say why. CPU, "
-        "pseudo-random, price only: slower than the default Sobol route, but "
-        "the time-step bias is controlled. n_paths, sampler and device are "
-        "then ignored.",
+        "otherwise the usual engine runs and the diagnostics say why. With "
+        "sampler='sobol' (the default) the levels are Sobol points, multilevel "
+        "QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price "
+        "only; the time-step bias is controlled. n_paths and device are then "
+        "ignored.",
     )
     milstein: bool = Field(
         False,

@@ -4,6 +4,7 @@
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/engines/mc/approx_inverse_cdf.hpp"
 #include "quantModeling/engines/mc/mlmc.hpp"
+#include "quantModeling/engines/mc/mlqmc.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
@@ -393,11 +394,18 @@ namespace quantModeling
         s.mc_mlmc_eps = 0.02;
         s.mc_seed = 37;
         const SimulationMCResult r = simulate_script(product, *m, s);
-        EXPECT_NE(r.diagnostics.find("multilevel Monte Carlo"), std::string::npos) << r.diagnostics;
+        // Sobol, the default sampler: multilevel QMC (P5).
+        EXPECT_NE(r.diagnostics.find("multilevel QMC"), std::string::npos) << r.diagnostics;
         EXPECT_LE(r.std_error(), 1.02 * 0.02 / std::sqrt(2.0));
         EXPECT_GT(r.n_paths, 0);
         // The reference price of the skewed call (P4a/P4b runs): 14.20.
         EXPECT_NEAR(r.npv(), 14.20, 3.0 * 0.02) << r.diagnostics;
+
+        PricingSettings pseudo = s;
+        pseudo.mc_sampler = SamplerKind::PseudoRandom;
+        const SimulationMCResult p = simulate_script(product, *m, pseudo);
+        EXPECT_NE(p.diagnostics.find("multilevel Monte Carlo"), std::string::npos) << p.diagnostics;
+        EXPECT_NEAR(p.npv(), 14.20, 3.0 * 0.02) << p.diagnostics;
     }
 
     TEST(Mlmc, TheScriptEngineSaysWhyItDidNotRunIt)
@@ -471,6 +479,72 @@ namespace quantModeling
                          .correction.stats.variance();
         }
         EXPECT_LT(v[1], v[0] / 4.0) << v[0] << " -> " << v[1];
+    }
+
+    // ── WP 26 P5: multilevel QMC (§9) ────────────────────────────────────
+
+    TEST(Mlmc, MultilevelQmcIsMultilevelMcWithinErrorAndFarCheaper)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        MlmcSettings a;
+        a.eps = 0.02;
+        a.seed = 13;
+        const MlmcResult mc = simulate_mlmc(product, *m, a);
+        MlqmcSettings b;
+        b.eps = 0.02;
+        b.seed = 13;
+        const MlmcResult qmc = simulate_mlqmc(product, *m, b);
+        EXPECT_TRUE(qmc.bias_converged) << qmc.diagnostics;
+        EXPECT_LE(qmc.std_error, 1.0 * b.eps / std::sqrt(2.0)) << qmc.diagnostics;
+        // Both estimate E[P] within eps; their finest levels may differ.
+        EXPECT_NEAR(qmc.value, mc.value, 3.0 * a.eps) << qmc.diagnostics << " | " << mc.diagnostics;
+        // Measured 14x cheaper on this case (WP 26 §9.1).
+        EXPECT_LT(5.0 * qmc.total_cost(), mc.total_cost()) << qmc.diagnostics << " | " << mc.diagnostics;
+    }
+
+    TEST(Mlmc, MultilevelQmcCostGrowsAsEpsToTheMinusOneOnASmoothSurface)
+    {
+        // Giles & Waterhouse 2009: with Milstein on a smooth volatility the
+        // coarse, low-dimensional levels carry the cost and QMC removes most
+        // of it. Measured slope -1.01, against -2.00 for MLMC (§9.1).
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.K_grid = {10.0, 1000.0};
+        spec.T_grid = {0.0, 2.0};
+        spec.sigma_loc_flat = {0.50, 0.50, 0.05, 0.05};
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        double sx = 0, sy = 0, sxx = 0, sxy = 0;
+        const std::vector<double> eps = {0.02, 0.01, 0.005, 0.0025};
+        for (const double e : eps)
+        {
+            MlqmcSettings s;
+            s.eps = e;
+            s.seed = 13;
+            const MlmcResult r = simulate_mlqmc(product, *m, s);
+            EXPECT_TRUE(r.bias_converged) << r.diagnostics;
+            const double x = std::log(e), y = std::log(r.total_cost());
+            sx += x, sy += y, sxx += x * x, sxy += x * y;
+        }
+        const double n = static_cast<double>(eps.size());
+        const double slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+        RecordProperty("mlqmc_cost_slope", std::to_string(slope));
+        EXPECT_LT(slope, -0.7);
+        EXPECT_GT(slope, -1.5);
+    }
+
+    TEST(Mlmc, MultilevelQmcRefusesWhatSobolCannotDraw)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.max_dt = 1.0 / 30000.0; // level 0 alone draws 30 000 numbers a path
+        auto m = make_script_model<Real>(spec);
+        MlqmcSettings s;
+        s.eps = 0.1;
+        EXPECT_THROW(simulate_mlqmc(product, *m, s), InvalidInput);
     }
 
 } // namespace quantModeling
