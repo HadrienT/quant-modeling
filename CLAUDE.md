@@ -149,7 +149,7 @@ The project's "JIRA" is the repository's **GitHub Issues**. `gh` is authenticate
 
 | File | Role |
 |---|---|
-| `blueprint/` | Specification of the work packages: the front-end rewrite (WP 00–14, merged into `main`), then the C++ core projects (WP 16 scripting, WP 17 AAD). Dependencies, acceptance criteria. |
+| `blueprint/` | Specification of the work packages: the front-end rewrite (WP 00–14, merged into `main`), then the C++ core projects (WP 16 scripting, WP 17 AAD, WP 26 performance, WP 27 IR and source-transformation AD). Dependencies, acceptance criteria. |
 | `etc/roadmap.md` | Six-month quant strategy: calibrated stochastic vol, AAD, GPU Monte Carlo, xVA capstone. A strategy document, not a spec. |
 | `etc/todo.md` | "Desk grade" checklist: what is missing to resemble a production library. |
 | `etc/structure.md` | Target layout of the pricing module. |
@@ -159,6 +159,14 @@ The project's "JIRA" is the repository's **GitHub Issues**. `gh` is authenticate
 than necessary; the marginal value of a 25th payoff is zero. Depth (calibration, adjoint
 greeks, GPU) beats breadth. One exception, decided by the maintainer on 2026-10-03: the
 currency swap of work package X10 (WP 23 §14.15).
+
+**Performance first, the books as references (decided by the maintainer on 2026-11-12).**
+WP 16 and WP 17 were built close to Savine's two books (scripting, AAD) on purpose; that is
+no longer a constraint. Depart from the books whenever it buys speed or exactness (WP 27
+replaces the GPU's hand-written adjoints with an IR of our own and source transformation),
+and keep the book's implementation where it serves as the oracle (the CPU tape checks every
+new derivative). Say in the work package why a departure is made; no ADR is needed to keep
+a book's name or layout away.
 
 ## Conventions
 
