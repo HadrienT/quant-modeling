@@ -97,11 +97,7 @@ namespace quantModeling
             sim_timeline_ = add_monitoring_steps(timeline_, max_dt_);
             defline_ = defline;
 
-            const std::vector<std::size_t> idx =
-                event_indices(sim_timeline_, timeline_);
-            event_index_of_step_.assign(sim_timeline_.size(), -1);
-            for (std::size_t j = 0; j < idx.size(); ++j)
-                event_index_of_step_[idx[j]] = static_cast<std::ptrdiff_t>(j);
+            event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
 
             // Every fine-grid step draws two correlated gaussians: one for
             // F's own Euler update, one (via the correlation mix) for

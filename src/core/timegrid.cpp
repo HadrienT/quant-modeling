@@ -77,4 +77,14 @@ namespace quantModeling
         return idx;
     }
 
+    std::vector<std::ptrdiff_t> event_index_of_step(const TimeLine &sim,
+                                                    const TimeLine &events)
+    {
+        const std::vector<std::size_t> idx = event_indices(sim, events);
+        std::vector<std::ptrdiff_t> of_step(sim.size(), -1);
+        for (std::size_t j = 0; j < idx.size(); ++j)
+            of_step[idx[j]] = static_cast<std::ptrdiff_t>(j);
+        return of_step;
+    }
+
 } // namespace quantModeling

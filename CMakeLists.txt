@@ -360,6 +360,7 @@ if(QM_BUILD_TESTS)
     tests/testCalendars.cpp
     tests/testSchedule.cpp
     tests/testTimeline.cpp
+    tests/testSimModelClone.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp
     tests/testScriptDomain.cpp
