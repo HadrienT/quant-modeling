@@ -6227,7 +6227,7 @@ export interface components {
             importance_sampling: boolean;
             /**
              * Milstein
-             * @description model='local_vol': the Milstein step instead of log-Euler (strong order 1; with mlmc_eps, the levels' variance decays as h^2 on a smooth surface). CPU only.
+             * @description model='local_vol': the Milstein step instead of log-Euler (strong order 1; with mlmc_eps, the levels' variance decays as h^2 on a smooth surface). CPU only. Not advised on a calibrated market grid: where the local vol's slope is steep at the edge of the quoted strikes, it makes the levels' coupling worse (blueprint WP 26 §9.2).
              * @default false
              */
             milstein: boolean;
@@ -6460,7 +6460,7 @@ export interface components {
             importance_sampling: boolean;
             /**
              * Milstein
-             * @description model='local_vol': the Milstein step instead of log-Euler (strong order 1; with mlmc_eps, the levels' variance decays as h^2 on a smooth surface). CPU only.
+             * @description model='local_vol': the Milstein step instead of log-Euler (strong order 1; with mlmc_eps, the levels' variance decays as h^2 on a smooth surface). CPU only. Not advised on a calibrated market grid: where the local vol's slope is steep at the edge of the quoted strikes, it makes the levels' coupling worse (blueprint WP 26 §9.2).
              * @default false
              */
             milstein: boolean;

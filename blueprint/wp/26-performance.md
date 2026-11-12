@@ -1088,17 +1088,54 @@ Measured, one thread, Milstein local vol, cost in model steps:
 prices equal within error in every row.)
 
 Acceptance: met on the smooth surface (slope −1.01 against −2.00, better
-than Giles & Waterhouse's ~−1.5); not met on the toy skewed grid, where
-MLQMC is a constant 15–25× cheaper than MLMC with the same slope. That grid
-has **5 strike nodes** and an extreme skew, so its bilinear kinks (∂σ/∂S
-jumps at each node) are large. The production grid is 100 strikes x 50
-maturities over ±0.6 log-moneyness (`market_snapshot.N_STRIKES`), sampled
-from smooth SVI slices through Dupire: its kinks are far smaller and **their
-effect on beta and on the MLQMC slope is not measured yet** -- the next
-measurement, on a calibrated grid from the database. If it confirms an
-effect, the lever is to read σ_loc from the SVI parameters directly rather
-than a sampled grid (or a smooth interpolation of it), checked against the
-calibration.
+than Giles & Waterhouse's ~−1.5); not met on the toy skewed grid (5 strike
+nodes, extreme skew), where MLQMC is a constant 15–25× cheaper than MLMC
+with the same slope.
+
+### 9.2 Measured on SPY's production grid (2026-11-12)
+
+The grid the API calibrates (`market_snapshot.local_vol_market`, snapshot of
+2026-11-11): SVI slices through Dupire, sampled on 100 strikes x 50
+maturities, spot 759.8. One-year ATM call and a 12-fixing monthly Asian,
+monthly level 0, one thread.
+
+**The interior bilinear kinks are not the problem.** The jump of S ∂σ/∂S
+from one strike node to the next is 0.02–0.03 at 6 months and 1 year, 0.14
+at 3 months. **The strike grid's edges are.** It covers only 608–848, −20 %
+to +11 % of the spot (the configured ±0.6 log-moneyness is cut to the quoted
+range); at its left edge σ_loc is already 36–53 % with S ∂σ/∂S between −1.1
+and −2.3, and the flat extrapolation beyond drops that slope to 0 -- a large
+kink many one-year paths cross.
+
+| | beta, log-Euler | beta, Milstein |
+|---|---|---|
+| Vanilla | 0.85 | **0.41**, level variances erratic (49, 77, 586, 19, 24): heavy tails |
+| Asian | 1.04 | 0.91 |
+
+Milstein's term ½ σ (S ∂σ/∂S) dt (z² − 1) is large where the slope is steep
+and switches off past the edge, so fine and coarse paths on either side of it
+get very different corrections: **on market grids Milstein makes the coupling
+worse**. With it, MLQMC lost its advantage on the vanilla (cost 2.8e7
+against MLMC's 1.25e7 at eps = 0.2) and its prices drifted from MLMC's by
+1.5–2 standard errors. With log-Euler:
+
+| Log-Euler, SPY | MLMC | MLQMC | Slopes, MLMC / MLQMC |
+|---|---|---|---|
+| Vanilla, eps = 0.1 (0.19 % of the price) | 1.9 s | **0.22 s** | −1.58 / −1.22 |
+| Asian, eps = 0.1 | 7.2 s | **1.2 s** | −2.01 / −2.05 |
+
+Prices agree within error throughout. On the vanilla the levels stop at 2
+(weekly steps): SPY's time-step bias is below eps / sqrt(2) there, most of
+the gain is QMC's.
+
+Conclusions: (1) for market grids, MLQMC with log-Euler (6–9× over MLMC);
+Milstein stays opt-in and is not advised there, said in the API's
+description; (2) the narrow, flat-extrapolated strike range is a property of
+the local-vol calibration, not of MLMC, and affects every local-vol price
+whose paths leave it: a smooth extrapolation of σ_loc beyond the quoted
+strikes (continuous slope, decaying to flat) would serve both, to decide
+with the calibration's owner; (3) β = 2 needs a σ smooth across the paths'
+range, as the smooth surface showed.
 
 Owen's hash scrambling against the digital shift: no consistent gain
 (costs within a factor 0.3–3 either way across the rows), as WP 19 §12.
