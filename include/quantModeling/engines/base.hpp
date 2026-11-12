@@ -37,5 +37,13 @@ namespace quantModeling
         [[noreturn]] void unsupported(const char *instName);
     };
 
+    struct VanillaOption;
+
+    /// The checks of an engine that prices a vanilla at its one maturity:
+    /// payoff and exercise set, one date, positive maturity, notional and
+    /// strike. With `european_only`, any other exercise type is refused with
+    /// that message (UnsupportedInstrument).
+    void validate_single_maturity_vanilla(const VanillaOption &opt, const char *european_only = nullptr);
+
 } // namespace quantModeling
 #endif
