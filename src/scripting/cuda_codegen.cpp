@@ -67,6 +67,7 @@ namespace quantModeling::scripting
                 case Op::Spot:
                 case Op::Df:
                 case Op::Surv:
+                case Op::Num:
                     return {0, 1, 0, 0};
                 case Op::Add:
                 case Op::Sub:
@@ -352,6 +353,9 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                         o << s(t) << " = df[" << in.a << "];";
                         break;
                     case Op::Surv: // refused above (Program::has_survival)
+                        break;
+                    case Op::Num:
+                        o << s(t) << " = num;";
                         break;
                     case Op::Add:
                         o << a << " = __dadd_rn(" << a << ", " << b << ");";

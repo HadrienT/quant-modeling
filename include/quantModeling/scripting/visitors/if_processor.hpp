@@ -43,8 +43,9 @@ namespace quantModeling::scripting
       private:
         static void collect_assigned(const Node &node, std::set<std::size_t> &out)
         {
-            if (const auto *assign = dynamic_cast<const NodeAssign *>(&node))
+            if (dynamic_cast<const NodeAssign *>(&node) || dynamic_cast<const NodeControlPays *>(&node))
             {
+                const Node *assign = &node;
                 const auto &var =
                     static_cast<const NodeVar &>(*assign->arguments[0]);
                 out.insert(var.index);

@@ -329,6 +329,14 @@ namespace quantModeling::scripting
             if (!suppress_payoff_)
                 payoff_ += value / (*scenario_)[event_index_].numeraire;
         }
+        void visit(const NodeControlPays &n) override
+        {
+            n.arguments[1]->accept(*this);
+            const T value = pop();
+            const auto &var = static_cast<const NodeVar &>(*n.arguments[0]);
+            if (!suppress_payoff_)
+                variables_[var.index] = variables_[var.index] + value / (*scenario_)[event_index_].numeraire;
+        }
         void visit(const NodeIf &n) override
         {
             const auto *cond =

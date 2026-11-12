@@ -156,6 +156,11 @@ namespace quantModeling::scripting
                     // Program::has_survival.
                     --sp;
                     break;
+                case Op::Num:
+                    // Only controlPays reads it, into a variable no payoff
+                    // reads: its adjoint is zero.
+                    --sp;
+                    break;
 
                 case Op::Add:
                 {

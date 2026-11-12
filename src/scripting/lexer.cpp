@@ -34,7 +34,7 @@ namespace quantModeling::scripting
         /// Keyword / builtin lookup on an already-lowercased spelling.
         TokenKind keyword_kind(const std::string &lowered, bool &is_keyword)
         {
-            static const std::array<std::pair<const char *, TokenKind>, 22> table{
+            static const std::array<std::pair<const char *, TokenKind>, 23> table{
                 {{"if", TokenKind::If},
                  {"then", TokenKind::Then},
                  {"else", TokenKind::Else},
@@ -54,6 +54,7 @@ namespace quantModeling::scripting
                  {"df", TokenKind::Df},
                  {"survivalabove", TokenKind::SurvivalAbove},
                  {"survivalbelow", TokenKind::SurvivalBelow},
+                 {"controlpays", TokenKind::ControlPays},
                  {"schedule", TokenKind::Schedule},
                  {"exercise", TokenKind::Exercise},
                  {"call", TokenKind::Call}}};

@@ -278,10 +278,20 @@ namespace quantModeling::scripting
             inner = parse_if();
         else if (check(TokenKind::Pays))
             inner = parse_pays();
+        else if (check(TokenKind::ControlPays))
+        {
+            advance();
+            auto var = std::make_unique<NodeVar>();
+            var->name = NodeControlPays::kControlVariable;
+            auto node = std::make_unique<NodeControlPays>();
+            node->arguments.push_back(std::move(var));
+            node->arguments.push_back(parse_expr());
+            inner = std::move(node);
+        }
         else if (check(TokenKind::Identifier))
             inner = parse_assignment();
         else
-            fail("expected a statement: an assignment, 'pays', or 'if'",
+            fail("expected a statement: an assignment, 'pays', 'controlPays', or 'if'",
                  current());
 
         if (!check(TokenKind::Newline) && !check(TokenKind::Else) &&

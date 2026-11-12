@@ -362,6 +362,7 @@ if(QM_BUILD_TESTS)
     tests/testTimeline.cpp
     tests/testSimModelClone.cpp
     tests/testBarrierMonitoring.cpp
+    tests/testAnalyticControls.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp
     tests/testScriptDomain.cpp

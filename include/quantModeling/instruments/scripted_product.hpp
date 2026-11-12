@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -89,6 +90,12 @@ namespace quantModeling
         /// (tests/testScriptBytecode.cpp); the tree evaluators remain the
         /// oracle, and the bytecode is what the GPU runs.
         bool bytecode = true;
+        /// The expectation of the script's `controlPays` cash flows (their
+        /// sum deflated, as a price), when the caller knows it in closed
+        /// form under the model it prices with (WP 26 P2): the engine then
+        /// uses them as a control variate. Without it, controlPays is
+        /// computed and ignored.
+        std::optional<double> control_mean{};
     };
 
     /**
@@ -141,6 +148,10 @@ namespace quantModeling
             scripting::VarIndexer indexer;
             indexer.index(events);
             variable_names_ = indexer.names();
+            for (std::size_t v = 0; v < variable_names_.size(); ++v)
+                if (variable_names_[v] == scripting::NodeControlPays::kControlVariable)
+                    control_index_ = static_cast<std::ptrdiff_t>(v);
+            control_mean_ = settings.control_mean;
 
             scripting::ConstCondProcessor().process(events);
             scripting::IfProcessor().process(events);
@@ -233,6 +244,27 @@ namespace quantModeling
                 compiled_ = true;
                 batchable_ = program_.batchable();
             }
+        }
+
+        /// The script's controlPays cash flows as a control variate, when
+        /// ScriptSettings::control_mean gave their expectation.
+        bool analytic_control(Real &mean) const override
+        {
+            if (control_index_ < 0 || !control_mean_)
+                return false;
+            mean = *control_mean_;
+            return true;
+        }
+
+        Real control_value(const typename ISimulatableProduct<T>::PayoffState *state) const override
+        {
+            if (control_index_ < 0)
+                return 0.0;
+            const auto v = static_cast<std::size_t>(control_index_);
+            if (!compiled_)
+                return static_cast<Real>(evaluator_->variables()[v]);
+            const auto *b = state ? static_cast<const MachineBuffers *>(state) : &buffers_;
+            return static_cast<Real>(b->vars[v]);
         }
 
         /// The script has exercise() or call(): it prices only once an
@@ -587,6 +619,8 @@ namespace quantModeling
         std::size_t n_underlyings_ = 1;
         scripting::ScriptAnalysis analysis_;
         std::vector<std::string> variable_names_;
+        std::ptrdiff_t control_index_ = -1; ///< the controlPays variable, -1 without
+        std::optional<double> control_mean_;
         std::vector<std::string> labels_{"price"};
         mutable std::unique_ptr<scripting::Evaluator<T>>
             evaluator_; ///< per-path state (§5.4); hard or fuzzy

@@ -266,6 +266,9 @@ Semantics you must respect:
   also has spot(0) and spot(1). Performances of several underlyings are
   ratios to their own initial levels (s0 = spot(0), s1 = spot(1) at the first
   event); min and max take two arguments, so nest them for three or more.
+- `controlPays expr` also exists: it declares a control variate whose
+  expectation a product builder knows in closed form. This page cannot give
+  that expectation, so it has no effect here: never write it.
 - No rates or forward accessors (no libor, no fwd), no loops, no `elseif`, no
   functions beyond the list above and exercise() / call() (no pow, no
   normcdf: use ^). Nest an if

@@ -60,6 +60,11 @@ namespace quantModeling::scripting
                 out += pad(depth) + "pays " + expr(*p->arguments[0]) + '\n';
                 return;
             }
+            if (const auto *c = dynamic_cast<const NodeControlPays *>(&inner))
+            {
+                out += pad(depth) + "controlPays " + expr(*c->arguments[1]) + '\n';
+                return;
+            }
             if (const auto *iff = dynamic_cast<const NodeIf *>(&inner))
             {
                 out += pad(depth) + "if " + expr(*iff->arguments[0]) + " then\n";

@@ -53,6 +53,8 @@ namespace quantModeling::scripting
                 return "'survivalAbove'";
             case TokenKind::SurvivalBelow:
                 return "'survivalBelow'";
+            case TokenKind::ControlPays:
+                return "'controlPays'";
             case TokenKind::Schedule:
                 return "'schedule'";
             case TokenKind::Exercise:

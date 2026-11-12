@@ -41,6 +41,7 @@ namespace quantModeling::scripting
         Spot,  ///< spots[a] of the current event
         Df,    ///< discounts[a] of the current event
         Surv,  ///< survivals[a] of the current event (survivalAbove/Below, WP 26 P2)
+        Num,   ///< the current event's numeraire (controlPays, WP 26 P2)
         // arithmetic and functions (pop operands, push result)
         Add,
         Sub,
@@ -271,6 +272,9 @@ namespace quantModeling::scripting
                     break;
                 case Op::Surv:
                     S[sp++] = survivals[in.a];
+                    break;
+                case Op::Num:
+                    S[sp++] = numeraire;
                     break;
 
                 case Op::Add:
@@ -706,6 +710,11 @@ namespace quantModeling::scripting
                 case Op::Surv:
                     for (int l = 0; l < W; ++l)
                         push[l] = survivals[l][in.a];
+                    ++sp;
+                    break;
+                case Op::Num:
+                    for (int l = 0; l < W; ++l)
+                        push[l] = numeraire[l];
                     ++sp;
                     break;
                 case Op::Add:

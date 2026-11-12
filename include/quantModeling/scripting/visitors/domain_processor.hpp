@@ -82,6 +82,13 @@ namespace quantModeling::scripting
                     var_domain_[var.index], domain_of(*assign->arguments[1]));
                 return;
             }
+            if (const auto *control = dynamic_cast<const NodeControlPays *>(&node))
+            {
+                // A running sum of deflated amounts: no script reads it.
+                const auto &var = static_cast<const NodeVar &>(*control->arguments[0]);
+                var_domain_[var.index] = Domain::real_line();
+                return;
+            }
             for (const ExprTree &child : node.arguments)
                 if (child)
                     collect(*child);

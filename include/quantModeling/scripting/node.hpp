@@ -258,6 +258,20 @@ namespace quantModeling::scripting
         bool issuer = false;
     };
 
+    /// `controlPays expr`: a cash flow of the script's control payoff, whose
+    /// expectation the caller knows in closed form (WP 26 P2) -- the
+    /// geometric Asian of an arithmetic one, the vanilla of a barrier. It
+    /// accumulates expr / numeraire, like `pays`, into a hidden variable;
+    /// the engine regresses the price on it. arguments[0] is that variable
+    /// (a NodeVar named kControlVariable, which no script can spell: `#`
+    /// starts a comment), arguments[1] the amount -- NodeAssign's layout, so
+    /// that the variable passes (VarIndexer, IfProcessor, the fuzzy ifs'
+    /// blends) treat it as the assignment it is.
+    struct NodeControlPays final : NodeT<NodeControlPays>
+    {
+        static constexpr const char *kControlVariable = "#control";
+    };
+
     struct NodeAnd final : NodeT<NodeAnd>
     {
     };

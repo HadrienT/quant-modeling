@@ -67,6 +67,7 @@ namespace quantModeling::scripting
 
         virtual void visit(Ref<NodeAssign> n) { visit_children(n); }
         virtual void visit(Ref<NodePays> n) { visit_children(n); }
+        virtual void visit(Ref<NodeControlPays> n) { visit_children(n); }
         virtual void visit(Ref<NodeIf> n) { visit_children(n); }
 
         virtual void visit(Ref<NodeCollect> n) { visit_children(n); }

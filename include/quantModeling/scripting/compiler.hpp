@@ -134,6 +134,18 @@ namespace quantModeling::scripting
             n.arguments[0]->accept(*this);
             emit(Op::Pays), pop();
         }
+        /// variables[c] = variables[c] + amount / numeraire, as the
+        /// evaluator computes it.
+        void visit(const NodeControlPays &n) override
+        {
+            const auto index = static_cast<std::int32_t>(static_cast<const NodeVar &>(*n.arguments[0]).index);
+            emit(Op::Var, index), push();
+            n.arguments[1]->accept(*this);
+            emit(Op::Num), push();
+            emit(Op::Div), pop(), pop(), push();
+            emit(Op::Add), pop(), pop(), push();
+            emit(Op::Assign, index), pop();
+        }
         void visit(const NodeIf &n) override
         {
             const auto *cond = dynamic_cast<const NodeComparison *>(n.arguments[0].get());

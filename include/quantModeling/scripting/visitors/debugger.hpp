@@ -82,6 +82,7 @@ namespace quantModeling::scripting
 
         void visit(const NodeAssign &n) override { node("Assign", n); }
         void visit(const NodePays &n) override { node("Pays", n); }
+        void visit(const NodeControlPays &n) override { node("ControlPays", n); }
         void visit(const NodeIf &n) override
         {
             node("If firstElse=" + std::to_string(n.firstElse), n);
