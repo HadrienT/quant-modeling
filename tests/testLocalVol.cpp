@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include "quantModeling/pricers/registry.hpp"
-#include "quantModeling/engines/mc/local_vol.hpp"
+#include "quantModeling/models/volatility.hpp"
+#include "quantModeling/pricers/adapters/equity_vanilla_lv.hpp"
+#include "quantModeling/utils/rng.hpp"
 
 #include <cmath>
 #include <vector>
@@ -68,8 +70,8 @@ namespace quantModeling
         const auto lv = price_local_vol_mc(in);
         const auto ana = priceAnalytic(true);
 
-        EXPECT_NEAR(lv.npv, ana.npv, ana.npv * 0.08)
-            << "Flat local-vol MC call should match BS analytic within 8%";
+        // Log-Euler is exact for a constant volatility: no bias, only noise.
+        EXPECT_NEAR(lv.npv, ana.npv, 4.0 * lv.mc_std_error);
     }
 
     TEST(LocalVolMC, FlatSurfaceMatchesBSPut)
@@ -78,7 +80,7 @@ namespace quantModeling
         const auto lv = price_local_vol_mc(in);
         const auto ana = priceAnalytic(false);
 
-        EXPECT_NEAR(lv.npv, ana.npv, ana.npv * 0.08);
+        EXPECT_NEAR(lv.npv, ana.npv, 4.0 * lv.mc_std_error);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -177,7 +179,101 @@ namespace quantModeling
     {
         auto in = makeFlatLocalVolInput(true);
         const auto res = price_local_vol_mc(in);
-        EXPECT_NE(res.diagnostics.find("LocalVolMC"), std::string::npos);
+        EXPECT_NE(res.diagnostics.find("local-vol vanilla call, 252 steps"), std::string::npos)
+            << res.diagnostics;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  A skewed surface: parity, and an independent hand-written oracle
+    // ─────────────────────────────────────────────────────────────────────────
+
+    namespace
+    {
+        // Sticky-strike skew rising into the wings, with a term structure.
+        LocalVolInput makeSkewedInput(bool is_call)
+        {
+            LocalVolInput in = makeFlatLocalVolInput(is_call, sigma, 1 << 17, 7);
+            in.strike = 95.0;
+            in.compute_greeks = false;
+            in.n_steps_per_year = 52;
+            in.K_grid = {50.0, 80.0, 100.0, 120.0, 200.0};
+            in.T_grid = {0.0, 0.5, 2.0};
+            in.sigma_loc_flat = {0.45, 0.40, 0.35,  // K = 50
+                                 0.30, 0.28, 0.26,  // K = 80
+                                 0.21, 0.20, 0.19,  // K = 100
+                                 0.17, 0.17, 0.16,  // K = 120
+                                 0.15, 0.15, 0.15}; // K = 200
+            return in;
+        }
+
+        // The engine retired by WP 26 P3, kept here as the oracle: log-Euler
+        // on GridLocalVol, PCG32 + Box-Muller, antithetic pairs.
+        std::pair<Real, Real> hand_written_euler(const LocalVolInput &in, int pairs, std::uint64_t seed)
+        {
+            const GridLocalVol lv(in.K_grid, in.T_grid, in.sigma_loc_flat, 0.0);
+            const int steps = std::max(1, static_cast<int>(std::ceil(in.maturity * in.n_steps_per_year)));
+            const Real dt = in.maturity / steps, sqdt = std::sqrt(dt), df = std::exp(-in.rate * in.maturity);
+            Pcg32 rng(seed, 54);
+            NormalBoxMuller gauss;
+            Real mean = 0.0, m2 = 0.0;
+            for (int p = 0; p < pairs; ++p)
+            {
+                Real s[2] = {in.spot, in.spot};
+                for (int k = 0; k < steps; ++k)
+                {
+                    const Real z = gauss(rng), t = k * dt;
+                    for (int a = 0; a < 2; ++a)
+                    {
+                        const Real v = lv.value(s[a], t);
+                        s[a] *= std::exp((in.rate - in.dividend - 0.5 * v * v) * dt + v * sqdt * (a ? -z : z));
+                    }
+                }
+                Real x = 0.0;
+                for (int a = 0; a < 2; ++a)
+                    x += 0.5 * df * (in.is_call ? std::max(s[a] - in.strike, 0.0) : std::max(in.strike - s[a], 0.0));
+                const Real d = x - mean;
+                mean += d / (p + 1);
+                m2 += d * (x - mean);
+            }
+            return {mean, std::sqrt(m2 / (pairs - 1) / pairs)};
+        }
+    } // namespace
+
+    TEST(LocalVolMC, SkewedSurfaceMatchesTheHandWrittenEuler)
+    {
+        const LocalVolInput in = makeSkewedInput(false);
+        const PricingResult script = price_local_vol_mc(in);
+        const auto [oracle, oracle_se] = hand_written_euler(in, 200000, 11);
+        EXPECT_NEAR(script.npv, oracle, 4.0 * std::hypot(script.mc_std_error, oracle_se))
+            << "script " << script.npv << " +- " << script.mc_std_error << ", oracle " << oracle << " +- "
+            << oracle_se;
+    }
+
+    TEST(LocalVolMC, SkewedSurfaceKeepsPutCallParity)
+    {
+        // Log-Euler with the -v^2/2 drift keeps the discounted spot a
+        // martingale step by step, whatever the surface: C - P is the forward.
+        const PricingResult call = price_local_vol_mc(makeSkewedInput(true));
+        const PricingResult put = price_local_vol_mc(makeSkewedInput(false));
+        const Real forward = S0 * std::exp(-q * T) - 95.0 * std::exp(-r * T);
+        EXPECT_NEAR(call.npv - put.npv, forward, 4.0 * std::hypot(call.mc_std_error, put.mc_std_error));
+    }
+
+    TEST(LocalVolMC, VegaIsTheParallelShiftOfTheGrid)
+    {
+        // The adjoint vega sums every grid point's sensitivity: the price
+        // under the grid shifted by +-0.5 vol point, common Sobol points.
+        LocalVolInput in = makeSkewedInput(true);
+        in.compute_greeks = true;
+        const PricingResult res = price_local_vol_mc(in);
+        LocalVolInput up = makeSkewedInput(true), down = makeSkewedInput(true);
+        for (Real &v : up.sigma_loc_flat)
+            v += 0.005;
+        for (Real &v : down.sigma_loc_flat)
+            v -= 0.005;
+        const Real fd = (price_local_vol_mc(up).npv - price_local_vol_mc(down).npv) / 0.01;
+        ASSERT_TRUE(res.greeks.vega.has_value());
+        EXPECT_NEAR(*res.greeks.vega, fd, 0.02 * fd);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

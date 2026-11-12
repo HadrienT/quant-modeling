@@ -4,7 +4,7 @@
 #include "common.hpp"
 
 #include "quantModeling/pricers/inputs.hpp"
-#include "quantModeling/engines/mc/local_vol.hpp"
+#include "quantModeling/pricers/adapters/equity_vanilla_lv.hpp"
 #include "quantModeling/engines/mc/path_simulation.hpp"
 #include "quantModeling/market/heston_calibration.hpp"
 #include "quantModeling/market/sabr_calibration.hpp"
