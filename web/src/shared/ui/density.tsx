@@ -91,6 +91,42 @@ export function Uncertainty({
 	);
 }
 
+/* ── DiscretisationBias ────────────────────────────────────────────────── */
+/**
+ * The time-step bias of a Monte-Carlo price, next to its standard error,
+ * which leaves it out (blueprint WP 26 §9.4): estimated by the multilevel
+ * run's bias test or by halving a plain run's steps; 0 for a model simulated
+ * exactly between the product's dates. Nothing when not estimated.
+ */
+export function DiscretisationBias({
+	bias,
+	value,
+	magnitude = "price",
+}: {
+	bias: number | null | undefined;
+	value: number | null | undefined;
+	magnitude?: Magnitude;
+}) {
+	if (bias == null || Number.isNaN(bias)) return null;
+	if (bias === 0) {
+		return (
+			<span className="font-mono text-2xs text-ink-muted">
+				Time-step bias: none (exact simulation between dates)
+			</span>
+		);
+	}
+	const relative = value ? Math.abs(bias / value) : 0;
+	return (
+		<span
+			className="font-mono text-2xs text-ink-muted"
+			title="Estimated discretisation (time-step) bias: not included in the ± standard error"
+		>
+			Time-step bias ≈ {formatNumber(bias, magnitude)}
+			{relative > 0 && ` (${(relative * 100).toFixed(2)} %)`}, not in the ±
+		</span>
+	);
+}
+
 /* ── DeltaBadge ────────────────────────────────────────────────────────── */
 export function DeltaBadge({
 	value,

@@ -233,7 +233,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &xi_values,
                              const std::map<std::string, double> &hull_white,
                              const std::vector<double> &curve_times,
-                             const std::vector<double> &curve_dfs, std::size_t threads)
+                             const std::vector<double> &curve_dfs, std::size_t threads,
+                             double mlmc_eps, bool milstein, double mlmc_rel_eps, bool bias_estimate)
 {
     using namespace quantModeling;
 
@@ -270,6 +271,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
     spec.T_grids = T_grids;
     spec.sigma_loc_flats = sigma_loc_flats;
     spec.max_dt = max_dt;
+    // WP 26 P4b: the Milstein step under local vol (CPU only).
+    spec.milstein = milstein;
     if (model == "rough_bergomi")
     {
         const auto get = [&](const char *k, double fallback)
@@ -446,6 +449,10 @@ static py::dict price_script(const std::string &script, double spot, double rate
                                "pseudo-random instead";
         if (importance_sampling)
             res.diagnostics += " | importance sampling is not available under AAD";
+        if (mlmc_eps > 0.0 || mlmc_rel_eps > 0.0)
+            res.diagnostics += " | multilevel Monte Carlo is not available under AAD -- used the plain engine";
+        if (bias_estimate)
+            res.diagnostics += " | discretisation bias not estimated under AAD";
         py::dict out = pricing_result_to_dict(res);
         out["warnings"] = advice_to_py(aad_advice);
         return out;
@@ -482,6 +489,15 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              : device == "auto" ? ComputeDevice::Auto
                                                 : ComputeDevice::Cpu;
         settings.mc_rng = (rng == "philox") ? RngKind::Philox : RngKind::Pcg32;
+        // WP 26 P4c, §9.4: multilevel Monte Carlo over the time step, to an
+        // absolute target or a share of the price (floored at 1e-5 of the
+        // spot, so that an option worth nothing still stops).
+        settings.mc_mlmc_eps = mlmc_eps;
+        settings.mc_mlmc_rel_eps = mlmc_rel_eps;
+        if (mlmc_rel_eps > 0.0 && !(mlmc_eps > 0.0))
+            settings.mc_mlmc_eps = 1e-5 * (spots.empty() ? spot : spots.front());
+        // ... and the plain run's discretisation bias.
+        settings.mc_bias_estimate = bias_estimate;
 
         if (product.has_exercise())
             lsm_note = " | " + fit_exercise_policy(product, *sim_model, paths, seed_value).note();
@@ -506,6 +522,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                       " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
     res.device = mc->device;
     res.gpus = mc->gpus;
+    res.discretisation_bias = mc->discretisation_bias;
     py::dict out = pricing_result_to_dict(res);
     out["warnings"] = advice_to_py(advice);
     return out;
@@ -602,13 +619,23 @@ void register_scripting(py::module_ &m)
           py::arg("hull_white") = std::map<std::string, double>{},
           py::arg("curve_times") = std::vector<double>{},
           py::arg("curve_dfs") = std::vector<double>{}, py::arg("threads") = 0,
+          py::arg("mlmc_eps") = 0.0, py::arg("milstein") = false, py::arg("mlmc_rel_eps") = 0.0,
+          py::arg("bias_estimate") = false,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. threads: CPU threads of a CPU run "
           "(0, the default: the available CPUs, at most 16); Philox, Sobol and "
           "stratified runs give the same bits on any number of them, a PCG32 "
           "run and a script with early exercise stay on one thread "
           "(blueprint/wp/26-performance.md, P1e). Raises on a malformed script, with "
-          "the offending line and column in the message. greeks_method: "
+          "the offending line and column in the message. mlmc_eps > 0: "
+          "multilevel Monte Carlo over the time step to that root-mean-square "
+          "error, when the script suits it (local vol, one payoff, no early "
+          "exercise; CPU, pseudo-random; blueprint/wp/26-performance.md §8); "
+          "milstein: the Milstein step under local vol. mlmc_rel_eps > 0: "
+          "the multilevel target as a share of the price (floored at mlmc_eps, "
+          "or 1e-5 of the spot). bias_estimate: estimate the discretisation "
+          "bias of a plain run (steps halved; 0 for a model simulated exactly), "
+          "returned as discretisation_bias. greeks_method: "
           "'none' (default) or 'aad' -- every model parameter's sensitivity "
           "(blueprint/wp/17-aad.md), at roughly 3-5x one price's cost "
           "regardless of how many; on the GPU (device 'gpu' or 'auto') by "

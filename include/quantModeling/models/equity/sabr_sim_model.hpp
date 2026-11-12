@@ -83,7 +83,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         SABRSimModel(const SABRSimModel &other)
-            : f0_(other.f0_), r_(other.r_), alpha0_(other.alpha0_), rho_(other.rho_), nu_(other.nu_), beta_(other.beta_), max_dt_(other.max_dt_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : f0_(other.f0_), r_(other.r_), alpha0_(other.alpha0_), rho_(other.rho_), nu_(other.nu_), beta_(other.beta_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -95,7 +95,7 @@ namespace quantModeling
         {
             refuse_barrier_monitoring(defline, "SABRSimModel");
             timeline_ = canonical_timeline(product_timeline);
-            sim_timeline_ = add_monitoring_steps(timeline_, max_dt_);
+            sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
@@ -104,6 +104,16 @@ namespace quantModeling
             // F's own Euler update, one (via the correlation mix) for
             // alpha's exact lognormal update.
             sim_dim_ = 2 * sim_timeline_.size();
+        }
+
+        /// Multilevel Monte Carlo (WP 26 §9.5): each max_dt step split into
+        /// r -- Euler on the forward and the log-normal vol.
+        bool set_refinement(int r) override
+        {
+            if (r < 1)
+                return false;
+            refinement_ = r;
+            return true;
         }
 
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
@@ -180,6 +190,7 @@ namespace quantModeling
         T f0_{}, r_{}, alpha0_{}, rho_{}, nu_{};
         Real beta_ = 0.5;
         Time max_dt_;
+        int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
 
         TimeLine timeline_;
         TimeLine sim_timeline_;

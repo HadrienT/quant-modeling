@@ -120,6 +120,9 @@ namespace quantModeling
         const TimeLine &sim_timeline() const override { return timeline_; }
         std::size_t sim_dim() const override { return sim_dim_; }
 
+        /// Exact log-normal steps between the product's dates (WP 26 §9.4).
+        bool exact_between_dates() const override { return true; }
+
         BrownianLayout brownian_layout() const override
         {
             BrownianLayout l;

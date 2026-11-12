@@ -13,7 +13,8 @@ namespace quantModeling
 
     std::vector<std::size_t> select_surface_slices(const std::vector<SVISliceCalibration> &slices,
                                                    const std::vector<std::size_t> &n_quotes, Real k_min,
-                                                   Real k_max, const SurfaceSliceSelection &selection)
+                                                   Real k_max, const SurfaceSliceSelection &selection,
+                                                   const std::vector<QuotedBand> *bands)
     {
         std::vector<std::size_t> candidates;
         for (std::size_t i = 0; i < slices.size(); ++i)
@@ -46,8 +47,14 @@ namespace quantModeling
             {
                 const SVISliceCalibration &shorter = slices[candidates[i]];
                 const Score through{best[i].first + 1, best[i].second + quotes};
+                Real lo = k_min, hi = k_max;
+                if (bands != nullptr)
+                {
+                    lo = std::max((*bands)[candidates[i]].lo, (*bands)[candidates[j]].lo);
+                    hi = std::min((*bands)[candidates[i]].hi, (*bands)[candidates[j]].hi);
+                }
                 if (through <= best[j] || longer.ttm < (1.0 + selection.min_relative_gap) * shorter.ttm ||
-                    !svi_slices_are_calendar_arbitrage_free(shorter, longer, k_min, k_max))
+                    !(hi > lo) || !svi_slices_are_calendar_arbitrage_free(shorter, longer, lo, hi))
                     continue;
                 best[j] = through;
                 previous[j] = i;
@@ -115,68 +122,66 @@ namespace quantModeling
             reports.push_back(std::move(report));
         }
 
-        // Intersection of the log-moneyness ranges the slices of at least
-        // min_ttm actually have quotes over, each out to its reach. A fixed
-        // k range that looks reasonable for a one-year slice can be a wild
-        // extrapolation for a one-week one: svi_implied_vol = sqrt(w(k)/T)
-        // divides by a tiny T, so whatever wing curvature exists at the edge
-        // of the requested range is massively amplified on the shortest
-        // maturity. Found against a real AAPL chain (a ~6-day slice implying
-        // ~600% vol at k=0.6), not hypothesised. The slices below min_ttm
-        // stay out of the surface altogether, and a slice quoted past its
-        // reach does not narrow the grid -- the few-day slices, quoted over
-        // a few percent of moneyness, used to shrink the whole grid to it.
-        const auto long_enough = std::count_if(maturities.begin(), maturities.end(),
-                                               [&](Real t)
-                                               { return t >= selection.min_ttm; });
-        const Real range_ttm = long_enough >= 2 ? selection.min_ttm : -std::numeric_limits<Real>::infinity();
-        Real observed_k_min = -std::numeric_limits<Real>::infinity();
-        Real observed_k_max = std::numeric_limits<Real>::infinity();
+        // A band per slice (WP 26 §9.3): its quoted log-moneyness range.
+        // A fixed k range that looks reasonable
+        // for a one-year slice is a wild extrapolation for a one-week one:
+        // svi_implied_vol = sqrt(w(k)/T) divides by a tiny T, so whatever
+        // wing curvature exists past the quotes is massively amplified on
+        // the shortest maturity (found against a real AAPL chain: a ~6-day
+        // slice implying ~600 % vol at k = 0.6). The grid used to clamp
+        // every maturity to the intersection of the slices' ranges, so the
+        // narrowest short slice capped the long ones too (SPY: a three-week
+        // slice quoted to +8 % capped the two-year grid there). Now each
+        // maturity's local vol is computed on its own band only -- the
+        // intersection of the two slices it interpolates -- and the grid's
+        // strikes span the union.
+        std::vector<QuotedBand> bands;
         for (std::size_t i = 0; i < reports.size(); ++i)
         {
-            const auto &report = reports[i];
-            if (report.quotes.empty() || report.ttm < range_ttm)
-                continue;
-            const auto [lo, hi] = std::minmax_element(report.quotes.begin(), report.quotes.end(),
-                                                      [](const SVISliceQuote &a, const SVISliceQuote &b)
-                                                      { return a.log_moneyness < b.log_moneyness; });
-            const Real reach =
-                selection.reach_std_devs * std::sqrt(std::max(svi_total_variance(0.0, calibrations[i].params), 0.0));
-            if (lo->log_moneyness > -reach)
-                observed_k_min = std::max(observed_k_min, lo->log_moneyness);
-            if (hi->log_moneyness < reach)
-                observed_k_max = std::min(observed_k_max, hi->log_moneyness);
-        }
-
-        // Clamp the caller's requested range to the observed intersection,
-        // unless that intersection is degenerate (e.g. disjoint strike
-        // ranges across maturities) -- a real chain always has every slice
-        // quoted around the current spot, so this is a safety net, not the
-        // expected path.
-        if (observed_k_max > observed_k_min)
-        {
-            k_min = std::max(k_min, observed_k_min);
-            k_max = std::min(k_max, observed_k_max);
+            reports[i].band = quoted_band(reports[i].quotes, k_min, k_max);
+            bands.push_back(reports[i].band);
         }
 
         std::vector<bool> calendar_ok(calibrations.size() - 1);
         for (std::size_t i = 0; i + 1 < calibrations.size(); ++i)
-            calendar_ok[i] = svi_slices_are_calendar_arbitrage_free(
-                calibrations[i], calibrations[i + 1], k_min, k_max);
+        {
+            const Real lo = std::max(bands[i].lo, bands[i + 1].lo), hi = std::min(bands[i].hi, bands[i + 1].hi);
+            calendar_ok[i] = hi > lo && svi_slices_are_calendar_arbitrage_free(calibrations[i], calibrations[i + 1], lo, hi);
+        }
 
         std::vector<std::size_t> n_quotes;
         for (const auto &report : reports)
             n_quotes.push_back(report.n_quotes);
         std::vector<SVISliceCalibration> kept;
-        for (const std::size_t i : select_surface_slices(calibrations, n_quotes, k_min, k_max, selection))
+        std::vector<QuotedBand> kept_bands;
+        Real grid_k_min = std::numeric_limits<Real>::infinity(), grid_k_max = -std::numeric_limits<Real>::infinity();
+        for (const std::size_t i : select_surface_slices(calibrations, n_quotes, k_min, k_max, selection, &bands))
         {
             reports[i].in_surface = true;
             kept.push_back(calibrations[i]);
+            kept_bands.push_back(bands[i]);
+            grid_k_min = std::min(grid_k_min, bands[i].lo);
+            grid_k_max = std::max(grid_k_max, bands[i].hi);
+        }
+        if (grid_k_max > grid_k_min)
+        {
+            k_min = grid_k_min;
+            k_max = grid_k_max;
         }
 
+        // SVISurface sorts its slices by maturity: the bands follow them.
+        std::vector<std::size_t> order(kept.size());
+        for (std::size_t s = 0; s < order.size(); ++s)
+            order[s] = s;
+        std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b)
+                  { return kept[a].ttm < kept[b].ttm; });
+        std::vector<QuotedBand> sorted_bands;
+        for (const std::size_t s : order)
+            sorted_bands.push_back(kept_bands[s]);
+
         SVISurface surface(std::move(kept));
-        GridLocalVol grid = build_local_vol_grid(
-            surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, dupire_params);
+        GridLocalVol grid = build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
+                                                 dupire_params, &sorted_bands);
 
         VolSurfacePipelineResult result;
         result.cleaning_stats = raw_surface.stats();

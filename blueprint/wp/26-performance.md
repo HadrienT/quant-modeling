@@ -881,11 +881,80 @@ MLMC chose):
 | 0.01 | 4 | 1.4e8 | 8.3e8 | 5.8× | 9.0 s |
 | 0.005 | 7 | 9.5e8 | 2.7e10 | 28× | 58 s |
 
-Open for P4b: alpha estimated by regression over noisy level means swings
+Open for P4b (done, §8.6b): alpha estimated by regression over noisy level means swings
 (0.66 to 2.2 in the runs above), and the bias test divides by 2^alpha - 1; a
 large estimate stops adding levels early (eps = 0.01 stopped at level 4 with
 alpha 2.2). Giles's code has the same estimator; Milstein (beta = 2) and a
 floor or prior on alpha are the candidates, decided on measurements.
+
+### 8.6b P4b: Milstein for local vol, a robust alpha (done, 2026-11-12)
+
+**Milstein.** `mc::local_vol_milstein_step` (`models/equity/path_steps.hpp`)
+steps the log-spot X = ln S with the Milstein term of its diffusion
+b(X) = σ(e^X, t), b' = S ∂σ/∂S:
+X += (r − q − σ²/2) dt + σ √dt z + ½ σ (S ∂σ/∂S) dt (z² − 1). The slope comes
+from the Dupire grid's bilinear lookup (`mc::local_vol_with_slope`: the
+strike interpolation's slope blended in time, 0 outside the strike grid and
+where the floor binds). Opt-in (`LocalVolSimModel::set_milstein`,
+`ScriptModelSpec::milstein`): log-Euler stays the default, no bit moves. CPU
+only (the device steps log-Euler; `describe_device` refuses), and the
+deflated spot is no longer an exact martingale on the grid
+(`deflated_spot_mean` refuses, so the generic spot controls stay off).
+
+**alpha.** The regression now uses only the levels whose sample mean is
+resolved (|mean| > 2 standard errors), 1 (the weak order of Euler and
+Milstein) when fewer than two are. P4a's swings (0.66 to 2.2) came from
+regressing on means lost in their noise.
+
+Measured (`tests/testMlmc.cpp`):
+
+- smooth surface (σ linear in S, no grid node on the paths' range):
+  beta = 2.00 with Milstein, 1.02 with log-Euler;
+- Milstein-GBM test bed: MLMC cost against eps in log-log, slope −2.01
+  (Giles 2008, Theorem 3.1: O(eps^-2) when beta > gamma);
+- the toy skewed grid of §8.6a (5 strike nodes, 80 % to 10 % vol), whose
+  bilinear interpolation has large kinks at the strike nodes (∂σ/∂S jumps):
+  beta = 1.66 with Milstein. The production grid (100 x 50, from SVI) is not
+  measured yet (§9.1). Gains over plain
+  Monte Carlo at equal error, one thread:
+
+| eps | log-Euler MLMC | Milstein MLMC |
+|---|---|---|
+| 0.02 | 2.2× (1.6 s) | 10.5× (1.2 s) |
+| 0.01 | 28× (14.8 s) | 20× (5.1 s) |
+| 0.005 | 28× (59 s) | 38× (22 s) |
+
+With the robust alpha, log-Euler goes to level 7 at eps = 0.01 instead of
+stopping at 4 on a noisy estimate: dearer, but its bias is controlled.
+Milstein's level-0 bias is larger (0.078 against ~0.002 for log-Euler on
+level 1) and resolved, which is what makes its alpha stable (0.94–1.17).
+
+Left: Milstein for Heston and SLV (the doc's later decision, §8.5); beta on
+the production Dupire grid, to measure before any change to how σ_loc is
+read (§9.1).
+
+### 8.6c P4c: MLMC opt-in through the script engine (done, 2026-11-12)
+
+The maintainer chose opt-in (2026-11-12): the CPU pseudo-random MLMC is
+slower than the default Sobol/GPU route until P5/P6, so no default route
+moves; what it brings today is a controlled discretisation bias.
+
+- `PricingSettings::mc_mlmc_eps` (0: off), read by `simulate_script`. The
+  engine checks that the script suits it -- no early exercise, one payoff
+  label, a model that refines its grid -- and otherwise runs the usual route,
+  adding "(no multilevel Monte Carlo: <why>)" to the diagnostics. The
+  diagnostics of an MLMC run give the levels, paths per level, alpha, beta,
+  gamma, the target and the estimated remaining bias.
+- Bindings: `price_script(..., mlmc_eps=0.0, milstein=False)`; under AAD
+  greeks the plain engine runs, and says so.
+- API: `ScriptRequest.mlmc_eps` and `ScriptRequest.milstein` (price only;
+  `n_paths`, `sampler` and `device` are then ignored). The front end does not
+  expose them yet.
+- Registry routes (`price_by_script`) are unchanged: their greeks need the
+  adjoint and the common-number differences, which MLMC does not give yet.
+
+Left in P4: the Dupire vanillas repriced within eps on a calibrated surface
+(acceptance of §8.6), Heston/SLV refinement, greeks per level, P4d (§8.7).
 
 ### 8.7 A second axis: approximate random variables (nested MLMC)
 
@@ -939,6 +1008,47 @@ digital (the hard case), against plain Monte-Carlo at equal RMS error; the
 estimator must equal plain Monte-Carlo within error, and the correction
 level's variance decay must be measured, not assumed.
 
+**Measured first (P4d, 2026-11-12): not worth doing on our paths.** The gain
+is bounded by Φ⁻¹'s share of a path. CPU, one thread, on the most favourable
+case, a Black-Scholes vanilla (one draw per path, an exact step):
+
+| | ns |
+|---|---|
+| Φ⁻¹, AS 241 (since P1i) | 12.5 per draw |
+| Φ⁻¹, piecewise-linear table, 1024 cells (the papers' kind of approximation) | 6.9 per draw |
+| One path through the generic engine, Sobol | 92 |
+
+A free Φ⁻¹ would save 13.5 % of the path, the table 6 %, before paying the
+correction level. The papers' 5–7× came from an Euler step whose inverse CDF
+dominated the cost; AS 241 (P1i) removed that on the CPU, and on the GPU the
+Halley step it replaced was the 37 % of the P1i ablations.
+
+**The full experiment, run anyway at the maintainer's request (2026-11-12).**
+`engines/mc/approx_inverse_cdf.hpp`: `PiecewiseLinearInverseCdf` (equal cells
+of p in [1/2, 1), mirrored; the last cell calls the exact Φ⁻¹, so the
+approximation stays bounded) and `simulate_approx_inverse_cdf` (the
+approximate level, the correction on the same uniforms, and plain exact
+paths, each timed). Gain = plain cost over two-level cost at equal RMS
+error with the optimal split, costs in wall time per sample (one thread,
+Black-Scholes, PCG32 uniforms):
+
+| Product | 256 cells | 1024 cells | 4096 cells | Correction variance, 256 → 4096 |
+|---|---|---|---|---|
+| Vanilla call | 1.15× | 1.17× | 1.12× | 4.2e-4 → 2.8e-5 (price variance 217) |
+| Digital (the "hard" case) | 1.17× | 1.24× | 1.19× | 0: no path flipped in 1e6 |
+| Arithmetic Asian, 52 weekly dates | 1.06× | 1.08× | 1.09× | 6.7e-5 → 3.0e-6 (price variance 65) |
+
+The two-level estimator equals plain Monte Carlo within error (tested). The
+digital is not hard here: the table's error near the threshold is ~1e-7, so
+paths do not flip; the correction is free, and the gain still stops at the
+13.5 % bound. Tests (`tests/testMlmc.cpp`): the table's accuracy and exact
+tail, the estimator unbiased, the correction's variance falling with the
+cells; no timing assertion (#223 is a flaky one).
+
+Conclusion: **8–24 %, not 5–7×**. Not wired into any route. To revisit only
+where draws dominate a path again (reduced precision on the GPU, many
+factors).
+
 ## 9. P5 — Multilevel quasi-Monte Carlo
 
 Each level's paths are Sobol points (Brownian bridge on the level's fine grid,
@@ -970,6 +1080,237 @@ diagnostics).
 
 Acceptance: measured complexity slope of MLQMC below MLMC's on the Milstein
 local-vol Asian and vanilla; same price within error.
+
+### 9.1 P5 done (2026-11-12)
+
+`engines/mc/mlqmc.hpp`: `simulate_mlqmc`. P4's levels and coupling
+(`LevelSampler`, whose sampling and evaluation are now separate), each level
+drawing points of R = 32 randomised Sobol sequences of its fine dimension,
+through a Brownian bridge on the fine grid (`BridgedGaussians` from
+`brownian_layout()`); the level's estimate is the mean of its replicate
+means, its variance their sample variance over R. N_l starts at 16 points a
+replicate and doubles on the level with the largest V_l / (C_l N_l) until
+sum V_l <= eps² / 2; the bias test is P4's. A level that needs more draws
+than the 21 201 Sobol dimensions is refused (`InvalidInput`), and the
+script engine's opt-in then falls back to MLMC and says so: the padding with
+pseudo-random dimensions of the design is not done.
+
+The opt-in of P4c (`mc_mlmc_eps`) now runs multilevel QMC when the sampler
+is Sobol (the default) and MLMC when it is pseudo-random.
+
+Measured, one thread, Milstein local vol, cost in model steps:
+
+| Case | eps | MLMC cost (time) | MLQMC cost (time) | Slopes, MLMC / MLQMC |
+|---|---|---|---|---|
+| Toy skewed grid (5 strikes, 80 % to 10 % vol), vanilla K = 95 | 0.005 | 3.2e8 (21.6 s) | 1.5e7 (0.89 s) | −2.07 / −2.11 |
+| Same toy grid, Asian on 12 monthly fixings | 0.005 | 1.5e8 (14.6 s) | 9.8e6 (0.70 s) | −2.05 / −2.17 |
+| Smooth surface (σ linear in S), vanilla | 0.0025 | 5.0e9 (306 s) | 6.8e6 (0.41 s) | −2.00 / **−1.01** |
+
+(slopes over eps = 0.04 … 0.005, and 0.02 … 0.0025 for the smooth surface;
+prices equal within error in every row.)
+
+Acceptance: met on the smooth surface (slope −1.01 against −2.00, better
+than Giles & Waterhouse's ~−1.5); not met on the toy skewed grid (5 strike
+nodes, extreme skew), where MLQMC is a constant 15–25× cheaper than MLMC
+with the same slope.
+
+### 9.2 Measured on SPY's production grid (2026-11-12)
+
+The grid the API calibrates (`market_snapshot.local_vol_market`, snapshot of
+2026-11-11): SVI slices through Dupire, sampled on 100 strikes x 50
+maturities, spot 759.8. One-year ATM call and a 12-fixing monthly Asian,
+monthly level 0, one thread.
+
+**The interior bilinear kinks are not the problem.** The jump of S ∂σ/∂S
+from one strike node to the next is 0.02–0.03 at 6 months and 1 year, 0.14
+at 3 months. **The strike grid's edges are.** It covers only 608–848, −20 %
+to +11 % of the spot (the configured ±0.6 log-moneyness is cut to the quoted
+range); at its left edge σ_loc is already 36–53 % with S ∂σ/∂S between −1.1
+and −2.3, and the flat extrapolation beyond drops that slope to 0 -- a large
+kink many one-year paths cross.
+
+| | beta, log-Euler | beta, Milstein |
+|---|---|---|
+| Vanilla | 0.85 | **0.41**, level variances erratic (49, 77, 586, 19, 24): heavy tails |
+| Asian | 1.04 | 0.91 |
+
+Milstein's term ½ σ (S ∂σ/∂S) dt (z² − 1) is large where the slope is steep
+and switches off past the edge, so fine and coarse paths on either side of it
+get very different corrections: **on market grids Milstein makes the coupling
+worse**. With it, MLQMC lost its advantage on the vanilla (cost 2.8e7
+against MLMC's 1.25e7 at eps = 0.2) and its prices drifted from MLMC's by
+1.5–2 standard errors. With log-Euler:
+
+| Log-Euler, SPY | MLMC | MLQMC | Slopes, MLMC / MLQMC |
+|---|---|---|---|
+| Vanilla, eps = 0.1 (0.19 % of the price) | 1.9 s | **0.22 s** | −1.58 / −1.22 |
+| Asian, eps = 0.1 | 7.2 s | **1.2 s** | −2.01 / −2.05 |
+
+Prices agree within error throughout. On the vanilla the levels stop at 2
+(weekly steps): SPY's time-step bias is below eps / sqrt(2) there, most of
+the gain is QMC's.
+
+Conclusions: (1) for market grids, MLQMC with log-Euler (6–9× over MLMC);
+Milstein stays opt-in and is not advised there, said in the API's
+description; (2) the narrow, flat-extrapolated strike range is a property of
+the local-vol calibration, not of MLMC, and affects every local-vol price
+whose paths leave it: a smooth extrapolation of σ_loc beyond the quoted
+strikes (continuous slope, decaying to flat) would serve both, to decide
+with the calibration's owner; (3) β = 2 needs a σ smooth across the paths'
+range, as the smooth surface showed.
+
+Owen's hash scrambling against the digital shift: no consistent gain
+(costs within a factor 0.3–3 either way across the rows), as WP 19 §12.
+
+Tests (`tests/testMlmc.cpp`): MLQMC equals MLMC within eps and is more than
+5× cheaper on the skewed case, its cost slope on the smooth surface in
+(−1.5, −0.7), the Sobol dimension limit refused, the script engine's opt-in
+on Sobol (MLQMC) and on pseudo-random draws (MLMC).
+
+### 9.3 The local-vol grid's strike band, and the fixes that follow (2026-11-12)
+
+**Why the grid was narrow.** `calibrate_vol_surface` clamped the requested
+log-moneyness range (±0.6) to the intersection of what every slice of at
+least `min_ttm` was quoted over (commit `803e7e4`, from a real AAPL chain:
+a 6-day slice's SVI wing extrapolated to k = 0.6 gave a 600 % vol, since
+svi_implied_vol = sqrt(w/T) amplifies a short slice's wing). One range for
+every maturity let the narrowest short slice cap the long ones: on SPY a
+three-week slice quoted to +8.4 % capped the whole two-year grid there,
+while the one-year slices are quoted to +30 %.
+
+**The fix: a band per maturity** (`market/dupire_from_svi`). Each slice is
+trusted on its quotes' range (`quoted_band`); each grid maturity's local vol
+is computed on the intersection of the two slices it interpolates
+(`local_vol_column_bands`), so no SVI wing is read past its quotes; the
+grid's strikes span the union of the kept slices' bands; a cell outside its
+band, or where Dupire is unstable, takes its column's nearest valid cell
+along K (`banded_sources`): flat in the strike within the maturity, never
+borrowed from another one (the ring search of `nearest_valid_sources`
+copied 50–110 % short-maturity vols into SPY's two-year call wing once that
+wing entered the grid). The calendar checks of the slice selection read each
+pair's common band. The superbucket rebuilds the same bands from the same
+quotes, so its tape replays the same grid. The reach rule
+(`reach_std_devs`) is gone with the single range it relaxed. The IV display
+grid (`vol_surface.svi_implied_vol_grid`) leaves out what lies outside the
+bands of the two slices it interpolates.
+
+SPY (snapshot of 2026-11-11, spot 757.1): grid k in [−0.425, +0.275]
+instead of [−0.367, +0.084]. One-year vanillas against the SVI market (GPU,
+Sobol, 1e6 paths, daily steps), with the same grid made flat past +8.4 % to
+stand for the old one:
+
+| | SVI market | New grid | Old-style capped grid |
+|---|---|---|---|
+| Put 80 % | 9.919 | 9.890 (−0.03) | 9.872 (−0.05) |
+| Put 90 % | 17.372 | 17.457 (+0.09) | 17.426 (+0.05) |
+| Call 100 % | 54.021 | 54.181 (+0.16) | 54.092 (+0.07) |
+| Call 110 % | 13.681 | 13.759 (+0.08) | 13.161 (**−0.52**) |
+| Call 120 % | 7.075 | 6.956 (−0.12) | 3.581 (**−3.49, −49 %**) |
+
+**MLMC's bias test reads three corrections** (`mlmc_detail::
+remaining_bias`, Giles's later code): max over the last three correction
+levels of |Y_l| / r^(L−l), over r − 1. The two-level test stopped at level 2
+on SPY (corrections 1.06, 0.12, then 0.03–0.06) with about twice its bias
+target. On the new grid, against a 8064-steps-a-year GPU reference of
+54.071 ± 0.004:
+
+| eps | MLMC (finest level, error) | MLQMC (finest level, error) |
+|---|---|---|
+| 0.2 | 6, −0.20 (1.4 se) | 6, +0.00 |
+| 0.1 | 6, +0.09 | 7, +0.05 |
+| 0.05 | 7, +0.02 | 8, −0.01 |
+
+every estimate within its target, at the price of finer levels (MLQMC
+11 s at eps = 0.1 on one thread: QMC gains little on the fine,
+high-dimensional levels). beta on the new grid: log-Euler 0.98, Milstein
+1.25 (0.41 before; still irregular, the advice against it stands).
+
+**The scripts' default steps** (`ScriptRequest.steps_per_year`, not sent by
+the front end): 52 → 252. The same call is 0.57 above its fine-step limit at
+52 steps a year, 0.13 at 252, 0.017 at 2016, against a Sobol standard error
+of 0.005: the displayed error does not include this bias. 252 removes most
+of it at ~5x the cost of 52; a discretisation-bias estimate shown next to
+the standard error (two step counts on common Sobol points) would make the
+displayed error defensible, left to decide.
+
+### 9.4 Multilevel by default, and the bias shown (2026-11-12)
+
+Decided by the maintainer: the scripting API runs multilevel Monte Carlo by
+default and returns the discretisation bias of every Monte-Carlo price.
+
+- **Default** (`ScriptRequest.mlmc = "auto"`): MLQMC (Sobol, the default
+  sampler) whenever the script suits it -- local vol, one payoff, no early
+  exercise, no AAD greeks -- to a root-mean-square error of
+  `mlmc_rel_eps` = 0.2 % of the price (`MlqmcSettings::rel_eps`, the target
+  following the running estimate, floored at 1e-5 of the spot so that a
+  worthless option still stops); `mlmc_eps` gives an absolute target
+  instead; `mlmc = "off"` the usual engine. The binding keeps everything off
+  by default: the other callers of `price_script` (portfolio marks, risk
+  profiles, market vega) do not move without a decision.
+- **Threads**: each Sobol replicate of a level has its own sampler (models,
+  scenarios, payoff state) and runs as a task on the pool; its sum
+  accumulates in point order, so the bits are the same on any number of
+  threads (tested on 1 and 8). A product without a concurrent payoff state
+  stays on one thread.
+- **Bias** (`PricingResult::discretisation_bias`, `PricingResponse.
+  discretisation_bias`, shown under the price on the scripting page): the
+  multilevel run's own estimate of its remaining bias; for a plain run of a
+  model that refines its grid (`mc_bias_estimate`, on by default in the
+  API), the price with every step halved and the bias as the difference from
+  the unhalved run on the same seed (weak order one, about three times the
+  cost of one run); 0 for a model simulated exactly between the product's
+  dates (Black-Scholes); absent otherwise (Heston, SLV, rough Bergomi: their
+  grids do not refine yet; AAD greeks).
+
+SPY through the API service (16 threads, snapshot of 2026-11-12):
+
+| ATM call | Default (MLQMC, 0.2 %) | `mlmc = "off"`, CPU | `mlmc = "off"`, GPU |
+|---|---|---|---|
+| 1 year | 55.096 ± 0.071, bias ~0.074, 0.64 s | 55.076 ± 0.014, bias ~0.126, 1.47 s | 0.73 s |
+| 3 months | 23.571 ± 0.032, bias ~0.016, 1.11 s | 23.666 ± 0.003, bias ~0.057, 0.61 s | 0.13 s |
+
+The multilevel standard error is larger by design (half the mean-square
+budget goes to the bias); the plain run's small ± now sits next to a bias
+five to twenty times larger, which the page shows. Left: MLQMC on the GPU
+(P6), which would make the default as fast as the plain GPU route; Heston and
+SLV refinement, so that their bias is estimated too.
+
+### 9.5 The stochastic-volatility models refine; multilevel stays for local vol (2026-11-13)
+
+- `set_refinement` on Bates (Heston is Bates with lambda = 0; with jumps it
+  refuses any r > 1: their draws would couple poorly, §8.3), SLV and SABR.
+  Rough Bergomi does not refine: its hybrid scheme has a Volterra kernel on a
+  fixed daily grid, and coupling two of its levels is a research question,
+  not a refinement.
+- The coupling now carries a step's non-Brownian draws (Bates's jump count
+  and size, unused at lambda = 0): the coarse step takes its last fine
+  step's, which keeps every level's law exact.
+- `ISimulationModel::exact_between_dates()`, true for Black-Scholes (one and
+  several assets) only: the bias reported as 0 is now a model's declaration,
+  not inferred from its grid (rough Bergomi exposes the product's dates but
+  steps on a grid of its own; the inference reported it exact).
+
+Measured on SPY through the API (16 threads), one-year contracts:
+
+| | Multilevel (MLQMC, 0.2 %) | Plain, bias estimated |
+|---|---|---|
+| Call, Heston | 62.343 ± 0.085, bias ~0.054, 12.5 s | 62.200 ± 0.063, bias ~0.174, 1.8 s |
+| Call, SLV | 54.948 ± 0.071, bias ~0.052, 59.5 s | 55.358 ± 0.089, bias ~0.428, 2.0 s |
+| Weekly up-and-out call, auto (SLV) | 23.270 ± 0.030, bias ~0.031, 163 s | 23.320 ± 0.072, bias ~0.174, 1.8 s |
+
+The two agree (SLV call: 55.36 − 0.43 ≈ 54.93 against 54.95), and the
+plain run's bias is large -- five times its standard error on the SLV call.
+But MLQMC is far too slow on these models: its correction levels keep as
+many points as level 0, so their variance hardly decays -- the variance's
+full truncation and the leverage's staircase in T couple fine and coarse
+paths poorly. Hence `ScriptRequest.mlmc`: "auto" (the default) runs
+multilevel under local vol only, where it was measured fast; Heston and SLV
+get the plain engine with their bias estimated and shown; "on" forces
+multilevel on any model that refines.
+
+Left: a better-coupled scheme for the variance (an implicit or QE step whose
+levels' differences shrink with h) and a leverage interpolated in T would
+make multilevel pay under Heston and SLV; P6 for speed.
 
 ## 10. P6 — Multilevel on the GPU
 

@@ -99,7 +99,7 @@ namespace quantModeling
         }
     }
 
-    TEST(VolSurfacePipeline, ClampsKRangeToWhatTheNarrowestSliceObserved)
+    TEST(VolSurfacePipeline, ANarrowSliceIsNotExtrapolatedPastItsQuotes)
     {
         // A short-dated slice quoted only close to the money (narrow strike
         // range) alongside a long-dated slice with the usual wide range.
@@ -135,12 +135,75 @@ namespace quantModeling
 
         const Real narrow_k_min = std::log(92.5 / 100.0);
         const Real narrow_k_max = std::log(107.5 / 100.0);
-        EXPECT_GE(result.k_min, narrow_k_min - 1e-9);
-        EXPECT_LE(result.k_max, narrow_k_max + 1e-9);
-        EXPECT_LT(result.k_max - result.k_min, 0.6); // much tighter than the requested [-0.6, 0.6]
-
+        // Each slice reports the band it is trusted on: its quotes' range.
+        ASSERT_EQ(result.slices.size(), 2u);
+        EXPECT_NEAR(result.slices[0].band.lo, narrow_k_min, 1e-9);
+        EXPECT_NEAR(result.slices[0].band.hi, narrow_k_max, 1e-9);
+        // The grid's strikes span the union of the bands (WP 26 §9.3)...
+        EXPECT_GT(result.k_max - result.k_min, narrow_k_max - narrow_k_min + 0.1);
+        // ... but every maturity here interpolates the narrow slice, so its
+        // local vol is computed on the narrow band only and flat past it:
+        // no wing blow-up from extrapolating the short slice's SVI.
         for (const Real sigma_loc : result.sigma_loc)
-            EXPECT_LT(sigma_loc, 3.0); // no wing blow-up from extrapolating past the short slice's data
+            EXPECT_LT(sigma_loc, 3.0);
+        const std::size_t nK = result.K_grid.size(), nT = result.T_grid.size();
+        for (std::size_t j = 0; j < nT; ++j)
+            EXPECT_EQ(result.sigma_loc[j], result.sigma_loc[nT + j]) << "column " << j << " flat below its band";
+        (void)nK;
+    }
+
+    TEST(VolSurfacePipeline, ALongMaturityIsNotCappedByAShortSlicesRange)
+    {
+        // A three-month slice quoted within +/-7 %, then two wide ones: the
+        // maturities between the wide slices get local vols past +/-7 %
+        // (SPY's three-week slice, quoted to +8 %, capped its whole two-year
+        // grid there before WP 26 §9.3).
+        const Real spot = 100.0;
+        std::vector<RawOptionQuote> raw;
+        for (Real strike = 93.0; strike <= 107.0; strike += 1.0)
+        {
+            const Real k = std::log(strike / spot);
+            const Real iv = svi_implied_vol(k, 0.25, smile(0.25 * 0.04));
+            RawOptionQuote q;
+            q.strike = strike;
+            q.ttm = 0.25;
+            q.is_call = true;
+            const Real price = bs_call_price(spot, strike, 0.25, 0.0, iv);
+            q.bid = price - 0.001;
+            q.ask = price + 0.001;
+            q.last = price;
+            q.volume = 500;
+            q.open_interest = 1000;
+            q.implied_vol = iv;
+            q.has_iv = true;
+            raw.push_back(q);
+        }
+        for (const Real T : {0.5, 1.0})
+        {
+            const std::vector<RawOptionQuote> wide = synthetic_slice(spot, T, smile(T * 0.04));
+            raw.insert(raw.end(), wide.begin(), wide.end());
+        }
+        const auto result = calibrate_vol_surface(raw, spot, 0.0, 0.0, -0.6, 0.6, 60, 30);
+        const Real narrow = std::log(107.0 / 100.0);
+        EXPECT_GT(result.k_max, narrow + 0.05);
+
+        // A column between the two wide slices: its local vol still moves
+        // with the strike past +7 %.
+        const std::size_t nK = result.K_grid.size(), nT = result.T_grid.size();
+        std::size_t j = 0;
+        while (j + 1 < nT && result.T_grid[j] < 0.75)
+            ++j;
+        std::vector<Real> past;
+        for (std::size_t i = 0; i < nK; ++i)
+        {
+            const Real k = std::log(result.K_grid[i] / spot);
+            if (k > narrow + 0.02 && k < result.k_max - 0.02)
+                past.push_back(result.sigma_loc[i * nT + j]);
+        }
+        ASSERT_GE(past.size(), 3u);
+        EXPECT_NE(past.front(), past.back()) << "flat past +7 %: capped by the short slice";
+        for (const Real sigma_loc : result.sigma_loc)
+            EXPECT_LT(sigma_loc, 3.0);
     }
 
     // A few-day slice quoted near the money, next to two wide ones: it no

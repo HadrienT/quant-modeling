@@ -74,7 +74,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         SLVSimModel(const SLVSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -86,7 +86,7 @@ namespace quantModeling
         {
             refuse_barrier_monitoring(defline, "SLVSimModel");
             timeline_ = canonical_timeline(product_timeline);
-            sim_timeline_ = add_monitoring_steps(timeline_, max_dt_);
+            sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
@@ -95,6 +95,16 @@ namespace quantModeling
             // variance) -- same shape as BatesSimModel without the two
             // jump draws.
             sim_dim_ = 2 * sim_timeline_.size();
+        }
+
+        /// Multilevel Monte Carlo (WP 26 §9.5): each max_dt step split into
+        /// r -- the Heston dynamics times the leverage, full-truncation Euler.
+        bool set_refinement(int r) override
+        {
+            if (r < 1)
+                return false;
+            refinement_ = r;
+            return true;
         }
 
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
@@ -239,6 +249,7 @@ namespace quantModeling
         std::vector<Real> K_grid_, T_grid_;
         std::vector<T> leverage_;
         Time max_dt_;
+        int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
 
         TimeLine timeline_;
         TimeLine sim_timeline_;

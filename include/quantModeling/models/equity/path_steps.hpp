@@ -178,6 +178,51 @@ namespace quantModeling::mc
         return vol_sqrt_dt * vol_sqrt_dt;
     }
 
+    /// The local vol and its slope in the spot, ∂σ/∂S, of the bilinear
+    /// lookup above: the strike interpolation's slope blended in time, 0
+    /// outside the strike grid (flat there) and where the floor binds.
+    template <class T>
+    QM_HOST_DEVICE T local_vol_with_slope(const GridView<T> &g, const T &S_t, double t, T &dsigma_dS)
+    {
+        int i0, i1, j0, j1;
+        const T wK = g.strike_weight(S_t, i0, i1);
+        const double S_raw = value_of(S_t);
+        const bool inside = S_raw >= g.K[0] && S_raw <= g.K[g.nK - 1];
+        t = std::clamp(t, g.T_grid[0], g.T_grid[g.nT - 1]);
+        bracket(g.T_grid, g.nT, t, j0, j1);
+        const double T0 = g.T_grid[j0];
+        const double dT = g.T_grid[j1] - T0;
+        const double wT = (dT > 1e-12) ? (t - T0) / dT : 0.0;
+        const T sigma = (1.0 - wK) * (1.0 - wT) * g.at(i0, j0) + wK * (1.0 - wT) * g.at(i1, j0) +
+                        (1.0 - wK) * wT * g.at(i0, j1) + wK * wT * g.at(i1, j1);
+        const double dK = g.K[i1] - g.K[i0];
+        if (!inside || dK <= 1e-12 || value_of(sigma) <= 1e-6)
+            dsigma_dS = T(0.0);
+        else
+            dsigma_dS = ((1.0 - wT) * (g.at(i1, j0) - g.at(i0, j0)) + wT * (g.at(i1, j1) - g.at(i0, j1))) / dK;
+        return value_of(sigma) > 1e-6 ? sigma : T(1e-6);
+    }
+
+    /// Milstein step of the log-spot X = ln S under local vol (WP 26 P4b):
+    /// X += (r - q - σ²/2) dt + σ √dt z + ½ σ (S ∂σ/∂S) dt (z² - 1), the
+    /// diffusion b(X) = σ(e^X, t) having b' = S ∂σ/∂S. Strong order 1 where
+    /// σ is smooth (MLMC's beta = 2, Giles & Szpruch 2012), against 1/2 for
+    /// the Euler step above. Returns σ² dt, as local_vol_step.
+    template <class T>
+    QM_HOST_DEVICE T local_vol_milstein_step(const GridView<T> &sigma_loc, const T &r, const T &q, T &S, double t,
+                                             double dt, double z)
+    {
+        using std::exp;
+        using std::sqrt;
+        T slope;
+        const T sig = local_vol_with_slope(sigma_loc, S, t, slope);
+        const T drift = (r - q - 0.5 * sig * sig) * dt;
+        const T vol_sqrt_dt = sig * sqrt(dt);
+        const T correction = 0.5 * sig * (S * slope) * dt * (z * z - 1.0);
+        S *= exp(drift + vol_sqrt_dt * z + correction);
+        return vol_sqrt_dt * vol_sqrt_dt;
+    }
+
     /**
      * @brief Probability that a log-Brownian bridge from `a` to `b` with
      *        log-variance `var` stays above (`above`) or below `level` --

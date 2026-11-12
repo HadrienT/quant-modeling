@@ -146,10 +146,87 @@ namespace quantModeling
         return T_grid;
     }
 
+    QuotedBand quoted_band(const std::vector<SVISliceQuote> &quotes, Real k_min, Real k_max)
+    {
+        if (quotes.empty())
+            return {k_min, k_max};
+        const auto [lo, hi] = std::minmax_element(quotes.begin(), quotes.end(),
+                                                  [](const SVISliceQuote &a, const SVISliceQuote &b)
+                                                  { return a.log_moneyness < b.log_moneyness; });
+        return {std::max(k_min, lo->log_moneyness), std::min(k_max, hi->log_moneyness)};
+    }
+
+    std::vector<bool> outside_column_bands(const std::vector<Real> &K_grid, const std::vector<Real> &T_grid,
+                                           Real spot, Real rate, Real dividend,
+                                           const std::vector<QuotedBand> &column)
+    {
+        const std::size_t nK = K_grid.size(), nT = T_grid.size();
+        std::vector<bool> out(nK * nT, false);
+        for (std::size_t i = 0; i < nK; ++i)
+            for (std::size_t j = 0; j < nT; ++j)
+            {
+                const Real k = std::log(K_grid[i] / (spot * std::exp((rate - dividend) * T_grid[j])));
+                out[i * nT + j] = k < column[j].lo || k > column[j].hi;
+            }
+        return out;
+    }
+
+    std::vector<std::size_t> banded_sources(const std::vector<Real> &grid, std::size_t n_strikes,
+                                            std::size_t n_maturities, const std::vector<bool> &outside)
+    {
+        std::vector<std::size_t> source = nearest_valid_sources(grid, n_strikes, n_maturities);
+        auto valid = [&](std::size_t idx)
+        { return !outside[idx] && !std::isnan(grid[idx]); };
+        for (std::size_t j = 0; j < n_maturities; ++j)
+            for (std::size_t i = 0; i < n_strikes; ++i)
+            {
+                const std::size_t idx = i * n_maturities + j;
+                if (valid(idx))
+                    continue;
+                // The column's nearest valid cell along K: flat in the strike
+                // past the band or where Dupire is unstable, within the
+                // maturity. A column with no valid cell keeps the ring search.
+                for (std::size_t d = 1; d < n_strikes; ++d)
+                {
+                    const bool down_ok = i >= d && valid((i - d) * n_maturities + j);
+                    const bool up_ok = i + d < n_strikes && valid((i + d) * n_maturities + j);
+                    if (down_ok || up_ok)
+                    {
+                        source[idx] = down_ok ? (i - d) * n_maturities + j : (i + d) * n_maturities + j;
+                        break;
+                    }
+                }
+            }
+        return source;
+    }
+
+    std::vector<QuotedBand> local_vol_column_bands(const SVISurface &surface,
+                                                   const std::vector<QuotedBand> &slice_bands,
+                                                   const std::vector<Real> &T_grid)
+    {
+        if (slice_bands.size() != surface.slices().size())
+            throw InvalidInput("local_vol_column_bands: one band per surface slice");
+        std::vector<QuotedBand> out;
+        out.reserve(T_grid.size());
+        for (const Real T : T_grid)
+        {
+            const SVISurface::Bracket b = surface.bracket(T);
+            const QuotedBand &upper = slice_bands[b.upper];
+            if (b.lower == SVISurface::kZeroSlice || b.lower == b.upper)
+            {
+                out.push_back(upper);
+                continue;
+            }
+            const QuotedBand &lower = slice_bands[b.lower];
+            out.push_back({std::max(lower.lo, upper.lo), std::min(lower.hi, upper.hi)});
+        }
+        return out;
+    }
+
     GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend,
                                       Real k_min, Real k_max,
                                       std::size_t n_strikes, std::size_t n_maturities,
-                                      const DupireFromSVIParams &params)
+                                      const DupireFromSVIParams &params, const std::vector<QuotedBand> *slice_bands)
     {
         const std::vector<Real> T_grid = local_vol_maturities(surface, n_maturities);
 
@@ -165,6 +242,10 @@ namespace quantModeling
             K_grid[i] = F_mid * std::exp(k_min + t * (k_max - k_min));
         }
 
+        std::vector<bool> outside;
+        if (slice_bands != nullptr)
+            outside = outside_column_bands(K_grid, T_grid, spot, rate, dividend,
+                                           local_vol_column_bands(surface, *slice_bands, T_grid));
         std::vector<Real> loc_var(n_strikes * n_maturities);
         for (std::size_t i = 0; i < n_strikes; ++i)
         {
@@ -173,12 +254,15 @@ namespace quantModeling
                 const Real T = T_grid[j];
                 const Real F_T = spot * std::exp((rate - dividend) * T);
                 const Real k = std::log(K_grid[i] / F_T);
-                loc_var[i * n_maturities + j] = svi_surface_local_variance(surface, k, T, params);
+                const std::size_t idx = i * n_maturities + j;
+                loc_var[idx] = !outside.empty() && outside[idx] ? std::numeric_limits<Real>::quiet_NaN()
+                                                                : svi_surface_local_variance(surface, k, T, params);
             }
         }
 
-        const std::vector<std::size_t> source =
-            nearest_valid_sources(loc_var, n_strikes, n_maturities);
+        const std::vector<std::size_t> source = outside.empty()
+                                                    ? nearest_valid_sources(loc_var, n_strikes, n_maturities)
+                                                    : banded_sources(loc_var, n_strikes, n_maturities, outside);
 
         std::vector<Real> sigma_loc(loc_var.size());
         for (std::size_t idx = 0; idx < loc_var.size(); ++idx)

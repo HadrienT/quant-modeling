@@ -70,9 +70,13 @@ namespace quantModeling
         double value = 0.0;
         double std_error = 0.0; ///< sqrt(sum V_l / N_l)
         double bias = 0.0;      ///< the estimate of |E[P - P_L]| the bias test used (adaptive runs)
+        double eps = 0.0;       ///< the target RMS error the run stopped at (adaptive runs)
         bool bias_converged = true;
         double alpha = 0.0, beta = 0.0, gamma = 0.0; ///< |E Y_l| ~ 2^-alpha l, V_l ~ 2^-beta l, C_l ~ 2^gamma l
         std::vector<MlmcLevel> levels;
+        /// Each level's V_l / N_l, the variance of its estimate (filled by
+        /// multilevel QMC, mlqmc.hpp, whose samples are not independent).
+        std::vector<double> estimator_variance;
         std::string diagnostics;
 
         int finest_level() const { return static_cast<int>(levels.size()) - 1; }
@@ -119,6 +123,7 @@ namespace quantModeling
                          std::uint64_t seed)
                 : product_(product), level_(level), rng_(seed, static_cast<std::uint64_t>(level))
             {
+                state_ = product.make_payoff_state();
                 fine_ = at_refinement(base, refinement_of(level), product);
                 allocate_scenario(fine_path_, product.defline(), product.n_underlyings());
                 gauss_fine_.resize(fine_->sim_dim());
@@ -132,11 +137,12 @@ namespace quantModeling
                 cost_ += static_cast<double>(coarse_->sim_dim());
 
                 const BrownianLayout lf = fine_->brownian_layout(), lc = coarse_->brownian_layout();
-                if (!lf.covers(fine_->sim_dim()) || !lc.covers(coarse_->sim_dim()) || lf.stride != lf.factors ||
-                    lc.stride != lc.factors || lf.factors != lc.factors)
-                    throw InvalidInput("multilevel Monte Carlo: the model's draws are not all Brownian increments "
-                                       "(jumps?), the levels cannot be coupled");
+                if (!lf.covers(fine_->sim_dim()) || !lc.covers(coarse_->sim_dim()) || lf.factors != lc.factors ||
+                    lf.stride != lc.stride)
+                    throw InvalidInput("multilevel Monte Carlo: the model does not describe its draws "
+                                       "(brownian_layout), the levels cannot be coupled");
                 factors_ = lf.factors;
+                stride_ = lf.stride;
                 // Each fine step's coarse step, and the sqrt(dt) weights. The
                 // coarse dates are fine dates exactly (refine_steps), hence
                 // the tight tolerance: TIMELINE_EPS (an hour) is longer than
@@ -167,40 +173,75 @@ namespace quantModeling
             void run(long long n, MlmcLevel &acc)
             {
                 acc.cost = cost_;
-                std::vector<Real> out;
                 for (long long p = 0; p < n; ++p)
                 {
                     for (double &z : gauss_fine_)
                         z = bm_(rng_);
-                    fine_->generate_path(gauss_fine_, fine_path_);
-                    product_.payoffs(fine_path_, out);
-                    double y = out.at(0);
-                    if (level_ > 0)
-                    {
-                        std::fill(gauss_coarse_.begin(), gauss_coarse_.end(), 0.0);
-                        for (std::size_t k = 0; k < coarse_of_.size(); ++k)
-                            for (std::size_t f = 0; f < factors_; ++f)
-                                gauss_coarse_[coarse_of_[k] * factors_ + f] +=
-                                    weight_[k] * gauss_fine_[k * factors_ + f];
-                        coarse_->generate_path(gauss_coarse_, coarse_path_);
-                        product_.payoffs(coarse_path_, out);
-                        y -= out.at(0);
-                    }
+                    const double y = evaluate();
                     ++acc.n;
                     acc.sum += y;
                     acc.sum2 += y * y;
                 }
             }
 
+            /// The fine level's draws, time order (BrownianLayout): fill
+            /// them, then evaluate() (P5's Sobol points go through here).
+            std::vector<double> &draws() { return gauss_fine_; }
+            BrownianLayout fine_layout() const { return fine_->brownian_layout(); }
+
+            /// The sample of the draws in draws(): P_l, minus P_{l-1} on the
+            /// summed increments above level 0.
+            double evaluate()
+            {
+                fine_->generate_path(gauss_fine_, fine_path_);
+                payoffs(fine_path_);
+                double y = out_.at(0);
+                if (level_ > 0)
+                {
+                    std::fill(gauss_coarse_.begin(), gauss_coarse_.end(), 0.0);
+                    for (std::size_t k = 0; k < coarse_of_.size(); ++k)
+                    {
+                        const std::size_t c = coarse_of_[k] * stride_, fk = k * stride_;
+                        for (std::size_t f = 0; f < factors_; ++f)
+                            gauss_coarse_[c + f] += weight_[k] * gauss_fine_[fk + f];
+                        // A step's other draws (jump counts and sizes): the
+                        // coarse step takes its last fine step's, which keeps
+                        // every level's law exact (WP 26 §9.5). Their
+                        // coupling is poor, so a model only accepts a
+                        // refinement where they do not act (Bates: lambda = 0).
+                        for (std::size_t e = factors_; e < stride_; ++e)
+                            gauss_coarse_[c + e] = gauss_fine_[fk + e];
+                    }
+                    coarse_->generate_path(gauss_coarse_, coarse_path_);
+                    payoffs(coarse_path_);
+                    y -= out_.at(0);
+                }
+                return y;
+            }
+
+            /// Whether several samplers of this product may run at once
+            /// (the product gives each its own payoff state).
+            bool concurrent() const { return state_ != nullptr; }
+
           private:
+            void payoffs(const Scenario<Real> &path)
+            {
+                if (state_)
+                    product_.payoffs_with_state(path, out_, *state_);
+                else
+                    product_.payoffs(path, out_);
+            }
+
             const ISimulatableProduct<Real> &product_;
+            std::unique_ptr<typename ISimulatableProduct<Real>::PayoffState> state_;
             int level_;
             Pcg32 rng_;
             NormalBoxMuller bm_;
             std::unique_ptr<ISimulationModel<Real>> fine_, coarse_;
             Scenario<Real> fine_path_, coarse_path_;
             std::vector<double> gauss_fine_, gauss_coarse_;
-            std::size_t factors_ = 0;
+            std::vector<Real> out_;
+            std::size_t factors_ = 0, stride_ = 0;
             std::vector<std::size_t> coarse_of_;
             std::vector<double> weight_;
             double cost_ = 0.0;
@@ -226,6 +267,49 @@ namespace quantModeling
             return (n * sxy - sx * sy) / (n * sxx - sx * sx);
         }
 
+        /**
+         * alpha by regression over the levels from 1 whose sample mean is
+         * resolved, |mean| > 2 standard errors (WP 26 P4b). A mean lost in
+         * its noise says nothing of the decay, and regressing on it swung
+         * the estimate from 0.66 to 2.2 between runs (P4a), which the bias
+         * test divides by. Fewer than two resolved levels: 1, the weak order
+         * of both Euler and Milstein. At least 0.5, as Giles.
+         */
+        inline double alpha_estimate(const std::vector<MlmcLevel> &levels)
+        {
+            std::vector<double> m(levels.size(), 0.0);
+            for (std::size_t l = 1; l < levels.size(); ++l)
+            {
+                const MlmcLevel &v = levels[l];
+                if (v.n < 2)
+                    continue;
+                const double se = std::sqrt(v.variance() / static_cast<double>(v.n));
+                if (std::fabs(v.mean()) > 2.0 * se)
+                    m[l] = std::fabs(v.mean());
+            }
+            return std::max(0.5, -log2_slope(m, -1.0));
+        }
+
+        /**
+         * The remaining bias after level L, from the last three correction
+         * levels (Giles's later code, range -2:0): max over l in {L-2, L-1,
+         * L}, l >= 1, of |Y_l| / r^(L - l), over r - 1, r = 2^alpha. Two
+         * levels (Giles 2008) assume the decay is already geometric; on
+         * SPY's local-vol grid the corrections fell fast then slowly (1.06,
+         * 0.12, 0.03, 0.06, 0.06), and the two-level test stopped at level 2
+         * with a bias about twice its target (WP 26 §9.2). Level 0 is the
+         * price itself, never a correction.
+         */
+        inline double remaining_bias(const std::vector<double> &m, double alpha)
+        {
+            const double r = std::pow(2.0, alpha);
+            const std::size_t L = m.size() - 1;
+            double worst = 0.0;
+            for (std::size_t back = 0; back <= 2 && back < L; ++back)
+                worst = std::max(worst, m[L - back] / std::pow(r, static_cast<double>(back)));
+            return worst / (r - 1.0);
+        }
+
         inline void finish(MlmcResult &res)
         {
             res.value = 0.0;
@@ -244,7 +328,7 @@ namespace quantModeling
                 v.push_back(l.variance());
                 c.push_back(l.cost);
             }
-            res.alpha = -log2_slope(m, -1.0);
+            res.alpha = alpha_estimate(res.levels);
             res.beta = -log2_slope(v, -1.0);
             res.gamma = log2_slope(c, 1.0);
 
@@ -285,9 +369,11 @@ namespace quantModeling
      *        Numerica §3), M = 2: a pilot of every level, then
      *        N_l = ceil(2 eps^-2 sqrt(V_l / C_l) sum_k sqrt(V_k C_k)) (half the
      *        mean-square budget to the variance), and a level added while
-     *        max(|Y_{L-1}| / 2^alpha, |Y_L|) / (2^alpha - 1) > eps / sqrt(2)
+     *        the remaining bias of the last three corrections
+     *        (mlmc_detail::remaining_bias) exceeds eps / sqrt(2)
      *        (the other half to the bias). alpha and beta are estimated by
-     *        regression over the levels (alpha at least 0.5), never assumed;
+     *        regression over the levels (alpha over the resolved ones only,
+     *        see mlmc_detail::alpha_estimate), never assumed;
      *        a level whose sample mean or variance is below what the decay
      *        predicts from the previous one is lifted to half that
      *        prediction (Giles's guard against a lucky small estimate).
@@ -333,7 +419,7 @@ namespace quantModeling
                 v[l] = res.levels[l].variance();
                 c[l] = res.levels[l].cost;
             }
-            const double alpha = std::max(0.5, -mlmc_detail::log2_slope(m, -1.0));
+            const double alpha = mlmc_detail::alpha_estimate(res.levels);
             const double beta = std::max(0.5, -mlmc_detail::log2_slope(v, -1.0));
             for (std::size_t l = 2; l <= L; ++l)
             {
@@ -362,7 +448,7 @@ namespace quantModeling
                 continue;
 
             const double r = std::pow(2.0, alpha);
-            res.bias = std::max(m[L - 1] / r, m[L]) / (r - 1.0);
+            res.bias = mlmc_detail::remaining_bias(m, alpha);
             if (res.bias <= s.eps / std::sqrt(2.0))
                 break;
             if (static_cast<int>(L) >= s.max_finest_level)
@@ -377,6 +463,7 @@ namespace quantModeling
             targets();
         }
 
+        res.eps = s.eps;
         mlmc_detail::finish(res);
         return res;
     }

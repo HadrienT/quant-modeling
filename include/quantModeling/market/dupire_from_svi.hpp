@@ -2,6 +2,7 @@
 #define MARKET_DUPIRE_FROM_SVI_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/market/svi_calibration.hpp"
 #include "quantModeling/market/svi_surface.hpp"
 #include "quantModeling/models/volatility.hpp"
 
@@ -63,10 +64,63 @@ namespace quantModeling
      * amplifies noise; these are analytic, so there is no such noise to
      * smooth away.
      */
+    /// A log-moneyness interval, k = ln(K / F_T).
+    struct QuotedBand
+    {
+        Real lo = 0.0;
+        Real hi = 0.0;
+    };
+
+    /**
+     * The band a slice's SVI is trusted on (blueprint/wp/26-performance.md
+     * §9.3): its quotes' log-moneyness range, clamped to [k_min, k_max]. Past
+     * it the SVI wing is an extrapolation, which svi_implied_vol = sqrt(w/T)
+     * amplifies on a short slice.
+     */
+    QuotedBand quoted_band(const std::vector<SVISliceQuote> &quotes, Real k_min, Real k_max);
+
+    /**
+     * Each grid maturity's band: the intersection of the bands of the two
+     * slices T falls between (the first slice's before it, the last one's
+     * beyond), so that a local vol is only computed where both slices whose
+     * total variances it interpolates are quoted. `slice_bands` follows
+     * surface.slices().
+     */
+    std::vector<QuotedBand> local_vol_column_bands(const SVISurface &surface,
+                                                   const std::vector<QuotedBand> &slice_bands,
+                                                   const std::vector<Real> &T_grid);
+
+    /// The cells (K-major) outside their column's band.
+    std::vector<bool> outside_column_bands(const std::vector<Real> &K_grid, const std::vector<Real> &T_grid,
+                                           Real spot, Real rate, Real dividend,
+                                           const std::vector<QuotedBand> &column);
+
+    /**
+     * The fill of a banded grid: a cell outside its band, or where Dupire is
+     * unstable, takes its column's nearest valid cell along K, so the local
+     * vol is flat in the strike past what a maturity supports instead of
+     * borrowed from another maturity (the ring search of
+     * nearest_valid_sources() copied two-year call-wing cells from short
+     * maturities on SPY, local vols of 50-110 %). A column with no valid
+     * cell keeps the ring search. The superbucket replays the same map.
+     */
+    std::vector<std::size_t> banded_sources(const std::vector<Real> &grid, std::size_t n_strikes,
+                                            std::size_t n_maturities, const std::vector<bool> &outside);
+
+    /**
+     * ... and with `slice_bands` (one per surface slice, quoted_band()), a
+     * band per grid maturity (local_vol_column_bands()) instead of one for
+     * the whole grid: a cell outside its column's band is a gap, filled
+     * from its column's nearest in-band cell along K (banded_sources()). A short
+     * maturity, quoted near the money only, then no longer caps the strikes
+     * of the long ones (WP 26 §9.3: SPY's three-week slice, quoted to +8 %,
+     * capped the whole two-year grid there).
+     */
     GridLocalVol build_local_vol_grid(const SVISurface &surface, Real spot, Real rate, Real dividend,
                                       Real k_min, Real k_max,
                                       std::size_t n_strikes = 100, std::size_t n_maturities = 50,
-                                      const DupireFromSVIParams &params = {});
+                                      const DupireFromSVIParams &params = {},
+                                      const std::vector<QuotedBand> *slice_bands = nullptr);
 
     /// No valid cell anywhere on the grid to copy from.
     inline constexpr std::size_t kNoSource = static_cast<std::size_t>(-1);

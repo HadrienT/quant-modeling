@@ -1,8 +1,11 @@
 #include "quantModeling/engines/mc/script_engine.hpp"
 
 #include <algorithm>
+#include <sstream>
 
 #include "quantModeling/engines/mc/importance_sampling.hpp"
+#include "quantModeling/engines/mc/mlmc.hpp"
+#include "quantModeling/engines/mc/mlqmc.hpp"
 #include "quantModeling/engines/mc/script_adjoint.hpp"
 #include "quantModeling/engines/mc/sobol_bridge_host.hpp"
 #include "quantModeling/engines/mc/spot_controls.hpp"
@@ -168,9 +171,131 @@ namespace quantModeling
         }
     } // namespace
 
+    namespace
+    {
+        /// Why multilevel Monte Carlo cannot take this script (WP 26 P4c),
+        /// empty if it can.
+        std::string mlmc_unsuitable(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model)
+        {
+            if (product.has_exercise())
+                return "early exercise";
+            if (product.payoff_labels().size() != 1)
+                return "several payoff labels (the estimator takes one)";
+            if (!model.clone()->set_refinement(2))
+                return "the model has no time-step bias to remove (or cannot refine its grid yet: MLMC runs "
+                       "under local vol)";
+            return {};
+        }
+
+        SimulationMCResult run_mlmc(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model,
+                                    const PricingSettings &settings, ThreadPool *pool)
+        {
+            const std::uint64_t seed = static_cast<std::uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1);
+            // Sobol (the default sampler): multilevel QMC (WP 26 P5), 15-25x
+            // cheaper than MLMC on the measured cases, its replicates on the
+            // pool; MLMC when a level needs more draws than Sobol has
+            // dimensions, or when pseudo-random draws were asked for.
+            MlmcResult r;
+            std::string sampler_note = " (CPU, pseudo-random)";
+            bool done = false;
+            if (settings.mc_sampler == SamplerKind::Sobol)
+            {
+                MlqmcSettings q;
+                q.eps = settings.mc_mlmc_eps;
+                q.rel_eps = settings.mc_mlmc_rel_eps;
+                q.seed = seed;
+                q.owen = settings.mc_sobol_owen;
+                try
+                {
+                    r = simulate_mlqmc(product, model, q, pool);
+                    sampler_note = " (CPU)";
+                    done = true;
+                }
+                catch (const InvalidInput &e)
+                {
+                    sampler_note = std::string(" (CPU, pseudo-random: ") + e.what() + ")";
+                }
+            }
+            if (!done)
+            {
+                MlmcSettings s;
+                s.eps = settings.mc_mlmc_eps;
+                s.seed = seed;
+                if (settings.mc_mlmc_rel_eps > 0.0)
+                {
+                    // A relative target needs the price's scale: level 0's.
+                    const MlmcResult pilot = simulate_mlmc_fixed(product, model, {4000}, seed);
+                    s.eps = std::max(s.eps, settings.mc_mlmc_rel_eps * std::fabs(pilot.value));
+                }
+                r = simulate_mlmc(product, model, s);
+            }
+            SimulationMCResult res;
+            res.labels = product.payoff_labels();
+            res.values = {r.value};
+            res.std_errors = {r.std_error};
+            res.discretisation_bias = r.bias;
+            res.n_paths = 0;
+            for (const MlmcLevel &l : r.levels)
+                res.n_paths += l.n;
+            std::ostringstream os;
+            os << "SimulationMCEngine, " << r.diagnostics << "; target RMS error " << r.eps
+               << ", estimated remaining bias " << r.bias << sampler_note;
+            res.diagnostics = os.str();
+            return res;
+        }
+
+        /// A plain run with its discretisation bias (WP 26 §9.4): a model
+        /// that refines its grid is priced with every step halved, the bias
+        /// estimated as the difference from the unhalved run on the same
+        /// seed (weak order one: bias(h/2) ~ P(h/2) - P(h)); a model exact
+        /// between the product's dates (exact_between_dates) has bias 0.
+        SimulationMCResult run_with_bias(const ScriptedProduct<Real> &product, ISimulationModel<Real> &model,
+                                         const PricingSettings &settings, ThreadPool *pool)
+        {
+            PricingSettings plain = settings;
+            plain.mc_bias_estimate = false;
+            std::unique_ptr<ISimulationModel<Real>> halved = model.clone();
+            if (!product.has_exercise() && halved->set_refinement(2))
+            {
+                SimulationMCResult fine = simulate_script(product, *halved, plain, pool);
+                const SimulationMCResult coarse = simulate_script(product, model, plain, pool);
+                fine.discretisation_bias = std::fabs(fine.npv() - coarse.npv());
+                fine.diagnostics += " | steps halved, discretisation bias estimated from the unhalved run";
+                return fine;
+            }
+            SimulationMCResult res = simulate_script(product, model, plain, pool);
+            if (model.exact_between_dates())
+                res.discretisation_bias = 0.0;
+            else
+                res.diagnostics += " | discretisation bias not estimated (the model cannot refine its grid)";
+            return res;
+        }
+    } // namespace
+
     SimulationMCResult simulate_script(const ScriptedProduct<Real> &product, ISimulationModel<Real> &model,
                                        const PricingSettings &settings, ThreadPool *pool)
     {
+        // Multilevel Monte Carlo (WP 26 P4c, §9.4): when the script suits
+        // it, otherwise the usual route, saying why.
+        if (settings.mc_mlmc_eps < 0.0 || settings.mc_mlmc_rel_eps < 0.0)
+            throw InvalidInput("mc_mlmc_eps and mc_mlmc_rel_eps must be >= 0 (0: no multilevel Monte Carlo)");
+        if (settings.mc_mlmc_rel_eps > 0.0 && !(settings.mc_mlmc_eps > 0.0))
+            throw InvalidInput("a relative multilevel target (mc_mlmc_rel_eps) needs mc_mlmc_eps > 0 as its floor");
+        if (settings.mc_mlmc_eps > 0.0)
+        {
+            const std::string why = mlmc_unsuitable(product, model);
+            if (why.empty())
+                return run_mlmc(product, model, settings, pool);
+            PricingSettings plain = settings;
+            plain.mc_mlmc_eps = 0.0;
+            plain.mc_mlmc_rel_eps = 0.0;
+            SimulationMCResult res = simulate_script(product, model, plain, pool);
+            res.diagnostics += " (no multilevel Monte Carlo: " + why + ")";
+            return res;
+        }
+        if (settings.mc_bias_estimate)
+            return run_with_bias(product, model, settings, pool);
+
         const bool explicit_gpu = settings.mc_device == ComputeDevice::Gpu;
         const bool want_gpu = explicit_gpu || (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0);
         if (!want_gpu)

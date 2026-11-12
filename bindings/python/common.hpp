@@ -52,6 +52,7 @@ inline py::dict pricing_result_to_dict(const quantModeling::PricingResult &res)
     out["mc_std_error"] = static_cast<double>(res.mc_std_error);
     out["device"] = res.device;
     out["gpus"] = res.gpus;
+    out["discretisation_bias"] = to_py(res.discretisation_bias);
 
     // Bond analytics (optional fields — only populated for bond instruments)
     py::dict bond_analytics;

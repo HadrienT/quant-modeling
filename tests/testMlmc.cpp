@@ -2,10 +2,18 @@
 
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/core/timegrid.hpp"
+#include "quantModeling/engines/mc/approx_inverse_cdf.hpp"
 #include "quantModeling/engines/mc/mlmc.hpp"
+#include "quantModeling/engines/mc/mlqmc.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
+#include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/models/device_model.hpp"
+#include "quantModeling/models/equity/bates_sim_model.hpp"
+#include "quantModeling/models/equity/local_vol_sim_model.hpp"
+#include "quantModeling/models/equity/sabr_sim_model.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 
 #include <cmath>
@@ -160,13 +168,17 @@ namespace quantModeling
          * The test bed of WP 26 §8.6: GBM stepped by Euler on S itself,
          * S <- S (1 + r h + sigma sqrt(h) z), whose weak error is known:
          * E[S_T] = S0 (1 + r h)^n against S0 e^{rT}, an O(h) bias
-         * (alpha = 1), and whose strong error gives beta = 1.
+         * (alpha = 1), and whose strong error gives beta = 1 -- beta = 2 with
+         * the Milstein term ½ sigma² h (z² - 1) (Milstein's weak bias is the
+         * same: E[z² - 1] = 0).
          */
         class EulerGbm final : public ISimulationModel<Real>
         {
           public:
-            EulerGbm(Real s0, Real r, Real sigma, Time max_dt)
-                : s0_(s0), r_(r), sigma_(sigma), max_dt_(max_dt) {}
+            EulerGbm(Real s0, Real r, Real sigma, Time max_dt, bool milstein = false)
+                : s0_(s0), r_(r), sigma_(sigma), max_dt_(max_dt), milstein_(milstein)
+            {
+            }
             std::size_t n_underlyings() const override { return 1; }
             bool set_refinement(int r) override { return r >= 1 && (refinement_ = r); }
             void init(const TimeLine &product_timeline, const std::vector<SampleDef> &defline) override
@@ -186,7 +198,8 @@ namespace quantModeling
                 for (std::size_t k = 0; k < sim_.size(); ++k)
                 {
                     const Time h = sim_[k] - prev;
-                    S *= 1.0 + r_ * h + sigma_ * std::sqrt(h) * z[k];
+                    S *= 1.0 + r_ * h + sigma_ * std::sqrt(h) * z[k] +
+                         (milstein_ ? 0.5 * sigma_ * sigma_ * h * (z[k] * z[k] - 1.0) : 0.0);
                     prev = sim_[k];
                     if (event_of_step_[k] < 0)
                         continue;
@@ -207,6 +220,7 @@ namespace quantModeling
           private:
             Real s0_, r_, sigma_;
             Time max_dt_;
+            bool milstein_;
             int refinement_ = 1;
             TimeLine sim_;
             std::vector<std::ptrdiff_t> event_of_step_;
@@ -238,7 +252,7 @@ namespace quantModeling
         };
         for (int l = 1; l <= 5; ++l)
             EXPECT_NEAR(r.levels[l].mean(), euler(l) - euler(l - 1),
-                        4.0 * std::sqrt(r.levels[l].variance() / r.levels[l].n))
+                        4.0 * std::sqrt(r.levels[l].variance() / static_cast<double>(r.levels[l].n)))
                 << l;
     }
 
@@ -276,6 +290,444 @@ namespace quantModeling
             simulate_mlmc_fixed(product, *m, {400000, 200000, 100000, 50000, 25000, 12000, 6000, 3000, 1500}, 17);
         EXPECT_NEAR(r.value, ref.value, 3.0 * s.eps + 4.0 * ref.std_error)
             << r.diagnostics << " | reference " << ref.value << " +- " << ref.std_error;
+    }
+
+    // ── WP 26 P4b: Milstein ─────────────────────────────────────────────
+
+    TEST(Mlmc, TheLocalVolSlopeIsTheLookupsDerivative)
+    {
+        const std::vector<Real> K = {50.0, 80.0, 100.0, 120.0, 200.0}, Tg = {0.0, 0.5, 2.0};
+        const std::vector<Real> v = local_vol(false).sigma_loc_flat;
+        const mc::GridView<Real> g{K.data(), 5, Tg.data(), 3, v.data()};
+        for (const double S : {60.0, 90.0, 110.0, 150.0})
+            for (const double t : {0.1, 0.7})
+            {
+                Real slope;
+                const Real sigma = mc::local_vol_with_slope(g, S, t, slope);
+                EXPECT_DOUBLE_EQ(sigma, mc::local_vol_bilinear(g, S, t));
+                const double h = 1e-4;
+                const double fd =
+                    (mc::local_vol_bilinear(g, S + h, t) - mc::local_vol_bilinear(g, S - h, t)) / (2 * h);
+                EXPECT_NEAR(slope, fd, 1e-9) << S << ' ' << t;
+            }
+        Real slope;
+        mc::local_vol_with_slope(g, 300.0, 0.5, slope); // flat beyond the grid
+        EXPECT_EQ(slope, 0.0);
+    }
+
+    TEST(Mlmc, MilsteinOnAFlatSurfaceIsLogEuler)
+    {
+        // No slope, no Milstein term: the same bits.
+        ScriptModelSpec euler = local_vol(true), milstein = local_vol(true);
+        milstein.milstein = true;
+        const SimulationMCResult a = plain(kCall, euler, 0, 20000), b = plain(kCall, milstein, 0, 20000);
+        EXPECT_EQ(a.npv(), b.npv());
+    }
+
+    TEST(Mlmc, MilsteinStaysOnTheCpu)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        m->init(product.timeline(), product.defline());
+        DeviceModel d;
+        EXPECT_FALSE(m->describe_device(d));
+        Real mean;
+        EXPECT_FALSE(m->deflated_spot_mean(0, 0.5, mean)); // no longer an exact martingale
+    }
+
+    TEST(Mlmc, MilsteinLevelsDecayAsTheSquareOfTheStep)
+    {
+        // A local vol linear in S (two strike nodes far apart: no kink on
+        // the paths' range): sigma smooth, Milstein's strong order 1, beta
+        // ~ 2 -- against beta ~ 1 for log-Euler on the same surface.
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.K_grid = {10.0, 1000.0};
+        spec.T_grid = {0.0, 2.0};
+        spec.sigma_loc_flat = {0.50, 0.50, 0.05, 0.05}; // 50 % at 10, 5 % at 1000
+        const std::vector<long long> n = {1000, 100000, 100000, 100000, 100000, 100000};
+        const MlmcResult euler = simulate_mlmc_fixed(product, *make_script_model<Real>(spec), n, 29);
+        spec.milstein = true;
+        const MlmcResult milstein = simulate_mlmc_fixed(product, *make_script_model<Real>(spec), n, 29);
+        RecordProperty("milstein_beta", std::to_string(milstein.beta));
+        RecordProperty("euler_beta", std::to_string(euler.beta));
+        EXPECT_NEAR(milstein.beta, 2.0, 0.3) << milstein.diagnostics;
+        EXPECT_NEAR(euler.beta, 1.0, 0.25) << euler.diagnostics;
+        // and the two schemes converge to the same price
+        EXPECT_NEAR(milstein.value, euler.value, 4.0 * std::hypot(milstein.std_error, euler.std_error) + 0.01);
+    }
+
+    TEST(Mlmc, MilsteinCostGrowsAsEpsToTheMinusTwo)
+    {
+        // beta = 2 > gamma = 1: the MLMC cost is O(eps^-2) (Giles 2008,
+        // Theorem 3.1), against O(eps^-3) for plain Monte Carlo with a first
+        // order bias. Measured in log-log on the Milstein-GBM test bed.
+        ScriptedProduct<Real> product(kSpot, ctx());
+        const EulerGbm m(100.0, 0.5, 0.2, 1.0 / 12.0, true);
+        double sx = 0, sy = 0, sxx = 0, sxy = 0;
+        const std::vector<double> eps = {0.04, 0.02, 0.01, 0.005};
+        for (const double e : eps)
+        {
+            MlmcSettings s;
+            s.eps = e;
+            s.seed = 31;
+            const MlmcResult r = simulate_mlmc(product, m, s);
+            EXPECT_TRUE(r.bias_converged) << r.diagnostics;
+            EXPECT_NEAR(r.value, 100.0, 3.0 * e) << r.diagnostics;
+            const double x = std::log(e), y = std::log(r.total_cost());
+            sx += x, sy += y, sxx += x * x, sxy += x * y;
+        }
+        const double n = static_cast<double>(eps.size());
+        const double slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+        RecordProperty("cost_slope", std::to_string(slope));
+        EXPECT_NEAR(slope, -2.0, 0.3);
+    }
+
+    // ── WP 26 P4c: opt-in through the script engine ─────────────────────
+
+    TEST(Mlmc, TheScriptEngineRunsItWhenAsked)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        PricingSettings s;
+        s.mc_mlmc_eps = 0.02;
+        s.mc_seed = 37;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        // Sobol, the default sampler: multilevel QMC (P5).
+        EXPECT_NE(r.diagnostics.find("multilevel QMC"), std::string::npos) << r.diagnostics;
+        EXPECT_LE(r.std_error(), 1.02 * 0.02 / std::sqrt(2.0));
+        EXPECT_GT(r.n_paths, 0);
+        // The reference price of the skewed call (P4a/P4b runs): 14.20.
+        EXPECT_NEAR(r.npv(), 14.20, 3.0 * 0.02) << r.diagnostics;
+
+        PricingSettings pseudo = s;
+        pseudo.mc_sampler = SamplerKind::PseudoRandom;
+        const SimulationMCResult p = simulate_script(product, *m, pseudo);
+        EXPECT_NE(p.diagnostics.find("multilevel Monte Carlo"), std::string::npos) << p.diagnostics;
+        EXPECT_NEAR(p.npv(), 14.20, 3.0 * 0.02) << p.diagnostics;
+    }
+
+    TEST(Mlmc, TheScriptEngineSaysWhyItDidNotRunIt)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        auto m = make_script_model<Real>(bs);
+        PricingSettings s;
+        s.mc_mlmc_eps = 0.02;
+        s.mc_paths = 4096;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        EXPECT_NE(r.diagnostics.find("no multilevel Monte Carlo: the model has no time-step bias"),
+                  std::string::npos)
+            << r.diagnostics;
+
+        PricingSettings negative;
+        negative.mc_mlmc_eps = -1.0;
+        EXPECT_THROW(simulate_script(product, *m, negative), InvalidInput);
+    }
+
+    // ── WP 26 P4d: approximate random variables (§8.7) ──────────────────
+
+    TEST(Mlmc, ThePiecewiseLinearInverseCdfIsCloseAndExactInTheTail)
+    {
+        double err256 = 0.0, err4096 = 0.0;
+        const PiecewiseLinearInverseCdf a256(256), a4096(4096);
+        for (int i = 1; i < 100000; ++i)
+        {
+            const double p = i / 100000.0;
+            err256 = std::max(err256, std::fabs(a256(p) - inverse_normal_cdf(p)));
+            err4096 = std::max(err4096, std::fabs(a4096(p) - inverse_normal_cdf(p)));
+        }
+        EXPECT_LT(err4096, err256);
+        EXPECT_LT(err256, 0.05);
+        EXPECT_EQ(a256(1e-6), inverse_normal_cdf(1e-6)); // the extreme tail is exact
+        EXPECT_EQ(a256(0.3), -a256(0.7));                // symmetric
+    }
+
+    TEST(Mlmc, TheApproximateLevelPlusItsCorrectionIsUnbiased)
+    {
+        // E[P_exact] = E[P_approx] + E[P_exact - P_approx] whatever the
+        // approximation: a coarse table, a Black-Scholes call.
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        auto m = make_script_model<Real>(bs);
+        const ApproxRvResult r =
+            simulate_approx_inverse_cdf(product, *m, PiecewiseLinearInverseCdf(16), 400000, 100000, 400000, 41);
+        const double exact_se = std::sqrt(r.exact.stats.variance() / static_cast<double>(r.exact.stats.n));
+        EXPECT_NEAR(r.value, r.exact.stats.mean(), 4.0 * std::hypot(r.std_error, exact_se));
+        // The correction is small against the price's own variance.
+        EXPECT_LT(r.correction.stats.variance(), 1e-3 * r.exact.stats.variance());
+    }
+
+    TEST(Mlmc, TheCorrectionVarianceFallsWithTheTablesResolution)
+    {
+        // Measured, not assumed (§8.7): 256 -> 4096 cells.
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        double v[2];
+        int i = 0;
+        for (const int cells : {256, 4096})
+        {
+            auto m = make_script_model<Real>(bs);
+            v[i++] = simulate_approx_inverse_cdf(product, *m, PiecewiseLinearInverseCdf(cells), 1000, 200000, 1000, 43)
+                         .correction.stats.variance();
+        }
+        EXPECT_LT(v[1], v[0] / 4.0) << v[0] << " -> " << v[1];
+    }
+
+    // ── WP 26 P5: multilevel QMC (§9) ────────────────────────────────────
+
+    TEST(Mlmc, MultilevelQmcIsMultilevelMcWithinErrorAndFarCheaper)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        MlmcSettings a;
+        a.eps = 0.02;
+        a.seed = 13;
+        const MlmcResult mc = simulate_mlmc(product, *m, a);
+        MlqmcSettings b;
+        b.eps = 0.02;
+        b.seed = 13;
+        const MlmcResult qmc = simulate_mlqmc(product, *m, b);
+        EXPECT_TRUE(qmc.bias_converged) << qmc.diagnostics;
+        EXPECT_LE(qmc.std_error, 1.0 * b.eps / std::sqrt(2.0)) << qmc.diagnostics;
+        // Both estimate E[P] within eps; their finest levels may differ.
+        EXPECT_NEAR(qmc.value, mc.value, 3.0 * a.eps) << qmc.diagnostics << " | " << mc.diagnostics;
+        // Measured 14x cheaper on this case (WP 26 §9.1).
+        EXPECT_LT(5.0 * qmc.total_cost(), mc.total_cost()) << qmc.diagnostics << " | " << mc.diagnostics;
+    }
+
+    TEST(Mlmc, MultilevelQmcCostGrowsAsEpsToTheMinusOneOnASmoothSurface)
+    {
+        // Giles & Waterhouse 2009: with Milstein on a smooth volatility the
+        // coarse, low-dimensional levels carry the cost and QMC removes most
+        // of it. Measured slope -1.01, against -2.00 for MLMC (§9.1).
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.K_grid = {10.0, 1000.0};
+        spec.T_grid = {0.0, 2.0};
+        spec.sigma_loc_flat = {0.50, 0.50, 0.05, 0.05};
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        double sx = 0, sy = 0, sxx = 0, sxy = 0;
+        const std::vector<double> eps = {0.02, 0.01, 0.005, 0.0025};
+        for (const double e : eps)
+        {
+            MlqmcSettings s;
+            s.eps = e;
+            s.seed = 13;
+            const MlmcResult r = simulate_mlqmc(product, *m, s);
+            EXPECT_TRUE(r.bias_converged) << r.diagnostics;
+            const double x = std::log(e), y = std::log(r.total_cost());
+            sx += x, sy += y, sxx += x * x, sxy += x * y;
+        }
+        const double n = static_cast<double>(eps.size());
+        const double slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+        RecordProperty("mlqmc_cost_slope", std::to_string(slope));
+        EXPECT_LT(slope, -0.7);
+        EXPECT_GT(slope, -1.5);
+    }
+
+    TEST(Mlmc, MultilevelQmcRefusesWhatSobolCannotDraw)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.max_dt = 1.0 / 30000.0; // level 0 alone draws 30 000 numbers a path
+        auto m = make_script_model<Real>(spec);
+        MlqmcSettings s;
+        s.eps = 0.1;
+        EXPECT_THROW(simulate_mlqmc(product, *m, s), InvalidInput);
+    }
+
+    TEST(Mlmc, TheBiasTestReadsTheLastThreeCorrections)
+    {
+        // SPY's corrections fell fast then slowly (WP 26 §9.2): the
+        // two-level test, max(|Y_{L-1}| / r, |Y_L|) / (r - 1), stopped at
+        // level 2; the last three see the level-1 correction still large.
+        const std::vector<double> spy = {54.0, 1.06, 0.12};
+        EXPECT_NEAR(mlmc_detail::remaining_bias(spy, 1.0), std::max(1.06 / 2.0, 0.12), 1e-12);
+        const std::vector<double> later = {54.0, 1.06, 0.12, 0.03, 0.06};
+        EXPECT_NEAR(mlmc_detail::remaining_bias(later, 1.0), std::max({0.12 / 4.0, 0.03 / 2.0, 0.06}), 1e-12);
+        // r = 4 (alpha = 2): divided by r - 1 = 3.
+        EXPECT_NEAR(mlmc_detail::remaining_bias({1.0, 0.4, 0.1}, 2.0), 0.1 / 3.0, 1e-12);
+    }
+
+    TEST(Mlmc, MultilevelQmcGivesTheSameBitsOnAnyNumberOfThreads)
+    {
+        // Each replicate sums its points in order on its own (WP 26 §9.4).
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        MlqmcSettings s;
+        s.eps = 0.02;
+        s.seed = 13;
+        const MlmcResult one = simulate_mlqmc(product, *m, s);
+        ThreadPool pool;
+        pool.start(7);
+        const MlmcResult eight = simulate_mlqmc(product, *m, s, &pool);
+        EXPECT_EQ(one.value, eight.value);
+        EXPECT_EQ(one.std_error, eight.std_error);
+        EXPECT_EQ(one.finest_level(), eight.finest_level());
+    }
+
+    TEST(Mlmc, MultilevelQmcAimsAtAShareOfThePrice)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        MlqmcSettings s;
+        s.eps = 1e-6; // the floor
+        s.rel_eps = 0.002;
+        s.seed = 13;
+        const MlmcResult r = simulate_mlqmc(product, *m, s);
+        EXPECT_NEAR(r.eps, 0.002 * r.value, 1e-12);
+        EXPECT_LE(r.std_error, 1.02 * r.eps / std::sqrt(2.0)) << r.diagnostics;
+        EXPECT_LE(r.bias, r.eps / std::sqrt(2.0)) << r.diagnostics;
+    }
+
+    // ── WP 26 §9.4: the default route's bias, shown ──────────────────────
+
+    TEST(Mlmc, APlainLocalVolRunEstimatesItsBiasByHalvingTheSteps)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        PricingSettings s;
+        s.mc_paths = 1 << 16;
+        s.mc_bias_estimate = true;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        ASSERT_TRUE(r.discretisation_bias.has_value()) << r.diagnostics;
+        // The price is the halved run's; the bias the difference from the
+        // unhalved one.
+        auto halved = make_script_model<Real>(local_vol(false));
+        ASSERT_TRUE(halved->set_refinement(2));
+        PricingSettings p = s;
+        p.mc_bias_estimate = false;
+        const SimulationMCResult fine = simulate_script(product, *halved, p);
+        const SimulationMCResult coarse = simulate_script(product, *m, p);
+        EXPECT_EQ(r.npv(), fine.npv());
+        EXPECT_EQ(*r.discretisation_bias, std::fabs(fine.npv() - coarse.npv()));
+        EXPECT_GT(*r.discretisation_bias, 0.0);
+    }
+
+    TEST(Mlmc, BlackScholesHasNoDiscretisationBiasAndRoughBergomisIsNotEstimated)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        PricingSettings s;
+        s.mc_paths = 1 << 14;
+        s.mc_bias_estimate = true;
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        auto m = make_script_model<Real>(bs);
+        const SimulationMCResult exact = simulate_script(product, *m, s);
+        ASSERT_TRUE(exact.discretisation_bias.has_value());
+        EXPECT_EQ(*exact.discretisation_bias, 0.0);
+
+        // The hybrid scheme's grid does not refine (WP 26 §9.5).
+        ScriptModelSpec rb = local_vol(true);
+        rb.model = "rough_bergomi";
+        rb.xi_times = {0.5, 2.0};
+        rb.xi_values = {0.04, 0.04};
+        auto r = make_script_model<Real>(rb);
+        const SimulationMCResult unknown = simulate_script(product, *r, s);
+        EXPECT_FALSE(unknown.discretisation_bias.has_value());
+        EXPECT_NE(unknown.diagnostics.find("not estimated"), std::string::npos) << unknown.diagnostics;
+    }
+
+    // ── WP 26 §9.5: the stochastic-volatility models refine ──────────────
+
+    namespace
+    {
+        ScriptModelSpec heston()
+        {
+            ScriptModelSpec h = local_vol(true);
+            h.model = "heston";
+            h.heston = HestonParams{0.04, 2.0, 0.04, 0.5, -0.7};
+            return h;
+        }
+    } // namespace
+
+    TEST(Mlmc, StochasticVolatilityModelsRefineTheirGrids)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto check = [&](std::unique_ptr<ISimulationModel<Real>> m, const char *name)
+        {
+            m->init(product.timeline(), product.defline());
+            const std::size_t base = m->sim_dim();
+            auto r = m->clone();
+            ASSERT_TRUE(r->set_refinement(4)) << name;
+            r->init(product.timeline(), product.defline());
+            EXPECT_EQ(r->sim_dim(), 4 * base) << name;
+        };
+        check(make_script_model<Real>(heston()), "heston");
+        check(std::make_unique<SABRSimModel<Real>>(100.0, 0.03, 0.3, 0.7, -0.3, 0.4, 1.0 / 12.0), "sabr");
+        ScriptModelSpec slv = heston();
+        slv.model = "slv";
+        slv.K_grid = {50.0, 200.0};
+        slv.T_grid = {0.0, 2.0};
+        slv.leverage_flat = {1.0, 1.0, 1.0, 1.0};
+        check(make_script_model<Real>(slv), "slv");
+    }
+
+    TEST(Mlmc, JumpsStayOutOfTheLevels)
+    {
+        // Bates with jumps: their draws would couple poorly (WP 26 §8.3).
+        BatesSimModel<Real> bates(100.0, 0.03, 0.0, 0.04, 2.0, 0.04, 0.5, -0.7, 0.5, -0.1, 0.1, 1.0 / 12.0);
+        EXPECT_FALSE(bates.set_refinement(2));
+        EXPECT_TRUE(bates.set_refinement(1));
+    }
+
+    TEST(Mlmc, UnderHestonTheTelescopingSumIsPlainMonteCarloOnTheFinestGrid)
+    {
+        // The jump draws a Heston step carries (Bates with lambda = 0) are
+        // copied to the coarse step: unused, the levels stay exact.
+        ScriptedProduct<Real> product(kPut, ctx());
+        auto m = make_script_model<Real>(heston());
+        const MlmcResult ml = simulate_mlmc_fixed(product, *m, {200000, 40000, 20000}, 47);
+        const SimulationMCResult pl = plain(kPut, heston(), 2, 200000);
+        EXPECT_NEAR(ml.value, pl.npv(), 4.0 * std::hypot(ml.std_error, pl.std_error())) << ml.diagnostics;
+        EXPECT_GT(ml.levels[1].variance(), 0.0);
+        EXPECT_LT(ml.levels[2].variance(), ml.levels[1].variance()) << ml.diagnostics;
+    }
+
+    TEST(Mlmc, AHestonRunNowEstimatesItsBias)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(heston());
+        PricingSettings s;
+        s.mc_paths = 1 << 14;
+        s.mc_bias_estimate = true;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        ASSERT_TRUE(r.discretisation_bias.has_value()) << r.diagnostics;
+        EXPECT_GT(*r.discretisation_bias, 0.0);
+    }
+
+    TEST(Mlmc, TheMultilevelRouteReportsItsBiasAndAimsAtAShareOfThePrice)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        PricingSettings s;
+        s.mc_mlmc_eps = 1e-4; // floor
+        s.mc_mlmc_rel_eps = 0.002;
+        ThreadPool pool;
+        pool.start(7);
+        const SimulationMCResult r = simulate_script(product, *m, s, &pool);
+        ASSERT_TRUE(r.discretisation_bias.has_value()) << r.diagnostics;
+        EXPECT_LE(*r.discretisation_bias, 0.002 * r.npv() / std::sqrt(2.0) * 1.0001) << r.diagnostics;
+        EXPECT_LE(r.std_error(), 1.02 * 0.002 * r.npv() / std::sqrt(2.0)) << r.diagnostics;
+
+        PricingSettings no_floor = s;
+        no_floor.mc_mlmc_eps = 0.0;
+        EXPECT_THROW(simulate_script(product, *m, no_floor), InvalidInput);
     }
 
 } // namespace quantModeling

@@ -60,9 +60,15 @@ namespace quantModeling
 
         Real price(const std::vector<SVISliceCalibration> &slices)
         {
+            // The grid calibrate_vol_surface builds: each maturity on the
+            // band its slices are quoted on (WP 26 §9.3), as the superbucket
+            // rebuilds it from the quotes.
             const SVISurface surface(slices);
+            std::vector<QuotedBand> bands;
+            for (const auto &q : market_quotes())
+                bands.push_back(quoted_band(q, kKmin, kKmax));
             const GridLocalVol grid =
-                build_local_vol_grid(surface, kSpot, kRate, kDiv, kKmin, kKmax, kNK, kNT);
+                build_local_vol_grid(surface, kSpot, kRate, kDiv, kKmin, kKmax, kNK, kNT, {}, &bands);
             const std::vector<Real> c = weights();
             Real v = 0.0;
             for (std::size_t i = 0; i < c.size(); ++i)

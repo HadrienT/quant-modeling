@@ -124,6 +124,13 @@ namespace quantModeling
          */
         virtual bool set_refinement(int r) { return r == 1; }
 
+        /// Whether the model simulates the product's dates exactly, with no
+        /// time step between them (Black-Scholes): its discretisation bias
+        /// is then 0 (WP 26 §9.4). False by default -- a model that steps on
+        /// a grid of its own, even one it does not expose, must not claim
+        /// it.
+        virtual bool exact_between_dates() const { return false; }
+
         /// Valid after init(). Models without Brownian increments to reorder
         /// (or not yet described) keep the default: no bridge.
         virtual BrownianLayout brownian_layout() const { return {}; }

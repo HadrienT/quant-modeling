@@ -98,7 +98,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         BatesSimModel(const BatesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -110,7 +110,7 @@ namespace quantModeling
         {
             refuse_barrier_monitoring(defline, "BatesSimModel");
             timeline_ = canonical_timeline(product_timeline);
-            sim_timeline_ = add_monitoring_steps(timeline_, max_dt_);
+            sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
@@ -120,6 +120,16 @@ namespace quantModeling
             // shock's independent component, the poisson-count uniform,
             // and the jump-sum magnitude.
             sim_dim_ = 4 * sim_timeline_.size();
+        }
+
+        /// Multilevel Monte Carlo (WP 26 §9.5): each max_dt step split into
+        /// r -- without jumps only: coupling jump draws across levels is out of P4's first cut (WP 26 §8.3); with lambda = 0 (Heston) the jump draws are unused.
+        bool set_refinement(int r) override
+        {
+            if (r < 1 || (r > 1 && !(to_double(lambda_) == 0.0)))
+                return false;
+            refinement_ = r;
+            return true;
         }
 
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
@@ -277,6 +287,7 @@ namespace quantModeling
         T s0_{}, r_{}, q_{}, v0_{}, kappa_{}, theta_{}, xi_{}, rho_{}, lambda_{},
             jump_mean_{}, jump_vol_{};
         Time max_dt_;
+        int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
 
         TimeLine timeline_;     // the product's own event dates
         TimeLine sim_timeline_; // timeline_ plus internal Euler steps

@@ -270,10 +270,15 @@ class ScriptPricingInputs(BaseModel):
         "(ignored with tickers, whose correlation is historical).",
     )
     steps_per_year: int = Field(
-        52,
+        252,
         ge=12,
         le=504,
-        description="Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly).",
+        description="Euler steps per year for local_vol, heston and slv "
+        "(ignored by black_scholes, which is simulated exactly). 252 by "
+        "default: on SPY's local-vol grid a one-year ATM call (about 54) is "
+        "0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, "
+        "0.02 at 2016 (blueprint WP 26 §9.3). The standard error does not "
+        "include this discretisation bias; mlmc_eps controls it.",
     )
     spot: Optional[float] = Field(
         None,
@@ -339,6 +344,51 @@ class ScriptPricingInputs(BaseModel):
         McRng.pcg32,
         description="CPU runs only; a GPU run always uses Philox, the generator "
         "with which a CPU run gives the GPU's price.",
+    )
+    mlmc: Literal["auto", "on", "off"] = Field(
+        "auto",
+        description="'auto' (the default): multilevel Monte Carlo over the time "
+        "step for a local_vol script that suits it -- one payoff, no early "
+        "exercise, no AAD greeks -- to a root-mean-square error of "
+        "mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine "
+        "otherwise, the diagnostics saying why. 'on': also under heston and "
+        "slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU "
+        "against about 2 s for the usual engine with its bias estimated; "
+        "blueprint WP 26 §9.5). 'off': the usual engine (§9.4).",
+    )
+    mlmc_rel_eps: float = Field(
+        0.002,
+        gt=0.0,
+        le=0.1,
+        description="Multilevel target as a share of the price (0.2 % by "
+        "default), split half to the standard error, half to the "
+        "discretisation bias.",
+    )
+    bias_estimate: bool = Field(
+        True,
+        description="Estimate and return the discretisation bias of a plain "
+        "(non-multilevel) run: the steps are halved and the bias read from "
+        "the difference, at about three times the cost of one run of a "
+        "time-stepped model.",
+    )
+    mlmc_eps: float = Field(
+        0.0,
+        ge=0.0,
+        description="An absolute multilevel target instead of mlmc_rel_eps (0, "
+        "the default: the relative one). The levels are refined until the "
+        "estimated discretisation bias is below the target / sqrt(2). With "
+        "sampler='sobol' (the default) the levels are Sobol points, multilevel "
+        "QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price "
+        "only; n_paths and device are then ignored.",
+    )
+    milstein: bool = Field(
+        False,
+        description="model='local_vol': the Milstein step instead of "
+        "log-Euler (strong order 1; with mlmc_eps, the levels' variance "
+        "decays as h^2 on a smooth surface). CPU only. Not advised on a "
+        "calibrated market grid: where the local vol's slope is steep at the "
+        "edge of the quoted strikes, it makes the levels' coupling worse "
+        "(blueprint WP 26 §9.2).",
     )
     greeks_method: Literal["none", "aad"] = Field(
         "none",
@@ -782,6 +832,15 @@ class PricingResponse(BaseModel):
         0,
         description="GPUs the Monte-Carlo shared its paths between (0 on the "
         "CPU). The result is the same bits for any count (blueprint WP 19 §7).",
+    )
+    discretisation_bias: Optional[float] = Field(
+        None,
+        description="Estimated discretisation (time-step) bias of npv, in its "
+        "units: what mc_std_error leaves out (blueprint WP 26 §9.4). From the "
+        "multilevel run's bias test, or from halving a plain run's steps; 0 "
+        "for a model simulated exactly between the product's dates; null when "
+        "not estimated (a model that cannot refine its grid, AAD greeks, a "
+        "non-Monte-Carlo engine).",
     )
 
 
