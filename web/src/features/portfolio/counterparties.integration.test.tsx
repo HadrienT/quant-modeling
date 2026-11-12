@@ -1,21 +1,9 @@
-import {
-	RouterProvider,
-	createMemoryHistory,
-	createRootRoute,
-	createRoute,
-	createRouter,
-} from "@tanstack/react-router";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
-import { makeQueryClient } from "@/shared/api";
 import type { Portfolio } from "@/shared/api";
-import { SessionProvider } from "@/shared/session";
 import * as fx from "@/shared/test/fixtures";
-import { TooltipProvider } from "@/shared/ui";
-import PortfolioPage from "./PortfolioPage";
+import { renderPortfolioPage } from "./portfolio.test-utils";
 
 /**
  * The Counterparties tab of a portfolio kept in this browser: the examples
@@ -26,32 +14,9 @@ const KEY = "qm_local_portfolios";
 const stored = () =>
 	(JSON.parse(localStorage.getItem(KEY) ?? "[]") as Portfolio[])[0]!;
 
-function renderPage() {
-	const root = createRootRoute();
-	const page = createRoute({
-		getParentRoute: () => root,
-		path: "/portfolio",
-		validateSearch: z.object({ id: z.string().optional() }).parse,
-		component: PortfolioPage,
-	});
-	const router = createRouter({
-		routeTree: root.addChildren([page]),
-		history: createMemoryHistory({ initialEntries: ["/portfolio"] }),
-	});
-	return render(
-		<QueryClientProvider client={makeQueryClient()}>
-			<SessionProvider>
-				<TooltipProvider>
-					<RouterProvider router={router as never} />
-				</TooltipProvider>
-			</SessionProvider>
-		</QueryClientProvider>,
-	);
-}
-
 async function openTab() {
 	const user = userEvent.setup();
-	renderPage();
+	renderPortfolioPage();
 	await user.click(await screen.findByRole("tab", { name: /Counterparties/ }));
 	return user;
 }
@@ -145,7 +110,7 @@ describe("counterparties of a portfolio", () => {
 		};
 		localStorage.setItem(KEY, JSON.stringify([seeded]));
 		const user = userEvent.setup();
-		renderPage();
+		renderPortfolioPage();
 		await user.click(await screen.findByRole("button", { name: /New trade/ }));
 		await user.selectOptions(
 			screen.getByLabelText("Instrument type"),
@@ -183,7 +148,7 @@ describe("counterparties of a portfolio", () => {
 			]),
 		);
 		const user = userEvent.setup();
-		renderPage();
+		renderPortfolioPage();
 		await user.click(await screen.findByRole("tab", { name: "xVA" }));
 		expect(screen.getByLabelText("Netting set")).toHaveTextContent(
 			"Northgate Bank (dealer) (A): ISDA with CSA: variation margin — 1 trade",
@@ -223,7 +188,7 @@ describe("counterparties of a portfolio", () => {
 
 	it("says what to do when no trade is under a netting set", async () => {
 		const user = userEvent.setup();
-		renderPage();
+		renderPortfolioPage();
 		await user.click(await screen.findByRole("tab", { name: "xVA" }));
 		expect(
 			screen.getByText(/No open trade is under a netting set yet/),

@@ -6,26 +6,14 @@ import type {
 } from "@/shared/api";
 import { usePortfolioXva, usePortfolioXvaSensitivities } from "@/shared/api";
 import { RATINGS, netQuantities } from "@/shared/portfolio";
-import {
-	Button,
-	Label,
-	Methodology,
-	Tabs,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-	WarningList,
-} from "@/shared/ui";
+import { Button, Label, Methodology, WarningList } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import {
-	AdjustmentsPanel,
 	EquityMarketPanel,
-	ExposurePanel,
 	ForeignMarketPanel,
-	MarginCapitalPanel,
 	SensitivitiesPanel,
-	TradesTable,
 	XvaResultHeader,
+	XvaResultTabs,
 } from "@/shared/xva";
 
 const box =
@@ -180,34 +168,17 @@ export function XvaTab({ pf }: { pf: Portfolio }) {
 					{data.market.equity && (
 						<EquityMarketPanel market={data.market.equity} />
 					)}
-					<Tabs defaultValue="exposure">
-						<TabsList>
-							<TabsTrigger value="exposure">Exposure</TabsTrigger>
-							<TabsTrigger value="adjustments">Adjustments</TabsTrigger>
-							<TabsTrigger value="capital">Margin and capital</TabsTrigger>
-							<TabsTrigger value="sensitivities">Sensitivities</TabsTrigger>
-						</TabsList>
-						<TabsContent value="exposure">
-							<ExposurePanel data={data} />
-						</TabsContent>
-						<TabsContent value="adjustments">
-							<div className="flex flex-col gap-6">
-								<AdjustmentsPanel data={data} />
-								<TradesTable data={data} />
-							</div>
-						</TabsContent>
-						<TabsContent value="capital">
-							<MarginCapitalPanel data={data} />
-						</TabsContent>
-						<TabsContent value="sensitivities">
+					<XvaResultTabs
+						data={data}
+						sensitivities={
 							<SensitivitiesPanel
 								query={risks}
 								asked={risksOf === request}
 								onAsk={() => setRisksOf(request)}
 								id="portfolio-xva-sensitivities-methodology"
 							/>
-						</TabsContent>
-					</Tabs>
+						}
+					/>
 					<Methodology
 						id="portfolio-xva-methodology"
 						title="xVA — methodology"
