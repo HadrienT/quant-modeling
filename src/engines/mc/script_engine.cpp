@@ -5,6 +5,7 @@
 
 #include "quantModeling/engines/mc/importance_sampling.hpp"
 #include "quantModeling/engines/mc/mlmc.hpp"
+#include "quantModeling/engines/mc/mlqmc.hpp"
 #include "quantModeling/engines/mc/script_adjoint.hpp"
 #include "quantModeling/engines/mc/sobol_bridge_host.hpp"
 #include "quantModeling/engines/mc/spot_controls.hpp"
@@ -189,10 +190,38 @@ namespace quantModeling
         SimulationMCResult run_mlmc(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model,
                                     const PricingSettings &settings)
         {
-            MlmcSettings s;
-            s.eps = settings.mc_mlmc_eps;
-            s.seed = static_cast<std::uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1);
-            const MlmcResult r = simulate_mlmc(product, model, s);
+            const std::uint64_t seed = static_cast<std::uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1);
+            // Sobol (the default sampler): multilevel QMC (WP 26 P5), 15-25x
+            // cheaper than MLMC on the measured cases; MLMC when a level needs
+            // more draws than Sobol has dimensions, or when pseudo-random
+            // draws were asked for.
+            MlmcResult r;
+            std::string sampler_note = " (CPU, pseudo-random)";
+            bool done = false;
+            if (settings.mc_sampler == SamplerKind::Sobol)
+            {
+                MlqmcSettings q;
+                q.eps = settings.mc_mlmc_eps;
+                q.seed = seed;
+                q.owen = settings.mc_sobol_owen;
+                try
+                {
+                    r = simulate_mlqmc(product, model, q);
+                    sampler_note = " (CPU)";
+                    done = true;
+                }
+                catch (const InvalidInput &e)
+                {
+                    sampler_note = std::string(" (CPU, pseudo-random: ") + e.what() + ")";
+                }
+            }
+            if (!done)
+            {
+                MlmcSettings s;
+                s.eps = settings.mc_mlmc_eps;
+                s.seed = seed;
+                r = simulate_mlmc(product, model, s);
+            }
             SimulationMCResult res;
             res.labels = product.payoff_labels();
             res.values = {r.value};
@@ -201,8 +230,8 @@ namespace quantModeling
             for (const MlmcLevel &l : r.levels)
                 res.n_paths += l.n;
             std::ostringstream os;
-            os << "SimulationMCEngine, " << r.diagnostics << "; target RMS error " << s.eps
-               << ", estimated remaining bias " << r.bias << " (CPU, pseudo-random)";
+            os << "SimulationMCEngine, " << r.diagnostics << "; target RMS error " << settings.mc_mlmc_eps
+               << ", estimated remaining bias " << r.bias << sampler_note;
             res.diagnostics = os.str();
             return res;
         }

@@ -890,8 +890,10 @@ Measured (`tests/testMlmc.cpp`):
   beta = 2.00 with Milstein, 1.02 with log-Euler;
 - Milstein-GBM test bed: MLMC cost against eps in log-log, slope −2.01
   (Giles 2008, Theorem 3.1: O(eps^-2) when beta > gamma);
-- the skewed surface of §8.6a, whose bilinear interpolation has kinks at the
-  strike nodes (∂σ/∂S jumps): beta = 1.66 with Milstein. Gains over plain
+- the toy skewed grid of §8.6a (5 strike nodes, 80 % to 10 % vol), whose
+  bilinear interpolation has large kinks at the strike nodes (∂σ/∂S jumps):
+  beta = 1.66 with Milstein. The production grid (100 x 50, from SVI) is not
+  measured yet (§9.1). Gains over plain
   Monte Carlo at equal error, one thread:
 
 | eps | log-Euler MLMC | Milstein MLMC |
@@ -905,9 +907,9 @@ stopping at 4 on a noisy estimate: dearer, but its bias is controlled.
 Milstein's level-0 bias is larger (0.078 against ~0.002 for log-Euler on
 level 1) and resolved, which is what makes its alpha stable (0.94–1.17).
 
-Left: Milstein for Heston and SLV (the doc's later decision, §8.5); a
-smoother interpolation of the Dupire grid would give beta = 2 on market
-surfaces too (to measure against its effect on the calibration).
+Left: Milstein for Heston and SLV (the doc's later decision, §8.5); beta on
+the production Dupire grid, to measure before any change to how σ_loc is
+read (§9.1).
 
 ### 8.6c P4c: MLMC opt-in through the script engine (done, 2026-11-12)
 
@@ -1056,6 +1058,92 @@ diagnostics).
 
 Acceptance: measured complexity slope of MLQMC below MLMC's on the Milstein
 local-vol Asian and vanilla; same price within error.
+
+### 9.1 P5 done (2026-11-12)
+
+`engines/mc/mlqmc.hpp`: `simulate_mlqmc`. P4's levels and coupling
+(`LevelSampler`, whose sampling and evaluation are now separate), each level
+drawing points of R = 32 randomised Sobol sequences of its fine dimension,
+through a Brownian bridge on the fine grid (`BridgedGaussians` from
+`brownian_layout()`); the level's estimate is the mean of its replicate
+means, its variance their sample variance over R. N_l starts at 16 points a
+replicate and doubles on the level with the largest V_l / (C_l N_l) until
+sum V_l <= eps² / 2; the bias test is P4's. A level that needs more draws
+than the 21 201 Sobol dimensions is refused (`InvalidInput`), and the
+script engine's opt-in then falls back to MLMC and says so: the padding with
+pseudo-random dimensions of the design is not done.
+
+The opt-in of P4c (`mc_mlmc_eps`) now runs multilevel QMC when the sampler
+is Sobol (the default) and MLMC when it is pseudo-random.
+
+Measured, one thread, Milstein local vol, cost in model steps:
+
+| Case | eps | MLMC cost (time) | MLQMC cost (time) | Slopes, MLMC / MLQMC |
+|---|---|---|---|---|
+| Toy skewed grid (5 strikes, 80 % to 10 % vol), vanilla K = 95 | 0.005 | 3.2e8 (21.6 s) | 1.5e7 (0.89 s) | −2.07 / −2.11 |
+| Same toy grid, Asian on 12 monthly fixings | 0.005 | 1.5e8 (14.6 s) | 9.8e6 (0.70 s) | −2.05 / −2.17 |
+| Smooth surface (σ linear in S), vanilla | 0.0025 | 5.0e9 (306 s) | 6.8e6 (0.41 s) | −2.00 / **−1.01** |
+
+(slopes over eps = 0.04 … 0.005, and 0.02 … 0.0025 for the smooth surface;
+prices equal within error in every row.)
+
+Acceptance: met on the smooth surface (slope −1.01 against −2.00, better
+than Giles & Waterhouse's ~−1.5); not met on the toy skewed grid (5 strike
+nodes, extreme skew), where MLQMC is a constant 15–25× cheaper than MLMC
+with the same slope.
+
+### 9.2 Measured on SPY's production grid (2026-11-12)
+
+The grid the API calibrates (`market_snapshot.local_vol_market`, snapshot of
+2026-11-11): SVI slices through Dupire, sampled on 100 strikes x 50
+maturities, spot 759.8. One-year ATM call and a 12-fixing monthly Asian,
+monthly level 0, one thread.
+
+**The interior bilinear kinks are not the problem.** The jump of S ∂σ/∂S
+from one strike node to the next is 0.02–0.03 at 6 months and 1 year, 0.14
+at 3 months. **The strike grid's edges are.** It covers only 608–848, −20 %
+to +11 % of the spot (the configured ±0.6 log-moneyness is cut to the quoted
+range); at its left edge σ_loc is already 36–53 % with S ∂σ/∂S between −1.1
+and −2.3, and the flat extrapolation beyond drops that slope to 0 -- a large
+kink many one-year paths cross.
+
+| | beta, log-Euler | beta, Milstein |
+|---|---|---|
+| Vanilla | 0.85 | **0.41**, level variances erratic (49, 77, 586, 19, 24): heavy tails |
+| Asian | 1.04 | 0.91 |
+
+Milstein's term ½ σ (S ∂σ/∂S) dt (z² − 1) is large where the slope is steep
+and switches off past the edge, so fine and coarse paths on either side of it
+get very different corrections: **on market grids Milstein makes the coupling
+worse**. With it, MLQMC lost its advantage on the vanilla (cost 2.8e7
+against MLMC's 1.25e7 at eps = 0.2) and its prices drifted from MLMC's by
+1.5–2 standard errors. With log-Euler:
+
+| Log-Euler, SPY | MLMC | MLQMC | Slopes, MLMC / MLQMC |
+|---|---|---|---|
+| Vanilla, eps = 0.1 (0.19 % of the price) | 1.9 s | **0.22 s** | −1.58 / −1.22 |
+| Asian, eps = 0.1 | 7.2 s | **1.2 s** | −2.01 / −2.05 |
+
+Prices agree within error throughout. On the vanilla the levels stop at 2
+(weekly steps): SPY's time-step bias is below eps / sqrt(2) there, most of
+the gain is QMC's.
+
+Conclusions: (1) for market grids, MLQMC with log-Euler (6–9× over MLMC);
+Milstein stays opt-in and is not advised there, said in the API's
+description; (2) the narrow, flat-extrapolated strike range is a property of
+the local-vol calibration, not of MLMC, and affects every local-vol price
+whose paths leave it: a smooth extrapolation of σ_loc beyond the quoted
+strikes (continuous slope, decaying to flat) would serve both, to decide
+with the calibration's owner; (3) β = 2 needs a σ smooth across the paths'
+range, as the smooth surface showed.
+
+Owen's hash scrambling against the digital shift: no consistent gain
+(costs within a factor 0.3–3 either way across the rows), as WP 19 §12.
+
+Tests (`tests/testMlmc.cpp`): MLQMC equals MLMC within eps and is more than
+5× cheaper on the skewed case, its cost slope on the smooth surface in
+(−1.5, −0.7), the Sobol dimension limit refused, the script engine's opt-in
+on Sobol (MLQMC) and on pseudo-random draws (MLMC).
 
 ## 10. P6 — Multilevel on the GPU
 

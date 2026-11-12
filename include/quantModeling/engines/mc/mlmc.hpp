@@ -73,6 +73,9 @@ namespace quantModeling
         bool bias_converged = true;
         double alpha = 0.0, beta = 0.0, gamma = 0.0; ///< |E Y_l| ~ 2^-alpha l, V_l ~ 2^-beta l, C_l ~ 2^gamma l
         std::vector<MlmcLevel> levels;
+        /// Each level's V_l / N_l, the variance of its estimate (filled by
+        /// multilevel QMC, mlqmc.hpp, whose samples are not independent).
+        std::vector<double> estimator_variance;
         std::string diagnostics;
 
         int finest_level() const { return static_cast<int>(levels.size()) - 1; }
@@ -167,29 +170,40 @@ namespace quantModeling
             void run(long long n, MlmcLevel &acc)
             {
                 acc.cost = cost_;
-                std::vector<Real> out;
                 for (long long p = 0; p < n; ++p)
                 {
                     for (double &z : gauss_fine_)
                         z = bm_(rng_);
-                    fine_->generate_path(gauss_fine_, fine_path_);
-                    product_.payoffs(fine_path_, out);
-                    double y = out.at(0);
-                    if (level_ > 0)
-                    {
-                        std::fill(gauss_coarse_.begin(), gauss_coarse_.end(), 0.0);
-                        for (std::size_t k = 0; k < coarse_of_.size(); ++k)
-                            for (std::size_t f = 0; f < factors_; ++f)
-                                gauss_coarse_[coarse_of_[k] * factors_ + f] +=
-                                    weight_[k] * gauss_fine_[k * factors_ + f];
-                        coarse_->generate_path(gauss_coarse_, coarse_path_);
-                        product_.payoffs(coarse_path_, out);
-                        y -= out.at(0);
-                    }
+                    const double y = evaluate();
                     ++acc.n;
                     acc.sum += y;
                     acc.sum2 += y * y;
                 }
+            }
+
+            /// The fine level's draws, time order (BrownianLayout): fill
+            /// them, then evaluate() (P5's Sobol points go through here).
+            std::vector<double> &draws() { return gauss_fine_; }
+            BrownianLayout fine_layout() const { return fine_->brownian_layout(); }
+
+            /// The sample of the draws in draws(): P_l, minus P_{l-1} on the
+            /// summed increments above level 0.
+            double evaluate()
+            {
+                fine_->generate_path(gauss_fine_, fine_path_);
+                product_.payoffs(fine_path_, out_);
+                double y = out_.at(0);
+                if (level_ > 0)
+                {
+                    std::fill(gauss_coarse_.begin(), gauss_coarse_.end(), 0.0);
+                    for (std::size_t k = 0; k < coarse_of_.size(); ++k)
+                        for (std::size_t f = 0; f < factors_; ++f)
+                            gauss_coarse_[coarse_of_[k] * factors_ + f] += weight_[k] * gauss_fine_[k * factors_ + f];
+                    coarse_->generate_path(gauss_coarse_, coarse_path_);
+                    product_.payoffs(coarse_path_, out_);
+                    y -= out_.at(0);
+                }
+                return y;
             }
 
           private:
@@ -200,6 +214,7 @@ namespace quantModeling
             std::unique_ptr<ISimulationModel<Real>> fine_, coarse_;
             Scenario<Real> fine_path_, coarse_path_;
             std::vector<double> gauss_fine_, gauss_coarse_;
+            std::vector<Real> out_;
             std::size_t factors_ = 0;
             std::vector<std::size_t> coarse_of_;
             std::vector<double> weight_;

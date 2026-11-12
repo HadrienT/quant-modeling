@@ -348,16 +348,20 @@ class ScriptPricingInputs(BaseModel):
         "(0, the default: off). Applied when the script suits it -- model "
         "local_vol, one payoff, no early exercise -- the levels refined until "
         "the estimated discretisation bias is below mlmc_eps / sqrt(2); "
-        "otherwise the usual engine runs and the diagnostics say why. CPU, "
-        "pseudo-random, price only: slower than the default Sobol route, but "
-        "the time-step bias is controlled. n_paths, sampler and device are "
-        "then ignored.",
+        "otherwise the usual engine runs and the diagnostics say why. With "
+        "sampler='sobol' (the default) the levels are Sobol points, multilevel "
+        "QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price "
+        "only; the time-step bias is controlled. n_paths and device are then "
+        "ignored.",
     )
     milstein: bool = Field(
         False,
         description="model='local_vol': the Milstein step instead of "
         "log-Euler (strong order 1; with mlmc_eps, the levels' variance "
-        "decays as h^2 on a smooth surface). CPU only.",
+        "decays as h^2 on a smooth surface). CPU only. Not advised on a "
+        "calibrated market grid: where the local vol's slope is steep at the "
+        "edge of the quoted strikes, it makes the levels' coupling worse "
+        "(blueprint WP 26 §9.2).",
     )
     greeks_method: Literal["none", "aad"] = Field(
         "none",

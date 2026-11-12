@@ -15,7 +15,8 @@ def test_mlmc_runs_under_local_vol_and_says_so(store):
     resp = pricing_service.price_script(
         _req(VANILLA, ticker="TEST", model="local_vol", mlmc_eps=0.05, milstein=True)
     )
-    assert "multilevel Monte Carlo" in resp.diagnostics
+    # the default sampler, Sobol: multilevel QMC (WP 26 P5)
+    assert "multilevel QMC" in resp.diagnostics
     assert "target RMS error 0.05" in resp.diagnostics
     assert resp.mc_std_error <= 1.02 * 0.05 / 2**0.5
     # the same price as the default route, within both errors and the bias
