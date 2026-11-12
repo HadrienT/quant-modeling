@@ -984,6 +984,23 @@ digital (the hard case), against plain Monte-Carlo at equal RMS error; the
 estimator must equal plain Monte-Carlo within error, and the correction
 level's variance decay must be measured, not assumed.
 
+**Measured first (P4d, 2026-11-12): not worth doing on our paths.** The gain
+is bounded by Φ⁻¹'s share of a path. CPU, one thread, on the most favourable
+case, a Black-Scholes vanilla (one draw per path, an exact step):
+
+| | ns |
+|---|---|
+| Φ⁻¹, AS 241 (since P1i) | 12.5 per draw |
+| Φ⁻¹, piecewise-linear table, 1024 cells (the papers' kind of approximation) | 6.9 per draw |
+| One path through the generic engine, Sobol | 92 |
+
+A free Φ⁻¹ would save 13.5 % of the path, the table 6 %, before paying the
+correction level. The papers' 5–7× came from an Euler step whose inverse CDF
+dominated the cost; AS 241 (P1i) removed that on the CPU, and on the GPU the
+Halley step it replaced was the 37 % of the P1i ablations. Proposed: closed
+as measured, not done (as P1d); to revisit if a path where draws dominate
+again appears (reduced precision on the GPU, many factors).
+
 ## 9. P5 — Multilevel quasi-Monte Carlo
 
 Each level's paths are Sobol points (Brownian bridge on the level's fine grid,
