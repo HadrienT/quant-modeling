@@ -63,6 +63,34 @@ namespace
         return qm_::CreditCurve(pillars.first, pillars.second);
     }
 
+    /// The terms of a CSA from its dict; an absent key keeps Csa's default.
+    qm_::Csa csa_terms(const py::dict &c)
+    {
+        qm_::Csa terms;
+        terms.threshold_counterparty = item_or<qm_::Real>(c, "threshold_counterparty", terms.threshold_counterparty);
+        terms.threshold_bank = item_or<qm_::Real>(c, "threshold_bank", terms.threshold_bank);
+        terms.minimum_transfer_amount =
+            item_or<qm_::Real>(c, "minimum_transfer_amount", terms.minimum_transfer_amount);
+        terms.rounding = item_or<qm_::Real>(c, "rounding", terms.rounding);
+        terms.independent_amount = item_or<qm_::Real>(c, "independent_amount", terms.independent_amount);
+        terms.margin_period_of_risk = item_or<qm_::Time>(c, "margin_period_of_risk", terms.margin_period_of_risk);
+        return terms;
+    }
+
+    /// The treatment of the trade flows during the margin period of risk, from
+    /// the CSA dict's "cashflows" (paid, withheld, only_bank_pays).
+    qm_::MarginPeriodCashflows margin_period_cashflows(const py::dict &c)
+    {
+        const auto flows = item_or<std::string>(c, "cashflows", "paid");
+        if (flows == "withheld")
+            return qm_::MarginPeriodCashflows::Withheld;
+        if (flows == "only_bank_pays")
+            return qm_::MarginPeriodCashflows::OnlyBankPays;
+        if (flows != "paid")
+            throw qm_::InvalidInput("xva: unknown cash-flow treatment '" + flows + "'");
+        return qm_::MarginPeriodCashflows::Paid;
+    }
+
     py::dict exposure_dict(const qm_::ExposureStatistics &s)
     {
         py::dict out;
@@ -572,20 +600,8 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
     if (!csa.is_none())
     {
         const py::dict c = csa.cast<py::dict>();
-        qm_::Csa terms;
-        terms.threshold_counterparty = item_or<qm_::Real>(c, "threshold_counterparty", 0.0);
-        terms.threshold_bank = item_or<qm_::Real>(c, "threshold_bank", 0.0);
-        terms.minimum_transfer_amount = item_or<qm_::Real>(c, "minimum_transfer_amount", 0.0);
-        terms.rounding = item_or<qm_::Real>(c, "rounding", 0.0);
-        terms.independent_amount = item_or<qm_::Real>(c, "independent_amount", 0.0);
-        terms.margin_period_of_risk = item_or<qm_::Time>(c, "margin_period_of_risk", 10.0 / 250.0);
-        const auto flows = item_or<std::string>(c, "cashflows", "paid");
-        if (flows == "withheld")
-            inputs.collateral.cashflows = qm_::MarginPeriodCashflows::Withheld;
-        else if (flows == "only_bank_pays")
-            inputs.collateral.cashflows = qm_::MarginPeriodCashflows::OnlyBankPays;
-        else if (flows != "paid")
-            throw qm_::InvalidInput("xva: unknown cash-flow treatment '" + flows + "'");
+        const qm_::Csa terms = csa_terms(c);
+        inputs.collateral.cashflows = margin_period_cashflows(c);
         inputs.csa = terms;
         settings.grid.margin_period_of_risk = terms.margin_period_of_risk;
         settings.keep_cashflows = inputs.collateral.cashflows != qm_::MarginPeriodCashflows::Paid;
@@ -838,21 +854,8 @@ static py::dict xva_sensitivities_impl(const std::vector<std::pair<qm_::Time, qm
     if (!csa.is_none())
     {
         const py::dict c = csa.cast<py::dict>();
-        qm_::Csa terms;
-        terms.threshold_counterparty = item_or<qm_::Real>(c, "threshold_counterparty", 0.0);
-        terms.threshold_bank = item_or<qm_::Real>(c, "threshold_bank", 0.0);
-        terms.minimum_transfer_amount = item_or<qm_::Real>(c, "minimum_transfer_amount", 0.0);
-        terms.rounding = item_or<qm_::Real>(c, "rounding", 0.0);
-        terms.independent_amount = item_or<qm_::Real>(c, "independent_amount", 0.0);
-        terms.margin_period_of_risk = item_or<qm_::Time>(c, "margin_period_of_risk", terms.margin_period_of_risk);
-        inputs.csa = terms;
-        const auto flows = item_or<std::string>(c, "cashflows", "paid");
-        if (flows == "withheld")
-            inputs.cashflows = qm_::MarginPeriodCashflows::Withheld;
-        else if (flows == "only_bank_pays")
-            inputs.cashflows = qm_::MarginPeriodCashflows::OnlyBankPays;
-        else if (flows != "paid")
-            throw qm_::InvalidInput("xva: unknown cash-flow treatment '" + flows + "'");
+        inputs.csa = csa_terms(c);
+        inputs.cashflows = margin_period_cashflows(c);
     }
     qm_::ExposureSimulationSettings settings;
     settings.paths = paths;
