@@ -66,6 +66,7 @@ namespace quantModeling::scripting
                 case Op::Var:
                 case Op::Spot:
                 case Op::Df:
+                case Op::Surv:
                     return {0, 1, 0, 0};
                 case Op::Add:
                 case Op::Sub:
@@ -280,6 +281,12 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
             out.why = "the script is not compiled to bytecode";
             return out;
         }
+        if (p.has_survival)
+        {
+            out.why = "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the "
+                      "bridge survival probabilities yet";
+            return out;
+        }
         std::ostringstream src;
         src << kPrelude;
         src << "extern \"C\" __device__ void " << kCudaEventFunction
@@ -343,6 +350,8 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                         break;
                     case Op::Df:
                         o << s(t) << " = df[" << in.a << "];";
+                        break;
+                    case Op::Surv: // refused above (Program::has_survival)
                         break;
                     case Op::Add:
                         o << a << " = __dadd_rn(" << a << ", " << b << ");";

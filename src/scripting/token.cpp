@@ -49,6 +49,10 @@ namespace quantModeling::scripting
                 return "'spot'";
             case TokenKind::Df:
                 return "'df'";
+            case TokenKind::SurvivalAbove:
+                return "'survivalAbove'";
+            case TokenKind::SurvivalBelow:
+                return "'survivalBelow'";
             case TokenKind::Schedule:
                 return "'schedule'";
             case TokenKind::Exercise:

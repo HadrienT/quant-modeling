@@ -87,6 +87,7 @@ namespace quantModeling
 
         void init(const TimeLine &product_timeline, const std::vector<SampleDef> &defline) override
         {
+            refuse_barrier_monitoring(defline, "HullWhiteEquitySimModel");
             timeline_ = canonical_timeline(product_timeline);
             defline_ = defline;
             steps_.clear();

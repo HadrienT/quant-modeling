@@ -5,6 +5,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
+#include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
@@ -95,6 +96,7 @@ namespace quantModeling
 
             timeline_ = canonical_timeline(product_timeline);
             defline_ = defline;
+            check_barrier_assets(defline_, 1, "BlackScholesSimModel");
 
             const T mu = r_ - q_ - 0.5 * sigma_ * sigma_; // flat-rate case only
             steps_.clear();
@@ -152,6 +154,7 @@ namespace quantModeling
             for (std::size_t i = 0; i < steps_.size(); ++i)
             {
                 const Step &st = steps_[i];
+                const T S_before = S;
                 if (st.draws)
                 {
                     const double z = gaussians[g++];
@@ -160,6 +163,14 @@ namespace quantModeling
 
                 Sample<T> &smp = path[i];
                 smp.spots.assign(1, S);
+                // One step per event: the bridge over the whole interval,
+                // exact under Black-Scholes (a step without a draw has no
+                // variance: the spot only has to be on the safe side).
+                const std::vector<BarrierMonitor> &bars = defline_[i].barriers;
+                smp.survivals.resize(bars.size());
+                for (std::size_t k = 0; k < bars.size(); ++k)
+                    smp.survivals[k] = mc::bridge_survival(S_before, S, bars[k].level, bars[k].above,
+                                                           st.draws ? T(st.vol_sqrt_dt * st.vol_sqrt_dt) : T(0.0));
                 smp.numeraire = curve_ ? T(1.0 / curve_->discount(st.t))
                                        : T(exp(r_ * st.t));
 
@@ -183,6 +194,8 @@ namespace quantModeling
         {
             return std::make_unique<BlackScholesSimModel<T>>(*this);
         }
+
+        bool monitors_barriers() const override { return true; }
 
         bool describe_device(DeviceModel &d) const override
         {

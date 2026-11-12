@@ -14,6 +14,7 @@
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/parser.hpp"
+#include "quantModeling/scripting/visitors/barrier_lookup_resolver.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
 #include "quantModeling/scripting/visitors/discount_lookup_resolver.hpp"
@@ -186,7 +187,9 @@ namespace quantModeling
 
             const std::vector<std::vector<Time>> discount_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(events_);
-            defline_ = scripting::build_defline(events_, discount_mats);
+            const std::vector<std::vector<BarrierMonitor>> barriers =
+                scripting::BarrierLookupResolver().resolve(events_);
+            defline_ = scripting::build_defline(events_, discount_mats, barriers);
 
             const std::vector<std::vector<Time>> historical_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(historical_events_);
@@ -196,6 +199,14 @@ namespace quantModeling
                         "ScriptedProduct: df() is not supported in a "
                         "historical (pre-valuation) event (" +
                         historical_events_[i].date.to_iso() + ")");
+            const std::vector<std::vector<BarrierMonitor>> historical_barriers =
+                scripting::BarrierLookupResolver().resolve(historical_events_);
+            for (std::size_t i = 0; i < historical_barriers.size(); ++i)
+                if (!historical_barriers[i].empty())
+                    throw InvalidInput("ScriptedProduct: survivalAbove() / survivalBelow() on a past date (" +
+                                       historical_events_[i].date.to_iso() +
+                                       "): the path between past fixings is not known; script the barrier "
+                                       "on the fixings instead");
 
             if (settings.fuzzy)
                 evaluator_ = std::make_unique<scripting::FuzzyEvaluator<T>>();
@@ -396,6 +407,7 @@ namespace quantModeling
                 const unsigned lanes = count >= W ? (1u << W) - 1u : (1u << count) - 1u;
                 const double *spots[W];
                 const double *discounts[W];
+                const double *survivals[W];
                 double numeraire[W];
                 for (std::size_t i = 0; i < events_.size(); ++i)
                 {
@@ -404,11 +416,12 @@ namespace quantModeling
                         const Sample<T> &smp = (*paths[l < count ? l : 0])[i];
                         spots[l] = smp.spots.data();
                         discounts[l] = smp.discounts.data();
+                        survivals[l] = smp.survivals.data();
                         numeraire[l] = smp.numeraire;
                     }
                     check_event_sizes((*paths[0])[i], i);
                     scripting::run_event_batch(view, program_.event_begin[i], program_.event_begin[i + 1], m, spots,
-                                               discounts, numeraire, lanes);
+                                               discounts, numeraire, lanes, survivals);
                 }
                 for (int l = 0; l < count; ++l)
                     out[l] = m.payoff[l];
@@ -479,6 +492,10 @@ namespace quantModeling
             if (max_df >= 0 && static_cast<std::size_t>(max_df) >= smp.discounts.size())
                 throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
                                    "DiscountLookupResolver must run before this product is priced");
+            const std::int32_t max_surv = program_.event_max_surv[i];
+            if (max_surv >= 0 && static_cast<std::size_t>(max_surv) >= smp.survivals.size())
+                throw InvalidInput("survivalAbove/Below(): the model did not fill this event's survival "
+                                   "probabilities -- it must support barrier monitoring");
         }
 
         void payoffs_compiled(const Scenario<T> &path, std::vector<T> &out, MachineBuffers &b) const
@@ -495,7 +512,7 @@ namespace quantModeling
                 const Sample<T> &smp = path[i];
                 check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
-                                     smp.spots.data(), smp.discounts.data(), smp.numeraire);
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.survivals.data());
             }
             out.assign(1, m.payoff);
         }

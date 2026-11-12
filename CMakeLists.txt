@@ -361,6 +361,7 @@ if(QM_BUILD_TESTS)
     tests/testSchedule.cpp
     tests/testTimeline.cpp
     tests/testSimModelClone.cpp
+    tests/testBarrierMonitoring.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp
     tests/testScriptDomain.cpp

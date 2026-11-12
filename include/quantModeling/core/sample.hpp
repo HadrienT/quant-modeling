@@ -17,11 +17,26 @@ namespace quantModeling
      * timeline(). The model reads it in allocate()/init() to size its output
      * and to know which discount factors / forwards to evaluate.
      */
+    /// A barrier the model monitors continuously between the previous event
+    /// date and this one (WP 26 P2): it returns the probability that the
+    /// spot of `asset` stayed above (`above`) or below `level`, conditional
+    /// on the simulated path -- the product of the Brownian-bridge survival
+    /// probabilities over its own steps.
+    struct BarrierMonitor
+    {
+        Real level = 0.0;
+        std::size_t asset = 0;
+        bool above = true;
+
+        bool operator==(const BarrierMonitor &) const = default;
+    };
+
     struct SampleDef
     {
-        bool numeraire = true;           ///< need the numeraire at this date
-        std::vector<Time> discount_mats; ///< P(t, T) for these maturities T
-        std::vector<Time> forward_mats;  ///< F(t, T) for these maturities T
+        bool numeraire = true;                ///< need the numeraire at this date
+        std::vector<Time> discount_mats;      ///< P(t, T) for these maturities T
+        std::vector<Time> forward_mats;       ///< F(t, T) for these maturities T
+        std::vector<BarrierMonitor> barriers; ///< survival probabilities since the previous event
     };
 
     /**
@@ -37,12 +52,14 @@ namespace quantModeling
         std::vector<T> spots;     ///< underlying level(s), one per asset
         std::vector<T> discounts; ///< aligned with SampleDef::discount_mats
         std::vector<T> forwards;  ///< aligned with SampleDef::forward_mats
+        std::vector<T> survivals; ///< aligned with SampleDef::barriers
 
         void allocate(const SampleDef &def, std::size_t n_underlyings)
         {
             spots.resize(n_underlyings);
             discounts.resize(def.discount_mats.size());
             forwards.resize(def.forward_mats.size());
+            survivals.resize(def.barriers.size());
         }
 
         void initialize()
@@ -51,6 +68,7 @@ namespace quantModeling
             std::fill(spots.begin(), spots.end(), T(0));
             std::fill(discounts.begin(), discounts.end(), T(1));
             std::fill(forwards.begin(), forwards.end(), T(0));
+            std::fill(survivals.begin(), survivals.end(), T(1));
         }
     };
 

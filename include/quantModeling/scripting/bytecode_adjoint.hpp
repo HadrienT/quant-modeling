@@ -150,6 +150,12 @@ namespace quantModeling::scripting
                 case Op::Df:
                     discounts_adj[in.a] += S[--sp];
                     break;
+                case Op::Surv:
+                    // Never reached: the per-path adjoint carries no survival
+                    // probabilities and its callers refuse a program with
+                    // Program::has_survival.
+                    --sp;
+                    break;
 
                 case Op::Add:
                 {

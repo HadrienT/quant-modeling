@@ -100,6 +100,8 @@ namespace quantModeling::scripting
                 return Domain::greater_than(0.0);
             if (dynamic_cast<const NodeDf *>(&n))
                 return Domain::greater_than(0.0);
+            if (dynamic_cast<const NodeSurvival *>(&n))
+                return Domain::closed(0.0, 1.0);
 
             if (dynamic_cast<const NodeAdd *>(&n))
                 return d(0) + d(1);

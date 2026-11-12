@@ -40,6 +40,7 @@ namespace quantModeling::scripting
         Var,   ///< variables[a]
         Spot,  ///< spots[a] of the current event
         Df,    ///< discounts[a] of the current event
+        Surv,  ///< survivals[a] of the current event (survivalAbove/Below, WP 26 P2)
         // arithmetic and functions (pop operands, push result)
         Add,
         Sub,
@@ -226,7 +227,8 @@ namespace quantModeling::scripting
      */
     template <class T, class Rec>
     QM_HOST_DEVICE void run_event_impl(const ProgramView &p, int begin, int end, Machine<T> &m, const T *spots,
-                                       const T *discounts, const T &numeraire, Rec &rec)
+                                       const T *discounts, const T &numeraire, Rec &rec,
+                                       const T *survivals = nullptr)
     {
         using namespace bytecode_detail;
         int sp = 0; // value stack
@@ -266,6 +268,9 @@ namespace quantModeling::scripting
                     break;
                 case Op::Df:
                     S[sp++] = discounts[in.a];
+                    break;
+                case Op::Surv:
+                    S[sp++] = survivals[in.a];
                     break;
 
                 case Op::Add:
@@ -591,10 +596,10 @@ namespace quantModeling::scripting
 
     template <class T>
     QM_HOST_DEVICE void run_event(const ProgramView &p, int begin, int end, Machine<T> &m, const T *spots,
-                                  const T *discounts, const T &numeraire)
+                                  const T *discounts, const T &numeraire, const T *survivals = nullptr)
     {
         NoRecord none;
-        run_event_impl(p, begin, end, m, spots, discounts, numeraire, none);
+        run_event_impl(p, begin, end, m, spots, discounts, numeraire, none, survivals);
     }
 
     // ── Batched interpreter (blueprint/wp/26-performance.md §5, P1a) ──────
@@ -630,7 +635,7 @@ namespace quantModeling::scripting
      */
     inline void run_event_batch(const ProgramView &p, int begin, int end, BatchMachine &m,
                                 const double *const *spots, const double *const *discounts, const double *numeraire,
-                                unsigned lanes)
+                                unsigned lanes, const double *const *survivals = nullptr)
     {
         constexpr int W = kBatch;
         struct Frame
@@ -677,6 +682,11 @@ namespace quantModeling::scripting
                 case Op::Df:
                     for (int l = 0; l < W; ++l)
                         push[l] = discounts[l][in.a];
+                    ++sp;
+                    break;
+                case Op::Surv:
+                    for (int l = 0; l < W; ++l)
+                        push[l] = survivals[l][in.a];
                     ++sp;
                     break;
                 case Op::Add:
@@ -845,14 +855,19 @@ namespace quantModeling::scripting
         std::vector<std::int32_t> aff;
         /// Event e runs code[event_begin[e], event_begin[e + 1]).
         std::vector<std::int32_t> event_begin;
-        /// Highest spot index / discount slot event e reads (-1: none).
-        std::vector<std::int32_t> event_max_spot, event_max_df;
+        /// Highest spot index / discount slot / survival slot event e reads
+        /// (-1: none).
+        std::vector<std::int32_t> event_max_spot, event_max_df, event_max_surv;
         int n_vars = 0;
         int max_stack = 0;
         int max_degrees = 0;
         int n_if_slots = 0; ///< the most any one event needs
         int n_if_modes = 0;
         bool fuzzy = false;
+        /// The script reads survivalAbove/Below: a path that does not carry
+        /// the model's survival probabilities (the GPU kernels, the per-path
+        /// adjoint) must refuse it.
+        bool has_survival = false;
 
         ProgramView view() const { return {code.data(), ifs.data(), aff.data()}; }
 

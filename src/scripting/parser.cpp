@@ -636,6 +636,50 @@ namespace quantModeling::scripting
                 expect(TokenKind::RParen, "')' to close 'df(...)'");
                 return node;
             }
+            case TokenKind::SurvivalAbove:
+            case TokenKind::SurvivalBelow:
+            {
+                const bool above = tok.kind == TokenKind::SurvivalAbove;
+                const char *name = above ? "survivalAbove" : "survivalBelow";
+                advance();
+                const std::string open = std::string("'(' after '") + name + "'";
+                expect(TokenKind::LParen, open.c_str());
+                auto node = std::make_unique<NodeSurvival>();
+                node->above = above;
+                // The level is a literal: the model needs it before the
+                // simulation, as df() needs its date.
+                const Token &level = expect(TokenKind::Number, "a barrier level (a positive number)");
+                try
+                {
+                    node->level = std::stod(level.lexeme);
+                }
+                catch (const std::exception &)
+                {
+                    fail("invalid barrier level: '" + level.lexeme + "'", level);
+                }
+                if (!(node->level > 0.0))
+                    fail(std::string(name) + "(L): L must be a positive number", level);
+                if (check(TokenKind::Comma))
+                {
+                    advance();
+                    const Token &idx = expect(TokenKind::Number, "an asset index (a non-negative integer)");
+                    double value = 0.0;
+                    try
+                    {
+                        value = std::stod(idx.lexeme);
+                    }
+                    catch (const std::exception &)
+                    {
+                        fail("invalid asset index: '" + idx.lexeme + "'", idx);
+                    }
+                    if (value < 0.0 || value != std::floor(value))
+                        fail(std::string(name) + "(L, i): i must be a non-negative integer", idx);
+                    node->asset = static_cast<std::size_t>(value);
+                }
+                const std::string close = std::string("')' to close '") + name + "(...)'";
+                expect(TokenKind::RParen, close.c_str());
+                return node;
+            }
             case TokenKind::Min:
             case TokenKind::Max:
             case TokenKind::Log:

@@ -132,6 +132,27 @@ namespace quantModeling::scripting
         std::size_t slot = unindexed;
     };
 
+    /// `survivalAbove(L)` / `survivalBelow(L)`, optionally `(L, i)` for asset
+    /// i: the probability that the spot stayed above (below) the level L
+    /// between the previous event date (the valuation date for the first
+    /// event) and the current one, conditional on the simulated path -- the
+    /// product of the Brownian-bridge survival probabilities over the
+    /// model's own steps (WP 26 P2). The model computes it, because only the
+    /// model knows its steps and its volatility on each; the node only reads
+    /// it. `level` is a literal, like df()'s date, so that the barrier can be
+    /// handed to the model before the simulation. `slot` indexes the event's
+    /// own SampleDef::barriers / Sample::survivals, filled by
+    /// BarrierLookupResolver like NodeDf::slot.
+    struct NodeSurvival final : NodeT<NodeSurvival>
+    {
+        static constexpr std::size_t unindexed = NodeVar::unindexed;
+
+        double level = 0.0;
+        std::size_t asset = 0;
+        bool above = true;
+        std::size_t slot = unindexed;
+    };
+
     // ── arithmetic ────────────────────────────────────────────────────────────
 
     struct NodeAdd final : NodeT<NodeAdd>

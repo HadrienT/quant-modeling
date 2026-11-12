@@ -33,6 +33,12 @@ EXAMPLES: dict[str, str] = {
         "2027-12-10\n"
         "    if alive = 1 then pays max(spot() - 100, 0) endIf\n"
     ),
+    "Down-and-out call, continuously monitored barrier at 85, strike 100": (
+        "2027-09-10\n" "    pays survivalAbove(85) * max(spot() - 100, 0)\n"
+    ),
+    "Up-and-in call, continuously monitored barrier at 130, strike 100": (
+        "2027-09-10\n" "    pays (1 - survivalBelow(130)) * max(spot() - 100, 0)\n"
+    ),
     "Arithmetic Asian call, monthly fixings, strike 100, maturity 2027-09-20": (
         "2026-10-19\n"
         "    acc = spot()\n"
@@ -182,10 +188,26 @@ Statements (nothing else exists):
   if cond then ... [else ...] endIf conditional; blocks are delimited by
                                     the keywords, not by indentation
 
-Expressions: numbers, variables, spot(), df(DATE), parentheses, + - * / and ^
-(right-associative), and the functions min(a,b) max(a,b) log exp sqrt abs
-smooth(x, half_width). Conditions: = != < <= > >= combined with and / or / not.
-Comments start with #.
+Expressions: numbers, variables, spot(), df(DATE), survivalAbove(L),
+survivalBelow(L), parentheses, + - * / and ^ (right-associative), and the
+functions min(a,b) max(a,b) log exp sqrt abs smooth(x, half_width).
+Conditions: = != < <= > >= combined with and / or / not. Comments start
+with #.
+
+Continuous barriers: survivalAbove(L) is the probability that the spot stayed
+above L at every instant between the previous event date (the valuation date
+for the first event) and the current one, given the simulated path;
+survivalBelow(L) the same below L. The model computes it on its own time
+steps (the Brownian-bridge correction), so a continuously monitored barrier
+needs NO observation dates: a down-and-out call is one event,
+`pays survivalAbove(85) * max(spot() - 100, 0)`, and a knock-in uses
+1 - survival. Over several events, multiply: `alive = alive * survivalAbove(85)`
+at each one (and at the first, start with `alive = survivalAbove(85)`). L is a
+number written in the script, not a variable or an expression; spot(i)'s
+barrier is survivalAbove(L, i). Use it whenever the user says "continuous" or
+does not name observation dates for a barrier; keep `if spot() ...` tests for
+barriers observed on given dates (daily closes). It runs under Black-Scholes
+and local vol, on the CPU.
 
 Generated dates: a date line may be
   schedule(START, END, TENOR, CALENDAR, CONVENTION)
@@ -253,8 +275,9 @@ Semantics you must respect:
 - Notional and strike are numbers written in the script. Percent levels are
   expressed as multiples of a reference level fixed at an initial event
   (`s0 = spot()`), e.g. `spot() < 0.60 * s0`.
-- Digitals and hard barriers have a noisy pathwise delta; the UI has a "fuzzy"
-  option that smooths them. Mention it when you write one, do not emulate it
+- Digitals and hard barriers observed on dates have a noisy pathwise delta;
+  the UI has a "fuzzy" option that smooths them (survivalAbove/Below are
+  already smooth). Mention it when you write one, do not emulate it
   in the script.
 """
 
