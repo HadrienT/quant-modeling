@@ -59,6 +59,26 @@ namespace quantModeling
         return canonical_timeline(std::move(out));
     }
 
+    TimeLine refine_steps(const TimeLine &grid, int r)
+    {
+        if (r < 1)
+            throw InvalidInput("refine_steps: the refinement must be >= 1");
+        if (r == 1)
+            return grid;
+        TimeLine out;
+        out.reserve(grid.size() * static_cast<std::size_t>(r));
+        Time prev = 0.0;
+        for (const Time t : grid)
+        {
+            const Time step = (t - prev) / static_cast<Time>(r);
+            for (int i = 1; i < r; ++i)
+                out.push_back(prev + static_cast<Time>(i) * step);
+            out.push_back(t);
+            prev = t;
+        }
+        return out;
+    }
+
     std::vector<std::size_t> event_indices(const TimeLine &sim,
                                            const TimeLine &events)
     {
@@ -68,6 +88,10 @@ namespace quantModeling
         for (const Time e : events)
         {
             while (j < sim.size() && sim[j] < e - TIMELINE_EPS)
+                ++j;
+            // Steps shorter than TIMELINE_EPS (fine multilevel grids): the
+            // closest point, not the first one within the tolerance.
+            while (j + 1 < sim.size() && std::fabs(sim[j + 1] - e) < std::fabs(sim[j] - e))
                 ++j;
             if (j >= sim.size() || std::fabs(sim[j] - e) > TIMELINE_EPS)
                 throw InvalidInput(

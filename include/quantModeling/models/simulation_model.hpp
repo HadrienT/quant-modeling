@@ -112,6 +112,18 @@ namespace quantModeling
         /// defline with barriers in init() (refuse_barrier_monitoring).
         virtual bool monitors_barriers() const { return false; }
 
+        /**
+         * @brief Multilevel Monte Carlo (blueprint/wp/26-performance.md §8.3):
+         *        split every step of the model's own grid into `r` equal
+         *        steps. Called before init(). A model that discretises in
+         *        time (log-Euler local vol) accepts any r >= 1 and returns
+         *        true; a model with no time-step bias, or not yet able to,
+         *        keeps the default and accepts only r = 1. The coupling of
+         *        two levels is the engine's (engines/mc/mlmc.hpp), through
+         *        brownian_layout(): the model only steps on its grid.
+         */
+        virtual bool set_refinement(int r) { return r == 1; }
+
         /// Valid after init(). Models without Brownian increments to reorder
         /// (or not yet described) keep the default: no bridge.
         virtual BrownianLayout brownian_layout() const { return {}; }

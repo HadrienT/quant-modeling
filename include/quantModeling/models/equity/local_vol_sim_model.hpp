@@ -69,7 +69,7 @@ namespace quantModeling
         /// caches pointers into *this* object's own members, so a naive
         /// copy would leave them pointing at the original.
         LocalVolSimModel(const LocalVolSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -80,7 +80,7 @@ namespace quantModeling
                   const std::vector<SampleDef> &defline) override
         {
             timeline_ = canonical_timeline(product_timeline);
-            sim_timeline_ = add_monitoring_steps(timeline_, max_dt_);
+            sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
             check_barrier_assets(defline_, 1, "LocalVolSimModel");
 
@@ -91,6 +91,16 @@ namespace quantModeling
             // rule -- unlike BS there is no exact-transition first point to
             // skip).
             sim_dim_ = sim_timeline_.size();
+        }
+
+        /// Multilevel Monte Carlo: each max_dt step split into r (log-Euler
+        /// has an O(h) bias, the levels remove it).
+        bool set_refinement(int r) override
+        {
+            if (r < 1)
+                return false;
+            refinement_ = r;
+            return true;
         }
 
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
@@ -241,6 +251,7 @@ namespace quantModeling
         std::vector<Real> K_grid_, T_grid_;
         std::vector<T> sigma_loc_;
         Time max_dt_;
+        int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
 
         TimeLine timeline_;     // the product's own event dates
         TimeLine sim_timeline_; // timeline_ plus internal Euler steps

@@ -35,6 +35,16 @@ namespace quantModeling
      */
     TimeLine add_monitoring_steps(const TimeLine &events, Time max_dt);
 
+    /**
+     * @brief Split every step of a canonical grid into `r` equal steps
+     *        (multilevel Monte Carlo, blueprint/wp/26-performance.md §8.3).
+     *
+     * The grid of r = 2^l contains the grid of r = 2^(l-1) point for point
+     * (the step's length is divided by a power of two, exactly), so a coarse
+     * level's dates are fine ones. r = 1 returns the grid unchanged.
+     */
+    TimeLine refine_steps(const TimeLine &grid, int r);
+
     /// Index, into `sim`, of the entry equal (within TIMELINE_EPS) to each
     /// entry of `events`. `sim` must be canonical and contain every event.
     std::vector<std::size_t> event_indices(const TimeLine &sim,
