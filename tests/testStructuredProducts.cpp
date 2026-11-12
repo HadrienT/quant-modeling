@@ -17,10 +17,8 @@
 #include "quantModeling/models/rates/hull_white.hpp"
 
 // ── Engines ──────────────────────────────────────────────────────────────────
-#include "quantModeling/engines/mc/autocall.hpp"
-#include "quantModeling/engines/mc/mountain.hpp"
+#include "quantModeling/engines/base.hpp"
 #include "quantModeling/engines/analytic/short_rate.hpp"
-#include "quantModeling/engines/mc/short_rate.hpp"
 
 // ── Pricer / Adapters / Registry ─────────────────────────────────────────────
 #include "quantModeling/pricers/pricer.hpp"
@@ -36,6 +34,69 @@
 #include <vector>
 
 using namespace quantModeling;
+
+namespace
+{
+    // The hand-written autocall and mountain engines are gone (WP 26 P3):
+    // these tests price the same instruments through their script routes,
+    // reading the model and the settings the engines read.
+    class AutocallRoute final : public EngineBase
+    {
+      public:
+        using EngineBase::EngineBase;
+        void visit(const AutocallNote &n) override
+        {
+            const auto *m = dynamic_cast<const BlackScholesModel *>(ctx_.model.get());
+            if (m == nullptr)
+                throw InvalidInput("AutocallRoute: needs a Black-Scholes model");
+            AutocallBSInput in{};
+            in.spot = m->spot0();
+            in.rate = m->rate_r();
+            in.dividend = m->yield_q();
+            in.vol = m->vol_sigma();
+            in.observation_dates = n.observation_dates;
+            in.autocall_barrier = n.autocall_barrier;
+            in.coupon_barrier = n.coupon_barrier;
+            in.put_barrier = n.put_barrier;
+            in.coupon_rate = n.coupon_rate;
+            in.notional = n.notional;
+            in.memory_coupon = n.memory_coupon;
+            in.ki_continuous = n.ki_continuous;
+            in.n_paths = ctx_.settings.mc_paths;
+            in.seed = ctx_.settings.mc_seed;
+            res_ = price_equity_autocall_bs_mc(in);
+        }
+    };
+
+    class MountainRoute final : public EngineBase
+    {
+      public:
+        using EngineBase::EngineBase;
+        void visit(const MountainOption &o) override
+        {
+            const auto *m = dynamic_cast<const MultiAssetBSModel *>(ctx_.model.get());
+            if (m == nullptr)
+                throw InvalidInput("MountainRoute: needs a multi-asset Black-Scholes model");
+            MountainBSInput in{};
+            in.spots = m->spots;
+            in.vols = m->vols;
+            in.dividends = m->dividends;
+            const Eigen::MatrixXd corr = m->chol * m->chol.transpose();
+            in.correlations.assign(m->spots.size(), std::vector<Real>(m->spots.size()));
+            for (std::size_t i = 0; i < m->spots.size(); ++i)
+                for (std::size_t j = 0; j < m->spots.size(); ++j)
+                    in.correlations[i][j] = corr(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j));
+            in.observation_dates = o.observation_dates;
+            in.strike = o.strike;
+            in.is_call = o.is_call;
+            in.rate = m->rate_r;
+            in.notional = o.notional;
+            in.n_paths = ctx_.settings.mc_paths;
+            in.seed = ctx_.settings.mc_seed;
+            res_ = price_equity_mountain_bs_mc(in);
+        }
+    };
+} // namespace
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  Autocall — construction & validation
@@ -61,7 +122,7 @@ TEST(AutocallNote, EmptyDatesThrows)
     s.mc_paths = 1000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     AutocallNote note({}, 1.0, 0.7, 0.6, 0.05);
     EXPECT_THROW(note.accept(engine), InvalidInput);
@@ -80,17 +141,19 @@ TEST(AutocallMC, HighBarrierNeverCalled)
     s.mc_paths = 50000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     AutocallNote note({1.0, 2.0, 3.0}, /*ac_barrier=*/5.0,
                       /*cpn_barrier=*/5.0, /*put_barrier=*/0.01,
                       /*coupon_rate=*/0.05, /*notional=*/1000.0);
     auto res = price(note, engine);
 
-    // Should be close to notional × df(T=3) = 1000 × exp(-0.05×3) ≈ 860.7
+    // Every path pays the notional at T = 3: the price is exactly
+    // 1000 × exp(-0.05×3) ≈ 860.7 and its Monte-Carlo error zero (the
+    // hand-written engine reported rounding noise there).
     const Real expected = 1000.0 * std::exp(-0.05 * 3.0);
-    EXPECT_NEAR(res.npv, expected, 10.0); // within ±10
-    EXPECT_GT(res.mc_std_error, 0.0);
+    EXPECT_NEAR(res.npv, expected, 1e-9 * expected);
+    EXPECT_GE(res.mc_std_error, 0.0);
 }
 
 TEST(AutocallMC, LowBarrierAlwaysCalled)
@@ -102,7 +165,7 @@ TEST(AutocallMC, LowBarrierAlwaysCalled)
     s.mc_paths = 50000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     AutocallNote note({1.0, 2.0}, /*ac_barrier=*/0.5,
                       /*cpn_barrier=*/0.5, /*put_barrier=*/0.3,
@@ -123,7 +186,7 @@ TEST(AutocallMC, KnockInPutLoss)
     s.mc_paths = 100000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     AutocallNote note({1.0}, /*ac_barrier=*/5.0,
                       /*cpn_barrier=*/5.0, /*put_barrier=*/5.0,
@@ -148,7 +211,7 @@ TEST(AutocallMC, MemoryCoupon)
     s.mc_paths = 10000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     // Very low vol, coupon barrier = 0.5 → virtually all paths pass.
     // cpn barrier = 0.5 means S/S0 > 0.5, almost guaranteed with vol=0.01.
@@ -189,7 +252,7 @@ TEST(AutocallMC, CouponPaidBeforeAutocallIsNotOverwritten)
     s.mc_paths = 50000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     AutocallNote note({1.0, 2.0}, /*ac_barrier=*/1.4,
                       /*cpn_barrier=*/1.1, /*put_barrier=*/0.01,
@@ -214,7 +277,7 @@ TEST(AutocallMC, ContinuousKI)
     s.mc_paths = 10000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     AutocallNote note({1.0}, /*ac_barrier=*/5.0,
                       /*cpn_barrier=*/5.0, /*put_barrier=*/1.5,
@@ -222,9 +285,57 @@ TEST(AutocallMC, ContinuousKI)
                       /*memory=*/false, /*ki_cont=*/true);
     auto res = price(note, engine);
 
-    // KI is checked at obs dates only (S is simulated to obs dates, not continuously).
-    // With very low vol, S≈100 < 150, so KI triggers.  PV ≈ 1000 × 1.0 = 1000
+    // The spot starts below the knock-in barrier: the survival above it is
+    // 0, the knock-in certain. With very low vol, S(T) ≈ 100: PV ≈ 1000 ×
+    // S(T)/S0 ≈ 1000.
     EXPECT_NEAR(res.npv, 1000.0, 5.0);
+}
+
+// A note never called and paying no coupon redeems N (1 - 1_KI (1 - S_T/S0))
+// at T. With a continuously monitored knock-in at H, its value is
+// N e^{-rT} - (N/S0) (P_di - C_di), the down-and-in put and call struck at
+// S0 with the barrier H (Hull, Options, Futures and Other Derivatives,
+// §26.9, H < K). The script's survival probabilities make it exact under
+// Black-Scholes, whatever the observation dates.
+TEST(AutocallMC, ContinuousKnockInIsTheDownAndInClosedForm)
+{
+    const double S = 100.0, r = 0.05, q = 0.02, v = 0.25, T = 1.0, N = 1000.0, H = 60.0, K = S;
+    auto Phi = [](double x)
+    { return 0.5 * std::erfc(-x / std::sqrt(2.0)); };
+    const double sd = v * std::sqrt(T), lam = (r - q + 0.5 * v * v) / (v * v);
+    const double y = std::log(H * H / (S * K)) / sd + lam * sd;
+    const double x1 = std::log(S / H) / sd + lam * sd, y1 = std::log(H / S) / sd + lam * sd;
+    const double c_di = S * std::exp(-q * T) * std::pow(H / S, 2 * lam) * Phi(y) -
+                        K * std::exp(-r * T) * std::pow(H / S, 2 * lam - 2) * Phi(y - sd);
+    const double p_di = -S * std::exp(-q * T) * Phi(-x1) + K * std::exp(-r * T) * Phi(-x1 + sd) +
+                        S * std::exp(-q * T) * std::pow(H / S, 2 * lam) * (Phi(y) - Phi(y1)) -
+                        K * std::exp(-r * T) * std::pow(H / S, 2 * lam - 2) * (Phi(y - sd) - Phi(y1 - sd));
+    const double exact = N * std::exp(-r * T) - N / S * (p_di - c_di);
+
+    AutocallBSInput in{};
+    in.spot = S;
+    in.rate = r;
+    in.dividend = q;
+    in.vol = v;
+    in.observation_dates = {0.25, 0.5, 0.75, 1.0};
+    in.autocall_barrier = 100.0; // never called
+    in.coupon_barrier = 100.0;   // no coupon
+    in.put_barrier = H / S;
+    in.coupon_rate = 0.0;
+    in.notional = N;
+    in.ki_continuous = true;
+    in.n_paths = 1 << 17;
+    in.seed = 5;
+    const PricingResult cont = price_equity_autocall_bs_mc(in);
+    EXPECT_NEAR(cont.npv, exact, 4.0 * cont.mc_std_error) << "closed form " << exact;
+
+    // Monitoring at every instant knocks in more often than at expiry only.
+    in.ki_continuous = false;
+    const PricingResult terminal = price_equity_autocall_bs_mc(in);
+    RecordProperty("exact", std::to_string(exact));
+    RecordProperty("continuous", std::to_string(cont.npv) + " +- " + std::to_string(cont.mc_std_error));
+    RecordProperty("terminal", std::to_string(terminal.npv) + " +- " + std::to_string(terminal.mc_std_error));
+    EXPECT_LT(cont.npv, terminal.npv - 4.0 * std::hypot(cont.mc_std_error, terminal.mc_std_error));
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -304,7 +415,7 @@ TEST(MountainOption, WrongAssetCountThrows)
     s.mc_paths = 1000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSMountainMCEngine engine(ctx);
+    MountainRoute engine(ctx);
 
     MountainOption opt({1.0, 2.0}, 0.0); // 2 dates ≠ 3 assets
     EXPECT_THROW(opt.accept(engine), InvalidInput);
@@ -330,7 +441,7 @@ TEST(MountainMC, PositiveValue)
     s.mc_paths = 50000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSMountainMCEngine engine(ctx);
+    MountainRoute engine(ctx);
 
     MountainOption opt({1.0, 2.0, 3.0}, 0.0, true, 100.0);
     auto res = price(opt, engine);
@@ -355,7 +466,7 @@ TEST(MountainMC, PutPositive)
     s.mc_paths = 50000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSMountainMCEngine engine(ctx);
+    MountainRoute engine(ctx);
 
     MountainOption opt({1.0, 2.0}, 1.0, false, 100.0); // strike = 100%
     auto res = price(opt, engine);
@@ -389,7 +500,7 @@ TEST(MountainMC, CorrelationEffect)
         s.mc_paths = 100000;
         s.mc_seed = 42;
         PricingContext ctx{MarketView{}, s, model};
-        BSMountainMCEngine engine(ctx);
+        MountainRoute engine(ctx);
 
         MountainOption opt({1.0, 2.0, 3.0}, 0.0, true, 100.0);
         return price(opt, engine).npv;
@@ -567,13 +678,9 @@ TEST(CapletMC, ConvergesToAnalytic)
     Caplet cap(0.5, 1.0, 0.05, true, 100.0);
     auto res_a = price(cap, eng_a);
 
-    // MC
-    PricingSettings s;
-    s.mc_paths = 200000;
-    s.mc_seed = 42;
-    PricingContext ctx_mc{MarketView{}, s, model};
-    ShortRateMCEngine eng_mc(ctx_mc);
-    auto res_mc = price(cap, eng_mc);
+    // MC: the caplet route, a script since WP 26 P3
+    ShortRateCapletInput in{"vasicek", 0.3, 0.06, 0.015, 0.05, 0.5, 1.0, 0.05, true, 100.0, 200000, 42};
+    auto res_mc = price_caplet_short_rate_mc(in);
 
     // Should be within 3 standard errors
     EXPECT_NEAR(res_mc.npv, res_a.npv,
@@ -678,7 +785,7 @@ TEST(StructuredInstruments, AutocallAccept)
     s.mc_paths = 1000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSAutocallMCEngine engine(ctx);
+    AutocallRoute engine(ctx);
 
     AutocallNote note({1.0}, 1.0, 0.7, 0.6, 0.05, 1000.0);
     note.accept(engine);
@@ -700,7 +807,7 @@ TEST(StructuredInstruments, MountainAccept)
     s.mc_paths = 1000;
     s.mc_seed = 42;
     PricingContext ctx{MarketView{}, s, model};
-    BSMountainMCEngine engine(ctx);
+    MountainRoute engine(ctx);
 
     MountainOption opt({1.0, 2.0}, 0.0);
     opt.accept(engine);

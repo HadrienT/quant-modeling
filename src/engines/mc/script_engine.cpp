@@ -64,7 +64,26 @@ namespace quantModeling
                 if (controls.sel.n == 0)
                     cv_off = " (no spot control: " + controls.why_none + ")";
             }
+            // The script's analytic control (WP 26 P2), as on the CPU.
+            {
+                Real mean = 0.0;
+                if (settings.mc_control_variate && product.analytic_control(mean) &&
+                    controls.sel.n < mc::SpotControls::kMax)
+                {
+                    const int c = controls.sel.n++;
+                    controls.sel.event[c] = -1;
+                    controls.sel.asset[c] = -static_cast<int>(product.control_variable() + 1);
+                    controls.mean[c] = mean;
+                    req.controls = controls.sel;
+                    cv_off.clear();
+                }
+            }
             const int k = controls.sel.n;
+            bool analytic = false;
+            for (int c = 0; c < k; ++c)
+                analytic = analytic || controls.sel.asset[c] < 0;
+            const std::string cv_label =
+                analytic ? (k > 1 ? " + analytic and spot controls" : " + analytic control") : " + spot control";
 
             std::optional<mc::SobolTables> tables;
             int B = 1;
@@ -91,7 +110,7 @@ namespace quantModeling
                                gpu::devices_label(std::vector<int>(req.devices.begin(),
                                                                    req.devices.begin() + gpu::gpus_used(req))) +
                                ")";
-            std::string cv_note = k > 0 ? " + spot control" : "";
+            std::string cv_note = k > 0 ? cv_label : "";
             if (!stratified && !sobol)
             {
                 if (k > 0)
@@ -99,7 +118,7 @@ namespace quantModeling
                     const auto e = st.controlled.front().estimate(controls.mean, k);
                     res.values = {e.value};
                     res.std_errors = {e.std_error};
-                    cv_note = " + spot control (" + std::to_string(e.used) + " of " + std::to_string(k) + " kept" +
+                    cv_note = cv_label + " (" + std::to_string(e.used) + " of " + std::to_string(k) + " kept" +
                               detail::variance_ratio_note(e) + ")";
                 }
                 else
@@ -113,13 +132,17 @@ namespace quantModeling
             else
             {
                 // Independent replicates: the error is their spread.
+                // Kept in replicate order: two runs with the same seed pair
+                // up replicate by replicate (SimulationMCResult::replicates).
                 WelfordAccumulator reps;
                 for (const auto &c : st.stratified_controlled)
-                    reps.add(c.estimate(controls.mean, k));
+                    res.replicates.push_back(c.estimate(controls.mean, k));
                 for (const auto &c : st.controlled)
-                    reps.add(c.estimate(controls.mean, k).value);
+                    res.replicates.push_back(c.estimate(controls.mean, k).value);
                 for (const auto &w : st.plain)
-                    reps.add(w.mean);
+                    res.replicates.push_back(w.mean);
+                for (const Real x : res.replicates)
+                    reps.add(x);
                 res.values = {reps.mean};
                 res.std_errors = {reps.std_error()};
                 res.n_paths = static_cast<long long>(req.n_units) * B * (req.antithetic ? 2 : 1);
@@ -128,7 +151,7 @@ namespace quantModeling
                     note += " + Philox + stratified W(T) (" + std::to_string(B) + " replicates of " +
                             std::to_string(req.n_units) + " strata)";
                     if (k > 0)
-                        cv_note = " + spot control (within-stratum slope)";
+                        cv_note = cv_label + " (within-stratum slope)";
                 }
                 else
                     note += " + Sobol RQMC (" + std::to_string(B) + " batches of " + std::to_string(req.n_units) +

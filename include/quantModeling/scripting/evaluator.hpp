@@ -160,6 +160,16 @@ namespace quantModeling::scripting
                     "product is priced");
             push(discounts[n.slot]);
         }
+        void visit(const NodeSurvival &n) override
+        {
+            const std::vector<T> &survivals = (*scenario_)[event_index_].survivals;
+            if (n.slot >= survivals.size())
+                throw InvalidInput(std::string(n.above ? "survivalAbove" : "survivalBelow") +
+                                   "(): the model did not fill this event's survival probabilities -- "
+                                   "BarrierLookupResolver must run before this product is priced, and the "
+                                   "model must support barrier monitoring");
+            push(survivals[n.slot]);
+        }
 
         // ── arithmetic ──────────────────────────────────────────────────────
         void visit(const NodeAdd &n) override
@@ -318,6 +328,14 @@ namespace quantModeling::scripting
             const T value = pop();
             if (!suppress_payoff_)
                 payoff_ += value / (*scenario_)[event_index_].numeraire;
+        }
+        void visit(const NodeControlPays &n) override
+        {
+            n.arguments[1]->accept(*this);
+            const T value = pop();
+            const auto &var = static_cast<const NodeVar &>(*n.arguments[0]);
+            if (!suppress_payoff_)
+                variables_[var.index] = variables_[var.index] + value / (*scenario_)[event_index_].numeraire;
         }
         void visit(const NodeIf &n) override
         {

@@ -163,9 +163,11 @@ namespace quantModeling::mc
     }
 
     /// Euler step of the log-spot under local vol: S *= exp((r - q - σ²/2)dt + σ√dt z).
+    /// Returns the step's variance of the log-spot, σ² dt, for the barrier
+    /// monitoring of bridge_survival() (unused, it costs nothing).
     template <class T>
-    QM_HOST_DEVICE void local_vol_step(const GridView<T> &sigma_loc, const T &r, const T &q, T &S, double t,
-                                       double dt, double z)
+    QM_HOST_DEVICE T local_vol_step(const GridView<T> &sigma_loc, const T &r, const T &q, T &S, double t,
+                                    double dt, double z)
     {
         using std::exp;
         using std::sqrt;
@@ -173,6 +175,33 @@ namespace quantModeling::mc
         const T drift = (r - q - 0.5 * sig * sig) * dt;
         const T vol_sqrt_dt = sig * sqrt(dt);
         S *= exp(drift + vol_sqrt_dt * z);
+        return vol_sqrt_dt * vol_sqrt_dt;
+    }
+
+    /**
+     * @brief Probability that a log-Brownian bridge from `a` to `b` with
+     *        log-variance `var` stays above (`above`) or below `level` --
+     *        the continuous-monitoring correction of a barrier between two
+     *        simulated dates (WP 26 P2).
+     *
+     * P(cross | a, b) = exp(-2 ln(L/a) ln(L/b) / var) when both endpoints
+     * are on the safe side (Andersen & Brotherton-Ratcliffe; Glasserman
+     * 2004, §6.4); an endpoint on or beyond the level is a crossing. Exact
+     * for Black-Scholes; under local vol the step's own volatility makes it
+     * the usual approximation. Same formula and same edge cases as the
+     * conditional MC of engines/mc/barrier.cpp.
+     */
+    template <class T>
+    QM_HOST_DEVICE T bridge_survival(const T &a, const T &b, double level, bool above, const T &var)
+    {
+        using std::exp;
+        using std::log;
+        if (above ? (a <= level || b <= level) : (a >= level || b >= level))
+            return T(0.0);
+        const T exponent = -2.0 * log(level / a) * log(level / b) / var;
+        if (!(exponent < 0.0))
+            return T(0.0); // var = 0 with both endpoints safe cannot happen on a drawn step
+        return 1.0 - exp(exponent);
     }
 
     /// Heston parameters (the diffusion part of Bates and of SLV).

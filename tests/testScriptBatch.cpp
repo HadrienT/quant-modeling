@@ -105,12 +105,13 @@ namespace quantModeling
 
         /// Batched against path by path on every library script; returns how
         /// many scripts actually ran batched.
-        int expect_batch_equals_paths(Dyn dyn, PricingSettings s, ThreadPool *pool = nullptr)
+        int expect_batch_equals_paths(Dyn dyn, PricingSettings s, ThreadPool *pool = nullptr,
+                                      const ScriptSettings &script = {})
         {
             int batched = 0;
             for (const Script &sc : library())
             {
-                const ScriptedProduct<Real> product(sc.source, kCtx);
+                const ScriptedProduct<Real> product(sc.source, kCtx, script);
                 if (dyn != Dyn::BlackScholes && product.n_underlyings() > 1)
                     continue;
                 if (product.batch_width() > 0)
@@ -193,13 +194,52 @@ namespace quantModeling
         expect_batch_equals_paths(Dyn::LocalVol, s, &pool);
     }
 
-    // What does not batch: fuzzy scripts (fuzzy ifs), and AAD.
-    TEST(ScriptBatch, FuzzyScriptsDoNotBatch)
+    // Fuzzy scripts batch too (WP 26 P2): every library script in fuzzy
+    // mode, its fuzzy ifs split per lane (then only, else only, blend), the
+    // same bits as the scalar interpreter.
+    ScriptSettings fuzzy_settings()
     {
-        ScriptSettings fuzzy;
-        fuzzy.fuzzy = true;
-        const ScriptedProduct<Real> f("2027-06-01\n    if spot() > 100 then pays 1 endIf\n", kCtx, fuzzy);
-        EXPECT_EQ(f.batch_width(), 0);
+        ScriptSettings f;
+        f.fuzzy = true;
+        return f;
+    }
+
+    TEST(ScriptBatch, FuzzyBlackScholesPhilox)
+    {
+        EXPECT_GT(expect_batch_equals_paths(Dyn::BlackScholes, philox(2 * 4099), nullptr, fuzzy_settings()), 30);
+    }
+
+    TEST(ScriptBatch, FuzzyLocalVolAndHestonPhilox)
+    {
+        expect_batch_equals_paths(Dyn::LocalVol, philox(2 * 1003), nullptr, fuzzy_settings());
+        expect_batch_equals_paths(Dyn::Heston, philox(2 * 1003), nullptr, fuzzy_settings());
+    }
+
+    TEST(ScriptBatch, FuzzySobolOnAPool)
+    {
+        ThreadPool pool;
+        pool.start(3);
+        PricingSettings s;
+        s.mc_paths = 4 * 1003;
+        s.mc_seed = 11;
+        s.mc_rqmc_batches = 4;
+        s.mc_sampler = SamplerKind::Sobol;
+        expect_batch_equals_paths(Dyn::BlackScholes, s, &pool, fuzzy_settings());
+    }
+
+    // A wide eps puts most paths in the blending band of every if, the
+    // narrow default puts most at 0 or 1: both mixes of lanes.
+    TEST(ScriptBatch, FuzzyWideBandBlendsMostLanes)
+    {
+        ScriptSettings wide = fuzzy_settings();
+        wide.default_eps = 20.0;
+        expect_batch_equals_paths(Dyn::BlackScholes, philox(2 * 1003), nullptr, wide);
+    }
+
+    TEST(ScriptBatch, FuzzyAndHardScriptsBatch)
+    {
+        const ScriptedProduct<Real> f("2027-06-01\n    if spot() > 100 then pays 1 endIf\n", kCtx, fuzzy_settings());
+        EXPECT_GT(f.batch_width(), 0);
         const ScriptedProduct<Real> h("2027-06-01\n    if spot() > 100 then pays 1 endIf\n", kCtx);
         EXPECT_GT(h.batch_width(), 0);
     }

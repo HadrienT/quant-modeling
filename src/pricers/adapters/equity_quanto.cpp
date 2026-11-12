@@ -1,7 +1,8 @@
 #include "quantModeling/pricers/adapters/equity_quanto.hpp"
 
 #include "quantModeling/engines/analytic/black_scholes.hpp"
-#include "quantModeling/engines/mc/black_scholes.hpp"
+#include "quantModeling/pricers/script_builders.hpp"
+#include "quantModeling/pricers/script_route.hpp"
 #include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/models/equity/quanto_black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
@@ -34,17 +35,38 @@ namespace quantModeling
             in.correlation);
 
         const bool mc = engine == EngineKind::MonteCarlo;
-        PricingSettings settings = {mc ? in.n_paths : 0, mc ? in.seed : 0, true, 100, 100, 100};
-        PricingContext ctx{MarketView{}, settings, model};
-
         PricingResult out;
         if (mc)
         {
-            BSEuroVanillaMCEngine e(ctx);
-            out = price(opt, e);
+            // WP 26 P3: the quanto vanilla as a script, under Black-Scholes at
+            // the domestic rate with the quanto's effective yield q_eff.
+            ScriptRoute route;
+            route.valuation = script_builders::valuation();
+            route.maturity = in.maturity;
+            route.model.model = "black_scholes";
+            route.model.spot = in.spot;
+            route.model.rate = in.rate_domestic;
+            route.model.dividend = model->yield_q();
+            route.model.vol = in.vol;
+            route.name = std::string("quanto ") + (in.is_call ? "call" : "put");
+            const int days = ticks_for(in.maturity);
+            route.script = [in, days](const scripting::ScriptModelSpec &, int shift)
+            {
+                const std::string k = script_builders::number(in.strike);
+                return (script_builders::valuation() + days + shift).to_iso() + "\n    pays " +
+                       script_builders::number(in.fx_rate) + " * " +
+                       (in.is_call ? "max(spot() - " + k + ", 0)" : "max(" + k + " - spot(), 0)") + "\n";
+            };
+            PricingSettings settings;
+            settings.mc_paths = in.n_paths;
+            settings.mc_seed = in.seed;
+            settings.mc_device = ComputeDevice::Auto;
+            out = price_by_script(route, settings, true);
         }
         else
         {
+            PricingSettings settings = {0, 0, true, 100, 100, 100};
+            PricingContext ctx{MarketView{}, settings, model};
             BSEuroVanillaAnalyticEngine e(ctx);
             out = price(opt, e);
         }

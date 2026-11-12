@@ -1,7 +1,6 @@
 #include "quantModeling/pricers/adapters/rates_short_rate.hpp"
 
 #include "quantModeling/engines/analytic/short_rate.hpp"
-#include "quantModeling/engines/mc/short_rate.hpp"
 #include "quantModeling/instruments/rates/bond_option.hpp"
 #include "quantModeling/instruments/rates/capfloor.hpp"
 #include "quantModeling/instruments/rates/caplet.hpp"
@@ -80,20 +79,6 @@ namespace quantModeling
         return price(opt, engine);
     }
 
-    // ── BondOption — MC ──────────────────────────────────────────────────────
-
-    PricingResult price_bond_option_short_rate_mc(const ShortRateBondOptionInput &in)
-    {
-        auto model = make_short_rate_model(in.model_type, in.a, in.b, in.sigma, in.r0);
-        BondOption opt(in.option_maturity, in.bond_maturity, in.strike, in.is_call, in.notional);
-        PricingSettings settings;
-        settings.mc_paths = in.n_paths;
-        settings.mc_seed = in.seed;
-        auto ctx = make_context(model, settings);
-        ShortRateMCEngine engine(ctx);
-        return price(opt, engine);
-    }
-
     // ── CapFloor — Analytic ──────────────────────────────────────────────────
 
     PricingResult price_capfloor_short_rate_analytic(const ShortRateCapFloorInput &in)
@@ -105,20 +90,6 @@ namespace quantModeling
         return price(cf, engine);
     }
 
-    // ── CapFloor — MC ────────────────────────────────────────────────────────
-
-    PricingResult price_capfloor_short_rate_mc(const ShortRateCapFloorInput &in)
-    {
-        auto model = make_short_rate_model(in.model_type, in.a, in.b, in.sigma, in.r0);
-        CapFloor cf(in.schedule, in.strike, in.is_cap, in.notional);
-        PricingSettings settings;
-        settings.mc_paths = in.n_paths;
-        settings.mc_seed = in.seed;
-        auto ctx = make_context(model, settings);
-        ShortRateMCEngine engine(ctx);
-        return price(cf, engine);
-    }
-
     // ── Caplet — Analytic ────────────────────────────────────────────────────
 
     PricingResult price_caplet_short_rate_analytic(const ShortRateCapletInput &in)
@@ -127,20 +98,6 @@ namespace quantModeling
         Caplet cap(in.start, in.end, in.strike, in.is_cap, in.notional);
         auto ctx = make_context(model);
         ShortRateAnalyticEngine engine(ctx);
-        return price(cap, engine);
-    }
-
-    // ── Caplet — MC ──────────────────────────────────────────────────────────
-
-    PricingResult price_caplet_short_rate_mc(const ShortRateCapletInput &in)
-    {
-        auto model = make_short_rate_model(in.model_type, in.a, in.b, in.sigma, in.r0);
-        Caplet cap(in.start, in.end, in.strike, in.is_cap, in.notional);
-        PricingSettings settings;
-        settings.mc_paths = in.n_paths;
-        settings.mc_seed = in.seed;
-        auto ctx = make_context(model, settings);
-        ShortRateMCEngine engine(ctx);
         return price(cap, engine);
     }
 

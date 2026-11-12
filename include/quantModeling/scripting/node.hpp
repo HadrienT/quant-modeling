@@ -132,6 +132,27 @@ namespace quantModeling::scripting
         std::size_t slot = unindexed;
     };
 
+    /// `survivalAbove(L)` / `survivalBelow(L)`, optionally `(L, i)` for asset
+    /// i: the probability that the spot stayed above (below) the level L
+    /// between the previous event date (the valuation date for the first
+    /// event) and the current one, conditional on the simulated path -- the
+    /// product of the Brownian-bridge survival probabilities over the
+    /// model's own steps (WP 26 P2). The model computes it, because only the
+    /// model knows its steps and its volatility on each; the node only reads
+    /// it. `level` is a literal, like df()'s date, so that the barrier can be
+    /// handed to the model before the simulation. `slot` indexes the event's
+    /// own SampleDef::barriers / Sample::survivals, filled by
+    /// BarrierLookupResolver like NodeDf::slot.
+    struct NodeSurvival final : NodeT<NodeSurvival>
+    {
+        static constexpr std::size_t unindexed = NodeVar::unindexed;
+
+        double level = 0.0;
+        std::size_t asset = 0;
+        bool above = true;
+        std::size_t slot = unindexed;
+    };
+
     // ── arithmetic ────────────────────────────────────────────────────────────
 
     struct NodeAdd final : NodeT<NodeAdd>
@@ -235,6 +256,20 @@ namespace quantModeling::scripting
     struct NodeExercise final : NodeT<NodeExercise>
     {
         bool issuer = false;
+    };
+
+    /// `controlPays expr`: a cash flow of the script's control payoff, whose
+    /// expectation the caller knows in closed form (WP 26 P2) -- the
+    /// geometric Asian of an arithmetic one, the vanilla of a barrier. It
+    /// accumulates expr / numeraire, like `pays`, into a hidden variable;
+    /// the engine regresses the price on it. arguments[0] is that variable
+    /// (a NodeVar named kControlVariable, which no script can spell: `#`
+    /// starts a comment), arguments[1] the amount -- NodeAssign's layout, so
+    /// that the variable passes (VarIndexer, IfProcessor, the fuzzy ifs'
+    /// blends) treat it as the assignment it is.
+    struct NodeControlPays final : NodeT<NodeControlPays>
+    {
+        static constexpr const char *kControlVariable = "#control";
     };
 
     struct NodeAnd final : NodeT<NodeAnd>

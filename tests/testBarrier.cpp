@@ -232,4 +232,59 @@ namespace quantModeling
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    //  The route is a script since WP 26 P3: continuous monitoring is exact
+    //  under Black-Scholes, so the price and the five greeks are the
+    //  Reiner-Rubinstein closed form's (its greeks by finite differences of
+    //  the formula, far more precise than the Monte Carlo).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    namespace
+    {
+        double norm_cdf_(double x)
+        {
+            return 0.5 * std::erfc(-x / std::sqrt(2.0));
+        }
+
+        double down_and_out_call(double S, double H, double rr, double v, double TT)
+        {
+            const double sd = v * std::sqrt(TT);
+            const double d1 = (std::log(S / K) + (rr - q + 0.5 * v * v) * TT) / sd;
+            const double c = S * std::exp(-q * TT) * norm_cdf_(d1) - K * std::exp(-rr * TT) * norm_cdf_(d1 - sd);
+            const double lam = (rr - q + 0.5 * v * v) / (v * v);
+            const double y = std::log(H * H / (S * K)) / sd + lam * sd;
+            const double di = S * std::exp(-q * TT) * std::pow(H / S, 2.0 * lam) * norm_cdf_(y) -
+                              K * std::exp(-rr * TT) * std::pow(H / S, 2.0 * lam - 2.0) * norm_cdf_(y - sd);
+            return c - di;
+        }
+    } // namespace
+
+    TEST(BarrierMC, ContinuousDownAndOutIsTheClosedFormWithItsGreeks)
+    {
+        const double H = 90.0;
+        const PricingResult res = priceBarrier(true, BarrierType::DownAndOut, H, 0.0, 200000, 3);
+        auto f = [&](double S, double rr, double v, double TT)
+        { return down_and_out_call(S, H, rr, v, TT); };
+        const double h = 1e-4;
+        const double price = f(S0, r, sigma, T);
+        const double delta = (f(S0 + 0.01, r, sigma, T) - f(S0 - 0.01, r, sigma, T)) / 0.02;
+        const double gamma = (f(S0 + 1.0, r, sigma, T) - 2.0 * price + f(S0 - 1.0, r, sigma, T));
+        const double vega = (f(S0, r, sigma + h, T) - f(S0, r, sigma - h, T)) / (2.0 * h);
+        const double rho = (f(S0, r + h, sigma, T) - f(S0, r - h, sigma, T)) / (2.0 * h);
+        const double theta = -(f(S0, r, sigma, T + 1.0 / 365.0) - f(S0, r, sigma, T - 1.0 / 365.0)) / (2.0 / 365.0);
+
+        EXPECT_NEAR(res.npv, price, 4.0 * res.mc_std_error + 1e-6);
+        auto near = [](std::optional<Real> x, std::optional<Real> se, double exact, double slack)
+        {
+            ASSERT_TRUE(x.has_value());
+            EXPECT_NEAR(*x, exact, 4.0 * se.value_or(0.0) + slack) << "exact " << exact;
+        };
+        near(res.greeks.delta, res.greeks.delta_std_error, delta, 1e-4);
+        near(res.greeks.gamma, res.greeks.gamma_std_error, gamma, 1e-4); // the 1 % bump's own error
+        near(res.greeks.vega, res.greeks.vega_std_error, vega, 1e-2);
+        near(res.greeks.rho, res.greeks.rho_std_error, rho, 1e-2);
+        near(res.greeks.theta, res.greeks.theta_std_error, theta, 1e-2);
+        EXPECT_NE(res.diagnostics.find("adjoint"), std::string::npos) << res.diagnostics;
+    }
+
 } // namespace quantModeling

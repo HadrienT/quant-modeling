@@ -82,6 +82,7 @@ namespace quantModeling
             timeline_ = canonical_timeline(product_timeline);
             sim_timeline_ = add_monitoring_steps(timeline_, max_dt_);
             defline_ = defline;
+            check_barrier_assets(defline_, 1, "LocalVolSimModel");
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
 
@@ -107,6 +108,13 @@ namespace quantModeling
             using std::exp;
             using std::sqrt;
 
+            // Barrier monitoring (WP 26 P2): each event's survivals are the
+            // product of the bridge survivals over the fine steps since the
+            // previous event, each at the step's own local volatility.
+            std::size_t next = 0; // the event the current step leads to
+            if (!defline_.empty())
+                path[0].survivals.assign(defline_[0].barriers.size(), T(1.0));
+
             T S = s0_;
             Time t_prev = 0.0;
             for (std::size_t k = 0; k < sim_timeline_.size(); ++k)
@@ -114,12 +122,24 @@ namespace quantModeling
                 const Time t = sim_timeline_[k];
                 const Time dt = t - t_prev;
 
-                mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
+                const T S_before = S;
+                const T var = mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
                 t_prev = t;
+
+                if (next < defline_.size())
+                {
+                    const std::vector<BarrierMonitor> &bars = defline_[next].barriers;
+                    std::vector<T> &surv = path[next].survivals;
+                    for (std::size_t b = 0; b < bars.size(); ++b)
+                        surv[b] *= mc::bridge_survival(S_before, S, bars[b].level, bars[b].above, var);
+                }
 
                 const std::ptrdiff_t event = event_index_of_step_[k];
                 if (event < 0)
                     continue;
+                next = static_cast<std::size_t>(event) + 1;
+                if (next < defline_.size())
+                    path[next].survivals.assign(defline_[next].barriers.size(), T(1.0));
 
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots.assign(1, S);
@@ -143,6 +163,8 @@ namespace quantModeling
         {
             return std::make_unique<LocalVolSimModel<T>>(*this);
         }
+
+        bool monitors_barriers() const override { return true; }
 
         bool describe_device(DeviceModel &d) const override
         {

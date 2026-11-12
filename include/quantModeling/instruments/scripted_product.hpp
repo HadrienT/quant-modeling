@@ -14,6 +14,7 @@
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/parser.hpp"
+#include "quantModeling/scripting/visitors/barrier_lookup_resolver.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
 #include "quantModeling/scripting/visitors/discount_lookup_resolver.hpp"
@@ -25,6 +26,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -88,6 +90,12 @@ namespace quantModeling
         /// (tests/testScriptBytecode.cpp); the tree evaluators remain the
         /// oracle, and the bytecode is what the GPU runs.
         bool bytecode = true;
+        /// The expectation of the script's `controlPays` cash flows (their
+        /// sum deflated, as a price), when the caller knows it in closed
+        /// form under the model it prices with (WP 26 P2): the engine then
+        /// uses them as a control variate. Without it, controlPays is
+        /// computed and ignored.
+        std::optional<double> control_mean{};
     };
 
     /**
@@ -140,6 +148,10 @@ namespace quantModeling
             scripting::VarIndexer indexer;
             indexer.index(events);
             variable_names_ = indexer.names();
+            for (std::size_t v = 0; v < variable_names_.size(); ++v)
+                if (variable_names_[v] == scripting::NodeControlPays::kControlVariable)
+                    control_index_ = static_cast<std::ptrdiff_t>(v);
+            control_mean_ = settings.control_mean;
 
             scripting::ConstCondProcessor().process(events);
             scripting::IfProcessor().process(events);
@@ -186,7 +198,9 @@ namespace quantModeling
 
             const std::vector<std::vector<Time>> discount_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(events_);
-            defline_ = scripting::build_defline(events_, discount_mats);
+            const std::vector<std::vector<BarrierMonitor>> barriers =
+                scripting::BarrierLookupResolver().resolve(events_);
+            defline_ = scripting::build_defline(events_, discount_mats, barriers);
 
             const std::vector<std::vector<Time>> historical_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(historical_events_);
@@ -196,6 +210,14 @@ namespace quantModeling
                         "ScriptedProduct: df() is not supported in a "
                         "historical (pre-valuation) event (" +
                         historical_events_[i].date.to_iso() + ")");
+            const std::vector<std::vector<BarrierMonitor>> historical_barriers =
+                scripting::BarrierLookupResolver().resolve(historical_events_);
+            for (std::size_t i = 0; i < historical_barriers.size(); ++i)
+                if (!historical_barriers[i].empty())
+                    throw InvalidInput("ScriptedProduct: survivalAbove() / survivalBelow() on a past date (" +
+                                       historical_events_[i].date.to_iso() +
+                                       "): the path between past fixings is not known; script the barrier "
+                                       "on the fixings instead");
 
             if (settings.fuzzy)
                 evaluator_ = std::make_unique<scripting::FuzzyEvaluator<T>>();
@@ -222,6 +244,30 @@ namespace quantModeling
                 compiled_ = true;
                 batchable_ = program_.batchable();
             }
+        }
+
+        /// The script's controlPays cash flows as a control variate, when
+        /// ScriptSettings::control_mean gave their expectation.
+        bool analytic_control(Real &mean) const override
+        {
+            if (control_index_ < 0 || !control_mean_)
+                return false;
+            mean = *control_mean_;
+            return true;
+        }
+
+        /// The controlPays variable's slot, -1 without one.
+        std::ptrdiff_t control_variable() const { return control_index_; }
+
+        Real control_value(const typename ISimulatableProduct<T>::PayoffState *state) const override
+        {
+            if (control_index_ < 0)
+                return 0.0;
+            const auto v = static_cast<std::size_t>(control_index_);
+            if (!compiled_)
+                return static_cast<Real>(evaluator_->variables()[v]);
+            const auto *b = state ? static_cast<const MachineBuffers *>(state) : &buffers_;
+            return static_cast<Real>(b->vars[v]);
         }
 
         /// The script has exercise() or call(): it prices only once an
@@ -349,14 +395,14 @@ namespace quantModeling
         }
 
         /// The batched interpreter's buffers (P1a): kBatch lanes of
-        /// variables and stack.
+        /// variables, stack, and for a fuzzy script degrees and if slots.
         struct BatchBuffers final : ISimulatableProduct<T>::PayoffState
         {
-            std::vector<double> vars, stack;
+            std::vector<double> vars, stack, degrees, if_slots;
         };
 
-        /// kBatch for a compiled script with hard ifs only, priced in
-        /// double; 0 otherwise (fuzzy, the tree evaluator, AAD).
+        /// kBatch for a compiled script (hard or fuzzy) priced in double;
+        /// 0 otherwise (the tree evaluator, early exercise, AAD).
         int batch_width() const override
         {
             if constexpr (std::is_same_v<T, double>)
@@ -372,6 +418,8 @@ namespace quantModeling
             auto b = std::make_unique<BatchBuffers>();
             b->vars.assign(static_cast<std::size_t>(program_.n_vars) * scripting::kBatch, 0.0);
             b->stack.assign(static_cast<std::size_t>(std::max(1, program_.max_stack)) * scripting::kBatch, 0.0);
+            b->degrees.assign(static_cast<std::size_t>(std::max(1, program_.max_degrees)) * scripting::kBatch, 0.0);
+            b->if_slots.assign(static_cast<std::size_t>(std::max(1, program_.n_if_slots)) * scripting::kBatch, 0.0);
             return b;
         }
 
@@ -391,11 +439,12 @@ namespace quantModeling
                     for (int l = 0; l < W; ++l)
                         b.vars[static_cast<std::size_t>(v * W + l)] =
                             baseline_.empty() ? 0.0 : baseline_[static_cast<std::size_t>(v)];
-                scripting::BatchMachine m{b.vars.data(), b.stack.data(), {}};
+                scripting::BatchMachine m{b.vars.data(), b.stack.data(), b.degrees.data(), b.if_slots.data(), {}};
                 const scripting::ProgramView view = program_.view();
                 const unsigned lanes = count >= W ? (1u << W) - 1u : (1u << count) - 1u;
                 const double *spots[W];
                 const double *discounts[W];
+                const double *survivals[W];
                 double numeraire[W];
                 for (std::size_t i = 0; i < events_.size(); ++i)
                 {
@@ -404,11 +453,12 @@ namespace quantModeling
                         const Sample<T> &smp = (*paths[l < count ? l : 0])[i];
                         spots[l] = smp.spots.data();
                         discounts[l] = smp.discounts.data();
+                        survivals[l] = smp.survivals.data();
                         numeraire[l] = smp.numeraire;
                     }
                     check_event_sizes((*paths[0])[i], i);
                     scripting::run_event_batch(view, program_.event_begin[i], program_.event_begin[i + 1], m, spots,
-                                               discounts, numeraire, lanes);
+                                               discounts, numeraire, lanes, survivals);
                 }
                 for (int l = 0; l < count; ++l)
                     out[l] = m.payoff[l];
@@ -479,6 +529,10 @@ namespace quantModeling
             if (max_df >= 0 && static_cast<std::size_t>(max_df) >= smp.discounts.size())
                 throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
                                    "DiscountLookupResolver must run before this product is priced");
+            const std::int32_t max_surv = program_.event_max_surv[i];
+            if (max_surv >= 0 && static_cast<std::size_t>(max_surv) >= smp.survivals.size())
+                throw InvalidInput("survivalAbove/Below(): the model did not fill this event's survival "
+                                   "probabilities -- it must support barrier monitoring");
         }
 
         void payoffs_compiled(const Scenario<T> &path, std::vector<T> &out, MachineBuffers &b) const
@@ -495,7 +549,7 @@ namespace quantModeling
                 const Sample<T> &smp = path[i];
                 check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
-                                     smp.spots.data(), smp.discounts.data(), smp.numeraire);
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.survivals.data());
             }
             out.assign(1, m.payoff);
         }
@@ -568,6 +622,8 @@ namespace quantModeling
         std::size_t n_underlyings_ = 1;
         scripting::ScriptAnalysis analysis_;
         std::vector<std::string> variable_names_;
+        std::ptrdiff_t control_index_ = -1; ///< the controlPays variable, -1 without
+        std::optional<double> control_mean_;
         std::vector<std::string> labels_{"price"};
         mutable std::unique_ptr<scripting::Evaluator<T>>
             evaluator_; ///< per-path state (§5.4); hard or fuzzy

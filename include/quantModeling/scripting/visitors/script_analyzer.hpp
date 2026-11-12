@@ -44,13 +44,18 @@ namespace quantModeling::scripting
         /// across dates -- the forward smile -- not on each date's marginal
         /// alone.
         bool path_dependent = false;
+
+        /// The script reads survivalAbove / survivalBelow: the model must
+        /// monitor barriers between dates (Black-Scholes or local vol today,
+        /// ISimulationModel::monitors_barriers).
+        bool barrier_monitoring = false;
     };
 
     namespace detail
     {
         inline bool is_spot_derived(const Node &n, const std::vector<char> &tainted)
         {
-            if (dynamic_cast<const NodeSpot *>(&n))
+            if (dynamic_cast<const NodeSpot *>(&n) || dynamic_cast<const NodeSurvival *>(&n))
                 return true;
             if (const auto *v = dynamic_cast<const NodeVar *>(&n))
                 return v->index < tainted.size() && tainted[v->index];
@@ -128,6 +133,16 @@ namespace quantModeling::scripting
                     dynamic_cast<const NodeAbs *>(&n) || dynamic_cast<const NodeSmooth *>(&n);
                 if (nonlinear_op && is_spot_derived(n, tainted))
                     out.nonlinear_in_spot = true;
+
+                // A bridge survival is a barrier on the whole path between two
+                // dates: a threshold, path-dependent by construction.
+                if (dynamic_cast<const NodeSurvival *>(&n))
+                {
+                    out.barrier_monitoring = true;
+                    out.nonlinear_in_spot = true;
+                    out.spot_threshold_test = true;
+                    out.path_dependent = true;
+                }
 
                 if (const auto *cmp = dynamic_cast<const NodeComparison *>(&n))
                 {

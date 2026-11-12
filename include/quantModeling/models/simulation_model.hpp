@@ -65,6 +65,30 @@ namespace quantModeling
 
     struct DeviceModel; // models/device_model.hpp
 
+    /// Throws when the defline asks for continuous barrier monitoring
+    /// (survivalAbove / survivalBelow, WP 26 P2): a model that does not
+    /// compute the bridge survival probabilities calls it from init(), so
+    /// that a script never reads survivals nobody filled.
+    inline void refuse_barrier_monitoring(const std::vector<SampleDef> &defline, const char *model)
+    {
+        for (const SampleDef &def : defline)
+            if (!def.barriers.empty())
+                throw InvalidInput(std::string(model) +
+                                   " does not monitor barriers between dates: survivalAbove() / survivalBelow() "
+                                   "need Black-Scholes or local vol");
+    }
+
+    /// Checks the barriers a model that monitors them is asked for: each one
+    /// on an asset it simulates.
+    inline void check_barrier_assets(const std::vector<SampleDef> &defline, std::size_t n_assets, const char *model)
+    {
+        for (const SampleDef &def : defline)
+            for (const BarrierMonitor &b : def.barriers)
+                if (b.asset >= n_assets)
+                    throw InvalidInput(std::string(model) + ": a barrier on asset " + std::to_string(b.asset) +
+                                       ", but the model simulates " + std::to_string(n_assets) + " asset(s)");
+    }
+
     template <class T = Real>
     struct ISimulationModel
     {
@@ -82,6 +106,11 @@ namespace quantModeling
                                    Scenario<T> &path) const = 0;
 
         virtual std::unique_ptr<ISimulationModel<T>> clone() const = 0;
+
+        /// Whether generate_path() fills Sample::survivals for the barriers
+        /// of the defline (WP 26 P2). A model that returns false refuses a
+        /// defline with barriers in init() (refuse_barrier_monitoring).
+        virtual bool monitors_barriers() const { return false; }
 
         /// Valid after init(). Models without Brownian increments to reorder
         /// (or not yet described) keep the default: no bridge.

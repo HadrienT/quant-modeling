@@ -47,6 +47,11 @@ namespace quantModeling::scripting
         // straight from the surface syntax, not from a later pass, so it
         // belongs in the structural dump.
         void visit(const NodeDf &n) override { leaf("Df " + n.date.to_iso()); }
+        void visit(const NodeSurvival &n) override
+        {
+            leaf(std::string(n.above ? "SurvivalAbove " : "SurvivalBelow ") + std::to_string(n.level) + " " +
+                 std::to_string(n.asset));
+        }
 
         void visit(const NodeAdd &n) override { node("Add", n); }
         void visit(const NodeSub &n) override { node("Sub", n); }
@@ -77,6 +82,7 @@ namespace quantModeling::scripting
 
         void visit(const NodeAssign &n) override { node("Assign", n); }
         void visit(const NodePays &n) override { node("Pays", n); }
+        void visit(const NodeControlPays &n) override { node("ControlPays", n); }
         void visit(const NodeIf &n) override
         {
             node("If firstElse=" + std::to_string(n.firstElse), n);

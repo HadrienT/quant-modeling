@@ -128,6 +128,7 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
+            refuse_barrier_monitoring(defline, "SchwartzSmithSimModel");
             using std::exp;
             using std::sqrt;
 

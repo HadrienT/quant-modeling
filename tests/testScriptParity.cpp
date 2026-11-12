@@ -10,14 +10,14 @@
 #include "quantModeling/utils/stats.hpp"
 
 // legacy autocall engine, for the third parity
-#include "quantModeling/engines/mc/autocall.hpp"
+#include "quantModeling/pricers/adapters/equity_autocall.hpp"
 #include "quantModeling/instruments/equity/autocall.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/pricer.hpp"
 
 // legacy Himalaya/Mountain engine and the new multi-asset sim model, for the
-// 16e acceptance criterion (a multi-underlying script vs BSMountainMCEngine)
-#include "quantModeling/engines/mc/mountain.hpp"
+// 16e acceptance criterion (a multi-underlying script vs the registry's mountain, a script itself since WP 26 P3)
+#include "quantModeling/pricers/adapters/equity_mountain.hpp"
 #include "quantModeling/instruments/equity/mountain.hpp"
 #include "quantModeling/models/equity/multi_asset_bs_model.hpp"
 #include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
@@ -99,7 +99,8 @@ namespace quantModeling
         EXPECT_NEAR(a.std_error(), b.std_error(), 1e-12);
     }
 
-    // ── 3. scripted autocall vs BSAutocallMCEngine, independent MC ──────────
+    // ── 3. scripted autocall vs the registry's autocall (a script written by
+    // its C++ builder since WP 26 P3; until then BSAutocallMCEngine) ──────
     //
     // The legacy engine overwrites the path PV on an autocall (`path_pv =`,
     // not `+=`), discarding any coupons paid at earlier dates. A script cannot
@@ -133,16 +134,25 @@ namespace quantModeling
                                double q, double v, double ac_frac,
                                double cp_frac, double put_frac, unsigned seed)
         {
-            auto model = std::make_shared<BlackScholesModel>(S0, r, q, v);
-            PricingSettings s = mc_settings();
-            s.mc_seed = seed;
-            PricingContext pctx{MarketView{}, s, model};
-            BSAutocallMCEngine engine(pctx);
-            AutocallNote note(
-                std::vector<Time>(obs_times.begin(), obs_times.end()), ac_frac,
-                cp_frac, put_frac, /*coupon_rate=*/0.05, /*notional=*/1000.0,
-                /*memory=*/true, /*ki_continuous=*/false);
-            return price(note, engine).npv;
+            // Since WP 26 P3 the registry's autocall is itself a script, written
+            // by its C++ builder (pricers/script_builders.cpp): this compares
+            // the test's own script against it.
+            AutocallBSInput in{};
+            in.spot = S0;
+            in.rate = r;
+            in.dividend = q;
+            in.vol = v;
+            in.observation_dates.assign(obs_times.begin(), obs_times.end());
+            in.autocall_barrier = ac_frac;
+            in.coupon_barrier = cp_frac;
+            in.put_barrier = put_frac;
+            in.coupon_rate = 0.05;
+            in.notional = 1000.0;
+            in.memory_coupon = true;
+            in.ki_continuous = false;
+            in.n_paths = mc_settings().mc_paths;
+            in.seed = static_cast<int>(seed);
+            return price_equity_autocall_bs_mc(in).npv;
         }
     } // namespace
 
@@ -312,7 +322,8 @@ namespace quantModeling
     }
 
     // ── 16e's own acceptance criterion: a multi-underlying script priced
-    // against BSMountainMCEngine (blueprint/wp/16-scripting.md §10) ─────────
+    // against the registry's mountain (BSMountainMCEngine until WP 26 P3;
+    // blueprint/wp/16-scripting.md §10) ─────────
 
     namespace
     {
@@ -320,22 +331,25 @@ namespace quantModeling
                                double v0, double v1, double rho, Time T1,
                                Time T2, unsigned seed)
         {
-            Eigen::MatrixXd corr(2, 2);
-            corr << 1.0, rho, rho, 1.0;
-            auto model = std::make_shared<MultiAssetBSModel>(
-                r, std::vector<Real>{S0_0, S0_1}, std::vector<Real>{v0, v1},
-                std::vector<Real>{q, q}, corr);
-            PricingSettings s = mc_settings();
-            s.mc_seed = seed;
-            PricingContext pctx{MarketView{}, s, model};
-            BSMountainMCEngine engine(pctx);
-            MountainOption opt({T1, T2}, /*strike=*/0.0, /*is_call=*/true,
-                               /*notional=*/100.0);
-            return price(opt, engine).npv;
+            // The registry's mountain is a script since WP 26 P3 (its C++
+            // builder): the test's hand-unrolled script against it.
+            MountainBSInput in{};
+            in.spots = {S0_0, S0_1};
+            in.vols = {v0, v1};
+            in.dividends = {q, q};
+            in.correlations = {{1.0, rho}, {rho, 1.0}};
+            in.observation_dates = {T1, T2};
+            in.strike = 0.0;
+            in.is_call = true;
+            in.rate = r;
+            in.notional = 100.0;
+            in.n_paths = mc_settings().mc_paths;
+            in.seed = static_cast<int>(seed);
+            return price_equity_mountain_bs_mc(in).npv;
         }
     } // namespace
 
-    TEST(ScriptParity, TwoAssetHimalayaMatchesBSMountainMCEngine)
+    TEST(ScriptParity, TwoAssetHimalayaMatchesTheRegistrysMountain)
     {
         // Hand-unrolled Himalaya for n = 2 (the language has no loops, so a
         // fixed n is written out explicitly -- WP §11): at T1, lock in the

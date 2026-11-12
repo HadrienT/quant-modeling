@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "quantModeling/engines/mc/basket.hpp"
 #include "quantModeling/models/equity/multi_asset_bs_model.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/pricers/pricer.hpp"

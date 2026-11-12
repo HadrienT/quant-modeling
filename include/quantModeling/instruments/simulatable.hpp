@@ -77,6 +77,20 @@ namespace quantModeling
                                    PayoffState & /*state*/) const
         {
         }
+
+        /**
+         * @brief An analytic control variate the product carries (WP 26 P2):
+         *        a payoff computed on the same path, deflated, whose
+         *        expectation is known in closed form -- the geometric Asian
+         *        of an arithmetic one. The engine regresses the price on it
+         *        with the generic controls (engines/mc/simulation_engine.hpp).
+         *
+         * True with the expectation in `mean` when the product has one; then
+         * control_value() is its value on the path the last payoffs() /
+         * payoffs_with_state(state) call priced.
+         */
+        virtual bool analytic_control(Real & /*mean*/) const { return false; }
+        virtual Real control_value(const PayoffState * /*state*/) const { return 0.0; }
     };
 
 } // namespace quantModeling

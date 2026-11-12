@@ -1,55 +1,91 @@
 #include "quantModeling/pricers/adapters/equity_barrier.hpp"
+#include "quantModeling/pricers/adapters/equity_barrier_lv.hpp"
 
-#include "quantModeling/engines/mc/barrier.hpp"
-#include "quantModeling/instruments/equity/barrier.hpp"
-#include "quantModeling/instruments/equity/vanilla.hpp"
-#include "quantModeling/models/equity/black_scholes.hpp"
-#include "quantModeling/pricers/context.hpp"
-#include "quantModeling/pricers/pricer.hpp"
+#include "quantModeling/pricers/script_builders.hpp"
+#include "quantModeling/pricers/script_route.hpp"
 
-#include <memory>
+#include <algorithm>
+#include <cmath>
 
 namespace quantModeling
 {
+    namespace
+    {
+        script_builders::BarrierTerms terms_of(bool is_call, Real strike, BarrierType type, Real level, Real rebate)
+        {
+            script_builders::BarrierTerms t;
+            t.is_call = is_call;
+            t.strike = strike;
+            t.type = type;
+            t.level = level;
+            t.rebate = rebate;
+            return t;
+        }
+
+        /// Continuous monitoring (the bridge on) reads the barrier through
+        /// the model's survival probabilities; without the bridge, the
+        /// barrier is checked on the dates of the hand-written engine's grid
+        /// (n_steps, or `per_year` a year).
+        PricingResult price_barrier(const script_builders::BarrierTerms &terms, Time maturity, int n_steps,
+                                    bool bridge, int per_year, scripting::ScriptModelSpec model, int paths, int seed,
+                                    bool greeks)
+        {
+            const int observations =
+                bridge ? 0 : (n_steps > 0 ? n_steps : std::max(1, static_cast<int>(std::lround(per_year * maturity))));
+            ScriptRoute route;
+            route.valuation = script_builders::valuation();
+            route.maturity = maturity;
+            route.model = std::move(model);
+            const char *kind[] = {"down-and-out", "down-and-in", "up-and-out", "up-and-in"};
+            const int k = terms.type == BarrierType::DownAndOut  ? 0
+                          : terms.type == BarrierType::DownAndIn ? 1
+                          : terms.type == BarrierType::UpAndOut  ? 2
+                                                                 : 3;
+            route.name = std::string(kind[k]) + (terms.is_call ? " call" : " put") + ", barrier " +
+                         script_builders::number(terms.level) +
+                         (bridge ? ", continuous" : ", " + std::to_string(observations) + " dates");
+            route.fd_greeks = !bridge; // a hard knock on dates: pathwise derivatives miss the jump
+            const int days = ticks_for(maturity);
+            route.script = [terms, days, observations](const scripting::ScriptModelSpec &, int shift)
+            { return script_builders::barrier(terms, days + shift, observations); };
+            PricingSettings settings;
+            settings.mc_paths = paths;
+            settings.mc_seed = seed;
+            settings.mc_device = ComputeDevice::Auto; // the GPU when present and the script fits, the CPU otherwise
+            return price_by_script(route, settings, greeks);
+        }
+    } // namespace
 
     PricingResult price_equity_barrier_bs_mc(const BarrierBSInput &in)
     {
-        // Build the vanilla underlying payoff (call or put)
-        auto payoff = std::make_shared<PlainVanillaPayoff>(
-            in.is_call ? OptionType::Call : OptionType::Put,
-            static_cast<Real>(in.strike));
+        scripting::ScriptModelSpec m;
+        m.model = "black_scholes";
+        m.spot = in.spot;
+        m.rate = in.rate;
+        m.dividend = in.dividend;
+        m.vol = in.vol;
+        return price_barrier(terms_of(in.is_call, in.strike, in.barrier_type, in.barrier_level, in.rebate),
+                             in.maturity, in.n_steps, in.brownian_bridge, 52, std::move(m), in.n_paths, in.seed,
+                             in.compute_greeks);
+    }
 
-        // European exercise
-        auto exercise = std::make_shared<EuropeanExercise>(
-            static_cast<Real>(in.maturity));
-
-        // Build the barrier option instrument
-        BarrierOption opt(payoff, exercise,
-                          in.barrier_type,
-                          static_cast<Real>(in.barrier_level),
-                          static_cast<Real>(in.rebate),
-                          1.0 /* notional, scaled below */);
-        opt.n_steps = in.n_steps;
-        opt.brownian_bridge = in.brownian_bridge;
-
-        // Black-Scholes model
-        auto model = std::make_shared<BlackScholesModel>(
-            static_cast<Real>(in.spot),
-            static_cast<Real>(in.rate),
-            static_cast<Real>(in.dividend),
-            static_cast<Real>(in.vol));
-
-        PricingSettings settings;
-        settings.mc_paths = in.n_paths;
-        settings.mc_seed = in.seed;
-        settings.mc_antithetic = false; // CRN Greek scheme; antithetic handled separately
-        settings.greeks = in.compute_greeks ? GreeksMethod::Bump : GreeksMethod::None;
-
-        MarketView market = {};
-        PricingContext ctx{market, settings, model};
-
-        BSEuroBarrierMCEngine engine(ctx);
-        return price(opt, engine);
+    PricingResult price_equity_barrier_lv_mc(const BarrierLocalVolInput &in)
+    {
+        scripting::ScriptModelSpec m;
+        m.model = "local_vol";
+        m.spot = in.spot;
+        m.rate = in.rate;
+        m.dividend = in.dividend;
+        m.K_grid = in.surface.K_grid;
+        m.T_grid = in.surface.T_grid;
+        m.sigma_loc_flat = in.surface.sigma_loc_flat;
+        // The survivals are taken on the model's steps: the hand-written
+        // engine's grid (n_steps, or 52 a year).
+        const int steps = in.n_steps > 0 ? in.n_steps : std::max(1, static_cast<int>(std::lround(52.0 * in.maturity)));
+        m.max_dt = in.maturity / steps;
+        return price_barrier(terms_of(in.is_call, in.strike, in.barrier_type, in.barrier_level, in.rebate),
+                             in.maturity, in.n_steps, in.brownian_bridge, 52, std::move(m), in.n_paths, in.seed,
+                             in.compute_greeks);
     }
 
 } // namespace quantModeling

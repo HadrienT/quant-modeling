@@ -64,10 +64,6 @@ target_sources(quantModeling
         src/engines/analytic/future.cpp
         src/engines/analytic/bonds.cpp
         src/engines/mc/black_scholes.cpp
-        src/engines/mc/asian.cpp
-        src/engines/mc/barrier.cpp
-        src/engines/mc/basket.cpp
-        src/engines/mc/lookback.cpp
         src/engines/mc/local_vol.cpp
         src/engines/tree/binomial.cpp
         src/engines/tree/trinomial.cpp
@@ -159,34 +155,25 @@ target_sources(quantModeling
         src/instruments/rates/capfloor.cpp
         src/instruments/rates/caplet.cpp
         src/engines/analytic/short_rate.cpp
-        src/engines/mc/short_rate.cpp
-        src/engines/mc/autocall.cpp
-        src/engines/mc/mountain.cpp
-        src/engines/mc/variance_swap.cpp
-        src/engines/mc/dispersion.cpp
-        src/engines/mc/rainbow.cpp
         src/engines/analytic/variance_swap.cpp
         src/engines/analytic/fx.cpp
         src/engines/analytic/commodity.cpp
         src/pricers/registry.cpp
+        src/pricers/script_route.cpp
+        src/pricers/script_builders.cpp
+        src/pricers/adapters/equity_barrier.cpp
+        src/pricers/adapters/equity_asian_lookback_script.cpp
+        src/pricers/adapters/equity_multi_asset_script.cpp
+        src/pricers/adapters/equity_realised_variance_script.cpp
+        src/pricers/adapters/rates_short_rate_script.cpp
         src/pricers/adapters/equity_vanilla.cpp
         src/pricers/adapters/equity_quanto.cpp
         src/pricers/adapters/equity_vanilla_american.cpp
         src/pricers/adapters/equity_asian.cpp
-        src/pricers/adapters/equity_asian_lv.cpp
-        src/pricers/adapters/equity_barrier.cpp
-        src/pricers/adapters/equity_barrier_lv.cpp
-        src/pricers/adapters/equity_basket.cpp
-        src/pricers/adapters/equity_lookback.cpp
-        src/pricers/adapters/equity_lookback_lv.cpp
         src/pricers/adapters/equity_future.cpp
         src/pricers/adapters/bonds.cpp
         src/pricers/adapters/rates_short_rate.cpp
-        src/pricers/adapters/equity_autocall.cpp
-        src/pricers/adapters/equity_mountain.cpp
         src/pricers/adapters/equity_vol_swap.cpp
-        src/pricers/adapters/equity_dispersion.cpp
-        src/pricers/adapters/equity_rainbow.cpp
         src/pricers/adapters/fx.cpp
         src/pricers/adapters/commodity.cpp
         src/engines/analytic/digital.cpp
@@ -361,6 +348,8 @@ if(QM_BUILD_TESTS)
     tests/testSchedule.cpp
     tests/testTimeline.cpp
     tests/testSimModelClone.cpp
+    tests/testBarrierMonitoring.cpp
+    tests/testAnalyticControls.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp
     tests/testScriptDomain.cpp
@@ -371,7 +360,6 @@ if(QM_BUILD_TESTS)
     tests/testQuanto.cpp
     tests/testBSMC.cpp
     tests/testAsianOption.cpp
-    tests/testAsianVR.cpp
     tests/testVanillaVR.cpp
     tests/testSmoothing.cpp
     tests/testLookback.cpp

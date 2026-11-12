@@ -257,9 +257,15 @@ namespace quantModeling::mc
             events(e, m, static_cast<const T *>(spots), static_cast<const T *>(disc), numeraire);
             if (x)
                 for (int c = 0; c < v.controls.n; ++c)
-                    if (v.controls.event[c] == e)
+                    if (v.controls.event[c] == e && v.controls.asset[c] >= 0)
                         x[c] = value_of(S[v.controls.asset[c]]) / value_of(numeraire);
         }
+        // A script's analytic control (controlPays, WP 26 P2): asset -(i + 1)
+        // reads variable i at the end of the path, already deflated.
+        if (x)
+            for (int c = 0; c < v.controls.n; ++c)
+                if (v.controls.asset[c] < 0)
+                    x[c] = value_of(m.vars[-(v.controls.asset[c] + 1)]);
         return m.payoff;
     }
 

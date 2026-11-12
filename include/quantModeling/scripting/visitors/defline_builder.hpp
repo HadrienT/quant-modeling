@@ -22,10 +22,14 @@ namespace quantModeling::scripting
      * own `df()` calls need, in slot order (WP 16e). `forward_mats` stays
      * empty until the language gains `fwd()` (still out of scope: it needs
      * a real forward curve, not the flat-r convention `df()` reuses).
+     * `barriers` comes from BarrierLookupResolver: the levels the event's
+     * survivalAbove() / survivalBelow() calls ask the model to monitor
+     * since the previous event (WP 26 P2); empty means none.
      */
     inline std::vector<SampleDef>
     build_defline(const std::vector<Event> &events,
-                  const std::vector<std::vector<Time>> &discount_mats)
+                  const std::vector<std::vector<Time>> &discount_mats,
+                  const std::vector<std::vector<BarrierMonitor>> &barriers = {})
     {
         auto pays_here = [](const Event &event)
         {
@@ -51,6 +55,8 @@ namespace quantModeling::scripting
         {
             defline[i].numeraire = pays_here(events[i]);
             defline[i].discount_mats = discount_mats[i];
+            if (!barriers.empty())
+                defline[i].barriers = barriers[i];
         }
         return defline;
     }

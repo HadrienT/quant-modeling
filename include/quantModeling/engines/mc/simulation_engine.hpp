@@ -41,6 +41,13 @@ namespace quantModeling
         std::string diagnostics;
         std::string device = "cpu"; ///< where the paths ran: "cpu" or "gpu"
         int gpus = 0;               ///< GPUs the paths were shared between
+        /// Sobol RQMC (CPU or GPU) and stratified replicates: the first
+        /// label's estimate in each replicate, in replicate order (empty
+        /// otherwise).
+        /// Two runs with the same seed share their points replicate by
+        /// replicate, so the spread of their replicate-wise differences is
+        /// the error of a finite difference with common random numbers.
+        std::vector<Real> replicates;
 
         Real npv() const { return values.empty() ? Real(0) : values.front(); }
         Real std_error() const
@@ -207,6 +214,18 @@ namespace quantModeling
         mc::SpotControlSet controls;
         if (settings.mc_spot_control)
             controls = mc::choose_spot_controls(product.timeline(), model);
+        // The product's own analytic control (WP 26 P2), after the spots:
+        // one more regressor with its closed-form mean.
+        int product_control = -1;
+        {
+            Real mean = 0.0;
+            if (settings.mc_control_variate && product.analytic_control(mean) &&
+                controls.sel.n < mc::SpotControls::kMax)
+            {
+                product_control = controls.sel.n++;
+                controls.mean[product_control] = mean;
+            }
+        }
         const int k = controls.sel.n;
         const bool cv = k > 0;
         using CvSample = MultiControlAccumulator::Sample;
@@ -227,6 +246,7 @@ namespace quantModeling
             mc::PathDraws draws;
             std::vector<Real> out;
             std::vector<CvSample> out_cv;
+            Real control = 0.0; ///< the product's analytic control on the last path
             // The batched interpreter's (P1a): its paths, their weights and
             // payoffs, and one logical block's samples.
             std::unique_ptr<PayoffState> batch_state;
@@ -308,18 +328,32 @@ namespace quantModeling
                 product.payoffs_with_state(w.path, w.pay, *w.state);
             else
                 product.payoffs(w.path, w.pay);
+            if (product_control >= 0)
+                w.control = product.control_value(w.state.get());
         };
         /// The path just generated: controls into s.v[1..k].
         auto read_controls = [&](const Worker &w, CvSample &s)
         {
             for (int c = 0; c < k; ++c)
             {
+                if (c == product_control)
+                {
+                    s.v[1 + c] = w.control;
+                    continue;
+                }
                 const Sample<T> &smp = w.path[static_cast<std::size_t>(controls.sel.event[c])];
                 s.v[1 + c] = static_cast<Real>(smp.spots[static_cast<std::size_t>(controls.sel.asset[c])]) /
                              static_cast<Real>(smp.numeraire);
             }
         };
         std::string cv_note;
+        /// What the controls are, for the diagnostics.
+        auto cv_label = [&]() -> std::string
+        {
+            if (product_control < 0)
+                return " + spot control";
+            return k > 1 ? " + analytic and spot controls" : " + analytic control";
+        };
         auto finish_cv = [&](const std::vector<MultiControlAccumulator> &acc)
         {
             for (std::size_t l = 0; l < n_labels && l < acc.size(); ++l)
@@ -328,7 +362,7 @@ namespace quantModeling
                 res.values[l] = e.value;
                 res.std_errors[l] = e.std_error;
                 if (l == 0)
-                    cv_note = " + spot control (" + std::to_string(e.used) + " of " + std::to_string(k) + " kept" +
+                    cv_note = cv_label() + " (" + std::to_string(e.used) + " of " + std::to_string(k) + " kept" +
                               detail::variance_ratio_note(e) + ")";
             }
         };
@@ -479,6 +513,9 @@ namespace quantModeling
             for (int b = 0; b < B; ++b)
                 for (std::size_t l = 0; l < n_labels; ++l)
                     batch_means[l].add(estimates[static_cast<std::size_t>(b)][l]);
+            res.replicates.clear();
+            for (int b = 0; b < B && n_labels > 0; ++b)
+                res.replicates.push_back(estimates[static_cast<std::size_t>(b)][0]);
 
             for (std::size_t l = 0; l < n_labels; ++l)
             {
@@ -490,7 +527,7 @@ namespace quantModeling
                               std::to_string(B) + " batches of " + std::to_string(per_batch) + " points, dim=" +
                               std::to_string(dim) + ")" +
                               (bridged ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? " + Owen scrambling" : "") +
-                              (cv ? " + spot control" : "") + cv_off + threads_note();
+                              (cv ? cv_label() : "") + cv_off + threads_note();
             return res;
         }
 
@@ -712,7 +749,7 @@ namespace quantModeling
                 res.n_paths = static_cast<long long>(per_rep) * B * (anti ? 2 : 1);
                 note += " + stratified W(T) (" + std::to_string(B) + " replicates of " + std::to_string(per_rep) +
                         " strata)";
-                cv_note = cv ? " + spot control (within-stratum slope)" : "";
+                cv_note = cv ? cv_label() + " (within-stratum slope)" : "";
             }
             res.diagnostics = note + (anti ? " + antithetic" : "") + cv_note + cv_off + threads_note();
             return res;

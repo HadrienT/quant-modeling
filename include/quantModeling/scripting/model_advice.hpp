@@ -231,6 +231,16 @@ namespace quantModeling::scripting
                     "option chain): one flat volatility, as typed, is the "
                     "only model available."};
 
+        if (a.barrier_monitoring)
+            return {ModelKind::LocalVolSurface, "barrier_monitoring",
+                    "The script monitors a barrier between dates "
+                    "(survivalAbove / survivalBelow), which needs the model's "
+                    "volatility on every step: local vol on the market "
+                    "surface provides it and reprices today's vanillas "
+                    "exactly. Stochastic-local vol does not monitor barriers "
+                    "yet, so the forward smile is local vol's, flatter than "
+                    "markets typically show."};
+
         if (a.path_dependent)
         {
             if (avail.stochastic)

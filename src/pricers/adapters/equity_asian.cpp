@@ -1,7 +1,6 @@
 #include "quantModeling/pricers/adapters/equity_asian.hpp"
 
 #include "quantModeling/engines/analytic/asian.hpp"
-#include "quantModeling/engines/mc/asian.hpp"
 #include "quantModeling/instruments/equity/asian.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
@@ -14,6 +13,9 @@ namespace quantModeling
 
     PricingResult price_equity_asian_bs(const AsianBSInput &in, EngineKind engine)
     {
+        if (engine == EngineKind::MonteCarlo)
+            return price_equity_asian_bs_script(in);
+
         std::shared_ptr<IPayoff> payoff;
         if (in.average_type == AsianAverageType::Arithmetic)
         {
@@ -50,12 +52,6 @@ namespace quantModeling
             0}; // pde_time_steps
 
         PricingContext ctx{market, settings, model};
-
-        if (use_mc)
-        {
-            BSEuroAsianMCEngine mc_engine(ctx);
-            return price(opt, mc_engine);
-        }
 
         if (in.average_type == AsianAverageType::Arithmetic)
         {

@@ -31,6 +31,9 @@
 namespace quantModeling::mc
 {
 
+    /// event[c], asset[c]: the spot of asset[c] at event[c], deflated. A
+    /// negative asset -(i + 1) is a script's analytic control instead
+    /// (controlPays, WP 26 P2): variable i at the end of the path.
     struct SpotControls
     {
         static constexpr int kMax = MultiControlAccumulator::kMaxControls;

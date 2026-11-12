@@ -284,7 +284,7 @@ namespace quantModeling
     {
         throw UnsupportedInstrument(
             "BSEuroVanillaMCEngine does not support Asian options. "
-            "Use BSEuroAsianMCEngine instead.");
+            "They are priced as scripts (WP 26 P3).");
     }
 
     void BSEuroVanillaMCEngine::visit(const EquityFuture &)
@@ -306,7 +306,7 @@ namespace quantModeling
     {
         throw UnsupportedInstrument(
             "BSEuroVanillaMCEngine does not support barrier options. "
-            "Use BSEuroBarrierMCEngine instead.");
+            "They are priced as scripts (WP 26 P3).");
     }
 
     void BSEuroVanillaMCEngine::visit(const DigitalOption &opt)

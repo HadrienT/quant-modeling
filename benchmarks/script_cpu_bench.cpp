@@ -7,7 +7,11 @@
 // the same and the difference is the engine. Median of five timed runs after
 // a warm-up; time per antithetic unit (a pair of paths).
 //
-//   build/qm_script_cpu_bench [units=100000] [only=<case>]
+//   build/qm_script_cpu_bench [units=100000] [only=<case>|all] [fuzzy] [nobatch]
+//
+// `fuzzy` prices the scripts in fuzzy mode (smoothed ifs); `nobatch` turns
+// the batched interpreter off (one path per decode), to measure what it
+// gains (WP 26 P2: fuzzy scripts batch too).
 
 #include <algorithm>
 #include <chrono>
@@ -85,14 +89,23 @@ namespace
 int main(int argc, char **argv)
 {
     const long units = argc > 1 ? std::atol(argv[1]) : 100000;
-    const std::string only = argc > 2 ? argv[2] : "";
+    const std::string only = argc > 2 && std::string(argv[2]) != "all" ? argv[2] : "";
+    bool fuzzy = false, batch = true;
+    for (int a = 3; a < argc; ++a)
+    {
+        fuzzy = fuzzy || std::string(argv[a]) == "fuzzy";
+        batch = batch && std::string(argv[a]) != "nobatch";
+    }
+    ScriptSettings script_settings;
+    script_settings.fuzzy = fuzzy;
     const qm_reference::Grid g = qm_reference::local_vol_grid();
     const qm_reference::LocalVolGrid view{g.K.data(), static_cast<int>(g.K.size()), g.T.data(),
                                           static_cast<int>(g.T.size()), g.sigma.data()};
     const std::vector<std::string> scripts = {weekly_barrier(), weekly_barrier(), kDailyAsian, kDailyAsian};
     const std::vector<qm_reference::Case> cases = qm_reference::cases();
 
-    std::printf("One CPU thread, Philox + antithetic, %ld units (pairs of paths)\n", units);
+    std::printf("One CPU thread, Philox + antithetic, %ld units (pairs of paths), %s, %s\n", units,
+                fuzzy ? "fuzzy" : "hard", batch ? "batched" : "path by path");
     std::printf("%-11s %12s %12s %8s   %s\n", "case", "script (ms)", "ref (ms)", "ratio", "script ns/unit");
     for (std::size_t i = 0; i < cases.size(); ++i)
     {
@@ -100,7 +113,7 @@ int main(int argc, char **argv)
         const std::string name = c.name.substr(0, c.name.find(' '));
         if (!only.empty() && only != name)
             continue;
-        const ScriptedProduct<Real> product(scripts[i], ValuationContext{kValuation});
+        const ScriptedProduct<Real> product(scripts[i], ValuationContext{kValuation}, script_settings);
         auto model = scripting::make_script_model<Real>(spec(c.local_vol, g));
         PricingSettings s;
         s.mc_paths = static_cast<int>(2 * units);
@@ -109,6 +122,7 @@ int main(int argc, char **argv)
         s.mc_rng = RngKind::Philox;
         s.mc_sampler = SamplerKind::PseudoRandom; // explicit: Sobol is the default
         s.mc_device = ComputeDevice::Cpu;
+        s.mc_batch = batch;
         double npv = 0.0;
         const double script_ms = median_ms([&]
                                            { npv = simulate_script(product, *model, s).npv(); });

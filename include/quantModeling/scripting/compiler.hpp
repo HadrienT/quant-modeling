@@ -41,13 +41,14 @@ namespace quantModeling::scripting
             for (const Event &event : events)
             {
                 p_.event_begin.push_back(pc());
-                max_spot_ = max_df_ = -1;
+                max_spot_ = max_df_ = max_surv_ = -1;
                 slot_ = mode_ = 0; // an event\'s ifs reuse the previous event\'s slots
                 for (const ExprTree &statement : event.statements)
                     if (statement)
                         statement->accept(*this);
                 p_.event_max_spot.push_back(max_spot_);
                 p_.event_max_df.push_back(max_df_);
+                p_.event_max_surv.push_back(max_surv_);
             }
             p_.event_begin.push_back(pc());
             return std::move(p_);
@@ -71,6 +72,15 @@ namespace quantModeling::scripting
                                    "): not resolved -- DiscountLookupResolver must run before compiling");
             max_df_ = std::max(max_df_, static_cast<std::int32_t>(n.slot));
             emit(Op::Df, static_cast<std::int32_t>(n.slot)), push();
+        }
+        void visit(const NodeSurvival &n) override
+        {
+            if (n.slot == NodeSurvival::unindexed)
+                throw InvalidInput("survivalAbove/Below(): not resolved -- BarrierLookupResolver must run before "
+                                   "compiling");
+            max_surv_ = std::max(max_surv_, static_cast<std::int32_t>(n.slot));
+            p_.has_survival = true;
+            emit(Op::Surv, static_cast<std::int32_t>(n.slot)), push();
         }
 
         // ── arithmetic and functions ────────────────────────────────────────
@@ -123,6 +133,18 @@ namespace quantModeling::scripting
         {
             n.arguments[0]->accept(*this);
             emit(Op::Pays), pop();
+        }
+        /// variables[c] = variables[c] + amount / numeraire, as the
+        /// evaluator computes it.
+        void visit(const NodeControlPays &n) override
+        {
+            const auto index = static_cast<std::int32_t>(static_cast<const NodeVar &>(*n.arguments[0]).index);
+            emit(Op::Var, index), push();
+            n.arguments[1]->accept(*this);
+            emit(Op::Num), push();
+            emit(Op::Div), pop(), pop(), push();
+            emit(Op::Add), pop(), pop(), push();
+            emit(Op::Assign, index), pop();
         }
         void visit(const NodeIf &n) override
         {
@@ -249,6 +271,7 @@ namespace quantModeling::scripting
         int mode_ = 0;
         std::int32_t max_spot_ = -1;
         std::int32_t max_df_ = -1;
+        std::int32_t max_surv_ = -1;
     };
 
     inline Program compile_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy)

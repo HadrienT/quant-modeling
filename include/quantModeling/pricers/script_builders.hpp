@@ -1,0 +1,158 @@
+#ifndef QM_PRICERS_SCRIPT_BUILDERS_HPP
+#define QM_PRICERS_SCRIPT_BUILDERS_HPP
+
+#include "quantModeling/core/date.hpp"
+#include "quantModeling/core/types.hpp"
+#include "quantModeling/instruments/equity/barrier.hpp"
+
+#include <string>
+#include <vector>
+
+/**
+ * @file script_builders.hpp
+ * @brief Catalogue products written as scripts (WP 26 P3,
+ *        blueprint/wp/26-performance.md §7): the terms of a product in, the
+ *        script the generic engine prices out. One builder per product
+ *        family; the adapters (pricers/adapters/) pair it with a model and
+ *        price it with price_by_script().
+ *
+ * Dates count from the route's valuation date in ticks of the routes' time
+ * grid (pricers/script_route.hpp: one hour, ACT/8760): `days` is the
+ * maturity, as ticks_for() gives it.
+ * Numbers are written with 17 significant digits, so the script prices the
+ * terms it was given to the bit.
+ */
+namespace quantModeling::script_builders
+{
+
+    /// The valuation date every route's dates count from. Any date works:
+    /// the scripts only see differences of dates.
+    Date valuation();
+
+    /// A number as the script parser reads it back to the bit.
+    std::string number(double x);
+
+    struct BarrierTerms
+    {
+        bool is_call = true;
+        Real strike = 0.0;
+        BarrierType type = BarrierType::DownAndOut;
+        Real level = 0.0;
+        Real rebate = 0.0; ///< paid at expiry in the "dead" state (knocked out, or never knocked in)
+    };
+
+    /**
+     * Knock-in / knock-out vanilla. `observations` = 0: continuous
+     * monitoring, the barrier read through survivalAbove / survivalBelow
+     * (WP 26 P2) -- exact under Black-Scholes, per model step under local
+     * vol. `observations` > 0: the spot checked on that many evenly spaced
+     * dates up to the expiry (the hand-written engine's discrete mode).
+     */
+    std::string barrier(const BarrierTerms &t, int days, int observations = 0);
+
+    /// `observations` ticks evenly spread over (0, days], the last on
+    /// `days`, one per tick at most: the fixing dates of the routes whose
+    /// hand-written engines used n evenly spaced steps.
+    std::vector<int> evenly(int days, int observations);
+
+    struct AsianTerms
+    {
+        bool is_call = true;
+        Real strike = 0.0;
+        bool geometric = false;
+        /// Arithmetic only: declare the geometric Asian of the same fixings
+        /// as an analytic control (controlPays, WP 26 P2).
+        bool geometric_control = false;
+    };
+
+    /// Average-price Asian on `fixings` (days from the valuation date).
+    std::string asian(const AsianTerms &t, const std::vector<int> &fixings);
+
+    /// The geometric Asian on fixings at year fractions `times` under
+    /// Black-Scholes: ln G is normal with mean ln S0 + (r - q - σ²/2)
+    /// mean(t) and variance σ²/n² Σ_ij min(t_i, t_j) (Kemna & Vorst 1990,
+    /// for any dates); paid at the last fixing.
+    double geometric_asian_bs(double spot, double rate, double dividend, double vol, double strike, bool is_call,
+                              const std::vector<double> &times);
+
+    struct LookbackTerms
+    {
+        bool is_call = true;
+        Real strike = 0.0;
+        bool floating = false;  ///< floating strike: call S_T - min, put max - S_T
+        bool on_maximum = true; ///< fixed strike: the extremum the payoff reads
+    };
+
+    /// Lookback on `fixings`; the extremum starts at the initial spot `s0`
+    /// (the hand-written engines include it), written as a number.
+    std::string lookback(const LookbackTerms &t, Real s0, const std::vector<int> &fixings);
+
+    /// Worst-of (best-of) on n assets at expiry: notional * max(perf - K, 0)
+    /// for a call, max(K - perf, 0) for a put, perf the lowest (highest) of
+    /// spot(i) / s0[i].
+    std::string rainbow(bool worst, bool is_call, Real strike, Real notional, const std::vector<Real> &s0, int days);
+
+    /// Basket option at expiry: max(sum_i w_i spot(i) - K, 0) (call).
+    std::string basket(bool is_call, Real strike, const std::vector<Real> &weights, int days);
+
+    /// Himalaya (mountain): on each date (one per asset) the best return
+    /// spot(j) / s0[j] - 1 among the assets still in the basket is locked in
+    /// and the asset removed (the first one on a tie); at the last date,
+    /// notional * max(average locked return - K, 0) (call).
+    std::string mountain(bool is_call, Real strike, Real notional, const std::vector<Real> &s0,
+                         const std::vector<int> &dates);
+
+    struct AutocallTerms
+    {
+        Real s0 = 0.0;
+        Real autocall_barrier = 1.0; ///< fractions of s0
+        Real coupon_barrier = 0.0;
+        Real put_barrier = 0.0;
+        Real coupon_rate = 0.0; ///< per period, a fraction of the notional
+        Real notional = 1000.0;
+        bool memory_coupon = true;
+        /// A continuously monitored knock-in: the probability that the spot
+        /// stayed above the knock-in barrier at every instant up to the
+        /// expiry, by survivalAbove (WP 26 P2), the payoff weighted by it.
+        /// Otherwise the knock-in is the spot at the expiry below the
+        /// barrier.
+        bool ki_continuous = false;
+    };
+
+    /// Phoenix autocall on observation `dates`: called at par plus coupon(s)
+    /// on the first date at or above the autocall barrier; a coupon (with
+    /// the missed ones, memory) on a date at or above the coupon barrier;
+    /// at the last date, par, or notional * spot() / s0 after a knock-in --
+    /// with a continuous knock-in, notional * (q + (1 - q) spot() / s0), q
+    /// the probability of no knock-in given the path (conditional MC).
+    std::string autocall(const AutocallTerms &t, const std::vector<int> &dates);
+
+    /// Variance (or volatility) swap: realised variance (1/T) Σ ln²(S_i /
+    /// S_{i-1}) over the observation `dates`, from the initial spot `s0`;
+    /// at `pay_day`, notional * (variance - K) or notional * (sqrt(variance)
+    /// - K). `T` is the annualisation of the hand-written engine (the
+    /// maturity in years).
+    std::string realised_swap(bool volatility, Real s0, Real strike, Real notional, Real T,
+                              const std::vector<int> &dates, int pay_day);
+
+    /// Dispersion swap: notional * (Σ w_i var_i - var_index - K) at
+    /// `pay_day`, each realised variance as in realised_swap(), the index
+    /// Σ w_i spot(i) starting at Σ w_i s0_i.
+    /// Option on the zero-coupon bond maturing at `bond_day`, exercised at
+    /// `expiry_day`: notional * max(P(T, S) - K, 0) for a call, the bond
+    /// price read with df() from the model.
+    std::string bond_option(bool is_call, Real strike, Real notional, int expiry_day, int bond_day);
+
+    /// Caplets (floorlets) on [reset_i, end_i], fixed at their reset: each
+    /// pays, at its reset, notional * max(1 - (1 + K δ_i) P(reset, end), 0)
+    /// (the floorlet the other way round) -- the put on the bond of the
+    /// hand-written engine. `deltas` are the accrual fractions δ_i.
+    std::string caplets(bool is_cap, Real strike, Real notional, const std::vector<int> &resets,
+                        const std::vector<int> &ends, const std::vector<Real> &deltas);
+
+    std::string dispersion(const std::vector<Real> &s0, const std::vector<Real> &weights, Real strike_spread,
+                           Real notional, Real T, const std::vector<int> &dates, int pay_day);
+
+} // namespace quantModeling::script_builders
+
+#endif // QM_PRICERS_SCRIPT_BUILDERS_HPP
