@@ -909,6 +909,29 @@ Left: Milstein for Heston and SLV (the doc's later decision, §8.5); a
 smoother interpolation of the Dupire grid would give beta = 2 on market
 surfaces too (to measure against its effect on the calibration).
 
+### 8.6c P4c: MLMC opt-in through the script engine (done, 2026-11-12)
+
+The maintainer chose opt-in (2026-11-12): the CPU pseudo-random MLMC is
+slower than the default Sobol/GPU route until P5/P6, so no default route
+moves; what it brings today is a controlled discretisation bias.
+
+- `PricingSettings::mc_mlmc_eps` (0: off), read by `simulate_script`. The
+  engine checks that the script suits it -- no early exercise, one payoff
+  label, a model that refines its grid -- and otherwise runs the usual route,
+  adding "(no multilevel Monte Carlo: <why>)" to the diagnostics. The
+  diagnostics of an MLMC run give the levels, paths per level, alpha, beta,
+  gamma, the target and the estimated remaining bias.
+- Bindings: `price_script(..., mlmc_eps=0.0, milstein=False)`; under AAD
+  greeks the plain engine runs, and says so.
+- API: `ScriptRequest.mlmc_eps` and `ScriptRequest.milstein` (price only;
+  `n_paths`, `sampler` and `device` are then ignored). The front end does not
+  expose them yet.
+- Registry routes (`price_by_script`) are unchanged: their greeks need the
+  adjoint and the common-number differences, which MLMC does not give yet.
+
+Left in P4: the Dupire vanillas repriced within eps on a calibrated surface
+(acceptance of §8.6), Heston/SLV refinement, greeks per level, P4d (§8.7).
+
 ### 8.7 A second axis: approximate random variables (nested MLMC)
 
 Added 2026-11-11, after P1h. The levels above differ by their time step. They

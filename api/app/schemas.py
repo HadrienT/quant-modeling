@@ -340,6 +340,25 @@ class ScriptPricingInputs(BaseModel):
         description="CPU runs only; a GPU run always uses Philox, the generator "
         "with which a CPU run gives the GPU's price.",
     )
+    mlmc_eps: float = Field(
+        0.0,
+        ge=0.0,
+        description="Multilevel Monte Carlo over the time step (blueprint WP 26 "
+        "§8), opt-in: the target root-mean-square error of the price, absolute "
+        "(0, the default: off). Applied when the script suits it -- model "
+        "local_vol, one payoff, no early exercise -- the levels refined until "
+        "the estimated discretisation bias is below mlmc_eps / sqrt(2); "
+        "otherwise the usual engine runs and the diagnostics say why. CPU, "
+        "pseudo-random, price only: slower than the default Sobol route, but "
+        "the time-step bias is controlled. n_paths, sampler and device are "
+        "then ignored.",
+    )
+    milstein: bool = Field(
+        False,
+        description="model='local_vol': the Milstein step instead of "
+        "log-Euler (strong order 1; with mlmc_eps, the levels' variance "
+        "decays as h^2 on a smooth surface). CPU only.",
+    )
     greeks_method: Literal["none", "aad"] = Field(
         "none",
         description=(

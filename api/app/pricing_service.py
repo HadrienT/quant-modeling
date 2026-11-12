@@ -418,6 +418,8 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             control_variate=req.control_variate,
             antithetic=req.antithetic,
             importance_sampling=req.importance_sampling,
+            mlmc_eps=req.mlmc_eps,
+            milstein=req.milstein,
             **grids,
         )
     result["warnings"] = (
@@ -592,6 +594,8 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             hull_white=hw_params,
             curve_times=curve_times,
             curve_dfs=curve_dfs,
+            mlmc_eps=req.mlmc_eps,
+            milstein=req.milstein,
         )
     result["warnings"] = (
         _hard_threshold_greeks(req, valuation_date)

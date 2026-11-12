@@ -3,6 +3,7 @@
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/engines/mc/mlmc.hpp"
+#include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
@@ -377,6 +378,45 @@ namespace quantModeling
         const double slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
         RecordProperty("cost_slope", std::to_string(slope));
         EXPECT_NEAR(slope, -2.0, 0.3);
+    }
+
+    // ── WP 26 P4c: opt-in through the script engine ─────────────────────
+
+    TEST(Mlmc, TheScriptEngineRunsItWhenAsked)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        PricingSettings s;
+        s.mc_mlmc_eps = 0.02;
+        s.mc_seed = 37;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        EXPECT_NE(r.diagnostics.find("multilevel Monte Carlo"), std::string::npos) << r.diagnostics;
+        EXPECT_LE(r.std_error(), 1.02 * 0.02 / std::sqrt(2.0));
+        EXPECT_GT(r.n_paths, 0);
+        // The reference price of the skewed call (P4a/P4b runs): 14.20.
+        EXPECT_NEAR(r.npv(), 14.20, 3.0 * 0.02) << r.diagnostics;
+    }
+
+    TEST(Mlmc, TheScriptEngineSaysWhyItDidNotRunIt)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        auto m = make_script_model<Real>(bs);
+        PricingSettings s;
+        s.mc_mlmc_eps = 0.02;
+        s.mc_paths = 4096;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        EXPECT_NE(r.diagnostics.find("no multilevel Monte Carlo: the model has no time-step bias"),
+                  std::string::npos)
+            << r.diagnostics;
+
+        PricingSettings negative;
+        negative.mc_mlmc_eps = -1.0;
+        EXPECT_THROW(simulate_script(product, *m, negative), InvalidInput);
     }
 
 } // namespace quantModeling
