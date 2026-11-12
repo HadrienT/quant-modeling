@@ -24,6 +24,7 @@ from ..schemas import (
     FxOverviewResponse,
     MethodologySection,
 )
+from .errors import store_unavailable
 
 router = APIRouter()
 
@@ -71,9 +72,7 @@ def fx_overview(
     except fx.FxUnavailable as exc:
         raise _unavailable(exc) from exc
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     response = FxOverviewResponse(
         base=base,
         quote=quote,
@@ -110,9 +109,7 @@ def fx_history(
     except fx.FxUnavailable as exc:
         raise _unavailable(exc) from exc
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     response = FxHistoryResponse(
         base=base,
         quote=quote,
@@ -146,9 +143,7 @@ def fx_correlation(
     except fx.FxUnavailable as exc:
         raise _unavailable(exc) from exc
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     response = FxCorrelationResponse(
         ticker=ticker,
         base=base,

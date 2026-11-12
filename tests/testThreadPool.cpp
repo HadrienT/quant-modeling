@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <set>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -185,6 +186,68 @@ namespace quantModeling
                                   { return true; });
         EXPECT_TRUE(pool.active_wait(h2));
         pool.stop();
+    }
+
+    TEST(ThreadPool, ActiveWaitAllFinishesEveryTaskBeforeRethrowingTheFirstError)
+    {
+        ThreadPool pool;
+        pool.start(3);
+        std::atomic<int> finished{0};
+        std::vector<TaskHandle> handles;
+        for (int i = 0; i < 16; ++i)
+            handles.push_back(pool.spawn_task(
+                [&finished, i]
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    finished.fetch_add(1);
+                    if (i == 1)
+                        throw std::runtime_error("task 1 failed");
+                    return true;
+                }));
+        EXPECT_THROW(pool.active_wait_all(handles), std::runtime_error);
+        // No task outlives the call, so tasks may reference the caller's frame.
+        EXPECT_EQ(finished.load(), 16);
+        pool.stop();
+    }
+
+    TEST(ThreadPool, ActiveWaitAllWithoutWorkersRunsEverythingOnTheCaller)
+    {
+        ThreadPool pool;
+        int sum = 0;
+        std::vector<TaskHandle> handles;
+        for (int i = 1; i <= 4; ++i)
+            handles.push_back(pool.spawn_task(
+                [&sum, i]
+                {
+                    sum += i;
+                    return true;
+                }));
+        pool.active_wait_all(handles);
+        EXPECT_EQ(sum, 10);
+    }
+
+    TEST(ThreadPool, RunInChunksCoversTheRangeOnceWithOrWithoutWorkers)
+    {
+        for (const std::size_t workers : {std::size_t{0}, std::size_t{3}})
+        {
+            ThreadPool pool;
+            if (workers > 0)
+                pool.start(workers);
+            std::vector<std::atomic<int>> hits(1000);
+            std::atomic<int> calls{0};
+            run_in_chunks(&pool, hits.size(), 64,
+                          [&](std::size_t first, std::size_t last)
+                          {
+                              calls.fetch_add(1);
+                              for (std::size_t i = first; i < last; ++i)
+                                  hits[i].fetch_add(1);
+                          });
+            for (const auto &h : hits)
+                EXPECT_EQ(h.load(), 1);
+            // Without workers, one call over the whole range; with them, one per chunk.
+            EXPECT_EQ(calls.load(), workers == 0 ? 1 : 16);
+            pool.stop();
+        }
     }
 
 } // namespace quantModeling

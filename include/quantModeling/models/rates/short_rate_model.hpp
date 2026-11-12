@@ -70,6 +70,19 @@ namespace quantModeling
         virtual Real euler_step(Real r, Real t, Real dt, Real dW) const = 0;
     };
 
+    /// Throws InvalidInput unless 0 < T_option < T_bond and K > 0; `who`
+    /// names the model in the message.
+    void check_bond_option_terms(const char *who, Real K, Time T_option, Time T_bond);
+
+    /**
+     * @brief European option on a zero-coupon bond in a one-factor Gaussian
+     *        short-rate model of mean reversion a and volatility sigma
+     *        (Vasicek, Hull-White): Black on P(T_option, T_bond) with the
+     *        bond's lognormal vol sigma_p, from today's discount factors.
+     */
+    Real gaussian_bond_option_price(bool is_call, Real K, Time T_option, Time T_bond, Real P0_option,
+                                    Real P0_bond, Real a, Real sigma);
+
 } // namespace quantModeling
 
 #endif

@@ -66,7 +66,7 @@ namespace quantModeling
                 }
                 PricingSettings s;
                 s.mc_paths = settings.pricing_paths;
-                s.mc_seed = settings.seed;
+                s.mc_seed = static_cast<int>(settings.seed);
                 today_ = simulate<Real>(product, pricing, s).npv();
 
                 // spot() on a path of rates: found now, not in the middle of

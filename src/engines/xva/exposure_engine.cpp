@@ -501,36 +501,9 @@ namespace quantModeling
             return true;
         };
 
-        if (pool == nullptr || pool->num_threads() == 0)
-        {
-            run_chunk(0, N);
-            return out;
-        }
-        std::vector<TaskHandle> handles;
-        handles.reserve(N / kChunk + 1);
-        for (std::size_t first = 0; first < N; first += kChunk)
-        {
-            const std::size_t last = std::min(first + kChunk, N);
-            handles.push_back(pool->spawn_task([&run_chunk, first, last]
-                                               { return run_chunk(first, last); }));
-        }
-        // Wait for every task before leaving, even if one failed: they all
+        // Every chunk finishes before leaving, even if one failed: they all
         // write into `out`.
-        std::exception_ptr failure;
-        for (TaskHandle &h : handles)
-        {
-            try
-            {
-                pool->active_wait(h);
-            }
-            catch (...)
-            {
-                if (!failure)
-                    failure = std::current_exception();
-            }
-        }
-        if (failure)
-            std::rethrow_exception(failure);
+        run_in_chunks(pool, N, kChunk, run_chunk);
         return out;
     }
 

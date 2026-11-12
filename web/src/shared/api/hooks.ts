@@ -20,7 +20,6 @@ import type {
 	FxCurrency,
 	FxHistoryResponse,
 	FxOverviewResponse,
-	Portfolio,
 	PortfolioSummary,
 	RateCurrency,
 	RatesHistoryResponse,
@@ -352,27 +351,6 @@ export function usePortfolios() {
 				return (await unwrap(
 					api.GET("/api/portfolios", { signal: s }),
 				)) as PortfolioSummary[];
-			} finally {
-				s.cleanup();
-			}
-		},
-	});
-}
-
-export function usePortfolio(id: string | null) {
-	return useQuery({
-		queryKey: queryKeys.portfolio.detail(id ?? ""),
-		enabled: Boolean(id),
-		staleTime: STALE.portfolio,
-		queryFn: async ({ signal }) => {
-			const s = signalWithTimeout(signal);
-			try {
-				return (await unwrap(
-					api.GET("/api/portfolios/{portfolio_id}", {
-						params: { path: { portfolio_id: id! } },
-						signal: s,
-					}),
-				)) as Portfolio;
 			} finally {
 				s.cleanup();
 			}

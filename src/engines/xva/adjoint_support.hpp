@@ -16,8 +16,13 @@
 #include "quantModeling/utils/thread_pool.hpp"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <exception>
+#include <memory>
+#include <string>
 #include <vector>
 
 namespace quantModeling::xva_adjoint
@@ -178,21 +183,7 @@ namespace quantModeling::xva_adjoint
         for (std::size_t b = 0; b < batches; ++b)
             handles.push_back(pool->spawn_task([&one, b]
                                                { return one(b); }));
-        std::exception_ptr failure;
-        for (TaskHandle &h : handles)
-        {
-            try
-            {
-                pool->active_wait(h);
-            }
-            catch (...)
-            {
-                if (!failure)
-                    failure = std::current_exception();
-            }
-        }
-        if (failure)
-            std::rethrow_exception(failure);
+        pool->active_wait_all(handles);
     }
     /// The coefficients of an exposure program (engines/xva/exposure_program.hpp)
     /// as functions of the inputs of one rate model.
@@ -302,6 +293,234 @@ namespace quantModeling::xva_adjoint
             value += prog.trades[k].quantity * v;
         }
         return value;
+    }
+
+    /// A tenor written for a risk label: "5Y", or "2.50Y" off whole years.
+    inline std::string years(Time t)
+    {
+        char buffer[32];
+        if (std::abs(t - std::round(t)) < 1e-9)
+            std::snprintf(buffer, sizeof buffer, "%.0fY", t);
+        else
+            std::snprintf(buffer, sizeof buffer, "%.2fY", t);
+        return buffer;
+    }
+
+    /// The default and funding weights of each reporting date (risk/xva.hpp:
+    /// first to default, and the running funding cost), appended to
+    /// `s.weights`. `F` holds the reporting plan, the time grid and the hazard
+    /// times; `P` the hazards, losses given default and funding spreads in T.
+    template <class T, class F, class P, class S>
+    void push_default_and_funding_weights(const F &f, const P &p, S &s)
+    {
+        using std::exp;
+        T sc_before(1.0), si_before(1.0);
+        Time previous = 0.0;
+        for (const int i : f.plan.reporting)
+        {
+            const Time t = f.times[static_cast<std::size_t>(i)];
+            const T sc = exp(log_survival(f.hazard_times_c, p.hazard_c, t));
+            const T si = exp(log_survival(f.hazard_times_i, p.hazard_i, t));
+            const auto push = [&s](XvaOutput o, const T &w)
+            { s.weights[static_cast<std::size_t>(o)].push_back(w); };
+            push(XvaOutput::Cva, T(-p.lgd_c * si_before * (sc_before - sc)));
+            push(XvaOutput::Dva, T(-p.lgd_i * sc_before * (si_before - si)));
+            push(XvaOutput::Fca, T(-p.spread_b * sc * si * (t - previous)));
+            push(XvaOutput::Fba, T(-p.spread_l * sc * si * (t - previous)));
+            push(XvaOutput::CvaUnilateral, T(-p.lgd_c * (sc_before - sc)));
+            sc_before = sc;
+            si_before = si;
+            previous = t;
+        }
+    }
+
+    /// Adds the discounted exposure `v` of reporting date `r` to the outputs:
+    /// a positive one to the CVA, the FCA and the unilateral CVA, a negative
+    /// one to the DVA and the FBA (the order of XvaOutput).
+    template <class T, class W, class Out>
+    void accumulate_outputs(const T &v, std::size_t r, const W &weights, Out &out)
+    {
+        if (v > 0.0)
+        {
+            out[0] += weights[0][r] * v;
+            out[2] += weights[2][r] * v;
+            out[4] += weights[4][r] * v;
+        }
+        else if (v < 0.0)
+        {
+            out[1] += weights[1][r] * v;
+            out[3] += weights[3][r] * v;
+        }
+    }
+
+    /// Registers the credit and funding inputs as risk factors, through `add`
+    /// (factor, tenor, label), and copies them into the parameters `p` and the
+    /// hazard times of `f`.
+    template <class Add, class F, class P>
+    void add_credit_and_funding(const Add &add, const XvaRiskInputs &inputs, F &f, P &p)
+    {
+        const auto hazards = [&add](const CreditCurve &c, std::vector<Time> &times, std::vector<Real> &values,
+                                    XvaRiskFactor factor, const char *who)
+        {
+            times = c.times();
+            values = c.hazards();
+            // One period is a flat curve, whatever date it is written to.
+            const bool flat = values.size() == 1;
+            for (std::size_t j = 0; j < values.size(); ++j)
+                add(factor, flat || j >= times.size() ? 0.0 : times[j],
+                    std::string(who) + " hazard rate" +
+                        (flat ? std::string() : j < times.size() ? " to " + years(times[j])
+                                                                 : " beyond"));
+        };
+        hazards(inputs.counterparty, f.hazard_times_c, p.hazard_c, XvaRiskFactor::CounterpartyHazard, "counterparty");
+        hazards(inputs.own, f.hazard_times_i, p.hazard_i, XvaRiskFactor::OwnHazard, "own");
+        p.lgd_c = inputs.lgd_counterparty;
+        p.lgd_i = inputs.lgd_own;
+        p.spread_b = inputs.borrowing_spread;
+        p.spread_l = inputs.lending_spread;
+        add(XvaRiskFactor::CounterpartyLgd, 0.0, "counterparty loss given default");
+        add(XvaRiskFactor::OwnLgd, 0.0, "own loss given default");
+        add(XvaRiskFactor::BorrowingSpread, 0.0, "borrowing spread");
+        add(XvaRiskFactor::LendingSpread, 0.0, "lending spread");
+    }
+
+    /// The xVA values alone, in doubles: `evaluate(ws, path, out)` writes the
+    /// outputs of one path, with a workspace `make_workspace()` builds once per
+    /// batch. Batches of kBatch paths, spread over `pool`.
+    template <class MakeWorkspace, class Evaluate>
+    XvaValues xva_values_over_batches(std::size_t paths, ThreadPool *pool, const MakeWorkspace &make_workspace,
+                                      const Evaluate &evaluate)
+    {
+        const std::size_t batches = (paths + kBatch - 1) / kBatch;
+        std::vector<std::array<Real, kXvaOutputs>> means(batches);
+        const auto started = std::chrono::steady_clock::now();
+        for_each_batch(paths, pool,
+                       [&](std::size_t b, std::size_t first, std::size_t size)
+                       {
+                           auto ws = make_workspace();
+                           std::array<Real, kXvaOutputs> out{}, sum{};
+                           for (std::size_t q = 0; q < size; ++q)
+                           {
+                               evaluate(ws, first + q, out);
+                               for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                                   sum[o] += out[o];
+                           }
+                           for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                               means[b][o] = sum[o] / static_cast<Real>(size);
+                       });
+        XvaValues result;
+        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        result.paths = paths;
+        result.batches = batches;
+        for (std::size_t o = 0; o < kXvaOutputs; ++o)
+        {
+            std::vector<Real> column(batches);
+            for (std::size_t b = 0; b < batches; ++b)
+                column[b] = means[b][o];
+            result.values[o] = over_batches(column, paths);
+        }
+        return result;
+    }
+
+    /**
+     * The xVA values and their adjoint risks to every input, batch by batch:
+     * one tape per thread, on which `record(params, setup)` writes the
+     * inputs as leaves (in the order of `levels`) and the set-up once,
+     * before the mark, and returns the thread's workspace; then
+     * `evaluate(setup, path, workspace, out)` is replayed after the mark for
+     * each path. The caller fills in what names the factors.
+     */
+    template <class NumberParams, class NumberSetup, class Record, class Evaluate>
+    XvaRisks xva_risks_over_batches(std::size_t paths, ThreadPool *pool, const std::vector<const Real *> &levels,
+                                    const Record &record, const Evaluate &evaluate)
+    {
+        const std::size_t N = paths;
+        const std::size_t batches = (N + kBatch - 1) / kBatch;
+        const std::size_t P = levels.size();
+        using WorkspacePtr = decltype(record(std::declval<NumberParams &>(), std::declval<NumberSetup &>()));
+
+        // One tape per thread, with the set-up recorded on it once.
+        struct ThreadState
+        {
+            aad::Tape tape;
+            NumberParams params;
+            NumberSetup setup;
+            WorkspacePtr workspace;
+            bool initialised = false;
+        };
+        const std::size_t threads = (pool != nullptr ? pool->num_threads() : 0) + 1;
+        std::vector<std::unique_ptr<ThreadState>> states(threads);
+        for (auto &state : states)
+            state = std::make_unique<ThreadState>();
+
+        std::vector<std::array<Real, kXvaOutputs>> means(batches);
+        std::vector<Real> batch_risks(batches * kXvaOutputs * P, 0.0);
+        const auto started = std::chrono::steady_clock::now();
+        for_each_batch(
+            N, pool,
+            [&](std::size_t b, std::size_t first, std::size_t size)
+            {
+                ThreadState &st = *states[ThreadPool::thread_num()];
+                const TapeScope scope(&st.tape);
+                if (!st.initialised)
+                {
+                    st.tape.rewind();
+                    st.workspace = record(st.params, st.setup);
+                    st.tape.mark();
+                    st.initialised = true;
+                }
+                std::array<Number, kXvaOutputs> out;
+                std::array<Real, kXvaOutputs> sum{};
+                for (std::size_t p = 0; p < size; ++p)
+                {
+                    st.tape.rewind_to_mark();
+                    evaluate(st.setup, first + p, *st.workspace, out);
+                    for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                    {
+                        sum[o] += out[o].value();
+                        out[o].adjoint(o) = 1.0; // this output's own component
+                    }
+                    Number::propagate_to_mark_multi();
+                }
+                // What accumulated at the mark goes down to the inputs: the
+                // risks of this batch.
+                Number::propagate_mark_to_start_multi();
+                const std::vector<const Number *> leaves = st.params.all();
+                for (std::size_t o = 0; o < kXvaOutputs; ++o)
+                {
+                    means[b][o] = sum[o] / static_cast<Real>(size);
+                    for (std::size_t j = 0; j < P; ++j)
+                        batch_risks[(b * kXvaOutputs + o) * P + j] =
+                            const_cast<Number *>(leaves[j])->adjoint(o) / static_cast<Real>(size);
+                }
+                st.tape.reset_adjoints_before_mark();
+            });
+
+        XvaRisks result;
+        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+        result.paths = N;
+        result.batches = batches;
+        for (const Real *x : levels)
+            result.levels.push_back(*x);
+        result.risks.resize(kXvaOutputs * P);
+        result.errors.resize(kXvaOutputs * P);
+        std::vector<Real> column(batches);
+        for (std::size_t o = 0; o < kXvaOutputs; ++o)
+        {
+            for (std::size_t b = 0; b < batches; ++b)
+                column[b] = means[b][o];
+            result.values[o] = over_batches(column, N);
+            for (std::size_t j = 0; j < P; ++j)
+            {
+                for (std::size_t b = 0; b < batches; ++b)
+                    column[b] = batch_risks[(b * kXvaOutputs + o) * P + j];
+                const Estimate e = over_batches(column, N);
+                result.risks[o * P + j] = e.value;
+                result.errors[o * P + j] = e.error;
+            }
+        }
+        result.batch_risks = std::move(batch_risks);
+        return result;
     }
 
 } // namespace quantModeling::xva_adjoint

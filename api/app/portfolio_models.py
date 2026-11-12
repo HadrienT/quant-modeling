@@ -601,8 +601,4 @@ def price(
     return pricer(spec, d, md, params, inputs) if pricer else None
 
 
-def model_notes() -> str:
-    return __doc__ or ""
-
-
 __all__ = ["POLICY", "SCRIPTED", "SCRIPT_PATHS", "SCRIPT_SEED", "price"]

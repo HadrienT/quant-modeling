@@ -187,7 +187,7 @@ namespace quantModeling
             sigma_loc[idx] = std::sqrt(std::clamp(v, params.min_local_var, params.max_local_var));
         }
 
-        return GridLocalVol(std::move(K_grid), std::move(T_grid), std::move(sigma_loc));
+        return GridLocalVol(std::move(K_grid), T_grid, std::move(sigma_loc));
     }
 
 } // namespace quantModeling

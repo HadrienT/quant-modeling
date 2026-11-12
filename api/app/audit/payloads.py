@@ -116,6 +116,13 @@ class CodeVersion(BaseModel):
     api_sha: str
     lib_build: str
 
+    @classmethod
+    def current(cls) -> "CodeVersion":
+        """The version of the code running now."""
+        from .envelope import api_sha, lib_build_sha
+
+        return cls(api_sha=api_sha(), lib_build=lib_build_sha())
+
 
 class ValuationPayload(BaseModel):
     """prix = f(instrument, données de marché, configuration du modèle, version

@@ -428,10 +428,6 @@ namespace quantModeling
             with.pilot_dispersion = dispersion;
             const ExposurePaths paths = engine.simulate(with);
             EXPECT_EQ(paths.measure, ExposureMeasure::Historical);
-            const ExposureStatistics exact = exposure_statistics(paths, {0});
-            const ExposureStatistics regression = exposure_statistics(paths, {1});
-            // A payer swap when rates collapse: deep out of the money.
-            const Real scale = -*std::min_element(exact.ene.begin(), exact.ene.end());
             return std::pair{engine.pilot_dispersion(),
                              relative_rms(paths.trade_values[1], paths.trade_values[0])};
         };

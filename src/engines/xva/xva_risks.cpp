@@ -196,51 +196,15 @@ namespace quantModeling
         /// Everything the paths read, as functions of the inputs: recorded
         /// before the mark in a differentiable run.
         template <class T>
-        struct Setup
+        struct Setup : ProgramSetup<T>
         {
-            std::vector<xva::BasicProgramExp<T>> exps;
-            std::vector<xva::BasicProgramCoupon<T>> coupons;
-            std::vector<xva::BasicProgramAccrued<T>> accrued;
-            std::vector<xva::BasicProgramOptionDate<T>> option_dates;
-            std::vector<xva::BasicProgramOptionBond<T>> option_bonds;
             xva::BasicStateDynamics<T> dynamics;
             /// The netted terms of Fixed::netted, as amount × exp(-G x).
             std::vector<xva::BasicProgramExp<T>> netted;
             /// Per output, the weight of each reporting date.
             std::array<std::vector<T>, kXvaOutputs> weights;
             T held_today;
-
-            xva::BasicProgramView<T> view(const xva::ExposureProgram &p) const
-            {
-                return {p.trades.data(),
-                        p.date_records.data(),
-                        exps.data(),
-                        coupons.data(),
-                        accrued.data(),
-                        p.paid.data(),
-                        option_dates.data(),
-                        option_bonds.data(),
-                        p.intervals.data(),
-                        static_cast<int>(p.trades.size()),
-                        static_cast<int>(p.dates)};
-            }
         };
-
-        template <class T>
-        xva::BasicProgramOptionDate<T> option_date(Model<T> &m, Time from, Time expiry)
-        {
-            using std::exp;
-            using std::sqrt;
-            const auto tr = m.transition(from, expiry, expiry);
-            const T G = m.G(from, expiry);
-            return {tr.decay,
-                    tr.drift,
-                    tr.variance,
-                    T(sqrt(tr.variance)),
-                    T(0.5 * (tr.variance - m.y(expiry))),
-                    T(exp(m.log_discount(expiry) - m.log_discount(from) - 0.5 * G * G * m.y(from))),
-                    G};
-        }
 
         template <class T>
         void build(const Fixed &f, const Params<T> &p, Setup<T> &s)
@@ -310,7 +274,7 @@ namespace quantModeling
             }
             s.option_dates.reserve(prog.option_dates.size());
             for (const xva::OptionDateSource &o : prog.option_date_sources)
-                s.option_dates.push_back(option_date(m, o.from, o.expiry));
+                s.option_dates.push_back(program_option_date<T>(m, o.from, o.expiry));
             s.option_bonds.reserve(prog.option_bonds.size());
             for (const xva::OptionBondSource &b : prog.option_bond_sources)
                 s.option_bonds.push_back(
@@ -334,49 +298,13 @@ namespace quantModeling
                 previous = t;
             }
 
-            // Default and funding weights of each reporting date
-            // (risk/xva.hpp: first to default, and the running funding cost).
-            T sc_before(1.0), si_before(1.0);
-            previous = 0.0;
-            for (const int i : f.plan.reporting)
-            {
-                const Time t = f.times[static_cast<std::size_t>(i)];
-                const T sc = exp(log_survival(f.hazard_times_c, p.hazard_c, t));
-                const T si = exp(log_survival(f.hazard_times_i, p.hazard_i, t));
-                const auto push = [&s](XvaOutput o, const T &w)
-                { s.weights[static_cast<std::size_t>(o)].push_back(w); };
-                push(XvaOutput::Cva, T(-p.lgd_c * si_before * (sc_before - sc)));
-                push(XvaOutput::Dva, T(-p.lgd_i * sc_before * (si_before - si)));
-                push(XvaOutput::Fca, T(-p.spread_b * sc * si * (t - previous)));
-                push(XvaOutput::Fba, T(-p.spread_l * sc * si * (t - previous)));
-                push(XvaOutput::CvaUnilateral, T(-p.lgd_c * (sc_before - sc)));
-                sc_before = sc;
-                si_before = si;
-                previous = t;
-            }
+            push_default_and_funding_weights<T>(f, p, s);
 
             // The collateral held today: the call on today's value.
             s.held_today = T(0.0);
             if (f.collateralised)
             {
-                const xva::BasicProgramView<T> view = s.view(prog);
-                T value(0.0);
-                for (std::size_t k = 0; k < prog.trades.size(); ++k)
-                {
-                    const xva::TodaySource &today = prog.today[k];
-                    T v(0.0);
-                    if (today.expiry > 0.0)
-                    {
-                        const T x(0.0);
-                        v = xva::program_option_integral(view, prog.trades[k],
-                                                         option_date(m, 0.0, today.expiry), x);
-                    }
-                    else
-                        for (int j = today.term_begin; j < today.term_end; ++j)
-                            v += prog.today_terms[static_cast<std::size_t>(j)].raw *
-                                 exp(m.log_discount(prog.today_terms[static_cast<std::size_t>(j)].to));
-                    value += prog.trades[k].quantity * v;
-                }
+                const T value = program_value_today(prog, s, m);
                 s.held_today =
                     balance_after_call(T(0.0), variation_margin_required(value, f.plan.terms), f.plan.terms);
             }
@@ -508,28 +436,8 @@ namespace quantModeling
                                  ? collateralised_value(plan, static_cast<int>(r), ws.value.data(), ws.flow.data(),
                                                         ws.held.data(), s.held_today)
                                  : ws.value[i]);
-                if (v > 0.0)
-                {
-                    out[0] += s.weights[0][r] * v;
-                    out[2] += s.weights[2][r] * v;
-                    out[4] += s.weights[4][r] * v;
-                }
-                else if (v < 0.0)
-                {
-                    out[1] += s.weights[1][r] * v;
-                    out[3] += s.weights[3][r] * v;
-                }
+                accumulate_outputs(v, r, s.weights, out);
             }
-        }
-
-        std::string years(Time t)
-        {
-            char buffer[32];
-            if (std::abs(t - std::round(t)) < 1e-9)
-                std::snprintf(buffer, sizeof buffer, "%.0fY", t);
-            else
-                std::snprintf(buffer, sizeof buffer, "%.2fY", t);
-            return buffer;
         }
 
     } // namespace
@@ -621,30 +529,7 @@ namespace quantModeling
         p.sigma = model_.sigma();
         add(XvaRiskFactor::MeanReversion, 0.0, "Hull-White mean reversion");
         add(XvaRiskFactor::Sigma, 0.0, "Hull-White volatility");
-        const auto hazards = [&add](const CreditCurve &c, std::vector<Time> &times, std::vector<Real> &values,
-                                    XvaRiskFactor factor, const char *who)
-        {
-            times = c.times();
-            values = c.hazards();
-            // One period is a flat curve, whatever date it is written to.
-            const bool flat = values.size() == 1;
-            for (std::size_t j = 0; j < values.size(); ++j)
-                add(factor, flat || j >= times.size() ? 0.0 : times[j],
-                    std::string(who) + " hazard rate" +
-                        (flat ? std::string() : j < times.size() ? " to " + years(times[j])
-                                                                 : " beyond"));
-        };
-        hazards(inputs.counterparty, f.hazard_times_c, p.hazard_c, XvaRiskFactor::CounterpartyHazard,
-                "counterparty");
-        hazards(inputs.own, f.hazard_times_i, p.hazard_i, XvaRiskFactor::OwnHazard, "own");
-        p.lgd_c = inputs.lgd_counterparty;
-        p.lgd_i = inputs.lgd_own;
-        p.spread_b = inputs.borrowing_spread;
-        p.spread_l = inputs.lending_spread;
-        add(XvaRiskFactor::CounterpartyLgd, 0.0, "counterparty loss given default");
-        add(XvaRiskFactor::OwnLgd, 0.0, "own loss given default");
-        add(XvaRiskFactor::BorrowingSpread, 0.0, "borrowing spread");
-        add(XvaRiskFactor::LendingSpread, 0.0, "lending spread");
+        add_credit_and_funding(add, inputs, f, p);
 
         // The ramp of each option: a fraction of the standard deviation of
         // its underlying's value at the expiry, |dV/dx| sd(x) at the mean
@@ -698,36 +583,12 @@ namespace quantModeling
         Setup<Real> setup;
         build(f, run.params, setup);
 
-        const std::size_t N = settings.paths;
-        const std::size_t batches = (N + kBatch - 1) / kBatch;
-        std::vector<std::array<Real, kXvaOutputs>> means(batches);
-        const auto started = std::chrono::steady_clock::now();
-        for_each_batch(N, pool,
-                       [&](std::size_t b, std::size_t first, std::size_t size)
-                       {
-                           Workspace<Real> ws(f.times.size());
-                           std::array<Real, kXvaOutputs> out{}, sum{};
-                           for (std::size_t p = 0; p < size; ++p)
-                           {
-                               evaluate_path(f, setup, first + p, ws, out);
-                               for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                                   sum[o] += out[o];
-                           }
-                           for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                               means[b][o] = sum[o] / static_cast<Real>(size);
-                       });
-        XvaValues result;
-        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        result.paths = N;
-        result.batches = batches;
+        XvaValues result = xva_values_over_batches(
+            settings.paths, pool, [&f]
+            { return Workspace<Real>(f.times.size()); },
+            [&](Workspace<Real> &ws, std::size_t path, std::array<Real, kXvaOutputs> &out)
+            { evaluate_path(f, setup, path, ws, out); });
         result.smoothing_widths = f.widths;
-        for (std::size_t o = 0; o < kXvaOutputs; ++o)
-        {
-            std::vector<Real> column(batches);
-            for (std::size_t b = 0; b < batches; ++b)
-                column[b] = means[b][o];
-            result.values[o] = over_batches(column, N);
-        }
         return result;
     }
 
@@ -737,111 +598,35 @@ namespace quantModeling
         RiskRun run;
         prepare_risk_run(settings, inputs, run);
         const Fixed &f = run.fixed;
-        const std::size_t N = settings.paths;
-        const std::size_t batches = (N + kBatch - 1) / kBatch;
-        const std::size_t P = run.factors.size();
-
-        // One tape per thread, with the set-up recorded on it once.
-        struct ThreadState
-        {
-            aad::Tape tape;
-            Params<Number> params;
-            Setup<Number> setup;
-            std::unique_ptr<Workspace<Number>> workspace;
-            bool initialised = false;
-        };
-        const std::size_t threads = (pool != nullptr ? pool->num_threads() : 0) + 1;
-        std::vector<std::unique_ptr<ThreadState>> states(threads);
-        for (auto &state : states)
-            state = std::make_unique<ThreadState>();
-
-        std::vector<std::array<Real, kXvaOutputs>> means(batches);
-        std::vector<Real> batch_risks(batches * kXvaOutputs * P, 0.0);
-        const auto started = std::chrono::steady_clock::now();
-        for_each_batch(
-            N, pool,
-            [&](std::size_t b, std::size_t first, std::size_t size)
+        XvaRisks result = xva_risks_over_batches<Params<Number>, Setup<Number>>(
+            settings.paths, pool, run.params.all(),
+            [&](Params<Number> &q, Setup<Number> &setup)
             {
-                ThreadState &st = *states[ThreadPool::thread_num()];
-                const TapeScope scope(&st.tape);
-                if (!st.initialised)
-                {
-                    st.tape.rewind();
-                    // The inputs are the leaves; the set-up is recorded once,
-                    // before the mark.
-                    const Params<Real> &p = run.params;
-                    for (const Real z : p.zero)
-                        st.params.zero.emplace_back(z);
-                    st.params.a = Number(p.a);
-                    st.params.sigma = Number(p.sigma);
-                    for (const Real h : p.hazard_c)
-                        st.params.hazard_c.emplace_back(h);
-                    for (const Real h : p.hazard_i)
-                        st.params.hazard_i.emplace_back(h);
-                    st.params.lgd_c = Number(p.lgd_c);
-                    st.params.lgd_i = Number(p.lgd_i);
-                    st.params.spread_b = Number(p.spread_b);
-                    st.params.spread_l = Number(p.spread_l);
-                    build(f, st.params, st.setup);
-                    st.tape.mark();
-                    st.workspace = std::make_unique<Workspace<Number>>(f.times.size());
-                    st.initialised = true;
-                }
-                std::array<Number, kXvaOutputs> out;
-                std::array<Real, kXvaOutputs> sum{};
-                for (std::size_t p = 0; p < size; ++p)
-                {
-                    st.tape.rewind_to_mark();
-                    evaluate_path(f, st.setup, first + p, *st.workspace, out);
-                    for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                    {
-                        sum[o] += out[o].value();
-                        out[o].adjoint(o) = 1.0; // this output's own component
-                    }
-                    Number::propagate_to_mark_multi();
-                }
-                // What accumulated at the mark goes down to the inputs: the
-                // risks of this batch.
-                Number::propagate_mark_to_start_multi();
-                const std::vector<const Number *> leaves = st.params.all();
-                for (std::size_t o = 0; o < kXvaOutputs; ++o)
-                {
-                    means[b][o] = sum[o] / static_cast<Real>(size);
-                    for (std::size_t j = 0; j < P; ++j)
-                        batch_risks[(b * kXvaOutputs + o) * P + j] =
-                            const_cast<Number *>(leaves[j])->adjoint(o) / static_cast<Real>(size);
-                }
-                st.tape.reset_adjoints_before_mark();
-            });
-
-        XvaRisks result;
-        result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-        result.paths = N;
-        result.batches = batches;
+                // The inputs are the leaves, in the order of Params::all();
+                // the set-up is recorded once, before the mark.
+                const Params<Real> &p = run.params;
+                for (const Real z : p.zero)
+                    q.zero.emplace_back(z);
+                q.a = Number(p.a);
+                q.sigma = Number(p.sigma);
+                for (const Real h : p.hazard_c)
+                    q.hazard_c.emplace_back(h);
+                for (const Real h : p.hazard_i)
+                    q.hazard_i.emplace_back(h);
+                q.lgd_c = Number(p.lgd_c);
+                q.lgd_i = Number(p.lgd_i);
+                q.spread_b = Number(p.spread_b);
+                q.spread_l = Number(p.spread_l);
+                build(f, q, setup);
+                return std::make_unique<Workspace<Number>>(f.times.size());
+            },
+            [&f](const Setup<Number> &setup, std::size_t path, Workspace<Number> &ws,
+                 std::array<Number, kXvaOutputs> &out)
+            { evaluate_path(f, setup, path, ws, out); });
         result.smoothing_widths = f.widths;
         result.factors = run.factors;
         result.tenors = run.tenors;
         result.labels = run.labels;
-        for (const Real *x : run.params.all())
-            result.levels.push_back(*x);
-        result.risks.resize(kXvaOutputs * P);
-        result.errors.resize(kXvaOutputs * P);
-        std::vector<Real> column(batches);
-        for (std::size_t o = 0; o < kXvaOutputs; ++o)
-        {
-            for (std::size_t b = 0; b < batches; ++b)
-                column[b] = means[b][o];
-            result.values[o] = over_batches(column, N);
-            for (std::size_t j = 0; j < P; ++j)
-            {
-                for (std::size_t b = 0; b < batches; ++b)
-                    column[b] = batch_risks[(b * kXvaOutputs + o) * P + j];
-                const Estimate e = over_batches(column, N);
-                result.risks[o * P + j] = e.value;
-                result.errors[o * P + j] = e.error;
-            }
-        }
-        result.batch_risks = std::move(batch_risks);
         return result;
     }
 

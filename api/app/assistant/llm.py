@@ -24,18 +24,8 @@ class LLMError(RuntimeError):
 
 class ChatModel(Protocol):
     def served_models(self) -> list[str]:
-        """The ids of the models the server reports (GET /models). Short
-        timeouts: this is a status probe, asked for while a page loads."""
-        try:
-            resp = requests.get(f"{self.base_url}/models", timeout=(2, 3))
-        except requests.RequestException as exc:
-            raise LLMError(f"model server unreachable: {exc}") from exc
-        if resp.status_code != 200:
-            raise LLMError(f"model server answered HTTP {resp.status_code}")
-        try:
-            return [str(m["id"]) for m in resp.json().get("data", [])]
-        except (ValueError, KeyError, TypeError, AttributeError) as exc:
-            raise LLMError("model server sent an unreadable model list") from exc
+        """The ids of the models the server reports (GET /models)."""
+        ...
 
     def stream(self, messages: Sequence[Message]) -> Iterator[str]: ...
 

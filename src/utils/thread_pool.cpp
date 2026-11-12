@@ -1,5 +1,7 @@
 #include "quantModeling/utils/thread_pool.hpp"
 
+#include <exception>
+
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -97,6 +99,25 @@ namespace quantModeling
                 std::this_thread::yield();
         }
         return handle.get();
+    }
+
+    void ThreadPool::active_wait_all(std::vector<TaskHandle> &handles)
+    {
+        std::exception_ptr failure;
+        for (TaskHandle &h : handles)
+        {
+            try
+            {
+                active_wait(h);
+            }
+            catch (...)
+            {
+                if (!failure)
+                    failure = std::current_exception();
+            }
+        }
+        if (failure)
+            std::rethrow_exception(failure);
     }
 
 } // namespace quantModeling

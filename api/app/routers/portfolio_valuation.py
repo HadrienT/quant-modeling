@@ -28,6 +28,7 @@ from ..logging_utils import get_logger
 from ..portfolio_ledger import migrate, validate
 from ..portfolio_schemas import Counterparty, Portfolio, RateFxSpec
 from ..schemas import MethodologySection
+from .errors import store_unavailable
 
 router = APIRouter(prefix="/api/portfolio-valuation", tags=["portfolios"])
 logger = get_logger()
@@ -160,9 +161,7 @@ async def portfolio_snapshot(req: SnapshotRequest) -> SnapshotResponse:
     try:
         s = await run_in_threadpool(pv.snapshot, pf, as_of)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     return SnapshotResponse(
         as_of=s.as_of,
         base_currency=s.base_currency,
@@ -201,9 +200,7 @@ async def portfolio_history(req: HistoryRequest) -> HistoryResponse:
     try:
         points, warnings = await run_in_threadpool(pv.history, pf, start, end)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     return HistoryResponse(
         base_currency=pf.base_currency,
         points=[HistoryPointView(**vars(p)) for p in points],
@@ -229,9 +226,7 @@ async def ticker_close(
         )
         ccy = await run_in_threadpool(db.ticker_currency, ticker)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     rows = [r for r in rows if r[0] <= on]
     if not rows:
         raise HTTPException(
@@ -254,9 +249,7 @@ async def portfolio_demos_list() -> List[DemoPortfolio]:
     try:
         built = await run_in_threadpool(portfolio_demos.demos)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     out = []
     for demo, pf, error in built:
         if pf is None:
@@ -329,9 +322,7 @@ async def rate_fx_quote(req: RateFxQuoteRequest) -> RateFxQuote:
     try:
         return await run_in_threadpool(run)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     except portfolio_rates.NoMark as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:

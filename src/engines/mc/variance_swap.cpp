@@ -69,92 +69,67 @@ namespace quantModeling
         }
     } // anonymous namespace
 
-    // ─── Variance swap visit ─────────────────────────────────────────────────
+    // ─── Variance and volatility swap visits ─────────────────────────────────
+
+    namespace
+    {
+        /// Monte Carlo of a swap on realised variance: `payoff(variance,
+        /// volatility)` is the undiscounted value of one path at maturity.
+        template <class Payoff>
+        PricingResult price_realised(const ILocalVolModel &m, const PricingSettings &settings, Time maturity,
+                                     const std::vector<Time> &observation_dates, const std::string &label,
+                                     const Payoff &payoff)
+        {
+            const int n_paths = settings.mc_paths > 0 ? settings.mc_paths : 100000;
+            const auto seed = static_cast<uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 42);
+
+            const auto sched = make_schedule(maturity, observation_dates);
+            const Real df = m.discount_curve().discount(maturity);
+
+            RngFactory rng_fact(seed);
+            Real sum = 0.0, sum2 = 0.0;
+
+            for (int p = 0; p < n_paths; ++p)
+            {
+                Pcg32 rng = rng_fact.make(static_cast<uint64_t>(p));
+                NormalBoxMuller normal;
+                auto [var, vol] = simulate_realised(m, sched, rng, normal);
+                const Real pv = payoff(var, vol) * df;
+                sum += pv;
+                sum2 += pv * pv;
+            }
+
+            const auto N = static_cast<Real>(n_paths);
+            const Real mean = sum / N;
+            const Real variance = sum2 / N - mean * mean;
+
+            PricingResult out;
+            out.npv = mean;
+            out.mc_std_error = std::sqrt(variance / N);
+            out.diagnostics = "VolSwapMCEngine:" + label + " (paths=" + std::to_string(n_paths) +
+                              ", obs=" + std::to_string(sched.size()) + ")";
+            return out;
+        }
+    } // anonymous namespace
 
     void VolSwapMCEngine::visit(const VarianceSwap &vs)
     {
         const auto &m = require_model<ILocalVolModel>("VolSwapMCEngine");
-        const PricingSettings &settings = ctx_.settings;
-
         if (vs.maturity <= 0.0)
             throw InvalidInput("VarianceSwap: maturity must be > 0");
-
-        const int n_paths = settings.mc_paths > 0 ? settings.mc_paths : 100000;
-        const auto seed = static_cast<uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 42);
-
-        const auto sched = make_schedule(vs.maturity, vs.observation_dates);
-        const Real T = vs.maturity;
-        const Real r = m.rate_r();
-        const Real df = m.discount_curve().discount(T);
-
-        RngFactory rng_fact(seed);
-        Real sum = 0.0, sum2 = 0.0;
-
-        for (int p = 0; p < n_paths; ++p)
-        {
-            Pcg32 rng = rng_fact.make(static_cast<uint64_t>(p));
-            NormalBoxMuller normal;
-            auto [var, vol] = simulate_realised(m, sched, rng, normal);
-            const Real pv = vs.notional * (var - vs.strike_var) * df;
-            sum += pv;
-            sum2 += pv * pv;
-        }
-
-        const auto N = static_cast<Real>(n_paths);
-        const Real mean = sum / N;
-        const Real variance = sum2 / N - mean * mean;
-
-        PricingResult out;
-        out.npv = mean;
-        out.mc_std_error = std::sqrt(variance / N);
-        out.diagnostics = "VolSwapMCEngine:VarianceSwap (paths=" +
-                          std::to_string(n_paths) + ", obs=" +
-                          std::to_string(sched.size()) + ")";
-        res_ = out;
+        res_ = price_realised(m, ctx_.settings, vs.maturity, vs.observation_dates, "VarianceSwap",
+                              [&vs](Real var, Real)
+                              { return vs.notional * (var - vs.strike_var); });
     }
-
-    // ─── Volatility swap visit ───────────────────────────────────────────────
 
     void VolSwapMCEngine::visit(const VolatilitySwap &vs)
     {
         const auto &m = require_model<ILocalVolModel>("VolSwapMCEngine");
-        const PricingSettings &settings = ctx_.settings;
-
         if (vs.maturity <= 0.0)
             throw InvalidInput("VolatilitySwap: maturity must be > 0");
-
-        const int n_paths = settings.mc_paths > 0 ? settings.mc_paths : 100000;
-        const auto seed = static_cast<uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 42);
-
-        const auto sched = make_schedule(vs.maturity, vs.observation_dates);
-        const Real T = vs.maturity;
-        const Real r = m.rate_r();
-        const Real df = m.discount_curve().discount(T);
-
-        RngFactory rng_fact(seed);
-        Real sum = 0.0, sum2 = 0.0;
-
-        for (int p = 0; p < n_paths; ++p)
-        {
-            Pcg32 rng = rng_fact.make(static_cast<uint64_t>(p));
-            NormalBoxMuller normal;
-            auto [var, vol] = simulate_realised(m, sched, rng, normal);
-            const Real pv = vs.notional * (vol - vs.strike_vol) * df;
-            sum += pv;
-            sum2 += pv * pv;
-        }
-
-        const auto N = static_cast<Real>(n_paths);
-        const Real mean = sum / N;
-        const Real variance = sum2 / N - mean * mean;
-
-        PricingResult out;
-        out.npv = mean;
-        out.mc_std_error = std::sqrt(variance / N);
-        out.diagnostics = "VolSwapMCEngine:VolatilitySwap (paths=" +
-                          std::to_string(n_paths) + ", obs=" +
-                          std::to_string(sched.size()) + ")";
-        res_ = out;
+        res_ = price_realised(m, ctx_.settings, vs.maturity, vs.observation_dates, "VolatilitySwap",
+                              [&vs](Real, Real vol)
+                              { return vs.notional * (vol - vs.strike_vol); });
     }
 
     // ─── rejections ──────────────────────────────────────────────────────────

@@ -174,8 +174,8 @@ namespace quantModeling
                 [&run_batch, b, first, size]
                 { return run_batch(b, first, size); }));
         }
-        for (TaskHandle &h : handles)
-            pool.active_wait(h);
+        // Every batch finishes before an error leaves: they reference this frame.
+        pool.active_wait_all(handles);
 
         const std::size_t n_params = model.num_params();
         WelfordAccumulator price_acc;

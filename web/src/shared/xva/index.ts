@@ -13,4 +13,5 @@ export { MarginCapitalPanel } from "./MarginCapitalPanel";
 export { SensitivitiesPanel } from "./SensitivitiesPanel";
 export { TradesTable } from "./TradesTable";
 export { XvaResultHeader } from "./XvaResultHeader";
+export { type XvaResultTab, XvaResultTabs } from "./XvaResultTabs";
 export * from "./format";

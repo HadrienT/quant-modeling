@@ -19,6 +19,7 @@ from ..cache import TTLCache
 from ..logging_utils import get_logger
 from ..request_context import set_cache_hit
 from ..schemas import MarketHistoryPoint, MarketHistoryResponse
+from .errors import store_unavailable
 
 router = APIRouter()
 logger = get_logger()
@@ -119,9 +120,7 @@ async def list_markets() -> MarketsResponse:
     try:
         found = {m: (n, d) for m, n, d in await run_in_threadpool(db.equity_markets)}
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     response = MarketsResponse(
         markets=[
             MarketInfo(
@@ -174,9 +173,7 @@ async def _market_tickers(market: str) -> TickersResponse:
     try:
         members = await run_in_threadpool(db.market_members, market)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     if not members:
         raise HTTPException(status_code=404, detail=f"No members for {market}")
     extra = _INDEX_ETF_PROXIES if market == "SP500" else []
@@ -215,9 +212,7 @@ async def market_history(
             "market_history: store unavailable",
             extra={"ticker": ticker, "error": str(exc)},
         )
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
 
     if not rows:
         raise HTTPException(status_code=404, detail=f"No price history for {ticker}")

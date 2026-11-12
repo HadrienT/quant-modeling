@@ -25,6 +25,7 @@ from ..xva_schemas import (
     XvaSensitivitiesRequest,
     XvaSensitivitiesResponse,
 )
+from .errors import store_unavailable
 
 router = APIRouter()
 
@@ -44,22 +45,24 @@ def xva_portfolios() -> XvaPortfoliosResponse:
     )
 
 
-@router.post("/api/xva/netting-set", response_model=XvaResponse)
-async def xva_netting_set(req: XvaRequest) -> XvaResponse:
+async def _computed(fn, *args):
+    """Runs `fn(*args)` off the event loop (a few seconds of C++ on several
+    threads) and turns its failures into HTTP errors: 503 when the market data
+    or a model input is unavailable, 422 for an input the computation refuses
+    (InvalidInput from the C++ arrives as a RuntimeError)."""
     try:
-        # A few seconds of C++ on several threads: off the event loop.
-        response = await run_in_threadpool(xva.compute, req)
+        return await run_in_threadpool(fn, *args)
     except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
+        raise store_unavailable() from exc
     except xva.XvaUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except xva.XvaInputError as exc:
+    except (xva.XvaInputError, RuntimeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        # InvalidInput from the C++: an input no curve or model accepts.
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/api/xva/netting-set", response_model=XvaResponse)
+async def xva_netting_set(req: XvaRequest) -> XvaResponse:
+    response = await _computed(xva.compute, req)
     emit(xva_record.EVENT_TYPE, xva_record.payload(req, response))
     return response
 
@@ -69,18 +72,7 @@ async def xva_portfolio(req: portfolio_xva.PortfolioXvaRequest) -> XvaResponse:
     """Exposure and xVA of one netting set of a portfolio: the trades held
     under it today, the counterparty's rating and the collateral agreement
     of the ledger, on the market of the xVA page."""
-    try:
-        run, response = await run_in_threadpool(portfolio_xva.compute, req)
-    except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
-    except xva.XvaUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except xva.XvaInputError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    run, response = await _computed(portfolio_xva.compute, req)
     emit(xva_record.EVENT_TYPE, xva_record.payload(run, response, trades=True))
     return response
 
@@ -89,18 +81,7 @@ async def xva_portfolio(req: portfolio_xva.PortfolioXvaRequest) -> XvaResponse:
 async def xva_sensitivities(req: XvaSensitivitiesRequest) -> XvaSensitivitiesResponse:
     """The sensitivities of the adjustments to every market quote, by adjoint
     differentiation, and SA-CVA from them."""
-    try:
-        return await run_in_threadpool(xva.compute_sensitivities, req)
-    except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
-    except xva.XvaUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except xva.XvaInputError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _computed(xva.compute_sensitivities, req)
 
 
 @router.post(
@@ -111,15 +92,4 @@ async def xva_portfolio_sensitivities(
 ) -> XvaSensitivitiesResponse:
     """The sensitivities of the adjustments of one netting set of a
     portfolio to every market quote, by adjoint differentiation."""
-    try:
-        return await run_in_threadpool(portfolio_xva.compute_sensitivities, req)
-    except db.StoreUnavailable as exc:
-        raise HTTPException(
-            status_code=503, detail="Market data store unavailable"
-        ) from exc
-    except xva.XvaUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except xva.XvaInputError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _computed(portfolio_xva.compute_sensitivities, req)

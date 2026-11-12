@@ -23,14 +23,13 @@ anything larger is a real difference.
 from __future__ import annotations
 
 import math
-import os
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from . import valuation
-from .audit.envelope import lib_build_sha
+from .audit.envelope import api_sha, lib_build_sha
 
 REPRODUCTION_RTOL = 1e-12
 
@@ -70,6 +69,17 @@ class ReplayResponse(BaseModel):
 class NotAValuation(ValueError):
     """The event exists but cannot be replayed (wrong type, unknown product,
     a request the current API no longer accepts)."""
+
+
+def code_builds(payload: dict[str, Any]) -> tuple[CodeBuild, CodeBuild]:
+    """The build a recorded event names, and the build running now."""
+    code = payload.get("code", {})
+    recorded = CodeBuild(
+        api_sha=str(code.get("api_sha", "unknown")),
+        lib_build=str(code.get("lib_build", "unknown")),
+    )
+    current = CodeBuild(api_sha=api_sha(), lib_build=lib_build_sha())
+    return recorded, current
 
 
 def _same(a: float, b: float) -> bool:
@@ -123,14 +133,7 @@ def replay(event: dict[str, Any]) -> ReplayResponse:
 
     recorded_npv = float(payload["result"]["npv"])
     replayed_npv = float(priced.response.npv)
-    code = payload.get("code", {})
-    recorded_code = CodeBuild(
-        api_sha=str(code.get("api_sha", "unknown")),
-        lib_build=str(code.get("lib_build", "unknown")),
-    )
-    current_code = CodeBuild(
-        api_sha=os.getenv("COMMIT_SHA", "dev"), lib_build=lib_build_sha()
-    )
+    recorded_code, current_code = code_builds(payload)
     drifted = _drifted(payload.get("market_inputs", []), priced.market_inputs)
 
     if drifted:

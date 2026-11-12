@@ -203,26 +203,7 @@ namespace quantModeling
 
     void PDEEuropeanVanillaEngine::validate(const VanillaOption &opt)
     {
-        if (!opt.payoff)
-            throw InvalidInput("VanillaOption.payoff is null");
-        if (!opt.exercise)
-            throw InvalidInput("VanillaOption.exercise is null");
-        if (opt.exercise->type() != ExerciseType::European)
-        {
-            throw UnsupportedInstrument("PDE engine is designed for European exercise only");
-        }
-        if (opt.exercise->dates().size() != 1)
-        {
-            throw InvalidInput("EuropeanExercise must contain exactly one date (maturity)");
-        }
-        const Real T = opt.exercise->dates().front();
-        if (!(T > 0.0))
-            throw InvalidInput("Maturity T must be > 0");
-        if (!(opt.notional > 0.0))
-            throw InvalidInput("Notional must be > 0");
-        const Real K = opt.payoff->strike();
-        if (!(K > 0.0))
-            throw InvalidInput("Strike must be > 0");
+        validate_single_maturity_vanilla(opt, "PDE engine is designed for European exercise only");
     }
 
     void PDEEuropeanVanillaEngine::solve_tridiagonal(const std::vector<Real> &a,

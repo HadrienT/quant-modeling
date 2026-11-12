@@ -163,8 +163,7 @@ namespace
                                                {
                 run(b);
                 return true; }));
-        for (auto &h : handles)
-            pool->active_wait(h);
+        pool->active_wait_all(handles);
     }
 
     std::string read_script(const std::string &name)

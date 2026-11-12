@@ -575,9 +575,13 @@ namespace quantModeling
                     ASSERT_GE(v, 0.0);
                     ASSERT_GE(flow, 0.0);
                     if (i >= expiry)
+                    {
                         ASSERT_EQ(v, 0.0);
+                    }
                     if (i != expiry)
+                    {
                         ASSERT_EQ(flow, 0.0);
+                    }
                 }
     }
 

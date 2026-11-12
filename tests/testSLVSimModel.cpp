@@ -246,10 +246,10 @@ namespace quantModeling
     // already documents applies here identically, same scheme, same
     // sqrt(v_plus)); the grid's *last* T column never is reachable, and
     // that is asserted explicitly rather than silently excluded --
-    // leverage_at()'s staircase-in-T lookup (documented on that method)
+    // mc::leverage_staircase()'s staircase-in-T lookup (documented there)
     // uses column j-1 for the interval ending at T_grid[j], so column
     // nT-1 would only ever be read for t > T_grid.back(), which the
-    // clamp in leverage_at() never lets happen. Pricing is unaffected --
+    // clamp in that lookup never lets happen. Pricing is unaffected --
     // the interval (T_grid[nT-2], T_grid[nT-1]] is fully covered by
     // column nT-2 -- but a risk report correctly has nothing to say about
     // a grid point no path ever touches. ─────────────────────────────────

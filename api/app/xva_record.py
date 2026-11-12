@@ -18,14 +18,12 @@ Two limits, stated in the response or as an explicit refusal:
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from . import replay as valuation_replay
 from . import valuation, xva
-from .audit.envelope import lib_build_sha
 from .audit.payloads import (
     CodeVersion,
     EngineSpec,
@@ -66,12 +64,6 @@ def _result(response: XvaResponse) -> XvaResult:
     )
 
 
-def _code() -> CodeVersion:
-    return CodeVersion(
-        api_sha=os.getenv("COMMIT_SHA", "dev"), lib_build=lib_build_sha()
-    )
-
-
 def payload(
     req: XvaRequest, response: XvaResponse, trades: bool = False
 ) -> XvaValuationPayload:
@@ -107,7 +99,7 @@ def payload(
         market_inputs=_market_inputs(response),
         result=_result(response),
         timing=ValuationTiming(duration_ms=response.compute_ms),
-        code=_code(),
+        code=CodeVersion.current(),
         ip_hash=current_ip_hash(),
     )
 
@@ -166,15 +158,7 @@ def replay(event: dict[str, Any]) -> XvaReplayResponse:
     drifted = valuation_replay._drifted(
         body.get("market_inputs", []), _market_inputs(response)
     )
-    code = body.get("code", {})
-    recorded_code = valuation_replay.CodeBuild(
-        api_sha=str(code.get("api_sha", "unknown")),
-        lib_build=str(code.get("lib_build", "unknown")),
-    )
-    current = _code()
-    current_code = valuation_replay.CodeBuild(
-        api_sha=current.api_sha, lib_build=current.lib_build
-    )
+    recorded_code, current_code = valuation_replay.code_builds(body)
 
     if drifted:
         outcome = valuation_replay.ReplayOutcome.DRIFTED_INPUTS

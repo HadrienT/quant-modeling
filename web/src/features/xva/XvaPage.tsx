@@ -1,21 +1,11 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useXvaNettingSet, useXvaPortfolios } from "@/shared/api";
-import {
-	Methodology,
-	Tabs,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-	WarningList,
-} from "@/shared/ui";
+import { Methodology, WarningList } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import {
-	AdjustmentsPanel,
-	ExposurePanel,
 	ForeignMarketPanel,
-	MarginCapitalPanel,
-	TradesTable,
 	XvaResultHeader,
+	XvaResultTabs,
 } from "@/shared/xva";
 import {
 	DEFAULT_VIEW,
@@ -93,39 +83,19 @@ export default function XvaPage() {
 							domestic={data.market.currency}
 						/>
 					)}
-					<Tabs
+					<XvaResultTabs
+						data={data}
 						value={tab}
 						onValueChange={(v) =>
-							navigate({
-								search: (prev) => ({ ...prev, tab: v as typeof tab }),
-							})
+							navigate({ search: (prev) => ({ ...prev, tab: v }) })
 						}
-					>
-						<TabsList>
-							<TabsTrigger value="exposure">Exposure</TabsTrigger>
-							<TabsTrigger value="adjustments">Adjustments</TabsTrigger>
-							<TabsTrigger value="capital">Margin and capital</TabsTrigger>
-							<TabsTrigger value="sensitivities">Sensitivities</TabsTrigger>
-						</TabsList>
-						<TabsContent value="exposure">
-							<ExposurePanel data={data} />
-						</TabsContent>
-						<TabsContent value="adjustments">
-							<div className="flex flex-col gap-6">
-								<AdjustmentsPanel data={data} />
-								<TradesTable data={data} />
-							</div>
-						</TabsContent>
-						<TabsContent value="capital">
-							<MarginCapitalPanel data={data} />
-						</TabsContent>
-						<TabsContent value="sensitivities">
+						sensitivities={
 							<XvaSensitivities
 								key={JSON.stringify(sensitivitiesRequest(view))}
 								request={sensitivitiesRequest(view)}
 							/>
-						</TabsContent>
-					</Tabs>
+						}
+					/>
 					<Methodology id="xva-methodology" sections={data.methodology} />
 				</>
 			)}

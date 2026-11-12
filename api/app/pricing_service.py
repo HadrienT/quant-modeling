@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -74,17 +73,20 @@ _DEVICES = {
 _RNGS = {McRng.pcg32: qm.RngKind.Pcg32, McRng.philox: qm.RngKind.Philox}
 
 
+_OPTION_TERMS = ("spot", "strike", "maturity", "rate", "dividend", "vol", "is_call")
+
+
+def _set_option_terms(input_data, req) -> None:
+    """Copies the terms every single-asset Black-Scholes input shares."""
+    for name in _OPTION_TERMS:
+        setattr(input_data, name, getattr(req, name))
+
+
 def price_vanilla(req: VanillaRequest) -> PricingResponse:
     if req.is_american:
         # Price American vanilla
         input_data = qm.AmericanVanillaBSInput()
-        input_data.spot = req.spot
-        input_data.strike = req.strike
-        input_data.maturity = req.maturity
-        input_data.rate = req.rate
-        input_data.dividend = req.dividend
-        input_data.vol = req.vol
-        input_data.is_call = req.is_call
+        _set_option_terms(input_data, req)
         input_data.tree_steps = req.tree_steps
         input_data.pde_space_steps = 100
         input_data.pde_time_steps = 100
@@ -96,13 +98,7 @@ def price_vanilla(req: VanillaRequest) -> PricingResponse:
     else:
         # Price European vanilla
         input_data = qm.VanillaBSInput()
-        input_data.spot = req.spot
-        input_data.strike = req.strike
-        input_data.maturity = req.maturity
-        input_data.rate = req.rate
-        input_data.dividend = req.dividend
-        input_data.vol = req.vol
-        input_data.is_call = req.is_call
+        _set_option_terms(input_data, req)
         input_data.n_paths = req.n_paths
         input_data.seed = req.seed
         input_data.mc_epsilon = req.mc_epsilon
@@ -129,13 +125,7 @@ def price_vanilla(req: VanillaRequest) -> PricingResponse:
 
 def price_american_vanilla(req: AmericanVanillaRequest) -> PricingResponse:
     input_data = qm.AmericanVanillaBSInput()
-    input_data.spot = req.spot
-    input_data.strike = req.strike
-    input_data.maturity = req.maturity
-    input_data.rate = req.rate
-    input_data.dividend = req.dividend
-    input_data.vol = req.vol
-    input_data.is_call = req.is_call
+    _set_option_terms(input_data, req)
     input_data.tree_steps = req.tree_steps
     input_data.pde_space_steps = req.pde_space_steps
     input_data.pde_time_steps = req.pde_time_steps
@@ -150,13 +140,7 @@ def price_american_vanilla(req: AmericanVanillaRequest) -> PricingResponse:
 
 def price_asian(req: AsianRequest) -> PricingResponse:
     input_data = qm.AsianBSInput()
-    input_data.spot = req.spot
-    input_data.strike = req.strike
-    input_data.maturity = req.maturity
-    input_data.rate = req.rate
-    input_data.dividend = req.dividend
-    input_data.vol = req.vol
-    input_data.is_call = req.is_call
+    _set_option_terms(input_data, req)
     input_data.n_paths = req.n_paths
     input_data.seed = req.seed
     input_data.mc_epsilon = req.mc_epsilon
@@ -697,13 +681,7 @@ _BARRIER_KIND_MAP = {
 
 def price_barrier(req: BarrierRequest) -> PricingResponse:
     input_data = qm.BarrierBSInput()
-    input_data.spot = req.spot
-    input_data.strike = req.strike
-    input_data.maturity = req.maturity
-    input_data.rate = req.rate
-    input_data.dividend = req.dividend
-    input_data.vol = req.vol
-    input_data.is_call = req.is_call
+    _set_option_terms(input_data, req)
     input_data.barrier_level = req.barrier_level
     input_data.barrier_type = _BARRIER_KIND_MAP[req.barrier_kind]
     input_data.rebate = req.rebate
@@ -724,13 +702,7 @@ _DIGITAL_PAYOFF_MAP = {
 
 def price_digital(req: DigitalRequest) -> PricingResponse:
     input_data = qm.DigitalBSInput()
-    input_data.spot = req.spot
-    input_data.strike = req.strike
-    input_data.maturity = req.maturity
-    input_data.rate = req.rate
-    input_data.dividend = req.dividend
-    input_data.vol = req.vol
-    input_data.is_call = req.is_call
+    _set_option_terms(input_data, req)
     input_data.payoff_type = _DIGITAL_PAYOFF_MAP[req.payoff_type]
     input_data.cash_amount = req.cash_amount
     result = qm.price_digital_bs_analytic(input_data)
@@ -750,13 +722,7 @@ _LOOKBACK_EXTREMUM_MAP = {
 
 def price_lookback(req: LookbackRequest) -> PricingResponse:
     input_data = qm.LookbackBSInput()
-    input_data.spot = req.spot
-    input_data.strike = req.strike
-    input_data.maturity = req.maturity
-    input_data.rate = req.rate
-    input_data.dividend = req.dividend
-    input_data.vol = req.vol
-    input_data.is_call = req.is_call
+    _set_option_terms(input_data, req)
     input_data.style = _LOOKBACK_STYLE_MAP[req.style]
     input_data.extremum = _LOOKBACK_EXTREMUM_MAP[req.extremum]
     input_data.n_steps = req.n_steps
@@ -1083,50 +1049,3 @@ def price_rainbow(req: RainbowRequest) -> PricingResponse:
     else:
         result = qm.price_worst_of_bs_mc(input_data)
     return _pricing_response_from_dict(result)
-
-
-if __name__ == "__main__":
-    print("Running binding smoke tests...")
-
-    vanilla = qm.VanillaBSInput()
-    vanilla.spot = 100.0
-    vanilla.strike = 100.0
-    vanilla.maturity = 1.0
-    vanilla.rate = 0.05
-    vanilla.dividend = 0.02
-    vanilla.vol = 0.2
-    vanilla.is_call = True
-    vanilla.n_paths = 200000
-    vanilla.seed = 42
-    vanilla.mc_epsilon = 0.0
-    print("vanilla_analytic:", qm.price_vanilla_bs_analytic(vanilla))
-
-    american = qm.AmericanVanillaBSInput()
-    american.spot = 100.0
-    american.strike = 100.0
-    american.maturity = 1.0
-    american.rate = 0.05
-    american.dividend = 0.02
-    american.vol = 0.2
-    american.is_call = False
-    american.tree_steps = 100
-    print("american_put_binomial:", qm.price_american_vanilla_bs_binomial(american))
-    print("american_put_trinomial:", qm.price_american_vanilla_bs_trinomial(american))
-
-    zc = qm.ZeroCouponBondInput()
-    zc.maturity = 2.0
-    zc.rate = 0.03
-    zc.notional = 1000.0
-    zc.discount_times = [0.5, 1.0, 2.0, 3.0]
-    zc.discount_factors = [0.985, 0.97, 0.94, 0.915]
-    print("zero_coupon:", qm.price_zero_coupon_bond_analytic(zc))
-
-    fixed = qm.FixedRateBondInput()
-    fixed.maturity = 3.0
-    fixed.rate = 0.032
-    fixed.coupon_rate = 0.045
-    fixed.coupon_frequency = 2
-    fixed.notional = 1000.0
-    fixed.discount_times = [0.5, 1.0, 2.0, 3.0, 5.0]
-    fixed.discount_factors = [0.988, 0.975, 0.945, 0.92, 0.885]
-    print("fixed_rate:", qm.price_fixed_rate_bond_analytic(fixed))
