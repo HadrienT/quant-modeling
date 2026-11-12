@@ -23,10 +23,6 @@ One calibration per (ticker, snapshot, rate), cached in process and stored
 
 from __future__ import annotations
 
-import dataclasses
-import hashlib
-import json
-import logging
 import math
 import time
 from dataclasses import dataclass
@@ -35,11 +31,11 @@ from typing import List, Optional, Tuple
 
 import quantmodeling as qm
 
+from . import calibration_store
 from .keyed_cache import KeyedCache
-from .logging_utils import LOGGER_NAME
 from .market_snapshot import LocalVolMarket
-from .storage import get_storage
 from .telemetry import tracer
+from .util import norm_cdf
 
 #: Maturities the fit sees: one week to six months.
 MIN_TTM = 0.02
@@ -54,8 +50,6 @@ STEPS_PER_YEAR = 400
 SEED = 1
 METHOD = 1
 PREFIX = "calibrations/rough-bergomi"
-
-_log = logging.getLogger(LOGGER_NAME)
 
 
 class RoughCalibrationUnavailable(RuntimeError):
@@ -87,10 +81,6 @@ def _w(sl: dict, k: float) -> float:
     return sl["a"] + sl["b"] * (sl["rho"] * x + math.sqrt(x * x + sl["sigma"] ** 2))
 
 
-def _norm_cdf(x: float) -> float:
-    return 0.5 * math.erfc(-x / math.sqrt(2.0))
-
-
 def _black_otm(k: float, w: float) -> float:
     """Forward-normalised Black price of the out-of-the-money option at
     log-moneyness k, total variance w (F = 1, no discounting)."""
@@ -98,8 +88,8 @@ def _black_otm(k: float, w: float) -> float:
     d1 = -k / sd + 0.5 * sd
     d2 = d1 - sd
     if k >= 0.0:
-        return _norm_cdf(d1) - math.exp(k) * _norm_cdf(d2)
-    return math.exp(k) * _norm_cdf(-d2) - _norm_cdf(-d1)
+        return norm_cdf(d1) - math.exp(k) * norm_cdf(d2)
+    return math.exp(k) * norm_cdf(-d2) - norm_cdf(-d1)
 
 
 def variance_swap_total_variance(sl: dict) -> float:
@@ -194,7 +184,7 @@ _cache: KeyedCache[RoughVol] = KeyedCache(16)
 
 
 def store_key(market: LocalVolMarket) -> str:
-    payload = json.dumps(
+    return calibration_store.digest(
         {
             "method": METHOD,
             "paths": N_PATHS,
@@ -203,38 +193,19 @@ def store_key(market: LocalVolMarket) -> str:
             "ticker": market.ticker,
             "snapshot": market.valuation_date.isoformat(),
             "slices": market.svi_slices,
-        },
-        sort_keys=True,
-        default=list,
+        }
     )
-    return hashlib.sha256(payload.encode()).hexdigest()[:32]
+
+
+_TUPLE_FIELDS = ("xi_times", "xi_values")
 
 
 def _load(key: str) -> Optional[RoughVol]:
-    try:
-        raw = get_storage().read_json(f"{PREFIX}/{key}")
-    except Exception:  # noqa: BLE001 -- a miss, not an error
-        return None
-    if not raw:
-        return None
-    try:
-        raw["snapshot"] = date.fromisoformat(raw["snapshot"])
-        raw["xi_times"] = tuple(raw["xi_times"])
-        raw["xi_values"] = tuple(raw["xi_values"])
-        return RoughVol(**raw)
-    except (KeyError, TypeError, ValueError):
-        return None
+    return calibration_store.load(f"{PREFIX}/{key}", RoughVol, _TUPLE_FIELDS)
 
 
 def _save(key: str, rv: RoughVol) -> None:
-    raw = dataclasses.asdict(rv)
-    raw["snapshot"] = rv.snapshot.isoformat()
-    raw["xi_times"] = list(rv.xi_times)
-    raw["xi_values"] = list(rv.xi_values)
-    try:
-        get_storage().write_json(f"{PREFIX}/{key}", raw)
-    except Exception:  # noqa: BLE001 -- the next restart recalibrates
-        _log.exception("could not store the rough Bergomi calibration")
+    calibration_store.save(f"{PREFIX}/{key}", rv, _TUPLE_FIELDS, "rough Bergomi")
 
 
 def calibrate(market: LocalVolMarket) -> RoughVol:

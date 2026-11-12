@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
+
+from ..util import today_utc
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
-
-
-def _today_utc() -> date:
-    return datetime.now(timezone.utc).date()
 
 
 class ChatMessage(BaseModel):
@@ -27,7 +25,7 @@ class ScriptingChatRequest(BaseModel):
         max_length=4_000,
         description="The parser/pricing error currently shown next to the editor.",
     )
-    valuation_date: date = Field(default_factory=_today_utc)
+    valuation_date: date = Field(default_factory=today_utc)
     day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"
 
     @field_validator("messages")

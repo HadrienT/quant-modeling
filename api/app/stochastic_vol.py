@@ -27,9 +27,6 @@ calibrate the next snapshot before anyone asks.
 
 from __future__ import annotations
 
-import dataclasses
-import hashlib
-import json
 import logging
 import math
 import threading
@@ -40,6 +37,7 @@ from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
+from . import calibration_store
 from .keyed_cache import KeyedCache
 from .logging_utils import LOGGER_NAME
 from .market_snapshot import LocalVolMarket, surface_slices
@@ -230,7 +228,7 @@ _log = logging.getLogger(LOGGER_NAME)
 def store_key(market: LocalVolMarket) -> str:
     """Digest of everything the calibration reads: the Heston targets come
     from the SVI slices, the leverage from the Dupire grid."""
-    payload = json.dumps(
+    return calibration_store.digest(
         {
             "method": METHOD,
             "particles": SLV_PARTICLES,
@@ -244,36 +242,19 @@ def store_key(market: LocalVolMarket) -> str:
             "K": market.K_grid,
             "T": market.T_grid,
             "sigma": market.sigma_loc_flat,
-        },
-        sort_keys=True,
-        default=list,
+        }
     )
-    return hashlib.sha256(payload.encode()).hexdigest()[:32]
+
+
+_TUPLE_FIELDS = ("leverage_flat",)
 
 
 def _load(key: str) -> Optional[StochasticVol]:
-    try:
-        raw = get_storage().read_json(f"{PREFIX}/{key}")
-    except Exception:  # noqa: BLE001 -- a miss, not an error
-        return None
-    if not raw:
-        return None
-    try:
-        raw["snapshot"] = date.fromisoformat(raw["snapshot"])
-        raw["leverage_flat"] = tuple(raw["leverage_flat"])
-        return StochasticVol(**raw)
-    except (KeyError, TypeError, ValueError):
-        return None
+    return calibration_store.load(f"{PREFIX}/{key}", StochasticVol, _TUPLE_FIELDS)
 
 
 def _save(key: str, sv: StochasticVol) -> None:
-    raw = dataclasses.asdict(sv)
-    raw["snapshot"] = sv.snapshot.isoformat()
-    raw["leverage_flat"] = list(sv.leverage_flat)
-    try:
-        get_storage().write_json(f"{PREFIX}/{key}", raw)
-    except Exception:  # noqa: BLE001 -- the next restart recalibrates
-        _log.exception("could not store the stochastic-vol calibration")
+    calibration_store.save(f"{PREFIX}/{key}", sv, _TUPLE_FIELDS, "stochastic-vol")
 
 
 def remembered_rates(ticker: str) -> List[float]:

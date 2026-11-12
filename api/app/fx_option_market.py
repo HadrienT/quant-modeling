@@ -58,6 +58,7 @@ from datetime import date, datetime
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .db import FxOptionTrade
+from .util import norm_cdf
 
 #: Option expiries of the term structure, in years.
 EXPIRIES: Tuple[float, ...] = (1 / 12, 0.25, 0.5, 1.0, 2.0)
@@ -103,13 +104,9 @@ def black(
     sd = vol * math.sqrt(expiry)
     d1 = math.log(forward / strike) / sd + 0.5 * sd
     d2 = d1 - sd
-
-    def cdf(x: float) -> float:
-        return 0.5 * math.erfc(-x / math.sqrt(2.0))
-
     if call:
-        return forward * cdf(d1) - strike * cdf(d2)
-    return strike * cdf(-d2) - forward * cdf(-d1)
+        return forward * norm_cdf(d1) - strike * norm_cdf(d2)
+    return strike * norm_cdf(-d2) - forward * norm_cdf(-d1)
 
 
 def implied_volatility(

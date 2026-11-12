@@ -434,9 +434,15 @@ def history(currency: str, series_id: str, years: int) -> List[tuple[date, float
     return [(d, v / 100.0) for d, v in db.rates_history(rates.table, series_id, since)]
 
 
-def staleness_warning(as_of: date, today: Optional[date] = None) -> Optional[str]:
+def stale_age(as_of: date, today: Optional[date] = None) -> Optional[int]:
+    """Age in days of data published on ``as_of``, when beyond STALE_AFTER_DAYS."""
     age = ((today or date.today()) - as_of).days
-    if age > STALE_AFTER_DAYS:
+    return age if age > STALE_AFTER_DAYS else None
+
+
+def staleness_warning(as_of: date, today: Optional[date] = None) -> Optional[str]:
+    age = stale_age(as_of, today)
+    if age is not None:
         return (
             f"The latest complete curve is from {as_of.isoformat()}, {age} days ago: "
             "the source has not published since, or data-ingest has not run."
