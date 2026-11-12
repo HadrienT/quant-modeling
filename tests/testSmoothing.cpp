@@ -2,9 +2,7 @@
 #include "quantModeling/engines/analytic/black_scholes.hpp"
 #include "quantModeling/engines/analytic/digital.hpp"
 #include "quantModeling/engines/mc/black_scholes.hpp"
-#include "quantModeling/engines/mc/lookback.hpp"
 #include "quantModeling/instruments/equity/digital.hpp"
-#include "quantModeling/instruments/equity/lookback.hpp"
 #include "quantModeling/instruments/equity/vanilla.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
@@ -19,7 +17,6 @@ namespace quantModeling
     // Phase 3 — payoff smoothing:
     //  - conditional MC for digitals (indicator -> Phi),
     //  (the barriers' survival probabilities moved to the scripts: tests/testBarrierMonitoring.cpp),
-    //  - bridge-sampled extrema for lookbacks (discretisation bias removal).
     // ============================================================================
 
     class SmoothingTest : public ::testing::Test
@@ -69,22 +66,6 @@ namespace quantModeling
             auto exercise = std::make_shared<EuropeanExercise>(T);
             DigitalOption option(payoff, exercise, pt, /*cash=*/1.0);
             BSDigitalAnalyticEngine engine(ctx);
-            option.accept(engine);
-            return engine.results();
-        }
-
-        // --- lookbacks ---
-        PricingResult price_lookback_mc(int n_steps, int paths, int seed,
-                                        bool bridge) const
-        {
-            const PricingContext ctx = make_ctx(paths, seed, false, bridge);
-            // Floating-strike put: payoff = S_max - S_T (driven by the max).
-            auto payoff = std::make_shared<PlainVanillaPayoff>(OptionType::Put, K);
-            auto exercise = std::make_shared<EuropeanExercise>(T);
-            LookbackOption option(payoff, exercise, LookbackStyle::FloatingStrike,
-                                  LookbackExtremum::Maximum);
-            option.n_steps = n_steps;
-            BSEuroLookbackMCEngine engine(ctx);
             option.accept(engine);
             return engine.results();
         }
@@ -158,40 +139,6 @@ namespace quantModeling
                                                    DigitalPayoffType::AssetOrNothing,
                                                    1 << 17, 42, /*cmc=*/true);
         EXPECT_NEAR(res.npv, exact, std::max(4.0 * res.mc_std_error, 1e-3));
-    }
-
-    // ---- Lookbacks -------------------------------------------------------------
-
-    TEST_F(SmoothingTest, BridgeMaxIncreasesLookbackPrice)
-    {
-        // The sampled bridge max is >= the discrete max path by path, so the
-        // floating-put price (S_max - S_T) must strictly increase.
-        const PricingResult discrete = price_lookback_mc(50, 20'000, 42, false);
-        const PricingResult bridged = price_lookback_mc(50, 20'000, 42, true);
-        EXPECT_GT(bridged.npv, discrete.npv);
-    }
-
-    TEST_F(SmoothingTest, BridgeMaxRemovesDiscretisationBias)
-    {
-        // Reference: discrete monitoring with a very fine grid (n=2000) is
-        // close to the continuous price (bias ~ sqrt(dt)). The bridged coarse
-        // grid (n=50) must land far closer to it than the discrete coarse grid.
-        const PricingResult ref = price_lookback_mc(2000, 40'000, 99, false);
-        const PricingResult coarse_disc = price_lookback_mc(50, 40'000, 42, false);
-        const PricingResult coarse_bridge = price_lookback_mc(50, 40'000, 42, true);
-
-        const Real gap_disc = std::abs(coarse_disc.npv - ref.npv);
-        const Real gap_bridge = std::abs(coarse_bridge.npv - ref.npv);
-        EXPECT_LT(gap_bridge, 0.5 * gap_disc)
-            << "ref=" << ref.npv << " disc(50)=" << coarse_disc.npv
-            << " bridge(50)=" << coarse_bridge.npv;
-    }
-
-    TEST_F(SmoothingTest, BridgeLookbackReproducible)
-    {
-        const PricingResult a = price_lookback_mc(50, 10'000, 123, true);
-        const PricingResult b = price_lookback_mc(50, 10'000, 123, true);
-        EXPECT_DOUBLE_EQ(a.npv, b.npv);
     }
 
 } // namespace quantModeling

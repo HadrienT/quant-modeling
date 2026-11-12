@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "quantModeling/instruments/equity/asian.hpp"
 #include "quantModeling/engines/analytic/asian.hpp"
-#include "quantModeling/engines/mc/asian.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/pricers/pricer.hpp"

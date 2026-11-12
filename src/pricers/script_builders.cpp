@@ -1,6 +1,7 @@
 #include "quantModeling/pricers/script_builders.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -18,10 +19,19 @@ namespace quantModeling::script_builders
     {
         char buf[40];
         std::snprintf(buf, sizeof buf, "%.17g", x);
-        std::string s = buf;
         // The parser reads digits, a dot and an exponent; no "inf" or "nan"
         // ever comes from a product's terms.
-        return s;
+        return buf;
+    }
+
+    std::vector<int> evenly(int days, int observations)
+    {
+        std::set<int> out;
+        for (int k = 1; k <= observations; ++k)
+            out.insert(std::max(
+                1, static_cast<int>((static_cast<long long>(k) * days + observations / 2) / observations)));
+        out.insert(days);
+        return {out.begin(), out.end()};
     }
 
     namespace
@@ -37,16 +47,22 @@ namespace quantModeling::script_builders
             return is_call ? "max(spot() - " + k + ", 0)" : "max(" + k + " - spot(), 0)";
         }
 
-        /// `observations` dates evenly spread over (0, days], the last on
-        /// `days`, one per calendar day at most.
-        std::vector<int> evenly(int days, int observations)
+        /// The first date, the dates in between (on one line), the last
+        /// date, each with its statements; the last date runs `middle` then
+        /// `last`.
+        std::string three_events(const std::vector<int> &dates, const std::string &first, const std::string &middle,
+                                 const std::string &last)
         {
-            std::set<int> out;
-            for (int k = 1; k <= observations; ++k)
-                out.insert(std::max(1, static_cast<int>((static_cast<long long>(k) * days + observations / 2) /
-                                                        observations)));
-            out.insert(days);
-            return {out.begin(), out.end()};
+            if (dates.size() == 1)
+                return iso(dates.front()) + "\n" + first + last;
+            std::string s = iso(dates.front()) + "\n" + first + "\n";
+            if (dates.size() > 2)
+            {
+                for (std::size_t i = 1; i + 1 < dates.size(); ++i)
+                    s += (i > 1 ? "  " : "") + iso(dates[i]);
+                s += "\n" + middle + "\n";
+            }
+            return s + iso(dates.back()) + "\n" + middle + last;
         }
     } // namespace
 
@@ -79,18 +95,71 @@ namespace quantModeling::script_builders
         const std::string hit = up ? "spot() >= " + number(t.level) : "spot() <= " + number(t.level);
         const std::string check = "    if " + hit + " then s = 0 endIf\n";
         const std::vector<int> dates = evenly(days, observations);
-        std::string script;
         if (dates.size() == 1)
             return iso(days) + "\n    s = 1\n" + check + payment("s");
-        script += iso(dates.front()) + "\n    s = 1\n" + check + "\n";
-        if (dates.size() > 2)
+        return three_events(dates, "    s = 1\n" + check, check, payment("s"));
+    }
+
+    std::string asian(const AsianTerms &t, const std::vector<int> &fixings)
+    {
+        const std::string n = number(static_cast<double>(fixings.size()));
+        const std::string k = number(t.strike);
+        const bool logs = t.geometric || t.geometric_control;
+        const std::string first =
+            std::string(t.geometric ? "" : "    acc = spot()\n") + (logs ? "    lacc = log(spot())\n" : "");
+        const std::string middle =
+            std::string(t.geometric ? "" : "    acc = acc + spot()\n") + (logs ? "    lacc = lacc + log(spot())\n" : "");
+        const std::string avg = t.geometric ? "exp(lacc / " + n + ")" : "acc / " + n;
+        auto payoff = [&](const std::string &a)
+        { return t.is_call ? "max(" + a + " - " + k + ", 0)" : "max(" + k + " - " + a + ", 0)"; };
+        std::string last = "    pays " + payoff(avg) + "\n";
+        if (t.geometric_control && !t.geometric)
+            last += "    controlPays " + payoff("exp(lacc / " + n + ")") + "\n";
+        if (fixings.size() == 1)
+            return iso(fixings.front()) + "\n" + first + last;
+        return three_events(fixings, first, middle, last);
+    }
+
+    double geometric_asian_bs(double spot, double rate, double dividend, double vol, double strike, bool is_call,
+                              const std::vector<double> &times)
+    {
+        const double n = static_cast<double>(times.size());
+        double mean_t = 0.0, sum_min = 0.0;
+        for (double ti : times)
+            mean_t += ti / n;
+        for (double ti : times)
+            for (double tj : times)
+                sum_min += std::min(ti, tj);
+        const double mu = std::log(spot) + (rate - dividend - 0.5 * vol * vol) * mean_t;
+        const double var = vol * vol * sum_min / (n * n);
+        const double sd = std::sqrt(var);
+        const double forward = std::exp(mu + 0.5 * var);
+        const double df = std::exp(-rate * times.back());
+        auto N = [](double x)
+        { return 0.5 * std::erfc(-x / std::sqrt(2.0)); };
+        if (!(sd > 0.0))
+            return df * std::max(is_call ? forward - strike : strike - forward, 0.0);
+        const double d1 = (mu - std::log(strike) + var) / sd;
+        const double d2 = d1 - sd;
+        return is_call ? df * (forward * N(d1) - strike * N(d2)) : df * (strike * N(-d2) - forward * N(-d1));
+    }
+
+    std::string lookback(const LookbackTerms &t, Real s0, const std::vector<int> &fixings)
+    {
+        const std::string s = number(s0), k = number(t.strike);
+        const std::string first = "    hi = max(" + s + ", spot())\n    lo = min(" + s + ", spot())\n";
+        const std::string middle = "    hi = max(hi, spot())\n    lo = min(lo, spot())\n";
+        std::string payoff;
+        if (t.floating)
+            payoff = t.is_call ? "spot() - lo" : "hi - spot()";
+        else
         {
-            for (std::size_t i = 1; i + 1 < dates.size(); ++i)
-                script += (i > 1 ? "  " : "") + iso(dates[i]);
-            script += "\n" + check + "\n";
+            const std::string e = t.on_maximum ? "hi" : "lo";
+            payoff = t.is_call ? "max(" + e + " - " + k + ", 0)" : "max(" + k + " - " + e + ", 0)";
         }
-        script += iso(dates.back()) + "\n" + check + payment("s");
-        return script;
+        if (fixings.size() == 1)
+            return iso(fixings.front()) + "\n" + first + "    pays " + payoff + "\n";
+        return three_events(fixings, first, middle, "    pays " + payoff + "\n");
     }
 
 } // namespace quantModeling::script_builders

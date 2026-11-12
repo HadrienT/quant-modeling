@@ -23,9 +23,12 @@ namespace quantModeling
      */
     struct ScriptRoute
     {
-        /// The script, its maturity moved by `days` calendar days (theta's
-        /// bumps; 0 for the price). Every other term stays.
-        std::function<std::string(int days)> script;
+        /// The script under a model (a product whose script carries a model
+        /// input, as the lookback's initial spot, reads it here, so that the
+        /// bumped runs see the bumped input), its maturity moved by `days`
+        /// calendar days (theta's bumps; 0 for the price). Every other term
+        /// stays.
+        std::function<std::string(const scripting::ScriptModelSpec &, int days)> script;
         /// The valuation date the script's dates count from.
         Date valuation;
         /// The model at the request's inputs.
@@ -39,11 +42,13 @@ namespace quantModeling
         std::string name;
         /// Fuzzy (smoothed) ifs.
         bool fuzzy = false;
-        /// The payoff jumps on a path (a barrier checked on dates, a
-        /// digital): its pathwise derivatives miss the jump, so delta, vega
-        /// and rho are central differences with common random numbers too,
-        /// as gamma and theta, instead of the adjoint.
-        bool discontinuous = false;
+        /// Delta, vega and rho by central differences with common random
+        /// numbers too, as gamma and theta, instead of the adjoint: for a
+        /// payoff that jumps on a path (a barrier checked on dates, a
+        /// digital), whose pathwise derivatives miss the jump, and for a
+        /// script that carries a model input as a number (the adjoint does
+        /// not see it move).
+        bool fd_greeks = false;
     };
 
     /// The calendar days from `valuation` that put a date at year fraction
@@ -54,17 +59,20 @@ namespace quantModeling
     /**
      * @brief Price a route; with `greeks`, its five greeks.
      *
-     * Price: the script engine (settings.mc_device; Sobol by default), with
-     * the route's analytic control when it has one. Delta, vega and rho (a
-     * route that is not `discontinuous`; otherwise central differences): one
-     * adjoint run on the CPU tape (the model's spot, flat or local vol --
-     * every grid point, so a parallel shift -- and rate sensitivities summed
-     * per greek, their errors from the adjoint's batches). Gamma: central
-     * second difference of the price in the spot (±1 %), theta: -dV/dT by
-     * moving the maturity one day each way, both with common random numbers
-     * (the same Sobol points) and their errors from the replicate-wise
-     * differences. Units as the hand-written engines: vega per unit of
-     * volatility, theta per year, rho per unit of rate.
+     * Everything runs on settings.mc_device (the adapters ask for Auto: the
+     * GPU when present and the script fits, the CPU otherwise), Sobol by
+     * default. Price: the script engine, with the route's analytic control
+     * when it has one. Delta, vega and rho (a route without `fd_greeks`):
+     * one adjoint run -- on the GPU when it takes the request, else the CPU
+     * tape -- the spot, volatility and rate sensitivities summed per greek,
+     * their errors from the adjoint's batches; a greek that sums several
+     * parameters on the GPU (local vol's vega) is a central difference
+     * instead, since only the CPU tape gives the sum's error. Gamma, theta,
+     * and the greeks of a route with `fd_greeks`: central differences with
+     * common random numbers (the same Sobol points), their errors from the
+     * replicate-wise differences. Bumps as utils/greeks.hpp; units as the
+     * hand-written engines: vega per unit of volatility, theta per year,
+     * rho per unit of rate.
      */
     PricingResult price_by_script(const ScriptRoute &route, const PricingSettings &settings, bool greeks);
 

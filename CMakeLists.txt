@@ -64,9 +64,7 @@ target_sources(quantModeling
         src/engines/analytic/future.cpp
         src/engines/analytic/bonds.cpp
         src/engines/mc/black_scholes.cpp
-        src/engines/mc/asian.cpp
         src/engines/mc/basket.cpp
-        src/engines/mc/lookback.cpp
         src/engines/mc/local_vol.cpp
         src/engines/tree/binomial.cpp
         src/engines/tree/trinomial.cpp
@@ -171,14 +169,12 @@ target_sources(quantModeling
         src/pricers/script_route.cpp
         src/pricers/script_builders.cpp
         src/pricers/adapters/equity_barrier.cpp
+        src/pricers/adapters/equity_asian_lookback_script.cpp
         src/pricers/adapters/equity_vanilla.cpp
         src/pricers/adapters/equity_quanto.cpp
         src/pricers/adapters/equity_vanilla_american.cpp
         src/pricers/adapters/equity_asian.cpp
-        src/pricers/adapters/equity_asian_lv.cpp
         src/pricers/adapters/equity_basket.cpp
-        src/pricers/adapters/equity_lookback.cpp
-        src/pricers/adapters/equity_lookback_lv.cpp
         src/pricers/adapters/equity_future.cpp
         src/pricers/adapters/bonds.cpp
         src/pricers/adapters/rates_short_rate.cpp
@@ -373,7 +369,6 @@ if(QM_BUILD_TESTS)
     tests/testQuanto.cpp
     tests/testBSMC.cpp
     tests/testAsianOption.cpp
-    tests/testAsianVR.cpp
     tests/testVanillaVR.cpp
     tests/testSmoothing.cpp
     tests/testLookback.cpp

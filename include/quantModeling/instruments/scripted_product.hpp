@@ -256,6 +256,9 @@ namespace quantModeling
             return true;
         }
 
+        /// The controlPays variable's slot, -1 without one.
+        std::ptrdiff_t control_variable() const { return control_index_; }
+
         Real control_value(const typename ISimulatableProduct<T>::PayoffState *state) const override
         {
             if (control_index_ < 0)

@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "quantModeling/engines/mc/lookback.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/pricers/pricer.hpp"
@@ -196,25 +195,35 @@ namespace quantModeling
         EXPECT_NEAR(p1.mc_std_error, p2.mc_std_error, 1e-12);
     }
 
-    // ---- Validation --------------------------------------------------------
+    // ---- The script route's delta (WP 26 P3) ------------------------------
+    // Black-Scholes is homogeneous of degree one in (S0, K): V(λS0, λK) =
+    // λV, so Euler's identity gives delta = (V - K dV/dK) / S0, from prices
+    // alone. The route's delta (central differences, the initial spot moving
+    // with the model's) must satisfy it.
 
-    TEST(LookbackMC, AmericanExerciseThrows)
+    TEST(LookbackMC, DeltaSatisfiesEulersIdentity)
     {
-        using namespace quantModeling;
-
-        auto payoff = std::make_shared<PlainVanillaPayoff>(OptionType::Call, K);
-        auto exercise = std::make_shared<AmericanExercise>(T);
-        LookbackOption opt(payoff, exercise, LookbackStyle::FixedStrike, LookbackExtremum::Maximum, 1.0);
-
-        auto model = std::make_shared<BlackScholesModel>(S0, r, q, sigma);
-        PricingSettings settings;
-        settings.mc_paths = 1000;
-        settings.mc_seed = 1;
-        MarketView market = {};
-        PricingContext ctx{market, settings, model};
-        BSEuroLookbackMCEngine engine(ctx);
-
-        EXPECT_THROW(opt.accept(engine), UnsupportedInstrument);
+        auto price_k = [](Real k)
+        {
+            LookbackBSInput in{};
+            in.spot = S0;
+            in.strike = k;
+            in.maturity = T;
+            in.rate = r;
+            in.dividend = q;
+            in.vol = sigma;
+            in.is_call = true;
+            in.n_paths = 1 << 17;
+            in.seed = 9;
+            return default_registry().price(
+                {InstrumentKind::EquityLookbackOption, ModelKind::BlackScholes, EngineKind::MonteCarlo, PricingInput{in}});
+        };
+        const PricingResult base = price_k(K);
+        const Real dVdK = (price_k(K + 1.0).npv - price_k(K - 1.0).npv) / 2.0;
+        const Real euler = (base.npv - K * dVdK) / S0;
+        ASSERT_TRUE(base.greeks.delta.has_value());
+        EXPECT_NEAR(*base.greeks.delta, euler, 4.0 * base.greeks.delta_std_error.value_or(0.0) + 2e-3)
+            << "Euler " << euler;
     }
 
 } // namespace quantModeling

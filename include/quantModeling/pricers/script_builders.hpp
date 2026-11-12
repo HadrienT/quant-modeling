@@ -6,6 +6,7 @@
 #include "quantModeling/instruments/equity/barrier.hpp"
 
 #include <string>
+#include <vector>
 
 /**
  * @file script_builders.hpp
@@ -47,6 +48,43 @@ namespace quantModeling::script_builders
      * dates up to the expiry (the hand-written engine's discrete mode).
      */
     std::string barrier(const BarrierTerms &t, int days, int observations = 0);
+
+    /// `observations` calendar days evenly spread over (0, days], the last
+    /// on `days`, one per day at most: the fixing dates of the routes whose
+    /// hand-written engines used n evenly spaced steps.
+    std::vector<int> evenly(int days, int observations);
+
+    struct AsianTerms
+    {
+        bool is_call = true;
+        Real strike = 0.0;
+        bool geometric = false;
+        /// Arithmetic only: declare the geometric Asian of the same fixings
+        /// as an analytic control (controlPays, WP 26 P2).
+        bool geometric_control = false;
+    };
+
+    /// Average-price Asian on `fixings` (days from the valuation date).
+    std::string asian(const AsianTerms &t, const std::vector<int> &fixings);
+
+    /// The geometric Asian on fixings at year fractions `times` under
+    /// Black-Scholes: ln G is normal with mean ln S0 + (r - q - σ²/2)
+    /// mean(t) and variance σ²/n² Σ_ij min(t_i, t_j) (Kemna & Vorst 1990,
+    /// for any dates); paid at the last fixing.
+    double geometric_asian_bs(double spot, double rate, double dividend, double vol, double strike, bool is_call,
+                              const std::vector<double> &times);
+
+    struct LookbackTerms
+    {
+        bool is_call = true;
+        Real strike = 0.0;
+        bool floating = false;  ///< floating strike: call S_T - min, put max - S_T
+        bool on_maximum = true; ///< fixed strike: the extremum the payoff reads
+    };
+
+    /// Lookback on `fixings`; the extremum starts at the initial spot `s0`
+    /// (the hand-written engines include it), written as a number.
+    std::string lookback(const LookbackTerms &t, Real s0, const std::vector<int> &fixings);
 
 } // namespace quantModeling::script_builders
 

@@ -41,8 +41,9 @@ namespace quantModeling
         std::string diagnostics;
         std::string device = "cpu"; ///< where the paths ran: "cpu" or "gpu"
         int gpus = 0;               ///< GPUs the paths were shared between
-        /// Sobol RQMC on the CPU: the first label's estimate in each
-        /// digital-shift replicate, in replicate order (empty otherwise).
+        /// Sobol RQMC (CPU or GPU) and stratified replicates: the first
+        /// label's estimate in each replicate, in replicate order (empty
+        /// otherwise).
         /// Two runs with the same seed share their points replicate by
         /// replicate, so the spread of their replicate-wise differences is
         /// the error of a finite difference with common random numbers.

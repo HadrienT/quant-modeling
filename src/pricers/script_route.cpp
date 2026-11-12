@@ -57,7 +57,7 @@ namespace quantModeling
         SimulationMCResult run(const ScriptRoute &route, const scripting::ScriptModelSpec &spec, int days,
                                const PricingSettings &settings)
         {
-            const ScriptedProduct<Real> product(route.script(days), ValuationContext{route.valuation},
+            const ScriptedProduct<Real> product(route.script(spec, days), ValuationContext{route.valuation},
                                                 script_settings(route, spec, days));
             auto model = scripting::make_script_model<Real>(spec);
             return simulate_script(product, *model, settings);
@@ -122,65 +122,115 @@ namespace quantModeling
             return res;
         }
 
-        // Delta, vega, rho: one adjoint run on the CPU tape, without the
-        // control (the adjoint engine has none: unbiased, wider).
-        if (!route.discontinuous)
+        // Delta, vega, rho: one adjoint run without the control (the adjoint
+        // engines have none: unbiased, wider) -- on the GPU when the request
+        // runs there and the device takes it, else on the CPU tape. A greek
+        // that sums several parameters (local vol's vega: every grid point)
+        // needs the sum's error, which only the CPU tape's batches give: on
+        // the GPU it is a central difference instead.
+        bool fd[4] = {false, route.fd_greeks, route.fd_greeks, route.fd_greeks};
+        std::string aad_note;
+        if (!route.fd_greeks)
         {
-            const ScriptedProduct<aad::Number> product(route.script(0), ValuationContext{route.valuation},
-                                                       ScriptSettings{route.fuzzy});
-            auto model = scripting::make_script_model<aad::Number>(route.model);
             const std::size_t paths = static_cast<std::size_t>(settings.mc_paths > 0 ? settings.mc_paths : 100000);
             const auto seed = static_cast<std::uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1);
-            std::vector<std::vector<Real>> batches;
-            const AADSimulResults aad = simulate_aad(product, *model, paths, seed, first_aad_payoff, RngKind::Philox,
-                                                     settings.mc_sampler == SamplerKind::Sobol ? SamplerKind::Sobol
-                                                                                               : SamplerKind::PseudoRandom,
-                                                     &batches);
-            WelfordAccumulator acc[4];
-            for (const std::vector<Real> &batch : batches)
+            const SamplerKind sampler =
+                settings.mc_sampler == SamplerKind::Sobol ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
+            std::optional<AADSimulResults> gpu;
+            if (settings.mc_device != ComputeDevice::Cpu)
             {
-                Real sum[4] = {0.0, 0.0, 0.0, 0.0};
-                for (std::size_t j = 0; j < batch.size() && j < aad.risk_labels.size(); ++j)
-                    sum[static_cast<int>(greek_of(aad.risk_labels[j]))] += batch[j];
+                const ScriptedProduct<Real> product(route.script(route.model, 0), ValuationContext{route.valuation},
+                                                    ScriptSettings{route.fuzzy});
+                auto model = scripting::make_script_model<Real>(route.model);
+                std::string why;
+                gpu = simulate_script_aad_gpu(product, *model, paths, seed, why, sampler, settings.mc_gpus);
+                if (!gpu && settings.mc_device == ComputeDevice::Gpu)
+                    throw InvalidInput("GPU: " + why);
+                aad_note = gpu ? "adjoint risks on the GPU" : "adjoint risks on the CPU (" + why + ")";
+            }
+            std::optional<Real> value[4], error[4];
+            if (gpu)
+            {
+                int count[4] = {0, 0, 0, 0};
+                for (std::size_t j = 0; j < gpu->risks.size(); ++j)
+                {
+                    const int g = static_cast<int>(greek_of(gpu->risk_labels[j]));
+                    if (g == 0)
+                        continue;
+                    ++count[g];
+                    value[g] = gpu->risks[j];
+                    if (j < gpu->risk_std_errors.size())
+                        error[g] = gpu->risk_std_errors[j];
+                }
                 for (int g = 1; g < 4; ++g)
-                    acc[g].add(sum[g]);
+                    fd[g] = count[g] != 1;
             }
-            Real total[4] = {0.0, 0.0, 0.0, 0.0};
-            for (std::size_t j = 0; j < aad.risks.size(); ++j)
-                total[static_cast<int>(greek_of(aad.risk_labels[j]))] += aad.risks[j];
-            res.greeks.delta = total[1];
-            res.greeks.vega = total[2];
-            res.greeks.rho = total[3];
-            if (batches.size() >= 2)
+            else
             {
-                res.greeks.delta_std_error = acc[1].std_error();
-                res.greeks.vega_std_error = acc[2].std_error();
-                res.greeks.rho_std_error = acc[3].std_error();
+                const ScriptedProduct<aad::Number> product(route.script(route.model, 0),
+                                                           ValuationContext{route.valuation},
+                                                           ScriptSettings{route.fuzzy});
+                auto model = scripting::make_script_model<aad::Number>(route.model);
+                std::vector<std::vector<Real>> batches;
+                const AADSimulResults aad = simulate_aad(product, *model, paths, seed, first_aad_payoff,
+                                                         RngKind::Philox, sampler, &batches);
+                WelfordAccumulator acc[4];
+                for (const std::vector<Real> &batch : batches)
+                {
+                    Real sum[4] = {0.0, 0.0, 0.0, 0.0};
+                    for (std::size_t j = 0; j < batch.size() && j < aad.risk_labels.size(); ++j)
+                        sum[static_cast<int>(greek_of(aad.risk_labels[j]))] += batch[j];
+                    for (int g = 1; g < 4; ++g)
+                        acc[g].add(sum[g]);
+                }
+                Real total[4] = {0.0, 0.0, 0.0, 0.0};
+                for (std::size_t j = 0; j < aad.risks.size(); ++j)
+                    total[static_cast<int>(greek_of(aad.risk_labels[j]))] += aad.risks[j];
+                for (int g = 1; g < 4; ++g)
+                {
+                    value[g] = total[g];
+                    if (batches.size() >= 2)
+                        error[g] = acc[g].std_error();
+                }
+                if (aad_note.empty())
+                    aad_note = "adjoint risks on the CPU";
             }
+            if (!fd[1])
+                res.greeks.delta = value[1], res.greeks.delta_std_error = error[1];
+            if (!fd[2])
+                res.greeks.vega = value[2], res.greeks.vega_std_error = error[2];
+            if (!fd[3])
+                res.greeks.rho = value[3], res.greeks.rho_std_error = error[3];
         }
 
-        // Gamma and theta: central differences on the CPU, Sobol points
-        // shared with the base run (same seed), errors replicate-wise.
-        PricingSettings cpu = settings;
-        cpu.mc_device = ComputeDevice::Cpu;
-        const SimulationMCResult centre = settings.mc_device == ComputeDevice::Cpu ? base : run(route, route.model, 0, cpu);
-        const Real dS = 0.01 * route.model.spot;
+        // The central differences: the request's device and Sobol points
+        // (same seed), errors replicate-wise. The project's bump sizes
+        // (utils/greeks.hpp): 1 % spot, 0.1 % vol (every local-vol point: a
+        // parallel shift), 0.01 % rate, one day of maturity.
+        const GreeksBumps bumps;
+        const Real dS = bumps.delta_bump * route.model.spot;
         scripting::ScriptModelSpec up = route.model, down = route.model;
         up.spot += dS;
         down.spot -= dS;
-        const SimulationMCResult su = run(route, up, 0, cpu), sd = run(route, down, 0, cpu);
-        const Difference gamma = difference({&su, &centre, &sd}, {1.0, -2.0, 1.0}, dS * dS);
+        const SimulationMCResult su = run(route, up, 0, settings), sd = run(route, down, 0, settings);
+        const Difference gamma = difference({&su, &base, &sd}, {1.0, -2.0, 1.0}, dS * dS);
         res.greeks.gamma = gamma.value;
         res.greeks.gamma_std_error = gamma.std_error;
-
-        if (route.discontinuous)
+        if (fd[1])
         {
-            // The project's bump sizes (utils/greeks.hpp): 1 % spot, 0.1 %
-            // vol (every local-vol point: a parallel shift), 0.01 % rate.
-            const GreeksBumps bumps;
             const Difference delta = difference({&su, &sd}, {1.0, -1.0}, 2.0 * dS);
             res.greeks.delta = delta.value;
             res.greeks.delta_std_error = delta.std_error;
+        }
+
+        const SimulationMCResult later = run(route, route.model, 1, settings),
+                                 sooner = run(route, route.model, -1, settings);
+        const Difference theta = difference({&later, &sooner}, {-1.0, 1.0}, 2.0 / 365.0);
+        res.greeks.theta = theta.value;
+        res.greeks.theta_std_error = theta.std_error;
+
+        if (fd[2])
+        {
             auto shifted_vol = [&](Real dv)
             {
                 scripting::ScriptModelSpec s = route.model;
@@ -194,29 +244,30 @@ namespace quantModeling
                         v += dv;
                 return s;
             };
-            const SimulationMCResult vu = run(route, shifted_vol(bumps.vega_bump), 0, cpu),
-                                     vd = run(route, shifted_vol(-bumps.vega_bump), 0, cpu);
+            const SimulationMCResult vu = run(route, shifted_vol(bumps.vega_bump), 0, settings),
+                                     vd = run(route, shifted_vol(-bumps.vega_bump), 0, settings);
             const Difference vega = difference({&vu, &vd}, {1.0, -1.0}, 2.0 * bumps.vega_bump);
             res.greeks.vega = vega.value;
             res.greeks.vega_std_error = vega.std_error;
+        }
+        if (fd[3])
+        {
             scripting::ScriptModelSpec ru = route.model, rd = route.model;
             ru.rate += bumps.rho_bump;
             rd.rate -= bumps.rho_bump;
-            const SimulationMCResult rhu = run(route, ru, 0, cpu), rhd = run(route, rd, 0, cpu);
+            const SimulationMCResult rhu = run(route, ru, 0, settings), rhd = run(route, rd, 0, settings);
             const Difference rho = difference({&rhu, &rhd}, {1.0, -1.0}, 2.0 * bumps.rho_bump);
             res.greeks.rho = rho.value;
             res.greeks.rho_std_error = rho.std_error;
         }
 
-        const SimulationMCResult later = run(route, route.model, 1, cpu), sooner = run(route, route.model, -1, cpu);
-        const Difference theta = difference({&later, &sooner}, {-1.0, 1.0}, 2.0 / 365.0);
-        res.greeks.theta = theta.value;
-        res.greeks.theta_std_error = theta.std_error;
-        res.diagnostics += route.discontinuous
-                               ? " | greeks by central differences with common random numbers (a payoff that "
-                                 "jumps: no pathwise derivative)"
-                               : " | delta, vega, rho by adjoint differentiation; gamma and theta by central "
-                                 "differences with common random numbers";
+        std::string fd_names;
+        const char *names[4] = {"", "delta", "vega", "rho"};
+        for (int g = 1; g < 4; ++g)
+            if (fd[g])
+                fd_names += std::string(names[g]) + ", ";
+        res.diagnostics += " | " + (aad_note.empty() ? std::string() : aad_note + "; ") + fd_names +
+                           "gamma and theta by central differences with common random numbers";
         return res;
     }
 

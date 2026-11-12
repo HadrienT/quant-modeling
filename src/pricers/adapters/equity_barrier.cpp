@@ -43,13 +43,14 @@ namespace quantModeling
             route.name = std::string(kind[k]) + (terms.is_call ? " call" : " put") + ", barrier " +
                          script_builders::number(terms.level) +
                          (bridge ? ", continuous" : ", " + std::to_string(observations) + " dates");
-            route.discontinuous = !bridge; // a hard knock on dates: pathwise derivatives miss the jump
+            route.fd_greeks = !bridge; // a hard knock on dates: pathwise derivatives miss the jump
             const int days = days_for(maturity);
-            route.script = [terms, days, observations](int shift)
+            route.script = [terms, days, observations](const scripting::ScriptModelSpec &, int shift)
             { return script_builders::barrier(terms, days + shift, observations); };
             PricingSettings settings;
             settings.mc_paths = paths;
             settings.mc_seed = seed;
+            settings.mc_device = ComputeDevice::Auto; // the GPU when present and the script fits, the CPU otherwise
             return price_by_script(route, settings, greeks);
         }
     } // namespace

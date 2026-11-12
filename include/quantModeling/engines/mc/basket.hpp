@@ -41,7 +41,7 @@ namespace quantModeling
         }
         void visit(const AsianOption &) override
         {
-            throw UnsupportedInstrument("BSBasketMCEngine: use BSEuroAsianMCEngine for Asian.");
+            throw UnsupportedInstrument("BSBasketMCEngine: Asian options are priced as scripts (WP 26 P3).");
         }
         void visit(const BarrierOption &) override
         {
@@ -53,7 +53,7 @@ namespace quantModeling
         }
         void visit(const LookbackOption &) override
         {
-            throw UnsupportedInstrument("BSBasketMCEngine: use BSEuroLookbackMCEngine for lookback.");
+            throw UnsupportedInstrument("BSBasketMCEngine: lookbacks are priced as scripts (WP 26 P3).");
         }
         void visit(const EquityFuture &) override
         {
