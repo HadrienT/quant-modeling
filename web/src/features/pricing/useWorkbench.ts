@@ -104,38 +104,3 @@ export function useWorkbench() {
 		setCompare,
 	};
 }
-
-const PRESETS_KEY = "qm-pricing-presets";
-export type Preset = {
-	name: string;
-	product: string;
-	engine: string;
-	values: Record<string, unknown>;
-};
-
-export function loadPresets(): Preset[] {
-	try {
-		return JSON.parse(localStorage.getItem(PRESETS_KEY) ?? "[]");
-	} catch {
-		return [];
-	}
-}
-export function savePreset(p: Preset) {
-	const all = loadPresets().filter((x) => x.name !== p.name);
-	all.push(p);
-	try {
-		localStorage.setItem(PRESETS_KEY, JSON.stringify(all));
-	} catch {
-		/* private mode */
-	}
-}
-export function deletePreset(name: string) {
-	try {
-		localStorage.setItem(
-			PRESETS_KEY,
-			JSON.stringify(loadPresets().filter((x) => x.name !== name)),
-		);
-	} catch {
-		/* ignore */
-	}
-}

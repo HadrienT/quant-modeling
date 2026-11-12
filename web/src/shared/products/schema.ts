@@ -43,9 +43,4 @@ export const bsCoreDefaults = {
 	is_call: true,
 };
 
-export const mcCore = {
-	n_paths: f.paths(),
-	seed: f.seed(),
-};
-
 export const mcCoreDefaults = { n_paths: 200_000, seed: 1 };
