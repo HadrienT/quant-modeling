@@ -128,7 +128,8 @@ namespace quantModeling
         // that sums several parameters (local vol's vega: every grid point)
         // needs the sum's error, which only the CPU tape's batches give: on
         // the GPU it is a central difference instead.
-        bool fd[4] = {false, route.fd_greeks, route.fd_greeks, route.fd_greeks};
+        const bool multi = route.model.spots.size() >= 2;
+        bool fd[4] = {false, route.fd_greeks || multi, route.fd_greeks, route.fd_greeks};
         std::string aad_note;
         if (!route.fd_greeks)
         {
@@ -197,6 +198,8 @@ namespace quantModeling
             }
             if (!fd[1])
                 res.greeks.delta = value[1], res.greeks.delta_std_error = error[1];
+            // (several underlyings: delta per unit of the reference level is a
+            // central difference below)
             if (!fd[2])
                 res.greeks.vega = value[2], res.greeks.vega_std_error = error[2];
             if (!fd[3])
@@ -208,10 +211,21 @@ namespace quantModeling
         // (utils/greeks.hpp): 1 % spot, 0.1 % vol (every local-vol point: a
         // parallel shift), 0.01 % rate, one day of maturity.
         const GreeksBumps bumps;
-        const Real dS = bumps.delta_bump * route.model.spot;
+        const Real reference = route.spot_reference > 0.0 ? route.spot_reference
+                                                          : (multi ? route.model.spots.front() : route.model.spot);
+        const Real dS = bumps.delta_bump * reference;
         scripting::ScriptModelSpec up = route.model, down = route.model;
-        up.spot += dS;
-        down.spot -= dS;
+        if (multi)
+            for (std::size_t i = 0; i < up.spots.size(); ++i)
+            {
+                up.spots[i] *= 1.0 + bumps.delta_bump;
+                down.spots[i] *= 1.0 - bumps.delta_bump;
+            }
+        else
+        {
+            up.spot += dS;
+            down.spot -= dS;
+        }
         const SimulationMCResult su = run(route, up, 0, settings), sd = run(route, down, 0, settings);
         const Difference gamma = difference({&su, &base, &sd}, {1.0, -2.0, 1.0}, dS * dS);
         res.greeks.gamma = gamma.value;

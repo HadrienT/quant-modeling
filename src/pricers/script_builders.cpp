@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <set>
 #include <string>
 #include <vector>
@@ -17,11 +18,25 @@ namespace quantModeling::script_builders
 
     std::string number(double x)
     {
-        char buf[40];
+        // 17 significant digits read back to the bit; the script lexer reads
+        // no exponent, so a number %.17g would write with one is written in
+        // plain decimals instead (enough of them for its 17 digits).
+        char buf[400];
         std::snprintf(buf, sizeof buf, "%.17g", x);
-        // The parser reads digits, a dot and an exponent; no "inf" or "nan"
-        // ever comes from a product's terms.
-        return buf;
+        if (std::strchr(buf, 'e') == nullptr && std::strchr(buf, 'E') == nullptr)
+            return buf;
+        const int exponent = static_cast<int>(std::floor(std::log10(std::fabs(x))));
+        const int decimals = std::max(0, 16 - exponent);
+        std::snprintf(buf, sizeof buf, "%.*f", decimals, x);
+        std::string s = buf;
+        if (s.find('.') != std::string::npos)
+        {
+            while (s.back() == '0')
+                s.pop_back();
+            if (s.back() == '.')
+                s.pop_back();
+        }
+        return s;
     }
 
     std::vector<int> evenly(int days, int observations)
@@ -160,6 +175,115 @@ namespace quantModeling::script_builders
         if (fixings.size() == 1)
             return iso(fixings.front()) + "\n" + first + "    pays " + payoff + "\n";
         return three_events(fixings, first, middle, "    pays " + payoff + "\n");
+    }
+
+    namespace
+    {
+        /// min(a, min(b, ...)) or max(...) of terms, two at a time.
+        std::string fold(const char *f, const std::vector<std::string> &terms)
+        {
+            std::string out = terms.back();
+            for (std::size_t i = terms.size() - 1; i-- > 0;)
+                out = std::string(f) + "(" + terms[i] + ", " + out + ")";
+            return out;
+        }
+    } // namespace
+
+    std::string rainbow(bool worst, bool is_call, Real strike, Real notional, const std::vector<Real> &s0, int days)
+    {
+        std::vector<std::string> perfs;
+        for (std::size_t i = 0; i < s0.size(); ++i)
+            perfs.push_back("spot(" + std::to_string(i) + ") / " + number(s0[i]));
+        const std::string perf = fold(worst ? "min" : "max", perfs);
+        const std::string k = number(strike);
+        const std::string payoff = is_call ? "max(p - " + k + ", 0)" : "max(" + k + " - p, 0)";
+        return iso(days) + "\n    p = " + perf + "\n    pays " + number(notional) + " * " + payoff + "\n";
+    }
+
+    std::string basket(bool is_call, Real strike, const std::vector<Real> &weights, int days)
+    {
+        std::string b;
+        for (std::size_t i = 0; i < weights.size(); ++i)
+            b += (i ? " + " : "") + number(weights[i]) + " * spot(" + std::to_string(i) + ")";
+        const std::string k = number(strike);
+        return iso(days) + "\n    b = " + b + "\n    pays " + (is_call ? "max(b - " + k + ", 0)" : "max(" + k + " - b, 0)") +
+               "\n";
+    }
+
+    std::string mountain(bool is_call, Real strike, Real notional, const std::vector<Real> &s0,
+                         const std::vector<int> &dates)
+    {
+        const std::size_t n = s0.size();
+        // One event per date: the returns, the best alive one, the lock.
+        auto step = [&](bool first)
+        {
+            std::string s;
+            if (first)
+            {
+                s += "    total = 0\n";
+                for (std::size_t j = 0; j < n; ++j)
+                    s += "    a" + std::to_string(j) + " = 1\n";
+            }
+            s += "    best = -2\n    k = -1\n"; // a return is at least -1
+            for (std::size_t j = 0; j < n; ++j)
+            {
+                const std::string J = std::to_string(j);
+                s += "    r" + J + " = spot(" + J + ") / " + number(s0[j]) + " - 1\n";
+                s += "    if a" + J + " = 1 and r" + J + " > best then\n        best = r" + J + "\n        k = " + J +
+                     "\n    endIf\n";
+            }
+            s += "    total = total + best\n";
+            for (std::size_t j = 0; j < n; ++j)
+                s += "    if k = " + std::to_string(j) + " then a" + std::to_string(j) + " = 0 endIf\n";
+            return s;
+        };
+        const std::string k = number(strike);
+        const std::string avg = "total / " + number(static_cast<double>(dates.size()));
+        const std::string payoff =
+            is_call ? "max(" + avg + " - " + k + ", 0)" : "max(" + k + " - " + avg + ", 0)";
+        std::string script;
+        for (std::size_t i = 0; i < dates.size(); ++i)
+        {
+            script += (i ? "\n" : "") + iso(dates[i]) + "\n" + step(i == 0);
+            if (i + 1 == dates.size())
+                script += "    pays " + number(notional) + " * " + payoff + "\n";
+        }
+        return script;
+    }
+
+    std::string autocall(const AutocallTerms &t, const std::vector<int> &dates)
+    {
+        const std::string N = number(t.notional), c = number(t.coupon_rate);
+        const std::string ac = number(t.autocall_barrier * t.s0), cpn = number(t.coupon_barrier * t.s0),
+                          put = number(t.put_barrier * t.s0), s0 = number(t.s0);
+        const std::string periods = t.memory_coupon ? "(miss + 1)" : "1";
+        std::string obs = "    if alive = 1 then\n";
+        if (t.ki_on_every_date)
+            obs += "        if spot() < " + put + " then ki = 1 endIf\n";
+        obs += "        if spot() >= " + ac + " then\n"
+                                              "            pays " +
+               N + " * (1 + " + c + " * " + periods + ")\n"
+                                                      "            alive = 0\n"
+                                                      "        else\n"
+                                                      "            if spot() >= " +
+               cpn + " then\n"
+                     "                pays " +
+               N + " * " + c + " * " + periods + "\n"
+                                                 "                miss = 0\n"
+                                                 "            else\n"
+                                                 "                miss = miss + 1\n"
+                                                 "            endIf\n"
+                                                 "        endIf\n"
+                                                 "    endIf\n";
+        const std::string init = "    alive = 1\n    miss = 0\n    ki = 0\n";
+        std::string last = "    if alive = 1 then\n";
+        if (!t.ki_on_every_date)
+            last += "        if spot() < " + put + " then ki = 1 endIf\n";
+        last += "        if ki = 1 then\n            pays " + N + " * spot() / " + s0 +
+                "\n        else\n            pays " + N + "\n        endIf\n    endIf\n";
+        if (dates.size() == 1)
+            return iso(dates.front()) + "\n" + init + obs + last;
+        return three_events(dates, init + obs, obs, last);
     }
 
 } // namespace quantModeling::script_builders

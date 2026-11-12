@@ -11,7 +11,6 @@
 #include "quantModeling/models/equity/multi_asset_bs_model.hpp"
 
 // ── Engines ──────────────────────────────────────────────────────────────────
-#include "quantModeling/engines/mc/rainbow.hpp"
 
 // ── Pricer / Adapters / Registry ─────────────────────────────────────────────
 #include "quantModeling/pricers/pricer.hpp"
@@ -406,27 +405,6 @@ TEST(RainbowMC, DimensionMismatchThrows)
     in.maturity = 1.0;
     in.rate = 0.05;
     EXPECT_THROW(price_worst_of_bs_mc(in), InvalidInput);
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  9. Engine rejection
-// ═════════════════════════════════════════════════════════════════════════════
-
-TEST(RainbowMC, RejectsEquityFuture)
-{
-    Eigen::MatrixXd corr = Eigen::MatrixXd::Identity(2, 2);
-    auto model = std::make_shared<MultiAssetBSModel>(
-        0.05, std::vector<Real>{100.0, 100.0},
-        std::vector<Real>{0.20, 0.20},
-        std::vector<Real>{0.0, 0.0}, corr);
-    PricingSettings s;
-    s.mc_paths = 1000;
-    s.mc_seed = 1;
-    PricingContext ctx{MarketView{}, s, model};
-    RainbowMCEngine engine(ctx);
-
-    EquityFuture fut(100.0, 1.0);
-    EXPECT_THROW(fut.accept(engine), UnsupportedInstrument);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

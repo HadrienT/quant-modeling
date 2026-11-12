@@ -63,14 +63,15 @@ namespace quantModeling
     // pseudo-random, and it says so.
     TEST(SamplerDefault, AnEngineWithoutSobolSaysItRunsPseudoRandom)
     {
-        BasketBSInput in{};
-        in.spots = {100.0, 100.0};
-        in.vols = {0.2, 0.25};
-        in.dividends = {0.0, 0.0};
-        in.weights = {0.5, 0.5};
+        VarianceSwapBSInput in{};
+        in.spot = 100.0;
+        in.rate = 0.03;
+        in.vol = 0.2;
+        in.maturity = 1.0;
+        in.strike_var = 0.04;
         in.n_paths = 20000;
         const PricingResult r = default_registry().price(
-            {InstrumentKind::EquityBasketOption, ModelKind::BlackScholes, EngineKind::MonteCarlo, PricingInput{in}});
+            {InstrumentKind::VarianceSwap, ModelKind::BlackScholes, EngineKind::MonteCarlo, PricingInput{in}});
         EXPECT_TRUE(says(r.diagnostics, "pseudo-random: this engine has no Sobol path yet")) << r.diagnostics;
     }
 

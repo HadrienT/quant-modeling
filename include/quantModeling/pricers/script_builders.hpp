@@ -86,6 +86,41 @@ namespace quantModeling::script_builders
     /// (the hand-written engines include it), written as a number.
     std::string lookback(const LookbackTerms &t, Real s0, const std::vector<int> &fixings);
 
+    /// Worst-of (best-of) on n assets at expiry: notional * max(perf - K, 0)
+    /// for a call, max(K - perf, 0) for a put, perf the lowest (highest) of
+    /// spot(i) / s0[i].
+    std::string rainbow(bool worst, bool is_call, Real strike, Real notional, const std::vector<Real> &s0, int days);
+
+    /// Basket option at expiry: max(sum_i w_i spot(i) - K, 0) (call).
+    std::string basket(bool is_call, Real strike, const std::vector<Real> &weights, int days);
+
+    /// Himalaya (mountain): on each date (one per asset) the best return
+    /// spot(j) / s0[j] - 1 among the assets still in the basket is locked in
+    /// and the asset removed (the first one on a tie); at the last date,
+    /// notional * max(average locked return - K, 0) (call).
+    std::string mountain(bool is_call, Real strike, Real notional, const std::vector<Real> &s0,
+                         const std::vector<int> &dates);
+
+    struct AutocallTerms
+    {
+        Real s0 = 0.0;
+        Real autocall_barrier = 1.0; ///< fractions of s0
+        Real coupon_barrier = 0.0;
+        Real put_barrier = 0.0;
+        Real coupon_rate = 0.0; ///< per period, a fraction of the notional
+        Real notional = 1000.0;
+        bool memory_coupon = true;
+        /// The knock-in checked on every observation date; otherwise on the
+        /// last one only (the hand-written engine's two modes).
+        bool ki_on_every_date = false;
+    };
+
+    /// Phoenix autocall on observation `dates`: called at par plus coupon(s)
+    /// on the first date at or above the autocall barrier; a coupon (with
+    /// the missed ones, memory) on a date at or above the coupon barrier;
+    /// at the last date, par, or notional * spot() / s0 after a knock-in.
+    std::string autocall(const AutocallTerms &t, const std::vector<int> &dates);
+
 } // namespace quantModeling::script_builders
 
 #endif // QM_PRICERS_SCRIPT_BUILDERS_HPP

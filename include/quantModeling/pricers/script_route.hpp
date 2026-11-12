@@ -49,6 +49,12 @@ namespace quantModeling
         /// script that carries a model input as a number (the adjoint does
         /// not see it move).
         bool fd_greeks = false;
+        /// Several underlyings (ScriptModelSpec::spots): delta and gamma
+        /// scale every spot by 1 ± 1 % and are per unit of this reference
+        /// level (a basket's initial value), the hand-written basket engine's
+        /// convention; 0 takes the first spot. Delta is then a central
+        /// difference too.
+        Real spot_reference = 0.0;
     };
 
     /// The calendar days from `valuation` that put a date at year fraction
