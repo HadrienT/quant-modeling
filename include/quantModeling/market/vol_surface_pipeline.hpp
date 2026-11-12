@@ -34,6 +34,9 @@ namespace quantModeling
         /// The cleaned quotes the slice was fitted to (log-moneyness, implied
         /// vol, weight): the market the superbucket differentiates against.
         std::vector<SVISliceQuote> quotes;
+        /// The log-moneyness band the slice's SVI is trusted on
+        /// (quoted_band(), WP 26 §9.3).
+        QuotedBand band;
     };
 
     struct VolSurfacePipelineResult
@@ -53,15 +56,12 @@ namespace quantModeling
         std::vector<Real> T_grid;
         std::vector<Real> sigma_loc;
 
-        /// The log-moneyness range actually used to build the grid above --
-        /// the caller's requested [k_min, k_max], clamped to the
-        /// intersection of what every slice of at least
-        /// SurfaceSliceSelection::min_ttm actually had quotes over, each
-        /// within its reach (SurfaceSliceSelection::reach_std_devs; see
-        /// calibrate_vol_surface's doc comment). Any other display
-        /// grid built from `slices` (e.g. an implied-vol surface evaluated
-        /// in Python) should reuse this range rather than its own guess, so
-        /// the two surfaces never disagree about how far to extrapolate.
+        /// The log-moneyness range of the grid's strikes: the union of the
+        /// bands of the slices the surface is built from (quoted_band(),
+        /// within the caller's request). Each maturity's local vol is only
+        /// computed on its own band (VolSurfaceSliceReport::band, WP 26
+        /// §9.3); a display grid built from `slices` should leave out what
+        /// lies outside the bands of the two slices it interpolates.
         Real k_min = 0.0;
         Real k_max = 0.0;
     };
@@ -69,13 +69,12 @@ namespace quantModeling
     /// Which calibrated slices the local-vol surface is built from.
     struct SurfaceSliceSelection
     {
-        /// Slices shorter than this (in years) neither set the strike range
-        /// nor enter the surface. A few-day slice is quoted over a few
-        /// percent of moneyness, so the intersection of every slice's range
-        /// used to shrink the whole grid to it (+/-7 % on SPY, with a -15 %
-        /// barrier priced on flat-extrapolated local vol). The grid starts
-        /// at the first kept slice; GridLocalVol holds its first column flat
-        /// before it.
+        /// Slices shorter than this (in years) do not enter the surface. The
+        /// grid starts at the first kept slice; GridLocalVol holds its first
+        /// column flat before it. (Each kept slice bounds only the
+        /// maturities next to it, through its band: quoted_band(), WP 26
+        /// §9.3; the reach rule that let a slice quoted far enough out stop
+        /// narrowing one grid-wide range is gone with that range.)
         Real min_ttm = 0.05;
         /// Consecutive surface slices are at least this far apart,
         /// T_next >= (1 + min_relative_gap) T. Linear total variance makes
@@ -83,14 +82,6 @@ namespace quantModeling
         /// the fit error over T_next - T: two slices 0.02y apart turned
         /// fit noise of a vol point into local vols of 1 % or 70 %.
         Real min_relative_gap = 0.25;
-        /// A slice narrows the grid's strike range only within its reach:
-        /// this many standard deviations of log(S_T / F_T), reach_std_devs
-        /// sqrt(w(0)). Past it, paths to that maturity (almost) never go, and
-        /// the slice's SVI wing is extrapolated there instead. On SPY, the
-        /// 4-week slice, quoted to +10 %, capped the call side of the whole
-        /// grid at +10 %, which a one-year call crosses at 0.8 of its
-        /// standard deviation.
-        Real reach_std_devs = 3.0;
     };
 
     /**
@@ -98,7 +89,10 @@ namespace quantModeling
      * by ttm): among the candidates (ttm >= min_ttm), the chain with the
      * most slices (then the most quotes) in which every consecutive pair is calendar-arbitrage-free
      * on [k_min, k_max] and spaced by min_relative_gap -- a longest path in
-     * the DAG of admissible pairs, O(n^2) calendar checks.
+     * the DAG of admissible pairs, O(n^2) calendar checks. With `bands`
+     * (one per slice, quoted_band()), a pair is checked on the intersection
+     * of its two bands instead of [k_min, k_max] (WP 26 §9.3): the wings
+     * neither slice is quoted on are not read.
      *
      * Independent SVI fits of a real chain are not calendar-consistent: on
      * SPY, the at-the-money total variance of consecutive long slices goes
@@ -115,7 +109,8 @@ namespace quantModeling
      */
     std::vector<std::size_t> select_surface_slices(const std::vector<SVISliceCalibration> &slices,
                                                    const std::vector<std::size_t> &n_quotes, Real k_min,
-                                                   Real k_max, const SurfaceSliceSelection &selection = {});
+                                                   Real k_max, const SurfaceSliceSelection &selection = {},
+                                                   const std::vector<QuotedBand> *bands = nullptr);
 
     /**
      * The full pipeline, raw quotes in, a local-vol grid out: clean
@@ -127,17 +122,17 @@ namespace quantModeling
      * min_quotes_per_slice cleaned quotes -- SVISurface needs at least 2
      * slices, and a single slice is not a surface.
      *
-     * k_min/k_max are a request, not a guarantee: they are clamped to the
-     * intersection of the observed log-moneyness ranges of the slices of at
-     * least selection.min_ttm, each within its reach, before the grid is
-     * built (see
-     * VolSurfacePipelineResult::k_min), and the surface is built from the
-     * slices select_surface_slices keeps.
-     * Without this, a fixed range wide enough to look reasonable on a
-     * one-year slice can force a one-week slice's SVI wing to extrapolate
-     * far past its data -- svi_implied_vol divides total variance by T, so
-     * the same extrapolated wing curvature that is a small effect at T=1
-     * becomes a large one at T=1/52.
+     * k_min/k_max are a request: each slice is trusted on its quotes'
+     * range within it (quoted_band()), each grid maturity's local vol is
+     * computed on the intersection of the two slices it interpolates and is
+     * flat in the strike past it (banded_sources()), and the grid's strikes
+     * span the union of the kept slices' bands (VolSurfacePipelineResult::
+     * k_min). A fixed range wide enough for a one-year slice would force a
+     * one-week slice's SVI wing to extrapolate far past its data --
+     * svi_implied_vol divides total variance by T, so the same wing
+     * curvature that is a small effect at T=1 becomes a large one at T=1/52
+     * -- and one range for every maturity, the intersection of the slices',
+     * let the narrowest short slice cap the long ones (WP 26 §9.3).
      */
     VolSurfacePipelineResult calibrate_vol_surface(
         std::vector<RawOptionQuote> raw_quotes, Real spot, Real rate, Real dividend,

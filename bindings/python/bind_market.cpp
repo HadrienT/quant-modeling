@@ -114,6 +114,9 @@ static py::dict calibrate_vol_surface_impl(
         sd["converged"] = s.converged;
         sd["butterfly_arbitrage_free"] = s.butterfly_arbitrage_free;
         sd["in_surface"] = s.in_surface;
+        // The band the slice's SVI is trusted on (WP 26 §9.3).
+        sd["k_lo"] = static_cast<double>(s.band.lo);
+        sd["k_hi"] = static_cast<double>(s.band.hi);
         py::list quotes;
         for (const auto &q : s.quotes)
             quotes.append(py::make_tuple(q.log_moneyness, q.market_iv, q.weight));

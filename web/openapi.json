@@ -9549,8 +9549,8 @@
             "title": "Spot"
           },
           "steps_per_year": {
-            "default": 52,
-            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly).",
+            "default": 252,
+            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). 252 by default: on SPY's local-vol grid a one-year ATM call (about 54) is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016 (blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; mlmc_eps controls it.",
             "maximum": 504.0,
             "minimum": 12.0,
             "title": "Steps Per Year",
@@ -9956,8 +9956,8 @@
             "title": "Spot"
           },
           "steps_per_year": {
-            "default": 52,
-            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly).",
+            "default": 252,
+            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). 252 by default: on SPY's local-vol grid a one-year ATM call (about 54) is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016 (blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; mlmc_eps controls it.",
             "maximum": 504.0,
             "minimum": 12.0,
             "title": "Steps Per Year",

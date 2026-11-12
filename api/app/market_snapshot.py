@@ -46,8 +46,8 @@ SPOT_GAP_WARN_DAYS = 3
 #: Same rule as db._MAX_DIVIDEND_AGE_DAYS: a trailing yield moves slowly.
 MAX_DIVIDEND_GAP_DAYS = 30
 
-#: The log-moneyness band requested for the Dupire grid (clamped by the
-#: pipeline to what every slice observed) and its size.
+#: The log-moneyness band requested for the Dupire grid (each maturity is
+#: then computed on its own quoted band within it, WP 26 §9.3) and its size.
 K_MIN, K_MAX = -0.6, 0.6
 N_STRIKES, N_MATURITIES = 100, 50
 

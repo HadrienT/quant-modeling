@@ -105,7 +105,7 @@ namespace quantModeling
     namespace approx_rv_detail
     {
         template <class Gauss>
-        void run(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model, long long n,
+        void run(const ISimulationModel<Real> &model, long long n,
                  std::uint64_t seed, std::uint64_t stream, Gauss &&level_sample, ApproxRvLevel &out)
         {
             Pcg32 rng(seed, stream);
@@ -152,11 +152,11 @@ namespace quantModeling
         { return inverse_normal_cdf(p); };
 
         ApproxRvResult r;
-        approx_rv_detail::run(product, model, n_approx, seed, 1, [&](const std::vector<double> &u)
+        approx_rv_detail::run(model, n_approx, seed, 1, [&](const std::vector<double> &u)
                               { return price(approx, u); }, r.approx);
-        approx_rv_detail::run(product, model, n_corr, seed, 2, [&](const std::vector<double> &u)
+        approx_rv_detail::run(model, n_corr, seed, 2, [&](const std::vector<double> &u)
                               { return price(exact_inverse, u) - price(approx, u); }, r.correction);
-        approx_rv_detail::run(product, model, n_exact, seed, 3, [&](const std::vector<double> &u)
+        approx_rv_detail::run(model, n_exact, seed, 3, [&](const std::vector<double> &u)
                               { return price(exact_inverse, u); }, r.exact);
         r.value = r.approx.stats.mean() + r.correction.stats.mean();
         r.std_error = std::sqrt(r.approx.stats.variance() / static_cast<double>(n_approx) +

@@ -191,8 +191,10 @@ namespace quantModeling
             // Bias: P4's test on the last two levels.
             const std::size_t L = levels.size() - 1;
             const double alpha = mlqmc_detail::alpha_estimate(levels);
-            const double r = std::pow(2.0, alpha);
-            res.bias = std::max(std::fabs(levels[L - 1]->mean()) / r, std::fabs(levels[L]->mean())) / (r - 1.0);
+            std::vector<double> m;
+            for (const auto &lv : levels)
+                m.push_back(std::fabs(lv->mean()));
+            res.bias = mlmc_detail::remaining_bias(m, alpha);
             if (res.bias <= s.eps / std::sqrt(2.0))
                 break;
             if (static_cast<int>(L) >= s.max_finest_level)

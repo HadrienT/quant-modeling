@@ -264,6 +264,26 @@ namespace quantModeling
             return std::max(0.5, -log2_slope(m, -1.0));
         }
 
+        /**
+         * The remaining bias after level L, from the last three correction
+         * levels (Giles's later code, range -2:0): max over l in {L-2, L-1,
+         * L}, l >= 1, of |Y_l| / r^(L - l), over r - 1, r = 2^alpha. Two
+         * levels (Giles 2008) assume the decay is already geometric; on
+         * SPY's local-vol grid the corrections fell fast then slowly (1.06,
+         * 0.12, 0.03, 0.06, 0.06), and the two-level test stopped at level 2
+         * with a bias about twice its target (WP 26 §9.2). Level 0 is the
+         * price itself, never a correction.
+         */
+        inline double remaining_bias(const std::vector<double> &m, double alpha)
+        {
+            const double r = std::pow(2.0, alpha);
+            const std::size_t L = m.size() - 1;
+            double worst = 0.0;
+            for (std::size_t back = 0; back <= 2 && back < L; ++back)
+                worst = std::max(worst, m[L - back] / std::pow(r, static_cast<double>(back)));
+            return worst / (r - 1.0);
+        }
+
         inline void finish(MlmcResult &res)
         {
             res.value = 0.0;
@@ -323,7 +343,8 @@ namespace quantModeling
      *        Numerica §3), M = 2: a pilot of every level, then
      *        N_l = ceil(2 eps^-2 sqrt(V_l / C_l) sum_k sqrt(V_k C_k)) (half the
      *        mean-square budget to the variance), and a level added while
-     *        max(|Y_{L-1}| / 2^alpha, |Y_L|) / (2^alpha - 1) > eps / sqrt(2)
+     *        the remaining bias of the last three corrections
+     *        (mlmc_detail::remaining_bias) exceeds eps / sqrt(2)
      *        (the other half to the bias). alpha and beta are estimated by
      *        regression over the levels (alpha over the resolved ones only,
      *        see mlmc_detail::alpha_estimate), never assumed;
@@ -401,7 +422,7 @@ namespace quantModeling
                 continue;
 
             const double r = std::pow(2.0, alpha);
-            res.bias = std::max(m[L - 1] / r, m[L]) / (r - 1.0);
+            res.bias = mlmc_detail::remaining_bias(m, alpha);
             if (res.bias <= s.eps / std::sqrt(2.0))
                 break;
             if (static_cast<int>(L) >= s.max_finest_level)

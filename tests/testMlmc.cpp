@@ -249,7 +249,7 @@ namespace quantModeling
         };
         for (int l = 1; l <= 5; ++l)
             EXPECT_NEAR(r.levels[l].mean(), euler(l) - euler(l - 1),
-                        4.0 * std::sqrt(r.levels[l].variance() / r.levels[l].n))
+                        4.0 * std::sqrt(r.levels[l].variance() / static_cast<double>(r.levels[l].n)))
                 << l;
     }
 
@@ -545,6 +545,19 @@ namespace quantModeling
         MlqmcSettings s;
         s.eps = 0.1;
         EXPECT_THROW(simulate_mlqmc(product, *m, s), InvalidInput);
+    }
+
+    TEST(Mlmc, TheBiasTestReadsTheLastThreeCorrections)
+    {
+        // SPY's corrections fell fast then slowly (WP 26 §9.2): the
+        // two-level test, max(|Y_{L-1}| / r, |Y_L|) / (r - 1), stopped at
+        // level 2; the last three see the level-1 correction still large.
+        const std::vector<double> spy = {54.0, 1.06, 0.12};
+        EXPECT_NEAR(mlmc_detail::remaining_bias(spy, 1.0), std::max(1.06 / 2.0, 0.12), 1e-12);
+        const std::vector<double> later = {54.0, 1.06, 0.12, 0.03, 0.06};
+        EXPECT_NEAR(mlmc_detail::remaining_bias(later, 1.0), std::max({0.12 / 4.0, 0.03 / 2.0, 0.06}), 1e-12);
+        // r = 4 (alpha = 2): divided by r - 1 = 3.
+        EXPECT_NEAR(mlmc_detail::remaining_bias({1.0, 0.4, 0.1}, 2.0), 0.1 / 3.0, 1e-12);
     }
 
 } // namespace quantModeling

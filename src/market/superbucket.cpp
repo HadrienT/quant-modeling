@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace quantModeling
 {
@@ -108,18 +109,28 @@ namespace quantModeling
 
         // ── The double build: the grid, and every decision the tape replays ──
         const SVISurface surface(slices);
+        // The bands calibrate_vol_surface built the grid with (WP 26 §9.3),
+        // from the same quotes: k_min / k_max are that grid's range, the
+        // union of the bands, so each slice's band comes back the same.
+        std::vector<QuotedBand> bands;
+        for (std::size_t s = 0; s < n_slices; ++s)
+            bands.push_back(quoted_band(quotes[s], k_min, k_max));
         const GridLocalVol grid = build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max,
-                                                       n_strikes, n_maturities, params);
+                                                       n_strikes, n_maturities, params, &bands);
         const std::vector<Real> &K = grid.K_grid();
         const std::vector<Real> &Tg = grid.T_grid();
+        const std::vector<bool> outside =
+            outside_column_bands(K, Tg, spot, rate, dividend, local_vol_column_bands(surface, bands, Tg));
         std::vector<Real> loc_var(n_strikes * n_maturities);
         for (std::size_t i = 0; i < n_strikes; ++i)
             for (std::size_t j = 0; j < n_maturities; ++j)
             {
+                const std::size_t idx = i * n_maturities + j;
                 const Real k = std::log(K[i] / (spot * std::exp((rate - dividend) * Tg[j])));
-                loc_var[i * n_maturities + j] = svi_surface_local_variance(surface, k, Tg[j], params);
+                loc_var[idx] = outside[idx] ? std::numeric_limits<Real>::quiet_NaN()
+                                            : svi_surface_local_variance(surface, k, Tg[j], params);
             }
-        const std::vector<std::size_t> source = nearest_valid_sources(loc_var, n_strikes, n_maturities);
+        const std::vector<std::size_t> source = banded_sources(loc_var, n_strikes, n_maturities, outside);
 
         SuperbucketResult out;
         out.dV_dsvi.assign(n_slices, {});

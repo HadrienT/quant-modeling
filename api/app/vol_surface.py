@@ -610,12 +610,19 @@ def svi_implied_vol_grid(
         for i in range(n_strikes)
     ]
 
-    def variance_at(k: float, T: float) -> float:
+    def variance_at(k: float, T: float) -> Optional[float]:
         T_clamped = min(max(T, t_lo), t_hi)
         i = 0
         while i + 2 < len(ordered) and ordered[i + 1]["ttm"] < T_clamped:
             i += 1
         s0, s1 = ordered[i], ordered[i + 1]
+        # Only where both slices are quoted (their bands, WP 26 §9.3): the
+        # grid spans the union of the bands, a short slice is not read past
+        # its own.
+        lo = max(s0.get("k_lo", -math.inf), s1.get("k_lo", -math.inf))
+        hi = min(s0.get("k_hi", math.inf), s1.get("k_hi", math.inf))
+        if not lo <= k <= hi:
+            return None
         lam = (T_clamped - s0["ttm"]) / (s1["ttm"] - s0["ttm"])
         w0 = _svi_total_variance(k, s0["a"], s0["b"], s0["rho"], s0["m"], s0["sigma"])
         w1 = _svi_total_variance(k, s1["a"], s1["b"], s1["rho"], s1["m"], s1["sigma"])
@@ -628,7 +635,7 @@ def svi_implied_vol_grid(
         for K in K_grid:
             k = math.log(K / F_T)
             w = variance_at(k, T)
-            row.append(round(math.sqrt(w / T), 6) if w > 0 else None)
+            row.append(round(math.sqrt(w / T), 6) if w is not None and w > 0 else None)
         values.append(row)
 
     return K_grid, list(T_grid), values

@@ -1145,6 +1145,72 @@ Tests (`tests/testMlmc.cpp`): MLQMC equals MLMC within eps and is more than
 (−1.5, −0.7), the Sobol dimension limit refused, the script engine's opt-in
 on Sobol (MLQMC) and on pseudo-random draws (MLMC).
 
+### 9.3 The local-vol grid's strike band, and the fixes that follow (2026-11-12)
+
+**Why the grid was narrow.** `calibrate_vol_surface` clamped the requested
+log-moneyness range (±0.6) to the intersection of what every slice of at
+least `min_ttm` was quoted over (commit `803e7e4`, from a real AAPL chain:
+a 6-day slice's SVI wing extrapolated to k = 0.6 gave a 600 % vol, since
+svi_implied_vol = sqrt(w/T) amplifies a short slice's wing). One range for
+every maturity let the narrowest short slice cap the long ones: on SPY a
+three-week slice quoted to +8.4 % capped the whole two-year grid there,
+while the one-year slices are quoted to +30 %.
+
+**The fix: a band per maturity** (`market/dupire_from_svi`). Each slice is
+trusted on its quotes' range (`quoted_band`); each grid maturity's local vol
+is computed on the intersection of the two slices it interpolates
+(`local_vol_column_bands`), so no SVI wing is read past its quotes; the
+grid's strikes span the union of the kept slices' bands; a cell outside its
+band, or where Dupire is unstable, takes its column's nearest valid cell
+along K (`banded_sources`): flat in the strike within the maturity, never
+borrowed from another one (the ring search of `nearest_valid_sources`
+copied 50–110 % short-maturity vols into SPY's two-year call wing once that
+wing entered the grid). The calendar checks of the slice selection read each
+pair's common band. The superbucket rebuilds the same bands from the same
+quotes, so its tape replays the same grid. The reach rule
+(`reach_std_devs`) is gone with the single range it relaxed. The IV display
+grid (`vol_surface.svi_implied_vol_grid`) leaves out what lies outside the
+bands of the two slices it interpolates.
+
+SPY (snapshot of 2026-11-11, spot 757.1): grid k in [−0.425, +0.275]
+instead of [−0.367, +0.084]. One-year vanillas against the SVI market (GPU,
+Sobol, 1e6 paths, daily steps), with the same grid made flat past +8.4 % to
+stand for the old one:
+
+| | SVI market | New grid | Old-style capped grid |
+|---|---|---|---|
+| Put 80 % | 9.919 | 9.890 (−0.03) | 9.872 (−0.05) |
+| Put 90 % | 17.372 | 17.457 (+0.09) | 17.426 (+0.05) |
+| Call 100 % | 54.021 | 54.181 (+0.16) | 54.092 (+0.07) |
+| Call 110 % | 13.681 | 13.759 (+0.08) | 13.161 (**−0.52**) |
+| Call 120 % | 7.075 | 6.956 (−0.12) | 3.581 (**−3.49, −49 %**) |
+
+**MLMC's bias test reads three corrections** (`mlmc_detail::
+remaining_bias`, Giles's later code): max over the last three correction
+levels of |Y_l| / r^(L−l), over r − 1. The two-level test stopped at level 2
+on SPY (corrections 1.06, 0.12, then 0.03–0.06) with about twice its bias
+target. On the new grid, against a 8064-steps-a-year GPU reference of
+54.071 ± 0.004:
+
+| eps | MLMC (finest level, error) | MLQMC (finest level, error) |
+|---|---|---|
+| 0.2 | 6, −0.20 (1.4 se) | 6, +0.00 |
+| 0.1 | 6, +0.09 | 7, +0.05 |
+| 0.05 | 7, +0.02 | 8, −0.01 |
+
+every estimate within its target, at the price of finer levels (MLQMC
+11 s at eps = 0.1 on one thread: QMC gains little on the fine,
+high-dimensional levels). beta on the new grid: log-Euler 0.98, Milstein
+1.25 (0.41 before; still irregular, the advice against it stands).
+
+**The scripts' default steps** (`ScriptRequest.steps_per_year`, not sent by
+the front end): 52 → 252. The same call is 0.57 above its fine-step limit at
+52 steps a year, 0.13 at 252, 0.017 at 2016, against a Sobol standard error
+of 0.005: the displayed error does not include this bias. 252 removes most
+of it at ~5x the cost of 52; a discretisation-bias estimate shown next to
+the standard error (two step counts on common Sobol points) would make the
+displayed error defensible, left to decide.
+
 ## 10. P6 — Multilevel on the GPU
 
 Levels map onto the segments of `run_logical_block_segments` (WP 19, lot G3):
