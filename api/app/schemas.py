@@ -345,19 +345,39 @@ class ScriptPricingInputs(BaseModel):
         description="CPU runs only; a GPU run always uses Philox, the generator "
         "with which a CPU run gives the GPU's price.",
     )
+    mlmc: Literal["auto", "off"] = Field(
+        "auto",
+        description="'auto' (the default): multilevel Monte Carlo over the time "
+        "step whenever the script suits it -- model local_vol, one payoff, no "
+        "early exercise, no AAD greeks -- to a root-mean-square error of "
+        "mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine "
+        "otherwise, the diagnostics saying why. 'off': the usual engine "
+        "(blueprint WP 26 §9.4).",
+    )
+    mlmc_rel_eps: float = Field(
+        0.002,
+        gt=0.0,
+        le=0.1,
+        description="Multilevel target as a share of the price (0.2 % by "
+        "default), split half to the standard error, half to the "
+        "discretisation bias.",
+    )
+    bias_estimate: bool = Field(
+        True,
+        description="Estimate and return the discretisation bias of a plain "
+        "(non-multilevel) run: the steps are halved and the bias read from "
+        "the difference, at about three times the cost of one run of a "
+        "time-stepped model.",
+    )
     mlmc_eps: float = Field(
         0.0,
         ge=0.0,
-        description="Multilevel Monte Carlo over the time step (blueprint WP 26 "
-        "§8), opt-in: the target root-mean-square error of the price, absolute "
-        "(0, the default: off). Applied when the script suits it -- model "
-        "local_vol, one payoff, no early exercise -- the levels refined until "
-        "the estimated discretisation bias is below mlmc_eps / sqrt(2); "
-        "otherwise the usual engine runs and the diagnostics say why. With "
+        description="An absolute multilevel target instead of mlmc_rel_eps (0, "
+        "the default: the relative one). The levels are refined until the "
+        "estimated discretisation bias is below the target / sqrt(2). With "
         "sampler='sobol' (the default) the levels are Sobol points, multilevel "
         "QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price "
-        "only; the time-step bias is controlled. n_paths and device are then "
-        "ignored.",
+        "only; n_paths and device are then ignored.",
     )
     milstein: bool = Field(
         False,
@@ -810,6 +830,15 @@ class PricingResponse(BaseModel):
         0,
         description="GPUs the Monte-Carlo shared its paths between (0 on the "
         "CPU). The result is the same bits for any count (blueprint WP 19 §7).",
+    )
+    discretisation_bias: Optional[float] = Field(
+        None,
+        description="Estimated discretisation (time-step) bias of npv, in its "
+        "units: what mc_std_error leaves out (blueprint WP 26 §9.4). From the "
+        "multilevel run's bias test, or from halving a plain run's steps; 0 "
+        "for a model simulated exactly between the product's dates; null when "
+        "not estimated (a model that cannot refine its grid, AAD greeks, a "
+        "non-Monte-Carlo engine).",
     )
 
 

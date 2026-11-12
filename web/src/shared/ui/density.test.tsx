@@ -1,6 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { DeltaBadge, Freshness, Provenance, Uncertainty } from "./density";
+import {
+	DeltaBadge,
+	DiscretisationBias,
+	Freshness,
+	Provenance,
+	Uncertainty,
+} from "./density";
 
 describe("Uncertainty", () => {
 	it("keeps value and standard error together", () => {
@@ -46,5 +52,24 @@ describe("Provenance", () => {
 	it("labels a market value", () => {
 		render(<Provenance source="market" />);
 		expect(screen.getByText("market")).toBeInTheDocument();
+	});
+});
+
+describe("DiscretisationBias", () => {
+	it("shows the bias and says the standard error leaves it out", () => {
+		render(<DiscretisationBias bias={0.13} value={54.2} />);
+		expect(screen.getByText(/Time-step bias/)).toHaveTextContent(
+			/0\.13.*0\.24 %.*not in the ±/,
+		);
+	});
+
+	it("says an exact simulation has none", () => {
+		render(<DiscretisationBias bias={0} value={10} />);
+		expect(screen.getByText(/exact simulation/)).toBeInTheDocument();
+	});
+
+	it("renders nothing when not estimated", () => {
+		const { container } = render(<DiscretisationBias bias={null} value={10} />);
+		expect(container).toBeEmptyDOMElement();
 	});
 });

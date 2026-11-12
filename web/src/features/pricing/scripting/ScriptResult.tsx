@@ -1,9 +1,14 @@
 import { useEffect, useRef } from "react";
 import { deviceLabel, type PricingResult } from "@/shared/api";
-import { ComputeTime, Uncertainty } from "@/shared/ui/density";
+import {
+	ComputeTime,
+	DiscretisationBias,
+	Uncertainty,
+} from "@/shared/ui/density";
 import { ScriptGreeks } from "./ScriptGreeks";
 
-/** A scripted product's price, its Monte-Carlo error and how long it took,
+/** A scripted product's price, its Monte-Carlo error, its time-step bias and
+ * how long it took,
  * then its greeks when they were asked for. Each new price is scrolled into
  * view: the form above it can be long. */
 export function ScriptResult({ result: r }: { result: PricingResult }) {
@@ -27,6 +32,7 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 						magnitude="price"
 					/>
 				</div>
+				<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
 				{r.diagnostics && (
 					<p className="mt-2 font-mono text-2xs text-ink-muted">
 						{r.diagnostics}

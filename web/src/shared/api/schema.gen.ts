@@ -5336,6 +5336,11 @@ export interface components {
             /** Diagnostics */
             diagnostics: string;
             /**
+             * Discretisation Bias
+             * @description Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 §9.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).
+             */
+            discretisation_bias?: number | null;
+            /**
              * Gpus
              * @description GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 §7).
              * @default 0
@@ -6169,6 +6174,12 @@ export interface components {
              */
             antithetic: boolean;
             /**
+             * Bias Estimate
+             * @description Estimate and return the discretisation bias of a plain (non-multilevel) run: the steps are halved and the bias read from the difference, at about three times the cost of one run of a time-stepped model.
+             * @default true
+             */
+            bias_estimate: boolean;
+            /**
              * Control Variate
              * @description Regress the deflated spots at up to 8 event dates -- martingales of known mean -- out of the payoff (blueprint WP 19 §2.5). The diagnostics give the variance removed. Most useful without antithetic pairs, which already cancel the part linear in the spot.
              * @default false
@@ -6232,11 +6243,24 @@ export interface components {
              */
             milstein: boolean;
             /**
+             * Mlmc
+             * @description 'auto' (the default): multilevel Monte Carlo over the time step whenever the script suits it -- model local_vol, one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'off': the usual engine (blueprint WP 26 §9.4).
+             * @default auto
+             * @enum {string}
+             */
+            mlmc: "auto" | "off";
+            /**
              * Mlmc Eps
-             * @description Multilevel Monte Carlo over the time step (blueprint WP 26 §8), opt-in: the target root-mean-square error of the price, absolute (0, the default: off). Applied when the script suits it -- model local_vol, one payoff, no early exercise -- the levels refined until the estimated discretisation bias is below mlmc_eps / sqrt(2); otherwise the usual engine runs and the diagnostics say why. With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; the time-step bias is controlled. n_paths and device are then ignored.
+             * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.
              * @default 0
              */
             mlmc_eps: number;
+            /**
+             * Mlmc Rel Eps
+             * @description Multilevel target as a share of the price (0.2 % by default), split half to the standard error, half to the discretisation bias.
+             * @default 0.002
+             */
+            mlmc_rel_eps: number;
             /**
              * Model
              * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).
@@ -6402,6 +6426,12 @@ export interface components {
              */
             antithetic: boolean;
             /**
+             * Bias Estimate
+             * @description Estimate and return the discretisation bias of a plain (non-multilevel) run: the steps are halved and the bias read from the difference, at about three times the cost of one run of a time-stepped model.
+             * @default true
+             */
+            bias_estimate: boolean;
+            /**
              * Control Variate
              * @description Regress the deflated spots at up to 8 event dates -- martingales of known mean -- out of the payoff (blueprint WP 19 §2.5). The diagnostics give the variance removed. Most useful without antithetic pairs, which already cancel the part linear in the spot.
              * @default false
@@ -6465,11 +6495,24 @@ export interface components {
              */
             milstein: boolean;
             /**
+             * Mlmc
+             * @description 'auto' (the default): multilevel Monte Carlo over the time step whenever the script suits it -- model local_vol, one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'off': the usual engine (blueprint WP 26 §9.4).
+             * @default auto
+             * @enum {string}
+             */
+            mlmc: "auto" | "off";
+            /**
              * Mlmc Eps
-             * @description Multilevel Monte Carlo over the time step (blueprint WP 26 §8), opt-in: the target root-mean-square error of the price, absolute (0, the default: off). Applied when the script suits it -- model local_vol, one payoff, no early exercise -- the levels refined until the estimated discretisation bias is below mlmc_eps / sqrt(2); otherwise the usual engine runs and the diagnostics say why. With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; the time-step bias is controlled. n_paths and device are then ignored.
+             * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.
              * @default 0
              */
             mlmc_eps: number;
+            /**
+             * Mlmc Rel Eps
+             * @description Multilevel target as a share of the price (0.2 % by default), split half to the standard error, half to the discretisation bias.
+             * @default 0.002
+             */
+            mlmc_rel_eps: number;
             /**
              * Model
              * @description 'auto': the model the script needs, among those the inputs allow (a ticker for the market models, else spot and vol for flat Black-Scholes); announced in the response's model_choice. 'black_scholes': flat vol (spot and vol, or a ticker: then the at-the-money implied vol of its stored smile at the script's last date). 'local_vol': Dupire surface calibrated from the ticker's stored option-chain snapshot. 'heston': Heston calibrated to that surface. 'slv': stochastic-local vol, the calibrated Heston times a leverage that reprices the surface. 'rough_bergomi': rough Bergomi (H, eta, rho) calibrated to the short end of that surface, on its variance-swap forward variance curve. The market models need a ticker; spot and dividend then come from the database. 'hull_white': the equity at a flat vol (as black_scholes) under stochastic Hull-White rates fitted to the government curve of `hull_white.currency`; df() in the script reads the simulated curve (equity-rates hybrids, rates products).
@@ -7064,6 +7107,11 @@ export interface components {
             /** Diagnostics */
             diagnostics: string;
             /**
+             * Discretisation Bias
+             * @description Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 §9.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).
+             */
+            discretisation_bias?: number | null;
+            /**
              * Gpus
              * @description GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 §7).
              * @default 0
@@ -7208,6 +7256,11 @@ export interface components {
             device: "cpu" | "gpu";
             /** Diagnostics */
             diagnostics: string;
+            /**
+             * Discretisation Bias
+             * @description Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 §9.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).
+             */
+            discretisation_bias?: number | null;
             /**
              * Gpus
              * @description GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 §7).

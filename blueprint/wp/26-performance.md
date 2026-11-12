@@ -1211,6 +1211,48 @@ of it at ~5x the cost of 52; a discretisation-bias estimate shown next to
 the standard error (two step counts on common Sobol points) would make the
 displayed error defensible, left to decide.
 
+### 9.4 Multilevel by default, and the bias shown (2026-11-12)
+
+Decided by the maintainer: the scripting API runs multilevel Monte Carlo by
+default and returns the discretisation bias of every Monte-Carlo price.
+
+- **Default** (`ScriptRequest.mlmc = "auto"`): MLQMC (Sobol, the default
+  sampler) whenever the script suits it -- local vol, one payoff, no early
+  exercise, no AAD greeks -- to a root-mean-square error of
+  `mlmc_rel_eps` = 0.2 % of the price (`MlqmcSettings::rel_eps`, the target
+  following the running estimate, floored at 1e-5 of the spot so that a
+  worthless option still stops); `mlmc_eps` gives an absolute target
+  instead; `mlmc = "off"` the usual engine. The binding keeps everything off
+  by default: the other callers of `price_script` (portfolio marks, risk
+  profiles, market vega) do not move without a decision.
+- **Threads**: each Sobol replicate of a level has its own sampler (models,
+  scenarios, payoff state) and runs as a task on the pool; its sum
+  accumulates in point order, so the bits are the same on any number of
+  threads (tested on 1 and 8). A product without a concurrent payoff state
+  stays on one thread.
+- **Bias** (`PricingResult::discretisation_bias`, `PricingResponse.
+  discretisation_bias`, shown under the price on the scripting page): the
+  multilevel run's own estimate of its remaining bias; for a plain run of a
+  model that refines its grid (`mc_bias_estimate`, on by default in the
+  API), the price with every step halved and the bias as the difference from
+  the unhalved run on the same seed (weak order one, about three times the
+  cost of one run); 0 for a model simulated exactly between the product's
+  dates (Black-Scholes); absent otherwise (Heston, SLV, rough Bergomi: their
+  grids do not refine yet; AAD greeks).
+
+SPY through the API service (16 threads, snapshot of 2026-11-12):
+
+| ATM call | Default (MLQMC, 0.2 %) | `mlmc = "off"`, CPU | `mlmc = "off"`, GPU |
+|---|---|---|---|
+| 1 year | 55.096 ± 0.071, bias ~0.074, 0.64 s | 55.076 ± 0.014, bias ~0.126, 1.47 s | 0.73 s |
+| 3 months | 23.571 ± 0.032, bias ~0.016, 1.11 s | 23.666 ± 0.003, bias ~0.057, 0.61 s | 0.13 s |
+
+The multilevel standard error is larger by design (half the mean-square
+budget goes to the bias); the plain run's small ± now sits next to a bias
+five to twenty times larger, which the page shows. Left: MLQMC on the GPU
+(P6), which would make the default as fast as the plain GPU route; Heston and
+SLV refinement, so that their bias is estimated too.
+
 ## 10. P6 — Multilevel on the GPU
 
 Levels map onto the segments of `run_logical_block_segments` (WP 19, lot G3):

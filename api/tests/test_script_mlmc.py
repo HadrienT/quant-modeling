@@ -1,7 +1,8 @@
 """Multilevel Monte Carlo through the scripting API (blueprint WP 26 §8,
-P4c): opt-in with mlmc_eps, applied when the script suits it, the usual
-engine otherwise with the reason in the diagnostics. The native module
-prices for real; the database is a synthetic local-vol surface."""
+§9.4): on by default when the script suits it, to a share of the price; the
+usual engine otherwise with the reason in the diagnostics; the
+discretisation bias returned either way. The native module prices for real;
+the database is a synthetic local-vol surface."""
 
 import pytest
 from pydantic import ValidationError
@@ -11,39 +12,55 @@ from app import pricing_service
 from test_script_model_choice import VANILLA, _req, store  # noqa: F401 (fixture)
 
 
-def test_mlmc_runs_under_local_vol_and_says_so(store):
+def test_multilevel_is_the_default_under_local_vol_and_returns_its_bias(store):
+    resp = pricing_service.price_script(_req(VANILLA, ticker="TEST", model="local_vol"))
+    # the default sampler, Sobol: multilevel QMC (WP 26 P5), 0.2 % of the price
+    assert "multilevel QMC" in resp.diagnostics
+    eps = 0.002 * resp.npv
+    assert resp.mc_std_error <= 1.02 * eps / 2**0.5
+    assert resp.discretisation_bias is not None
+    assert 0.0 <= resp.discretisation_bias <= eps / 2**0.5 * 1.0001
+
+
+def test_an_absolute_target_overrides_the_relative_one(store):
     resp = pricing_service.price_script(
         _req(VANILLA, ticker="TEST", model="local_vol", mlmc_eps=0.05, milstein=True)
     )
-    # the default sampler, Sobol: multilevel QMC (WP 26 P5)
-    assert "multilevel QMC" in resp.diagnostics
     assert "target RMS error 0.05" in resp.diagnostics
     assert resp.mc_std_error <= 1.02 * 0.05 / 2**0.5
-    # the same price as the default route, within both errors and the bias
-    plain = pricing_service.price_script(
-        _req(VANILLA, ticker="TEST", model="local_vol", n_paths=200_000)
-    )
-    assert resp.npv == pytest.approx(plain.npv, abs=0.15)
 
 
-def test_mlmc_off_by_default_leaves_the_route_unchanged(store):
-    a = pricing_service.price_script(_req(VANILLA, ticker="TEST", model="local_vol"))
-    b = pricing_service.price_script(
-        _req(VANILLA, ticker="TEST", model="local_vol", mlmc_eps=0.0)
-    )
-    assert a.npv == b.npv
-    assert "multilevel" not in a.diagnostics
-
-
-def test_mlmc_under_black_scholes_falls_back_and_says_why():
+def test_off_runs_the_usual_engine_and_estimates_its_bias_by_halving(store):
     resp = pricing_service.price_script(
-        _req(VANILLA, spot=100.0, vol=0.2, model="black_scholes", mlmc_eps=0.05)
+        _req(VANILLA, ticker="TEST", model="local_vol", mlmc="off")
+    )
+    assert "multilevel" not in resp.diagnostics
+    assert "steps halved" in resp.diagnostics
+    assert resp.discretisation_bias is not None and resp.discretisation_bias > 0.0
+    # and the multilevel price agrees within both errors and the biases
+    ml = pricing_service.price_script(_req(VANILLA, ticker="TEST", model="local_vol"))
+    assert resp.npv == pytest.approx(ml.npv, abs=0.15)
+
+
+def test_black_scholes_falls_back_says_why_and_has_no_bias():
+    resp = pricing_service.price_script(
+        _req(VANILLA, spot=100.0, vol=0.2, model="black_scholes")
     )
     assert (
         "no multilevel Monte Carlo: the model has no time-step bias" in resp.diagnostics
     )
+    assert resp.discretisation_bias == 0.0
 
 
-def test_a_negative_target_is_refused():
+def test_no_bias_without_the_estimate(store):
+    resp = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol", mlmc="off", bias_estimate=False)
+    )
+    assert resp.discretisation_bias is None
+
+
+def test_bad_targets_are_refused():
     with pytest.raises(ValidationError):
         _req(VANILLA, spot=100.0, vol=0.2, mlmc_eps=-1.0)
+    with pytest.raises(ValidationError):
+        _req(VANILLA, spot=100.0, vol=0.2, mlmc_rel_eps=0.0)

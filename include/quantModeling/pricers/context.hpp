@@ -127,6 +127,17 @@ namespace quantModeling
         /// Sobol/GPU route until P5/P6, but its discretisation bias is
         /// controlled (below eps / sqrt(2)).
         double mc_mlmc_eps = 0.0;
+        /// Multilevel target relative to the price (WP 26 §9.4): the run
+        /// aims at max(mc_mlmc_eps, mc_mlmc_rel_eps |price|), mc_mlmc_eps
+        /// being then the floor (> 0 required). 0: the absolute target only.
+        double mc_mlmc_rel_eps = 0.0;
+        /// Estimate the discretisation bias of a plain run (WP 26 §9.4): a
+        /// model that refines its grid is priced with every step halved,
+        /// and the bias estimated as the difference from the unhalved run
+        /// (weak order one, same Sobol seed); 0 for a model simulated
+        /// exactly between the product's dates. Off by default so that no
+        /// existing number moves.
+        bool mc_bias_estimate = false;
     };
 
     struct MarketView

@@ -70,6 +70,7 @@ namespace quantModeling
         double value = 0.0;
         double std_error = 0.0; ///< sqrt(sum V_l / N_l)
         double bias = 0.0;      ///< the estimate of |E[P - P_L]| the bias test used (adaptive runs)
+        double eps = 0.0;       ///< the target RMS error the run stopped at (adaptive runs)
         bool bias_converged = true;
         double alpha = 0.0, beta = 0.0, gamma = 0.0; ///< |E Y_l| ~ 2^-alpha l, V_l ~ 2^-beta l, C_l ~ 2^gamma l
         std::vector<MlmcLevel> levels;
@@ -122,6 +123,7 @@ namespace quantModeling
                          std::uint64_t seed)
                 : product_(product), level_(level), rng_(seed, static_cast<std::uint64_t>(level))
             {
+                state_ = product.make_payoff_state();
                 fine_ = at_refinement(base, refinement_of(level), product);
                 allocate_scenario(fine_path_, product.defline(), product.n_underlyings());
                 gauss_fine_.resize(fine_->sim_dim());
@@ -191,7 +193,7 @@ namespace quantModeling
             double evaluate()
             {
                 fine_->generate_path(gauss_fine_, fine_path_);
-                product_.payoffs(fine_path_, out_);
+                payoffs(fine_path_);
                 double y = out_.at(0);
                 if (level_ > 0)
                 {
@@ -200,14 +202,27 @@ namespace quantModeling
                         for (std::size_t f = 0; f < factors_; ++f)
                             gauss_coarse_[coarse_of_[k] * factors_ + f] += weight_[k] * gauss_fine_[k * factors_ + f];
                     coarse_->generate_path(gauss_coarse_, coarse_path_);
-                    product_.payoffs(coarse_path_, out_);
+                    payoffs(coarse_path_);
                     y -= out_.at(0);
                 }
                 return y;
             }
 
+            /// Whether several samplers of this product may run at once
+            /// (the product gives each its own payoff state).
+            bool concurrent() const { return state_ != nullptr; }
+
           private:
+            void payoffs(const Scenario<Real> &path)
+            {
+                if (state_)
+                    product_.payoffs_with_state(path, out_, *state_);
+                else
+                    product_.payoffs(path, out_);
+            }
+
             const ISimulatableProduct<Real> &product_;
+            std::unique_ptr<typename ISimulatableProduct<Real>::PayoffState> state_;
             int level_;
             Pcg32 rng_;
             NormalBoxMuller bm_;
@@ -437,6 +452,7 @@ namespace quantModeling
             targets();
         }
 
+        res.eps = s.eps;
         mlmc_detail::finish(res);
         return res;
     }

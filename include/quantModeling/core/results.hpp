@@ -74,6 +74,12 @@ namespace quantModeling
         /// GPUs the Monte-Carlo shared its logical blocks between (lot G4);
         /// 0 on the CPU.
         int gpus = 0;
+        /// The estimated discretisation (time-step) bias of npv, in its
+        /// units (WP 26 §9.4): what mc_std_error leaves out. 0 for a model
+        /// simulated exactly between the product's dates; absent when not
+        /// estimated (a model that cannot refine its grid, a non-Monte-Carlo
+        /// engine).
+        std::optional<Real> discretisation_bias;
     };
 } // namespace quantModeling
 

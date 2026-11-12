@@ -48,6 +48,10 @@ namespace quantModeling
         /// replicate, so the spread of their replicate-wise differences is
         /// the error of a finite difference with common random numbers.
         std::vector<Real> replicates;
+        /// The first label's estimated discretisation bias (WP 26 §9.4),
+        /// filled by simulate_script when asked (PricingSettings::
+        /// mc_bias_estimate) or by its multilevel route; absent otherwise.
+        std::optional<Real> discretisation_bias;
 
         Real npv() const { return values.empty() ? Real(0) : values.front(); }
         Real std_error() const

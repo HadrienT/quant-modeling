@@ -4,6 +4,7 @@
 #include "quantModeling/engines/mc/mlmc.hpp"
 #include "quantModeling/utils/brownian_bridge.hpp"
 #include "quantModeling/utils/sobol.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -35,7 +36,13 @@ namespace quantModeling
 
     struct MlqmcSettings
     {
-        double eps = 0.0; ///< target root-mean-square error, absolute (> 0)
+        /// Target root-mean-square error, absolute; with rel_eps, the floor
+        /// of the target (an option worth almost nothing still stops).
+        double eps = 0.0;
+        /// Target relative to the price: the run aims at max(eps, rel_eps
+        /// |estimate|), the estimate updated as levels and points are added
+        /// (WP 26 §9.4: the default route's target, 0.2 % of the price).
+        double rel_eps = 0.0;
         int min_finest_level = 2;
         int max_finest_level = 10;
         int replicates = 32;           ///< R
@@ -53,40 +60,41 @@ namespace quantModeling
           public:
             QmcLevel(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model, int level,
                      const MlqmcSettings &s)
-                : sampler_(product, model, level, s.seed), sums_(static_cast<std::size_t>(s.replicates), 0.0)
             {
-                const std::size_t dim = sampler_.draws().size();
-                if (dim > static_cast<std::size_t>(sobol_detail::kMaxDimension))
-                    throw InvalidInput("multilevel QMC: level " + std::to_string(level) + " needs " +
-                                       std::to_string(dim) + " draws per path, more than the " +
-                                       std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
                 for (int r = 0; r < s.replicates; ++r)
                 {
+                    auto rep = std::make_unique<Replicate>(product, model, level, s.seed);
+                    const std::size_t dim = rep->sampler.draws().size();
+                    if (dim > static_cast<std::size_t>(sobol_detail::kMaxDimension))
+                        throw InvalidInput("multilevel QMC: level " + std::to_string(level) + " needs " +
+                                           std::to_string(dim) + " draws per path, more than the " +
+                                           std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
                     // Independent across levels and replicates.
                     const std::uint64_t key = (s.seed << 32) ^ (static_cast<std::uint64_t>(level) << 16) ^
                                               static_cast<std::uint64_t>(r);
-                    seq_.emplace_back(static_cast<int>(dim), key, s.owen);
+                    rep->seq.emplace(static_cast<int>(dim), key, s.owen);
+                    const BrownianLayout layout = rep->sampler.fine_layout();
+                    if (layout.covers(dim))
+                        rep->bridge.emplace(layout.times, layout.factors, layout.stride);
+                    rep->point.resize(dim);
+                    reps_.push_back(std::move(rep));
                 }
-                const BrownianLayout layout = sampler_.fine_layout();
-                if (layout.covers(dim))
-                    bridge_.emplace(layout.times, layout.factors, layout.stride);
-                point_.resize(dim);
-                cost_ = sampler_.cost();
+                cost_ = reps_.front()->sampler.cost();
+                concurrent_ = reps_.front()->sampler.concurrent();
             }
 
-            /// `n` more points on every replicate.
-            void add(long long n)
+            /// `n` more points on every replicate; the replicates run as tasks
+            /// on `pool` when the product allows it. Each replicate's sum
+            /// accumulates in point order on its own: the same bits on any
+            /// number of threads.
+            void add(long long n, ThreadPool *pool)
             {
-                for (std::size_t r = 0; r < seq_.size(); ++r)
-                    for (long long p = 0; p < n; ++p)
-                    {
-                        seq_[r].next_gaussian(point_);
-                        if (bridge_)
-                            bridge_->map(point_, sampler_.draws());
-                        else
-                            std::copy(point_.begin(), point_.end(), sampler_.draws().begin());
-                        sums_[r] += sampler_.evaluate();
-                    }
+                run_in_chunks(concurrent_ ? pool : nullptr, reps_.size(), 1,
+                              [&](std::size_t first, std::size_t last)
+                              {
+                                  for (std::size_t r = first; r < last; ++r)
+                                      reps_[r]->add(n);
+                              });
                 points_ += n;
             }
 
@@ -96,33 +104,55 @@ namespace quantModeling
             double mean() const
             {
                 double m = 0.0;
-                for (const double v : sums_)
-                    m += v;
-                return m / (static_cast<double>(sums_.size()) * static_cast<double>(points_));
+                for (const auto &rep : reps_)
+                    m += rep->sum;
+                return m / (static_cast<double>(reps_.size()) * static_cast<double>(points_));
             }
 
             /// Variance of the level's estimate: the replicate means' sample
             /// variance over R.
             double estimator_variance() const
             {
-                const double m = mean(), R = static_cast<double>(sums_.size());
+                const double m = mean(), R = static_cast<double>(reps_.size());
                 double v = 0.0;
-                for (const double s : sums_)
+                for (const auto &rep : reps_)
                 {
-                    const double d = s / static_cast<double>(points_) - m;
+                    const double d = rep->sum / static_cast<double>(points_) - m;
                     v += d * d;
                 }
                 return v / (R - 1.0) / R;
             }
 
           private:
-            mlmc_detail::LevelSampler sampler_;
-            std::vector<SobolSequence> seq_;
-            std::optional<BridgedGaussians> bridge_;
-            std::vector<double> sums_;
-            std::vector<double> point_;
+            struct Replicate
+            {
+                Replicate(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model, int level,
+                          std::uint64_t seed)
+                    : sampler(product, model, level, seed)
+                {
+                }
+                void add(long long n)
+                {
+                    for (long long p = 0; p < n; ++p)
+                    {
+                        seq->next_gaussian(point);
+                        if (bridge)
+                            bridge->map(point, sampler.draws());
+                        else
+                            std::copy(point.begin(), point.end(), sampler.draws().begin());
+                        sum += sampler.evaluate();
+                    }
+                }
+                mlmc_detail::LevelSampler sampler;
+                std::optional<SobolSequence> seq;
+                std::optional<BridgedGaussians> bridge;
+                std::vector<double> point;
+                double sum = 0.0;
+            };
+            std::vector<std::unique_ptr<Replicate>> reps_;
             long long points_ = 0;
             double cost_ = 0.0;
+            bool concurrent_ = false;
         };
 
         /// alpha over the levels from 1 whose mean is resolved (|mean| > 2
@@ -145,10 +175,12 @@ namespace quantModeling
      * estimator_variance holds each level's V_l, std_error sqrt(sum V_l).
      */
     inline MlmcResult simulate_mlqmc(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model,
-                                     const MlqmcSettings &s)
+                                     const MlqmcSettings &s, ThreadPool *pool = nullptr)
     {
         if (!(s.eps > 0.0))
-            throw InvalidInput("simulate_mlqmc: eps must be > 0");
+            throw InvalidInput("simulate_mlqmc: eps must be > 0 (with rel_eps, the target's floor)");
+        if (s.rel_eps < 0.0)
+            throw InvalidInput("simulate_mlqmc: rel_eps must be >= 0");
         if (s.min_finest_level < 1 || s.max_finest_level < s.min_finest_level || s.max_finest_level > 20)
             throw InvalidInput("simulate_mlqmc: 1 <= min_finest_level <= max_finest_level <= 20");
         if (s.replicates < 2)
@@ -161,10 +193,20 @@ namespace quantModeling
         {
             levels.push_back(std::make_unique<mlqmc_detail::QmcLevel>(product, model,
                                                                       static_cast<int>(levels.size()), s));
-            levels.back()->add(s.initial_points);
+            levels.back()->add(s.initial_points, pool);
         };
         for (int l = 0; l <= s.min_finest_level; ++l)
             add_level();
+
+        // The target: absolute, or relative to the running estimate with
+        // eps as its floor.
+        auto target = [&]
+        {
+            double value = 0.0;
+            for (const auto &lv : levels)
+                value += lv->mean();
+            return std::max(s.eps, s.rel_eps * std::fabs(value));
+        };
 
         MlmcResult res;
         for (;;)
@@ -183,9 +225,10 @@ namespace quantModeling
                     if (score > best)
                         best = score, arg = l;
                 }
-                if (total <= 0.5 * s.eps * s.eps)
+                const double eps = target();
+                if (total <= 0.5 * eps * eps)
                     break;
-                levels[arg]->add(levels[arg]->points());
+                levels[arg]->add(levels[arg]->points(), pool);
             }
 
             // Bias: P4's test on the last two levels.
@@ -195,7 +238,7 @@ namespace quantModeling
             for (const auto &lv : levels)
                 m.push_back(std::fabs(lv->mean()));
             res.bias = mlmc_detail::remaining_bias(m, alpha);
-            if (res.bias <= s.eps / std::sqrt(2.0))
+            if (res.bias <= target() / std::sqrt(2.0))
                 break;
             if (static_cast<int>(L) >= s.max_finest_level)
             {
@@ -223,6 +266,7 @@ namespace quantModeling
             c.push_back(lv->cost());
         }
         res.std_error = std::sqrt(var);
+        res.eps = target();
         res.alpha = mlqmc_detail::alpha_estimate(levels);
         res.beta = -mlmc_detail::log2_slope(v, -1.0);
         res.gamma = mlmc_detail::log2_slope(c, 1.0);

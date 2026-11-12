@@ -7562,6 +7562,18 @@
             "title": "Diagnostics",
             "type": "string"
           },
+          "discretisation_bias": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
+            "title": "Discretisation Bias"
+          },
           "gpus": {
             "default": 0,
             "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
@@ -9373,6 +9385,12 @@
             "title": "Antithetic",
             "type": "boolean"
           },
+          "bias_estimate": {
+            "default": true,
+            "description": "Estimate and return the discretisation bias of a plain (non-multilevel) run: the steps are halved and the bias read from the difference, at about three times the cost of one run of a time-stepped model.",
+            "title": "Bias Estimate",
+            "type": "boolean"
+          },
           "control_variate": {
             "default": false,
             "description": "Regress the deflated spots at up to 8 event dates -- martingales of known mean -- out of the payoff (blueprint WP 19 \u00a72.5). The diagnostics give the variance removed. Most useful without antithetic pairs, which already cancel the part linear in the spot.",
@@ -9475,11 +9493,29 @@
             "title": "Milstein",
             "type": "boolean"
           },
+          "mlmc": {
+            "default": "auto",
+            "description": "'auto' (the default): multilevel Monte Carlo over the time step whenever the script suits it -- model local_vol, one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'off': the usual engine (blueprint WP 26 \u00a79.4).",
+            "enum": [
+              "auto",
+              "off"
+            ],
+            "title": "Mlmc",
+            "type": "string"
+          },
           "mlmc_eps": {
             "default": 0.0,
-            "description": "Multilevel Monte Carlo over the time step (blueprint WP 26 \u00a78), opt-in: the target root-mean-square error of the price, absolute (0, the default: off). Applied when the script suits it -- model local_vol, one payoff, no early exercise -- the levels refined until the estimated discretisation bias is below mlmc_eps / sqrt(2); otherwise the usual engine runs and the diagnostics say why. With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79); with 'pseudo', multilevel Monte Carlo. CPU, price only; the time-step bias is controlled. n_paths and device are then ignored.",
+            "description": "An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.",
             "minimum": 0.0,
             "title": "Mlmc Eps",
+            "type": "number"
+          },
+          "mlmc_rel_eps": {
+            "default": 0.002,
+            "description": "Multilevel target as a share of the price (0.2 % by default), split half to the standard error, half to the discretisation bias.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.1,
+            "title": "Mlmc Rel Eps",
             "type": "number"
           },
           "model": {
@@ -9780,6 +9816,12 @@
             "title": "Antithetic",
             "type": "boolean"
           },
+          "bias_estimate": {
+            "default": true,
+            "description": "Estimate and return the discretisation bias of a plain (non-multilevel) run: the steps are halved and the bias read from the difference, at about three times the cost of one run of a time-stepped model.",
+            "title": "Bias Estimate",
+            "type": "boolean"
+          },
           "control_variate": {
             "default": false,
             "description": "Regress the deflated spots at up to 8 event dates -- martingales of known mean -- out of the payoff (blueprint WP 19 \u00a72.5). The diagnostics give the variance removed. Most useful without antithetic pairs, which already cancel the part linear in the spot.",
@@ -9882,11 +9924,29 @@
             "title": "Milstein",
             "type": "boolean"
           },
+          "mlmc": {
+            "default": "auto",
+            "description": "'auto' (the default): multilevel Monte Carlo over the time step whenever the script suits it -- model local_vol, one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'off': the usual engine (blueprint WP 26 \u00a79.4).",
+            "enum": [
+              "auto",
+              "off"
+            ],
+            "title": "Mlmc",
+            "type": "string"
+          },
           "mlmc_eps": {
             "default": 0.0,
-            "description": "Multilevel Monte Carlo over the time step (blueprint WP 26 \u00a78), opt-in: the target root-mean-square error of the price, absolute (0, the default: off). Applied when the script suits it -- model local_vol, one payoff, no early exercise -- the levels refined until the estimated discretisation bias is below mlmc_eps / sqrt(2); otherwise the usual engine runs and the diagnostics say why. With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79); with 'pseudo', multilevel Monte Carlo. CPU, price only; the time-step bias is controlled. n_paths and device are then ignored.",
+            "description": "An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.",
             "minimum": 0.0,
             "title": "Mlmc Eps",
+            "type": "number"
+          },
+          "mlmc_rel_eps": {
+            "default": 0.002,
+            "description": "Multilevel target as a share of the price (0.2 % by default), split half to the standard error, half to the discretisation bias.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 0.1,
+            "title": "Mlmc Rel Eps",
             "type": "number"
           },
           "model": {
@@ -11504,6 +11564,18 @@
             "title": "Diagnostics",
             "type": "string"
           },
+          "discretisation_bias": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
+            "title": "Discretisation Bias"
+          },
           "gpus": {
             "default": 0,
             "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
@@ -11876,6 +11948,18 @@
           "diagnostics": {
             "title": "Diagnostics",
             "type": "string"
+          },
+          "discretisation_bias": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
+            "title": "Discretisation Bias"
           },
           "gpus": {
             "default": 0,

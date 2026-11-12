@@ -5,6 +5,7 @@
 #include "quantModeling/engines/mc/approx_inverse_cdf.hpp"
 #include "quantModeling/engines/mc/mlmc.hpp"
 #include "quantModeling/engines/mc/mlqmc.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
@@ -558,6 +559,103 @@ namespace quantModeling
         EXPECT_NEAR(mlmc_detail::remaining_bias(later, 1.0), std::max({0.12 / 4.0, 0.03 / 2.0, 0.06}), 1e-12);
         // r = 4 (alpha = 2): divided by r - 1 = 3.
         EXPECT_NEAR(mlmc_detail::remaining_bias({1.0, 0.4, 0.1}, 2.0), 0.1 / 3.0, 1e-12);
+    }
+
+    TEST(Mlmc, MultilevelQmcGivesTheSameBitsOnAnyNumberOfThreads)
+    {
+        // Each replicate sums its points in order on its own (WP 26 §9.4).
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        MlqmcSettings s;
+        s.eps = 0.02;
+        s.seed = 13;
+        const MlmcResult one = simulate_mlqmc(product, *m, s);
+        ThreadPool pool;
+        pool.start(7);
+        const MlmcResult eight = simulate_mlqmc(product, *m, s, &pool);
+        EXPECT_EQ(one.value, eight.value);
+        EXPECT_EQ(one.std_error, eight.std_error);
+        EXPECT_EQ(one.finest_level(), eight.finest_level());
+    }
+
+    TEST(Mlmc, MultilevelQmcAimsAtAShareOfThePrice)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        MlqmcSettings s;
+        s.eps = 1e-6; // the floor
+        s.rel_eps = 0.002;
+        s.seed = 13;
+        const MlmcResult r = simulate_mlqmc(product, *m, s);
+        EXPECT_NEAR(r.eps, 0.002 * r.value, 1e-12);
+        EXPECT_LE(r.std_error, 1.02 * r.eps / std::sqrt(2.0)) << r.diagnostics;
+        EXPECT_LE(r.bias, r.eps / std::sqrt(2.0)) << r.diagnostics;
+    }
+
+    // ── WP 26 §9.4: the default route's bias, shown ──────────────────────
+
+    TEST(Mlmc, APlainLocalVolRunEstimatesItsBiasByHalvingTheSteps)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        PricingSettings s;
+        s.mc_paths = 1 << 16;
+        s.mc_bias_estimate = true;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        ASSERT_TRUE(r.discretisation_bias.has_value()) << r.diagnostics;
+        // The price is the halved run's; the bias the difference from the
+        // unhalved one.
+        auto halved = make_script_model<Real>(local_vol(false));
+        ASSERT_TRUE(halved->set_refinement(2));
+        PricingSettings p = s;
+        p.mc_bias_estimate = false;
+        const SimulationMCResult fine = simulate_script(product, *halved, p);
+        const SimulationMCResult coarse = simulate_script(product, *m, p);
+        EXPECT_EQ(r.npv(), fine.npv());
+        EXPECT_EQ(*r.discretisation_bias, std::fabs(fine.npv() - coarse.npv()));
+        EXPECT_GT(*r.discretisation_bias, 0.0);
+    }
+
+    TEST(Mlmc, BlackScholesHasNoDiscretisationBiasAndHestonsIsNotEstimated)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        PricingSettings s;
+        s.mc_paths = 1 << 14;
+        s.mc_bias_estimate = true;
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        auto m = make_script_model<Real>(bs);
+        const SimulationMCResult exact = simulate_script(product, *m, s);
+        ASSERT_TRUE(exact.discretisation_bias.has_value());
+        EXPECT_EQ(*exact.discretisation_bias, 0.0);
+
+        ScriptModelSpec heston = local_vol(true);
+        heston.model = "heston";
+        heston.heston = HestonParams{0.04, 2.0, 0.04, 0.5, -0.7};
+        auto h = make_script_model<Real>(heston);
+        const SimulationMCResult unknown = simulate_script(product, *h, s);
+        EXPECT_FALSE(unknown.discretisation_bias.has_value());
+        EXPECT_NE(unknown.diagnostics.find("not estimated"), std::string::npos) << unknown.diagnostics;
+    }
+
+    TEST(Mlmc, TheMultilevelRouteReportsItsBiasAndAimsAtAShareOfThePrice)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        PricingSettings s;
+        s.mc_mlmc_eps = 1e-4; // floor
+        s.mc_mlmc_rel_eps = 0.002;
+        ThreadPool pool;
+        pool.start(7);
+        const SimulationMCResult r = simulate_script(product, *m, s, &pool);
+        ASSERT_TRUE(r.discretisation_bias.has_value()) << r.diagnostics;
+        EXPECT_LE(*r.discretisation_bias, 0.002 * r.npv() / std::sqrt(2.0) * 1.0001) << r.diagnostics;
+        EXPECT_LE(r.std_error(), 1.02 * 0.002 * r.npv() / std::sqrt(2.0)) << r.diagnostics;
+
+        PricingSettings no_floor = s;
+        no_floor.mc_mlmc_eps = 0.0;
+        EXPECT_THROW(simulate_script(product, *m, no_floor), InvalidInput);
     }
 
 } // namespace quantModeling
