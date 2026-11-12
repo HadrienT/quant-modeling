@@ -64,7 +64,6 @@ target_sources(quantModeling
         src/engines/analytic/future.cpp
         src/engines/analytic/bonds.cpp
         src/engines/mc/black_scholes.cpp
-        src/engines/mc/local_vol.cpp
         src/engines/tree/binomial.cpp
         src/engines/tree/trinomial.cpp
         src/engines/pde/european_vanilla.cpp
@@ -162,6 +161,7 @@ target_sources(quantModeling
         src/pricers/script_route.cpp
         src/pricers/script_builders.cpp
         src/pricers/adapters/equity_barrier.cpp
+        src/pricers/adapters/equity_vanilla_lv.cpp
         src/pricers/adapters/equity_asian_lookback_script.cpp
         src/pricers/adapters/equity_multi_asset_script.cpp
         src/pricers/adapters/equity_realised_variance_script.cpp

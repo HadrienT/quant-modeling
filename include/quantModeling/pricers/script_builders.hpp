@@ -32,6 +32,9 @@ namespace quantModeling::script_builders
     /// A number as the script parser reads it back to the bit.
     std::string number(double x);
 
+    /// European call (put) paid at expiry: max(spot() - K, 0).
+    std::string european(bool is_call, Real strike, int days);
+
     struct BarrierTerms
     {
         bool is_call = true;

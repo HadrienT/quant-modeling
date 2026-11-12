@@ -5,7 +5,7 @@
 
 #include "quantModeling/pricers/inputs.hpp"
 #include "quantModeling/pricers/registry.hpp"
-#include "quantModeling/engines/mc/local_vol.hpp"
+#include "quantModeling/pricers/adapters/equity_vanilla_lv.hpp"
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/engines/xva/cross_currency_exposure_engine.hpp"

@@ -81,6 +81,11 @@ namespace quantModeling::script_builders
         }
     } // namespace
 
+    std::string european(bool is_call, Real strike, int days)
+    {
+        return iso(days) + "\n    pays " + vanilla(is_call, strike) + "\n";
+    }
+
     std::string barrier(const BarrierTerms &t, int days, int observations)
     {
         const bool up = t.type == BarrierType::UpAndOut || t.type == BarrierType::UpAndIn;

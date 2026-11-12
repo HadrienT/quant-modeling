@@ -728,6 +728,28 @@ Acceptance: `src/engines/mc/` keeps only the generic engine, the model
 kernels and what the GPU needs; every catalogue Monte-Carlo price comes from a
 script.
 
+**The local-vol endpoint's vanilla (follow-up, 2026-11-12).**
+`price_local_vol_mc`, the Monte Carlo of the API's `/local-vol/price`, was a
+hand-written log-Euler loop outside the registry (`engines/mc/local_vol.cpp`,
+PCG32 + Box-Muller, antithetic, five bumped re-simulations for the greeks).
+It is now a script route (`pricers/adapters/equity_vanilla_lv.cpp`, builder
+`script_builders::european`): the same scheme and steps (local vol read at
+each step's start), Sobol, the GPU when present. The retired loop stays in
+`tests/testLocalVol.cpp` as the oracle on a skewed surface; parity and the
+grid's parallel-shift vega are checked there too. Same inputs as the API's
+defaults (50 000 paths, 252 steps a year, one year, K = 95, skewed surface),
+one V100:
+
+| | Price | Std error | Time with greeks | Price only |
+|---|---|---|---|---|
+| Retired loop (CPU, one thread) | 12.403 | 0.063 | 3.3 s | 0.56 s |
+| Script route (GPU, Sobol) | 12.468 | 0.0017 | 0.07 s (0.62 s cold) | 0.006 s (0.54 s cold) |
+
+The cold times are the kernel's compilation (NVRTC), paid once per shape and
+process; WP 27's lot L1b removes it. Left in `src/engines/mc/` outside the
+generic engine: the plain vanilla's `BSEuroVanillaMCEngine`, the GPU's
+reference kernel.
+
 ## 8. P4 — Multilevel Monte-Carlo
 
 ### 8.1 The method
