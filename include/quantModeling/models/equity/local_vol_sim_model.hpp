@@ -69,7 +69,7 @@ namespace quantModeling
         /// caches pointers into *this* object's own members, so a naive
         /// copy would leave them pointing at the original.
         LocalVolSimModel(const LocalVolSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), sigma_loc_(other.sigma_loc_), max_dt_(other.max_dt_), refinement_(other.refinement_), milstein_(other.milstein_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
         {
             set_param_pointers();
         }
@@ -103,6 +103,13 @@ namespace quantModeling
             return true;
         }
 
+        /// The Milstein step instead of log-Euler (WP 26 P4b): strong order 1,
+        /// MLMC's levels then decay as h^2. CPU only (describe_device
+        /// refuses it), and the deflated spot is no longer an exact
+        /// martingale on the grid (deflated_spot_mean refuses it).
+        void set_milstein(bool on) { milstein_ = on; }
+        bool milstein() const { return milstein_; }
+
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
         std::size_t sim_dim() const override { return sim_dim_; }
 
@@ -133,7 +140,8 @@ namespace quantModeling
                 const Time dt = t - t_prev;
 
                 const T S_before = S;
-                const T var = mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
+                const T var = milstein_ ? mc::local_vol_milstein_step(grid(), r_, q_, S, t, dt, gaussians[k])
+                                        : mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
                 t_prev = t;
 
                 if (next < defline_.size())
@@ -182,6 +190,8 @@ namespace quantModeling
                 return false;
             else
             {
+                if (milstein_)
+                    return false; // the device steps log-Euler only
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::LocalVol;
                 d.r = r_;
@@ -203,7 +213,7 @@ namespace quantModeling
         /// on the grid, E = S0 e^{-q t}.
         bool deflated_spot_mean(std::size_t asset, Time t, Real &mean) const override
         {
-            if (asset != 0)
+            if (asset != 0 || milstein_)
                 return false;
             mean = to_double(s0_) * std::exp(-to_double(q_) * t);
             return true;
@@ -252,6 +262,7 @@ namespace quantModeling
         std::vector<T> sigma_loc_;
         Time max_dt_;
         int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
+        bool milstein_ = false;
 
         TimeLine timeline_;     // the product's own event dates
         TimeLine sim_timeline_; // timeline_ plus internal Euler steps

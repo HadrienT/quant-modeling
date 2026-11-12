@@ -226,6 +226,29 @@ namespace quantModeling
             return (n * sxy - sx * sy) / (n * sxx - sx * sx);
         }
 
+        /**
+         * alpha by regression over the levels from 1 whose sample mean is
+         * resolved, |mean| > 2 standard errors (WP 26 P4b). A mean lost in
+         * its noise says nothing of the decay, and regressing on it swung
+         * the estimate from 0.66 to 2.2 between runs (P4a), which the bias
+         * test divides by. Fewer than two resolved levels: 1, the weak order
+         * of both Euler and Milstein. At least 0.5, as Giles.
+         */
+        inline double alpha_estimate(const std::vector<MlmcLevel> &levels)
+        {
+            std::vector<double> m(levels.size(), 0.0);
+            for (std::size_t l = 1; l < levels.size(); ++l)
+            {
+                const MlmcLevel &v = levels[l];
+                if (v.n < 2)
+                    continue;
+                const double se = std::sqrt(v.variance() / static_cast<double>(v.n));
+                if (std::fabs(v.mean()) > 2.0 * se)
+                    m[l] = std::fabs(v.mean());
+            }
+            return std::max(0.5, -log2_slope(m, -1.0));
+        }
+
         inline void finish(MlmcResult &res)
         {
             res.value = 0.0;
@@ -244,7 +267,7 @@ namespace quantModeling
                 v.push_back(l.variance());
                 c.push_back(l.cost);
             }
-            res.alpha = -log2_slope(m, -1.0);
+            res.alpha = alpha_estimate(res.levels);
             res.beta = -log2_slope(v, -1.0);
             res.gamma = log2_slope(c, 1.0);
 
@@ -287,7 +310,8 @@ namespace quantModeling
      *        mean-square budget to the variance), and a level added while
      *        max(|Y_{L-1}| / 2^alpha, |Y_L|) / (2^alpha - 1) > eps / sqrt(2)
      *        (the other half to the bias). alpha and beta are estimated by
-     *        regression over the levels (alpha at least 0.5), never assumed;
+     *        regression over the levels (alpha over the resolved ones only,
+     *        see mlmc_detail::alpha_estimate), never assumed;
      *        a level whose sample mean or variance is below what the decay
      *        predicts from the previous one is lifted to half that
      *        prediction (Giles's guard against a lucky small estimate).
@@ -333,7 +357,7 @@ namespace quantModeling
                 v[l] = res.levels[l].variance();
                 c[l] = res.levels[l].cost;
             }
-            const double alpha = std::max(0.5, -mlmc_detail::log2_slope(m, -1.0));
+            const double alpha = mlmc_detail::alpha_estimate(res.levels);
             const double beta = std::max(0.5, -mlmc_detail::log2_slope(v, -1.0));
             for (std::size_t l = 2; l <= L; ++l)
             {

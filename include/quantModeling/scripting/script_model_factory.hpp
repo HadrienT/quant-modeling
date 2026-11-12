@@ -59,6 +59,9 @@ namespace quantModeling::scripting
         std::vector<std::vector<double>> T_grids;
         std::vector<std::vector<double>> sigma_loc_flats;
         double max_dt = 1.0 / 52.0; ///< Euler step bound (every model but black_scholes)
+        /// local_vol (one underlying): the Milstein step instead of log-Euler
+        /// (WP 26 P4b), CPU only.
+        bool milstein = false;
         /// rough_bergomi: (H, eta, rho) and the forward variance curve
         /// xi0(t), piecewise constant on (xi_times[i-1], xi_times[i]].
         double rb_H = 0.1;
@@ -175,9 +178,12 @@ namespace quantModeling::scripting
                 T(s.spot), T(s.rate), T(s.dividend), T(s.vol));
         }
         if (s.model == "local_vol")
-            return std::make_unique<LocalVolSimModel<T>>(
-                T(s.spot), T(s.rate), T(s.dividend), s.K_grid, s.T_grid,
-                to_T(s.sigma_loc_flat), s.max_dt);
+        {
+            auto m = std::make_unique<LocalVolSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend), s.K_grid, s.T_grid,
+                                                           to_T(s.sigma_loc_flat), s.max_dt);
+            m->set_milstein(s.milstein);
+            return m;
+        }
         if (s.model == "heston")
             return std::make_unique<BatesSimModel<T>>(
                 T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),

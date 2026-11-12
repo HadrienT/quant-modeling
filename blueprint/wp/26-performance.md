@@ -859,11 +859,55 @@ MLMC chose):
 | 0.01 | 4 | 1.4e8 | 8.3e8 | 5.8× | 9.0 s |
 | 0.005 | 7 | 9.5e8 | 2.7e10 | 28× | 58 s |
 
-Open for P4b: alpha estimated by regression over noisy level means swings
+Open for P4b (done, §8.6b): alpha estimated by regression over noisy level means swings
 (0.66 to 2.2 in the runs above), and the bias test divides by 2^alpha - 1; a
 large estimate stops adding levels early (eps = 0.01 stopped at level 4 with
 alpha 2.2). Giles's code has the same estimator; Milstein (beta = 2) and a
 floor or prior on alpha are the candidates, decided on measurements.
+
+### 8.6b P4b: Milstein for local vol, a robust alpha (done, 2026-11-12)
+
+**Milstein.** `mc::local_vol_milstein_step` (`models/equity/path_steps.hpp`)
+steps the log-spot X = ln S with the Milstein term of its diffusion
+b(X) = σ(e^X, t), b' = S ∂σ/∂S:
+X += (r − q − σ²/2) dt + σ √dt z + ½ σ (S ∂σ/∂S) dt (z² − 1). The slope comes
+from the Dupire grid's bilinear lookup (`mc::local_vol_with_slope`: the
+strike interpolation's slope blended in time, 0 outside the strike grid and
+where the floor binds). Opt-in (`LocalVolSimModel::set_milstein`,
+`ScriptModelSpec::milstein`): log-Euler stays the default, no bit moves. CPU
+only (the device steps log-Euler; `describe_device` refuses), and the
+deflated spot is no longer an exact martingale on the grid
+(`deflated_spot_mean` refuses, so the generic spot controls stay off).
+
+**alpha.** The regression now uses only the levels whose sample mean is
+resolved (|mean| > 2 standard errors), 1 (the weak order of Euler and
+Milstein) when fewer than two are. P4a's swings (0.66 to 2.2) came from
+regressing on means lost in their noise.
+
+Measured (`tests/testMlmc.cpp`):
+
+- smooth surface (σ linear in S, no grid node on the paths' range):
+  beta = 2.00 with Milstein, 1.02 with log-Euler;
+- Milstein-GBM test bed: MLMC cost against eps in log-log, slope −2.01
+  (Giles 2008, Theorem 3.1: O(eps^-2) when beta > gamma);
+- the skewed surface of §8.6a, whose bilinear interpolation has kinks at the
+  strike nodes (∂σ/∂S jumps): beta = 1.66 with Milstein. Gains over plain
+  Monte Carlo at equal error, one thread:
+
+| eps | log-Euler MLMC | Milstein MLMC |
+|---|---|---|
+| 0.02 | 2.2× (1.6 s) | 10.5× (1.2 s) |
+| 0.01 | 28× (14.8 s) | 20× (5.1 s) |
+| 0.005 | 28× (59 s) | 38× (22 s) |
+
+With the robust alpha, log-Euler goes to level 7 at eps = 0.01 instead of
+stopping at 4 on a noisy estimate: dearer, but its bias is controlled.
+Milstein's level-0 bias is larger (0.078 against ~0.002 for log-Euler on
+level 1) and resolved, which is what makes its alpha stable (0.94–1.17).
+
+Left: Milstein for Heston and SLV (the doc's later decision, §8.5); a
+smoother interpolation of the Dupire grid would give beta = 2 on market
+surfaces too (to measure against its effect on the calibration).
 
 ### 8.7 A second axis: approximate random variables (nested MLMC)
 

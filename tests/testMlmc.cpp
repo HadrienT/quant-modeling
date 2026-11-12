@@ -6,6 +6,8 @@
 #include "quantModeling/engines/mc/simulation_engine.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/models/device_model.hpp"
+#include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 
 #include <cmath>
@@ -160,13 +162,17 @@ namespace quantModeling
          * The test bed of WP 26 §8.6: GBM stepped by Euler on S itself,
          * S <- S (1 + r h + sigma sqrt(h) z), whose weak error is known:
          * E[S_T] = S0 (1 + r h)^n against S0 e^{rT}, an O(h) bias
-         * (alpha = 1), and whose strong error gives beta = 1.
+         * (alpha = 1), and whose strong error gives beta = 1 -- beta = 2 with
+         * the Milstein term ½ sigma² h (z² - 1) (Milstein's weak bias is the
+         * same: E[z² - 1] = 0).
          */
         class EulerGbm final : public ISimulationModel<Real>
         {
           public:
-            EulerGbm(Real s0, Real r, Real sigma, Time max_dt)
-                : s0_(s0), r_(r), sigma_(sigma), max_dt_(max_dt) {}
+            EulerGbm(Real s0, Real r, Real sigma, Time max_dt, bool milstein = false)
+                : s0_(s0), r_(r), sigma_(sigma), max_dt_(max_dt), milstein_(milstein)
+            {
+            }
             std::size_t n_underlyings() const override { return 1; }
             bool set_refinement(int r) override { return r >= 1 && (refinement_ = r); }
             void init(const TimeLine &product_timeline, const std::vector<SampleDef> &defline) override
@@ -186,7 +192,8 @@ namespace quantModeling
                 for (std::size_t k = 0; k < sim_.size(); ++k)
                 {
                     const Time h = sim_[k] - prev;
-                    S *= 1.0 + r_ * h + sigma_ * std::sqrt(h) * z[k];
+                    S *= 1.0 + r_ * h + sigma_ * std::sqrt(h) * z[k] +
+                         (milstein_ ? 0.5 * sigma_ * sigma_ * h * (z[k] * z[k] - 1.0) : 0.0);
                     prev = sim_[k];
                     if (event_of_step_[k] < 0)
                         continue;
@@ -207,6 +214,7 @@ namespace quantModeling
           private:
             Real s0_, r_, sigma_;
             Time max_dt_;
+            bool milstein_;
             int refinement_ = 1;
             TimeLine sim_;
             std::vector<std::ptrdiff_t> event_of_step_;
@@ -276,6 +284,99 @@ namespace quantModeling
             simulate_mlmc_fixed(product, *m, {400000, 200000, 100000, 50000, 25000, 12000, 6000, 3000, 1500}, 17);
         EXPECT_NEAR(r.value, ref.value, 3.0 * s.eps + 4.0 * ref.std_error)
             << r.diagnostics << " | reference " << ref.value << " +- " << ref.std_error;
+    }
+
+    // ── WP 26 P4b: Milstein ─────────────────────────────────────────────
+
+    TEST(Mlmc, TheLocalVolSlopeIsTheLookupsDerivative)
+    {
+        const std::vector<Real> K = {50.0, 80.0, 100.0, 120.0, 200.0}, Tg = {0.0, 0.5, 2.0};
+        const std::vector<Real> v = local_vol(false).sigma_loc_flat;
+        const mc::GridView<Real> g{K.data(), 5, Tg.data(), 3, v.data()};
+        for (const double S : {60.0, 90.0, 110.0, 150.0})
+            for (const double t : {0.1, 0.7})
+            {
+                Real slope;
+                const Real sigma = mc::local_vol_with_slope(g, S, t, slope);
+                EXPECT_DOUBLE_EQ(sigma, mc::local_vol_bilinear(g, S, t));
+                const double h = 1e-4;
+                const double fd =
+                    (mc::local_vol_bilinear(g, S + h, t) - mc::local_vol_bilinear(g, S - h, t)) / (2 * h);
+                EXPECT_NEAR(slope, fd, 1e-9) << S << ' ' << t;
+            }
+        Real slope;
+        mc::local_vol_with_slope(g, 300.0, 0.5, slope); // flat beyond the grid
+        EXPECT_EQ(slope, 0.0);
+    }
+
+    TEST(Mlmc, MilsteinOnAFlatSurfaceIsLogEuler)
+    {
+        // No slope, no Milstein term: the same bits.
+        ScriptModelSpec euler = local_vol(true), milstein = local_vol(true);
+        milstein.milstein = true;
+        const SimulationMCResult a = plain(kCall, euler, 0, 20000), b = plain(kCall, milstein, 0, 20000);
+        EXPECT_EQ(a.npv(), b.npv());
+    }
+
+    TEST(Mlmc, MilsteinStaysOnTheCpu)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        m->init(product.timeline(), product.defline());
+        DeviceModel d;
+        EXPECT_FALSE(m->describe_device(d));
+        Real mean;
+        EXPECT_FALSE(m->deflated_spot_mean(0, 0.5, mean)); // no longer an exact martingale
+    }
+
+    TEST(Mlmc, MilsteinLevelsDecayAsTheSquareOfTheStep)
+    {
+        // A local vol linear in S (two strike nodes far apart: no kink on
+        // the paths' range): sigma smooth, Milstein's strong order 1, beta
+        // ~ 2 -- against beta ~ 1 for log-Euler on the same surface.
+        ScriptedProduct<Real> product(kCall, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.K_grid = {10.0, 1000.0};
+        spec.T_grid = {0.0, 2.0};
+        spec.sigma_loc_flat = {0.50, 0.50, 0.05, 0.05}; // 50 % at 10, 5 % at 1000
+        const std::vector<long long> n = {1000, 100000, 100000, 100000, 100000, 100000};
+        const MlmcResult euler = simulate_mlmc_fixed(product, *make_script_model<Real>(spec), n, 29);
+        spec.milstein = true;
+        const MlmcResult milstein = simulate_mlmc_fixed(product, *make_script_model<Real>(spec), n, 29);
+        RecordProperty("milstein_beta", std::to_string(milstein.beta));
+        RecordProperty("euler_beta", std::to_string(euler.beta));
+        EXPECT_NEAR(milstein.beta, 2.0, 0.3) << milstein.diagnostics;
+        EXPECT_NEAR(euler.beta, 1.0, 0.25) << euler.diagnostics;
+        // and the two schemes converge to the same price
+        EXPECT_NEAR(milstein.value, euler.value, 4.0 * std::hypot(milstein.std_error, euler.std_error) + 0.01);
+    }
+
+    TEST(Mlmc, MilsteinCostGrowsAsEpsToTheMinusTwo)
+    {
+        // beta = 2 > gamma = 1: the MLMC cost is O(eps^-2) (Giles 2008,
+        // Theorem 3.1), against O(eps^-3) for plain Monte Carlo with a first
+        // order bias. Measured in log-log on the Milstein-GBM test bed.
+        ScriptedProduct<Real> product(kSpot, ctx());
+        const EulerGbm m(100.0, 0.5, 0.2, 1.0 / 12.0, true);
+        double sx = 0, sy = 0, sxx = 0, sxy = 0;
+        const std::vector<double> eps = {0.04, 0.02, 0.01, 0.005};
+        for (const double e : eps)
+        {
+            MlmcSettings s;
+            s.eps = e;
+            s.seed = 31;
+            const MlmcResult r = simulate_mlmc(product, m, s);
+            EXPECT_TRUE(r.bias_converged) << r.diagnostics;
+            EXPECT_NEAR(r.value, 100.0, 3.0 * e) << r.diagnostics;
+            const double x = std::log(e), y = std::log(r.total_cost());
+            sx += x, sy += y, sxx += x * x, sxy += x * y;
+        }
+        const double n = static_cast<double>(eps.size());
+        const double slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+        RecordProperty("cost_slope", std::to_string(slope));
+        EXPECT_NEAR(slope, -2.0, 0.3);
     }
 
 } // namespace quantModeling
