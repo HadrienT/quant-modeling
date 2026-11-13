@@ -180,6 +180,16 @@ Measure before changing anything.
 - **qmharness baseline**: one `full` run stored, the reference for every later
   `qm_compare`.
 
+**Follow-up (2026-11-14): the worst-of autocall reference.** The third
+reference kernel, left out of P0: `qm_reference::worst_of_autocall` (three
+assets, 8 quarters, the script library's Phoenix terms) and the same product
+as a script (`benchmarks/reference/reference_scripts.hpp`). One CPU thread,
+Philox + antithetic, 100 000 pairs: script 247 ms against 102 ms hand-written
+(2.4x, the highest ratio of the five cases: eight dates, so the per-event
+overhead is not amortised over steps). One V100: the reference reaches 1e-3
+in 0.9 ms; the compiled script runs 2 000 000 paths in 3.5 ms (9.0 ms
+interpreted), the same bits.
+
 Acceptance: `qm_perf_bench` reproduces its own numbers within 10 % on two runs;
 §11's "v1" column is filled; the barrier's price-only time replaces the
 estimate of §2.2.

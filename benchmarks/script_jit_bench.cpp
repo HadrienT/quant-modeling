@@ -30,6 +30,8 @@
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 
+#include "reference/reference_scripts.hpp"
+
 using namespace quantModeling;
 
 namespace
@@ -80,6 +82,7 @@ namespace
         std::string script;
         bool local_vol;
         int paths;
+        bool three_assets = false; ///< the worst-of autocall's model
     };
 
     struct Timing
@@ -94,7 +97,8 @@ namespace
     {
         setenv("QM_SCRIPT_JIT", compiled ? "1" : "0", 1);
         const ScriptedProduct<Real> product(c.script, ValuationContext{kValuation});
-        auto model = scripting::make_script_model<Real>(spec(c.local_vol));
+        auto model = scripting::make_script_model<Real>(c.three_assets ? qm_reference::worst_of_autocall_model(0.03)
+                                                                       : spec(c.local_vol));
         PricingSettings s;
         s.mc_paths = paths;
         s.mc_seed = 1;
@@ -141,6 +145,7 @@ int main(int argc, char **argv)
         {"barrier_lv", weekly_barrier(), true, 1877726},
         {"asian_bs", kDailyAsian, false, 1163724},
         {"asian_lv", kDailyAsian, true, 950442},
+        {"autocall_bs", qm_reference::worst_of_autocall_script(kValuation), false, 2000000, true},
     };
     std::printf("Script engine on one V100, %s: interpreter vs compiled script\n",
                 g_sobol ? "Sobol RQMC (16 replicates, bridge)" : "Philox + antithetic");
