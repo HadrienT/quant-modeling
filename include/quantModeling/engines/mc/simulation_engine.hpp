@@ -786,9 +786,13 @@ namespace quantModeling
             }
             if (cv)
                 run_payoff_cv(w, acc_cv);
+            else if (batch > 0)
+                batch_path(w, acc); // the batched interpreter (P1a): the same payoffs, added in the same order
             else
                 run_payoff(w, acc);
         }
+        if (batch > 0 && !cv)
+            flush_batch(w, acc);
 
         if (cv)
             finish_cv(acc_cv);

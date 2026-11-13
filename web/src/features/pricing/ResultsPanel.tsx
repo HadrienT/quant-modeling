@@ -3,6 +3,7 @@ import type { ProductDescriptor } from "@/shared/products";
 import { type ComputeDevice, deviceLabel, usePricing } from "@/shared/api";
 import {
 	ComputeTime,
+	DiscretisationBias,
 	EngineTag,
 	Freshness,
 	NumberCell,
@@ -114,6 +115,9 @@ export function ResultsPanel({
 						/>
 					</div>
 				</div>
+				{isMc && (
+					<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
+				)}
 				{r.diagnostics && (
 					<p className="mt-2 font-mono text-2xs text-ink-muted">
 						{r.diagnostics}

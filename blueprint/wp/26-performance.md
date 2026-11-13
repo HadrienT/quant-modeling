@@ -1510,6 +1510,26 @@ The requests of §10.1 and §10.2 after both (same prices and errors):
 | Call 120 % (one level doubles three times) | 0.26 s | 0.81 s |
 | Arithmetic Asian | 0.33 s | 0.64 s |
 
+### 10.4 The registry's prices carry their bias (2026-11-13)
+
+The scripting API returns the discretisation bias of every Monte-Carlo price
+since §9.4; the registry's script routes (`price_by_script`: the workbench's
+local-vol vanilla, barrier, Asian and lookback, and the catalogue under
+Black-Scholes) did not. They now ask for it the same way
+(`mc_bias_estimate`): a model that steps on a grid is priced with every step
+halved and its bias read from the unhalved run on the same points; a model
+exact between the dates returns 0 at no cost; a model that cannot refine its
+grid returns none. With greeks, the central differences stay on the route's
+own grid, beside the priced run. The workbench's result panel shows the
+bias under the price, as the scripting page does.
+
+What moves: a local-vol registry price is now the halved-step one (closer to
+the limit by about its former bias), at three runs instead of one (§11's
+local-vol rows of the first column: 0.008 → 0.023 s for the barrier). Tests
+(`tests/testLocalVol.cpp`): the bias is there, positive and small against
+the price, the same with and without greeks; the hand-written oracle steps
+on the halved grid; a Black-Scholes route returns exactly 0.
+
 ## 11. Results
 
 Time to reach a relative standard error of 1e-3 (`benchmarks/perf_matrix.py`;
@@ -1546,7 +1566,57 @@ The CPU columns of the reference are not in the table: on one thread its
 Philox + Φ⁻¹ gaussians make it slower than PCG32 + Box-Muller engines (§2.2),
 so it is not a ceiling there until P1f.
 
-Later lots add their columns (P1, P3, P4 MLMC, P5 MLQMC, P6 GPU).
+**Today** (2026-11-13, after P1 to P6;
+`benchmarks/results/2026-11-13-699a1e2.json`, run on that commit plus §10.4
+and the two fixes below). The first column is no longer a hand-written
+engine: since P3 the registry's route is the script engine with Sobol, on the
+GPU when present, and it estimates its bias (§10.4).
+
+| Product (model) | Registry route | Script, CPU PCG32 | Script, CPU Sobol | Script, 1 V100 Philox | Script, 1 V100 Sobol |
+|---|---|---|---|---|---|
+| Vanilla call (BS) | 0.002 s | 0.187 s | 0.001 s | 0.002 s | 0.002 s |
+| Arithmetic Asian, 252 fixings (BS) | 0.101 s | 27.5 s | 0.077 s | 0.055 s | 0.043 s |
+| Arithmetic Asian, 252 fixings (local vol) | 0.079 s | 42.4 s | 0.098 s | 0.060 s | 0.041 s |
+| Up-and-out call, 52 weekly dates (BS) | 0.005 s | 7.77 s | 0.169 s | 0.006 s | 0.006 s |
+| Up-and-out call, 52 weekly dates (local vol) | 0.023 s | 12.5 s | 0.286 s | 0.011 s | 0.006 s |
+| Fixed-strike lookback, 52 weekly dates (BS) | 0.016 s | 1.91 s | 0.009 s | 0.002 s | 0.002 s |
+| Fixed-strike lookback, 52 weekly dates (local vol) | 0.023 s | 3.04 s | 0.015 s | 0.003 s | 0.002 s |
+| Basket call, 3 assets (BS) | 0.018 s | 0.418 s | 0.002 s | 0.002 s | 0.002 s |
+| Worst-of call, 3 assets (BS) | 0.001 s | 1.18 s | 0.002 s | 0.003 s | 0.002 s |
+| Best-of call, 3 assets (BS) | 0.001 s | | | | |
+| Autocall, 4 quarterly dates (BS) | 0.001 s | | | | |
+| Mountain range, 3 assets, 3 dates (BS) | 0.002 s | | | | |
+| Dispersion swap, 3 assets, 52 dates (BS) | 0.006 s | | | | |
+| Variance swap, 52 dates (BS) | 0.002 s | | | | |
+| Volatility swap, 52 dates (BS) | 0.002 s | | | | |
+| Quanto call (BS) | 0.044 s | | | | |
+
+Against v1: the routes the site uses went from seconds to milliseconds
+(Asian under local vol 60.3 s → 0.079 s, up-and-out under local vol
+9.31 s → 0.023 s, mountain range 0.939 s → 0.002 s); the CPU Sobol script
+route is 5 to 13 times faster on the path-dependent products (batched
+interpreter, AS 241).
+
+**A regression this run found, and its fix.** The first run of the day had
+the CPU PCG32 column 9 to 22 % *slower* than v1 at the same paths and the
+same prices (Asian BS 30.7 → 36.2 s, lookback BS 1.96 → 2.37 s). Timed commit
+by commit on a 52-date lookback (800 000 paths, one thread): 1.83 s at v1,
+2.20 s after P1a, 2.36 s after P2a, 2.32 s today. Two causes, both fixed:
+
+- the PCG32 loop was the one route left on the path-by-path interpreter
+  (P1a batched Philox and Sobol only), and its code got slower when the
+  engine's function grew around it. It now feeds the batched interpreter
+  like a Sobol sequence does (`batch_path` / `flush_batch`: the payoffs
+  added in the same order);
+- since P2a the Black-Scholes model resized every event's survival vector on
+  every path, barrier or not. It now touches it only for an event that has
+  one (`allocate_scenario` sized it already).
+
+After both: 1.80 s on the lookback, below v1, and the nine PCG32 prices of
+the matrix identical to v1's to 17 digits. The table above is the run after
+the fix. Lesson for the method (`hpc-finance`): the matrix compares
+*columns*, so a route nobody was optimising was not watched; rerun it at the
+end of each lot, not only its own bench.
 
 ## 12. Risks and open decisions
 
