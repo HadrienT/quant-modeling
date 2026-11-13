@@ -263,6 +263,7 @@ namespace quantModeling
         ASSERT_TRUE(model->describe_device(dm));
         gpu::ScriptGpuRequest req;
         req.program = &product.program();
+        req.ir = &product.ir();
         req.model = &dm;
         req.baseline = product.baseline();
         for (const SampleDef &d : product.defline())

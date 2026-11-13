@@ -47,6 +47,7 @@ namespace quantModeling
             const bool stratified = settings.mc_sampler == SamplerKind::Stratified;
             gpu::ScriptGpuRequest req;
             req.program = &product.program();
+            req.ir = &product.ir();
             req.model = &dm;
             req.baseline = product.baseline();
             req.discount_mats = mats;
@@ -308,6 +309,7 @@ namespace quantModeling
             {
                 gpu::ScriptGpuRequest req;
                 req.program = &product_.program();
+                req.ir = &product_.ir();
                 req.model = &dm;
                 req.baseline = product_.baseline();
                 req.discount_mats = mats_;
@@ -600,6 +602,7 @@ namespace quantModeling
 
         gpu::ScriptGpuRequest req;
         req.program = &product.program();
+        req.ir = &product.ir();
         req.model = &dm;
         req.baseline = product.baseline();
         req.discount_mats = mats;

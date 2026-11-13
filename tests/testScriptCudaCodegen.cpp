@@ -11,8 +11,8 @@
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/cuda_codegen.hpp"
 
-// Lot P1b of blueprint/wp/26-performance.md: the generator of a script's CUDA
-// source. That the source gives the interpreter's bits on the device is
+// Lot P1b of blueprint/wp/26-performance.md, generated from the IR since lot
+// L1 of blueprint/wp/27-ir-ad.md: the generator of a script's CUDA source. That the source gives the interpreter's bits on the device is
 // tests/gpu/testGpuScriptJit.cpp's job (the CI has no GPU); here, what the
 // generator promises without one.
 
@@ -35,7 +35,7 @@ namespace quantModeling
             ScriptSettings ss;
             ss.fuzzy = fuzzy;
             const ScriptedProduct<Real> product(script, kCtx, ss);
-            const scripting::CudaSource src = scripting::cuda_event_source(product.program());
+            const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
             EXPECT_TRUE(src.why.empty()) << src.why;
             return src.source;
         }
@@ -58,10 +58,10 @@ namespace quantModeling
                 ScriptSettings ss;
                 ss.fuzzy = fuzzy;
                 const ScriptedProduct<Real> product(text.str(), kCtx, ss);
-                const scripting::CudaSource a = scripting::cuda_event_source(product.program());
+                const scripting::CudaSource a = scripting::cuda_event_source(product.ir());
                 ASSERT_TRUE(a.why.empty()) << entry.path().stem() << ": " << a.why;
                 EXPECT_EQ(count(a.source, "    case "), product.program().n_events()) << entry.path().stem();
-                EXPECT_EQ(a.source, scripting::cuda_event_source(product.program()).source);
+                EXPECT_EQ(a.source, scripting::cuda_event_source(product.ir()).source);
             }
             ++n;
         }
@@ -76,9 +76,9 @@ namespace quantModeling
         EXPECT_NE(src.find("0x1.999999999999ap-4"), std::string::npos) << src;
     }
 
-    // The stack arithmetic goes through the intrinsics the device compiler
-    // never contracts into an FMA: the interpreter never fuses them either.
-    TEST(ScriptCudaCodegen, StackArithmeticIsNeverContracted)
+    // The arithmetic goes through the intrinsics the device compiler never
+    // contracts into an FMA: the interpreter never fuses them either.
+    TEST(ScriptCudaCodegen, ArithmeticIsNeverContracted)
     {
         const std::string src = source_of("2027-06-01\n    pays spot() * 2 + 1 - spot()\n");
         EXPECT_NE(src.find("__dmul_rn("), std::string::npos);
@@ -99,32 +99,29 @@ namespace quantModeling
                                           "2027-06-01\n    acc = acc + spot()\n    n = n + 1\n"
                                           "    pays max(acc / n - 100, 0)\n");
         EXPECT_GT(count(src, "    case "), 200u);
-        // A body opens on its stack slots: first date, schedule, last date.
-        EXPECT_EQ(count(src, "\n    {\n        double s0"), 3u) << "distinct bodies";
+        // A body opens on its values: first date, schedule, last date.
+        EXPECT_EQ(count(src, "\n    {\n        double x0"), 3u) << "distinct bodies";
     }
 
-    // Fuzzy ifs keep their state in locals and blend as the interpreter.
+    // A fuzzy if picks its mode from its degree and blends as the
+    // interpreter, without a bare product either.
     TEST(ScriptCudaCodegen, FuzzyIfsGenerate)
     {
         const std::string src = source_of("2027-06-01\n    if spot() > 100 then pays 1 else pays 0 endIf\n", true);
         EXPECT_NE(src.find("qm_up("), std::string::npos) << src;
-        EXPECT_NE(src.find("w1 = 1.0 - degree"), std::string::npos) << src;
+        EXPECT_NE(src.find("<= 0.0 ? 1 : ("), std::string::npos) << src;
+        EXPECT_EQ(src.find(" * "), std::string::npos) << src;
     }
 
-    // A malformed program is refused with a reason (the interpreter runs).
-    TEST(ScriptCudaCodegen, MalformedProgramIsRefused)
+    // What cannot be generated is refused with a reason (the interpreter
+    // runs): no IR, or a script that reads the bridge survival.
+    TEST(ScriptCudaCodegen, WhatCannotBeGeneratedIsRefused)
     {
-        const ScriptedProduct<Real> product("2027-06-01\n    pays spot()\n", kCtx);
-        scripting::Program p = product.program();
-        p.code.insert(p.code.begin() + p.event_begin[0], scripting::Instr{scripting::Op::Add, 0, 0, 0.0});
-        for (std::size_t e = 1; e < p.event_begin.size(); ++e)
-            ++p.event_begin[e];
-        const scripting::CudaSource src = scripting::cuda_event_source(p);
+        EXPECT_FALSE(scripting::cuda_event_source(scripting::ir::Script{}).why.empty());
+        const ScriptedProduct<Real> product("2027-06-01\n    pays survivalAbove(80) * spot()\n", kCtx);
+        const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
         EXPECT_TRUE(src.source.empty());
-        EXPECT_NE(src.why.find("underflows"), std::string::npos) << src.why;
-
-        scripting::Program empty;
-        EXPECT_FALSE(scripting::cuda_event_source(empty).why.empty());
+        EXPECT_NE(src.why.find("survival"), std::string::npos) << src.why;
     }
 
     TEST(ScriptCudaCodegen, SpecIsWrittenAsConstants)

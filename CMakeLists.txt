@@ -54,7 +54,8 @@ target_sources(quantModeling
         src/scripting/parser.cpp
         src/scripting/domain.cpp
         src/scripting/exercise.cpp
-        src/scripting/cuda_codegen.cpp
+        src/scripting/ir.cpp
+        src/scripting/ir_cuda.cpp
         src/market/conventions.cpp
         src/market/calendars.cpp
         src/market/schedule.cpp
@@ -436,6 +437,7 @@ if(QM_BUILD_TESTS)
     tests/testLogicalBlocks.cpp
     tests/testScriptBytecode.cpp
     tests/testScriptCudaCodegen.cpp
+    tests/testScriptIr.cpp
     tests/testScriptBatch.cpp
     tests/testSamplerDefault.cpp
     tests/testDual.cpp

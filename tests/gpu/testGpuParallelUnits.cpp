@@ -100,6 +100,7 @@ namespace quantModeling
 
                 gpu::ScriptGpuRequest req;
                 req.program = &product.program();
+                req.ir = &product.ir();
                 req.model = &dm;
                 req.baseline = product.baseline();
                 for (const SampleDef &def : product.defline())

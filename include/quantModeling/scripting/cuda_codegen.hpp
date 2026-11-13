@@ -3,34 +3,32 @@
 
 #include <string>
 
-#include "quantModeling/scripting/bytecode.hpp"
+#include "quantModeling/scripting/ir.hpp"
 
 /**
  * @file cuda_codegen.hpp
- * @brief A compiled script's bytecode turned into CUDA source
- *        (blueprint/wp/26-performance.md §5, lot P1b).
+ * @brief A script's IR turned into CUDA source
+ *        (blueprint/wp/27-ir-ad.md §4, lot L1; the run-time compilation is
+ *        blueprint/wp/26-performance.md §5, lot P1b).
  *
- * The GPU kernel interprets a script's bytecode: one `switch` per
- * instruction, the value stack in local memory. This generator writes the
- * same instructions out as straight-line CUDA, one block per event, the
- * stack slots as named locals and the jumps as `goto`, so that the device
- * compiler sees the script and keeps its values in registers. The GPU
- * backend compiles the source at run time (NVRTC) and links it into the
- * script kernel (src/gpu/script_jit.*).
+ * The generator writes each distinct block of the IR (scripting/ir.hpp) as
+ * straight-line CUDA: every SSA value a local double, the regions as `if`s.
+ * The GPU backend compiles the source at run time (NVRTC) and links it into
+ * the script kernel (src/gpu/script_jit.*), so the device compiler sees the
+ * script and keeps its values in registers.
  *
- * Same bits as the interpreter on the GPU, by construction:
- *  - the same operations in the same order, per path;
+ * Same bits as the bytecode interpreter on the GPU, by construction:
+ *  - the IR holds the interpreter's operations in its order, per path, and
+ *    the generator writes them one for one;
  *  - no FMA contraction on either side: the interpreter (script.cu) and the
- *    compiled kernel are built with --fmad=false, and the stack arithmetic
- *    goes through __dadd_rn, __dsub_rn and __dmul_rn besides. With
- *    contraction the bits would depend on how the optimiser sees the code
- *    (measured: Heston moved in the last bit once the kernel was
- *    specialised);
- *  - the fuzzy-if helpers and blends written as the interpreter writes them
- *    (bytecode.hpp);
+ *    compiled kernel are built with --fmad=false, and + - * go through
+ *    __dadd_rn, __dsub_rn and __dmul_rn besides. With contraction the bits
+ *    would depend on how the optimiser sees the code (measured: Heston moved
+ *    in the last bit once the kernel was specialised);
+ *  - the fuzzy ramps and blends written as the interpreter writes them;
  *  - constants as hexadecimal floating literals, exact to the bit.
  *
- * The source holds no user text: only indices, opcodes turned into C and
+ * The source holds no user text: only indices, operations turned into C and
  * numbers. It needs no header (NVRTC has no standard library).
  */
 
@@ -50,10 +48,9 @@ namespace quantModeling::scripting
         std::string why;    ///< then: the reason, in words a user can read
     };
 
-    /// The CUDA source of `p`'s events, or why it cannot be generated (a
-    /// malformed program: unbalanced stack, a jump out of its event). Events
-    /// with the same statements (a schedule's dates) share their code.
-    CudaSource cuda_event_source(const Program &p);
+    /// The CUDA source of `s`'s events, or why it cannot be generated.
+    /// Events that share a block (a schedule's dates) share their code.
+    CudaSource cuda_event_source(const ir::Script &s);
 
     /**
      * What one compiled kernel serves: the model and the sampling options of

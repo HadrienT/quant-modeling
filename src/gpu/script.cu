@@ -422,7 +422,12 @@ namespace quantModeling::gpu
                 note = "interpreted bytecode (serial units)";
                 return {};
             }
-            const scripting::CudaSource src = scripting::cuda_event_source(*req.program);
+            if (!req.ir || req.ir->empty())
+            {
+                note = "interpreted bytecode (the request carries no IR)";
+                return {};
+            }
+            const scripting::CudaSource src = scripting::cuda_event_source(*req.ir);
             if (src.source.empty())
             {
                 note = "interpreted bytecode (" + src.why + ")";

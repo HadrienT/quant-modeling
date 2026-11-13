@@ -7,6 +7,7 @@
 #include "quantModeling/instruments/simulatable.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/bytecode.hpp"
+#include "quantModeling/scripting/ir.hpp"
 #include "quantModeling/scripting/compiler.hpp"
 #include "quantModeling/scripting/evaluator.hpp"
 #include "quantModeling/scripting/event.hpp"
@@ -236,6 +237,7 @@ namespace quantModeling
             if (settings.bytecode && !has_exercise_)
             {
                 program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy);
+                ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy);
                 buffers_.vars.assign(static_cast<std::size_t>(program_.n_vars), T(0));
                 buffers_.stack.assign(static_cast<std::size_t>(program_.max_stack), T(0));
                 buffers_.degrees.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
@@ -323,6 +325,10 @@ namespace quantModeling
 
         /// The compiled script (empty when ScriptSettings::bytecode is off).
         const scripting::Program &program() const { return program_; }
+        /// The script's intermediate representation (blueprint/wp/27-ir-ad.md):
+        /// what the GPU compiles, and what the derivatives are built from.
+        /// Empty when the bytecode is.
+        const scripting::ir::Script &ir() const { return ir_; }
         /// Variable state every future path starts from (empty: all zero).
         const std::vector<T> &baseline() const { return baseline_; }
 
@@ -629,6 +635,7 @@ namespace quantModeling
             evaluator_; ///< per-path state (§5.4); hard or fuzzy
         std::vector<T> baseline_;
         scripting::Program program_;
+        scripting::ir::Script ir_;
         bool compiled_ = false;
         bool batchable_ = false; ///< run_event_batch can run it (P1a)
         // The machine's per-path buffers for payoffs(); payoffs_with_state()

@@ -229,6 +229,7 @@ namespace quantModeling
         mc::SobolTables tables = mc::sobol_tables(m->sim_dim(), 7, 4, m->brownian_layout(), true);
         gpu::ScriptGpuRequest req;
         req.program = &product.program();
+        req.ir = &product.ir();
         req.model = &dm;
         req.baseline = product.baseline();
         for (const SampleDef &def : product.defline())

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Design, decided by the maintainer on 2026-11-12 (option B of #239) |
+| **Status** | In progress: see §14 for what is done and measured (design decided by the maintainer on 2026-11-12, option B of #239) |
 | **Depends on** | 16 (scripting), 17 (AAD: the CPU tape stays the oracle), 19 (GPU Monte-Carlo), 26 (scripts compiled with NVRTC, catalogue products as scripts) |
 | **Issue** | #239 (and one issue per lot, below) |
 | **Rule** | Performance first, the books as references (CLAUDE.md, 2026-11-12) |
@@ -356,3 +356,66 @@ oracle), the logical-block reduction and its bits.
 - **Bits:** the passes must not reorder floating-point operations (§4).
 - **Scope:** L1–L4 replace what exists; L5–L8 extend it. The lots are
   ordered so that each one ends with something measured and merged.
+
+## 14. Progress
+
+### 14.1 L1 done: the IR, its lowering, and the CUDA backend for prices (2026-11-14)
+
+What was built:
+
+- `scripting/ir.hpp`, `src/scripting/ir.cpp`: the instructions (§3.4), a
+  block per event, the builder, the lowering from the tree
+  (`ir::lower_script`, a visitor that mirrors `scripting/compiler.hpp`
+  statement for statement), dead-code removal, a printer
+  (`ir::to_string`), and a reference evaluator on the CPU (`ir::run_block`).
+  `ScriptedProduct::ir()` holds it next to the bytecode.
+- `src/scripting/ir_cuda.cpp`: the CUDA backend. It replaces the
+  bytecode-to-CUDA generator of WP 26 P1b, which is deleted; the kernel it
+  links into (`src/gpu/script_jit_kernel.cu`) is unchanged.
+
+How the design's choices came out:
+
+- **SSA with structured regions**, as §3.1–§3.2. Every variable is renamed
+  at each assignment; a hard `if` ends with one `phi` per variable its two
+  blocks leave different. A fuzzy `if` needs no save and restore of the
+  variables any more: both blocks read the values from before the `if`, and
+  a `fuzzy_phi` picks the then-value, the else-value or their blend from the
+  mode (the degree at or below 0, at or above 1, in between). The blend is
+  one instruction with its own rule rather than three arithmetic ones, so
+  that a block that did not run is never read.
+- **Passes at construction.** The builder shares a value when the same
+  operation on the same operands is visible from the current region (common
+  subexpressions, scoped by region), and folds an operation on constants only
+  through `+ − × ÷ √ min max abs neg`, which IEEE 754 rounds the same on
+  every machine; `exp`, `log` and `pow` are left to run time (their last bit
+  is the library's, and the GPU's is not the host's). Dead code is removed
+  per event.
+- **Not done in L1** (no measured need): turning a pure `if` into a `select`
+  (the device compiler already does it where it pays), dead variables across
+  events, and the `loop` region -- the loop over the model's steps stays in
+  the kernel that calls the generated code, which is how the adjoint will
+  walk it backwards too (§5.2's checkpoints are per date).
+
+Acceptance (same bits as P1b's kernels):
+
+- CPU, in the CI: `tests/testScriptIr.cpp` -- every library script, crisp and
+  fuzzy, event by event on 400 random paths: every variable and the payoff
+  equal the bytecode interpreter's bit for bit (and the fuzzy blend mode is
+  hit more than 1 000 times).
+- GPU: `tests/gpu/testGpuScriptJit.cpp`, unchanged -- the kernel compiled from
+  the IR against the interpreter on the device, Black-Scholes (one and
+  several assets), local vol, Heston and SLV, crisp and fuzzy, Philox and
+  Sobol: same bits.
+
+Measured (one V100, `qm_script_jit_bench`, Philox + antithetic, ms for the
+paths of §11's cases; before = the bytecode generator on the same commit):
+
+| Case | Before | From the IR |
+|---|---|---|
+| barrier_bs | 6.48 | 6.35 |
+| barrier_lv | 8.81 | 8.77 |
+| asian_bs | 16.47 | 15.69 |
+| asian_lv | 20.62 | 20.08 |
+| autocall_bs (3 assets) | 3.48 | 3.48 |
+
+The same prices to the bit, 0 to 5 % faster (shared subexpressions).

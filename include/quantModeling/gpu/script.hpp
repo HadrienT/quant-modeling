@@ -12,6 +12,7 @@
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/scripting/bytecode.hpp"
+#include "quantModeling/scripting/ir.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/variance_reduction/multi_control.hpp"
 
@@ -70,6 +71,9 @@ namespace quantModeling::gpu
     struct ScriptGpuRequest
     {
         const scripting::Program *program = nullptr;
+        /// The script's IR (blueprint/wp/27-ir-ad.md): what the compiled
+        /// kernels are generated from. Null: the request runs interpreted.
+        const scripting::ir::Script *ir = nullptr;
         const DeviceModel *model = nullptr;
         std::vector<Real> baseline;                   ///< starting variables; empty = zeros
         std::vector<std::vector<Time>> discount_mats; ///< per event: the df() maturities

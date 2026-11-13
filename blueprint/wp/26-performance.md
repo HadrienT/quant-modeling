@@ -283,7 +283,10 @@ measurements changed in the design above:
   stack depth is static at every instruction, so each stack slot becomes a
   named local and each jump a `goto`; the source has no include and no user
   text (constants as hexadecimal literals). Events with the same statements
-  share one `case`: a daily schedule is three bodies, not 252.
+  share one `case`: a daily schedule is three bodies, not 252. (Since WP 27
+  lot L1 the generator reads the script's IR, `scripting/ir_cuda.cpp`: the
+  same operations, SSA values instead of stack slots, `if`s instead of
+  `goto`s; the bytecode generator is gone.)
 - *Linking, not compiling the kernel.* NVRTC has no standard library, and the
   kernel's headers use `<vector>`, `<string>`, `std::function`. So NVRTC
   compiles only the events, to LTO-IR; the kernel (`src/gpu/script_jit_kernel.cu`,
