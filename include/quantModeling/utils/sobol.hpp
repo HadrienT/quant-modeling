@@ -142,9 +142,20 @@ namespace quantModeling
             for (int d = 0; d < dim_; ++d)
                 init_directions(d, &v_[static_cast<size_t>(d) * kBits]);
 
+            shift_ = shifts_for(dim_, scramble_seed);
+        }
+
+        /// The digital-shift masks of SobolSequence(dimension, scramble_seed)
+        /// alone: what a table of many replicates needs of each, without
+        /// building its direction integers again (they do not depend on the
+        /// seed).
+        static std::vector<uint32_t> shifts_for(int dimension, uint64_t scramble_seed)
+        {
+            std::vector<uint32_t> shift(static_cast<size_t>(dimension));
             Pcg32 rng(scramble_seed, /*stream_id=*/0x50b01u);
-            for (int d = 0; d < dim_; ++d)
-                shift_[static_cast<size_t>(d)] = rng();
+            for (uint32_t &s : shift)
+                s = rng();
+            return shift;
         }
 
         int dimension() const { return dim_; }

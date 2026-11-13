@@ -40,7 +40,8 @@ namespace quantModeling::gpu::detail
                 const long row = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
                 double *pt = scratch + row;
                 double *out = scratch + static_cast<long>(sobol.dim) * rows + row;
-                mc::sobol_bridged_gaussians(sobol, rep, static_cast<uint32_t>(u), pt, rows, out, rows);
+                mc::sobol_bridged_gaussians(sobol, rep, sobol.first_point + static_cast<uint32_t>(u), pt, rows, out,
+                                                rows);
                 d.given = out;
                 d.given_stride = rows;
             }

@@ -48,6 +48,24 @@ namespace quantModeling
                                                            SamplerKind sampler = SamplerKind::PseudoRandom,
                                                            int max_gpus = 0);
 
+    /**
+     * @brief A script's price and model risks by multilevel QMC on the GPU
+     *        (blueprint/wp/26-performance.md §10.2): simulate_script's
+     *        multilevel levels, each launch the per-path adjoint instead of
+     *        the price kernel. A risk is the sum over the levels of the
+     *        fine-minus-coarse risks (Burgos & Giles 2012), its error the
+     *        replicates' spread; the points per level follow the price's
+     *        target (eps, or rel_eps of the price floored at eps), as in
+     *        MlqmcSettings.
+     *
+     * Local vol (the adjoint's model). nullopt, with `why`, when the GPU
+     * cannot take the request or the script does not suit multilevel.
+     */
+    std::optional<AADSimulResults> simulate_script_aad_mlqmc_gpu(const ScriptedProduct<Real> &product,
+                                                                 const ISimulationModel<Real> &model, double eps,
+                                                                 double rel_eps, std::uint64_t seed,
+                                                                 std::string &why, int max_gpus = 0);
+
 } // namespace quantModeling
 
 #endif // QM_ENGINES_MC_SCRIPT_ENGINE_HPP

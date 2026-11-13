@@ -42,6 +42,9 @@ namespace quantModeling
         long long n_paths = 0;
         std::string diagnostics;
         int gpus = 0; ///< GPUs that computed the risks (0: the CPU tape)
+        /// A multilevel run's estimate of its remaining discretisation
+        /// bias on the price (WP 26 §10.2); unset for a plain run.
+        std::optional<Real> discretisation_bias;
     };
 
     /// Default aggregator: the product's first (and, for every product in
@@ -422,6 +425,7 @@ namespace quantModeling
         out.diagnostics = r.diagnostics;
         out.risks = RiskReport{r.risk_labels, r.risks, r.risk_std_errors};
         out.gpus = r.gpus;
+        out.discretisation_bias = r.discretisation_bias;
 
         for (std::size_t i = 0; i < r.risk_labels.size(); ++i)
         {

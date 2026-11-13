@@ -169,11 +169,17 @@ namespace quantModeling
                 // One step per event: the bridge over the whole interval,
                 // exact under Black-Scholes (a step without a draw has no
                 // variance: the spot only has to be on the safe side).
+                // (allocate_scenario sized the survivals; nothing to do for
+                // an event without a barrier, which is most of them.)
                 const std::vector<BarrierMonitor> &bars = defline_[i].barriers;
-                smp.survivals.resize(bars.size());
-                for (std::size_t k = 0; k < bars.size(); ++k)
-                    smp.survivals[k] = mc::bridge_survival(S_before, S, bars[k].level, bars[k].above,
-                                                           st.draws ? T(st.vol_sqrt_dt * st.vol_sqrt_dt) : T(0.0));
+                if (!bars.empty())
+                {
+                    smp.survivals.resize(bars.size());
+                    for (std::size_t k = 0; k < bars.size(); ++k)
+                        smp.survivals[k] =
+                            mc::bridge_survival(S_before, S, bars[k].level, bars[k].above,
+                                                st.draws ? T(st.vol_sqrt_dt * st.vol_sqrt_dt) : T(0.0));
+                }
                 smp.numeraire = curve_ ? T(1.0 / curve_->discount(st.t))
                                        : T(exp(r_ * st.t));
 

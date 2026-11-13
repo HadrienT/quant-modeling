@@ -85,3 +85,63 @@ def test_on_runs_multilevel_under_heston(store):
     )
     assert "multilevel QMC" in resp.diagnostics
     assert resp.discretisation_bias is not None
+
+
+def test_a_multilevel_price_takes_the_gpu_unless_told_otherwise(store):
+    """WP 26 §10: a request that names no device runs its multilevel price
+    on the GPU when the server has one; every other run, and AAD greeks,
+    stay on the CPU; a named device is obeyed."""
+    import quantmodeling as qm
+
+    has_gpu = bool(qm.gpu_devices())
+    default = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol")
+    )
+    assert "multilevel QMC" in default.diagnostics
+    assert default.device == ("gpu" if has_gpu else "cpu")
+
+    cpu = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol", device="cpu")
+    )
+    assert cpu.device == "cpu" and "multilevel QMC" in cpu.diagnostics
+    # the same estimator on the other device: within both errors
+    assert default.npv == pytest.approx(
+        cpu.npv, abs=4.0 * (default.mc_std_error + cpu.mc_std_error)
+    )
+
+    off = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol", mlmc="off")
+    )
+    assert off.device == "cpu"
+
+
+def test_aad_greeks_come_from_the_multilevel_levels_on_the_gpu(store):
+    """WP 26 §10.2: under local vol the risks of a multilevel price are the
+    sum of its levels' adjoints, on the GPU; without one the plain engine
+    computes them and the diagnostics say so."""
+    import quantmodeling as qm
+
+    resp = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol", greeks_method="aad")
+    )
+    assert resp.risks is not None and resp.greeks.delta is not None
+    if not qm.gpu_devices():
+        assert resp.device == "cpu"
+        assert "used the plain engine" in resp.diagnostics
+        return
+    assert resp.device == "gpu"
+    assert "multilevel QMC" in resp.diagnostics
+    assert "risks by the per-path adjoint of every level" in resp.diagnostics
+    assert resp.discretisation_bias is not None
+    # the same levels as the price alone: the same number
+    price = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol")
+    )
+    assert resp.npv == pytest.approx(price.npv, abs=1e-9)
+    # and the plain engine's delta within both errors
+    plain = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol", greeks_method="aad", mlmc="off")
+    )
+    assert "multilevel" not in plain.diagnostics
+    tol = 4.0 * (resp.greeks.delta_std_error + plain.greeks.delta_std_error) + 2e-3
+    assert resp.greeks.delta == pytest.approx(plain.greeks.delta, abs=tol)
