@@ -479,6 +479,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuRisks.cpp
       tests/gpu/testGpuSobolIs.cpp
       tests/gpu/testGpuTwoCards.cpp
+      tests/gpu/testGpuMlqmc.cpp
       tests/gpu/testGpuExposure.cpp
     )
     target_link_libraries(quantModeling_gpu_tests PRIVATE quantModeling GTest::gtest_main)

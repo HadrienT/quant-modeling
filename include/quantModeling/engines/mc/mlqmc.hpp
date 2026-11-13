@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -51,15 +52,51 @@ namespace quantModeling
         bool owen = false; ///< Owen's hash-based scrambling instead of the digital shift
     };
 
+    /// One level of a multilevel QMC run, wherever its points are priced:
+    /// simulate_mlqmc_levels() only reads these (the CPU's levels below, the
+    /// GPU's in src/engines/mc/script_engine.cpp, WP 26 P6).
+    class IQmcLevel
+    {
+      public:
+        virtual ~IQmcLevel() = default;
+        /// `n` more points on every replicate.
+        virtual void add(long long n) = 0;
+        virtual long long points() const = 0; ///< per replicate
+        virtual double cost() const = 0;      ///< of one point, in model draws
+        virtual double mean() const = 0;      ///< the level's estimate
+        /// Variance of the level's estimate: the replicate means' sample
+        /// variance over R.
+        virtual double estimator_variance() const = 0;
+    };
+
     namespace mlqmc_detail
     {
+        /// Mean and variance of a level's estimate from its R replicate
+        /// means.
+        inline double replicate_mean(const std::vector<double> &means)
+        {
+            double m = 0.0;
+            for (const double x : means)
+                m += x;
+            return m / static_cast<double>(means.size());
+        }
+        inline double replicate_variance(const std::vector<double> &means)
+        {
+            const double m = replicate_mean(means), R = static_cast<double>(means.size());
+            double v = 0.0;
+            for (const double x : means)
+                v += (x - m) * (x - m);
+            return v / (R - 1.0) / R;
+        }
+
         /// One level's R Sobol replicates, their running sums, and its
         /// sampler.
-        class QmcLevel
+        class QmcLevel final : public IQmcLevel
         {
           public:
             QmcLevel(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model, int level,
-                     const MlqmcSettings &s)
+                     const MlqmcSettings &s, ThreadPool *pool)
+                : pool_(pool)
             {
                 for (int r = 0; r < s.replicates; ++r)
                 {
@@ -87,9 +124,9 @@ namespace quantModeling
             /// on `pool` when the product allows it. Each replicate's sum
             /// accumulates in point order on its own: the same bits on any
             /// number of threads.
-            void add(long long n, ThreadPool *pool)
+            void add(long long n) override
             {
-                run_in_chunks(concurrent_ ? pool : nullptr, reps_.size(), 1,
+                run_in_chunks(concurrent_ ? pool_ : nullptr, reps_.size(), 1,
                               [&](std::size_t first, std::size_t last)
                               {
                                   for (std::size_t r = first; r < last; ++r)
@@ -98,10 +135,10 @@ namespace quantModeling
                 points_ += n;
             }
 
-            long long points() const { return points_; }
-            double cost() const { return cost_; }
+            long long points() const override { return points_; }
+            double cost() const override { return cost_; }
 
-            double mean() const
+            double mean() const override
             {
                 double m = 0.0;
                 for (const auto &rep : reps_)
@@ -111,7 +148,7 @@ namespace quantModeling
 
             /// Variance of the level's estimate: the replicate means' sample
             /// variance over R.
-            double estimator_variance() const
+            double estimator_variance() const override
             {
                 const double m = mean(), R = static_cast<double>(reps_.size());
                 double v = 0.0;
@@ -150,6 +187,7 @@ namespace quantModeling
                 double sum = 0.0;
             };
             std::vector<std::unique_ptr<Replicate>> reps_;
+            ThreadPool *pool_ = nullptr;
             long long points_ = 0;
             double cost_ = 0.0;
             bool concurrent_ = false;
@@ -157,7 +195,7 @@ namespace quantModeling
 
         /// alpha over the levels from 1 whose mean is resolved (|mean| > 2
         /// standard errors of the level's estimate), as mlmc_detail.
-        inline double alpha_estimate(const std::vector<std::unique_ptr<QmcLevel>> &levels)
+        inline double alpha_estimate(const std::vector<std::unique_ptr<IQmcLevel>> &levels)
         {
             std::vector<double> m(levels.size(), 0.0);
             for (std::size_t l = 1; l < levels.size(); ++l)
@@ -167,15 +205,18 @@ namespace quantModeling
         }
     } // namespace mlqmc_detail
 
+    /// Builds level l of a run (its first points are added by the run).
+    using QmcLevelFactory = std::function<std::unique_ptr<IQmcLevel>(int)>;
+
     /**
-     * @brief Giles & Waterhouse's multilevel QMC for a target RMS error.
+     * @brief Giles & Waterhouse's multilevel QMC for a target RMS error, on
+     *        the levels `make_level` builds.
      *
      * The result's levels carry n = R N_l samples and their sum (sum2 is
      * not meaningful: the samples of a replicate are not independent);
      * estimator_variance holds each level's V_l, std_error sqrt(sum V_l).
      */
-    inline MlmcResult simulate_mlqmc(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model,
-                                     const MlqmcSettings &s, ThreadPool *pool = nullptr)
+    inline MlmcResult simulate_mlqmc_levels(const QmcLevelFactory &make_level, const MlqmcSettings &s)
     {
         if (!(s.eps > 0.0))
             throw InvalidInput("simulate_mlqmc: eps must be > 0 (with rel_eps, the target's floor)");
@@ -188,12 +229,11 @@ namespace quantModeling
         if (s.initial_points < 1 || (s.initial_points & (s.initial_points - 1)) != 0)
             throw InvalidInput("simulate_mlqmc: initial_points must be a power of two");
 
-        std::vector<std::unique_ptr<mlqmc_detail::QmcLevel>> levels;
+        std::vector<std::unique_ptr<IQmcLevel>> levels;
         auto add_level = [&]
         {
-            levels.push_back(std::make_unique<mlqmc_detail::QmcLevel>(product, model,
-                                                                      static_cast<int>(levels.size()), s));
-            levels.back()->add(s.initial_points, pool);
+            levels.push_back(make_level(static_cast<int>(levels.size())));
+            levels.back()->add(s.initial_points);
         };
         for (int l = 0; l <= s.min_finest_level; ++l)
             add_level();
@@ -228,7 +268,7 @@ namespace quantModeling
                 const double eps = target();
                 if (total <= 0.5 * eps * eps)
                     break;
-                levels[arg]->add(levels[arg]->points(), pool);
+                levels[arg]->add(levels[arg]->points());
             }
 
             // Bias: P4's test on the last two levels.
@@ -281,6 +321,16 @@ namespace quantModeling
             os << "; bias test failed at the finest level allowed (" << res.bias << ")";
         res.diagnostics = os.str();
         return res;
+    }
+
+    /// The same on the CPU: each level's replicates as tasks on `pool`.
+    inline MlmcResult simulate_mlqmc(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model,
+                                     const MlqmcSettings &s, ThreadPool *pool = nullptr)
+    {
+        return simulate_mlqmc_levels(
+            [&](int level) -> std::unique_ptr<IQmcLevel>
+            { return std::make_unique<mlqmc_detail::QmcLevel>(product, model, level, s, pool); },
+            s);
     }
 
 } // namespace quantModeling

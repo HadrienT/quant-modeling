@@ -62,7 +62,7 @@ export default function ScriptingPreview() {
 	const [vr, setVr] = useState(DEFAULT_VARIANCE_REDUCTION);
 	const [nPaths, setNPaths] = useState("200000");
 	const [seed, setSeed] = useState("1");
-	const [device, setDevice] = useState<ComputeDevice>("cpu");
+	const [device, setDevice] = useState<ComputeDevice>(); // unset: the server's default
 	const [model, setModel] = useState<ScriptModel>("auto");
 	const [ticker, setTicker] = useState("SPY");
 	const [hw, setHw] = useState(DEFAULT_HULL_WHITE);
@@ -121,8 +121,8 @@ export default function ScriptingPreview() {
 							...varianceReductionRequest(vr),
 							n_paths: Number(nPaths),
 							seed: Number(seed),
-							device,
-							...(device === "cpu" ? {} : { rng: "philox" }),
+							...(device ? { device } : {}),
+							...(device && device !== "cpu" ? { rng: "philox" } : {}),
 							...(model === "hull_white" ? { hull_white: hw } : {}),
 						});
 					}}

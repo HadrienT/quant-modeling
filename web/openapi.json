@@ -9446,9 +9446,15 @@
             "type": "number"
           },
           "device": {
-            "$ref": "#/components/schemas/ComputeDevice",
-            "default": "cpu",
-            "description": "Where the paths run (blueprint WP 19 \u00a78). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses."
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeDevice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the paths run (blueprint WP 19 \u00a78). Omitted (the default): 'auto' for a multilevel price (WP 26 \u00a710: the GPU when the server has one, the CPU otherwise, said in the diagnostics), 'cpu' for every other run. The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses."
           },
           "dividend": {
             "default": 0.0,
@@ -9506,7 +9512,7 @@
           },
           "mlmc_eps": {
             "default": 0.0,
-            "description": "An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.",
+            "description": "An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79), on the GPU with device 'gpu' or 'auto' (each level's fine and coarse grids as two runs of the compiled script on the same points, WP 26 \u00a710); with 'pseudo', multilevel Monte Carlo on the CPU. Price only; n_paths is then ignored.",
             "minimum": 0.0,
             "title": "Mlmc Eps",
             "type": "number"
@@ -9878,9 +9884,15 @@
             "type": "number"
           },
           "device": {
-            "$ref": "#/components/schemas/ComputeDevice",
-            "default": "cpu",
-            "description": "Where the paths run (blueprint WP 19 \u00a78). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses."
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeDevice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the paths run (blueprint WP 19 \u00a78). Omitted (the default): 'auto' for a multilevel price (WP 26 \u00a710: the GPU when the server has one, the CPU otherwise, said in the diagnostics), 'cpu' for every other run. The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses."
           },
           "dividend": {
             "default": 0.0,
@@ -9938,7 +9950,7 @@
           },
           "mlmc_eps": {
             "default": 0.0,
-            "description": "An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.",
+            "description": "An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 \u00a79), on the GPU with device 'gpu' or 'auto' (each level's fine and coarse grids as two runs of the compiled script on the same points, WP 26 \u00a710); with 'pseudo', multilevel Monte Carlo on the CPU. Price only; n_paths is then ignored.",
             "minimum": 0.0,
             "title": "Mlmc Eps",
             "type": "number"

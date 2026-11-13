@@ -187,6 +187,115 @@ namespace quantModeling
             return {};
         }
 
+        /**
+         * One multilevel QMC level on the GPU (WP 26 P6, §10). The fine and
+         * the coarse grids are two ordinary Sobol runs of the script's
+         * kernel on the same points (mc::coupled_sobol_tables): replicate
+         * b's sample of the correction is the difference of its two means.
+         * More points means running the level again from its first point --
+         * at most twice the final run's cost over the doublings.
+         */
+        class GpuQmcLevel final : public IQmcLevel
+        {
+          public:
+            /// What the levels of a run report of their launches.
+            struct Note
+            {
+                int gpus = 0;
+                std::string events; ///< compiled or interpreted, and why
+            };
+
+            GpuQmcLevel(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &base, int level,
+                        const MlqmcSettings &s, const PricingSettings &settings, Note &note)
+                : product_(product), mats_(discount_lists(product)), devices_(gpu::devices_for(settings.mc_gpus)), note_(note)
+            {
+                fine_ = describe(base, level, dm_fine_);
+                cost_ = static_cast<double>(fine_->sim_dim());
+                std::vector<uint64_t> keys; // the CPU levels' keys (QmcLevel)
+                for (int r = 0; r < s.replicates; ++r)
+                    keys.push_back((s.seed << 32) ^ (static_cast<std::uint64_t>(level) << 16) ^
+                                   static_cast<std::uint64_t>(r));
+                if (level == 0)
+                {
+                    tables_.fine = mc::sobol_tables(fine_->sim_dim(), keys, fine_->brownian_layout(), true, s.owen);
+                    return;
+                }
+                coarse_ = describe(base, level - 1, dm_coarse_);
+                cost_ += static_cast<double>(coarse_->sim_dim());
+                tables_ = mc::coupled_sobol_tables(fine_->brownian_layout(), coarse_->brownian_layout(), keys, s.owen);
+            }
+
+            void add(long long n) override
+            {
+                points_ += n;
+                means_ = run(dm_fine_, tables_.fine);
+                if (!coarse_)
+                    return;
+                const std::vector<double> coarse = run(dm_coarse_, tables_.coarse);
+                for (std::size_t r = 0; r < means_.size(); ++r)
+                    means_[r] -= coarse[r];
+            }
+
+            long long points() const override { return points_; }
+            double cost() const override { return cost_; }
+            double mean() const override { return mlqmc_detail::replicate_mean(means_); }
+            double estimator_variance() const override { return mlqmc_detail::replicate_variance(means_); }
+
+          private:
+            /// The model of `level`'s fine grid, as the device steps it.
+            std::unique_ptr<ISimulationModel<Real>> describe(const ISimulationModel<Real> &base, int level,
+                                                             DeviceModel &dm) const
+            {
+                auto m = mlmc_detail::at_refinement(base, mlmc_detail::refinement_of(level), product_);
+                if (!m->describe_device(dm))
+                    throw InvalidInput("this model runs on the CPU only");
+                if (m->sim_dim() > static_cast<std::size_t>(sobol_detail::kMaxDimension))
+                    throw InvalidInput("multilevel QMC: level " + std::to_string(level) + " needs " +
+                                       std::to_string(m->sim_dim()) + " draws per path, more than the " +
+                                       std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
+                const std::string why = gpu::script_gpu_unsupported(product_.program(), dm, mats_);
+                if (!why.empty())
+                    throw InvalidInput(why);
+                return m;
+            }
+
+            /// Each replicate's mean over the level's points.
+            std::vector<double> run(const DeviceModel &dm, const mc::SobolTables &tables)
+            {
+                gpu::ScriptGpuRequest req;
+                req.program = &product_.program();
+                req.model = &dm;
+                req.baseline = product_.baseline();
+                req.discount_mats = mats_;
+                req.antithetic = false;
+                req.devices = devices_;
+                req.n_units = static_cast<uint64_t>(points_);
+                req.sobol = &tables;
+                const gpu::ScriptGpuStats st = gpu::simulate_script(req);
+                note_.gpus = std::max(note_.gpus, gpu::gpus_used(req));
+                note_.events = st.events_note;
+                std::vector<double> means;
+                for (const WelfordAccumulator &w : st.plain)
+                    means.push_back(w.mean);
+                return means;
+            }
+
+            const ScriptedProduct<Real> &product_;
+            std::vector<std::vector<Time>> mats_;
+            std::vector<int> devices_;
+            std::unique_ptr<ISimulationModel<Real>> fine_, coarse_;
+            DeviceModel dm_fine_, dm_coarse_;
+            mc::CoupledSobolTables tables_;
+            std::vector<double> means_;
+            long long points_ = 0;
+            double cost_ = 0.0;
+            Note &note_;
+        };
+
+        /// Points per replicate a GPU level starts with: a launch has a
+        /// fixed cost that 16 points (the CPU's start) would not repay.
+        constexpr long long kGpuMlqmcInitialPoints = 1024;
+
         SimulationMCResult run_mlmc(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model,
                                     const PricingSettings &settings, ThreadPool *pool)
         {
@@ -198,6 +307,8 @@ namespace quantModeling
             MlmcResult r;
             std::string sampler_note = " (CPU, pseudo-random)";
             bool done = false;
+            std::string device = "cpu";
+            int gpus = 0;
             if (settings.mc_sampler == SamplerKind::Sobol)
             {
                 MlqmcSettings q;
@@ -205,16 +316,50 @@ namespace quantModeling
                 q.rel_eps = settings.mc_mlmc_rel_eps;
                 q.seed = seed;
                 q.owen = settings.mc_sobol_owen;
-                try
+                // On the GPU when asked for and the device can take the
+                // script and the model (WP 26 P6); otherwise the CPU, saying
+                // why.
+                const bool explicit_gpu = settings.mc_device == ComputeDevice::Gpu;
+                std::string gpu_off;
+                if (explicit_gpu || (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0))
                 {
-                    r = simulate_mlqmc(product, model, q, pool);
-                    sampler_note = " (CPU)";
-                    done = true;
+                    MlqmcSettings g = q;
+                    g.initial_points = kGpuMlqmcInitialPoints;
+                    GpuQmcLevel::Note note;
+                    try
+                    {
+                        r = simulate_mlqmc_levels(
+                            [&](int level) -> std::unique_ptr<IQmcLevel>
+                            {
+                                return std::make_unique<GpuQmcLevel>(product, model, level, g, settings, note);
+                            },
+                            g);
+                        done = true;
+                        device = "gpu";
+                        gpus = note.gpus;
+                        const std::vector<int> all = gpu::devices_for(settings.mc_gpus);
+                        sampler_note = " (GPU: " +
+                                       gpu::devices_label(std::vector<int>(all.begin(), all.begin() + gpus)) +
+                                       (note.events.empty() ? "" : ", " + note.events) + ")";
+                    }
+                    catch (const InvalidInput &e)
+                    {
+                        if (explicit_gpu)
+                            throw InvalidInput(std::string("GPU: ") + e.what());
+                        gpu_off = std::string("; not on the GPU: ") + e.what();
+                    }
                 }
-                catch (const InvalidInput &e)
-                {
-                    sampler_note = std::string(" (CPU, pseudo-random: ") + e.what() + ")";
-                }
+                if (!done)
+                    try
+                    {
+                        r = simulate_mlqmc(product, model, q, pool);
+                        sampler_note = " (CPU" + gpu_off + ")";
+                        done = true;
+                    }
+                    catch (const InvalidInput &e)
+                    {
+                        sampler_note = std::string(" (CPU, pseudo-random: ") + e.what() + gpu_off + ")";
+                    }
             }
             if (!done)
             {
@@ -241,6 +386,8 @@ namespace quantModeling
             os << "SimulationMCEngine, " << r.diagnostics << "; target RMS error " << r.eps
                << ", estimated remaining bias " << r.bias << sampler_note;
             res.diagnostics = os.str();
+            res.device = device;
+            res.gpus = gpus;
             return res;
         }
 

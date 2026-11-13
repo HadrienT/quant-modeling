@@ -1321,6 +1321,80 @@ Bits identical on one or two cards, CPU = GPU within error.
 
 Acceptance: §11's P6 column; `GpuTwoCardsTest`-style test for MLMC.
 
+### 10.1 P6 done: multilevel QMC on the GPU, with no new kernel (2026-11-13)
+
+**Why first.** Production runs the API on two CPUs (`docker-compose.prod.yml`),
+not the 16 threads of §9.4's measurements: the default local-vol route took
+2.0 s (SPY one-year at-the-money call) to 12 s (the 120 % call) there.
+
+**Departure from the plan above.** No kernel prices a fine and a coarse path
+together. A level is **two ordinary Sobol runs** of the script's compiled
+kernel (P1b), one on the fine grid and one on the coarse grid, on the same
+points; replicate b's sample of the correction is the difference of its two
+means. What couples them is the tables alone
+(`mc::coupled_sobol_tables`, `engines/mc/sobol_bridge_host.hpp`):
+
+- the fine grid's Brownian bridge is built in a **nested order**: its first
+  n_c variates construct W on the coarse dates with the coarse bridge's own
+  indices and weights, the n_c others fill each coarse step's midpoint;
+- the coarse run reads the first n_c × factors coordinates of the same
+  randomised sequences (Joe-Kuo directions and digital shifts are prefixes).
+
+Point p of replicate b therefore gives both grids the same Brownian path, as
+`LevelSampler` does by summing increments. The estimator is P5's
+(`simulate_mlqmc_levels`, the adaptive loop now written on an `IQmcLevel`:
+the CPU's `QmcLevel`, the GPU's `GpuQmcLevel` in
+`src/engines/mc/script_engine.cpp`), with the CPU's keys per level and
+replicate. Every existing property of a GPU script run carries over: the
+compiled kernel, the logical-block reduction, the same bits on one or two
+cards.
+
+Limits, each said in the diagnostics:
+
+- a level whose points grow is run again from its first point (a launch
+  takes a number of points, not a range): at most twice the final run's cost
+  over the doublings. Levels start at 1024 points a replicate (16 on the
+  CPU): a launch has a fixed cost;
+- draws that are not Brownian increments (a jump's) do not nest: refused,
+  the CPU runs;
+- what the device cannot step (Milstein, a model without `describe_device`,
+  `survivalAbove()`) stays on the CPU on `device = "auto"` and is refused on
+  `"gpu"`;
+- **the API's default** (maintainer, 2026-11-13): a script request that
+  names no device (`ScriptPricingInputs.device`, now optional) runs a
+  multilevel price on `"auto"` -- the GPU when the server has one -- and
+  every other run on the CPU as before, AAD greeks included (they are not
+  multilevel); a named device is obeyed. The scripting page starts with no
+  device picked and says so. The workbench's catalogue products ask for
+  their greeks by AAD and are therefore not multilevel.
+
+Tests: `tests/testMlmc.cpp` (host, in the CI): every coarse increment is the
+sum of its two fine ones to 1e-12 on an uneven two-factor grid, the fine
+draws stay independent N(0, 1), the coarse bridge is the coarse grid's own,
+grids that do not nest are refused. `tests/gpu/testGpuMlqmc.cpp`: under a
+flat surface the estimated bias is below 1e-10 (two runs on unrelated points
+would leave noise); GPU = CPU within the target on a call and a 12-fixing
+Asian; the same bits on one or two cards; Milstein refused on `"gpu"`, on the
+CPU with the reason on `"auto"`.
+
+Measured on SPY through the API (snapshot of 2026-11-12, rate 4 %, one-year
+contracts of the script library, target 0.2 % of the price, warm kernel
+cache, one V100; the request's time, calibration read included):
+
+| | GPU multilevel | CPU multilevel, dev (16 threads) | CPU multilevel, production (2 CPUs) | Plain GPU, no bias estimate |
+|---|---|---|---|---|
+| Call 100 % | 56.087 ± 0.078, bias ~0.060, **0.38 s** | 56.160 ± 0.070, bias ~0.070, 1.95 s | 2.0 s | 56.217 ± 0.035, 0.15 s |
+| Call 120 % | 12.633 ± 0.018, bias ~0.012, **0.32 s** | 12.646 ± 0.017, bias ~0.011, 2.26 s | 12.1 s | 12.664 ± 0.034, 0.17 s |
+| Arithmetic Asian | 33.137 ± 0.043, bias ~0.026, **0.51 s** | 33.202 ± 0.040, bias ~0.047, 0.75 s | | 33.242 ± 0.014, 0.19 s |
+
+The GPU launches themselves take about 0.15 s of each request (the 120 %
+call: 12 launches of 3 to 37 ms); the first request of a script pays the
+kernel's compilation once (WP 27 L1b removes it).
+
+Left: a launch over a range of points, so that a doubling prices only the new
+half; multilevel under Heston and SLV stays a matter of coupling (§9.5), not
+of device.
+
 ## 11. Results
 
 Time to reach a relative standard error of 1e-3 (`benchmarks/perf_matrix.py`;

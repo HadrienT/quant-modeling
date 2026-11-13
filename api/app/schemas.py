@@ -331,9 +331,12 @@ class ScriptPricingInputs(BaseModel):
     )
     n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
     seed: int = 1
-    device: ComputeDevice = Field(
-        ComputeDevice.cpu,
-        description="Where the paths run (blueprint WP 19 §8). The GPU prices the "
+    device: Optional[ComputeDevice] = Field(
+        None,
+        description="Where the paths run (blueprint WP 19 §8). Omitted (the "
+        "default): 'auto' for a multilevel price (WP 26 §10: the GPU when the "
+        "server has one, the CPU otherwise, said in the diagnostics), 'cpu' "
+        "for every other run. The GPU prices the "
         "compiled script under Black-Scholes, local vol, Heston or SLV, "
         "pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the "
         "risks under Black-Scholes, Heston (forward-mode duals) and local vol "
@@ -378,8 +381,10 @@ class ScriptPricingInputs(BaseModel):
         "the default: the relative one). The levels are refined until the "
         "estimated discretisation bias is below the target / sqrt(2). With "
         "sampler='sobol' (the default) the levels are Sobol points, multilevel "
-        "QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price "
-        "only; n_paths and device are then ignored.",
+        "QMC (WP 26 §9), on the GPU with device 'gpu' or 'auto' (each level's "
+        "fine and coarse grids as two runs of the compiled script on the same "
+        "points, WP 26 §10); with 'pseudo', multilevel Monte Carlo on the "
+        "CPU. Price only; n_paths is then ignored.",
     )
     milstein: bool = Field(
         False,

@@ -85,3 +85,32 @@ def test_on_runs_multilevel_under_heston(store):
     )
     assert "multilevel QMC" in resp.diagnostics
     assert resp.discretisation_bias is not None
+
+
+def test_a_multilevel_price_takes_the_gpu_unless_told_otherwise(store):
+    """WP 26 §10: a request that names no device runs its multilevel price
+    on the GPU when the server has one; every other run, and AAD greeks,
+    stay on the CPU; a named device is obeyed."""
+    import quantmodeling as qm
+
+    has_gpu = bool(qm.gpu_devices())
+    default = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol")
+    )
+    assert "multilevel QMC" in default.diagnostics
+    assert default.device == ("gpu" if has_gpu else "cpu")
+
+    cpu = pricing_service.price_script(
+        _req(VANILLA, ticker="TEST", model="local_vol", device="cpu")
+    )
+    assert cpu.device == "cpu" and "multilevel QMC" in cpu.diagnostics
+    # the same estimator on the other device: within both errors
+    assert default.npv == pytest.approx(
+        cpu.npv, abs=4.0 * (default.mc_std_error + cpu.mc_std_error)
+    )
+
+    for other in (dict(mlmc="off"), dict(greeks_method="aad")):
+        resp = pricing_service.price_script(
+            _req(VANILLA, ticker="TEST", model="local_vol", **other)
+        )
+        assert resp.device == "cpu", other

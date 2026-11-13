@@ -61,6 +61,19 @@ def _multilevel(req, model: str) -> Dict:
     )
 
 
+def _device(req, model: str) -> str:
+    """Where a script request runs when it does not say: the GPU when the
+    server has one ("auto") for a multilevel price, which the GPU returns
+    several times faster within the same error (WP 26 §10); the CPU for
+    every other run, AAD greeks included (they are not multilevel)."""
+    if req.device is not None:
+        return req.device.value
+    multilevel = _multilevel(req, model)["mlmc_eps"] > 0.0 or (
+        _multilevel(req, model)["mlmc_rel_eps"] > 0.0
+    )
+    return "auto" if multilevel and req.greeks_method != "aad" else "cpu"
+
+
 def _pricing_response_from_dict(result: Dict) -> PricingResponse:
     return PricingResponse(
         npv=result["npv"],
@@ -428,7 +441,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             dividends=[u.dividend + u.drift_adjustment for u in used],
             vols=[u.vol for u in used],
             correlation=[x for row in corr for x in row],
-            device=req.device.value,
+            device=_device(req, model if n > 1 else "black_scholes"),
             rng=req.rng.value,
             control_variate=req.control_variate,
             antithetic=req.antithetic,
@@ -596,7 +609,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             req.steps_per_year,
             heston=heston,
             leverage_flat=leverage,
-            device=req.device.value,
+            device=_device(req, model),
             rng=req.rng.value,
             control_variate=req.control_variate,
             antithetic=req.antithetic,
