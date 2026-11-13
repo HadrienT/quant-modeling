@@ -1308,9 +1308,58 @@ multilevel under local vol only, where it was measured fast; Heston and SLV
 get the plain engine with their bias estimated and shown; "on" forces
 multilevel on any model that refines.
 
-Left: a better-coupled scheme for the variance (an implicit or QE step whose
-levels' differences shrink with h) and a leverage interpolated in T would
-make multilevel pay under Heston and SLV; P6 for speed.
+Left when written: a better-coupled scheme for the variance and a leverage
+interpolated in T, to make multilevel pay under Heston and SLV -- measured
+since, and bounded by the calibration itself: §9.6. P6 for speed: §10.
+
+### 9.6 Why multilevel cannot pay under SPY's Heston: the Feller ratio (2026-11-13)
+
+§9.5 left "a better-coupled scheme for the variance" as the way to make
+multilevel pay under Heston and SLV. Measured before writing one, on the
+calibration production serves (SPY, snapshot of 2026-11-12: v0 0.0189,
+kappa 9.16, theta 0.0365, xi 2.06, rho −0.62; one-year call, target 1 % of
+the price, CPU):
+
+| | beta (decay of the corrections' variance) | Levels | Time |
+|---|---|---|---|
+| Heston, MLMC | 0.21 | 0..2 | 11.5 s |
+| Heston, MLQMC | 0.24 | 0..4 | 5.2 s |
+| SLV, MLMC | 0.24 | 0..2 | 17.3 s |
+| SLV, MLQMC | 0.90 (three levels, noisy) | 0..2 | 2.1 s |
+
+Multilevel needs beta close to 1 to beat plain Monte Carlo and above 1 to
+reach its eps^-2 cost. A beta of 0.2 is not the full-truncation Euler step's
+doing. These parameters break the Feller condition by a wide margin:
+delta = 4 kappa theta / xi^2 = 0.31 (Feller needs delta >= 2), so the
+variance sits at zero much of the time, where its square-root diffusion is
+not Lipschitz. For the CIR process in that regime:
+
+- no scheme that reads the Brownian path at equidistant points converges
+  strongly faster than order delta / 2 (Hefter & Jentzen, *On arbitrarily
+  slow convergence rates for strong numerical approximations of
+  Cox-Ingersoll-Ross processes and squared Bessel processes*, Finance and
+  Stochastics 23, 2019);
+- the truncated Milstein scheme reaches min(1/2, delta / 2) up to an epsilon
+  (Hefter & Herzwurm, *Strong convergence rates for Cox-Ingersoll-Ross
+  processes -- full parameter range*, J. Math. Anal. Appl. 459, 2018).
+
+Order delta / 2 = 0.16 in L1 means a variance decaying as about
+2^(−0.31 l): what we measure. An implicit or Milstein variance step would
+change the constant, not the rate; QE (Andersen 2008) is not driven by
+Brownian increments at all and has no natural coupling between levels. So:
+
+- **Time-step multilevel stays off under Heston and SLV** (`mlmc = "auto"`
+  is local vol only, §9.5), and this is a property of the calibrated
+  parameters, not a gap in the engine. It would pay on a calibration that
+  respects Feller (delta >= 2), which SPY's smile does not give (#146).
+- What remains improvable is the **bias of the plain run** (0.17 to 0.43 on
+  a price of 55 to 62, estimated and shown since §9.5): a QE variance step
+  has a far smaller weak error at the same number of steps. That is a
+  change of scheme on the CPU, the GPU and their derivatives, and moves
+  every Heston and SLV price: a decision for the maintainer, outside
+  multilevel.
+- The leverage interpolated in T (§9.5) would smooth SLV's levels, which
+  the Heston factor underneath bounds all the same: not pursued.
 
 ## 10. P6 — Multilevel on the GPU
 
@@ -1351,10 +1400,9 @@ cards.
 
 Limits, each said in the diagnostics:
 
-- a level whose points grow is run again from its first point (a launch
-  takes a number of points, not a range): at most twice the final run's cost
-  over the doublings. Levels start at 1024 points a replicate (16 on the
-  CPU): a launch has a fixed cost;
+- levels start at 1024 points a replicate (16 on the CPU): a launch has a
+  fixed cost. (A level whose points grew was first run again from its first
+  point; §10.3 removed that.)
 - draws that are not Brownian increments (a jump's) do not nest: refused,
   the CPU runs;
 - what the device cannot step (Milstein, a model without `describe_device`,
@@ -1389,8 +1437,7 @@ The GPU launches themselves take about 0.15 s of each request (the 120 %
 call: 12 launches of 3 to 37 ms); the first request of a script pays the
 kernel's compilation once (WP 27 L1b removes it).
 
-Left: a launch over a range of points, so that a doubling prices only the new
-half; multilevel under Heston and SLV stays a matter of coupling (§9.5), not
+Left: multilevel under Heston and SLV stays a matter of coupling (§9.5), not
 of device.
 
 ### 10.2 The risks of a multilevel price (2026-11-13)
@@ -1441,6 +1488,27 @@ errors. The multilevel errors are larger on these contracts because the
 default target, 0.2 % of the price, asks for fewer points than the plain
 run's 65 536: what multilevel adds is the bias, estimated and bounded, not a
 smaller statistical error at this target.
+
+### 10.3 A run over a range of points; the directions built once (2026-11-13)
+
+- `SobolTables::first_point` (and `SobolBridgeView`): a run prices points
+  first_point .. first_point + n_units − 1 of every replicate. A level that
+  doubles its points prices the new half alone and folds it into its means
+  and risks. Every GPU script kernel reads the field (0 for every other
+  run: the same bits as before). Test: two halves of a Sobol run of 10 000
+  points give the whole run's replicate means to 1e-12, on other points.
+- `sobol_tables` built a `SobolSequence` per replicate, each recomputing the
+  direction integers of every dimension -- 32 times the work for a
+  multilevel level. They are built once; the shifts come from
+  `SobolSequence::shifts_for` (the constructor's own draws: the same bits).
+
+The requests of §10.1 and §10.2 after both (same prices and errors):
+
+| | Price | Price and 5003 risks |
+|---|---|---|
+| Call 100 % | 0.35 s | 0.61 s |
+| Call 120 % (one level doubles three times) | 0.26 s | 0.81 s |
+| Arithmetic Asian | 0.33 s | 0.64 s |
 
 ## 11. Results
 

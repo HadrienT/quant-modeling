@@ -27,12 +27,15 @@ namespace quantModeling::mc
         t.dim = static_cast<int>(dimension);
         t.owen = owen;
         t.replicates = static_cast<int>(keys.size());
-        for (std::size_t b = 0; b < keys.size(); ++b)
+        // The directions are the same for every replicate: built once.
         {
-            const SobolSequence s(t.dim, keys[b]);
-            if (b == 0)
-                t.V.assign(s.directions().begin(), s.directions().end());
-            t.shift.insert(t.shift.end(), s.shifts().begin(), s.shifts().end());
+            const SobolSequence s(t.dim);
+            t.V.assign(s.directions().begin(), s.directions().end());
+        }
+        for (const uint64_t key : keys)
+        {
+            const std::vector<uint32_t> shift = SobolSequence::shifts_for(t.dim, key);
+            t.shift.insert(t.shift.end(), shift.begin(), shift.end());
         }
         if (bridge && layout.covers(dimension))
         {
@@ -109,16 +112,16 @@ namespace quantModeling::mc
         c.dim = static_cast<int>(nc * factors);
         f.owen = c.owen = owen;
         f.replicates = c.replicates = static_cast<int>(keys.size());
-        for (std::size_t b = 0; b < keys.size(); ++b)
         {
-            const SobolSequence seq(f.dim, keys[b]);
-            if (b == 0)
-            {
-                f.V.assign(seq.directions().begin(), seq.directions().end());
-                c.V.assign(f.V.begin(), f.V.begin() + 32L * c.dim);
-            }
-            f.shift.insert(f.shift.end(), seq.shifts().begin(), seq.shifts().end());
-            c.shift.insert(c.shift.end(), seq.shifts().begin(), seq.shifts().begin() + c.dim);
+            const SobolSequence seq(f.dim);
+            f.V.assign(seq.directions().begin(), seq.directions().end());
+            c.V.assign(f.V.begin(), f.V.begin() + 32L * c.dim);
+        }
+        for (const uint64_t key : keys)
+        {
+            const std::vector<uint32_t> shift = SobolSequence::shifts_for(f.dim, key);
+            f.shift.insert(f.shift.end(), shift.begin(), shift.end());
+            c.shift.insert(c.shift.end(), shift.begin(), shift.begin() + c.dim);
         }
 
         const BridgedGaussians gc(coarse.times, factors, factors);

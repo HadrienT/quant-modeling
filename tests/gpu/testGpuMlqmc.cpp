@@ -3,9 +3,13 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
+#include "quantModeling/engines/mc/sobol_bridge_host.hpp"
+#include "quantModeling/gpu/script.hpp"
+#include "quantModeling/models/device_model.hpp"
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
@@ -211,6 +215,44 @@ namespace quantModeling
         std::string why;
         EXPECT_FALSE(simulate_script_aad_mlqmc_gpu(product, *m, 0.01, 0.0, 1, why).has_value());
         EXPECT_NE(why.find("no time-step bias"), std::string::npos) << why;
+    }
+
+    // ── §10.3: a run over a range of points ─────────────────────────────
+
+    TEST_F(GpuMlqmcTest, TwoHalvesOfASobolRunAreTheWholeRun)
+    {
+        ScriptedProduct<Real> product(kAsian, kCtx);
+        auto m = make_script_model<Real>(local_vol(false));
+        m->init(product.timeline(), product.defline());
+        DeviceModel dm;
+        ASSERT_TRUE(m->describe_device(dm));
+        mc::SobolTables tables = mc::sobol_tables(m->sim_dim(), 7, 4, m->brownian_layout(), true);
+        gpu::ScriptGpuRequest req;
+        req.program = &product.program();
+        req.model = &dm;
+        req.baseline = product.baseline();
+        for (const SampleDef &def : product.defline())
+            req.discount_mats.push_back(def.discount_mats);
+        req.antithetic = false;
+        req.sobol = &tables;
+        auto means = [&](uint32_t first, uint64_t n)
+        {
+            tables.first_point = first;
+            req.n_units = n;
+            std::vector<double> out;
+            for (const WelfordAccumulator &w : gpu::simulate_script(req).plain)
+                out.push_back(w.mean);
+            return out;
+        };
+        const uint64_t half = 5000; // not a block's multiple: partial blocks on both sides
+        const std::vector<double> whole = means(0, 2 * half), a = means(0, half),
+                                  b = means(static_cast<uint32_t>(half), half);
+        ASSERT_EQ(whole.size(), 4u);
+        for (std::size_t r = 0; r < whole.size(); ++r)
+        {
+            EXPECT_NEAR(0.5 * (a[r] + b[r]), whole[r], 1e-12 * std::fabs(whole[r])) << r;
+            EXPECT_GT(std::fabs(a[r] - b[r]), 1e-6) << r; // other points, not the same ones twice
+        }
     }
 
 } // namespace quantModeling

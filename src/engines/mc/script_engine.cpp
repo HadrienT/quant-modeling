@@ -192,8 +192,8 @@ namespace quantModeling
          * the coarse grids are two ordinary Sobol runs of the script's
          * kernel on the same points (mc::coupled_sobol_tables): replicate
          * b's sample of the correction is the difference of its two means.
-         * More points means running the level again from its first point --
-         * at most twice the final run's cost over the doublings.
+         * More points are a run of the new points alone (the tables'
+         * first_point, §10.3).
          */
         class GpuQmcLevel final : public IQmcLevel
         {
@@ -243,20 +243,36 @@ namespace quantModeling
                 tables_ = mc::coupled_sobol_tables(fine_->brownian_layout(), coarse_->brownian_layout(), keys, s.owen);
             }
 
+            /// Points points_ .. points_ + n - 1 of every replicate, folded
+            /// into the level's means (and risks).
             void add(long long n) override
             {
-                points_ += n;
                 std::vector<double> *rows = risks_ ? &risks_->levels[static_cast<std::size_t>(level_)] : nullptr;
-                means_ = run(dm_fine_, tables_.fine, rows);
-                if (!coarse_)
-                    return;
-                std::vector<double> coarse_rows;
-                const std::vector<double> coarse = run(dm_coarse_, tables_.coarse, rows ? &coarse_rows : nullptr);
-                for (std::size_t r = 0; r < means_.size(); ++r)
-                    means_[r] -= coarse[r];
+                std::vector<double> more_rows, coarse_rows;
+                tables_.fine.first_point = tables_.coarse.first_point = static_cast<uint32_t>(points_);
+                std::vector<double> more = run(dm_fine_, tables_.fine, n, rows ? &more_rows : nullptr);
+                if (coarse_)
+                {
+                    const std::vector<double> coarse =
+                        run(dm_coarse_, tables_.coarse, n, rows ? &coarse_rows : nullptr);
+                    for (std::size_t r = 0; r < more.size(); ++r)
+                        more[r] -= coarse[r];
+                    for (std::size_t i = 0; i < coarse_rows.size(); ++i)
+                        more_rows[i] -= coarse_rows[i];
+                }
+                // Each mean over all the points so far.
+                const double had = static_cast<double>(points_), got = static_cast<double>(n);
+                auto fold = [&](std::vector<double> &all, const std::vector<double> &extra)
+                {
+                    if (all.empty())
+                        all.assign(extra.size(), 0.0);
+                    for (std::size_t i = 0; i < all.size(); ++i)
+                        all[i] = (had * all[i] + got * extra[i]) / (had + got);
+                };
+                fold(means_, more);
                 if (rows)
-                    for (std::size_t i = 0; i < rows->size(); ++i)
-                        (*rows)[i] -= coarse_rows[i];
+                    fold(*rows, more_rows);
+                points_ += n;
             }
 
             long long points() const override { return points_; }
@@ -284,9 +300,11 @@ namespace quantModeling
                 return m;
             }
 
-            /// Each replicate's mean over the level's points; with `rows`,
-            /// by the adjoint, and each replicate's risks there.
-            std::vector<double> run(const DeviceModel &dm, const mc::SobolTables &tables, std::vector<double> *rows)
+            /// Each replicate's mean over the `n` points from the tables'
+            /// first_point; with `rows`, by the adjoint, and each
+            /// replicate's risks there.
+            std::vector<double> run(const DeviceModel &dm, const mc::SobolTables &tables, long long n,
+                                    std::vector<double> *rows)
             {
                 gpu::ScriptGpuRequest req;
                 req.program = &product_.program();
@@ -295,7 +313,7 @@ namespace quantModeling
                 req.discount_mats = mats_;
                 req.antithetic = false;
                 req.devices = devices_;
-                req.n_units = static_cast<uint64_t>(points_);
+                req.n_units = static_cast<uint64_t>(n);
                 req.sobol = &tables;
                 note_.gpus = std::max(note_.gpus, gpu::gpus_used(req));
                 if (rows)
