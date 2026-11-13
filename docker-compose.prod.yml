@@ -38,6 +38,11 @@ services:
       # Heston/SLV calibrated for each new chain snapshot before the first
       # request (api/app/calibration_warmup.py).
       - QM_CALIBRATION_WARMUP=${QM_CALIBRATION_WARMUP:-1}
+      # GPU script kernels compiled once and kept on the data volume: a
+      # restart or a deployment reads them back instead of compiling, and the
+      # warm-up at start rebuilds those a new kernel made stale (WP 27 L1b).
+      - QM_KERNEL_CACHE_DIR=/app/data/kernels
+      - QM_KERNEL_WARMUP=${QM_KERNEL_WARMUP:-1}
       # Scripting assistant: the llama-server of ~/AgenticEnv, reached through
       # the llama-bridge socket on the Docker gateway (127.0.0.1 is the
       # container itself). Login is required to use it.

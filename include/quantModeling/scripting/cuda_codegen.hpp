@@ -36,10 +36,11 @@ namespace quantModeling::scripting
 {
 
     /// The device function the generated source defines and the script
-    /// kernel calls at each event date:
-    ///   extern "C" __device__ void qm_script_event(int e, double *vars,
+    /// kernel calls at each event date, with the date's block (`kind`:
+    /// ir::Script::event_block) and its terms (ir::Script::event_terms):
+    ///   extern "C" __device__ void qm_script_event(int kind, double *vars,
     ///       const double *spots, const double *discounts, double numeraire,
-    ///       double *payoff);
+    ///       double *payoff, const double *terms);
     inline constexpr const char *kCudaEventFunction = "qm_script_event";
 
     struct CudaSource
@@ -48,8 +49,8 @@ namespace quantModeling::scripting
         std::string why;    ///< then: the reason, in words a user can read
     };
 
-    /// The CUDA source of `s`'s events, or why it cannot be generated.
-    /// Events that share a block (a schedule's dates) share their code.
+    /// The CUDA source of `s`'s blocks, or why it cannot be generated: one
+    /// `case` per distinct block, whatever the number of dates.
     CudaSource cuda_event_source(const ir::Script &s);
 
     /**

@@ -381,7 +381,18 @@ namespace quantModeling::gpu
                 const mc::ScriptPathView v = device_view(req, mem, device);
                 const detail::StackLimitRestore release_stack;
                 const DrawSetup s = draw_setup(req, v, mem, device, 0, true);
-                Unit unit{v, s.draws, req.antithetic, req.n_units, {}};
+                // Which block each date runs, and its terms: data, so that
+                // the kernel does not depend on them (WP 27 lot L1b).
+                std::vector<std::int32_t> term_begin;
+                std::vector<double> terms{0.0}; // never empty: a device pointer to give
+                for (const std::vector<double> &event : req.ir->event_terms)
+                {
+                    term_begin.push_back(static_cast<std::int32_t>(terms.size()));
+                    terms.insert(terms.end(), event.begin(), event.end());
+                }
+                const detail::CompiledEvents events{mem.put(req.ir->event_block), mem.put(term_begin),
+                                                    mem.put(terms)};
+                Unit unit{v, s.draws, req.antithetic, req.n_units, events};
                 void *fn = fns[static_cast<std::size_t>(
                     std::find(devices.begin(), devices.end(), device) - devices.begin())];
                 uint64_t n_units = req.n_units, per_segment = bps;
@@ -461,10 +472,12 @@ namespace quantModeling::gpu
                 fns.push_back(fn);
             }
             char ms[96];
-            std::snprintf(ms, sizeof ms, "%.0f ms: NVRTC %.0f, link %.0f", built->compile_ms, built->nvrtc_ms,
-                          built->link_ms);
-            note = std::string("compiled script (NVRTC, ") + (cached ? "cached" : std::string("compiled in ") + ms) +
-                   ")";
+            if (built->from_disk)
+                std::snprintf(ms, sizeof ms, "read from the kernel cache in %.1f ms", built->compile_ms);
+            else
+                std::snprintf(ms, sizeof ms, "compiled in %.0f ms: NVRTC %.0f, link %.0f", built->compile_ms,
+                              built->nvrtc_ms, built->link_ms);
+            note = std::string("compiled script (NVRTC, ") + (cached ? "cached" : ms) + ")";
             return fns;
         }
 
@@ -488,6 +501,23 @@ namespace quantModeling::gpu
             std::vector<double> warp_sums;
         };
     } // namespace
+
+    void forget_compiled_scripts()
+    {
+        jit::forget_compiled();
+    }
+
+    ScriptKernelsRebuilt rebuild_script_kernels(int device)
+    {
+        detail::require_device(device);
+        const jit::Rebuilt r = jit::rebuild_stale(device);
+        return {r.current, r.rebuilt, r.failed};
+    }
+
+    std::string script_kernel_cache_dir()
+    {
+        return jit::disk_cache_dir();
+    }
 
     ScriptGpuStats simulate_script(const ScriptGpuRequest &req)
     {

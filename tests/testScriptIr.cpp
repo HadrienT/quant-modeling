@@ -108,7 +108,7 @@ namespace quantModeling
                               numeraire, survs.data());
                     const ir::Block &b = s.event(e);
                     ir::run_block(b, vars_i.data(), spots.data(), dfs.data(), numeraire, payoff, survs.data(),
-                                  val.data());
+                                  val.data(), s.event_terms[e].data());
                     for (const ir::Inst &in : b.code)
                         if (in.op == ir::Op::FuzzyIf && val[static_cast<std::size_t>(&in - b.code.data())] == 2.0)
                             ++out.blends;
@@ -134,10 +134,14 @@ namespace quantModeling
         int scripts = 0;
         long long blends = 0;
         for (const LibraryScript &script : library())
-            for (bool fuzzy : {false, true})
+            for (int mode = 0; mode < 4; ++mode)
             {
+                // Crisp and fuzzy; the numbers as constants and as terms
+                // (lot L1b: the same doubles, read from data).
+                const bool fuzzy = (mode & 1) != 0, terms = (mode & 2) != 0;
                 ScriptSettings ss;
                 ss.fuzzy = fuzzy;
+                ss.terms_as_parameters = terms;
                 const ScriptedProduct<Real> product(script.source, kCtx, ss);
                 if (product.program().code.empty()) // early exercise: the tree evaluator
                 {
@@ -145,13 +149,15 @@ namespace quantModeling
                     continue;
                 }
                 ASSERT_EQ(product.ir().n_events(), product.program().n_events()) << script.name;
+                ASSERT_EQ(product.ir().event_terms.size(), product.ir().n_events()) << script.name;
                 const Comparison c = compare(product, 400, 7u);
-                EXPECT_EQ(c.mismatches, 0) << script.name << (fuzzy ? " (fuzzy): " : ": ") << c.first;
+                EXPECT_EQ(c.mismatches, 0) << script.name << (fuzzy ? " (fuzzy" : " (crisp")
+                                           << (terms ? ", terms): " : "): ") << c.first;
                 EXPECT_GT(c.values, 0);
                 blends += c.blends;
                 ++scripts;
             }
-        EXPECT_GT(scripts, 40);
+        EXPECT_GT(scripts, 80);
         EXPECT_GT(blends, 1000) << "the fuzzy ifs' blended mode was hardly exercised";
     }
 
@@ -235,7 +241,9 @@ namespace quantModeling
                                             kCtx);
         const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
         ASSERT_TRUE(src.why.empty()) << src.why;
-        EXPECT_NE(src.source.find("case 0:\n    case 1:\n    case 2:\n    {"), std::string::npos) << src.source;
+        EXPECT_NE(src.source.find("case 0:\n    {"), std::string::npos) << src.source;
+        EXPECT_NE(src.source.find("case 1:\n    {"), std::string::npos) << src.source;
+        EXPECT_EQ(src.source.find("case 2:"), std::string::npos) << src.source;
         EXPECT_EQ(src.source.find("acc"), std::string::npos);
     }
 

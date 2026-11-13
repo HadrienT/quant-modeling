@@ -97,6 +97,14 @@ namespace quantModeling
         /// uses them as a control variate. Without it, controlPays is
         /// computed and ignored.
         std::optional<double> control_mean{};
+        /// The numbers written in the script are a product's terms (strike,
+        /// barriers, coupons): the GPU's compiled kernel reads them as data
+        /// instead of holding them as constants, so that one kernel serves
+        /// every set of terms and every number of dates of the same product
+        /// shape (blueprint/wp/27-ir-ad.md §6.1, lot L1b). For the scripts
+        /// the library writes (pricers/script_builders); a script a user
+        /// wrote keeps its numbers as constants. Same bits either way.
+        bool terms_as_parameters = false;
     };
 
     /**
@@ -237,7 +245,7 @@ namespace quantModeling
             if (settings.bytecode && !has_exercise_)
             {
                 program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy);
-                ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy);
+                ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy, settings.terms_as_parameters);
                 buffers_.vars.assign(static_cast<std::size_t>(program_.n_vars), T(0));
                 buffers_.stack.assign(static_cast<std::size_t>(program_.max_stack), T(0));
                 buffers_.degrees.assign(static_cast<std::size_t>(program_.max_degrees), T(0));

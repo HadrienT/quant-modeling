@@ -71,10 +71,10 @@ namespace quantModeling::scripting::ir
         return static_cast<std::int32_t>(block_.code.size()) - 1;
     }
 
-    std::int32_t Builder::value(Op op, std::int32_t a, std::int32_t b, double x)
+    std::int32_t Builder::value(Op op, std::int32_t a, std::int32_t b, double x, std::int32_t c)
     {
         const unsigned operands = value_operands(op);
-        if (operands != 0u)
+        if (operands == 1u || operands == 3u)
         {
             const Inst &ia = at(a);
             const bool unary = operands == 1u;
@@ -85,14 +85,14 @@ namespace quantModeling::scripting::ir
                     return constant(r);
             }
         }
-        const Key key{static_cast<int>(op), a, b, bits_of(x)};
+        const Key key{static_cast<int>(op), a, b, c, bits_of(x)};
         for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope)
         {
             const auto it = scope->find(key);
             if (it != scope->end())
                 return it->second;
         }
-        const std::int32_t id = raw(op, a, b, -1, x);
+        const std::int32_t id = raw(op, a, b, c, x);
         scopes_.back().emplace(key, id);
         return id;
     }
@@ -112,36 +112,53 @@ namespace quantModeling::scripting::ir
                 work.push_back(i);
             }
         };
-        for (std::int32_t v : b.var_out)
-            mark(v);
-        mark(b.pay_out);
+        for (const Out &o : b.outs)
+            mark(o.value);
+        for (std::size_t i = 0; i < n; ++i)
+            if (b.code[i].op == Op::GridAccum) // a statement: its effect is its use
+                mark(static_cast<std::int32_t>(i));
         while (!work.empty())
         {
             const std::int32_t i = work.back();
             work.pop_back();
             const Inst &in = b.code[static_cast<std::size_t>(i)];
-            const unsigned operands = value_operands(in.op);
-            if (operands & 1u)
+            // Its operands, and the markers of its region (a phi keeps its
+            // if, an if its else and its end).
+            const unsigned fields = value_operands(in.op) | link_operands(in.op);
+            if (fields & 1u)
                 mark(in.a);
-            if (operands & 2u)
+            if (fields & 2u)
                 mark(in.b);
-            switch (in.op)
+            if (fields & 4u)
+                mark(in.c);
+        }
+        // An instruction inside a region that stays needs the region: the
+        // markers around a live statement (GridAccum) are live too.
+        {
+            std::vector<std::int32_t> open;
+            for (std::size_t i = 0; i < n; ++i)
             {
-                case Op::Phi:
-                case Op::FuzzyPhi:
-                case Op::FuzzyPhiPay:
-                    mark(in.c); // its region
-                    break;
-                case Op::If: // with its markers
+                const Op op = b.code[i].op;
+                if (op == Op::If || op == Op::FuzzyIf)
+                    open.push_back(static_cast<std::int32_t>(i));
+                else if (op == Op::EndIf || op == Op::FuzzyEnd)
+                    open.pop_back();
+                else if (op == Op::GridAccum && live[i])
+                    for (std::int32_t head : open)
+                        mark(head);
+            }
+            while (!work.empty())
+            {
+                const std::int32_t i = work.back();
+                work.pop_back();
+                const Inst &in = b.code[static_cast<std::size_t>(i)];
+                const unsigned fields = value_operands(in.op) | link_operands(in.op);
+                if (fields & 1u)
+                    mark(in.a);
+                if (fields & 2u)
                     mark(in.b);
+                if (fields & 4u)
                     mark(in.c);
-                    break;
-                case Op::FuzzyIf:
-                    mark(in.c);
-                    mark(b.code[static_cast<std::size_t>(in.c)].c);
-                    break;
-                default:
-                    break;
             }
         }
         std::vector<std::int32_t> to(n, -1);
@@ -159,21 +176,17 @@ namespace quantModeling::scripting::ir
         };
         for (Inst &in : kept)
         {
-            const unsigned operands = value_operands(in.op);
-            const bool region = !defines_value(in.op);
-            const bool phi = in.op == Op::Phi || in.op == Op::FuzzyPhi || in.op == Op::FuzzyPhiPay;
-            if ((operands & 1u) || in.op == Op::Else || in.op == Op::EndIf || in.op == Op::FuzzyElse ||
-                in.op == Op::FuzzyEnd)
+            const unsigned fields = value_operands(in.op) | link_operands(in.op);
+            if (fields & 1u)
                 map(in.a);
-            if ((operands & 2u) || in.op == Op::If)
+            if (fields & 2u)
                 map(in.b);
-            if (region || phi)
+            if (fields & 4u)
                 map(in.c);
         }
         b.code = std::move(kept);
-        for (std::int32_t &v : b.var_out)
-            map(v);
-        map(b.pay_out);
+        for (Out &o : b.outs)
+            map(o.value);
     }
 
     // ── lowering ───────────────────────────────────────────────────────────
@@ -187,13 +200,12 @@ namespace quantModeling::scripting::ir
         class Lowering final : public ConstVisitor
         {
           public:
-            Lowering(std::size_t n_vars, bool fuzzy)
-                : n_vars_(n_vars), fuzzy_(fuzzy) {}
+            Lowering(std::size_t n_vars, bool fuzzy, bool terms)
+                : n_vars_(n_vars), fuzzy_(fuzzy), terms_(terms) {}
 
             Block lower(const Event &event)
             {
                 b_ = Builder();
-                b_.block().var_out.assign(n_vars_, -1);
                 vars_.resize(n_vars_);
                 first_.resize(n_vars_);
                 for (std::size_t i = 0; i < n_vars_; ++i)
@@ -202,21 +214,35 @@ namespace quantModeling::scripting::ir
                 values_.clear();
                 degrees_.clear();
                 has_survival_ = false;
+                term_values_.clear();
                 for (const ExprTree &statement : event.statements)
                     if (statement)
                         statement->accept(*this);
                 Block out = b_.take();
                 for (std::size_t i = 0; i < n_vars_; ++i)
-                    out.var_out[i] = vars_[i] == first_[i] ? -1 : vars_[i];
-                out.pay_out = pay_ == first_pay_ ? -1 : pay_;
+                    if (vars_[i] != first_[i])
+                        out.outs.push_back({Op::VarIn, static_cast<std::int32_t>(i), kPrimal, vars_[i], false});
+                if (pay_ != first_pay_)
+                    out.outs.push_back({Op::PayIn, 0, kPrimal, pay_, false});
                 remove_dead_code(out);
                 return out;
             }
 
             bool has_survival() const { return has_survival_; }
+            /// The numbers of the event just lowered, in the order its
+            /// `Param` instructions name them.
+            const std::vector<double> &term_values() const { return term_values_; }
 
             // ── leaves ──────────────────────────────────────────────────────
-            void visit(const NodeConst &n) override { push(b_.constant(n.value)); }
+            void visit(const NodeConst &n) override
+            {
+                if (!terms_)
+                    return push(b_.constant(n.value));
+                // One term per occurrence: two numbers equal in this product
+                // need not be in the next.
+                term_values_.push_back(n.value);
+                push(b_.raw(Op::Param, static_cast<std::int32_t>(term_values_.size()) - 1));
+            }
             void visit(const NodeVar &n) override { push(vars_.at(n.index)); }
             void visit(const NodeSpot &n) override
             {
@@ -448,6 +474,8 @@ namespace quantModeling::scripting::ir
 
             std::size_t n_vars_;
             bool fuzzy_;
+            bool terms_;
+            std::vector<double> term_values_;
             Builder b_;
             std::vector<std::int32_t> vars_, first_; ///< each variable's current value, and its VarIn
             std::int32_t pay_ = -1, first_pay_ = -1;
@@ -456,15 +484,16 @@ namespace quantModeling::scripting::ir
         };
     } // namespace
 
-    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy)
+    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms)
     {
         Script s;
         s.n_vars = static_cast<int>(n_vars);
         s.fuzzy = fuzzy;
-        Lowering lowering(n_vars, fuzzy);
+        Lowering lowering(n_vars, fuzzy, terms);
         for (const Event &event : events)
         {
             Block b = lowering.lower(event);
+            s.event_terms.push_back(lowering.term_values());
             s.has_survival = s.has_survival || lowering.has_survival();
             auto it = std::find(s.blocks.begin(), s.blocks.end(), b);
             if (it == s.blocks.end())
@@ -501,6 +530,22 @@ namespace quantModeling::scripting::ir
                     return "load_survival";
                 case Op::Num:
                     return "load_numeraire";
+                case Op::State:
+                    return "state";
+                case Op::Draw:
+                    return "draw";
+                case Op::Data:
+                    return "data";
+                case Op::Theta:
+                    return "theta";
+                case Op::Select:
+                    return "select";
+                case Op::GridVol:
+                    return "grid_vol";
+                case Op::GridSlope:
+                    return "grid_slope";
+                case Op::GridAccum:
+                    return "grid_accumulate";
                 case Op::Add:
                     return "add";
                 case Op::Sub:
@@ -571,6 +616,15 @@ namespace quantModeling::scripting::ir
             return "?";
         }
 
+        std::string tag_name(std::int32_t tag)
+        {
+            const int d = direction_of(tag);
+            std::string s = is_adjoint(tag) ? " adjoint" : "";
+            if (d >= 0)
+                s += " tangent " + std::to_string(d);
+            return s;
+        }
+
         std::string number(double x)
         {
             char buf[40];
@@ -605,7 +659,13 @@ namespace quantModeling::scripting::ir
                 case Op::Spot:
                 case Op::Df:
                 case Op::Surv:
+                case Op::Draw:
+                case Op::Data:
+                case Op::Theta:
                     o << ' ' << in.a;
+                    break;
+                case Op::State:
+                    o << ' ' << in.a << tag_name(in.c);
                     break;
                 case Op::FuzzyIf:
                     o << " %" << in.a;
@@ -615,6 +675,8 @@ namespace quantModeling::scripting::ir
                         o << " %" << in.a;
                     if (operands & 2u)
                         o << ", %" << in.b;
+                    if (operands & 4u)
+                        o << ", %" << in.c;
                     if (in.op == Op::Up || in.op == Op::Tent)
                         o << ", eps " << number(in.x);
             }
@@ -622,11 +684,16 @@ namespace quantModeling::scripting::ir
             if (in.op == Op::If || in.op == Op::Else || in.op == Op::FuzzyIf || in.op == Op::FuzzyElse)
                 ++indent;
         }
-        for (std::size_t i = 0; i < b.var_out.size(); ++i)
-            if (b.var_out[i] >= 0)
-                o << "  var_out " << i << " = %" << b.var_out[i] << '\n';
-        if (b.pay_out >= 0)
-            o << "  pay_out = %" << b.pay_out << '\n';
+        for (const Out &out : b.outs)
+        {
+            if (out.cls == Op::PayIn)
+                o << "  pay_out";
+            else
+                o << "  " << (out.cls == Op::VarIn ? "var_out " : out.cls == Op::State ? "state_out "
+                                                                                       : "theta_out ")
+                  << out.index << tag_name(out.tag);
+            o << (out.add ? " += %" : " = %") << out.value << '\n';
+        }
         return o.str();
     }
 

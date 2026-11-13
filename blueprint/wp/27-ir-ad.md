@@ -419,3 +419,78 @@ paths of §11's cases; before = the bytecode generator on the same commit):
 | autocall_bs (3 assets) | 3.48 | 3.48 |
 
 The same prices to the bit, 0 to 5 % faster (shared subexpressions).
+
+### 14.2 L1b done: compiled once (2026-11-14)
+
+The four items of §6.1, in the order built:
+
+1. **Dates as data.** The generated function no longer has one `case` per
+   event index but one per distinct block; which block a date runs is an
+   array on the device (`ir::Script::event_block`). An Asian on 252 fixings
+   and one on 253 are the same source.
+2. **Terms as kernel parameters.** `ScriptSettings::terms_as_parameters`
+   lowers every number of the script to a `param` read from an array of
+   terms, one array slice per event (`ir::Script::event_terms`), instead of a
+   constant. It is set for the scripts the library writes
+   (`pricers/script_route.cpp`: the catalogue's routes); a script a user
+   wrote keeps its numbers as constants. Two dates of an autocall with
+   different coupons are then the same block, and two autocalls with other
+   barriers the same kernel. Not done as "the builders mark the numbers that
+   are terms": every number of a library script is a term, which needs no
+   marking and no change to the language.
+3. **A cache on disk** (`src/gpu/script_jit.cpp`). Each linked cubin is
+   written under the hash of (the embedded kernel it was linked with, the
+   architecture, the source), in `QM_KERNEL_CACHE_DIR` (default
+   `~/.cache/quantmodeling/kernels`; `/app/data/kernels`, on the data volume,
+   in the compose files; `QM_KERNEL_CACHE=0` turns it off). The file holds
+   the source, compared on load, so a hash collision cannot hand out the
+   wrong code. A kernel is 35 to 60 kB.
+4. **A warm-up at start** (`api/app/kernel_warmup.py`, `QM_KERNEL_WARMUP=1`,
+   set in production). Two steps in a background thread: the kernels the
+   cache holds from an *older build* are compiled again from the source
+   stored with them (`rebuild_script_kernels`: after a deployment that
+   changes the embedded kernel, every script priced before -- catalogue and
+   users' -- is ready again); then 47 seed pricings of the catalogue's usual
+   shapes (call / put, the four barrier kinds, the averages, the lookback
+   styles, the multi-asset products) on 4 096 paths, which compile what the
+   cache has never seen.
+
+Acceptance:
+
+- **Same bits as the literal kernels.** `tests/testScriptIr.cpp` runs every
+  library script with its numbers as terms through the IR evaluator against
+  the bytecode (which holds them as constants): same bits.
+  `tests/gpu/testGpuScriptJit.cpp` does the same on the device
+  (Black-Scholes, and local vol fuzzy under Sobol).
+- **One kernel per product shape.** `ScriptCudaCodegen.
+  TermsAndDatesAreDataNotCode`: another strike and barrier, or 30 monthly
+  dates instead of 12, give the identical source.
+- **No catalogue request compiles after start.** Measured with
+  `qm_script_jit_bench` (first call minus the median of the next five, per
+  case): 405 to 571 ms in a process that compiles, 0 ms in a second process
+  that reads the cache. The warm-up takes 31 s on an empty cache (45 kernels
+  compiled, in the background) and 1.7 s when the cache is warm.
+  `GpuScriptJitTest.KernelsAreReadBackFromTheDiskCache` checks the read-back,
+  a corrupt file ignored, and a stale kernel rebuilt from its source.
+
+What it costs, measured (one V100, ms, the script's numbers as constants
+against as terms; `qm_script_jit_bench 1 0 "" philox|sobol terms`):
+
+| Case | Philox, constants | Philox, terms | Sobol, constants | Sobol, terms |
+|---|---|---|---|---|
+| barrier_bs | 6.35 | 6.62 | 13.24 | 13.61 |
+| barrier_lv | 8.77 | 9.27 | 14.9 | 17.7 |
+| asian_bs | 15.69 | 15.96 | 36.24 | 36.77 |
+| asian_lv | 20.08 | 20.43 | 44.03 | 44.47 |
+| autocall_bs | 3.48 | 3.62 | 5.62 | 5.62 |
+
+2 to 6 % a path (a term is a load, where a constant was folded into the
+code), 18 % in one case (the local-vol barrier under Sobol, repeated three
+times), against the 0.4 to 0.6 s every new set of terms cost before. The
+same prices to the bit.
+
+Found on the way: NVRTC and nvJitLink already keep a cache of their own
+(`~/.nv/ComputeCache`): a second process compiled the same source in about
+35 ms instead of 500. It is capped at 1 GiB, shared with every other CUDA
+program of the user and lost with the container's file system, hence the
+cache of our own on the data volume.

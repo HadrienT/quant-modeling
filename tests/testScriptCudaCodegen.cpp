@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -60,7 +61,7 @@ namespace quantModeling
                 const ScriptedProduct<Real> product(text.str(), kCtx, ss);
                 const scripting::CudaSource a = scripting::cuda_event_source(product.ir());
                 ASSERT_TRUE(a.why.empty()) << entry.path().stem() << ": " << a.why;
-                EXPECT_EQ(count(a.source, "    case "), product.program().n_events()) << entry.path().stem();
+                EXPECT_EQ(count(a.source, "    case "), product.ir().blocks.size()) << entry.path().stem();
                 EXPECT_EQ(a.source, scripting::cuda_event_source(product.ir()).source);
             }
             ++n;
@@ -88,9 +89,9 @@ namespace quantModeling
                                                       << src;
     }
 
-    // A daily schedule's dates share one body: 252 fixings, a handful of
-    // distinct cases -- the instruction cache holds the script, not a copy
-    // per date.
+    // A daily schedule's dates share one body: 252 fixings, three cases --
+    // the instruction cache holds the script, not a copy per date, and which
+    // case a date runs is data (WP 27 lot L1b).
     TEST(ScriptCudaCodegen, ScheduleDatesShareTheirCode)
     {
         const std::string src = source_of("2026-06-02\n    acc = spot()\n    n = 1\n\n"
@@ -98,8 +99,8 @@ namespace quantModeling
                                           "    acc = acc + spot()\n    n = n + 1\n\n"
                                           "2027-06-01\n    acc = acc + spot()\n    n = n + 1\n"
                                           "    pays max(acc / n - 100, 0)\n");
-        EXPECT_GT(count(src, "    case "), 200u);
-        // A body opens on its values: first date, schedule, last date.
+        // One case per distinct block: first date, schedule, last date.
+        EXPECT_EQ(count(src, "    case "), 3u);
         EXPECT_EQ(count(src, "\n    {\n        double x0"), 3u) << "distinct bodies";
     }
 
@@ -122,6 +123,40 @@ namespace quantModeling
         const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
         EXPECT_TRUE(src.source.empty());
         EXPECT_NE(src.why.find("survival"), std::string::npos) << src.why;
+    }
+
+    // Lot L1b of blueprint/wp/27-ir-ad.md: with its numbers as terms, a
+    // product's kernel depends on its shape alone -- another strike, another
+    // barrier, another number of dates give the same source, hence the same
+    // compiled kernel.
+    TEST(ScriptCudaCodegen, TermsAndDatesAreDataNotCode)
+    {
+        const auto up_and_out = [](double strike, double barrier, int months, bool terms)
+        {
+            std::string script = "2026-07-01\n    alive = 1\n";
+            for (int m = 1; m <= months; ++m)
+            {
+                char date[16];
+                std::snprintf(date, sizeof date, "20%02d-%02d-01", 26 + (6 + m) / 12, 1 + (6 + m) % 12);
+                script += std::string(date) + "\n    if spot() >= " + std::to_string(barrier) +
+                          " then alive = 0 endIf\n";
+            }
+            script += "2030-01-02\n    pays alive * max(spot() - " + std::to_string(strike) + ", 0)\n";
+            ScriptSettings ss;
+            ss.terms_as_parameters = terms;
+            const ScriptedProduct<Real> product(script, kCtx, ss);
+            const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
+            EXPECT_TRUE(src.why.empty()) << src.why;
+            return src.source;
+        };
+        const std::string a = up_and_out(100.0, 130.0, 12, true);
+        EXPECT_EQ(a, up_and_out(95.0, 140.0, 12, true)) << "other terms";
+        EXPECT_EQ(a, up_and_out(100.0, 130.0, 30, true)) << "other dates";
+        EXPECT_NE(a.find("term["), std::string::npos) << a;
+        // A script with its numbers as constants: the terms are in the code.
+        EXPECT_NE(up_and_out(100.0, 130.0, 12, false), up_and_out(95.0, 140.0, 12, false));
+        // ... but its dates are data already.
+        EXPECT_EQ(up_and_out(100.0, 130.0, 12, false), up_and_out(100.0, 130.0, 30, false));
     }
 
     TEST(ScriptCudaCodegen, SpecIsWrittenAsConstants)

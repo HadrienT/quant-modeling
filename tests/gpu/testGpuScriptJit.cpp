@@ -2,10 +2,14 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <unistd.h>
 
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/gpu/device.hpp"
+#include "quantModeling/gpu/script.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 
 #include "library_scripts.hpp"
@@ -47,13 +51,15 @@ namespace quantModeling
             return std::memcmp(&a, &b, sizeof a) == 0;
         }
 
-        void expect_compiled_equals_interpreted(Dyn dyn, bool fuzzy, bool single_asset_only, SamplerKind sampler)
+        void expect_compiled_equals_interpreted(Dyn dyn, bool fuzzy, bool single_asset_only, SamplerKind sampler,
+                                                bool terms = false)
         {
             int compared = 0;
             for (const auto &s : library())
             {
                 ScriptSettings ss;
                 ss.fuzzy = fuzzy;
+                ss.terms_as_parameters = terms; // the compiled kernel alone reads them: the oracle does not move
                 const ScriptedProduct<Real> product(s.source, kCtx, ss);
                 if (single_asset_only && product.n_underlyings() > 1)
                     continue;
@@ -121,6 +127,92 @@ namespace quantModeling
     TEST_F(GpuScriptJitTest, SlvFuzzySameBits)
     {
         expect_compiled_equals_interpreted(Dyn::SLV, true, true, SamplerKind::PseudoRandom);
+    }
+
+    // WP 27 lot L1b: the script's numbers read as terms, from data -- the
+    // same bits as the interpreter, which holds them as constants.
+    TEST_F(GpuScriptJitTest, TermsAsParametersBlackScholesSameBits)
+    {
+        expect_compiled_equals_interpreted(Dyn::BlackScholes, false, false, SamplerKind::PseudoRandom, true);
+    }
+    TEST_F(GpuScriptJitTest, TermsAsParametersLocalVolFuzzySobolSameBits)
+    {
+        expect_compiled_equals_interpreted(Dyn::LocalVol, true, true, SamplerKind::Sobol, true);
+    }
+
+    // WP 27 lot L1b: a compiled kernel is stored on disk and read back by a
+    // process that does not hold it -- the same bits, without compiling.
+    TEST_F(GpuScriptJitTest, KernelsAreReadBackFromTheDiskCache)
+    {
+        const std::filesystem::path dir =
+            std::filesystem::temp_directory_path() / ("qm-kernel-cache-" + std::to_string(::getpid()));
+        std::filesystem::remove_all(dir);
+        setenv("QM_KERNEL_CACHE_DIR", dir.c_str(), 1);
+        ASSERT_EQ(gpu::script_kernel_cache_dir(), dir.string());
+
+        // A script no other test compiles (its constant is its own).
+        const std::string script = "2027-06-01\n    pays max(spot() - 101.2345, 0)\n";
+        const ScriptedProduct<Real> product(script, kCtx);
+        const auto price = [&]()
+        {
+            auto m = model(Dyn::BlackScholes, 1);
+            return simulate_script(product, *m, settings(SamplerKind::PseudoRandom));
+        };
+        const SimulationMCResult first = price();
+        EXPECT_NE(first.diagnostics.find("compiled in"), std::string::npos) << first.diagnostics;
+        std::size_t files = 0;
+        for (const auto &entry : std::filesystem::directory_iterator(dir))
+            files += entry.path().extension() == ".qmk";
+        EXPECT_EQ(files, 1u);
+
+        EXPECT_NE(price().diagnostics.find("NVRTC, cached"), std::string::npos); // in memory
+
+        gpu::forget_compiled_scripts(); // as a restart
+        const SimulationMCResult again = price();
+        EXPECT_NE(again.diagnostics.find("read from the kernel cache"), std::string::npos) << again.diagnostics;
+        EXPECT_TRUE(same_bits(again.npv(), first.npv()));
+        EXPECT_TRUE(same_bits(again.std_error(), first.std_error()));
+
+        // A file that is not the kernel's is ignored: the script compiles.
+        gpu::forget_compiled_scripts();
+        for (const auto &entry : std::filesystem::directory_iterator(dir))
+            std::filesystem::resize_file(entry.path(), 100);
+        const SimulationMCResult rebuilt = price();
+        EXPECT_NE(rebuilt.diagnostics.find("compiled in"), std::string::npos) << rebuilt.diagnostics;
+        EXPECT_TRUE(same_bits(rebuilt.npv(), first.npv()));
+
+        // A kernel linked with another build of the library (its header
+        // names another embedded kernel) is stale: compiled again from the
+        // source stored with it, and its file removed.
+        gpu::forget_compiled_scripts();
+        std::filesystem::path current;
+        for (const auto &entry : std::filesystem::directory_iterator(dir))
+            current = entry.path();
+        const std::filesystem::path stale = dir / "0000000000000000-sm70.qmk";
+        std::filesystem::rename(current, stale);
+        {
+            std::fstream f(stale, std::ios::binary | std::ios::in | std::ios::out);
+            f.seekp(8); // the embedded kernel's hash
+            const char other[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+            f.write(other, sizeof other);
+        }
+        const gpu::ScriptKernelsRebuilt r = gpu::rebuild_script_kernels(0);
+        EXPECT_EQ(r.rebuilt, 1);
+        EXPECT_EQ(r.failed, 0);
+        EXPECT_FALSE(std::filesystem::exists(stale));
+        EXPECT_TRUE(std::filesystem::exists(current));
+        EXPECT_EQ(gpu::rebuild_script_kernels(0).current, 1);
+        gpu::forget_compiled_scripts();
+        const SimulationMCResult warm = price();
+        EXPECT_NE(warm.diagnostics.find("read from the kernel cache"), std::string::npos) << warm.diagnostics;
+        EXPECT_TRUE(same_bits(warm.npv(), first.npv()));
+
+        // Off: nothing is read or written.
+        setenv("QM_KERNEL_CACHE", "0", 1);
+        EXPECT_TRUE(gpu::script_kernel_cache_dir().empty());
+        unsetenv("QM_KERNEL_CACHE");
+        unsetenv("QM_KERNEL_CACHE_DIR");
+        std::filesystem::remove_all(dir);
     }
 
     // Spot controls are not compiled yet: the interpreter runs, and says why.

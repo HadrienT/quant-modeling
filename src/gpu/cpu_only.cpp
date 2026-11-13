@@ -48,6 +48,18 @@ namespace quantModeling::gpu
                              "without the CUDA backend: QM_ENABLE_CUDA=ON)");
     }
 
+    std::string script_kernel_cache_dir()
+    {
+        return "";
+    }
+
+    void forget_compiled_scripts() {}
+
+    ScriptKernelsRebuilt rebuild_script_kernels(int)
+    {
+        return {};
+    }
+
     ScriptGpuStats simulate_script(const ScriptGpuRequest &)
     {
         throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "

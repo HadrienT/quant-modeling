@@ -12,8 +12,8 @@
 #include "logical_blocks.cuh"
 #include "script_units.cuh"
 
-extern "C" __device__ void qm_script_event(int e, double *vars, const double *spots, const double *discounts,
-                                           double numeraire, double *payoff);
+extern "C" __device__ void qm_script_event(int kind, double *vars, const double *spots, const double *discounts,
+                                           double numeraire, double *payoff, const double *terms);
 
 // The request the kernel is linked for (scripting::CudaKernelSpec), defined
 // next to the events: constants after link-time optimisation.
@@ -29,7 +29,7 @@ namespace quantModeling::gpu::detail
     __device__ void CompiledEvents::operator()(int e, scripting::Machine<double> &m, const double *spots,
                                                const double *disc, const double &numeraire) const
     {
-        qm_script_event(e, m.vars, spots, disc, numeraire, &m.payoff);
+        qm_script_event(kind[e], m.vars, spots, disc, numeraire, &m.payoff, terms + term_begin[e]);
     }
 } // namespace quantModeling::gpu::detail
 

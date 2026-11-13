@@ -85,6 +85,11 @@ namespace quantModeling
         {
             ScriptSettings s;
             s.fuzzy = route.fuzzy;
+            // The script is the library's: its numbers are the product's
+            // terms, read by the compiled kernel as data, so that one kernel
+            // serves the product whatever its terms and its dates (WP 27
+            // lot L1b).
+            s.terms_as_parameters = true;
             if (route.control_mean)
                 s.control_mean = route.control_mean(spec, days);
             return s;

@@ -131,6 +131,32 @@ namespace quantModeling::gpu
     /// script_gpu_unsupported() is not empty.
     ScriptGpuStats simulate_script(const ScriptGpuRequest &req);
 
+    /// The directory compiled kernels are stored in, to be read back by a
+    /// later process instead of compiled (blueprint/wp/27-ir-ad.md §6.1, lot
+    /// L1b): QM_KERNEL_CACHE_DIR, else under the user's cache directory;
+    /// empty when QM_KERNEL_CACHE=0 or without a GPU backend.
+    std::string script_kernel_cache_dir();
+
+    struct ScriptKernelsRebuilt
+    {
+        int current = 0; ///< kernels of the cache already built for this library
+        int rebuilt = 0; ///< kernels of an older build compiled again
+        int failed = 0;  ///< sources that no longer compile (dropped)
+    };
+
+    /// Compile again, for this build of the library, every script the cache
+    /// directory holds a kernel of from an older build (the cache stores
+    /// each kernel's source): after a deployment that changed the kernel,
+    /// the scripts priced before -- the catalogue's shapes and the users'
+    /// scripts -- are ready before the first request. No effect without a
+    /// cache directory; on a CPU-only build returns zeros.
+    ScriptKernelsRebuilt rebuild_script_kernels(int device = 0);
+
+    /// Drop the compiled kernels this process holds in memory, as a restart
+    /// would: the next request reads the cache on disk, or compiles. For
+    /// tests and benchmarks.
+    void forget_compiled_scripts();
+
     /// The devices of `req` its logical blocks actually go to (lot G4): a
     /// card joins only with kMinBlocksPerDevice blocks to do.
     inline int gpus_used(const ScriptGpuRequest &req)

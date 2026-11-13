@@ -91,12 +91,15 @@ namespace
         std::string diagnostics;
     };
 
+    bool g_terms = false; // the script's numbers as kernel parameters (WP 27 lot L1b) instead of constants
     bool g_sobol = false; // Sobol RQMC (16 replicates, Brownian bridge) instead of Philox + antithetic
 
     Timing run(const Case &c, bool compiled, int paths, int device)
     {
         setenv("QM_SCRIPT_JIT", compiled ? "1" : "0", 1);
-        const ScriptedProduct<Real> product(c.script, ValuationContext{kValuation});
+        ScriptSettings script_settings;
+        script_settings.terms_as_parameters = g_terms;
+        const ScriptedProduct<Real> product(c.script, ValuationContext{kValuation}, script_settings);
         auto model = scripting::make_script_model<Real>(c.three_assets ? qm_reference::worst_of_autocall_model(0.03)
                                                                        : spec(c.local_vol));
         PricingSettings s;
@@ -135,6 +138,7 @@ int main(int argc, char **argv)
     const int device = argc > 2 ? std::atoi(argv[2]) : 0;
     const std::string only = argc > 3 ? argv[3] : "";
     g_sobol = argc > 4 && std::string(argv[4]) == "sobol";
+    g_terms = argc > 5 && std::string(argv[5]) == "terms";
     if (gpu::device_count() == 0)
     {
         std::puts("no CUDA device");
@@ -149,6 +153,8 @@ int main(int argc, char **argv)
     };
     std::printf("Script engine on one V100, %s: interpreter vs compiled script\n",
                 g_sobol ? "Sobol RQMC (16 replicates, bridge)" : "Philox + antithetic");
+    if (g_terms)
+        std::printf("The scripts' numbers are kernel parameters (terms), not constants\n");
     std::printf("%-11s %9s  %12s %12s %8s  %10s  %s\n", "case", "paths", "interp (ms)", "compiled (ms)", "speedup",
                 "compile ms", "same bits");
     for (const Case &c : cases)

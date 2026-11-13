@@ -109,6 +109,12 @@ namespace quantModeling::gpu::detail
      */
     struct CompiledEvents
     {
+        /// Per event (device memory): the block it runs, and where its terms
+        /// start in `terms` (WP 27 lot L1b: dates and terms are data).
+        const std::int32_t *kind = nullptr;
+        const std::int32_t *term_begin = nullptr;
+        const double *terms = nullptr;
+
         __device__ void operator()(int e, scripting::Machine<double> &m, const double *spots, const double *disc,
                                    const double &numeraire) const;
     };

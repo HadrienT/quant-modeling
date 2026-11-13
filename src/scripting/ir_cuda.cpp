@@ -196,6 +196,17 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     case Op::Tent:
                         o << x(k) << " = qm_tent(" << a << ", " << lit(in.x) << ");";
                         break;
+                    case Op::Select:
+                        o << x(k) << " = (" << a << " != 0.0) ? " << c << " : " << x(in.c) << ";";
+                        break;
+                    case Op::State: // path-level blocks: ir_path's generator
+                    case Op::Draw:
+                    case Op::Data:
+                    case Op::Theta:
+                    case Op::GridVol:
+                    case Op::GridSlope:
+                    case Op::GridAccum:
+                        break;
 
                     case Op::If:
                         o << "if (" << a << " != 0.0)\n"
@@ -252,11 +263,11 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                 }
                 o << "\n";
             }
-            for (std::size_t i = 0; i < b.var_out.size(); ++i)
-                if (b.var_out[i] >= 0)
-                    o << "        v[" << i << "] = " << x(b.var_out[i]) << ";\n";
-            if (b.pay_out >= 0)
-                o << "        *payoff = " << x(b.pay_out) << ";\n";
+            for (const ir::Out &out : b.outs)
+                if (out.cls == Op::VarIn)
+                    o << "        v[" << out.index << "] = " << x(out.value) << ";\n";
+                else
+                    o << "        *payoff = " << x(out.value) << ";\n";
             o << "        return;\n";
         }
     } // namespace
@@ -278,18 +289,16 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         std::ostringstream src;
         src << kPrelude;
         src << "extern \"C\" __device__ void " << kCudaEventFunction
-            << "(int e, double *__restrict__ v, const double *__restrict__ spot, const double *__restrict__ df,\n"
-            << "                                    double num, double *__restrict__ payoff)\n{\n"
-            << "    switch (e)\n    {\n";
-        // Events with the same block (a schedule's dates) share one case:
-        // the code the instruction cache holds is the script's distinct
-        // statements, not one copy per date.
+            << "(int kind, double *__restrict__ v, const double *__restrict__ spot, const double *__restrict__ df,\n"
+            << "                                    double num, double *__restrict__ payoff, const double "
+               "*__restrict__ term)\n{\n"
+            << "    switch (kind)\n    {\n";
+        // One case per distinct block, not per date: which block a date
+        // runs is data (ir::Script::event_block), so the source -- and the
+        // kernel compiled from it -- does not depend on the number of dates.
         for (std::size_t g = 0; g < s.blocks.size(); ++g)
         {
-            for (std::size_t e = 0; e < s.event_block.size(); ++e)
-                if (s.event_block[e] == static_cast<std::int32_t>(g))
-                    src << "    case " << e << ":\n";
-            src << "    {\n";
+            src << "    case " << g << ":\n    {\n";
             block_body(src, s.blocks[g]);
             src << "    }\n";
         }
