@@ -648,7 +648,13 @@ namespace quantModeling::gpu
         if (rqmc)
         {
             for (const WelfordAccumulator &p : price)
+            {
                 res.price.add(p.mean); // replicate means: its std_error() is RQMC's
+                res.replicate_prices.push_back(p.mean);
+            }
+            res.replicate_risks.resize(static_cast<std::size_t>(reps) * np);
+            for (std::size_t i = 0; i < res.replicate_risks.size(); ++i)
+                res.replicate_risks[i] = rep_sum[i] / static_cast<double>(req.n_units);
             for (std::size_t p = 0; p < np; ++p)
             {
                 WelfordAccumulator acc;

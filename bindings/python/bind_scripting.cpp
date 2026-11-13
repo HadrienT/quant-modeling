@@ -383,6 +383,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
         // Both adjoint engines take Sobol RQMC with the Brownian bridge
         // (blueprint/wp/19-gpu.md §2.2); stratification stays pseudo-random.
         const SamplerKind aad_sampler = sampler == "sobol" ? SamplerKind::Sobol : SamplerKind::PseudoRandom;
+        const bool want_multilevel = mlmc_eps > 0.0 || mlmc_rel_eps > 0.0;
+        bool multilevel_done = false;
+        std::string multilevel_note;
         {
             py::gil_scoped_release release;
             // Early exercise: the rule is fitted once, on doubles, and the
@@ -403,7 +406,34 @@ static py::dict price_script(const std::string &script, double spot, double rate
                     gpu_note = " (on the CPU: early exercise)";
                 }
             }
-            if (!policy && (device == "gpu" || device == "auto"))
+            // Multilevel (WP 26 §10.2): the price and its risks from the
+            // same levels, on the GPU's per-path adjoint. Otherwise the
+            // plain engine below, saying why.
+            if (want_multilevel && !policy && (device == "gpu" || device == "auto"))
+            {
+                std::string why = "Sobol points only";
+                if (sampler == "sobol")
+                {
+                    ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                    auto sim_model = scripting::make_script_model<Real>(spec);
+                    check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+                    // The target as simulate_script's: a share of the price,
+                    // floored at 1e-5 of the spot, or the absolute one.
+                    const double floor = mlmc_eps > 0.0 ? mlmc_eps : 1e-5 * (spots.empty() ? spot : spots.front());
+                    aad_res = simulate_script_aad_mlqmc_gpu(product, *sim_model, floor, mlmc_rel_eps, seed_value, why);
+                    if (aad_res)
+                    {
+                        multilevel_done = true;
+                        aad_device = "gpu";
+                        aad_events = product.timeline().size();
+                        aad_advice =
+                            scripting::advise(product.analysis(), kind, product.timeline().back(), surface_T);
+                    }
+                }
+                if (!aad_res)
+                    multilevel_note = " | no multilevel risks (" + why + ") -- used the plain engine";
+            }
+            if (!aad_res && !policy && (device == "gpu" || device == "auto"))
             {
                 ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
                 auto sim_model = scripting::make_script_model<Real>(spec);
@@ -449,9 +479,12 @@ static py::dict price_script(const std::string &script, double spot, double rate
                                "pseudo-random instead";
         if (importance_sampling)
             res.diagnostics += " | importance sampling is not available under AAD";
-        if (mlmc_eps > 0.0 || mlmc_rel_eps > 0.0)
-            res.diagnostics += " | multilevel Monte Carlo is not available under AAD -- used the plain engine";
-        if (bias_estimate)
+        if (want_multilevel && !multilevel_done)
+            res.diagnostics += multilevel_note.empty()
+                                   ? " | multilevel risks run on the GPU (device 'gpu' or 'auto') -- used the "
+                                     "plain engine"
+                                   : multilevel_note;
+        if (bias_estimate && !multilevel_done)
             res.diagnostics += " | discretisation bias not estimated under AAD";
         py::dict out = pricing_result_to_dict(res);
         out["warnings"] = advice_to_py(aad_advice);

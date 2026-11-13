@@ -334,9 +334,9 @@ class ScriptPricingInputs(BaseModel):
     device: Optional[ComputeDevice] = Field(
         None,
         description="Where the paths run (blueprint WP 19 §8). Omitted (the "
-        "default): 'auto' for a multilevel price (WP 26 §10: the GPU when the "
-        "server has one, the CPU otherwise, said in the diagnostics), 'cpu' "
-        "for every other run. The GPU prices the "
+        "default): 'auto' for a multilevel price and its local-vol AAD greeks "
+        "(WP 26 §10: the GPU when the server has one, the CPU otherwise, said "
+        "in the diagnostics), 'cpu' for every other run. The GPU prices the "
         "compiled script under Black-Scholes, local vol, Heston or SLV, "
         "pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the "
         "risks under Black-Scholes, Heston (forward-mode duals) and local vol "
@@ -352,9 +352,12 @@ class ScriptPricingInputs(BaseModel):
         "auto",
         description="'auto' (the default): multilevel Monte Carlo over the time "
         "step for a local_vol script that suits it -- one payoff, no early "
-        "exercise, no AAD greeks -- to a root-mean-square error of "
+        "exercise -- to a root-mean-square error of "
         "mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine "
-        "otherwise, the diagnostics saying why. 'on': also under heston and "
+        "otherwise, the diagnostics saying why. With greeks_method='aad' the "
+        "risks come from the same levels (each level's adjoint, fine minus "
+        "coarse) on the GPU, device 'gpu' or 'auto'; on the CPU they come "
+        "from the usual engine (WP 26 §10.2). 'on': also under heston and "
         "slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU "
         "against about 2 s for the usual engine with its bias estimated; "
         "blueprint WP 26 §9.5). 'off': the usual engine (§9.4).",

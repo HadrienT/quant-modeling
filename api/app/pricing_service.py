@@ -64,14 +64,16 @@ def _multilevel(req, model: str) -> Dict:
 def _device(req, model: str) -> str:
     """Where a script request runs when it does not say: the GPU when the
     server has one ("auto") for a multilevel price, which the GPU returns
-    several times faster within the same error (WP 26 §10); the CPU for
-    every other run, AAD greeks included (they are not multilevel)."""
+    several times faster within the same error (WP 26 §10), and for its
+    AAD greeks under local vol, where they are multilevel too (§10.2); the
+    CPU for every other run."""
     if req.device is not None:
         return req.device.value
     multilevel = _multilevel(req, model)["mlmc_eps"] > 0.0 or (
         _multilevel(req, model)["mlmc_rel_eps"] > 0.0
     )
-    return "auto" if multilevel and req.greeks_method != "aad" else "cpu"
+    aad = req.greeks_method == "aad"
+    return "auto" if multilevel and (not aad or model == "local_vol") else "cpu"
 
 
 def _pricing_response_from_dict(result: Dict) -> PricingResponse:

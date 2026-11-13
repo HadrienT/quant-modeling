@@ -1363,10 +1363,8 @@ Limits, each said in the diagnostics:
 - **the API's default** (maintainer, 2026-11-13): a script request that
   names no device (`ScriptPricingInputs.device`, now optional) runs a
   multilevel price on `"auto"` -- the GPU when the server has one -- and
-  every other run on the CPU as before, AAD greeks included (they are not
-  multilevel); a named device is obeyed. The scripting page starts with no
-  device picked and says so. The workbench's catalogue products ask for
-  their greeks by AAD and are therefore not multilevel.
+  every other run on the CPU as before; a named device is obeyed. The
+  scripting page starts with no device picked and says so.
 
 Tests: `tests/testMlmc.cpp` (host, in the CI): every coarse increment is the
 sum of its two fine ones to 1e-12 on an uneven two-factor grid, the fine
@@ -1394,6 +1392,55 @@ kernel's compilation once (WP 27 L1b removes it).
 Left: a launch over a range of points, so that a doubling prices only the new
 half; multilevel under Heston and SLV stays a matter of coupling (§9.5), not
 of device.
+
+### 10.2 The risks of a multilevel price (2026-11-13)
+
+Before: a request for AAD greeks dropped multilevel ("not available under
+AAD"), and both the scripting page and the workbench ask for greeks by
+default -- from the site, the multilevel route was only reached with the
+greeks off.
+
+The multilevel price is a sum of expectations, so each risk is the sum of
+its levels' risks: the pathwise derivative of the fine payoff minus that of
+the coarse one on the same Brownian path (Burgos & Giles 2012). With §10.1's
+design this is the same run with another kernel: each launch is the GPU's
+per-path adjoint (WP 19 lot G3, local vol) instead of the price kernel, fine
+then coarse, and a replicate's sample of a level's risks is the difference of
+its two rows (`simulate_script_aad_mlqmc_gpu`; `ScriptAdjointGpuResult` now
+returns each replicate's price and risks). A risk's error is the spread of
+the replicates, summed over the levels. The points per level follow the
+price's target: the risks get an error, not a target of their own.
+
+- GPU, local vol, Sobol. On the CPU, under another model, or for a script the
+  device cannot take, the risks come from the plain engine as before and the
+  diagnostics say why. The other models wait for WP 27's generated adjoint
+  (lot L4); a CPU version needs the tape inside `LevelSampler`.
+- The API's default device (§10.1) covers it: no device named, local vol,
+  greeks by AAD -> `"auto"`.
+- A discontinuous payoff's pathwise derivative is as wrong per level as on
+  one grid: `fuzzy` applies as before (WP 27 §8 is where it gets exact).
+
+Tests (`tests/gpu/testGpuMlqmc.cpp`): on a flat surface the delta is
+Black-Scholes's and the sigma_loc risks add up to its vega; on a skewed one
+the price is the price route's to 1e-9 and the delta the central difference
+of that price within error; a model without time-step bias is refused with
+the reason. API: `test_script_mlmc.py`.
+
+Measured on SPY as in §10.1 (5003 risks: spot, rate, dividend, the 100 x 50
+sigma_loc grid), against the plain adjoint at 65 536 points:
+
+| | Multilevel, GPU | Plain adjoint, GPU | Plain adjoint, CPU tape (16 threads) |
+|---|---|---|---|
+| Call 100 % | 56.087 ± 0.078, bias ~0.060, delta −0.2512 ± 0.0096, **0.69 s** | 56.217 ± 0.035, delta −0.2389 ± 0.0023, 0.30 s | 6.0 s |
+| Call 120 % | 12.633 ± 0.018, bias ~0.012, delta −0.0085 ± 0.0017, **0.96 s** | 12.664 ± 0.034, delta −0.0096 ± 0.0012, 0.28 s | 5.8 s |
+| Arithmetic Asian | 33.137 ± 0.043, bias ~0.026, delta −0.2541 ± 0.0043, **0.71 s** | 33.242 ± 0.014, delta −0.2568 ± 0.0015, 0.27 s | 6.3 s |
+
+(The library's contracts fix their strike on the spot a week ahead: their
+delta is the surface's, small and negative.) The risks agree within their
+errors. The multilevel errors are larger on these contracts because the
+default target, 0.2 % of the price, asks for fewer points than the plain
+run's 65 536: what multilevel adds is the bias, estimated and bounded, not a
+smaller statistical error at this target.
 
 ## 11. Results
 

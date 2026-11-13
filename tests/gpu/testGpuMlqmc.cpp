@@ -140,4 +140,77 @@ namespace quantModeling
         EXPECT_NE(r.diagnostics.find("not on the GPU"), std::string::npos) << r.diagnostics;
     }
 
+    // ── §10.2: the risks of a multilevel price ──────────────────────────
+
+    TEST_F(GpuMlqmcTest, MultilevelRisksOnAFlatSurfaceAreBlackScholes)
+    {
+        // Flat local vol is Black-Scholes: the delta, and the sum of the
+        // sigma_loc risks (a parallel move of the surface), are its delta
+        // and vega.
+        ScriptedProduct<Real> product(kCall, kCtx);
+        auto m = make_script_model<Real>(local_vol(true));
+        std::string why;
+        const auto r = simulate_script_aad_mlqmc_gpu(product, *m, 0.01, 0.0, 37, why);
+        ASSERT_TRUE(r.has_value()) << why;
+        ASSERT_TRUE(r->discretisation_bias.has_value());
+        EXPECT_LT(*r->discretisation_bias, 1e-10) << r->diagnostics;
+
+        const double S = 100.0, K = 95.0, rate = 0.05, q = 0.02, vol = 0.25, T = 1.0;
+        const double d1 = (std::log(S / K) + (rate - q + 0.5 * vol * vol) * T) / (vol * std::sqrt(T));
+        const double cdf = 0.5 * std::erfc(-d1 / std::sqrt(2.0));
+        const double pdf = std::exp(-0.5 * d1 * d1) / std::sqrt(2.0 * std::acos(-1.0));
+        const double delta = std::exp(-q * T) * cdf, vega = S * std::exp(-q * T) * pdf * std::sqrt(T);
+
+        ASSERT_EQ(r->risk_labels.size(), r->risks.size());
+        ASSERT_EQ(r->risk_labels.front(), "spot");
+        EXPECT_NEAR(r->risks[0], delta, 4.0 * r->risk_std_errors[0] + 1e-4) << r->diagnostics;
+        double parallel = 0.0;
+        for (std::size_t i = 3; i < r->risks.size(); ++i)
+            parallel += r->risks[i];
+        EXPECT_NEAR(parallel, vega, 0.01 * vega) << r->diagnostics;
+    }
+
+    TEST_F(GpuMlqmcTest, MultilevelRisksAreTheMultilevelPricesSlope)
+    {
+        // Skewed surface: the adjoint delta against a central difference of
+        // the multilevel price on the same points (same seed, a fixed
+        // absolute target so that both bumps take the same levels).
+        ScriptedProduct<Real> product(kCall, kCtx);
+        const double eps = 0.005, h = 0.5;
+        std::string why;
+        auto price = [&](double spot)
+        {
+            ScriptModelSpec spec = local_vol(false);
+            spec.spot = spot;
+            auto m = make_script_model<Real>(spec);
+            return simulate_script(product, *m, multilevel(eps, ComputeDevice::Gpu));
+        };
+        auto m = make_script_model<Real>(local_vol(false));
+        const auto r = simulate_script_aad_mlqmc_gpu(product, *m, eps, 0.0, 37, why);
+        ASSERT_TRUE(r.has_value()) << why;
+        // The same estimator as the price route: the same number.
+        const SimulationMCResult mid = price(100.0);
+        EXPECT_NEAR(r->price, mid.npv(), 1e-9) << r->diagnostics << '\n'
+                                               << mid.diagnostics;
+        const SimulationMCResult up = price(100.0 + h), dn = price(100.0 - h);
+        const double bump = (up.npv() - dn.npv()) / (2.0 * h);
+        // Two prices each within eps (RMS): the difference quotient's noise.
+        EXPECT_NEAR(r->risks[0], bump, 4.0 * (r->risk_std_errors[0] + std::sqrt(2.0) * eps / (2.0 * h)))
+            << r->diagnostics;
+        EXPECT_GT(r->risk_std_errors[0], 0.0);
+        EXPECT_LT(r->risk_std_errors[0], 0.01); // a delta near 0.7, resolved
+    }
+
+    TEST_F(GpuMlqmcTest, MultilevelRisksSayWhyTheyCannotRun)
+    {
+        ScriptedProduct<Real> product(kCall, kCtx);
+        ScriptModelSpec bs = local_vol(true);
+        bs.model = "black_scholes";
+        bs.vol = 0.2;
+        auto m = make_script_model<Real>(bs);
+        std::string why;
+        EXPECT_FALSE(simulate_script_aad_mlqmc_gpu(product, *m, 0.01, 0.0, 1, why).has_value());
+        EXPECT_NE(why.find("no time-step bias"), std::string::npos) << why;
+    }
+
 } // namespace quantModeling
