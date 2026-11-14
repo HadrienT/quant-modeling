@@ -745,4 +745,95 @@ namespace quantModeling::scripting::ir
         return payoff;
     }
 
+    double run_path_second_order(const PathProgram &fwd, const PathProgram &bwd, int K, const PathData &data,
+                                 const DeviceModel &model, const Script &script, mc::PathDraws &draws, double sign,
+                                 DerivativeScratch &w, double *gradient, double *hessian)
+    {
+        const PathLayout &l = fwd.layout;
+        const auto ns = static_cast<std::size_t>(l.n_state());
+        const auto nf = static_cast<std::size_t>(l.factors);
+        const auto nk = static_cast<std::size_t>(K);
+        const std::size_t width = ns * (1 + nk); // a checkpoint: the state, then its tangents
+        w.state.assign(ns, 0.0);
+        w.tangent.assign(ns * nk, 0.0);
+        w.val.resize(std::max(longest_block(fwd), longest_block(bwd)));
+        w.checkpoints.clear();
+        w.draws.clear();
+        w.record.clear();
+        double z[mc::ScriptLimits::kAssets] = {};
+        Frame f = frame_of(l, data, model);
+        f.state = w.state.data();
+        f.state_tangent = w.tangent.data();
+        f.directions = K;
+        f.draws = z;
+
+        const auto checkpoint = [&]
+        {
+            w.checkpoints.insert(w.checkpoints.end(), w.state.begin(), w.state.end());
+            w.checkpoints.insert(w.checkpoints.end(), w.tangent.begin(), w.tangent.end());
+        };
+        f.data = data.baseline.data();
+        run_block(fwd.init, f, w.val.data());
+        int d = 0;
+        for (std::size_t s = 0; s < model.t.size(); ++s)
+        {
+            if (model.draws[s])
+            {
+                for (std::size_t k = 0; k < nf; ++k)
+                    z[k] = draws.draw(d, static_cast<int>(k), sign);
+                w.draws.insert(w.draws.end(), z, z + nf);
+                checkpoint();
+                w.record.push_back(-1 - static_cast<std::int32_t>(s));
+                f.data = data.step_rows.data() + s * static_cast<std::size_t>(l.step_cols);
+                run_block(fwd.step, f, w.val.data());
+                ++d;
+            }
+            const int e = model.event[s];
+            if (e < 0)
+                continue;
+            checkpoint();
+            w.record.push_back(e);
+            f.data = data.event_rows.data() + static_cast<std::size_t>(e) * static_cast<std::size_t>(l.event_cols);
+            f.terms = data.terms.data() + data.term_begin[static_cast<std::size_t>(e)];
+            run_block(fwd.events[static_cast<std::size_t>(script.event_block[static_cast<std::size_t>(e)])], f,
+                      w.val.data());
+        }
+        const double payoff = w.state[static_cast<std::size_t>(l.pay())];
+
+        w.adjoint.assign(ns, 0.0);
+        w.adjoint[static_cast<std::size_t>(l.pay())] = 1.0;
+        w.adjoint_tangent.assign(ns * nk, 0.0);
+        f.state_adjoint = w.adjoint.data();
+        f.adjoint_tangent = w.adjoint_tangent.data();
+        f.theta_adjoint = gradient;
+        f.theta_stride = 1;
+        f.theta_adjoint_tangent = hessian;
+        for (std::size_t i = w.record.size(); i-- > 0;)
+        {
+            f.state = w.checkpoints.data() + i * width;
+            f.state_tangent = f.state + ns;
+            const std::int32_t rec = w.record[i];
+            if (rec < 0)
+            {
+                --d;
+                const auto s = static_cast<std::size_t>(-1 - rec);
+                f.draws = w.draws.data() + static_cast<std::size_t>(d) * nf;
+                f.data = data.step_rows.data() + s * static_cast<std::size_t>(l.step_cols);
+                run_block(bwd.step, f, w.val.data());
+            }
+            else
+            {
+                const auto e = static_cast<std::size_t>(rec);
+                f.data = data.event_rows.data() + e * static_cast<std::size_t>(l.event_cols);
+                f.terms = data.terms.data() + data.term_begin[e];
+                run_block(bwd.events[static_cast<std::size_t>(script.event_block[e])], f, w.val.data());
+            }
+        }
+        f.state = w.state.data();
+        f.state_tangent = w.tangent.data();
+        f.data = data.baseline.data();
+        run_block(bwd.init, f, w.val.data());
+        return payoff;
+    }
+
 } // namespace quantModeling::scripting::ir

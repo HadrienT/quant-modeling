@@ -647,3 +647,39 @@ the phis select, so a block is a straight line of loops over 8 lanes with no
 control flow (only `grid_accumulate` needs a mask) -- and P1a measured 5 to
 13 times from that on prices. Not built: with risks on the GPU (§14.3) the
 CPU's are the fallback, so second order (L6) comes first.
+
+### 14.5 L6, first part: second order by tangent over adjoint, on the host (2026-11-14)
+
+Built: `tangent(adjoint(block), directions)` needed nothing new -- the
+tangent transformation already reads and writes any tag, so the adjoint's
+state `ā` gets a tangent `ā̇` and the parameters' adjoints a tangent row.
+`ir::run_path_second_order` runs a path forward through the tangent blocks
+(state and tangents checkpointed), then backward through the tangent of the
+adjoint blocks: the payoff, its gradient, and one row of its Hessian per
+direction, in one pass.
+
+Checked (`tests/testScriptIrAd.cpp`, `ScriptIrSecondOrder`), Black-Scholes
+and Heston, on payoffs that are smooth along a path:
+
+- each Hessian row equals the central difference of the adjoint's gradient,
+  path by path (2e-6 relative under Black-Scholes; under Heston the
+  difference converges to the exact row as the step shrinks, 3e-8 at 1e-7);
+- symmetry, `∂²/∂θᵢ∂θⱼ = ∂²/∂θⱼ∂θᵢ`, from two rows of the same pass, to
+  1e-10;
+- a closed form: the power contract `S_T² / 100` under Black-Scholes --
+  gamma, vanna and volga within their Monte-Carlo error.
+
+**Not built, and what remains of L6:**
+
+- the regularity rungs of §8. A hard call's pathwise gamma is exactly 0
+  (`ACallsKinkIsInvisibleWithoutSmoothing` pins it), and the linear fuzzy
+  ramp's is not the true gamma; the C¹ ramp (rung 2) is the next piece, then
+  the conditional expectation on the last step (rung 1), Vibrato, and the
+  bump on the adjoint;
+- the second order through a grid (`grid_accumulate`'s tangent): local vol
+  and SLV refuse it, with a message;
+- the GPU kernel for it (the generator refuses second-order tags), the API
+  fields and the front end's second-order section.
+
+So second order is a tested mechanism in the core, not yet a number a user
+can ask for.

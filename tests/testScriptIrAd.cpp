@@ -10,6 +10,7 @@
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/scripting/ir_ad.hpp"
+#include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/dual.hpp"
 
 #include "ir_fixtures.hpp"
@@ -330,6 +331,159 @@ namespace quantModeling
         std::string why;
         EXPECT_FALSE(simulate_script_aad_ir(barrier, *model, 64, kSeed, why).has_value());
         EXPECT_NE(why.find("survival"), std::string::npos) << why;
+    }
+
+    // ── lot L6: second order, the tangent of the adjoint ──────────────────
+
+    namespace
+    {
+        /// The Hessian of the payoff of path `p` (n_risks x n_risks,
+        /// row-major by parameter then direction), its gradient and value.
+        struct SecondOrder
+        {
+            double payoff = 0.0;
+            std::vector<double> gradient, hessian;
+        };
+
+        struct SecondOrderCase
+        {
+            Case c;
+            ir::PathProgram primal, forward, backward;
+            int K;
+            SecondOrderCase(const std::string &source, Dyn dyn, bool fuzzy)
+                : c(source, dyn, [&]
+                    { ScriptSettings ss; ss.fuzzy = fuzzy; return ss; }()),
+                  primal(ir::path_program(c.product.ir(), c.dm.kind, c.dm.n_assets, true)),
+                  forward(ir::tangent(primal, all_risks(primal.layout))),
+                  backward(ir::tangent(ir::adjoint(primal), all_risks(primal.layout))),
+                  K(primal.layout.n_risks)
+            {
+            }
+
+            /// With the parameters at `theta` (the layout's order).
+            SecondOrder at(const std::vector<double> &theta, int path) const
+            {
+                ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
+                std::copy(theta.begin(), theta.end(), data.theta.begin());
+                SecondOrder out;
+                out.gradient.assign(data.theta.size(), 0.0);
+                out.hessian.assign(data.theta.size() * static_cast<std::size_t>(K), 0.0);
+                ir::DerivativeScratch w;
+                mc::PathDraws draws;
+                draws.seed = kSeed;
+                draws.stride = c.host->view.stride;
+                draws.begin(static_cast<uint64_t>(path));
+                out.payoff = ir::run_path_second_order(forward, backward, K, data, c.dm, c.product.ir(), draws, 1.0, w,
+                                                       out.gradient.data(), out.hessian.data());
+                return out;
+            }
+            std::vector<double> theta() const
+            {
+                const ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
+                return std::vector<double>(data.theta.begin(), data.theta.begin() + K);
+            }
+        };
+
+        // Payoffs that are smooth along a path: a pathwise second derivative
+        // sees all of them.
+        const char *const kSmooth[] = {
+            "2027-06-01\n    pays spot() * spot() / 100\n",
+            "2026-12-01\n    a = log(spot() / 100)\n2027-06-01\n    pays 100 * (a + log(spot() / 100)) ^ 2\n",
+            "2026-09-01 2026-12-01 2027-03-01\n    acc = acc + spot()\n"
+            "2027-06-01\n    pays sqrt(acc * spot()) * exp(-spot() / 200)\n"};
+
+        /// `step`, relative to each parameter, and `fd_rel`, what central
+        /// differences of the gradient are trusted to against the Hessian's
+        /// largest entry. Heston needs a small step: sqrt(v) has large third
+        /// derivatives, and the difference only converges to the exact row
+        /// as the step goes to 0 (measured: 3e-4 off at 1e-5, 3e-8 at 1e-7).
+        void second_order_against_differences(Dyn dyn, double step, double fd_rel)
+        {
+            for (const char *source : kSmooth)
+            {
+                const SecondOrderCase sc(source, dyn, false);
+                const std::vector<double> theta = sc.theta();
+                const auto K = static_cast<std::size_t>(sc.K);
+                for (int path = 0; path < 6; ++path)
+                {
+                    const SecondOrder base = sc.at(theta, path);
+                    double scale = 1e-9;
+                    for (std::size_t i = 0; i < K * K; ++i)
+                        scale = std::max(scale, std::abs(base.hessian[i]));
+                    for (std::size_t d = 0; d < K; ++d)
+                    {
+                        // Row d by central differences of the gradient.
+                        const double h = step * std::max(1.0, std::abs(theta[d]));
+                        std::vector<double> up = theta, down = theta;
+                        up[d] += h;
+                        down[d] -= h;
+                        const SecondOrder a = sc.at(up, path), b = sc.at(down, path);
+                        for (std::size_t p = 0; p < K; ++p)
+                        {
+                            const double fd = (a.gradient[p] - b.gradient[p]) / (2.0 * h);
+                            ASSERT_NEAR(base.hessian[p * K + d], fd, fd_rel * scale)
+                                << name(dyn) << ", path " << path << ", d2 / d theta_" << p << " d theta_" << d
+                                << "\n"
+                                << source;
+                            // Symmetry: two different rows of the same pass.
+                            ASSERT_NEAR(base.hessian[p * K + d], base.hessian[d * K + p], 1e-10 * scale)
+                                << name(dyn) << ", path " << path << ", " << p << " and " << d;
+                        }
+                    }
+                }
+            }
+        }
+    } // namespace
+
+    TEST(ScriptIrSecondOrder, BlackScholesHessianIsTheGradientsDerivative)
+    {
+        second_order_against_differences(Dyn::BlackScholes, 1e-5, 2e-6);
+    }
+    TEST(ScriptIrSecondOrder, HestonHessianIsTheGradientsDerivative)
+    {
+        second_order_against_differences(Dyn::Heston, 1e-7, 2e-5);
+    }
+
+    // Against a closed form: under Black-Scholes the power contract
+    // S_T^2 / 100 is worth S0^2 exp((r - 2 q + sigma^2) T) / 100, whose gamma,
+    // vanna and volga are known. The Monte-Carlo second-order risks agree
+    // within their error.
+    TEST(ScriptIrSecondOrder, PowerContractGammaVannaVolgaAreTheClosedForms)
+    {
+        const SecondOrderCase sc(kSmooth[0], Dyn::BlackScholes, false);
+        const std::vector<double> theta = sc.theta(); // spot, rate, div, vol
+        const double S = theta[0], r = theta[1], q = theta[2], vol = theta[3];
+        const double T = sc.c.dm.t.back();
+        const double V = S * S * std::exp((r - 2.0 * q + vol * vol) * T) / 100.0;
+        const double gamma = 2.0 * V / (S * S), vanna = 4.0 * vol * T * V / S,
+                     volga = (2.0 * T + 4.0 * vol * vol * T * T) * V;
+        const int paths = 4000;
+        WelfordAccumulator g, va, vo;
+        for (int p = 0; p < paths; ++p)
+        {
+            const SecondOrder x = sc.at(theta, p);
+            g.add(x.hessian[0 * 4 + 0]);
+            va.add(x.hessian[0 * 4 + 3]);
+            vo.add(x.hessian[3 * 4 + 3]);
+        }
+        EXPECT_NEAR(g.mean, gamma, 4.0 * g.std_error());
+        EXPECT_NEAR(va.mean, vanna, 4.0 * va.std_error());
+        EXPECT_NEAR(vo.mean, volga, 4.0 * vo.std_error());
+        EXPECT_LT(g.std_error(), 0.05 * gamma);
+    }
+
+    // What the pathwise second derivative does not see (§8): a call's kink.
+    // Under the linear fuzzy ramp the smoothed call's pathwise gamma is not
+    // the true gamma -- the number the C1 ramp of rung 2 is there to fix.
+    // Recorded here so that the day it is fixed this test says so.
+    TEST(ScriptIrSecondOrder, ACallsKinkIsInvisibleWithoutSmoothing)
+    {
+        const SecondOrderCase sc("2027-06-01\n    pays max(spot() - 100, 0)\n", Dyn::BlackScholes, false);
+        const std::vector<double> theta = sc.theta();
+        double gamma = 0.0;
+        for (int p = 0; p < 500; ++p)
+            gamma += sc.at(theta, p).hessian[0];
+        EXPECT_EQ(gamma, 0.0); // exactly: max is piecewise linear in the spot
     }
 
 } // namespace quantModeling

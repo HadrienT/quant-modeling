@@ -61,7 +61,7 @@ namespace quantModeling::scripting::ir
     /// Scratch of a host path with derivatives.
     struct DerivativeScratch
     {
-        std::vector<double> state, val, tangent, adjoint, checkpoints, draws;
+        std::vector<double> state, val, tangent, adjoint, adjoint_tangent, checkpoints, draws;
         std::vector<std::int32_t> record; ///< the blocks the forward sweep ran
     };
 
@@ -83,6 +83,24 @@ namespace quantModeling::scripting::ir
     double run_path_adjoint(const PathProgram &primal, const PathProgram &adjoint_program, const PathData &data,
                             const DeviceModel &model, const Script &script, mc::PathDraws &draws, double sign,
                             double weight, DerivativeScratch &scratch, double *gradient, long stride = 1);
+
+    /**
+     * @brief Second order (blueprint/wp/27-ir-ad.md §5.3, lot L6): one path
+     *        forward through `forward` = tangent(primal, directions), state
+     *        and tangents checkpointed, then backward through `backward` =
+     *        tangent(adjoint(primal), directions).
+     *
+     * Returns the payoff; adds its gradient to `gradient[p]` and, for each
+     * direction d, the row d of its Hessian to `hessian[p * directions + d]`
+     * = d2 payoff / d theta_p d theta_(direction d). Exact where the payoff
+     * is twice differentiable along the path; a kink (max, a hard or
+     * linearly smoothed `if`) contributes nothing, which is the pathwise
+     * second derivative's known blind spot (§8).
+     */
+    double run_path_second_order(const PathProgram &forward, const PathProgram &backward, int directions,
+                                 const PathData &data, const DeviceModel &model, const Script &script,
+                                 mc::PathDraws &draws, double sign, DerivativeScratch &scratch, double *gradient,
+                                 double *hessian);
 
 } // namespace quantModeling::scripting::ir
 
