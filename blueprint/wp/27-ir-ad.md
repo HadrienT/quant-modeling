@@ -615,3 +615,35 @@ interpreter and the hand-written adjoint):
 by model (grid models take the adjoint) rather than by cost; multilevel
 risks (`simulate_script_aad_mlqmc_gpu`) reach the generated adjoint through
 the same entry point but were not re-measured.
+
+### 14.4 L7 measured: the IR's adjoint on the CPU is correct, and slower than the tape (2026-11-14)
+
+`simulate_script_aad_ir` (`engines/mc/script_engine.hpp`) runs the adjoint
+blocks of §14.3 on the CPU with the IR's reference evaluator
+(`ir::run_block`, one instruction at a time, one path at a time), with the
+tape's paths, labels and batches of 64. `qm_script_ir_adjoint_bench`, 20 000
+paths, one thread:
+
+| Script, model (risks) | Tape ms | IR ms | Tape / IR | Largest gap |
+|---|---|---|---|---|
+| european-call, Black-Scholes (4) | 11 | 23 | 0.5 | 2e-16 |
+| asian-call, Black-Scholes (4) | 61 | 113 | 0.5 | 2e-16 |
+| phoenix-autocall, Black-Scholes (4) | 26 | 79 | 0.3 | 1e-16 |
+| up-and-out-call, Heston (11) | 4 089 | 5 869 | 0.7 | 8e-16 |
+| variance-swap, Heston (11) | 4 883 | 6 380 | 0.8 | 1e-16 |
+| european-call, local vol (363) | 2 467 | 2 972 | 0.8 | 1e-16 |
+| up-and-out-call, local vol (363) | 3 747 | 4 258 | 0.9 | 8e-18 |
+| phoenix-autocall, local vol (363) | 3 812 | 5 066 | 0.8 | 9e-18 |
+
+**Same gradients as the tape (to 1e-16), not faster: the lot's criterion is
+not met, and no route uses it.** The CPU's risks stay on the tape.
+
+Why, and what would change it: the reference evaluator dispatches on every
+instruction for one path and clears its values at each block; the tape pays
+a node per operation but its sweep is a tight loop. The lot's design was
+"through the batched interpreter", which this is not. In SSA the batched
+form is simple -- both sides of an `if` can be computed for every lane and
+the phis select, so a block is a straight line of loops over 8 lanes with no
+control flow (only `grid_accumulate` needs a mask) -- and P1a measured 5 to
+13 times from that on prices. Not built: with risks on the GPU (§14.3) the
+CPU's are the fallback, so second order (L6) comes first.

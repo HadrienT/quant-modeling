@@ -7,6 +7,7 @@
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/engines/mc/script_adjoint.hpp"
+#include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/scripting/ir_ad.hpp"
 #include "quantModeling/utils/dual.hpp"
@@ -298,6 +299,37 @@ namespace quantModeling
     TEST(ScriptIrAdjoint, SlvIsTheTapesGradient)
     {
         adjoint_against_tape(Dyn::SLV);
+    }
+
+    // Lot L7: the engine's entry point for the CPU -- the tape's labels,
+    // batches and estimates, from the IR's adjoint.
+    TEST(ScriptIrAdjoint, EngineOnTheCpuGivesTheTapesResults)
+    {
+        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::Heston, Dyn::LocalVol})
+        {
+            const std::string source = "2026-12-01 2027-06-01\n    if spot() > 105 then hit = 1 endIf\n"
+                                       "2027-06-01\n    pays (1 - hit) * max(spot() - 100, 0)\n";
+            const ScriptedProduct<Real> product(source, kCtx);
+            auto model = make_model<Real>(dyn, 1);
+            std::string why;
+            const auto got = simulate_script_aad_ir(product, *model, 200, kSeed, why);
+            ASSERT_TRUE(got.has_value()) << name(dyn) << ": " << why;
+            const ScriptedProduct<aad::Number> tape_product(source, kCtx);
+            auto tape_model = make_model<aad::Number>(dyn, 1);
+            const AADSimulResults tape =
+                simulate_aad(tape_product, *tape_model, 200, kSeed, first_aad_payoff, RngKind::Philox);
+            EXPECT_EQ(got->risk_labels, tape.risk_labels);
+            EXPECT_NEAR(got->price, tape.price, 1e-12 * std::max(1.0, std::abs(tape.price)));
+            EXPECT_NEAR(got->price_std_error, tape.price_std_error, 1e-12);
+            expect_rows_near(got->risks, tape.risks, 1e-10, name(dyn));
+            expect_rows_near(got->risk_std_errors, tape.risk_std_errors, 1e-9, std::string(name(dyn)) + " errors");
+        }
+        // What the IR does not cover says why.
+        const ScriptedProduct<Real> barrier("2027-06-01\n    pays survivalAbove(80) * spot()\n", kCtx);
+        auto model = make_model<Real>(Dyn::BlackScholes, 1);
+        std::string why;
+        EXPECT_FALSE(simulate_script_aad_ir(barrier, *model, 64, kSeed, why).has_value());
+        EXPECT_NE(why.find("survival"), std::string::npos) << why;
     }
 
 } // namespace quantModeling

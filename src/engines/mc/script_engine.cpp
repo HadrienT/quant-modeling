@@ -1,5 +1,7 @@
 #include "quantModeling/engines/mc/script_engine.hpp"
 
+#include "quantModeling/scripting/ir_ad.hpp"
+
 #include <algorithm>
 #include <sstream>
 
@@ -774,6 +776,88 @@ namespace quantModeling
            << "; risks by the per-path adjoint of every level (" << np << " risks, GPU: "
            << gpu::devices_label(std::vector<int>(all.begin(), all.begin() + note.gpus)) << ")";
         res.diagnostics = os.str();
+        return res;
+    }
+
+    std::optional<AADSimulResults> simulate_script_aad_ir(const ScriptedProduct<Real> &product,
+                                                          ISimulationModel<Real> &model, std::size_t n_paths,
+                                                          std::uint64_t seed, std::string &why)
+    {
+        namespace ir = scripting::ir;
+        if (n_paths == 0)
+            throw InvalidInput("simulate_script_aad_ir: need at least one path");
+        model.init(product.timeline(), product.defline());
+        DeviceModel dm;
+        if (product.has_exercise() || product.ir().empty())
+            why = "early exercise runs on the tree evaluator, whose risks take the tape";
+        else if (product.ir().has_survival)
+            why = "survivalAbove() / survivalBelow() are not in the IR's paths yet";
+        else if (!model.describe_device(dm))
+            why = "this model's step is not in the IR";
+        else if (dm.kind == DeviceModel::Kind::Heston && dm.jump_k != 0.0)
+            why = "jump parameters are set: the IR's Heston step has no jumps";
+        else
+            why = ir::path_program_unsupported(dm.kind, dm.n_assets);
+        if (!why.empty())
+            return std::nullopt;
+
+        const ir::PathProgram primal = ir::path_program(product.ir(), dm.kind, dm.n_assets, true);
+        const ir::PathProgram adjoint = ir::adjoint(primal);
+        const ir::PathData data =
+            ir::path_data(primal.layout, dm, product.ir(), discount_lists(product), product.baseline());
+        const std::size_t n_gradient = data.theta.size();
+        const auto n_risks = static_cast<std::size_t>(primal.layout.n_risks);
+
+        AADSimulResults res;
+        res.risk_labels = model.parameter_labels();
+        const std::size_t n_labels = res.risk_labels.size();
+        // The labels: the layout's risks, then the grid's points (a model
+        // with more labels -- Bates's jumps -- has zero risks there).
+        const auto gradient_index = [&](std::size_t label) -> std::size_t
+        {
+            if (label < n_risks)
+                return label;
+            return primal.layout.th_grid >= 0 ? static_cast<std::size_t>(primal.layout.th_grid) + (label - n_risks)
+                                              : n_gradient;
+        };
+
+        constexpr std::size_t kBatch = 64; // simulate_aad's
+        ir::DerivativeScratch scratch;
+        mc::PathDraws draws;
+        draws.seed = seed;
+        draws.stride = dm.stride;
+        std::vector<double> gradient(n_gradient);
+        WelfordAccumulator price_acc;
+        std::vector<WelfordAccumulator> risk_acc(n_labels);
+        for (std::size_t done = 0; done < n_paths; done += kBatch)
+        {
+            const std::size_t batch = std::min(kBatch, n_paths - done);
+            std::fill(gradient.begin(), gradient.end(), 0.0);
+            WelfordAccumulator batch_price;
+            for (std::size_t p = 0; p < batch; ++p)
+            {
+                draws.begin(static_cast<std::uint64_t>(done + p));
+                batch_price.add(ir::run_path_adjoint(primal, adjoint, data, dm, product.ir(), draws, 1.0, 1.0, scratch,
+                                                     gradient.data()));
+            }
+            for (std::size_t j = 0; j < n_labels; ++j)
+            {
+                const std::size_t at = gradient_index(j);
+                risk_acc[j].add(at < n_gradient ? gradient[at] / static_cast<Real>(batch) : 0.0);
+            }
+            price_acc.add(batch_price.mean);
+        }
+        res.price = price_acc.mean;
+        res.price_std_error = price_acc.std_error();
+        res.risks.resize(n_labels);
+        res.risk_std_errors.resize(n_labels);
+        for (std::size_t j = 0; j < n_labels; ++j)
+        {
+            res.risks[j] = risk_acc[j].mean;
+            res.risk_std_errors[j] = risk_acc[j].std_error();
+        }
+        res.n_paths = static_cast<long long>(n_paths);
+        res.diagnostics = "adjoint from the script's IR on the CPU (batches of 64) + Philox";
         return res;
     }
 

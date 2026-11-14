@@ -311,6 +311,11 @@ if(QM_BUILD_CLI)
   target_link_libraries(qm_reference_bench PRIVATE quantModeling)
   # Lots P1a / P1f: the script engine against the reference paths, one
   # CPU thread, same paths.
+  # WP 27 lot L7: the CPU tape against the adjoint built from the IR.
+  add_executable(qm_script_ir_adjoint_bench benchmarks/script_ir_adjoint_bench.cpp)
+  target_link_libraries(qm_script_ir_adjoint_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_script_ir_adjoint_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
   add_executable(qm_script_cpu_bench benchmarks/script_cpu_bench.cpp)
   target_link_libraries(qm_script_cpu_bench PRIVATE quantModeling)
   target_include_directories(qm_script_cpu_bench PRIVATE ${PROJECT_SOURCE_DIR}/benchmarks)
