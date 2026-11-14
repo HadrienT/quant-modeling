@@ -28,6 +28,7 @@ namespace quantModeling::scripting::ir::detail
     {
         int i0, i1, j0, j1;
         double wK, wT, dK;
+        double sigma; ///< the bilinear value, before the floor
         bool inside, free;
     };
 
@@ -45,10 +46,31 @@ namespace quantModeling::scripting::ir::detail
         const double T0 = g.T_grid[c.j0];
         const double dT = g.T_grid[c.j1] - T0;
         c.wT = (dT > 1e-12) ? (tc - T0) / dT : 0.0;
-        const double sigma = (1.0 - c.wK) * (1.0 - c.wT) * g.at(c.i0, c.j0) + c.wK * (1.0 - c.wT) * g.at(c.i1, c.j0) +
-                             (1.0 - c.wK) * c.wT * g.at(c.i0, c.j1) + c.wK * c.wT * g.at(c.i1, c.j1);
-        c.free = sigma > 1e-6;
+        c.sigma = (1.0 - c.wK) * (1.0 - c.wT) * g.at(c.i0, c.j0) + c.wK * (1.0 - c.wT) * g.at(c.i1, c.j0) +
+                  (1.0 - c.wK) * c.wT * g.at(c.i0, c.j1) + c.wK * c.wT * g.at(c.i1, c.j1);
+        c.free = c.sigma > 1e-6;
         return c;
+    }
+
+    // The same from a cell already found: a backward step looks its cell up
+    // once for the vol, its slope and the corners' shares.
+    QM_HOST_DEVICE inline double grid_slope(const mc::GridView<Real> &g, const GridCell &c)
+    {
+        if (!c.free || !c.inside || c.dK <= 1e-12)
+            return 0.0;
+        return ((1.0 - c.wT) * (g.at(c.i1, c.j0) - g.at(c.i0, c.j0)) + c.wT * (g.at(c.i1, c.j1) - g.at(c.i0, c.j1))) /
+               c.dK;
+    }
+
+    QM_HOST_DEVICE inline void grid_accumulate(const GridCell &c, long nT, double a, double *base, long stride,
+                                               int grid0)
+    {
+        if (!c.free)
+            return;
+        base[(grid0 + c.i0 * nT + c.j0) * stride] += a * ((1.0 - c.wK) * (1.0 - c.wT));
+        base[(grid0 + c.i1 * nT + c.j0) * stride] += a * (c.wK * (1.0 - c.wT));
+        base[(grid0 + c.i0 * nT + c.j1) * stride] += a * ((1.0 - c.wK) * c.wT);
+        base[(grid0 + c.i1 * nT + c.j1) * stride] += a * (c.wK * c.wT);
     }
 
     /// d sigma_loc / d S: 0 outside the strikes and where the floor binds.

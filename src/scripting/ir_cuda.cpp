@@ -87,6 +87,7 @@ struct QmFrame
     const double *gK;       // the local-vol grid's strikes and times
     const double *gT;
     int nK, nT, grid0, reserved;
+    void *cell;             // the adjoint's backward sweep: the grid cell of the step
 };
 
 extern "C" __device__ double qm_grid_vol(const QmFrame *f, double spot, double t);

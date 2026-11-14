@@ -32,6 +32,7 @@ struct QmFrame
     const double *gK;
     const double *gT;
     int nK, nT, grid0, reserved;
+    void *cell;
 };
 
 namespace quantModeling::gpu::detail

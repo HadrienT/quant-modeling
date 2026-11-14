@@ -88,17 +88,35 @@ namespace
 
 // The grid's lookups: the models' own functions (path_steps.hpp), so that a
 // generated local-vol step is local_vol_step's, bit for bit.
+//
+// The adjoint's backward sweep (f->cell set) asks three things of the same
+// cell -- the vol, its slope, the corners' shares: the cell is looked up once,
+// by the vol, and kept for the other two (the adjoint written by hand did
+// the same). The vol is then the cell's own bilinear value, the same
+// expression as local_vol_bilinear's.
 extern "C" __device__ double qm_grid_vol(const QmFrame *f, double spot, double t)
 {
+    if (f->cell)
+    {
+        grid::GridCell &c = *static_cast<grid::GridCell *>(f->cell);
+        c = grid::grid_cell(grid_of(f), spot, t);
+        return c.sigma < 1e-6 ? 1e-6 : c.sigma;
+    }
     return mc::local_vol_bilinear<Real>(grid_of(f), spot, t);
 }
 extern "C" __device__ double qm_grid_slope(const QmFrame *f, double spot, double t)
 {
+    if (f->cell)
+        return grid::grid_slope(grid_of(f), *static_cast<const grid::GridCell *>(f->cell));
     return grid::grid_slope(grid_of(f), spot, t);
 }
 extern "C" __device__ void qm_grid_accumulate(const QmFrame *f, double spot, double t, double adjoint)
 {
-    grid::grid_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
+    if (f->cell)
+        grid::grid_accumulate(*static_cast<const grid::GridCell *>(f->cell), f->nT, adjoint, f->ath, f->ath_stride,
+                              f->grid0);
+    else
+        grid::grid_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
 }
 extern "C" __device__ double qm_grid_leverage(const QmFrame *f, double spot, double t)
 {
@@ -370,10 +388,12 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
     ast[qm_pay_slot()] = 1.0;
     for (int p = 0; p < n_risks; ++p)
         lth[p] = 0.0;
+    grid::GridCell cell{};
     f.ast = ast;
     f.lth = lth;
     f.ath = u.gradient + row;
     f.ath_stride = rows;
+    f.cell = &cell;
     for (int s = u.n_steps - 1; s >= 0; --s)
     {
         const int e = u.step_event[s];

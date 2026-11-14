@@ -683,3 +683,26 @@ and Heston, on payoffs that are smooth along a path:
 
 So second order is a tested mechanism in the core, not yet a number a user
 can ask for.
+
+### 14.6 L4's speed criterion met: one grid lookup per backward step (2026-11-14)
+
+§14.3 left the generated local-vol adjoint on par with the hand-written
+one. The cause was not the gradient row: a generated backward step asked
+the grid three times for the same cell (the vol to recompute the step, its
+slope, the corners' shares), each a bracket search in strikes and in times,
+where the hand-written adjoint searched once. The backward sweep now looks
+the cell up once, with the vol, and the two other operations reuse it
+(`QmFrame::cell`, `script_jit_kernel.cu`); the forward sweep, hence the
+price's bits, is untouched. One V100, 1M paths, 363 risks, ms:
+
+| Script | Hand-written | Generated, §14.3 | Generated, now |
+|---|---|---|---|
+| european-call | 460 | 448 | 428 |
+| up-and-out-call | 753 | 744 | 577 |
+| phoenix-autocall | 766 | 986 | 732 |
+| variance-swap | 692 | 717 | 638 |
+
+Faster than the hand-written adjoint in the four cases, by 4 to 23 %. The
+tests of §14.3 pass unchanged (the same price to the bit, the gradient to
+1e-11). SLV's leverage does not use the cache yet (two lookups a step).
+The gradient row in global memory remains the lever for more.
