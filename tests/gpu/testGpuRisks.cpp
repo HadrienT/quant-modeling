@@ -3,9 +3,11 @@
 #include <Eigen/Core>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -83,6 +85,22 @@ namespace quantModeling
         std::unique_ptr<ISimulationModel<T>> local_vol()
         {
             return std::make_unique<LocalVolSimModel<T>>(T(100.0), T(0.03), T(0.01), kK, kT, skewed<T>(), 1.0 / 24.0);
+        }
+
+        template <class T>
+        std::unique_ptr<ISimulationModel<T>> multi_bs(std::size_t n)
+        {
+            Eigen::MatrixXd corr =
+                Eigen::MatrixXd::Constant(static_cast<Eigen::Index>(n), static_cast<Eigen::Index>(n), 0.4);
+            corr.diagonal().setOnes();
+            std::vector<T> s0, q, vol;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                s0.push_back(T(100.0 - 4.0 * static_cast<double>(i)));
+                q.push_back(T(0.01));
+                vol.push_back(T(0.2 + 0.04 * static_cast<double>(i)));
+            }
+            return std::make_unique<MultiAssetBSSimModel<T>>(s0, T(0.03), q, vol, corr);
         }
 
         class GpuRisksTest : public ::testing::Test
@@ -263,6 +281,7 @@ namespace quantModeling
         ASSERT_TRUE(model->describe_device(dm));
         gpu::ScriptGpuRequest req;
         req.program = &product.program();
+        req.ir = &product.ir();
         req.model = &dm;
         req.baseline = product.baseline();
         for (const SampleDef &d : product.defline())
@@ -364,14 +383,170 @@ namespace quantModeling
         EXPECT_GT(std::fabs(total), 1.0);
     }
 
-    // Where the GPU has no risks: SLV says why, and nothing throws.
-    TEST_F(GpuRisksTest, SlvRisksStayOnTheCpu)
+    // ── WP 27, lots L3-L5: the risks generated from the IR ────────────────
+
+    namespace
     {
+        /// QM_SCRIPT_JIT for the scope: "0" runs the interpreter's duals and
+        /// the adjoint written by hand.
+        struct JitSwitch
+        {
+            explicit JitSwitch(bool on) { setenv("QM_SCRIPT_JIT", on ? "1" : "0", 1); }
+            ~JitSwitch() { unsetenv("QM_SCRIPT_JIT"); }
+            JitSwitch(const JitSwitch &) = delete;
+            JitSwitch &operator=(const JitSwitch &) = delete;
+        };
+
+        void expect_same_risks(const AADSimulResults &a, const AADSimulResults &b, double rel, const std::string &what)
+        {
+            ASSERT_EQ(a.risks.size(), b.risks.size()) << what;
+            double scale = 1e-12;
+            for (Real r : b.risks)
+                scale = std::max(scale, std::abs(r));
+            for (std::size_t i = 0; i < a.risks.size(); ++i)
+                EXPECT_NEAR(a.risks[i], b.risks[i], rel * scale) << what << " " << b.risk_labels[i];
+        }
+    } // namespace
+
+    // The tangent kernel against the dual numbers it replaces, on the device:
+    // the same price to the bit, the same risks to rounding.
+    TEST_F(GpuRisksTest, TangentKernelIsTheDuals)
+    {
+        int compared = 0;
+        for (const bool heston : {false, true})
+            for (const auto &s : library())
+            {
+                const ScriptedProduct<Real> product(s.source, kCtx);
+                if (product.n_underlyings() > (heston ? 1u : 2u))
+                    continue;
+                auto make = [&]() -> std::unique_ptr<ISimulationModel<Real>>
+                {
+                    if (heston)
+                        return std::make_unique<BatesSimModel<Real>>(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7,
+                                                                     0.0, 0.0, 0.0);
+                    if (product.n_underlyings() == 1)
+                        return std::make_unique<BlackScholesSimModel<Real>>(100.0, 0.03, 0.01, 0.25);
+                    return multi_bs<Real>(product.n_underlyings());
+                };
+                std::string why;
+                std::optional<AADSimulResults> duals, tangent;
+                {
+                    const JitSwitch off(false);
+                    auto m = make();
+                    duals = simulate_script_aad_gpu(product, *m, 4096, 5, why);
+                }
+                {
+                    const JitSwitch on(true);
+                    auto m = make();
+                    tangent = simulate_script_aad_gpu(product, *m, 4096, 5, why);
+                }
+                ASSERT_TRUE(duals && tangent) << s.name << ": " << why;
+                EXPECT_NE(tangent->diagnostics.find("tangent kernel"), std::string::npos) << tangent->diagnostics;
+                EXPECT_NE(duals->diagnostics.find("dual numbers"), std::string::npos) << duals->diagnostics;
+                EXPECT_EQ(tangent->price, duals->price) << s.name;
+                expect_same_risks(*tangent, *duals, 1e-12, s.name);
+                ++compared;
+            }
+        EXPECT_GT(compared, 40);
+    }
+
+    // The adjoint kernel against the adjoint written by hand, under local
+    // vol: the same price to the bit, every risk -- the whole grid -- to
+    // rounding.
+    TEST_F(GpuRisksTest, AdjointKernelIsTheHandWrittenAdjoint)
+    {
+        int compared = 0;
+        for (const auto &s : library())
+        {
+            const ScriptedProduct<Real> product(s.source, kCtx);
+            if (product.n_underlyings() > 1)
+                continue;
+            std::string why;
+            std::optional<AADSimulResults> hand, kernel;
+            {
+                const JitSwitch off(false);
+                LocalVolSimModel<Real> m(100.0, 0.03, 0.01, kK, kT, skewed<Real>());
+                hand = simulate_script_aad_gpu(product, m, 4096, 5, why);
+            }
+            {
+                const JitSwitch on(true);
+                LocalVolSimModel<Real> m(100.0, 0.03, 0.01, kK, kT, skewed<Real>());
+                kernel = simulate_script_aad_gpu(product, m, 4096, 5, why);
+            }
+            ASSERT_TRUE(hand && kernel) << s.name << ": " << why;
+            EXPECT_NE(kernel->diagnostics.find("adjoint kernel"), std::string::npos) << kernel->diagnostics;
+            EXPECT_NE(hand->diagnostics.find("written by hand"), std::string::npos) << hand->diagnostics;
+            EXPECT_EQ(kernel->price, hand->price) << s.name;
+            expect_same_risks(*kernel, *hand, 1e-11, s.name);
+            ++compared;
+        }
+        EXPECT_GT(compared, 20);
+    }
+
+    // Lot L5: models nobody wrote a derivative for. SLV's risks -- its eight
+    // parameters and every point of the leverage -- and Black-Scholes's on
+    // three assets (ten parameters, past the duals' eight) equal the CPU
+    // tape's.
+    TEST_F(GpuRisksTest, SlvRisksMatchTheTape)
+    {
+        int compared = 0;
+        for (const auto &s : library())
+        {
+            const ScriptedProduct<Real> product(s.source, kCtx);
+            if (product.n_underlyings() > 1)
+                continue;
+            SLVSimModel<Real> slv(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, kK, kT, skewed<Real>());
+            std::string why;
+            const auto gpu = simulate_script_aad_gpu(product, slv, kPaths, kSeed, why);
+            ASSERT_TRUE(gpu.has_value()) << s.name << ": " << why;
+            EXPECT_NE(gpu->diagnostics.find("adjoint kernel"), std::string::npos) << gpu->diagnostics;
+            const ScriptedProduct<aad::Number> tape_product(s.source, kCtx);
+            SLVSimModel<aad::Number> tape_slv(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01),
+                                              aad::Number(0.04), aad::Number(1.5), aad::Number(0.05),
+                                              aad::Number(0.6), aad::Number(-0.7), kK, kT, skewed<aad::Number>());
+            const AADSimulResults cpu =
+                simulate_aad(tape_product, tape_slv, kPaths, kSeed, first_aad_payoff, RngKind::Philox);
+            EXPECT_NEAR(gpu->price, cpu.price, 1e-9 * std::max(1.0, std::abs(cpu.price))) << s.name;
+            expect_same_risks(*gpu, cpu, 1e-8, s.name);
+            ++compared;
+        }
+        EXPECT_GT(compared, 20);
+    }
+
+    TEST_F(GpuRisksTest, ThreeAssetRisksMatchTheTape)
+    {
+        int compared = 0;
+        for (const auto &s : library())
+        {
+            const ScriptedProduct<Real> product(s.source, kCtx);
+            if (product.n_underlyings() != 3)
+                continue;
+            auto m = multi_bs<Real>(3);
+            std::string why;
+            const auto gpu = simulate_script_aad_gpu(product, *m, kPaths, kSeed, why);
+            ASSERT_TRUE(gpu.has_value()) << s.name << ": " << why;
+            EXPECT_NE(gpu->diagnostics.find("10 directions"), std::string::npos) << gpu->diagnostics;
+            const ScriptedProduct<aad::Number> tape_product(s.source, kCtx);
+            auto tape_model = multi_bs<aad::Number>(3);
+            const AADSimulResults cpu =
+                simulate_aad(tape_product, *tape_model, kPaths, kSeed, first_aad_payoff, RngKind::Philox);
+            EXPECT_NEAR(gpu->price, cpu.price, 1e-9 * std::max(1.0, std::abs(cpu.price))) << s.name;
+            expect_same_risks(*gpu, cpu, 1e-8, s.name);
+            ++compared;
+        }
+        EXPECT_GT(compared, 0);
+    }
+
+    // With compilation off, what only the generated kernels cover says why,
+    // and nothing throws.
+    TEST_F(GpuRisksTest, WithoutCompilationSlvRisksStayOnTheCpu)
+    {
+        const JitSwitch off(false);
         const ScriptedProduct<Real> product(library().front().source, kCtx);
         SLVSimModel<Real> slv(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, kK, kT, skewed<Real>());
         std::string why;
         EXPECT_FALSE(simulate_script_aad_gpu(product, slv, 1024, 1, why).has_value());
-        EXPECT_NE(why.find("SLV"), std::string::npos) << why;
+        EXPECT_NE(why.find("QM_SCRIPT_JIT=0"), std::string::npos) << why;
     }
 
 } // namespace quantModeling

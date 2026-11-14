@@ -12,6 +12,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/gpu/device.hpp"
+#include "quantModeling/gpu/script.hpp"
 #include "quantModeling/gpu/vanilla_bs.hpp"
 #include "quantModeling/market/curve_bootstrap.hpp"
 #include "quantModeling/engines/analytic/swap.hpp"
@@ -77,6 +78,26 @@ void register_core(py::module_ &m)
           py::call_guard<py::gil_scoped_release>(),
           "Create the CUDA context and load the kernels, so that the first "
           "priced request is not charged for them.");
+
+    m.def(
+        "rebuild_script_kernels",
+        [](int device)
+        {
+            quantModeling::gpu::ScriptKernelsRebuilt r;
+            {
+                py::gil_scoped_release release;
+                r = quantModeling::gpu::rebuild_script_kernels(device);
+            }
+            py::dict d;
+            d["current"] = r.current;
+            d["rebuilt"] = r.rebuilt;
+            d["failed"] = r.failed;
+            d["directory"] = quantModeling::gpu::script_kernel_cache_dir();
+            return d;
+        },
+        py::arg("device") = 0,
+        "Compile again, for this build, the script kernels the cache on disk holds from an older "
+        "build (QM_KERNEL_CACHE_DIR): {current, rebuilt, failed, directory}.");
 
     py::enum_<quantModeling::AsianAverageType>(m, "AsianAverageType")
         .value("Arithmetic", quantModeling::AsianAverageType::Arithmetic)

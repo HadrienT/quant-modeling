@@ -222,7 +222,7 @@ def test_script_risks_on_the_gpu_are_the_cpu_tapes(client):
         c, greeks_method="aad", device="cpu", rng="philox", n_paths=64_000
     ).json()
     assert gpu["device"] == "gpu" and cpu["device"] == "cpu"
-    assert "duals on GPU" in gpu["diagnostics"]
+    assert "forward-mode risks on GPU" in gpu["diagnostics"]
     assert gpu["npv"] == pytest.approx(cpu["npv"], rel=1e-10)
     by_label = {r["label"]: r["value"] for r in cpu["risks"]}
     for r in gpu["risks"]:
