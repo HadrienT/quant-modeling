@@ -141,6 +141,7 @@ namespace quantModeling::scripting::ir
             case Op::FuzzyPhi:
             case Op::FuzzyPhiPay:
             case Op::GridAccum:
+            case Op::GridLevAccum:
                 id = b.raw(in.op, m(in.a), m(in.b), m(in.c));
                 break;
             case Op::Select:
@@ -178,7 +179,7 @@ namespace quantModeling::scripting::ir
         for (const Out &o : b.outs)
             mark(o.value);
         for (std::size_t i = 0; i < n; ++i)
-            if (b.code[i].op == Op::GridAccum) // a statement: its effect is its use
+            if (b.code[i].op == Op::GridAccum || b.code[i].op == Op::GridLevAccum) // statements: used by their effect
                 mark(static_cast<std::int32_t>(i));
         while (!work.empty())
         {
@@ -206,7 +207,7 @@ namespace quantModeling::scripting::ir
                     open.push_back(static_cast<std::int32_t>(i));
                 else if (op == Op::EndIf || op == Op::FuzzyEnd)
                     open.pop_back();
-                else if (op == Op::GridAccum && live[i])
+                else if ((op == Op::GridAccum || op == Op::GridLevAccum) && live[i])
                     for (std::int32_t head : open)
                         mark(head);
             }
@@ -609,6 +610,12 @@ namespace quantModeling::scripting::ir
                     return "grid_slope";
                 case Op::GridAccum:
                     return "grid_accumulate";
+                case Op::GridLev:
+                    return "grid_leverage";
+                case Op::GridLevSlope:
+                    return "grid_leverage_slope";
+                case Op::GridLevAccum:
+                    return "grid_leverage_accumulate";
                 case Op::Add:
                     return "add";
                 case Op::Sub:

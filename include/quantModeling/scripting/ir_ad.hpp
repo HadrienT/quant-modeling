@@ -48,8 +48,9 @@ namespace quantModeling::scripting::ir
     /// the mode for those).
     Block tangent(const Block &b, const std::vector<std::int32_t> &direction_theta);
 
-    /// The adjoint of `b`.
-    Block adjoint(const Block &b);
+    /// The adjoint of `b`. Parameters from `n_risks` on are not risks (a
+    /// Cholesky factor): nothing is accumulated for them.
+    Block adjoint(const Block &b, std::int32_t n_risks = 1 << 30);
 
     /// A path's blocks, each replaced by its derivative.
     PathProgram tangent(const PathProgram &p, const std::vector<std::int32_t> &direction_theta);

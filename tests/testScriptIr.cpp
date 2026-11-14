@@ -239,12 +239,12 @@ namespace quantModeling
         const ScriptedProduct<Real> product("2027-01-04 2027-02-04 2027-03-04\n    acc = acc + spot()\n"
                                             "2027-04-05\n    pays max(acc / 3 - 100, 0)\n",
                                             kCtx);
-        const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
+        const scripting::CudaSource src = scripting::cuda_path_source(product.ir(), 0, 1, scripting::PathKernel::Price);
         ASSERT_TRUE(src.why.empty()) << src.why;
         EXPECT_NE(src.source.find("case 0:\n    {"), std::string::npos) << src.source;
         EXPECT_NE(src.source.find("case 1:\n    {"), std::string::npos) << src.source;
         EXPECT_EQ(src.source.find("case 2:"), std::string::npos) << src.source;
-        EXPECT_EQ(src.source.find("acc"), std::string::npos);
+        EXPECT_EQ(src.source.find("acc ="), std::string::npos);
     }
 
 } // namespace quantModeling

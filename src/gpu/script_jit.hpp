@@ -48,11 +48,13 @@ namespace quantModeling::gpu::jit
         bool from_disk = false;  ///< read from the kernel cache on disk; then compile_ms is the time to read it
     };
 
-    /// The linked cubin of `events_source` for `device`'s architecture, or
+    /// The linked cubin of `events_source`, against kernel `kernel` of
+    /// script_jit_kernel.cu (0 prices, 1 tangent, 2 adjoint: the values of
+    /// scripting::PathKernel), for `device`'s architecture, or
     /// null and the reason in `why` (compilation or link failure). Kept for
     /// the life of the process; `cached` says whether this call found it built.
-    std::shared_ptr<const Compiled> compile(const std::string &events_source, int device, std::string &why,
-                                            bool *cached = nullptr);
+    std::shared_ptr<const Compiled> compile(const std::string &events_source, int kernel, int device,
+                                            std::string &why, bool *cached = nullptr);
 
     /// Forget the cubins held in memory (those on disk stay): the next
     /// compile() of a script reads the disk cache or builds. For tests.

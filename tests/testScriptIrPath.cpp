@@ -122,4 +122,9 @@ namespace quantModeling
         EXPECT_NE(text.find("state_out 0 = %7"), std::string::npos) << text;
     }
 
+    TEST(ScriptIrPath, SlvPriceIsTheHandWrittenPath)
+    {
+        expect_same_paths(Dyn::SLV, false);
+    }
+
 } // namespace quantModeling

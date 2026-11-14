@@ -36,7 +36,7 @@ namespace quantModeling
             ScriptSettings ss;
             ss.fuzzy = fuzzy;
             const ScriptedProduct<Real> product(script, kCtx, ss);
-            const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
+            const scripting::CudaSource src = scripting::cuda_path_source(product.ir(), 0, static_cast<int>(product.n_underlyings()), scripting::PathKernel::Price);
             EXPECT_TRUE(src.why.empty()) << src.why;
             return src.source;
         }
@@ -59,10 +59,10 @@ namespace quantModeling
                 ScriptSettings ss;
                 ss.fuzzy = fuzzy;
                 const ScriptedProduct<Real> product(text.str(), kCtx, ss);
-                const scripting::CudaSource a = scripting::cuda_event_source(product.ir());
+                const scripting::CudaSource a = scripting::cuda_path_source(product.ir(), 0, static_cast<int>(product.n_underlyings()), scripting::PathKernel::Price);
                 ASSERT_TRUE(a.why.empty()) << entry.path().stem() << ": " << a.why;
                 EXPECT_EQ(count(a.source, "    case "), product.ir().blocks.size()) << entry.path().stem();
-                EXPECT_EQ(a.source, scripting::cuda_event_source(product.ir()).source);
+                EXPECT_EQ(a.source, scripting::cuda_path_source(product.ir(), 0, static_cast<int>(product.n_underlyings()), scripting::PathKernel::Price).source);
             }
             ++n;
         }
@@ -118,9 +118,9 @@ namespace quantModeling
     // runs): no IR, or a script that reads the bridge survival.
     TEST(ScriptCudaCodegen, WhatCannotBeGeneratedIsRefused)
     {
-        EXPECT_FALSE(scripting::cuda_event_source(scripting::ir::Script{}).why.empty());
+        EXPECT_FALSE(scripting::cuda_path_source(scripting::ir::Script{}, 0, 1, scripting::PathKernel::Price).why.empty());
         const ScriptedProduct<Real> product("2027-06-01\n    pays survivalAbove(80) * spot()\n", kCtx);
-        const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
+        const scripting::CudaSource src = scripting::cuda_path_source(product.ir(), 0, static_cast<int>(product.n_underlyings()), scripting::PathKernel::Price);
         EXPECT_TRUE(src.source.empty());
         EXPECT_NE(src.why.find("survival"), std::string::npos) << src.why;
     }
@@ -145,14 +145,14 @@ namespace quantModeling
             ScriptSettings ss;
             ss.terms_as_parameters = terms;
             const ScriptedProduct<Real> product(script, kCtx, ss);
-            const scripting::CudaSource src = scripting::cuda_event_source(product.ir());
+            const scripting::CudaSource src = scripting::cuda_path_source(product.ir(), 0, static_cast<int>(product.n_underlyings()), scripting::PathKernel::Price);
             EXPECT_TRUE(src.why.empty()) << src.why;
             return src.source;
         };
         const std::string a = up_and_out(100.0, 130.0, 12, true);
         EXPECT_EQ(a, up_and_out(95.0, 140.0, 12, true)) << "other terms";
         EXPECT_EQ(a, up_and_out(100.0, 130.0, 30, true)) << "other dates";
-        EXPECT_NE(a.find("term["), std::string::npos) << a;
+        EXPECT_NE(a.find("f->tm["), std::string::npos) << a;
         // A script with its numbers as constants: the terms are in the code.
         EXPECT_NE(up_and_out(100.0, 130.0, 12, false), up_and_out(95.0, 140.0, 12, false));
         // ... but its dates are data already.

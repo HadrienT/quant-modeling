@@ -289,4 +289,15 @@ namespace quantModeling
         EXPECT_EQ(ir::to_string(tan.step).find("log"), std::string::npos);
     }
 
+    // Lot L5: a model nobody wrote an adjoint for -- its step in the IR is
+    // its price; the gradient, the leverage grid included, follows.
+    TEST(ScriptIrAdjoint, SlvAgreesWithTheTangent)
+    {
+        adjoint_against_tangent(Dyn::SLV);
+    }
+    TEST(ScriptIrAdjoint, SlvIsTheTapesGradient)
+    {
+        adjoint_against_tape(Dyn::SLV);
+    }
+
 } // namespace quantModeling

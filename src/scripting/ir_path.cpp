@@ -16,9 +16,8 @@ namespace quantModeling::scripting::ir
                 return "";
             case DeviceModel::Kind::LocalVol:
             case DeviceModel::Kind::Heston:
-                return n_assets == 1 ? "" : "local vol and Heston have one underlying";
             case DeviceModel::Kind::SLV:
-                return "the stochastic local vol model's step is not in the IR yet";
+                return n_assets == 1 ? "" : "local vol, Heston and SLV have one underlying";
         }
         return "unknown model";
     }
@@ -65,7 +64,9 @@ namespace quantModeling::scripting::ir
                 l.th_spot = 0, l.th_rate = 1, l.th_div = 2;
                 l.th_heston = 3;
                 l.n_theta = l.n_risks = 8;
-                l.step_cols = 2;
+                l.step_cols = kind == DeviceModel::Kind::SLV ? 3 : 2;
+                if (kind == DeviceModel::Kind::SLV)
+                    l.th_grid = 8; // the leverage
                 break;
         }
         int max_df = -1;
@@ -194,17 +195,32 @@ namespace quantModeling::scripting::ir
                     break;
                 }
                 case DeviceModel::Kind::Heston:
+                case DeviceModel::Kind::SLV:
                 {
+                    const bool slv = l.kind == DeviceModel::Kind::SLV;
                     const std::int32_t S = state(0), V = state(1);
-                    const std::int32_t dt = data(0), sqdt = data(1);
+                    const std::int32_t dt = data(slv ? 1 : 0), sqdt = data(slv ? 2 : 1);
+                    // slv_step reads its leverage before anything else
+                    const std::int32_t lev = slv ? b.value(Op::GridLev, S, data(0)) : -1;
                     const std::int32_t v_plus = b.value(Op::Max, V, b.constant(mc::variance_floor()));
                     const std::int32_t sqrt_v = b.value(Op::Sqrt, v_plus);
-                    // heston_log_return with lambda = k = 0, written out
-                    const std::int32_t zero = b.constant(0.0);
-                    const std::int32_t mu =
-                        b.sub(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(zero, zero)),
-                              b.mul(b.constant(0.5), v_plus));
-                    out(0, b.mul(S, exp(b.add(b.mul(mu, dt), b.mul(sqrt_v, b.mul(sqdt, draw(0)))))));
+                    std::int32_t log_return = -1;
+                    if (slv) // (r - q - 0.5 L L v+) dt + L sqrt(v+) (sqrt(dt) z)
+                        log_return = b.add(
+                            b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)),
+                                        b.mul(b.mul(b.mul(b.constant(0.5), lev), lev), v_plus)),
+                                  dt),
+                            b.mul(b.mul(lev, sqrt_v), b.mul(sqdt, draw(0))));
+                    else
+                    {
+                        // heston_log_return with lambda = k = 0, written out
+                        const std::int32_t zero = b.constant(0.0);
+                        const std::int32_t mu =
+                            b.sub(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(zero, zero)),
+                                  b.mul(b.constant(0.5), v_plus));
+                        log_return = b.add(b.mul(mu, dt), b.mul(sqrt_v, b.mul(sqdt, draw(0))));
+                    }
+                    out(0, b.mul(S, exp(log_return)));
                     // heston_variance_step
                     const int h = l.th_heston;
                     const std::int32_t rho = theta(h + 4);
@@ -215,8 +231,6 @@ namespace quantModeling::scripting::ir
                                  b.mul(b.mul(theta(h + 3), sqrt_v), b.mul(sqdt, dW))));
                     break;
                 }
-                case DeviceModel::Kind::SLV:
-                    throw InvalidInput("script IR: " + path_program_unsupported(l.kind, n));
             }
             return b.take();
         }
@@ -282,7 +296,7 @@ namespace quantModeling::scripting::ir
                     row[n + a] = i < m.vol_sqrt_dt.size() ? m.vol_sqrt_dt[i] : 0.0;
                 }
             }
-            else if (l.kind == DeviceModel::Kind::LocalVol)
+            else if (l.kind == DeviceModel::Kind::LocalVol || l.kind == DeviceModel::Kind::SLV)
                 row[0] = ts, row[1] = dt, row[2] = std::sqrt(dt);
             else
                 row[0] = dt, row[1] = std::sqrt(dt);

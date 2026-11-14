@@ -12,6 +12,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/scripting/event.hpp"
+#include "quantModeling/scripting/ir_grid.hpp"
 
 /**
  * @file ir.hpp
@@ -132,6 +133,10 @@ namespace quantModeling::scripting::ir
         GridVol,   ///< the local vol at spot a and time b: bilinear, floored (mc::local_vol_bilinear)
         GridSlope, ///< its slope in the spot (0 outside the strikes and where the floor binds)
         GridAccum, ///< a statement: adjoint a of the vol at (spot b, time c), added to its four corners
+        // ── the SLV leverage, on the same grid ─────────────────────────────
+        GridLev,      ///< the leverage at spot a and time b (mc::leverage_staircase)
+        GridLevSlope, ///< its slope in the spot
+        GridLevAccum, ///< a statement: adjoint a of the leverage at (spot b, time c), added to its two corners
         // ── regions ─────────────────────────────────────────────────────────
         If,          ///< a: condition; b: its Else; c: its EndIf
         Else,        ///< a: its If; c: its EndIf
@@ -186,7 +191,7 @@ namespace quantModeling::scripting::ir
     constexpr bool defines_value(Op op)
     {
         return op != Op::If && op != Op::Else && op != Op::EndIf && op != Op::FuzzyIf && op != Op::FuzzyElse &&
-               op != Op::FuzzyEnd && op != Op::GridAccum;
+               op != Op::FuzzyEnd && op != Op::GridAccum && op != Op::GridLevAccum;
     }
 
     /// Operands of `op` that are values: bit 0 for a, 1 for b, 2 for c.
@@ -223,6 +228,7 @@ namespace quantModeling::scripting::ir
                 return 1u;
             case Op::Select:
             case Op::GridAccum:
+            case Op::GridLevAccum:
                 return 7u;
             default: // binary operations, the phis, FuzzyIf (degree, payoff before or -1)
                 return 3u;
@@ -478,65 +484,6 @@ namespace quantModeling::scripting::ir
         mc::GridView<Real> grid() const { return {grid_K, grid_nK, grid_T, grid_nT, theta + grid0}; }
     };
 
-    namespace detail
-    {
-        /// The four corners and weights of the local vol at (S, t), and
-        /// whether the floor leaves it free (mc::local_vol_bilinear's
-        /// arithmetic; what GridSlope and GridAccum need).
-        struct GridCell
-        {
-            int i0, i1, j0, j1;
-            double wK, wT, dK;
-            bool inside, free;
-        };
-
-        QM_HOST_DEVICE inline GridCell grid_cell(const mc::GridView<Real> &g, double S, double t)
-        {
-            GridCell c{};
-            const double Sc = S < g.K[0] ? g.K[0] : (S > g.K[g.nK - 1] ? g.K[g.nK - 1] : S);
-            c.inside = Sc == S;
-            mc::bracket(g.K, g.nK, Sc, c.i0, c.i1);
-            const double K0 = g.K[c.i0];
-            c.dK = g.K[c.i1] - K0;
-            c.wK = c.dK <= 1e-12 ? 0.0 : (c.inside ? (S - K0) / c.dK : (Sc - K0) / c.dK);
-            const double tc = t < g.T_grid[0] ? g.T_grid[0] : (t > g.T_grid[g.nT - 1] ? g.T_grid[g.nT - 1] : t);
-            mc::bracket(g.T_grid, g.nT, tc, c.j0, c.j1);
-            const double T0 = g.T_grid[c.j0];
-            const double dT = g.T_grid[c.j1] - T0;
-            c.wT = (dT > 1e-12) ? (tc - T0) / dT : 0.0;
-            const double sigma = (1.0 - c.wK) * (1.0 - c.wT) * g.at(c.i0, c.j0) +
-                                 c.wK * (1.0 - c.wT) * g.at(c.i1, c.j0) + (1.0 - c.wK) * c.wT * g.at(c.i0, c.j1) +
-                                 c.wK * c.wT * g.at(c.i1, c.j1);
-            c.free = sigma > 1e-6;
-            return c;
-        }
-
-        QM_HOST_DEVICE inline double grid_slope(const mc::GridView<Real> &g, double S, double t)
-        {
-            const GridCell c = grid_cell(g, S, t);
-            if (!c.free || !c.inside || c.dK <= 1e-12)
-                return 0.0;
-            return ((1.0 - c.wT) * (g.at(c.i1, c.j0) - g.at(c.i0, c.j0)) +
-                    c.wT * (g.at(c.i1, c.j1) - g.at(c.i0, c.j1))) /
-                   c.dK;
-        }
-
-        /// `a` times each corner's weight, added to the corners' adjoints
-        /// (parameter p at base[p * stride]).
-        QM_HOST_DEVICE inline void grid_accumulate(const mc::GridView<Real> &g, double S, double t, double a,
-                                                   double *base, long stride, int grid0)
-        {
-            const GridCell c = grid_cell(g, S, t);
-            if (!c.free)
-                return;
-            const long nT = g.nT;
-            base[(grid0 + c.i0 * nT + c.j0) * stride] += a * ((1.0 - c.wK) * (1.0 - c.wT));
-            base[(grid0 + c.i1 * nT + c.j0) * stride] += a * (c.wK * (1.0 - c.wT));
-            base[(grid0 + c.i0 * nT + c.j1) * stride] += a * ((1.0 - c.wK) * c.wT);
-            base[(grid0 + c.i1 * nT + c.j1) * stride] += a * (c.wK * c.wT);
-        }
-    } // namespace detail
-
     /**
      * @brief Run one block on one path: `val` (b.code.size() doubles of
      *        scratch) receives every value; the outputs are written to the
@@ -692,6 +639,15 @@ namespace quantModeling::scripting::ir
                     break;
                 case Op::GridAccum: // adjoint a of the vol at (spot b, time c)
                     grid_accumulate(f.grid(), c, val[in.c], a, f.theta_adjoint, f.theta_stride, f.grid0);
+                    continue;
+                case Op::GridLev:
+                    r = mc::leverage_staircase<Real>(f.grid(), a, c);
+                    break;
+                case Op::GridLevSlope:
+                    r = leverage_slope(f.grid(), a, c);
+                    break;
+                case Op::GridLevAccum:
+                    leverage_accumulate(f.grid(), c, val[in.c], a, f.theta_adjoint, f.theta_stride, f.grid0);
                     continue;
 
                 case Op::If:

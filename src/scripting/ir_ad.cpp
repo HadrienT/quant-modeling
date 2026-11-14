@@ -35,6 +35,7 @@ namespace quantModeling::scripting::ir
                 case Op::Or:
                 case Op::Not:
                 case Op::GridSlope:
+                case Op::GridLevSlope:
                     return false;
                 default:
                     return true;
@@ -70,7 +71,7 @@ namespace quantModeling::scripting::ir
         {
             const Inst &in = src.code[static_cast<std::size_t>(k)];
             const std::int32_t id = r.copy(k);
-            if (in.op == Op::GridAccum)
+            if (in.op == Op::GridAccum || in.op == Op::GridLevAccum)
                 throw InvalidInput("script IR: the second order through the local-vol grid is not built yet");
             if (!defines_value(in.op))
                 continue;
@@ -173,8 +174,9 @@ namespace quantModeling::scripting::ir
                                          zero());
                         break;
                     case Op::GridVol:
+                    case Op::GridLev:
                         if (ta >= 0)
-                            t = b.mul(b.value(Op::GridSlope, A, B), ta);
+                            t = b.mul(b.value(in.op == Op::GridVol ? Op::GridSlope : Op::GridLevSlope, A, B), ta);
                         break;
                     case Op::Phi:
                         if (ta >= 0 || tb >= 0)
@@ -228,8 +230,10 @@ namespace quantModeling::scripting::ir
         class Reverse
         {
           public:
-            explicit Reverse(const Block &src)
-                : src_(src), r_(src), b_(r_.b), n_(static_cast<std::int32_t>(src.code.size())) {}
+            Reverse(const Block &src, std::int32_t n_risks)
+                : src_(src), r_(src), b_(r_.b), n_(static_cast<std::int32_t>(src.code.size())), n_risks_(n_risks)
+            {
+            }
 
             Block run()
             {
@@ -244,7 +248,7 @@ namespace quantModeling::scripting::ir
                         if (!slot_.count(in.a))
                             slot_[in.a] = next_++, read.push_back(in.a);
                     }
-                    else if (in.op == Op::Theta && !theta_.count(in.a))
+                    else if (in.op == Op::Theta && in.a < n_risks_ && !theta_.count(in.a))
                         theta_[in.a] = next_++;
                     else if (in.op == Op::VarIn || in.op == Op::PayIn || in.op == Op::Spot || in.op == Op::Df ||
                              in.op == Op::Num || in.op == Op::Surv)
@@ -297,7 +301,13 @@ namespace quantModeling::scripting::ir
             std::int32_t zero() { return b_.constant(0.0); }
             std::int32_t zero_or(std::int32_t v) { return v < 0 ? zero() : v; }
 
-            bool wants(std::int32_t i) const { return i >= n_ || differentiable(code(i)); }
+            bool wants(std::int32_t i) const
+            {
+                if (i >= n_)
+                    return true;
+                const Inst &in = code(i);
+                return differentiable(in) && !(in.op == Op::Theta && in.a >= n_risks_);
+            }
             void accumulate(std::int32_t i, std::int32_t v)
             {
                 if (i < 0 || !wants(i))
@@ -429,6 +439,7 @@ namespace quantModeling::scripting::ir
                             k = in.a;
                             continue;
                         case Op::GridAccum:
+                        case Op::GridLevAccum:
                             throw InvalidInput("script IR: the adjoint is taken of a primal block");
                         default:
                             break;
@@ -445,7 +456,8 @@ namespace quantModeling::scripting::ir
                             accumulate(n_ + slot_[in.a], a);
                             break;
                         case Op::Theta:
-                            accumulate(n_ + theta_[in.a], a);
+                            if (theta_.count(in.a))
+                                accumulate(n_ + theta_[in.a], a);
                             break;
                         case Op::Add:
                             accumulate(in.a, a);
@@ -533,6 +545,10 @@ namespace quantModeling::scripting::ir
                             accumulate(in.a, b_.mul(a, b_.value(Op::GridSlope, A, B)));
                             b_.raw(Op::GridAccum, a, A, B);
                             break;
+                        case Op::GridLev:
+                            accumulate(in.a, b_.mul(a, b_.value(Op::GridLevSlope, A, B)));
+                            b_.raw(Op::GridLevAccum, a, A, B);
+                            break;
                         default: // nothing flows into constants, data, logic
                             break;
                     }
@@ -543,6 +559,7 @@ namespace quantModeling::scripting::ir
             Rebuilder r_;
             Builder &b_;
             std::int32_t n_;
+            std::int32_t n_risks_;
             std::int32_t next_ = 0;
             std::map<std::int32_t, std::int32_t> slot_, theta_;         ///< state slot / parameter -> its entry after the values
             std::vector<std::int32_t> adj_;                             ///< per value, then per slot and parameter: its adjoint so far
@@ -550,9 +567,9 @@ namespace quantModeling::scripting::ir
         };
     } // namespace
 
-    Block adjoint(const Block &b)
+    Block adjoint(const Block &b, std::int32_t n_risks)
     {
-        return Reverse(b).run();
+        return Reverse(b, n_risks).run();
     }
 
     PathProgram tangent(const PathProgram &p, const std::vector<std::int32_t> &dirs)
@@ -574,10 +591,10 @@ namespace quantModeling::scripting::ir
     {
         PathProgram out;
         out.layout = p.layout;
-        out.init = adjoint(p.init);
-        out.step = adjoint(p.step);
+        out.init = adjoint(p.init, p.layout.n_risks);
+        out.step = adjoint(p.step, p.layout.n_risks);
         for (const Block &e : p.events)
-            out.events.push_back(adjoint(e));
+            out.events.push_back(adjoint(e, p.layout.n_risks));
         return out;
     }
 

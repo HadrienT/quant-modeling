@@ -4,14 +4,19 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <numeric>
 #include <sstream>
 #include <vector>
 
-// The IR's CUDA backend for prices (blueprint/wp/27-ir-ad.md §4, lot L1):
-// one `case` per distinct block, each SSA value a local double. The
-// operations are the interpreter's, in its order; + - * go through
-// __dadd_rn / __dsub_rn / __dmul_rn, which the device compiler never
-// contracts into an FMA.
+#include "quantModeling/scripting/ir_ad.hpp"
+
+// The IR's CUDA backend (blueprint/wp/27-ir-ad.md §4 and §6, lots L1-L4):
+// every block of a path -- the state's start, the model's step, the script's
+// events, and their tangents or adjoints -- as a device function on a
+// QmFrame, each SSA value a local double. The operations are the IR's, in
+// its order; sums, differences and products go through __dadd_rn /
+// __dsub_rn / __dmul_rn, which the device compiler never contracts into an
+// FMA.
 
 namespace quantModeling::scripting
 {
@@ -61,9 +66,35 @@ namespace quantModeling::scripting
             }
         }
 
+        // QmFrame is src/gpu/script_units.cuh's: the two must be laid out the
+        // same way.
         constexpr const char *kPrelude = R"(// Generated from a script's IR (quantModeling, scripting/ir_cuda.cpp).
 // Compiled with --fmad=false, as the interpreter; sums, differences and
 // products go through __dadd_rn / __dsub_rn / __dmul_rn, never contracted.
+
+struct QmFrame
+{
+    double *st;             // the path's state: the model's, the script's variables, the payoff
+    double *dst;            // its tangents, [slot x directions + d]
+    double *ast;            // its adjoints
+    double *lth;            // the scalar parameters' adjoints, this path's
+    double *ath;            // the grid's adjoints, parameter p at ath[p x ath_stride]
+    long ath_stride;
+    const double *z;        // the step's gaussians
+    const double *dat;      // the step's or the date's data row
+    const double *th;       // the model's parameters
+    const double *tm;       // the date's terms
+    const double *gK;       // the local-vol grid's strikes and times
+    const double *gT;
+    int nK, nT, grid0, reserved;
+};
+
+extern "C" __device__ double qm_grid_vol(const QmFrame *f, double spot, double t);
+extern "C" __device__ double qm_grid_slope(const QmFrame *f, double spot, double t);
+extern "C" __device__ void qm_grid_accumulate(const QmFrame *f, double spot, double t, double adjoint);
+extern "C" __device__ double qm_grid_leverage(const QmFrame *f, double spot, double t);
+extern "C" __device__ double qm_grid_leverage_slope(const QmFrame *f, double spot, double t);
+extern "C" __device__ void qm_grid_leverage_accumulate(const QmFrame *f, double spot, double t, double adjoint);
 
 static __device__ __forceinline__ double qm_clamp01(double v)
 {
@@ -84,26 +115,52 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
 
 )";
 
-        /// One block's statements; `term(k)` is how kernel parameter k reads.
-        void block_body(std::ostringstream &o, const ir::Block &b)
+        struct Emit
+        {
+            int K = 0;            ///< tangent directions
+            int local_thetas = 0; ///< parameters below this accumulate in f->lth
+        };
+
+        std::string slot(const Emit &e, std::int32_t index, std::int32_t tag)
+        {
+            const int d = ir::direction_of(tag);
+            if (ir::is_adjoint(tag))
+            {
+                if (d >= 0)
+                    throw InvalidInput("script IR: second-order blocks have no CUDA backend yet");
+                return "f->ast[" + std::to_string(index) + "]";
+            }
+            if (d < 0)
+                return "f->st[" + std::to_string(index) + "]";
+            return "f->dst[" + std::to_string(index * e.K + d) + "]";
+        }
+
+        /// One path-level block's statements.
+        void block_body(std::ostringstream &o, const ir::Block &b, const Emit &e, const char *indent)
         {
             using ir::Op;
             const auto n = static_cast<std::int32_t>(b.code.size());
-            // Every value up front: a phi reads values its blocks defined.
+            // Every value up front, at 0: a phi and a reversed region read
+            // values a block defined, and a Select may name one that did not
+            // run.
             int declared = 0;
             for (std::int32_t k = 0; k < n; ++k)
                 if (ir::defines_value(b.code[static_cast<std::size_t>(k)].op))
                 {
-                    o << (declared == 0 ? "        double " : (declared % 16 == 0 ? ",\n            " : ", ")) << x(k);
+                    o << (declared == 0 ? std::string(indent) + "double "
+                                        : (declared % 8 == 0 ? ",\n" + std::string(indent) + "    " : ", "))
+                      << x(k) << " = 0.0";
                     ++declared;
                 }
             if (declared > 0)
                 o << ";\n";
-            std::string pad = "        ";
+            std::string pad = indent;
             for (std::int32_t k = 0; k < n; ++k)
             {
                 const ir::Inst &in = b.code[static_cast<std::size_t>(k)];
-                const std::string a = in.a >= 0 ? x(in.a) : "", c = in.b >= 0 ? x(in.b) : "";
+                const unsigned operands = ir::value_operands(in.op);
+                const std::string a = (operands & 1u) && in.a >= 0 ? x(in.a) : "",
+                                  c = (operands & 2u) && in.b >= 0 ? x(in.b) : "";
                 if (in.op == Op::Else || in.op == Op::EndIf || in.op == Op::FuzzyElse || in.op == Op::FuzzyEnd)
                     pad.resize(pad.size() - 4);
                 o << pad;
@@ -113,26 +170,27 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                         o << x(k) << " = " << lit(in.x) << ";";
                         break;
                     case Op::Param:
-                        o << x(k) << " = term[" << in.a << "];";
+                        o << x(k) << " = f->tm[" << in.a << "];";
+                        break;
+                    case Op::State:
+                        o << x(k) << " = " << slot(e, in.a, in.c) << ";";
+                        break;
+                    case Op::Draw:
+                        o << x(k) << " = f->z[" << in.a << "];";
+                        break;
+                    case Op::Data:
+                        o << x(k) << " = f->dat[" << in.a << "];";
+                        break;
+                    case Op::Theta:
+                        o << x(k) << " = f->th[" << in.a << "];";
                         break;
                     case Op::VarIn:
-                        o << x(k) << " = v[" << in.a << "];";
-                        break;
                     case Op::PayIn:
-                        o << x(k) << " = *payoff;";
-                        break;
                     case Op::Spot:
-                        o << x(k) << " = spot[" << in.a << "];";
-                        break;
                     case Op::Df:
-                        o << x(k) << " = df[" << in.a << "];";
-                        break;
                     case Op::Surv:
-                        o << x(k) << " = surv[" << in.a << "];";
-                        break;
                     case Op::Num:
-                        o << x(k) << " = num;";
-                        break;
+                        throw InvalidInput("script IR: a script-level block reached the CUDA backend unbound");
                     case Op::Add:
                         o << x(k) << " = __dadd_rn(" << a << ", " << c << ");";
                         break;
@@ -190,22 +248,32 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     case Op::Not:
                         o << x(k) << " = (" << a << " != 0.0) ? 0.0 : 1.0;";
                         break;
+                    case Op::Select:
+                        o << x(k) << " = (" << a << " != 0.0) ? " << c << " : " << x(in.c) << ";";
+                        break;
                     case Op::Up:
                         o << x(k) << " = qm_up(" << a << ", " << lit(in.x) << ", " << lit(2.0 * in.x) << ");";
                         break;
                     case Op::Tent:
                         o << x(k) << " = qm_tent(" << a << ", " << lit(in.x) << ");";
                         break;
-                    case Op::Select:
-                        o << x(k) << " = (" << a << " != 0.0) ? " << c << " : " << x(in.c) << ";";
-                        break;
-                    case Op::State: // path-level blocks: ir_path's generator
-                    case Op::Draw:
-                    case Op::Data:
-                    case Op::Theta:
                     case Op::GridVol:
+                        o << x(k) << " = qm_grid_vol(f, " << a << ", " << c << ");";
+                        break;
                     case Op::GridSlope:
+                        o << x(k) << " = qm_grid_slope(f, " << a << ", " << c << ");";
+                        break;
                     case Op::GridAccum:
+                        o << "qm_grid_accumulate(f, " << c << ", " << x(in.c) << ", " << a << ");";
+                        break;
+                    case Op::GridLev:
+                        o << x(k) << " = qm_grid_leverage(f, " << a << ", " << c << ");";
+                        break;
+                    case Op::GridLevSlope:
+                        o << x(k) << " = qm_grid_leverage_slope(f, " << a << ", " << c << ");";
+                        break;
+                    case Op::GridLevAccum:
+                        o << "qm_grid_leverage_accumulate(f, " << c << ", " << x(in.c) << ", " << a << ");";
                         break;
 
                     case Op::If:
@@ -252,8 +320,8 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     }
                     case Op::FuzzyPhiPay:
                     {
-                        const ir::Inst &f = b.code[static_cast<std::size_t>(in.c)];
-                        const std::string d = x(f.a), p0 = x(f.b);
+                        const ir::Inst &fi = b.code[static_cast<std::size_t>(in.c)];
+                        const std::string d = x(fi.a), p0 = x(fi.b);
                         o << x(k) << " = " << m(in.c) << " == 0 ? " << a << " : (" << m(in.c) << " == 1 ? " << c
                           << " : __dadd_rn(__dadd_rn(" << p0 << ", __dmul_rn(" << d << ", __dsub_rn(" << a << ", "
                           << p0 << "))), __dmul_rn(__dsub_rn(1.0, " << d << "), __dsub_rn(" << c << ", " << p0
@@ -264,45 +332,128 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                 o << "\n";
             }
             for (const ir::Out &out : b.outs)
-                if (out.cls == Op::VarIn)
-                    o << "        v[" << out.index << "] = " << x(out.value) << ";\n";
+            {
+                o << indent;
+                if (out.cls == Op::State)
+                    o << slot(e, out.index, out.tag) << (out.add ? " += " : " = ") << x(out.value) << ";\n";
+                else if (out.cls == Op::Theta && out.index < e.local_thetas) // a scalar parameter's adjoint
+                    o << "f->lth[" << out.index << "] = __dadd_rn(f->lth[" << out.index << "], " << x(out.value)
+                      << ");\n";
+                else if (out.cls == Op::Theta)
+                    o << "f->ath[" << out.index << " * f->ath_stride] += " << x(out.value) << ";\n";
                 else
-                    o << "        *payoff = " << x(out.value) << ";\n";
-            o << "        return;\n";
+                    throw InvalidInput("script IR: a script-level block reached the CUDA backend unbound");
+            }
+        }
+
+        void function(std::ostringstream &o, const char *name, const ir::Block &b, const Emit &e)
+        {
+            o << "extern \"C\" __device__ void " << name << "(const QmFrame *__restrict__ f)\n{\n";
+            block_body(o, b, e, "    ");
+            o << "}\n\n";
+        }
+
+        /// One `case` per distinct block: which block a date runs is data,
+        /// so the source does not depend on the number of dates.
+        void events(std::ostringstream &o, const char *name, const std::vector<ir::Block> &blocks, const Emit &e)
+        {
+            o << "extern \"C\" __device__ void " << name << "(int kind, const QmFrame *__restrict__ f)\n{\n"
+              << "    switch (kind)\n    {\n";
+            for (std::size_t g = 0; g < blocks.size(); ++g)
+            {
+                o << "    case " << g << ":\n    {\n";
+                block_body(o, blocks[g], e, "        ");
+                o << "        return;\n    }\n";
+            }
+            o << "    default:\n        return;\n    }\n}\n\n";
+        }
+
+        void constant(std::ostringstream &o, const char *name, int value)
+        {
+            o << "extern \"C\" __device__ int " << name << "() { return " << value << "; }\n";
         }
     } // namespace
 
-    CudaSource cuda_event_source(const ir::Script &s)
+    CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel)
     {
         CudaSource out;
-        if (s.empty())
+        if (script.empty())
         {
             out.why = "the script is not compiled";
             return out;
         }
-        if (s.has_survival)
+        if (script.has_survival)
         {
             out.why = "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the "
                       "bridge survival probabilities yet";
             return out;
         }
+        const auto kind = static_cast<DeviceModel::Kind>(model_kind);
+        out.why = ir::path_program_unsupported(kind, n_assets);
+        if (!out.why.empty())
+            return out;
+
+        const ir::PathProgram primal = ir::path_program(script, kind, n_assets, kernel != PathKernel::Price);
+        const ir::PathLayout &l = primal.layout;
         std::ostringstream src;
         src << kPrelude;
-        src << "extern \"C\" __device__ void " << kCudaEventFunction
-            << "(int kind, double *__restrict__ v, const double *__restrict__ spot, const double *__restrict__ df,\n"
-            << "                                    double num, double *__restrict__ payoff, const double "
-               "*__restrict__ term)\n{\n"
-            << "    switch (kind)\n    {\n";
-        // One case per distinct block, not per date: which block a date
-        // runs is data (ir::Script::event_block), so the source -- and the
-        // kernel compiled from it -- does not depend on the number of dates.
-        for (std::size_t g = 0; g < s.blocks.size(); ++g)
+        src << "// The path's shape (ir::PathLayout).\n";
+        constant(src, "qm_n_state", l.n_state());
+        constant(src, "qm_n_model", l.n_model);
+        constant(src, "qm_pay_slot", l.pay());
+        constant(src, "qm_factors", l.factors);
+        constant(src, "qm_step_cols", l.step_cols);
+        constant(src, "qm_event_cols", l.event_cols);
+        constant(src, "qm_n_risks", l.n_risks);
+        const int ns = l.n_state();
+        src << "\n";
+        Emit e;
+        switch (kernel)
         {
-            src << "    case " << g << ":\n    {\n";
-            block_body(src, s.blocks[g]);
-            src << "    }\n";
+            case PathKernel::Price:
+                function(src, "qm_init", primal.init, e);
+                function(src, "qm_step", primal.step, e);
+                events(src, "qm_event", primal.events, e);
+                src << "extern \"C\" __device__ double qm_drive(const void *unit, void *draws, double sign, double "
+                       "*controls, double *st);\n"
+                    << "extern \"C\" __device__ double qm_path(const void *unit, void *draws, double sign, double "
+                       "*controls)\n{\n    double st["
+                    << ns << "];\n    return qm_drive(unit, draws, sign, controls, st);\n}\n";
+                break;
+            case PathKernel::Tangent:
+            {
+                std::vector<std::int32_t> dirs(static_cast<std::size_t>(l.n_risks));
+                std::iota(dirs.begin(), dirs.end(), 0);
+                const ir::PathProgram tan = ir::tangent(primal, dirs);
+                e.K = l.n_risks;
+                function(src, "qm_init", tan.init, e);
+                function(src, "qm_step", tan.step, e);
+                events(src, "qm_event", tan.events, e);
+                src << "extern \"C\" __device__ void qm_drive(const void *unit, void *draws, double *out, double "
+                       "*st, double *dst);\n"
+                    << "extern \"C\" __device__ void qm_path(const void *unit, void *draws, double *out)\n{\n"
+                    << "    double st[" << ns << "];\n    double dst[" << ns * e.K << "];\n"
+                    << "    qm_drive(unit, draws, out, st, dst);\n}\n";
+                break;
+            }
+            case PathKernel::Adjoint:
+            {
+                const ir::PathProgram adj = ir::adjoint(primal);
+                e.local_thetas = l.n_risks;
+                function(src, "qm_init", primal.init, e);
+                function(src, "qm_step", primal.step, e);
+                events(src, "qm_event", primal.events, e);
+                function(src, "qm_init_adjoint", adj.init, e);
+                function(src, "qm_step_adjoint", adj.step, e);
+                events(src, "qm_event_adjoint", adj.events, e);
+                src << "extern \"C\" __device__ double qm_drive(const void *unit, void *draws, double *st, double "
+                       "*ast, double *lth);\n"
+                    << "extern \"C\" __device__ double qm_path(const void *unit, void *draws)\n{\n"
+                    << "    double st[" << ns << "];\n    double ast[" << ns << "];\n    double lth[" << l.n_risks
+                    << "];\n    return qm_drive(unit, draws, st, ast, lth);\n}\n";
+                break;
+            }
         }
-        src << "    default:\n        return;\n    }\n}\n";
         out.source = src.str();
         return out;
     }
@@ -319,6 +470,7 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         fn("qm_spec_stratified", spec.stratified ? 1 : 0);
         fn("qm_spec_importance", spec.importance ? 1 : 0);
         fn("qm_spec_antithetic", spec.antithetic ? 1 : 0);
+        fn("qm_spec_controls", spec.controls);
         return o.str();
     }
 

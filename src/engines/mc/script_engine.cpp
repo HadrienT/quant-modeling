@@ -571,26 +571,27 @@ namespace quantModeling
         DeviceModel dm;
         if (!model.describe_device(dm))
         {
-            why = "this model's risks run on the CPU only (the GPU differentiates Black-Scholes, Heston and "
-                  "local vol)";
+            why = "this model's risks run on the CPU only (the GPU differentiates Black-Scholes, Heston, local "
+                  "vol and SLV)";
             return std::nullopt;
         }
         const auto mats = discount_lists(product);
         why = gpu::script_gpu_unsupported(product.program(), dm, mats);
         if (!why.empty())
             return std::nullopt;
-        const bool adjoint = dm.kind == DeviceModel::Kind::LocalVol;
+        // A model with a grid (every sigma_loc point, every leverage point)
+        // takes the adjoint; the others the tangent, a pass per parameter.
+        // Both are generated from the script's IR (WP 27, lots L3-L5).
+        const bool adjoint = dm.kind == DeviceModel::Kind::LocalVol || dm.kind == DeviceModel::Kind::SLV;
         const int dirs = mc::dual_directions(dm.kind, dm.n_assets);
         if (dm.kind == DeviceModel::Kind::Heston && dm.jump_k != 0.0)
         {
             why = "jump parameters are set: the GPU does not differentiate the jump compensator";
             return std::nullopt;
         }
-        if (!adjoint && (dirs <= 0 || dirs > 8))
+        if (!adjoint && dirs <= 0)
         {
-            why = dm.kind == DeviceModel::Kind::SLV
-                      ? "SLV risks run on the CPU (the GPU differentiates Black-Scholes, Heston and local vol)"
-                      : "more than two assets: the GPU's forward-mode risks carry at most 8 parameters";
+            why = "this model's risks run on the CPU only";
             return std::nullopt;
         }
         const bool sobol = sampler == SamplerKind::Sobol;
@@ -644,11 +645,12 @@ namespace quantModeling
                     res.risk_std_errors[i] = r.risk_std_errors[i];
                 }
                 res.diagnostics = "per-path adjoint on GPU (" + card + ", " + std::to_string(r.risks.size()) +
-                                  (sobol ? " risks)" : " risks, batches of 512)") + draws;
+                                  (sobol ? " risks)" : " risks, batches of 512)") + draws + " + " + r.note;
             }
             else
             {
-                const auto reps = gpu::simulate_script_duals(req);
+                std::string how;
+                const auto reps = gpu::simulate_script_duals(req, &how);
                 if (!sobol)
                 {
                     const std::vector<WelfordAccumulator> &w = reps.front();
@@ -675,8 +677,8 @@ namespace quantModeling
                         res.risk_std_errors[i] = acc[i + 1].std_error();
                     }
                 }
-                res.diagnostics =
-                    "forward-mode duals on GPU (" + card + ", " + std::to_string(dirs) + " directions)" + draws;
+                res.diagnostics = "forward-mode risks on GPU (" + card + ", " + std::to_string(dirs) +
+                                  " directions)" + draws + " + " + how;
             }
             return res;
         };
@@ -687,6 +689,11 @@ namespace quantModeling
             return run();
         }
         catch (const gpu::GpuUnavailable &e)
+        {
+            why = e.what();
+            return std::nullopt;
+        }
+        catch (const InvalidInput &e) // what only the compiled kernels cover, with compilation off
         {
             why = e.what();
             return std::nullopt;

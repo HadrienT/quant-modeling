@@ -228,8 +228,6 @@ if(QM_ENABLE_CUDA)
   # nvcc compiles it to LTO-IR, embedded here; at run time NVRTC compiles a
   # script's events and nvJitLink links both. Same options as the library's
   # CUDA sources, so that the kernel code is the interpreter's.
-  set(_qm_jit_fatbin ${CMAKE_CURRENT_BINARY_DIR}/qm_script_jit_kernel.fatbin)
-  set(_qm_jit_embed ${CMAKE_CURRENT_BINARY_DIR}/qm_script_jit_kernel_fatbin.cpp)
   set(_qm_jit_gencode)
   foreach(_arch IN LISTS CMAKE_CUDA_ARCHITECTURES)
     string(REGEX REPLACE "-.*$" "" _arch "${_arch}")
@@ -241,24 +239,32 @@ if(QM_ENABLE_CUDA)
   if(CMAKE_CUDA_HOST_COMPILER)
     set(_qm_jit_ccbin -ccbin ${CMAKE_CUDA_HOST_COMPILER})
   endif()
-  add_custom_command(
-    OUTPUT ${_qm_jit_fatbin}
-    COMMAND ${CMAKE_CUDA_COMPILER} ${_qm_jit_ccbin} ${_qm_jit_flags} -std=c++20 --expt-relaxed-constexpr --fmad=false
-            ${_qm_jit_gencode} -rdc=true -fatbin
-            -I${PROJECT_SOURCE_DIR}/include
-            -MD -MF ${_qm_jit_fatbin}.d
-            -o ${_qm_jit_fatbin} ${PROJECT_SOURCE_DIR}/src/gpu/script_jit_kernel.cu
-    DEPENDS ${PROJECT_SOURCE_DIR}/src/gpu/script_jit_kernel.cu
-    DEPFILE ${_qm_jit_fatbin}.d
-    COMMENT "LTO-IR of the compiled-script kernel"
-    VERBATIM)
-  add_custom_command(
-    OUTPUT ${_qm_jit_embed}
-    COMMAND ${CMAKE_COMMAND} -DINPUT=${_qm_jit_fatbin} -DOUTPUT=${_qm_jit_embed}
-            -DSYMBOL=qm_script_jit_fatbin -P ${PROJECT_SOURCE_DIR}/cmake/embed_binary.cmake
-    DEPENDS ${_qm_jit_fatbin} ${PROJECT_SOURCE_DIR}/cmake/embed_binary.cmake
-    VERBATIM)
-  target_sources(quantModeling PRIVATE src/gpu/script_jit.cpp ${_qm_jit_embed})
+  # One fatbin per kernel (WP 27, lots L2-L4): 0 prices, 1 tangent, 2 adjoint.
+  # A script links against the one it asks for, so its cubin holds no other.
+  set(_qm_jit_embeds)
+  foreach(_kernel 0 1 2)
+    set(_qm_jit_fatbin ${CMAKE_CURRENT_BINARY_DIR}/qm_script_jit_kernel_${_kernel}.fatbin)
+    set(_qm_jit_embed ${CMAKE_CURRENT_BINARY_DIR}/qm_script_jit_kernel_${_kernel}_fatbin.cpp)
+    add_custom_command(
+      OUTPUT ${_qm_jit_fatbin}
+      COMMAND ${CMAKE_CUDA_COMPILER} ${_qm_jit_ccbin} ${_qm_jit_flags} -std=c++20 --expt-relaxed-constexpr --fmad=false
+              ${_qm_jit_gencode} -rdc=true -fatbin -DQM_JIT_KERNEL=${_kernel}
+              -I${PROJECT_SOURCE_DIR}/include
+              -MD -MF ${_qm_jit_fatbin}.d
+              -o ${_qm_jit_fatbin} ${PROJECT_SOURCE_DIR}/src/gpu/script_jit_kernel.cu
+      DEPENDS ${PROJECT_SOURCE_DIR}/src/gpu/script_jit_kernel.cu
+      DEPFILE ${_qm_jit_fatbin}.d
+      COMMENT "LTO-IR of the compiled-script kernel ${_kernel}"
+      VERBATIM)
+    add_custom_command(
+      OUTPUT ${_qm_jit_embed}
+      COMMAND ${CMAKE_COMMAND} -DINPUT=${_qm_jit_fatbin} -DOUTPUT=${_qm_jit_embed}
+              -DSYMBOL=qm_script_jit_fatbin_${_kernel} -P ${PROJECT_SOURCE_DIR}/cmake/embed_binary.cmake
+      DEPENDS ${_qm_jit_fatbin} ${PROJECT_SOURCE_DIR}/cmake/embed_binary.cmake
+      VERBATIM)
+    list(APPEND _qm_jit_embeds ${_qm_jit_embed})
+  endforeach()
+  target_sources(quantModeling PRIVATE src/gpu/script_jit.cpp ${_qm_jit_embeds})
   # Static: the wheel carries the compiler, the image needs no CUDA library
   # beyond the driver (whose functions script_jit.cpp takes from cudart).
   target_link_libraries(quantModeling PRIVATE CUDA::nvrtc_static CUDA::nvJitLink_static)

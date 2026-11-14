@@ -494,3 +494,124 @@ Found on the way: NVRTC and nvJitLink already keep a cache of their own
 35 ms instead of 500. It is capped at 1 GiB, shared with every other CUDA
 program of the user and lost with the container's file system, hence the
 cache of our own on the data volume.
+
+### 14.3 L2 to L5 done: the path in the IR, tangent and adjoint by transformation (2026-11-14)
+
+**What was built.**
+
+- `scripting/ir_path.*` (L2). A path is three kinds of block on one state
+  array `[spots | variance | script variables | payoff]`: `init` (the state
+  at t = 0 from the parameters), the model's `step`, and the script's events
+  bound to the state. The steps of Black-Scholes (one and several assets),
+  local vol, Heston and SLV are written once with the IR builder, operation
+  for operation as `path_steps.hpp` and `mc::script_path` compute them. The
+  grid lookups are IR operations (`grid_vol`, `grid_leverage`) that call the
+  models' own functions; their slope and the share of each grid point are
+  in `scripting/ir_grid.hpp`. Two variants, as the hand-written path has for
+  `double` and `Dual`: the price (Black-Scholes on its tabulated
+  coefficients, numeraire and discount factors read as data) and the one the
+  derivatives are taken from (Black-Scholes on its parameters, `exp(r t)`
+  from the rate).
+- `scripting/ir_ad.*` (L3, L4). `tangent(block, directions)` and
+  `adjoint(block)` return blocks. Neither knows a model or a product: only
+  the IR's operations, with the tape's local derivatives and its choices at
+  a kink. A derivative known to be zero when the block is built is not
+  emitted. The adjoint recomputes the block's values, then walks it
+  backwards; an `if` becomes an `if` on the same condition around the
+  reverse of the side that ran, a fuzzy `if` two guarded regions (one per
+  side) with the blend's weights, and the adjoints the two sides leave
+  different are merged by phis.
+- `scripting/ir_cuda.cpp`, `src/gpu/script_jit_kernel.cu`. The generator
+  writes whole paths (`cuda_path_source`: price, tangent or adjoint), and
+  the kernel file is compiled three times (one fatbin per kind). What stays
+  hand-written is what is the same for every script: the loop over the
+  steps, the draws, the antithetic pair, the logical blocks, and for the
+  adjoint the checkpoints. The state's arrays are declared in the generated
+  source, sized for the script.
+- The adjoint's memory, as §5.2 planned: per path, the model's state before
+  each step and the script's variables and payoff before each date (rolled
+  back in place, last in first out); no record per operation, no branch
+  bits (the recomputed values give the conditions), draws regenerated. The
+  scalar parameters' adjoints stay in registers for the path; only the
+  grid's go to the thread's row in global memory.
+
+**Departures from the design.**
+
+- No `loop` region in the IR: the loop over steps is the kernel's (and the
+  host runner's), forwards and backwards.
+- One state array rather than separate model state and variables: a spot
+  read by the script *is* the model's slot, so no copy at a date.
+- L5's "jump models" and "several assets beyond two": the second came free
+  (the Black-Scholes step is written for n assets; the tangent has no limit
+  of 8 directions); jumps are not done (the device has no jump model).
+- "The hand-written instruction adjoints deleted" (L4): **not deleted.**
+  `bytecode_adjoint.hpp`, `script_adjoint.hpp` and the dual path stay as the
+  oracle the generated kernels are tested against (`QM_SCRIPT_JIT=0` runs
+  them), and as the fallback when compilation is off. Deleting them is a
+  decision for the maintainer once the generated kernels have been in
+  production.
+- L3's tolerance: the tangent equals the duals to 1e-12 relative, not
+  1e-14 (the formulas are equivalent, not identical: one case of the
+  library, a corridor variance swap under Heston, differs by 1.3e-13). The
+  prices are the same bits.
+
+**Acceptance.** On the host, in the CI (`tests/testScriptIrPath.cpp`,
+`tests/testScriptIrAd.cpp`; every library script, crisp and fuzzy):
+
+- a path run from the blocks is `mc::script_path`'s bit for bit -- price
+  variant under Black-Scholes, local vol, Heston and SLV, with numbers as
+  constants and as terms; risk variant against the dual path's value;
+- tangent = dual path: same value bits, derivatives to 1e-12;
+- adjoint = tangent to 1e-11 (two transformations sharing only the table of
+  local derivatives), under Black-Scholes, Heston, local vol and SLV;
+- adjoint = the CPU tape (`simulate_aad`, 256 paths), same four models;
+- under local vol, adjoint = the adjoint written by hand, path by path,
+  every grid point, to 1e-11, and the same price to the bit.
+
+On the device (`tests/gpu/`):
+
+- prices: compiled = interpreted, same bits, every model, Philox, Sobol and
+  stratified, with spot control variates too (`SpotControlsSameBits`: #239's
+  "compiled control variates");
+- `TangentKernelIsTheDuals` (same price bits, risks to 1e-12),
+  `AdjointKernelIsTheHandWrittenAdjoint` (same price bits, 1e-11);
+- the earlier tests against the tape now run on the generated kernels;
+- L5: `SlvRisksMatchTheTape` (8 parameters and the leverage grid) and
+  `ThreeAssetRisksMatchTheTape` (10 directions) -- two cases that had no GPU
+  risks before.
+
+**Measured** (one V100, `qm_gpu_risk_bench <paths> gpu`, median of three
+calls after the first, ms; before = `QM_SCRIPT_JIT=0`, the duals on the
+interpreter and the hand-written adjoint):
+
+| Script, model (risks) | 100k before | 100k now | 1M before | 1M now |
+|---|---|---|---|---|
+| phoenix-autocall, Black-Scholes (4, tangent) | 5.4 | 1.3 | 35.9 | 2.7 |
+| phoenix-autocall, Heston (8, tangent) | 24–130 | 13.8 | 183 | 122 |
+| up-and-out-call, Heston (8, tangent) | 35–41 | 11.1 | 271 | 96 |
+| european-call, local vol (363, adjoint) | 61.5 | 75.5 | 460 | 448 |
+| up-and-out-call, local vol (363, adjoint) | 128 | 98 | 753 | 744 |
+| phoenix-autocall, local vol (363, adjoint) | 103 | 127 | 766 | 986 |
+| variance-swap, local vol (363, adjoint) | 165 | 109 | 692 | 717 |
+
+- **Tangent: the gain is there** -- 13 times under Black-Scholes at a
+  million paths, 1.5 to 2.8 times under Heston.
+- **Adjoint under local vol: on par, not faster.** L4's criterion ("local
+  vol faster than today's hand-written per-path adjoint") is **not met**: two
+  cases a little faster, one equal, one 29 % slower (the autocall, whose
+  eight dates checkpoint every variable). Both adjoints share what #130
+  measured as the bottleneck -- four read-modify-writes of the thread's
+  gradient row in global memory per step -- and the generated one has not
+  moved it yet. Next levers, not tried: checkpoint only the variables a
+  date overwrites and a later date reads; keep the gradient of the current
+  time slice (the two grid columns a step can touch) out of global memory.
+- Prices with the model's step generated (`qm_script_jit_bench`, against
+  §14.1's column): within 2 % either way, except asian_lv under Philox,
+  20.1 → 21.7 ms. Same bits.
+- The first call of a new script: 0.5 to 1.2 s to compile a price kernel
+  (more code than the events alone), then the caches of §14.2.
+
+**Not done in these lots:** the API's choice between tangent and adjoint is
+by model (grid models take the adjoint) rather than by cost; multilevel
+risks (`simulate_script_aad_mlqmc_gpu`) reach the generated adjoint through
+the same entry point but were not re-measured.

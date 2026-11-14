@@ -173,7 +173,12 @@ namespace quantModeling::gpu
     /// replicate (one without Sobol), the price's Welford, then one per
     /// derivative, in the CPU model's label order (mc::dual_directions). One
     /// path per unit, no mirror.
-    std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req);
+    /// Since WP 27 (lot L3) the tangent kernel generated from the script's
+    /// IR runs them, in any number of directions; the dual numbers on the
+    /// interpreter remain where the script is not compiled (`note` says
+    /// which, and why).
+    std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req,
+                                                                       std::string *note = nullptr);
 
     struct ScriptAdjointGpuResult
     {
@@ -185,10 +190,16 @@ namespace quantModeling::gpu
         /// (replicates x risks, replicate-major) -- what a multilevel level
         /// subtracts, replicate by replicate (WP 26 §10.2).
         std::vector<Real> replicate_prices, replicate_risks;
+        /// Which adjoint ran: the kernel generated from the IR, or the one
+        /// written by hand (and why).
+        std::string note;
     };
 
-    /// The per-path adjoint of a script under local vol: d price / d (spot,
-    /// rate, div, every sigma_loc point). One path per unit, no mirror.
+    /// The per-path adjoint of a script: d price / d (every scalar parameter
+    /// of the model, in its label order, then every point of its grid --
+    /// local vol's sigma_loc, SLV's leverage). One path per unit, no mirror.
+    /// Generated from the script's IR (WP 27, lot L4) for every model whose
+    /// step is in it; the adjoint written by hand covers local vol alone.
     ScriptAdjointGpuResult simulate_script_adjoint(const ScriptGpuRequest &req);
 
 } // namespace quantModeling::gpu

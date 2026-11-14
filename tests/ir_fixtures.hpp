@@ -22,6 +22,7 @@
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
+#include "quantModeling/models/equity/slv_sim_model.hpp"
 #include "quantModeling/scripting/ir_path.hpp"
 
 namespace quantModeling::ir_test
@@ -66,13 +67,23 @@ namespace quantModeling::ir_test
     {
         BlackScholes,
         LocalVol,
-        Heston
+        Heston,
+        SLV
     };
 
     inline const char *name(Dyn d)
     {
-        return d == Dyn::BlackScholes ? "Black-Scholes" : d == Dyn::LocalVol ? "local vol"
-                                                                             : "Heston";
+        switch (d)
+        {
+            case Dyn::LocalVol:
+                return "local vol";
+            case Dyn::Heston:
+                return "Heston";
+            case Dyn::SLV:
+                return "SLV";
+            default:
+                return "Black-Scholes";
+        }
     }
 
     /// The model of `dyn` for a script on n assets, in the number type T
@@ -106,6 +117,15 @@ namespace quantModeling::ir_test
             case Dyn::Heston:
                 return std::make_unique<BatesSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.04), T(1.5), T(0.05),
                                                           T(0.6), T(-0.7), T(0.0), T(0.0), T(0.0));
+            case Dyn::SLV:
+            {
+                std::vector<T> leverage; // around 1, skewed
+                for (Real k : kK)
+                    for (Real t : kT)
+                        leverage.emplace_back(1.0 + 0.4 * (100.0 - k) / 100.0 + 0.005 * t);
+                return std::make_unique<SLVSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.04), T(1.5), T(0.05), T(0.6),
+                                                        T(-0.7), kK, kT, leverage);
+            }
             default:
                 return std::make_unique<BlackScholesSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.25));
         }

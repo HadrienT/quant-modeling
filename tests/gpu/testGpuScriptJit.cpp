@@ -215,16 +215,41 @@ namespace quantModeling
         std::filesystem::remove_all(dir);
     }
 
-    // Spot controls are not compiled yet: the interpreter runs, and says why.
-    TEST_F(GpuScriptJitTest, SpotControlsStayOnTheInterpreter)
+    // Spot control variates run on the compiled kernel too (WP 27, lot L2;
+    // #239's "compiled control variates"): the regression samples, hence
+    // the controlled estimate and its error, are the interpreter's bits.
+    TEST_F(GpuScriptJitTest, SpotControlsSameBits)
     {
-        const ScriptedProduct<Real> product(library().front().source, kCtx);
-        auto m = model(Dyn::BlackScholes, product.n_underlyings());
-        PricingSettings s = settings(SamplerKind::PseudoRandom);
-        s.mc_spot_control = true;
-        const SimulationMCResult r = simulate_script(product, *m, s);
-        EXPECT_EQ(r.device, "gpu");
-        EXPECT_NE(r.diagnostics.find("interpreted bytecode (spot controls"), std::string::npos) << r.diagnostics;
+        int compared = 0;
+        for (const SamplerKind sampler : {SamplerKind::PseudoRandom, SamplerKind::Stratified})
+            for (const auto &s : library())
+            {
+                const ScriptedProduct<Real> product(s.source, kCtx);
+                auto m1 = model(Dyn::BlackScholes, product.n_underlyings());
+                auto m2 = model(Dyn::BlackScholes, product.n_underlyings());
+                PricingSettings ps = settings(sampler);
+                ps.mc_spot_control = true;
+                SimulationMCResult interpreted, compiled;
+                {
+                    const JitSwitch off(false);
+                    interpreted = simulate_script(product, *m1, ps);
+                }
+                {
+                    const JitSwitch on(true);
+                    compiled = simulate_script(product, *m2, ps);
+                }
+                if (compiled.diagnostics.find("spot control") == std::string::npos)
+                    continue; // no control was kept for this script
+                EXPECT_NE(compiled.diagnostics.find("compiled script"), std::string::npos)
+                    << s.name << ": " << compiled.diagnostics;
+                EXPECT_NE(interpreted.diagnostics.find("interpreted bytecode"), std::string::npos)
+                    << s.name << ": " << interpreted.diagnostics;
+                EXPECT_TRUE(same_bits(compiled.npv(), interpreted.npv()))
+                    << s.name << ": compiled " << compiled.npv() << ", interpreted " << interpreted.npv();
+                EXPECT_TRUE(same_bits(compiled.std_error(), interpreted.std_error())) << s.name;
+                ++compared;
+            }
+        EXPECT_GT(compared, 20);
     }
 
 } // namespace quantModeling

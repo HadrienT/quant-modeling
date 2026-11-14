@@ -22,7 +22,7 @@ NOT_PUBLIC = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
 
 def forwarded() -> list:
     """One regex per nginx location that proxies to the API."""
-    text = NGINX.read_text()
+    text = NGINX.read_text(encoding="utf-8")
     out = []
     # A block ends at a line holding only "}" (the body has "${API_URL}").
     for m in re.finditer(r"location\s+(=|~\*?|)\s*(\S+)\s*\{(.*?)\n\s*\}", text, re.S):

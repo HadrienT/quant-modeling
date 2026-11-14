@@ -77,6 +77,24 @@ namespace quantModeling::gpu
             numeraire[e] = exp(r * ts);
         }
 
+        /// The same factors as dense rows, for the generated paths (WP 27 lot
+        /// L2): row e = [exp(r t_e), exp(-r (T_i - t_e)) per df() slot].
+        __global__ void event_rows_kernel(const Time *t, const int *event, int n_steps, double r,
+                                          const int *disc_begin, const Time *disc_mats, int cols, double *rows)
+        {
+            const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+            if (s >= n_steps)
+                return;
+            const int e = event[s];
+            if (e < 0)
+                return;
+            const Time ts = t[s];
+            double *row = rows + static_cast<long>(e) * cols;
+            for (int i = disc_begin[e]; i < disc_begin[e + 1]; ++i)
+                row[1 + i - disc_begin[e]] = exp(-r * (disc_mats[i] - ts));
+            row[0] = exp(r * ts);
+        }
+
         /// Check the request, select the device and copy the script and
         /// model: the view every kernel below runs.
         mc::ScriptPathView device_view(const ScriptGpuRequest &req, DeviceArrays &mem, int device)
@@ -366,12 +384,129 @@ namespace quantModeling::gpu
             return detail::merge_segments(detail::run_on_devices<Stats>(devices_of(req), bps * reps, job), reps, bps);
         }
 
-        /// The plain prices on the script's compiled kernel (lot P1b): the
-        /// blocks, devices and reduction of run_script_blocks, launched from
-        /// the linked cubin; `fns[k]` is its kernel on devices_of(req)[k].
-        std::vector<WelfordAccumulator> run_compiled_plain(const ScriptGpuRequest &req, const std::vector<void *> &fns)
+        using scripting::PathKernel;
+
+        /// The request's data on the device, as the generated paths read it
+        /// (scripting::ir::PathData), and the unit their kernels take.
+        detail::PathUnit path_unit(const ScriptGpuRequest &req, DeviceArrays &mem, const mc::ScriptPathView &v,
+                                   const UnitDraws &draws, bool risk)
         {
-            using Unit = ScriptUnit<false, detail::CompiledEvents>;
+            namespace ir = scripting::ir;
+            const ir::PathLayout l = ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, risk);
+            const ir::PathData data = ir::path_data(l, *req.model, *req.ir, req.discount_mats, req.baseline);
+            detail::PathUnit u;
+            u.draws = draws;
+            u.antithetic = req.antithetic;
+            u.per_replicate = req.n_units;
+            u.theta = mem.put(data.theta);
+            u.step_rows = mem.put(data.step_rows);
+            u.baseline = mem.put(data.baseline);
+            u.terms = mem.put(data.terms);
+            u.term_begin = mem.put(data.term_begin);
+            u.kind = mem.put(req.ir->event_block);
+            u.step_draws = v.draws;
+            u.step_event = v.event;
+            u.n_steps = v.n_steps;
+            u.grid_K = v.grid.K;
+            u.grid_T = v.grid.T_grid;
+            u.grid_nK = v.grid.nK;
+            u.grid_nT = v.grid.nT;
+            u.grid0 = l.th_grid;
+            u.controls = req.controls;
+            if (risk || data.event_rows.empty() || v.n_steps == 0)
+                u.event_rows = mem.put(data.event_rows); // times and maturities: the blocks take their exp
+            else
+            {
+                // The price's factors, tabulated with the device's exp: the
+                // interpreter's bits (WP 26 P1i).
+                double *rows = mem.alloc<double>(data.event_rows.size());
+                const unsigned threads = 256;
+                event_rows_kernel<<<static_cast<unsigned>((v.n_steps + threads - 1) / threads), threads>>>(
+                    v.t, v.event, v.n_steps, v.r, v.disc_begin, v.disc_mats, l.event_cols, rows);
+                detail::check(cudaGetLastError(), "event rows launch");
+                u.event_rows = rows;
+            }
+            return u;
+        }
+
+        /// A request's compiled kernel on each of its devices.
+        struct CompiledKernels
+        {
+            std::vector<void *> fns; ///< empty: not compiled, `note` says why
+            std::string note;
+            bool ok() const { return !fns.empty(); }
+            void *on(const ScriptGpuRequest &req, int device) const
+            {
+                const std::vector<int> devices = devices_of(req);
+                return fns[static_cast<std::size_t>(std::find(devices.begin(), devices.end(), device) -
+                                                    devices.begin())];
+            }
+        };
+
+        /// The kernel `name` of `req`'s generated path, compiled (or found in
+        /// the caches) for `kernel`; without it, why the interpreter runs.
+        CompiledKernels compiled_kernels(const ScriptGpuRequest &req, PathKernel kernel, const char *name)
+        {
+            CompiledKernels out;
+            const auto refuse = [&](const std::string &why)
+            {
+                out.note = "interpreted bytecode (" + why + ")";
+                return out;
+            };
+            if (!req.compile)
+                return refuse("compilation off");
+            if (!jit::enabled())
+                return refuse("QM_SCRIPT_JIT=0");
+            if (kernel == PathKernel::Price && !req.parallel_units)
+                return refuse("serial units");
+            if (!req.ir || req.ir->empty())
+                return refuse("the request carries no IR");
+            const scripting::CudaSource src = scripting::cuda_path_source(
+                *req.ir, static_cast<int>(req.model->kind), req.model->n_assets, kernel);
+            if (src.source.empty())
+                return refuse(src.why);
+            scripting::CudaKernelSpec spec;
+            spec.model_kind = static_cast<int>(req.model->kind);
+            spec.n_assets = req.model->n_assets;
+            spec.sobol = req.sobol != nullptr;
+            spec.stratified = req.stratified;
+            spec.importance = !req.is_theta.empty();
+            spec.antithetic = kernel == PathKernel::Price && req.antithetic;
+            spec.controls = kernel == PathKernel::Price ? req.controls.n : 0;
+            const std::vector<int> devices = devices_of(req);
+            std::string why;
+            bool cached = false;
+            const auto built = jit::compile(src.source + scripting::cuda_spec_source(spec), static_cast<int>(kernel),
+                                            devices.front(), why, &cached);
+            if (!built)
+                return refuse(why);
+            for (int device : devices)
+            {
+                void *fn = jit::kernel(built, device, name, why);
+                if (!fn)
+                {
+                    out.fns.clear();
+                    return refuse(why);
+                }
+                out.fns.push_back(fn);
+            }
+            char ms[96];
+            if (built->from_disk)
+                std::snprintf(ms, sizeof ms, "read from the kernel cache in %.1f ms", built->compile_ms);
+            else
+                std::snprintf(ms, sizeof ms, "compiled in %.0f ms: NVRTC %.0f, link %.0f", built->compile_ms,
+                              built->nvrtc_ms, built->link_ms);
+            out.note = std::string("compiled script (NVRTC, ") + (cached ? "cached" : ms) + ")";
+            return out;
+        }
+
+        /// The request's logical blocks on its compiled kernel, one thread
+        /// per unit: the blocks, devices and reduction of run_script_blocks.
+        /// `extra` is appended to the kernel's arguments.
+        template <class Stats, class Out>
+        std::vector<Stats> run_compiled_units(const ScriptGpuRequest &req, const CompiledKernels &k, bool risk,
+                                              int out_stride = 0)
+        {
             const std::vector<int> devices = devices_of(req);
             const uint64_t reps = replicates_of(req);
             const uint64_t bps = LB::count(req.n_units);
@@ -381,104 +516,19 @@ namespace quantModeling::gpu
                 const mc::ScriptPathView v = device_view(req, mem, device);
                 const detail::StackLimitRestore release_stack;
                 const DrawSetup s = draw_setup(req, v, mem, device, 0, true);
-                // Which block each date runs, and its terms: data, so that
-                // the kernel does not depend on them (WP 27 lot L1b).
-                std::vector<std::int32_t> term_begin;
-                std::vector<double> terms{0.0}; // never empty: a device pointer to give
-                for (const std::vector<double> &event : req.ir->event_terms)
-                {
-                    term_begin.push_back(static_cast<std::int32_t>(terms.size()));
-                    terms.insert(terms.end(), event.begin(), event.end());
-                }
-                const detail::CompiledEvents events{mem.put(req.ir->event_block), mem.put(term_begin),
-                                                    mem.put(terms)};
-                Unit unit{v, s.draws, req.antithetic, req.n_units, events};
-                void *fn = fns[static_cast<std::size_t>(
-                    std::find(devices.begin(), devices.end(), device) - devices.begin())];
+                detail::PathUnit unit = path_unit(req, mem, v, s.draws, risk);
+                void *fn = k.on(req, device);
                 uint64_t n_units = req.n_units, per_segment = bps;
-                const detail::LaunchUnits<double> launch = [&](uint64_t b, uint64_t count, double *d_samples)
+                int stride = out_stride;
+                const detail::LaunchUnits<Out> launch = [&](uint64_t b, uint64_t count, Out *d_samples)
                 {
-                    void *args[] = {&b, &per_segment, &n_units, &count, &unit, &d_samples};
+                    void *args[] = {&b, &per_segment, &n_units, &count, &unit, &d_samples, &stride};
                     jit::launch(fn, detail::unit_grid(count), LB::kThreadsPerBlock, args);
                 };
-                return detail::run_block_range_units<WelfordAccumulator, double>(device, first, last, bps,
-                                                                                 req.n_units, s.blocks_per_launch,
-                                                                                 launch);
+                return detail::run_block_range_units<Stats, Out>(device, first, last, bps, req.n_units,
+                                                                 s.blocks_per_launch, launch);
             };
-            return detail::merge_segments(detail::run_on_devices<WelfordAccumulator>(devices, bps * reps, job), reps,
-                                          bps);
-        }
-
-        /// The kernels of `req`'s compiled script on each of its devices, or
-        /// empty and why not (then the interpreter runs).
-        std::vector<void *> compiled_kernels(const ScriptGpuRequest &req, std::string &note)
-        {
-            if (!req.compile)
-            {
-                note = "interpreted bytecode (compilation off)";
-                return {};
-            }
-            if (!jit::enabled())
-            {
-                note = "interpreted bytecode (QM_SCRIPT_JIT=0)";
-                return {};
-            }
-            if (req.controls.n > 0)
-            {
-                note = "interpreted bytecode (spot controls are not compiled yet)";
-                return {};
-            }
-            if (!req.parallel_units)
-            {
-                note = "interpreted bytecode (serial units)";
-                return {};
-            }
-            if (!req.ir || req.ir->empty())
-            {
-                note = "interpreted bytecode (the request carries no IR)";
-                return {};
-            }
-            const scripting::CudaSource src = scripting::cuda_event_source(*req.ir);
-            if (src.source.empty())
-            {
-                note = "interpreted bytecode (" + src.why + ")";
-                return {};
-            }
-            scripting::CudaKernelSpec spec;
-            spec.model_kind = static_cast<int>(req.model->kind);
-            spec.n_assets = req.model->n_assets;
-            spec.sobol = req.sobol != nullptr;
-            spec.stratified = req.stratified;
-            spec.importance = !req.is_theta.empty();
-            spec.antithetic = req.antithetic;
-            const std::vector<int> devices = devices_of(req);
-            std::string why;
-            bool cached = false;
-            const auto built = jit::compile(src.source + scripting::cuda_spec_source(spec), devices.front(), why, &cached);
-            if (!built)
-            {
-                note = "interpreted bytecode (" + why + ")";
-                return {};
-            }
-            std::vector<void *> fns;
-            for (int device : devices)
-            {
-                void *fn = jit::kernel(built, device, "qm_script_plain", why);
-                if (!fn)
-                {
-                    note = "interpreted bytecode (" + why + ")";
-                    return {};
-                }
-                fns.push_back(fn);
-            }
-            char ms[96];
-            if (built->from_disk)
-                std::snprintf(ms, sizeof ms, "read from the kernel cache in %.1f ms", built->compile_ms);
-            else
-                std::snprintf(ms, sizeof ms, "compiled in %.0f ms: NVRTC %.0f, link %.0f", built->compile_ms,
-                              built->nvrtc_ms, built->link_ms);
-            note = std::string("compiled script (NVRTC, ") + (cached ? "cached" : ms) + ")";
-            return fns;
+            return detail::merge_segments(detail::run_on_devices<Stats>(devices, bps * reps, job), reps, bps);
         }
 
         template <int N>
@@ -522,40 +572,71 @@ namespace quantModeling::gpu
     ScriptGpuStats simulate_script(const ScriptGpuRequest &req)
     {
         ScriptGpuStats out;
-        if (req.controls.n > 0 && req.stratified)
-            out.stratified_controlled = run_script_blocks<StratifiedControlAccumulator>(
-                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
-                { return ScriptUnit<true>{v, s.draws, req.antithetic, req.n_units, mc::InterpretedEvents{v.prog, v.event_begin}}; });
-        else if (req.controls.n > 0)
-            out.controlled = run_script_blocks<MultiControlAccumulator>(
-                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
-                { return ScriptUnit<true>{v, s.draws, req.antithetic, req.n_units, mc::InterpretedEvents{v.prog, v.event_begin}}; });
-        else
+        if (!req.program || !req.model)
+            throw InvalidInput("simulate_script: program and model are required");
+        const bool controlled = req.controls.n > 0;
+        const CompiledKernels k =
+            compiled_kernels(req, PathKernel::Price, controlled ? "qm_script_controlled" : "qm_script_plain");
+        out.events_note = k.note;
+        out.compiled = k.ok();
+        using Sample = MultiControlAccumulator::Sample;
+        const auto interpreted = [&](const mc::ScriptPathView &v, const DrawSetup &s)
         {
-            if (!req.program || !req.model)
-                throw InvalidInput("simulate_script: program and model are required");
-            const std::vector<void *> fns = compiled_kernels(req, out.events_note);
-            out.compiled = !fns.empty();
-            if (out.compiled)
-                out.plain = run_compiled_plain(req, fns);
-            else
-                out.plain = run_script_blocks<WelfordAccumulator>(
-                    req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
-                    { return ScriptUnit<false>{v, s.draws, req.antithetic, req.n_units, mc::InterpretedEvents{v.prog, v.event_begin}}; });
-            return out;
-        }
-        if (out.events_note.empty())
-            out.events_note = "interpreted bytecode (spot controls are not compiled yet)";
+            return ScriptUnit<true>{v, s.draws, req.antithetic, req.n_units,
+                                    mc::InterpretedEvents{v.prog, v.event_begin}};
+        };
+        if (controlled && req.stratified)
+            out.stratified_controlled =
+                k.ok() ? run_compiled_units<StratifiedControlAccumulator, Sample>(req, k, false)
+                       : run_script_blocks<StratifiedControlAccumulator>(req, interpreted);
+        else if (controlled)
+            out.controlled = k.ok() ? run_compiled_units<MultiControlAccumulator, Sample>(req, k, false)
+                                    : run_script_blocks<MultiControlAccumulator>(req, interpreted);
+        else if (k.ok())
+            out.plain = run_compiled_units<WelfordAccumulator, double>(req, k, false);
+        else
+            out.plain = run_script_blocks<WelfordAccumulator>(
+                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
+                { return ScriptUnit<false>{v, s.draws, req.antithetic, req.n_units, mc::InterpretedEvents{v.prog, v.event_begin}}; });
         return out;
     }
 
-    std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req)
+    namespace
+    {
+        /// The compiled tangent kernel's samples as Dual<N>, reduced like the
+        /// interpreter's duals.
+        template <int N>
+        std::vector<std::vector<WelfordAccumulator>> run_compiled_tangent(const ScriptGpuRequest &req,
+                                                                          const CompiledKernels &k, int dirs)
+        {
+            const auto st = run_compiled_units<DualStats<N>, Dual<N>>(req, k, true, N + 1);
+            std::vector<std::vector<WelfordAccumulator>> out;
+            for (const DualStats<N> &r : st)
+                out.emplace_back(r.w, r.w + 1 + dirs);
+            return out;
+        }
+    } // namespace
+
+    std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req, std::string *note)
     {
         if (!req.model)
             throw InvalidInput("simulate_script: program and model are required");
         const int dirs = mc::dual_directions(req.model->kind, req.model->n_assets);
-        if (dirs <= 0 || dirs > 8)
-            throw InvalidInput("GPU: forward-mode risks cover Black-Scholes (one or two assets) and Heston");
+        if (dirs <= 0)
+            throw InvalidInput("GPU: forward-mode risks cover Black-Scholes and Heston");
+        // The tangent built from the IR (WP 27 lot L3): any number of
+        // directions. The dual numbers on the interpreter stay as its oracle
+        // (QM_SCRIPT_JIT=0), for up to 8.
+        ScriptGpuRequest unmirrored = req;
+        unmirrored.antithetic = false;
+        const CompiledKernels k = compiled_kernels(unmirrored, PathKernel::Tangent, "qm_script_tangent");
+        if (note)
+            *note = k.ok() ? "tangent kernel, " + k.note : "dual numbers, " + k.note;
+        if (k.ok())
+            return dirs <= 8 ? run_compiled_tangent<8>(unmirrored, k, dirs) : run_compiled_tangent<32>(unmirrored, k, dirs);
+        if (dirs > 8)
+            throw InvalidInput("GPU: forward-mode risks in more than 8 directions need the compiled tangent (" +
+                               k.note + ")");
         return dirs <= 4 ? run_duals<4>(req, dirs) : run_duals<8>(req, dirs);
     }
 
@@ -563,12 +644,24 @@ namespace quantModeling::gpu
     {
         if (!req.model || !req.program)
             throw InvalidInput("simulate_script: program and model are required");
-        if (req.model->kind != DeviceModel::Kind::LocalVol)
-            throw InvalidInput("GPU: the per-path adjoint covers local vol");
         if (req.stratified || !req.is_theta.empty())
             throw InvalidInput("GPU: the per-path adjoint runs pseudo-random or Sobol paths");
 
-        const int n_params = 3 + static_cast<int>(req.model->K.size() * req.model->T_grid.size());
+        // The adjoint built from the IR (WP 27 lot L4), for every model whose
+        // step is in the IR. The adjoint written by hand for local vol stays
+        // as its oracle (QM_SCRIPT_JIT=0).
+        ScriptGpuRequest unmirrored = req;
+        unmirrored.antithetic = false;
+        const CompiledKernels compiled = compiled_kernels(unmirrored, PathKernel::Adjoint, "qm_script_adjoint");
+        if (!compiled.ok() && req.model->kind != DeviceModel::Kind::LocalVol)
+            throw InvalidInput("GPU: without the compiled adjoint, the per-path adjoint covers local vol (" +
+                               compiled.note + ")");
+        const scripting::ir::PathLayout layout =
+            compiled.ok() ? scripting::ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, true)
+                          : scripting::ir::PathLayout{};
+        // The risks: the model's scalar parameters, then its grid's points.
+        const int n_params = compiled.ok() ? layout.n_risks + (layout.th_grid >= 0 ? static_cast<int>(req.model->grid.size()) : 0)
+                                           : 3 + static_cast<int>(req.model->K.size() * req.model->T_grid.size());
         const auto np = static_cast<std::size_t>(n_params);
         const uint64_t reps = replicates_of(req);
         const uint64_t bps = LB::count(req.n_units);
@@ -579,7 +672,21 @@ namespace quantModeling::gpu
             DeviceArrays mem;
             const mc::ScriptPathView v = device_view(req, mem, device);
             const detail::StackLimitRestore release_stack;
-            const long trail_len = mc::lv_trail_bound(*req.program, v.n_steps);
+            // Per thread: the hand-written adjoint's trail, or the compiled
+            // one's checkpoints (the model's state per drawing step, the
+            // script's variables and the payoff per date).
+            long trail_len = 0;
+            if (compiled.ok())
+            {
+                long drawing = 0;
+                for (int d : req.model->draws)
+                    drawing += d ? 1 : 0;
+                trail_len = drawing * layout.n_model +
+                            static_cast<long>(req.program->n_events()) * (layout.n_vars + 1);
+            }
+            else
+                trail_len = mc::lv_trail_bound(*req.program, v.n_steps);
+            trail_len = std::max<long>(trail_len, 1);
 
             // Launch size from the memory a thread needs (its trail, its
             // gradient row, a Sobol point), never a default; the warp
@@ -597,6 +704,14 @@ namespace quantModeling::gpu
             double *d_warps = mem.alloc<double>(static_cast<std::size_t>(max_warps) * np);
             detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * np * sizeof(double)), "cudaMemset");
             const AdjointUnit unit{v, s.draws, d_trail, d_grad, rows, req.n_units};
+            detail::PathUnit path;
+            if (compiled.ok())
+            {
+                path = path_unit(unmirrored, mem, v, s.draws, true);
+                path.checkpoints = d_trail;
+                path.gradient = d_grad;
+                path.rows = rows;
+            }
 
             std::vector<AdjointBlock> blocks(static_cast<std::size_t>(last - first));
             std::vector<double> host(static_cast<std::size_t>(max_warps) * np);
@@ -623,9 +738,22 @@ namespace quantModeling::gpu
                                      static_cast<std::size_t>(c) * LB::kWarpsPerBlock + static_cast<std::size_t>(w)];
                 }
             };
-            const std::vector<WelfordAccumulator> price =
-                detail::run_block_range<WelfordAccumulator>(device, first, last, bps, req.n_units, unit, per_launch,
-                                                            after);
+            std::vector<WelfordAccumulator> price;
+            if (compiled.ok())
+            {
+                void *fn = compiled.on(req, device);
+                uint64_t n_units = req.n_units, per_segment = bps;
+                const detail::LaunchBlocks<WelfordAccumulator> launch =
+                    [&](uint64_t b, uint64_t count, WelfordAccumulator *d_partials)
+                {
+                    void *args[] = {&b, &per_segment, &n_units, &path, &d_partials};
+                    jit::launch(fn, static_cast<unsigned>(count), LB::kThreadsPerBlock, args);
+                };
+                price = detail::run_block_range_with<WelfordAccumulator>(device, first, last, per_launch, launch, after);
+            }
+            else
+                price = detail::run_block_range<WelfordAccumulator>(device, first, last, bps, req.n_units, unit,
+                                                                    per_launch, after);
             for (std::size_t b = 0; b < blocks.size(); ++b)
                 blocks[b].price = price[b];
             return blocks;
@@ -674,6 +802,7 @@ namespace quantModeling::gpu
             }
 
         ScriptAdjointGpuResult res;
+        res.note = compiled.ok() ? "adjoint kernel, " + compiled.note : "adjoint written by hand, " + compiled.note;
         res.risks.assign(np, 0.0);
         res.risk_std_errors.assign(np, 0.0);
         std::vector<WelfordAccumulator> block_price;
