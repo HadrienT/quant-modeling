@@ -59,9 +59,12 @@
  *     FuzzyPhi t, e   d t + (1 - d) e when blended, else the block that ran
  *     FuzzyPhiPay t, e
  *
- * A block's values are only visible inside it; the phis are how they leave.
- * A value of a block that did not run reads as 0 (the evaluator and the
- * generated code initialise every value), so that a `Select` may name it.
+ * A block's values leave it through the phis. An adjoint block also reads
+ * them from a later region opened on the *same condition* (its reverse
+ * sweep), which is sound because that region runs exactly when the first
+ * did. A value of a block that did not run reads as 0 (the evaluator and
+ * the generated code initialise every value), so that a `Select` may name
+ * it.
  *
  * Derivatives are blocks too (ir_ad.hpp): the tangent and the adjoint of a
  * block are built from it by a transformation, and read and write the same
@@ -361,6 +364,29 @@ namespace quantModeling::scripting::ir
         using Key = std::tuple<int, std::int32_t, std::int32_t, std::int32_t, std::uint64_t>;
         Block block_;
         std::vector<std::map<Key, std::int32_t>> scopes_;
+    };
+
+    /**
+     * @brief Copies a block instruction by instruction into a builder, the
+     *        operands renamed: what the binding and the derivative
+     *        transformations are written on. The caller walks the source in
+     *        order and, for each instruction, either calls `copy(k)` or
+     *        emits a replacement and records it in `map[k]`.
+     */
+    class Rebuilder
+    {
+      public:
+        explicit Rebuilder(const Block &src)
+            : map(src.code.size(), -1), src_(src) {}
+
+        Builder b;
+        std::vector<std::int32_t> map; ///< source instruction -> its copy
+
+        std::int32_t copy(std::int32_t k);
+        std::int32_t operator[](std::int32_t k) const { return k < 0 ? -1 : map[static_cast<std::size_t>(k)]; }
+
+      private:
+        const Block &src_;
     };
 
     /// Removes what no output reads (values, and whole regions none of whose

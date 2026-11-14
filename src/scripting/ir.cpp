@@ -97,6 +97,69 @@ namespace quantModeling::scripting::ir
         return id;
     }
 
+    // ── copying ────────────────────────────────────────────────────────────
+
+    std::int32_t Rebuilder::copy(std::int32_t k)
+    {
+        const Inst &in = src_.code[static_cast<std::size_t>(k)];
+        const auto m = [&](std::int32_t i)
+        { return (*this)[i]; };
+        std::int32_t id = -1;
+        switch (in.op)
+        {
+            case Op::If:
+                id = b.raw(Op::If, m(in.a));
+                b.open_scope();
+                break;
+            case Op::FuzzyIf:
+                id = b.raw(Op::FuzzyIf, m(in.a), m(in.b));
+                b.open_scope();
+                break;
+            case Op::Else:
+            case Op::FuzzyElse:
+            {
+                b.close_scope();
+                const std::int32_t head = m(in.a);
+                id = b.raw(in.op, head);
+                (in.op == Op::Else ? b.at(head).b : b.at(head).c) = id;
+                b.open_scope();
+                break;
+            }
+            case Op::EndIf:
+            case Op::FuzzyEnd:
+            {
+                b.close_scope();
+                const std::int32_t head = m(in.a);
+                id = b.raw(in.op, head);
+                const std::int32_t mid = in.op == Op::EndIf ? b.at(head).b : b.at(head).c;
+                b.at(mid).c = id;
+                if (in.op == Op::EndIf)
+                    b.at(head).c = id;
+                break;
+            }
+            case Op::Phi:
+            case Op::FuzzyPhi:
+            case Op::FuzzyPhiPay:
+            case Op::GridAccum:
+                id = b.raw(in.op, m(in.a), m(in.b), m(in.c));
+                break;
+            case Op::Select:
+                id = b.value(Op::Select, m(in.a), m(in.b), 0.0, m(in.c));
+                break;
+            case Op::State:
+                id = b.value(Op::State, in.a, -1, 0.0, in.c);
+                break;
+            default:
+            {
+                const unsigned operands = value_operands(in.op);
+                id = operands == 0u ? b.value(in.op, in.a, -1, in.x)
+                                    : b.value(in.op, m(in.a), (operands & 2u) ? m(in.b) : -1, in.x);
+            }
+        }
+        map[static_cast<std::size_t>(k)] = id;
+        return id;
+    }
+
     // ── dead code ──────────────────────────────────────────────────────────
 
     void remove_dead_code(Block &b)
