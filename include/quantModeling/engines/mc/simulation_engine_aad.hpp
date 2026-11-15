@@ -45,6 +45,10 @@ namespace quantModeling
         /// A multilevel run's estimate of its remaining discretisation
         /// bias on the price (WP 26 §10.2); unset for a plain run.
         std::optional<Real> discretisation_bias;
+        /// Sobol RQMC on the GPU only: each replicate's risks (replicates x
+        /// risks, replicate-major). Two runs on the same tables are paired
+        /// replicate by replicate (the bump on the adjoint, WP 27 §14.10).
+        std::vector<Real> replicate_risks;
     };
 
     /// Default aggregator: the product's first (and, for every product in

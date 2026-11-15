@@ -4420,6 +4420,28 @@
             ],
             "title": "Theta Std Error"
           },
+          "vanna": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vanna"
+          },
+          "vanna_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vanna Std Error"
+          },
           "vega": {
             "anyOf": [
               {
@@ -4441,6 +4463,28 @@
               }
             ],
             "title": "Vega Std Error"
+          },
+          "volga": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volga"
+          },
+          "volga_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volga Std Error"
           }
         },
         "title": "Greeks",
@@ -7628,6 +7672,18 @@
             "description": "Scripted library products only: the script priced.",
             "title": "Script"
           },
+          "second_order_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.",
+            "title": "Second Order Method"
+          },
           "warnings": {
             "items": {
               "$ref": "#/components/schemas/ModelWarning"
@@ -9573,6 +9629,12 @@
             "title": "Script",
             "type": "string"
           },
+          "second_order": {
+            "default": false,
+            "description": "With greeks_method='aad': also gamma, vanna and volga, each with its standard error, by the bump on the GPU's adjoint (blueprint/wp/27-ir-ad.md \u00a714.10): central differences of the first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same Sobol points. Vanna and volga need a model with one vol (Black-Scholes, local vol). About four first-order runs more; on the GPU only (otherwise the diagnostics say why and the first-order answer stands).",
+            "title": "Second Order",
+            "type": "boolean"
+          },
           "seed": {
             "default": 1,
             "title": "Seed",
@@ -10010,6 +10072,12 @@
             ],
             "title": "Sampler",
             "type": "string"
+          },
+          "second_order": {
+            "default": false,
+            "description": "With greeks_method='aad': also gamma, vanna and volga, each with its standard error, by the bump on the GPU's adjoint (blueprint/wp/27-ir-ad.md \u00a714.10): central differences of the first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same Sobol points. Vanna and volga need a model with one vol (Black-Scholes, local vol). About four first-order runs more; on the GPU only (otherwise the diagnostics say why and the first-order answer stands).",
+            "title": "Second Order",
+            "type": "boolean"
           },
           "seed": {
             "default": 1,
@@ -11644,6 +11712,18 @@
             "description": "Scripted library products only: the script priced.",
             "title": "Script"
           },
+          "second_order_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.",
+            "title": "Second Order Method"
+          },
           "swap": {
             "$ref": "#/components/schemas/SwapResult"
           },
@@ -12028,6 +12108,18 @@
             ],
             "description": "Scripted library products only: the script priced.",
             "title": "Script"
+          },
+          "second_order_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.",
+            "title": "Second Order Method"
           },
           "swaption": {
             "$ref": "#/components/schemas/SwaptionResult"

@@ -83,6 +83,46 @@ namespace quantModeling
                                                           ISimulationModel<Real> &model, std::size_t n_paths,
                                                           std::uint64_t seed, std::string &why);
 
+    /// A script's second-order risks (WP 27 §9, §14.10).
+    struct ScriptSecondOrderResults
+    {
+        std::vector<std::string> labels; ///< the model's risks (its parameter_labels)
+        /// d2 price / d spot d theta_i, for every risk i: gamma, then the
+        /// spot's cross-derivatives (vanna against a vol parameter or a
+        /// grid point).
+        std::vector<Real> spot_row, spot_row_std_errors;
+        Real gamma = 0.0, gamma_std_error = 0.0;
+        /// d delta / d vol and d vega / d vol: against the vol parameter
+        /// (Black-Scholes) or a parallel shift of the local-vol grid; unset
+        /// for a model without one vol (Heston, SLV).
+        std::optional<Real> vanna, vanna_std_error, volga, volga_std_error;
+        Real spot_bump = 0.0, vol_bump = 0.0;
+        std::string method;      ///< how they were computed, in words a user can read
+        std::string diagnostics; ///< the first-order runs' diagnostics
+    };
+
+    /**
+     * @brief Second-order risks by the bump on the adjoint (WP 27 §8, rung
+     *        4): central differences of the GPU's first-order risks, at the
+     *        spot bumped by +-rel_spot_bump (gamma and the spot's row) and the
+     *        vol by +-vol_bump (volga; a parallel shift of a local-vol grid).
+     *
+     * Every run on the same Sobol RQMC tables: replicate r of the run up and
+     * replicate r of the run down share their points, so each replicate
+     * gives one difference and the replicates' spread is the error (paired,
+     * not two independent errors added). Biased in h^2, robust: it needs no
+     * regularity of the payoff, and it is what the local-vol grid needs --
+     * the grid is linear by pieces in the spot, so a pathwise second
+     * derivative misses its kinks (§14.10). nullopt, with `why`, when the
+     * GPU cannot take the first-order runs, or when the payoff jumps (a crisp
+     * comparison of the spot, not fuzzy): its pathwise delta is 0 on every
+     * path, and so would its bump be.
+     */
+    std::optional<ScriptSecondOrderResults> simulate_script_second_order_gpu(
+        const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model, std::size_t n_paths,
+        std::uint64_t seed, std::string &why, double rel_spot_bump = 1e-2, double vol_bump = 2.5e-3,
+        int max_gpus = 0);
+
 } // namespace quantModeling
 
 #endif // QM_ENGINES_MC_SCRIPT_ENGINE_HPP

@@ -86,6 +86,7 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
         device=result.get("device", "cpu"),
         gpus=result.get("gpus", 0),
         discretisation_bias=result.get("discretisation_bias"),
+        second_order_method=result.get("second_order_method"),
         # Only price_script(greeks_method="aad") populates this today
         # (blueprint/wp/17-aad.md §13.1); every other pricer's dict carries
         # risks=None, same as before this field existed.
@@ -449,6 +450,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             antithetic=req.antithetic,
             importance_sampling=req.importance_sampling,
             milstein=req.milstein,
+            second_order=req.second_order and req.greeks_method == "aad",
             **_multilevel(req, model if n > 1 else "black_scholes"),
             **grids,
         )
@@ -625,6 +627,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             curve_times=curve_times,
             curve_dfs=curve_dfs,
             milstein=req.milstein,
+            second_order=req.second_order and req.greeks_method == "aad",
             **_multilevel(req, model),
         )
     result["warnings"] = (

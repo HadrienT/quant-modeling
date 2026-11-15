@@ -5,7 +5,7 @@ import { MetricRowSkeleton } from "@/shared/ui/states";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
 import { ScriptingMarketFields, type DayCount } from "./ScriptingMarketFields";
 import { alignToValuationDate } from "./scripting/alignDates";
-import { FuzzyFields } from "./scripting/FuzzyFields";
+import { FuzzyFields, type GreeksChoice } from "./scripting/FuzzyFields";
 import { DEFAULT_PRODUCT } from "./scripting/library";
 import { LibraryPicker } from "./scripting/LibraryPicker";
 import { ScriptEditor } from "./scripting/ScriptEditor";
@@ -57,7 +57,7 @@ export default function ScriptingPreview() {
 	const [valuationDate, setValuationDate] = useState(today);
 	const [dayCount, setDayCount] = useState<DayCount>("ACT/365F");
 	const [fuzzy, setFuzzy] = useState(false);
-	const [greeks, setGreeks] = useState(true);
+	const [greeks, setGreeks] = useState<GreeksChoice>("first");
 	const [defaultEps, setDefaultEps] = useState("1");
 	const [vr, setVr] = useState(DEFAULT_VARIANCE_REDUCTION);
 	const [nPaths, setNPaths] = useState("200000");
@@ -117,7 +117,8 @@ export default function ScriptingPreview() {
 							day_count: dayCount,
 							fuzzy,
 							default_eps: Number(defaultEps),
-							greeks_method: greeks ? "aad" : "none",
+							greeks_method: greeks === "none" ? "none" : "aad",
+							...(greeks === "second" ? { second_order: true } : {}),
 							...varianceReductionRequest(vr),
 							n_paths: Number(nPaths),
 							seed: Number(seed),

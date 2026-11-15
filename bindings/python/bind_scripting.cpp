@@ -234,7 +234,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::map<std::string, double> &hull_white,
                              const std::vector<double> &curve_times,
                              const std::vector<double> &curve_dfs, std::size_t threads,
-                             double mlmc_eps, bool milstein, double mlmc_rel_eps, bool bias_estimate)
+                             double mlmc_eps, bool milstein, double mlmc_rel_eps, bool bias_estimate,
+                             bool second_order)
 {
     using namespace quantModeling;
 
@@ -488,6 +489,42 @@ static py::dict price_script(const std::string &script, double spot, double rate
             res.diagnostics += " | discretisation bias not estimated under AAD";
         py::dict out = pricing_result_to_dict(res);
         out["warnings"] = advice_to_py(aad_advice);
+        // Second order (WP 27 §14.10): gamma, vanna and volga by the bump on
+        // the GPU's adjoint, the method said next to them. The first-order
+        // answer stands when the GPU cannot take it; the diagnostics say why.
+        if (second_order)
+        {
+            std::optional<ScriptSecondOrderResults> so;
+            std::string why = "early exercise runs on the CPU, the second order on the GPU";
+            if (device == "cpu")
+                why = "the second order runs on the GPU and the request asked for the CPU";
+            else if (!lsm_note.empty())
+                ; // early exercise: the why above
+            else
+            {
+                py::gil_scoped_release release;
+                ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                auto sim_model = scripting::make_script_model<Real>(spec);
+                so = simulate_script_second_order_gpu(product, *sim_model, static_cast<std::size_t>(paths),
+                                                      seed_value, why);
+            }
+            py::dict greeks = out["greeks"].cast<py::dict>();
+            if (so)
+            {
+                greeks["gamma"] = so->gamma;
+                greeks["gamma_std_error"] = so->gamma_std_error;
+                if (so->vanna)
+                {
+                    greeks["vanna"] = *so->vanna;
+                    greeks["vanna_std_error"] = *so->vanna_std_error;
+                    greeks["volga"] = *so->volga;
+                    greeks["volga_std_error"] = *so->volga_std_error;
+                }
+                out["second_order_method"] = so->method;
+            }
+            else
+                out["diagnostics"] = out["diagnostics"].cast<std::string>() + " | no second-order risks (" + why + ")";
+        }
         return out;
     }
 
@@ -653,7 +690,7 @@ void register_scripting(py::module_ &m)
           py::arg("curve_times") = std::vector<double>{},
           py::arg("curve_dfs") = std::vector<double>{}, py::arg("threads") = 0,
           py::arg("mlmc_eps") = 0.0, py::arg("milstein") = false, py::arg("mlmc_rel_eps") = 0.0,
-          py::arg("bias_estimate") = false,
+          py::arg("bias_estimate") = false, py::arg("second_order") = false,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. threads: CPU threads of a CPU run "
           "(0, the default: the available CPUs, at most 16); Philox, Sobol and "

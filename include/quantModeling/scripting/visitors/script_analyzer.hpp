@@ -38,6 +38,14 @@ namespace quantModeling::scripting
         /// payoffs most sensitive to skew.
         bool spot_threshold_test = false;
 
+        /// A crisp comparison of a spot-derived value (not a flag): unless
+        /// the comparisons are smoothed (fuzzy), the payoff jumps there along
+        /// a path, and a pathwise delta -- hence its bump, the second order
+        /// of WP 27 §14.10 -- sees none of the jump. Unlike
+        /// spot_threshold_test, not set by survivals or lastStepDigital, whose
+        /// values are smooth.
+        bool spot_comparison = false;
+
         /// A spot-derived variable is assigned at one event and read at a
         /// later one (a running sum, a knock-in flag, a reference level such
         /// as `k = spot()`): the price depends on the *joint* law of spot
@@ -159,7 +167,7 @@ namespace quantModeling::scripting
                     {
                         out.nonlinear_in_spot = true;
                         if (!cmp->discrete)
-                            out.spot_threshold_test = true;
+                            out.spot_threshold_test = out.spot_comparison = true;
                     }
                 }
 

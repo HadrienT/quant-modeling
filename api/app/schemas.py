@@ -413,6 +413,17 @@ class ScriptPricingInputs(BaseModel):
             "rng='philox' (blueprint WP 19 §6)."
         ),
     )
+    second_order: bool = Field(
+        False,
+        description="With greeks_method='aad': also gamma, vanna and volga, "
+        "each with its standard error, by the bump on the GPU's adjoint "
+        "(blueprint/wp/27-ir-ad.md §14.10): central differences of the "
+        "first-order risks at the spot bumped by 1 % and the vol by 25 bp (a "
+        "parallel shift of a local-vol grid), each pair on the same Sobol "
+        "points. Vanna and volga need a model with one vol (Black-Scholes, "
+        "local vol). About four first-order runs more; on the GPU only "
+        "(otherwise the diagnostics say why and the first-order answer stands).",
+    )
 
     @model_validator(mode="after")
     def _model_inputs_present(self) -> "ScriptPricingInputs":
@@ -651,6 +662,13 @@ class Greeks(BaseModel):
     theta_std_error: Optional[float] = None
     rho_std_error: Optional[float] = None
 
+    # Second order of a script (second_order=True, WP 27 §14.10):
+    # d delta / d vol and d vega / d vol.
+    vanna: Optional[float] = None
+    volga: Optional[float] = None
+    vanna_std_error: Optional[float] = None
+    volga_std_error: Optional[float] = None
+
 
 class BondAnalytics(BaseModel):
     macaulay_duration: Optional[float] = None
@@ -840,6 +858,12 @@ class PricingResponse(BaseModel):
         0,
         description="GPUs the Monte-Carlo shared its paths between (0 on the "
         "CPU). The result is the same bits for any count (blueprint WP 19 §7).",
+    )
+    second_order_method: Optional[str] = Field(
+        None,
+        description="Scripts priced with second_order=True: how gamma, vanna "
+        "and volga were computed (the bump on the GPU's adjoint, its bumps and "
+        "pairing). Null when they were not.",
     )
     discretisation_bias: Optional[float] = Field(
         None,

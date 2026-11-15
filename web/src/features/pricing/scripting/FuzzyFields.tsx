@@ -1,13 +1,17 @@
 import { Field } from "@/shared/ui";
 
+/** No greeks, the adjoint's first order, or that plus gamma, vanna, volga. */
+export type GreeksChoice = "none" | "first" | "second";
+
 /**
  * Greeks and fuzzy logic for a script. The greeks come from one adjoint run
- * on the price's own paths; smoothed comparisons (and their default width)
- * are what gives a digital or a barrier greeks at all.
+ * on the price's own paths; the second order from that adjoint bumped (on
+ * the GPU); smoothed comparisons (and their default width) are what gives a
+ * digital or a barrier greeks at all.
  */
 export function FuzzyFields(props: {
-	greeks: boolean;
-	onGreeks: (v: boolean) => void;
+	greeks: GreeksChoice;
+	onGreeks: (v: GreeksChoice) => void;
 	fuzzy: boolean;
 	onFuzzy: (v: boolean) => void;
 	eps: string;
@@ -21,10 +25,24 @@ export function FuzzyFields(props: {
 			>
 				<input
 					type="checkbox"
-					checked={props.greeks}
-					onChange={(e) => props.onGreeks(e.target.checked)}
+					checked={props.greeks !== "none"}
+					onChange={(e) => props.onGreeks(e.target.checked ? "first" : "none")}
 				/>
 				Greeks (adjoint)
+			</label>
+			<label
+				className="flex items-center gap-2 text-sm"
+				title="Gamma, vanna and volga with their errors: the adjoint's risks bumped (spot 1 %, vol 25 bp) on the same Sobol points. On the GPU only, about four adjoint runs more."
+			>
+				<input
+					type="checkbox"
+					disabled={props.greeks === "none"}
+					checked={props.greeks === "second"}
+					onChange={(e) =>
+						props.onGreeks(e.target.checked ? "second" : "first")
+					}
+				/>
+				+ second order (gamma, vanna, volga · GPU)
 			</label>
 			<label className="flex items-center gap-2 text-sm">
 				<input

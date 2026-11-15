@@ -866,3 +866,86 @@ steps, with its own adjoint), and the catalogue's vanillas and digitals
 switched to the primitives, which would move displayed greeks (a decision
 for the maintainer). Left for L6: the GPU second-order kernel, the API and
 the front end.
+
+### 14.10 L6: second order a user can ask for -- the bump on the adjoint (2026-11-15)
+
+**Why not tangent over adjoint everywhere.** Exactness along a path needs the
+payoff *and the model* to be C¹ in the parameters. The local-vol grid is
+linear by pieces in the spot (bilinear lookup), so its slope jumps at every
+strike node: a pathwise second derivative misses those kinks exactly as it
+misses the corners of the linear fuzzy ramp (§14.7), and the gamma it gives
+under local vol is biased. The test grids are linear in the strike and hide
+it; a Dupire grid from SPY has a kink at every node. Second order through the
+grid by transformation would compute a wrong number exactly. So, following
+§8's ladder, the rung that applies to every model and payoff ships first:
+**rung 4, the bump on the adjoint**. Tangent over adjoint on the GPU stays the
+exact route for C¹ scripts under Black-Scholes and Heston, to add next.
+
+**What it computes.** `simulate_script_second_order_gpu` runs the GPU's
+first-order risks (tangent or adjoint kernel) at the spot bumped by ±1 % and,
+when the model has one vol, at the vol bumped by ±25 bp (Black-Scholes's
+`vol`; a parallel shift of every `lvol` node), each pair on the **same Sobol
+RQMC tables**: replicate r of the run up and replicate r of the run down share
+their points, so each replicate gives one central difference and the 16
+replicates' spread is the error (`AADSimulResults::replicate_risks`, new). It
+returns the spot's whole Hessian row (gamma, then d²/dS dθ for every risk),
+gamma, vanna (d delta / d vol, or against the parallel shift) and volga (d
+vega / d vol), each with its error, and the method in words. Four first-order
+runs; Heston and SLV have no single vol and get gamma and the row only.
+
+**API and front end.** `second_order=True` (with `greeks_method="aad"`) on the
+scripting routes; `Greeks` gains `vanna`, `volga` and their errors, and
+`PricingResponse` a `second_order_method`. Without a GPU the first-order
+answer stands and the diagnostics say why. The scripting page has a "+ second
+order (gamma, vanna, volga · GPU)" box under the greeks one, off by default,
+and shows a "Second-order greeks" table with each value's error, its unit,
+the method and the bump bias the error leaves out.
+
+**Measured** (V100, Black-Scholes S = K = 100, r = 3 %, q = 1 %, vol = 25 %,
+T = 1; closed forms gamma 0.015470, vanna 0.0696, volga −1.427):
+
+| Script, points | Gamma | Vanna | Volga |
+|---|---|---|---|
+| hard call, 2^16 | 0.015475 ± 0.000015 | 0.0701 ± 0.0002 | −1.232 ± 0.045 |
+| lastStepCall, 2^16 | 0.015468 ± 0.000000 | 0.0699 ± 0.0001 | −1.405 ± 0.021 |
+| hard call, 2^20 | 0.015468 | | −1.4305 ± 0.0062 |
+
+Two limits, measured. With a hard payoff the vega differences have heavy
+tails (a path crossing the strike between the two vols), and 16 replicates of
+a few thousand points can underestimate their error: at 2^16 points the volga
+sat 4.3 errors off, then converged (2^18: −1.373 ± 0.034, 2^20: −1.4305 ±
+0.0062, across bumps and seeds) -- noise, not bias; `lastStepCall` removes it.
+And the bump's own bias, O(h²), shows once the error is tiny: gamma 0.015462
+± 0.000002 at 2^18 against 0.015470, 0.05 %. The page says that the error
+leaves the bump bias out.
+
+Checked: GPU tests against the closed forms (hard call, lastStepCall, flat
+local vol = Black-Scholes; Heston gives gamma only); API test (the closed
+forms through the route when a GPU is there, the first-order answer and the
+reason on the CPU); front-end test (the box sends `second_order`, the table
+shows the three with their errors and the method).
+
+**A payoff that jumps is refused.** The bump differentiates the pathwise
+delta, and a payoff that jumps (a crisp comparison of the spot: a hard
+digital, a barrier on dates, an autocall trigger) has a pathwise delta of 0
+on every path. Its bump would read 0 ± 0 -- a wrong number shown as an exact
+one. `ScriptAnalysis::spot_comparison` (new; unlike `spot_threshold_test`,
+not set by survivals or `lastStepDigital`, whose values are smooth) makes the
+engine refuse the second order of a hard script that compares the spot, and
+say what to do: tick fuzzy, or write the digital with `lastStepDigital`.
+Checked in CI (the refusal comes before any GPU work) and through the API.
+
+**The exact route, reconsidered.** Tangent over adjoint on the GPU would
+remove the bump's 0.05 % bias on smooth scripts under Black-Scholes and
+Heston, but there the paired bump already has an error near zero
+(lastStepCall's gamma ± 0.000000 at 2^16), and it does not apply to the
+payoffs that jump either. A full second-order kernel (forward tangents,
+checkpoints with their tangents, the tangent of the adjoint backward) for
+that gain is set aside, not built: the host's `run_path_second_order` stays
+the exact oracle in the tests.
+
+Left for L6: rung 3 (Vibrato), the one that gives a payoff that jumps its
+greeks without smoothing it;
+and a C¹ interpolation of the local-vol grid, which would make the exact
+route possible under local vol, changes the model (a maintainer decision;
+kept bilinear on 2026-11-15).

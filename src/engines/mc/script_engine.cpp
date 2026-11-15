@@ -646,6 +646,8 @@ namespace quantModeling
                     res.risks[i] = r.risks[i];
                     res.risk_std_errors[i] = r.risk_std_errors[i];
                 }
+                if (sobol && !r.risks.empty() && r.risks.size() == res.risks.size())
+                    res.replicate_risks = r.replicate_risks;
                 res.diagnostics = "per-path adjoint on GPU (" + card + ", " + std::to_string(r.risks.size()) +
                                   (sobol ? " risks)" : " risks, batches of 512)") + draws + " + " + r.note;
             }
@@ -669,8 +671,13 @@ namespace quantModeling
                     // Replicate means are i.i.d.: their spread is the error.
                     std::vector<WelfordAccumulator> acc(reps.front().size());
                     for (const auto &w : reps)
+                    {
                         for (std::size_t i = 0; i < w.size(); ++i)
                             acc[i].add(w[i].mean);
+                        // every risk per replicate, 0 for what the kernel does not differentiate
+                        for (std::size_t i = 0; i < res.risks.size(); ++i)
+                            res.replicate_risks.push_back(i + 1 < w.size() ? w[i + 1].mean : 0.0);
+                    }
                     res.price = acc[0].mean;
                     res.price_std_error = acc[0].std_error();
                     for (std::size_t i = 0; i + 1 < acc.size() && i < res.risks.size(); ++i)
@@ -858,6 +865,124 @@ namespace quantModeling
         }
         res.n_paths = static_cast<long long>(n_paths);
         res.diagnostics = "adjoint from the script's IR on the CPU (batches of 64) + Philox";
+        return res;
+    }
+
+    namespace
+    {
+        /// Per replicate, (up - down) / (2 h) of the risks `pick` sums; the
+        /// replicates' mean and error. Empty when a run has no replicates.
+        template <class Pick>
+        std::optional<WelfordAccumulator> paired_difference(const AADSimulResults &up, const AADSimulResults &down,
+                                                            double h, Pick pick)
+        {
+            const std::size_t n = up.risks.size();
+            if (n == 0 || up.replicate_risks.empty() || up.replicate_risks.size() % n != 0 ||
+                down.replicate_risks.size() != up.replicate_risks.size())
+                return std::nullopt;
+            WelfordAccumulator acc;
+            for (std::size_t r = 0; r < up.replicate_risks.size() / n; ++r)
+                acc.add((pick(up.replicate_risks.data() + r * n) - pick(down.replicate_risks.data() + r * n)) /
+                        (2.0 * h));
+            return acc;
+        }
+    } // namespace
+
+    std::optional<ScriptSecondOrderResults> simulate_script_second_order_gpu(const ScriptedProduct<Real> &product,
+                                                                             const ISimulationModel<Real> &model,
+                                                                             std::size_t n_paths, std::uint64_t seed,
+                                                                             std::string &why, double rel_spot_bump,
+                                                                             double vol_bump, int max_gpus)
+    {
+        if (!(rel_spot_bump > 0.0) || !(vol_bump > 0.0))
+            throw InvalidInput("second-order risks: the bumps must be positive");
+        // A payoff that jumps has a pathwise delta of 0 on every path, and so
+        // a bumped one: the second order would read 0 +- 0, a wrong number
+        // shown as an exact one.
+        if (product.analysis().spot_comparison && !product.program().fuzzy)
+        {
+            why = "the payoff jumps where the script compares the spot to a level, and a pathwise delta (so its "
+                  "bump) sees none of the jump: tick fuzzy, or write the digital with lastStepDigital";
+            return std::nullopt;
+        }
+        const std::vector<std::string> &labels = model.parameter_labels();
+        if (labels.empty() || labels.front() != "spot")
+        {
+            why = "second-order risks need a model whose first parameter is the spot";
+            return std::nullopt;
+        }
+        // The vol direction: Black-Scholes's vol, or every point of a local-vol grid.
+        std::vector<std::size_t> vol_index;
+        for (std::size_t i = 0; i < labels.size(); ++i)
+            if (labels[i] == "vol" || labels[i].rfind("lvol[", 0) == 0)
+                vol_index.push_back(i);
+        const auto run_bumped = [&](const std::vector<std::size_t> &which, double h) -> std::optional<AADSimulResults>
+        {
+            std::unique_ptr<ISimulationModel<Real>> m = model.clone();
+            for (std::size_t i : which)
+                *m->parameters()[i] += h;
+            return simulate_script_aad_gpu(product, *m, n_paths, seed, why, SamplerKind::Sobol, max_gpus);
+        };
+        const double S = *model.parameters().front();
+        const double hs = rel_spot_bump * std::abs(S);
+        const auto up = run_bumped({0}, hs);
+        if (!up)
+            return std::nullopt;
+        const auto down = run_bumped({0}, -hs);
+        if (!down)
+            return std::nullopt;
+
+        ScriptSecondOrderResults res;
+        res.labels = labels;
+        res.spot_bump = hs;
+        const std::size_t n = labels.size();
+        res.spot_row.assign(n, 0.0);
+        res.spot_row_std_errors.assign(n, 0.0);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const auto d = paired_difference(*up, *down, hs, [i](const Real *row)
+                                             { return row[i]; });
+            if (!d)
+            {
+                why = "second-order risks need the first-order runs' Sobol replicates";
+                return std::nullopt;
+            }
+            res.spot_row[i] = d->mean;
+            res.spot_row_std_errors[i] = d->std_error();
+        }
+        res.gamma = res.spot_row[0];
+        res.gamma_std_error = res.spot_row_std_errors[0];
+        const auto vega = [&](const Real *row)
+        {
+            double v = 0.0;
+            for (std::size_t i : vol_index)
+                v += row[i];
+            return v;
+        };
+        if (!vol_index.empty())
+        {
+            const auto vanna = paired_difference(*up, *down, hs, vega);
+            res.vanna = vanna->mean;
+            res.vanna_std_error = vanna->std_error();
+            const auto vup = run_bumped(vol_index, vol_bump);
+            const auto vdown = vup ? run_bumped(vol_index, -vol_bump) : std::nullopt;
+            if (!vup || !vdown)
+                return std::nullopt;
+            const auto volga = paired_difference(*vup, *vdown, vol_bump, vega);
+            res.volga = volga->mean;
+            res.volga_std_error = volga->std_error();
+            res.vol_bump = vol_bump;
+        }
+        const bool grid = vol_index.size() > 1;
+        std::ostringstream method;
+        method << "bump on the adjoint: central differences of the GPU's first-order risks, spot +-"
+               << rel_spot_bump * 100.0 << " %";
+        if (!vol_index.empty())
+            method << ", vol +-" << vol_bump * 1e4 << " bp" << (grid ? " (a parallel shift of the local-vol grid)" : "");
+        method << ", each pair on the same Sobol points (the error is the " << kAadRqmcReplicates
+               << " replicates' spread)";
+        res.method = method.str();
+        res.diagnostics = up->diagnostics;
         return res;
     }
 
