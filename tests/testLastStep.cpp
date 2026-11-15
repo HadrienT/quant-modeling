@@ -216,6 +216,30 @@ namespace quantModeling
         }
     }
 
+    // The engine clones the model for each thread (and each multilevel
+    // level): a clone computes the expectations too.
+    TEST(LastStep, AClonedLocalVolModelComputesThemToo)
+    {
+        ScriptedProduct<Real> prod(kMid + "2025-06-03\n    pays lastStepCall(100) + lastStepDigital(110)\n", kCtx);
+        LocalVolSimModel<Real> model(S0, r, q, kK, kT, skewed_surface(), 1.0 / 52.0);
+        model.init(prod.timeline(), prod.defline());
+        const auto clone = model.clone();
+        std::vector<double> z(model.sim_dim());
+        for (std::size_t i = 0; i < z.size(); ++i)
+            z[i] = 1.3 * std::sin(0.7 * static_cast<double>(i));
+        Scenario<Real> a, b;
+        allocate_scenario(a, prod.defline(), 1);
+        allocate_scenario(b, prod.defline(), 1);
+        model.generate_path(z, a);
+        clone->generate_path(z, b);
+        ASSERT_EQ(a.back().survivals.size(), 2u);
+        EXPECT_EQ(a.back().survivals, b.back().survivals);
+        std::vector<Real> pa, pb;
+        prod.payoffs(a, pa);
+        prod.payoffs(b, pb);
+        EXPECT_EQ(pa[0], pb[0]);
+    }
+
     namespace
     {
         using N2 = SecondOrderNumber;
