@@ -414,7 +414,9 @@ namespace quantModeling::scripting::ir
      * reach the same operations, so the bits do not move; only the folds of
      * constants are left to run time.
      */
-    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms = false);
+    /// `smooth_ramp`: the fuzzy comparisons' C1 ramp (ScriptSettings::smooth_ramp).
+    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms = false,
+                        bool smooth_ramp = false);
 
     /// A block as text, one instruction per line (`%7 = add %3, %6`).
     std::string to_string(const Block &b);

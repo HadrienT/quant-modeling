@@ -67,11 +67,12 @@ namespace quantModeling
             return std::make_unique<MultiAssetBSSimModel<T>>(s0, T(0.03), q, vol, corr);
         }
 
-        SimulationMCResult price(const std::string &script, bool fuzzy, bool bytecode)
+        SimulationMCResult price(const std::string &script, bool fuzzy, bool bytecode, bool smooth_ramp = false)
         {
             ScriptSettings s;
             s.fuzzy = fuzzy;
             s.bytecode = bytecode;
+            s.smooth_ramp = smooth_ramp;
             ScriptedProduct<Real> product(script, kCtx, s);
             auto model = model_for<Real>(product.n_underlyings());
             PricingSettings mc;
@@ -142,6 +143,23 @@ namespace quantModeling
             EXPECT_GT(p.code.size(), 0u) << s.name;
             EXPECT_LE(p.max_stack, 64) << s.name;
         }
+    }
+
+    // The C1 ramp (ScriptSettings::smooth_ramp, WP 27 §8 rung 2): the same
+    // bits from the tree and from the bytecode, and another price than the
+    // linear ramp's where a script has a smoothed condition.
+    TEST(ScriptBytecode, SmoothRampPricesAreBitIdenticalToTheTree)
+    {
+        int moved = 0;
+        for (const auto &s : library())
+        {
+            const auto tree = price(s.source, true, false, true);
+            const auto code = price(s.source, true, true, true);
+            EXPECT_EQ(code.npv(), tree.npv()) << s.name;
+            EXPECT_EQ(code.std_error(), tree.std_error()) << s.name;
+            moved += code.npv() != price(s.source, true, true, false).npv();
+        }
+        EXPECT_GT(moved, 5);
     }
 
 } // namespace quantModeling

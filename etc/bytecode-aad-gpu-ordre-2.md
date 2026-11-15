@@ -975,9 +975,20 @@ La méthode du livre n'a pas ce défaut : le **delta** d'un payoff flou est
 continu dans les paramètres, sa différence finie converge vers le gamma du
 produit lissé.
 
-Un lissage C¹ (une rampe à raccords lisses) rendrait l'adjoint sur tangent
-juste partout. Ce serait changer le lissage du livre de scripting ; ce n'est
-pas fait (ADR-A10).
+**Update (2026-11-15, WP 27 §14.7): the C¹ ramp exists, as an option.**
+`ScriptSettings::smooth_ramp` replaces the linear ramp u by the smoothstep
+u²(3 − 2u), whose slope is 0 where it meets 0 and 1. P′ no longer jumps at
+±ε, P″ = 2H′ + xH″ has no Dirac mass and integrates to 1, and adjoint over
+tangent gives the smoothed product's gamma -- Black-Scholes's up to O(ε²).
+Measured on the same call (ε = 2, 40 000 paths, through the IR): linear ramp
+2.02 × the Black-Scholes gamma, C¹ ramp 1.05 ± 0.04 ×; on the tape
+(`WithTheSmoothRampTheTapesPathwiseGammaIsBlackScholesGamma`), Black-Scholes's
+gamma within its error. It is the same polynomial, in the same order of
+operations, in the tree evaluator, the bytecode (CPU, batched, GPU), the
+bytecode adjoint and the IR, so every route prices the same bits. It is off
+by default: it is another smoothing, hence another (equally small) bias on
+the price, and the book's linear ramp stays what the catalogue uses until the
+second order reaches the API (WP 27 L6).
 
 ## III.4 Laquelle utiliser
 
@@ -986,7 +997,7 @@ pas fait (ADR-A10).
 | Fonction | `simulate_aad_bumped_second_order` | `simulate_aad_second_order` |
 | Coût | trois AAD | une AAD sur une tape plus longue |
 | Biais | en h² | aucun |
-| Payoffs scriptés, digitales, barrières, vanilles | **oui** | **non** : faux d'un facteur 2 sur un call flou, nul sur un payoff dur |
+| Payoffs scriptés, digitales, barrières, vanilles | **oui** | **non** : faux d'un facteur 2 sur un call flou, nul sur un payoff dur; **exact on fuzzy payoffs with the C¹ ramp** (`smooth_ramp`, 2026-11-15) |
 | Payoffs réguliers (puissances, log-contrats, fonctions lisses) | oui | oui, exact |
 | Rôle dans le dépôt | méthode par défaut | payoffs C¹ et vérifications |
 

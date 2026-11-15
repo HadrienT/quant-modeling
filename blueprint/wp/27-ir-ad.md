@@ -706,3 +706,50 @@ Faster than the hand-written adjoint in the four cases, by 4 to 23 %. The
 tests of §14.3 pass unchanged (the same price to the bit, the gradient to
 1e-11). SLV's leverage does not use the cache yet (two lookups a step).
 The gradient row in global memory remains the lever for more.
+
+### 14.7 L6, rung 2: the C¹ ramp (2026-11-15)
+
+Rung 2 of §8 before rung 1, because it is the one the L6 acceptance names
+("the fuzzy call's factor 2 gone with the C¹ ramp") and it needs no model
+formula. `ScriptSettings::smooth_ramp` replaces the fuzzy comparisons' clamped
+linear ramp u by u²(3 − 2u) (smoothstep), whose slope is 0 where it meets 0
+and 1. Written once per route, the same operations in the same order: the
+tree's `FuzzyEvaluator`, the bytecode (`FCmp*` with `b = 1`: CPU, batched and
+GPU interpreters), the bytecode adjoint (slope × 6u(1 − u)) and the IR's
+lowering (two `mul`s and a `sub` after `Up` / `Tent`, so the tangent, adjoint
+and CUDA backends get it with no new operation). The kernel cache keys on the
+generated source, so the two ramps never share a kernel. Off by default: it is
+another smoothing, hence another price bias of the same order, and nothing
+in the API asks for it yet.
+
+Checked:
+
+- every library script prices to the same bits from the tree and from the
+  bytecode with the C¹ ramp, and from the IR (CPU and lowering modes), and the
+  price moves against the linear ramp's (`SmoothRampPricesAreBitIdenticalToTheTree`,
+  `testScriptIr`);
+- path by path, with no noise: inside the band the Hessian row of a fuzzy
+  digital and of a fuzzy call equals the central difference of the gradient
+  (`TheSmoothRampsHessianIsTheGradientsDerivativeInsideTheBand`);
+- the acceptance, a fuzzy call `if spot() > 100 then pays spot() - 100`,
+  ε = 2, Black-Scholes, 40 000 paths, average pathwise gamma by tangent over
+  adjoint against the closed form 0.01547 (`TheSmoothRampRemovesTheFuzzyCallsFactorTwo`):
+
+  | Ramp | Pathwise gamma | / Black-Scholes |
+  |---|---|---|
+  | linear | 0.03118 ± 0.00060 | 2.02 |
+  | C¹ | 0.01621 ± 0.00063 | 1.05 (1.2 standard errors) |
+
+- the CPU tape's adjoint over tangent gives Black-Scholes's gamma too with
+  the C¹ ramp (`WithTheSmoothRampTheTapesPathwiseGammaIsBlackScholesGamma`,
+  100 000 paths); `etc/bytecode-aad-gpu-ordre-2.md` §III.3 is updated.
+
+The unattended run's first test of this rung compared the average pathwise
+gamma of a digital with a difference of deltas at ε = 0.05 (absolute, so a
+band of ±0.05 on a spot of 100): a few dozen paths in the band, a
+Monte-Carlo error of 8.6 on a gamma of 2.6, so it could not decide. It is
+replaced by the two tests above.
+
+Left in L6: rung 1 (the conditional expectation on the last step), Vibrato,
+the bump on the adjoint as the fallback, second order through a grid (local
+vol, SLV), the GPU second-order kernel, the API fields and the front end.

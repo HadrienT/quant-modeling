@@ -105,6 +105,15 @@ namespace quantModeling
         /// the library writes (pricers/script_builders); a script a user
         /// wrote keeps its numbers as constants. Same bits either way.
         bool terms_as_parameters = false;
+        /// With `fuzzy`: a C1 ramp for the smoothed comparisons -- the
+        /// clamped linear ramp u replaced by u^2 (3 - 2 u), whose slope is 0
+        /// where it meets 0 and 1 -- so that the smoothed payoff has a second
+        /// derivative along a path and the second-order risks by tangent over
+        /// adjoint are exact for it (blueprint/wp/27-ir-ad.md §8, rung 2).
+        /// The linear ramp's corners carry the whole gamma, which a pathwise
+        /// second derivative cannot see. Another smoothing, so another
+        /// (equally small) bias on the price: off by default.
+        bool smooth_ramp = false;
     };
 
     /**
@@ -229,7 +238,11 @@ namespace quantModeling
                                        "on the fixings instead");
 
             if (settings.fuzzy)
-                evaluator_ = std::make_unique<scripting::FuzzyEvaluator<T>>();
+            {
+                auto fuzzy = std::make_unique<scripting::FuzzyEvaluator<T>>();
+                fuzzy->set_smooth_ramp(settings.smooth_ramp);
+                evaluator_ = std::move(fuzzy);
+            }
             else
                 evaluator_ = std::make_unique<scripting::Evaluator<T>>();
             evaluator_->set_variable_count(indexer.count());
@@ -244,8 +257,9 @@ namespace quantModeling
             // with it the GPU) has no exercise instruction.
             if (settings.bytecode && !has_exercise_)
             {
-                program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy);
-                ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy, settings.terms_as_parameters);
+                program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy, settings.smooth_ramp);
+                ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy, settings.terms_as_parameters,
+                                                  settings.smooth_ramp);
                 buffers_.vars.assign(static_cast<std::size_t>(program_.n_vars), T(0));
                 buffers_.stack.assign(static_cast<std::size_t>(program_.max_stack), T(0));
                 buffers_.degrees.assign(static_cast<std::size_t>(program_.max_degrees), T(0));

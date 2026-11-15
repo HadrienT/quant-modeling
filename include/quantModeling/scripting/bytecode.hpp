@@ -68,7 +68,7 @@ namespace quantModeling::scripting
         Or,
         Not,
         // fuzzy logic: degrees on the degree stack
-        FCmpEq, ///< a = 1: crisp (discrete, or eps <= 0); x = eps
+        FCmpEq, ///< a = 1: crisp (discrete, or eps <= 0); x = eps; b = 1: the C1 ramp
         FCmpNe,
         FCmpGt,
         FCmpGe,
@@ -150,19 +150,26 @@ namespace quantModeling::scripting
             return v;
         }
 
+        /// FuzzyEvaluator::ramp: u, or u^2 (3 - 2 u) for the C1 ramp.
+        template <class T>
+        QM_HOST_DEVICE T ramp(const T &u, bool smooth)
+        {
+            return smooth ? T(u * u * (T(3) - T(2) * u)) : u;
+        }
+
         /// FuzzyEvaluator::tent: max(0, 1 − |x|/eps).
         template <class T>
-        QM_HOST_DEVICE T tent(const T &x, double eps)
+        QM_HOST_DEVICE T tent(const T &x, double eps, bool smooth = false)
         {
             using std::fabs;
-            return clamp01<T>(T(1) - fabs(x) / T(eps));
+            return ramp<T>(clamp01<T>(T(1) - fabs(x) / T(eps)), smooth);
         }
 
         /// FuzzyEvaluator::call_spread, the comparison given by `op`.
         template <class T>
-        QM_HOST_DEVICE T call_spread(const T &x, double eps, Op op)
+        QM_HOST_DEVICE T call_spread(const T &x, double eps, Op op, bool smooth = false)
         {
-            const T up = clamp01<T>((x + T(eps)) / T(2.0 * eps)); // degree of x > 0
+            const T up = ramp<T>(clamp01<T>((x + T(eps)) / T(2.0 * eps)), smooth); // degree of x > 0
             switch (op)
             {
                 case Op::FCmpGt:
@@ -172,9 +179,9 @@ namespace quantModeling::scripting
                 case Op::FCmpLe:
                     return T(1) - up;
                 case Op::FCmpEq:
-                    return tent(x, eps);
+                    return tent(x, eps, smooth);
                 case Op::FCmpNe:
-                    return T(1) - tent(x, eps);
+                    return T(1) - tent(x, eps, smooth);
                 default:
                     return up;
             }
@@ -465,7 +472,7 @@ namespace quantModeling::scripting
                     if (in.a != 0)
                         D[dp++] = hard(dbl(x), in.op) ? T(1) : T(0);
                     else
-                        D[dp++] = call_spread(x, in.x, in.op);
+                        D[dp++] = call_spread(x, in.x, in.op, in.b != 0);
                     break;
                 }
                 case Op::FConst:
@@ -881,7 +888,7 @@ namespace quantModeling::scripting
                     {
                         const double x = a[l] - b[l]; // condition is x ⋈ 0
                         d[l] = in.a != 0 ? (bytecode_detail::hard(x, in.op) ? 1.0 : 0.0)
-                                         : bytecode_detail::call_spread<double>(x, in.x, in.op);
+                                         : bytecode_detail::call_spread<double>(x, in.x, in.op, in.b != 0);
                     }
                     sp -= 2;
                     ++dp;

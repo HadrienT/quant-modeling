@@ -134,14 +134,16 @@ namespace quantModeling
         int scripts = 0;
         long long blends = 0;
         for (const LibraryScript &script : library())
-            for (int mode = 0; mode < 4; ++mode)
+            for (int mode = 0; mode < 6; ++mode)
             {
                 // Crisp and fuzzy; the numbers as constants and as terms
                 // (lot L1b: the same doubles, read from data).
-                const bool fuzzy = (mode & 1) != 0, terms = (mode & 2) != 0;
+                // ... and, modes 4 and 5, the fuzzy comparisons' C1 ramp.
+                const bool smooth = mode >= 4, fuzzy = smooth || (mode & 1) != 0, terms = mode == 5 || (mode & 2) != 0;
                 ScriptSettings ss;
                 ss.fuzzy = fuzzy;
                 ss.terms_as_parameters = terms;
+                ss.smooth_ramp = smooth;
                 const ScriptedProduct<Real> product(script.source, kCtx, ss);
                 if (product.program().code.empty()) // early exercise: the tree evaluator
                 {
@@ -157,7 +159,7 @@ namespace quantModeling
                 blends += c.blends;
                 ++scripts;
             }
-        EXPECT_GT(scripts, 80);
+        EXPECT_GT(scripts, 120);
         EXPECT_GT(blends, 1000) << "the fuzzy ifs' blended mode was hardly exercised";
     }
 

@@ -39,6 +39,11 @@ namespace quantModeling::scripting
             degrees_.clear();
         }
 
+        /// A C1 ramp (ScriptSettings::smooth_ramp): the clamped linear ramp
+        /// u replaced by u^2 (3 - 2 u), whose slope is 0 where it meets 0
+        /// and 1 (blueprint/wp/27-ir-ad.md §8, rung 2).
+        void set_smooth_ramp(bool on) { smooth_ = on; }
+
         void visit(const NodeEqual &n) override { comparison(n, Cmp::Eq); }
         void visit(const NodeNotEqual &n) override { comparison(n, Cmp::Ne); }
         void visit(const NodeSuperior &n) override { comparison(n, Cmp::Gt); }
@@ -207,9 +212,9 @@ namespace quantModeling::scripting
         }
 
         /// Degree that `x ⋈ 0` holds, smoothed over a band of half-width eps.
-        static T call_spread(const T &x, double eps, Cmp c)
+        T call_spread(const T &x, double eps, Cmp c) const
         {
-            const T up = clamp01((x + T(eps)) / T(2.0 * eps)); // degree of x > 0
+            const T up = ramp(clamp01((x + T(eps)) / T(2.0 * eps))); // degree of x > 0
             switch (c)
             {
                 case Cmp::Gt:
@@ -227,11 +232,13 @@ namespace quantModeling::scripting
         }
 
         /// max(0, 1 − |x|/eps): 1 at x = 0, 0 beyond ±eps.
-        static T tent(const T &x, double eps)
+        T tent(const T &x, double eps) const
         {
             using std::fabs;
-            return clamp01(T(1) - fabs(x) / T(eps));
+            return ramp(clamp01(T(1) - fabs(x) / T(eps)));
         }
+
+        T ramp(const T &u) const { return smooth_ ? T(u * u * (T(3) - T(2) * u)) : u; }
 
         static T clamp01(T v)
         {
@@ -244,6 +251,7 @@ namespace quantModeling::scripting
         }
 
         std::vector<T> degrees_;
+        bool smooth_ = false;
     };
 
 } // namespace quantModeling::scripting

@@ -298,7 +298,7 @@ namespace quantModeling::scripting
                             // tent = clamp01(1 - |x| / eps)
                             const double inner = 1.0 - std::fabs(x) / eps;
                             if (inner > 0.0 && inner < 1.0)
-                                gx = -(x >= 0.0 ? 1.0 : -1.0) / eps;
+                                gx = -(x >= 0.0 ? 1.0 : -1.0) / eps * (in.b != 0 ? 6.0 * inner * (1.0 - inner) : 1.0);
                             if (in.op == Op::FCmpNe)
                                 gx = -gx;
                         }
@@ -306,8 +306,8 @@ namespace quantModeling::scripting
                         {
                             // up = clamp01((x + eps) / (2 eps))
                             const double inner = (x + eps) / (2.0 * eps);
-                            if (inner > 0.0 && inner < 1.0)
-                                gx = 1.0 / (2.0 * eps);
+                            if (inner > 0.0 && inner < 1.0) // the C1 ramp u^2 (3 - 2 u): slope 6 u (1 - u)
+                                gx = 1.0 / (2.0 * eps) * (in.b != 0 ? 6.0 * inner * (1.0 - inner) : 1.0);
                             if (in.op == Op::FCmpLt || in.op == Op::FCmpLe)
                                 gx = -gx;
                         }
