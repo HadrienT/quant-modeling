@@ -896,6 +896,15 @@ namespace quantModeling
     {
         if (!(rel_spot_bump > 0.0) || !(vol_bump > 0.0))
             throw InvalidInput("second-order risks: the bumps must be positive");
+        // A payoff that jumps has a pathwise delta of 0 on every path, and so
+        // a bumped one: the second order would read 0 +- 0, a wrong number
+        // shown as an exact one.
+        if (product.analysis().spot_comparison && !product.program().fuzzy)
+        {
+            why = "the payoff jumps where the script compares the spot to a level, and a pathwise delta (so its "
+                  "bump) sees none of the jump: tick fuzzy, or write the digital with lastStepDigital";
+            return std::nullopt;
+        }
         const std::vector<std::string> &labels = model.parameter_labels();
         if (labels.empty() || labels.front() != "spot")
         {

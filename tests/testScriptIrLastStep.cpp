@@ -170,4 +170,32 @@ namespace quantModeling
         EXPECT_NE(why.find("survival"), std::string::npos) << why;
     }
 
+    // WP 27 §14.10: a payoff that jumps (a crisp comparison of the spot)
+    // has a pathwise delta of 0 on every path, so the bump on the adjoint
+    // would show 0 +- 0. The engine refuses it, before any GPU work, and says
+    // what to do; a fuzzy digital and lastStepDigital are not refused for it.
+    TEST(ScriptIrLastStep, TheSecondOrderRefusesAPayoffThatJumps)
+    {
+        auto model = make_model<Real>(Dyn::BlackScholes, 1);
+        std::string why;
+        const ScriptedProduct<Real> hard("2027-06-01\n    if spot() > 100 then pays 1 endIf\n", kCtx);
+        EXPECT_TRUE(hard.analysis().spot_comparison);
+        EXPECT_FALSE(simulate_script_second_order_gpu(hard, *model, 1024, kSeed, why).has_value());
+        EXPECT_NE(why.find("jumps"), std::string::npos) << why;
+        EXPECT_NE(why.find("lastStepDigital"), std::string::npos) << why;
+
+        ScriptSettings fuzzy;
+        fuzzy.fuzzy = true;
+        const ScriptedProduct<Real> smoothed("2027-06-01\n    if spot() > 100 then pays 1 endIf\n", kCtx, fuzzy);
+        why.clear();
+        simulate_script_second_order_gpu(smoothed, *model, 1024, kSeed, why);
+        EXPECT_EQ(why.find("jumps"), std::string::npos) << why;
+
+        const ScriptedProduct<Real> last("2027-06-01\n    pays lastStepDigital(100)\n", kCtx);
+        EXPECT_FALSE(last.analysis().spot_comparison);
+        why.clear();
+        simulate_script_second_order_gpu(last, *model, 1024, kSeed, why);
+        EXPECT_EQ(why.find("jumps"), std::string::npos) << why;
+    }
+
 } // namespace quantModeling

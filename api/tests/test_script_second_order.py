@@ -73,3 +73,22 @@ def test_on_the_cpu_the_first_order_answer_stands_and_says_why():
     assert resp.greeks.vanna is None
     assert "no second-order risks" in resp.diagnostics
     assert resp.risks  # the first-order report is still there
+
+
+def test_a_payoff_that_jumps_gets_no_second_order_and_says_what_to_do():
+    resp = pricing_service.price_script(
+        _req(
+            "2027-09-13\n    if spot() > 100 then pays 1 endIf\n",
+            spot=100.0,
+            vol=0.2,
+            model="black_scholes",
+            greeks_method="aad",
+            sampler="sobol",
+            second_order=True,
+            device="auto",
+        )
+    )
+    assert resp.second_order_method is None
+    assert resp.greeks.vanna is None
+    assert "the payoff jumps" in resp.diagnostics
+    assert "lastStepDigital" in resp.diagnostics

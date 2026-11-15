@@ -925,8 +925,27 @@ forms through the route when a GPU is there, the first-order answer and the
 reason on the CPU); front-end test (the box sends `second_order`, the table
 shows the three with their errors and the method).
 
-Left for L6: the exact route (tangent over adjoint on the GPU) for C¹
-scripts under Black-Scholes and Heston, picked automatically when it applies;
-rung 3 (Vibrato); a C¹ interpolation of the local-vol grid would make the
-exact route possible under local vol too, but it changes the model (a
-maintainer decision).
+**A payoff that jumps is refused.** The bump differentiates the pathwise
+delta, and a payoff that jumps (a crisp comparison of the spot: a hard
+digital, a barrier on dates, an autocall trigger) has a pathwise delta of 0
+on every path. Its bump would read 0 ± 0 -- a wrong number shown as an exact
+one. `ScriptAnalysis::spot_comparison` (new; unlike `spot_threshold_test`,
+not set by survivals or `lastStepDigital`, whose values are smooth) makes the
+engine refuse the second order of a hard script that compares the spot, and
+say what to do: tick fuzzy, or write the digital with `lastStepDigital`.
+Checked in CI (the refusal comes before any GPU work) and through the API.
+
+**The exact route, reconsidered.** Tangent over adjoint on the GPU would
+remove the bump's 0.05 % bias on smooth scripts under Black-Scholes and
+Heston, but there the paired bump already has an error near zero
+(lastStepCall's gamma ± 0.000000 at 2^16), and it does not apply to the
+payoffs that jump either. A full second-order kernel (forward tangents,
+checkpoints with their tangents, the tangent of the adjoint backward) for
+that gain is set aside, not built: the host's `run_path_second_order` stays
+the exact oracle in the tests.
+
+Left for L6: rung 3 (Vibrato), the one that gives a payoff that jumps its
+greeks without smoothing it;
+and a C¹ interpolation of the local-vol grid, which would make the exact
+route possible under local vol, changes the model (a maintainer decision;
+kept bilinear on 2026-11-15).

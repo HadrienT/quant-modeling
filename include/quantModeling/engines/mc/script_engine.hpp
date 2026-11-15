@@ -114,7 +114,9 @@ namespace quantModeling
      * regularity of the payoff, and it is what the local-vol grid needs --
      * the grid is linear by pieces in the spot, so a pathwise second
      * derivative misses its kinks (§14.10). nullopt, with `why`, when the
-     * GPU cannot take the first-order runs.
+     * GPU cannot take the first-order runs, or when the payoff jumps (a crisp
+     * comparison of the spot, not fuzzy): its pathwise delta is 0 on every
+     * path, and so would its bump be.
      */
     std::optional<ScriptSecondOrderResults> simulate_script_second_order_gpu(
         const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model, std::size_t n_paths,
