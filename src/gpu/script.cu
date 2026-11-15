@@ -450,6 +450,12 @@ namespace quantModeling::gpu
             CompiledKernels out;
             const auto refuse = [&](const std::string &why)
             {
+                // The interpreted kernels (and the hand-written adjoint and
+                // duals) read no last-step expectation: only the kernels
+                // compiled from the IR compute them (WP 27 §14.9).
+                if (req.program && req.program->has_survival)
+                    throw InvalidInput("GPU: lastStep*() need the kernels compiled from the IR, and they are not "
+                                       "available here (" + why + ")");
                 out.note = "interpreted bytecode (" + why + ")";
                 return out;
             };
@@ -681,8 +687,11 @@ namespace quantModeling::gpu
                 long drawing = 0;
                 for (int d : req.model->draws)
                     drawing += d ? 1 : 0;
+                // per date, what qm_drive saves: every slot past the
+                // model's (the variables, the payoff, and the last step's
+                // forward and variance when the script reads them)
                 trail_len = drawing * layout.n_model +
-                            static_cast<long>(req.program->n_events()) * (layout.n_vars + 1);
+                            static_cast<long>(req.program->n_events()) * (layout.n_state() - layout.n_model);
             }
             else
                 trail_len = mc::lv_trail_bound(*req.program, v.n_steps);

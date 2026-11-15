@@ -2,6 +2,7 @@
 #define QM_MODELS_EQUITY_LAST_STEP_HPP
 
 #include <cmath>
+#include <vector>
 
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/utils/stats.hpp"
@@ -82,6 +83,28 @@ namespace quantModeling::mc
             default:
                 return normal_cdf_of(d2);
         }
+    }
+
+    /// Whether the defline asks for a last-step expectation.
+    inline bool asks_last_step(const std::vector<SampleDef> &defline)
+    {
+        for (const SampleDef &def : defline)
+            for (const BarrierMonitor &b : def.barriers)
+                if (b.kind != StepQuantity::Survival)
+                    return true;
+        return false;
+    }
+
+    /// Writes every last-step slot of an event from the step that reached
+    /// it: forward F = E[S'] and log-variance v (bridge survival slots are
+    /// left alone).
+    template <class T>
+    void fill_last_step(const SampleDef &def, Sample<T> &smp, const T &forward, const T &var)
+    {
+        smp.survivals.resize(def.barriers.size());
+        for (std::size_t b = 0; b < def.barriers.size(); ++b)
+            if (def.barriers[b].kind != StepQuantity::Survival)
+                smp.survivals[b] = last_step_expectation(def.barriers[b].kind, forward, var, def.barriers[b].level);
     }
 
 } // namespace quantModeling::mc

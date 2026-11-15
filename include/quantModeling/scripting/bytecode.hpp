@@ -1030,6 +1030,10 @@ namespace quantModeling::scripting
         /// the model's survival probabilities (the GPU kernels, the per-path
         /// adjoint) must refuse it.
         bool has_survival = false;
+        /// Of those, a bridge survival (survivalAbove/Below), which no GPU
+        /// kernel computes; a last-step expectation alone runs in the kernels
+        /// compiled from the IR (WP 27 §14.9), not in the interpreted ones.
+        bool has_bridge = false;
 
         ProgramView view() const { return {code.data(), ifs.data(), aff.data()}; }
 

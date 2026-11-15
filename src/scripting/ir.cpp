@@ -280,6 +280,8 @@ namespace quantModeling::scripting::ir
                 values_.clear();
                 degrees_.clear();
                 has_survival_ = false;
+                has_bridge_ = has_last_step_ = false;
+                quantities_.clear();
                 term_values_.clear();
                 for (const ExprTree &statement : event.statements)
                     if (statement)
@@ -290,11 +292,14 @@ namespace quantModeling::scripting::ir
                         out.outs.push_back({Op::VarIn, static_cast<std::int32_t>(i), kPrimal, vars_[i], false});
                 if (pay_ != first_pay_)
                     out.outs.push_back({Op::PayIn, 0, kPrimal, pay_, false});
+                out.quantities = quantities_;
                 remove_dead_code(out);
                 return out;
             }
 
             bool has_survival() const { return has_survival_; }
+            bool has_bridge() const { return has_bridge_; }
+            bool has_last_step() const { return has_last_step_; }
             /// The numbers of the event just lowered, in the order its
             /// `Param` instructions name them.
             const std::vector<double> &term_values() const { return term_values_; }
@@ -333,6 +338,11 @@ namespace quantModeling::scripting::ir
                 const auto i = static_cast<std::int32_t>(n.slot);
                 b_.block().max_surv = std::max(b_.block().max_surv, i);
                 has_survival_ = true;
+                const bool bridge = n.kind == StepQuantity::Survival;
+                (bridge ? has_bridge_ : has_last_step_) = true;
+                if (quantities_.size() <= n.slot)
+                    quantities_.resize(n.slot + 1);
+                quantities_[n.slot] = BarrierMonitor{n.level, n.asset, bridge ? n.above : true, n.kind};
                 push(b_.value(Op::Surv, i));
             }
 
@@ -557,6 +567,8 @@ namespace quantModeling::scripting::ir
             std::int32_t pay_ = -1, first_pay_ = -1;
             std::vector<std::int32_t> values_, degrees_;
             bool has_survival_ = false;
+            bool has_bridge_ = false, has_last_step_ = false;
+            std::vector<BarrierMonitor> quantities_;
         };
     } // namespace
 
@@ -571,6 +583,8 @@ namespace quantModeling::scripting::ir
             Block b = lowering.lower(event);
             s.event_terms.push_back(lowering.term_values());
             s.has_survival = s.has_survival || lowering.has_survival();
+            s.has_bridge = s.has_bridge || lowering.has_bridge();
+            s.has_last_step = s.has_last_step || lowering.has_last_step();
             auto it = std::find(s.blocks.begin(), s.blocks.end(), b);
             if (it == s.blocks.end())
             {
@@ -652,6 +666,8 @@ namespace quantModeling::scripting::ir
                     return "sqrt";
                 case Op::Abs:
                     return "abs";
+                case Op::Ncdf:
+                    return "ncdf";
                 case Op::Smooth:
                     return "smooth";
                 case Op::Eq:

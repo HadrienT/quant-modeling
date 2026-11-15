@@ -36,6 +36,7 @@
 #include "quantModeling/utils/stats.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -300,13 +301,28 @@ namespace quantModeling
         EXPECT_THROW(simulate<Real>(prod, model, settings(100)), InvalidInput);
     }
 
-    TEST(LastStep, TheGpuLeavesItToTheCpuAndSaysWhy)
+    // The GPU runs them in its kernels compiled from the IR (WP 27 §14.9);
+    // with compilation off it leaves them to the CPU and says why. A bridge
+    // survival stays on the CPU either way.
+    TEST(LastStep, TheGpuTakesThemCompiledAndSaysWhyNot)
     {
         ScriptedProduct<Real> prod(kOneEvent, kCtx);
         DeviceModel dm;
         dm.kind = DeviceModel::Kind::BlackScholes;
+        const char *saved = std::getenv("QM_SCRIPT_JIT");
+        const std::string restore = saved ? saved : "";
+        unsetenv("QM_SCRIPT_JIT");
+        EXPECT_EQ(gpu::script_gpu_unsupported(prod.program(), dm, {{}}), "");
+        setenv("QM_SCRIPT_JIT", "0", 1);
         const std::string why = gpu::script_gpu_unsupported(prod.program(), dm, {{}});
         EXPECT_NE(why.find("lastStep"), std::string::npos) << why;
+        if (saved)
+            setenv("QM_SCRIPT_JIT", restore.c_str(), 1);
+        else
+            unsetenv("QM_SCRIPT_JIT");
+
+        ScriptedProduct<Real> bridge("2025-06-03\n    pays survivalAbove(80) * lastStepCall(100)\n", kCtx);
+        EXPECT_NE(gpu::script_gpu_unsupported(bridge.program(), dm, {{}}).find("survivalAbove"), std::string::npos);
     }
 
 } // namespace quantModeling

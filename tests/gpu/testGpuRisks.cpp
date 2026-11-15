@@ -549,4 +549,62 @@ namespace quantModeling
         EXPECT_NE(why.find("QM_SCRIPT_JIT=0"), std::string::npos) << why;
     }
 
+    // WP 27 §14.9: the risks of the last-step expectations from the
+    // generated tangent (Black-Scholes, Heston) and adjoint (local vol, SLV)
+    // kernels, against the CPU tape on the same draws.
+    TEST_F(GpuRisksTest, LastStepRisksMatchTheTape)
+    {
+        const std::string source = "2026-12-01\n    a = spot()\n2027-06-01\n"
+                                   "    pays lastStepCall(100) + lastStepPut(95) + lastStepDigital(105) * a / 100\n";
+        const ScriptedProduct<Real> product(source, kCtx);
+        const ScriptedProduct<aad::Number> tape_product(source, kCtx);
+        const auto compare = [&](ISimulationModel<Real> &m, ISimulationModel<aad::Number> &tape_m, const char *what)
+        {
+            std::string why;
+            const auto gpu = simulate_script_aad_gpu(product, m, kPaths, kSeed, why);
+            ASSERT_TRUE(gpu.has_value()) << what << ": " << why;
+            const AADSimulResults cpu =
+                simulate_aad(tape_product, tape_m, kPaths, kSeed, first_aad_payoff, RngKind::Philox);
+            EXPECT_NEAR(gpu->price, cpu.price, 1e-9 * std::max(1.0, std::abs(cpu.price))) << what;
+            expect_same_risks(*gpu, cpu, 1e-8, what);
+        };
+        {
+            BlackScholesSimModel<Real> m(100.0, 0.03, 0.01, 0.25);
+            BlackScholesSimModel<aad::Number> t(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01),
+                                                aad::Number(0.25));
+            compare(m, t, "Black-Scholes");
+        }
+        {
+            auto m = local_vol<Real>();
+            auto t = local_vol<aad::Number>();
+            compare(*m, *t, "local vol");
+        }
+        {
+            BatesSimModel<Real> m(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, 0.0, 0.0, 0.0);
+            BatesSimModel<aad::Number> t(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01), aad::Number(0.04),
+                                         aad::Number(1.5), aad::Number(0.05), aad::Number(0.6), aad::Number(-0.7),
+                                         aad::Number(0.0), aad::Number(0.0), aad::Number(0.0));
+            compare(m, t, "Heston");
+        }
+        {
+            SLVSimModel<Real> m(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, kK, kT, skewed<Real>());
+            SLVSimModel<aad::Number> t(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01), aad::Number(0.04),
+                                       aad::Number(1.5), aad::Number(0.05), aad::Number(0.6), aad::Number(-0.7), kK,
+                                       kT, skewed<aad::Number>());
+            compare(m, t, "SLV");
+        }
+    }
+
+    // With compilation off, a last-step expectation stays on the CPU and
+    // says why; nothing reaches the interpreted kernels.
+    TEST_F(GpuRisksTest, WithoutCompilationLastStepStaysOnTheCpu)
+    {
+        const JitSwitch off(false);
+        const ScriptedProduct<Real> product("2027-06-01\n    pays lastStepCall(100)\n", kCtx);
+        BlackScholesSimModel<Real> m(100.0, 0.03, 0.01, 0.25);
+        std::string why;
+        EXPECT_FALSE(simulate_script_aad_gpu(product, m, 1024, 1, why).has_value());
+        EXPECT_NE(why.find("QM_SCRIPT_JIT=0"), std::string::npos) << why;
+    }
+
 } // namespace quantModeling

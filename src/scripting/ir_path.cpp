@@ -29,6 +29,7 @@ namespace quantModeling::scripting::ir
         l.n_assets = n_assets;
         l.n_vars = script.n_vars;
         l.risk = risk;
+        l.last_step = script.has_last_step;
         const int n = n_assets;
         switch (kind)
         {
@@ -76,6 +77,41 @@ namespace quantModeling::scripting::ir
         return l;
     }
 
+    namespace
+    {
+        /// lastStepCall / Put / Digital from the forward F and log-variance
+        /// v the step left (models/equity/last_step.hpp, Black's formula):
+        /// sd = sqrt(max(v, 1e-200)) so that an event with no step before it
+        /// (v = 0) gets the payoff of F as the limit, with no branch and no
+        /// infinity for the derivatives to multiply by zero.
+        std::int32_t last_step_expectation(Builder &b, const PathLayout &l, const BarrierMonitor &q)
+        {
+            if (!l.last_step)
+                throw InvalidInput("script IR: a last-step expectation in a layout without the step's forward");
+            const int a = static_cast<int>(q.asset);
+            if (a >= l.n_assets)
+                throw InvalidInput("script IR: a last-step expectation on asset " + std::to_string(a) +
+                                   ", but the model simulates " + std::to_string(l.n_assets));
+            const std::int32_t F = b.input(Op::State, l.last0() + 2 * a);
+            const std::int32_t v = b.input(Op::State, l.last0() + 2 * a + 1);
+            const std::int32_t K = b.constant(q.level);
+            const std::int32_t sd = b.value(Op::Sqrt, b.value(Op::Max, v, b.constant(1e-200)));
+            const std::int32_t d1 = b.add(b.div(b.value(Op::Log, b.div(F, K)), sd), b.mul(b.constant(0.5), sd));
+            const std::int32_t d2 = b.sub(d1, sd);
+            const auto N = [&](std::int32_t x)
+            { return b.value(Op::Ncdf, x); };
+            switch (q.kind)
+            {
+                case StepQuantity::LastStepCall:
+                    return b.sub(b.mul(F, N(d1)), b.mul(K, N(d2)));
+                case StepQuantity::LastStepPut:
+                    return b.sub(b.mul(K, N(b.neg(d2))), b.mul(F, N(b.neg(d1))));
+                default:
+                    return N(d2);
+            }
+        }
+    } // namespace
+
     Block bind_event(const Block &event, const PathLayout &l)
     {
         Rebuilder r(event);
@@ -106,8 +142,13 @@ namespace quantModeling::scripting::ir
                                 : b.input(Op::Data, 1 + in.a);
                     break;
                 case Op::Surv:
-                    throw InvalidInput("script IR: survivalAbove() / survivalBelow() and the lastStep*() expectations are not bound to a "
-                                       "path yet");
+                {
+                    const auto slot = static_cast<std::size_t>(in.a);
+                    if (slot >= event.quantities.size() || event.quantities[slot].kind == StepQuantity::Survival)
+                        throw InvalidInput("script IR: survivalAbove() / survivalBelow() are not bound to a path yet");
+                    id = last_step_expectation(b, l, event.quantities[slot]);
+                    break;
+                }
                 default:
                     r.copy(k);
                     continue;
@@ -136,6 +177,12 @@ namespace quantModeling::scripting::ir
             for (int i = 0; i < l.n_vars; ++i)
                 out.outs.push_back({Op::State, l.var0() + i, kPrimal, b.input(Op::Data, i), false});
             out.outs.push_back({Op::State, l.pay(), kPrimal, b.constant(0.0), false});
+            if (l.last_step) // before any step: F = S0, v = 0 (an event at t = 0 pays its payoff of S0)
+                for (int k = 0; k < l.n_assets; ++k)
+                {
+                    out.outs.push_back({Op::State, l.last0() + 2 * k, kPrimal, b.input(Op::Theta, l.th_spot + k), false});
+                    out.outs.push_back({Op::State, l.last0() + 2 * k + 1, kPrimal, b.constant(0.0), false});
+                }
             return b.take();
         }
 
@@ -156,6 +203,18 @@ namespace quantModeling::scripting::ir
             { return b.value(Op::Exp, x); };
             const auto out = [&](int slot, std::int32_t v)
             { b.block().outs.push_back({Op::State, slot, kPrimal, v, false}); };
+            // A step S' = S exp(m + s z), z ~ N(0, 1) given the path so far:
+            // with last-step expectations, also F = S exp(m + s^2 / 2) and
+            // v = s^2 (extra values only; the primal's operations are not
+            // touched, so the prices keep their bits).
+            const auto last = [&](int a, std::int32_t S, std::int32_t m, std::int32_t sz)
+            {
+                if (!l.last_step)
+                    return;
+                const std::int32_t v = b.mul(sz, sz);
+                out(l.last0() + 2 * a, b.mul(S, exp(b.add(m, b.mul(b.constant(0.5), v)))));
+                out(l.last0() + 2 * a + 1, v);
+            };
             const int n = l.n_assets;
             switch (l.kind)
             {
@@ -171,16 +230,18 @@ namespace quantModeling::scripting::ir
                             for (int c = 0; c < n; ++c)
                                 z = b.add(z, b.mul(theta(l.th_chol + a * n + c), draw(c)));
                         }
-                        std::int32_t x = -1;
+                        std::int32_t m = -1, sz = -1;
                         if (!l.risk) // drift[s] + vol_sqrt_dt[s] * z, tabulated by the CPU model
-                            x = b.add(data(a), b.mul(data(n + a), z));
+                            m = data(a), sz = data(n + a);
                         else
                         {
                             const std::int32_t vol = theta(l.th_vol + a);
                             const std::int32_t mu = b.sub(b.sub(theta(l.th_rate), theta(l.th_div + a)),
                                                           b.mul(b.mul(b.constant(0.5), vol), vol));
-                            x = b.add(b.mul(mu, data(0)), b.mul(b.mul(vol, data(1)), z));
+                            m = b.mul(mu, data(0)), sz = b.mul(vol, data(1));
                         }
+                        const std::int32_t x = b.add(m, b.mul(sz, z));
+                        last(a, state(a), m, sz);
                         out(a, b.mul(state(a), exp(x)));
                     }
                     break;
@@ -193,6 +254,7 @@ namespace quantModeling::scripting::ir
                               data(1));
                     const std::int32_t vol_sqrt_dt = b.mul(sig, data(2));
                     out(0, b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0))))));
+                    last(0, S, drift, vol_sqrt_dt);
                     break;
                 }
                 case DeviceModel::Kind::Heston:
@@ -205,13 +267,16 @@ namespace quantModeling::scripting::ir
                     const std::int32_t lev = slv ? b.value(Op::GridLev, S, data(0)) : -1;
                     const std::int32_t v_plus = b.value(Op::Max, V, b.constant(mc::variance_floor()));
                     const std::int32_t sqrt_v = b.value(Op::Sqrt, v_plus);
-                    std::int32_t log_return = -1;
+                    std::int32_t log_return = -1, m = -1, sz = -1;
                     if (slv) // (r - q - 0.5 L L v+) dt + L sqrt(v+) (sqrt(dt) z)
-                        log_return = b.add(
-                            b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)),
+                    {
+                        m = b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)),
                                         b.mul(b.mul(b.mul(b.constant(0.5), lev), lev), v_plus)),
-                                  dt),
-                            b.mul(b.mul(lev, sqrt_v), b.mul(sqdt, draw(0))));
+                                  dt);
+                        log_return = b.add(m, b.mul(b.mul(lev, sqrt_v), b.mul(sqdt, draw(0))));
+                        if (l.last_step)
+                            sz = b.mul(b.mul(lev, sqrt_v), sqdt);
+                    }
                     else
                     {
                         // heston_log_return with lambda = k = 0, written out
@@ -219,9 +284,13 @@ namespace quantModeling::scripting::ir
                         const std::int32_t mu =
                             b.sub(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(zero, zero)),
                                   b.mul(b.constant(0.5), v_plus));
-                        log_return = b.add(b.mul(mu, dt), b.mul(sqrt_v, b.mul(sqdt, draw(0))));
+                        m = b.mul(mu, dt);
+                        log_return = b.add(m, b.mul(sqrt_v, b.mul(sqdt, draw(0))));
+                        if (l.last_step)
+                            sz = b.mul(sqrt_v, sqdt);
                     }
                     out(0, b.mul(S, exp(log_return)));
+                    last(0, S, m, sz);
                     // heston_variance_step
                     const int h = l.th_heston;
                     const std::int32_t rho = theta(h + 4);

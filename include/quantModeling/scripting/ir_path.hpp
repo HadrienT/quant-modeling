@@ -22,7 +22,7 @@
  *
  * all reading and writing one array of *state* per path,
  *
- *     [ S_0 .. S_{n-1} | V (Heston) | script variables | payoff ],
+ *     [ S_0 .. S_{n-1} | V (Heston) | script variables | payoff | F_0 v_0 .. ],
  *
  * the model's *parameters* theta (what the derivatives are taken against),
  * and per step or per date a row of path-independent *data*.
@@ -58,9 +58,15 @@ namespace quantModeling::scripting::ir
 
         // state
         int n_model = 1; ///< the model's slots: the spots, then the variance
+        /// The script reads a last-step expectation (lastStepCall / Put /
+        /// Digital, WP 27 §14.9): the step also leaves, per asset, the
+        /// forward F and the log-variance v of the step it just took, and
+        /// the events compute Black's formula from them.
+        bool last_step = false;
         int var0() const { return n_model; }
         int pay() const { return n_model + n_vars; }
-        int n_state() const { return n_model + n_vars + 1; }
+        int last0() const { return n_model + n_vars + 1; } ///< F of asset a at last0() + 2a, v at + 1
+        int n_state() const { return n_model + n_vars + 1 + (last_step ? 2 * n_assets : 0); }
 
         // theta: the differentiable parameters first, in the CPU model's
         // label order (mc::dual_directions), then what is not differentiated

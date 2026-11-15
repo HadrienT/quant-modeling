@@ -221,7 +221,7 @@ greeks (gamma, vanna, volga) are exact instead of zero or biased. Use them
 only when the user asks for exact or smooth gammas/second-order greeks, as
 `pays lastStepCall(100)`; otherwise write max(spot() - 100, 0). K is a
 number written in the script; spot(i)'s is lastStepCall(K, i). They run under
-Black-Scholes and local vol, on the CPU.
+Black-Scholes, local vol, Heston and SLV, on the CPU and the GPU.
 
 Generated dates: a date line may be
   schedule(START, END, TENOR, CALENDAR, CONVENTION)

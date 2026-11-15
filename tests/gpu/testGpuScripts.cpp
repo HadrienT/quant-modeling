@@ -118,4 +118,30 @@ namespace quantModeling
         EXPECT_EQ(simulate_script(product, bs, s).device, "gpu");
     }
 
+    // WP 27 §14.9: the last-step expectations run in the kernels compiled
+    // from the IR -- the CPU models' numbers, on the same draws, under every
+    // model the GPU steps.
+    TEST_F(GpuScriptsTest, LastStepExpectationsGiveTheCpuNumbers)
+    {
+        const std::string mid = "2026-12-01\n    a = spot()\n";
+        const std::vector<std::string> scripts = {
+            mid + "2027-06-01\n    pays lastStepCall(100)\n",
+            mid + "2027-06-01\n    pays lastStepPut(95) + 0.5 * lastStepDigital(105) * a / 100\n",
+            "2026-12-01\n    pays lastStepCall(100)\n2027-06-01\n    pays lastStepCall(110)\n",
+        };
+        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::LocalVol, Dyn::Heston, Dyn::SLV})
+            for (const std::string &source : scripts)
+            {
+                const ScriptedProduct<Real> product(source, kCtx);
+                auto cpu_model = model(dyn, 1);
+                auto gpu_model = model(dyn, 1);
+                const SimulationMCResult cpu = simulate_script(product, *cpu_model, settings(ComputeDevice::Cpu));
+                const SimulationMCResult gpu = simulate_script(product, *gpu_model, settings(ComputeDevice::Gpu));
+                ASSERT_EQ(gpu.device, "gpu") << source << ": " << gpu.diagnostics;
+                const double scale = std::max(1.0, std::abs(cpu.npv()));
+                EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * scale) << source;
+                EXPECT_NEAR(gpu.std_error(), cpu.std_error(), 1e-7 * std::max(1e-12, cpu.std_error())) << source;
+            }
+    }
+
 } // namespace quantModeling

@@ -240,8 +240,9 @@ namespace quantModeling::scripting
                     "lastStepDigital), which needs the model's volatility on "
                     "every step: local vol on the market surface provides it "
                     "and reprices today's vanillas exactly. Stochastic-local "
-                    "vol does not compute these yet, so the forward smile is "
-                    "local vol's, flatter than markets typically show."};
+                    "vol does not monitor barriers between dates yet, so the "
+                    "forward smile is local vol's, flatter than markets "
+                    "typically show."};
 
         if (a.path_dependent)
         {
