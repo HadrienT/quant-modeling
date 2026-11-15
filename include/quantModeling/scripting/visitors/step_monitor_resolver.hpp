@@ -1,5 +1,5 @@
-#ifndef QM_SCRIPTING_VISITORS_BARRIER_LOOKUP_RESOLVER_HPP
-#define QM_SCRIPTING_VISITORS_BARRIER_LOOKUP_RESOLVER_HPP
+#ifndef QM_SCRIPTING_VISITORS_STEP_MONITOR_RESOLVER_HPP
+#define QM_SCRIPTING_VISITORS_STEP_MONITOR_RESOLVER_HPP
 
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/scripting/event.hpp"
@@ -19,18 +19,18 @@ namespace quantModeling::scripting
      *        event's list of model-computed quantities.
      *
      * The same route as df() (DiscountLookupResolver): a slot is local to
-     * the event, it indexes that event's SampleDef::barriers and
-     * Sample::survivals, and the model fills the survivals while it builds
+     * the event, it indexes that event's SampleDef::monitors and
+     * Sample::monitored, and the model fills the survivals while it builds
      * the path. Two calls with the same level, side and asset within one
      * event share a slot.
      */
-    class BarrierLookupResolver final : public Visitor
+    class StepMonitorResolver final : public Visitor
     {
       public:
         /// One inner vector per event, same order as `events`.
-        std::vector<std::vector<BarrierMonitor>> resolve(std::vector<Event> &events)
+        std::vector<std::vector<StepMonitor>> resolve(std::vector<Event> &events)
         {
-            std::vector<std::vector<BarrierMonitor>> out(events.size());
+            std::vector<std::vector<StepMonitor>> out(events.size());
             for (std::size_t i = 0; i < events.size(); ++i)
             {
                 current_ = &out[i];
@@ -42,12 +42,12 @@ namespace quantModeling::scripting
             return out;
         }
 
-        void visit(NodeSurvival &n) override
+        void visit(NodeStepQuantity &n) override
         {
             // A last-step expectation has no side: `above` is left at its
             // default so that two calls with the same strike share a slot.
             const bool survival = n.kind == StepQuantity::Survival;
-            const BarrierMonitor want{n.level, n.asset, survival ? n.above : true, n.kind};
+            const StepMonitor want{n.level, n.asset, survival ? n.above : true, n.kind};
             const auto it = std::find(current_->begin(), current_->end(), want);
             n.slot = static_cast<std::size_t>(it - current_->begin());
             if (it == current_->end())
@@ -55,9 +55,9 @@ namespace quantModeling::scripting
         }
 
       private:
-        std::vector<BarrierMonitor> *current_ = nullptr;
+        std::vector<StepMonitor> *current_ = nullptr;
     };
 
 } // namespace quantModeling::scripting
 
-#endif // QM_SCRIPTING_VISITORS_BARRIER_LOOKUP_RESOLVER_HPP
+#endif // QM_SCRIPTING_VISITORS_STEP_MONITOR_RESOLVER_HPP

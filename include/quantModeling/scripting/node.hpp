@@ -142,9 +142,9 @@ namespace quantModeling::scripting
     /// model knows its steps and its volatility on each; the node only reads
     /// it. `level` is a literal, like df()'s date, so that the barrier can be
     /// handed to the model before the simulation. `slot` indexes the event's
-    /// own SampleDef::barriers / Sample::survivals, filled by
-    /// BarrierLookupResolver like NodeDf::slot.
-    struct NodeSurvival final : NodeT<NodeSurvival>
+    /// own SampleDef::monitors / Sample::monitored, filled by
+    /// StepMonitorResolver like NodeDf::slot.
+    struct NodeStepQuantity final : NodeT<NodeStepQuantity>
     {
         static constexpr std::size_t unindexed = NodeVar::unindexed;
 

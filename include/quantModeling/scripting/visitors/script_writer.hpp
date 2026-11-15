@@ -101,7 +101,7 @@ namespace quantModeling::scripting
                 out += n.index == 0 ? "spot()" : "spot(" + std::to_string(n.index) + ")";
             }
             void visit(const NodeDf &n) override { out += "df(" + n.date.to_iso() + ")"; }
-            void visit(const NodeSurvival &n) override
+            void visit(const NodeStepQuantity &n) override
             {
                 out += std::string(n.function()) + "(" + number(n.level);
                 if (n.asset != 0)

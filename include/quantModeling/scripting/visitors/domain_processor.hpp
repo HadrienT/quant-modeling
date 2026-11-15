@@ -107,7 +107,7 @@ namespace quantModeling::scripting
                 return Domain::greater_than(0.0);
             if (dynamic_cast<const NodeDf *>(&n))
                 return Domain::greater_than(0.0);
-            if (const auto *s = dynamic_cast<const NodeSurvival *>(&n))
+            if (const auto *s = dynamic_cast<const NodeStepQuantity *>(&n))
                 switch (s->kind)
                 {
                     case StepQuantity::LastStepCall:

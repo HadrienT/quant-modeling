@@ -85,13 +85,19 @@ namespace quantModeling::mc
         }
     }
 
-    /// Whether the defline asks for a last-step expectation.
+    /// Whether an event (a defline) asks for a last-step expectation.
+    inline bool asks_last_step(const SampleDef &def)
+    {
+        for (const StepMonitor &b : def.monitors)
+            if (b.kind != StepQuantity::Survival)
+                return true;
+        return false;
+    }
     inline bool asks_last_step(const std::vector<SampleDef> &defline)
     {
         for (const SampleDef &def : defline)
-            for (const BarrierMonitor &b : def.barriers)
-                if (b.kind != StepQuantity::Survival)
-                    return true;
+            if (asks_last_step(def))
+                return true;
         return false;
     }
 
@@ -101,10 +107,10 @@ namespace quantModeling::mc
     template <class T>
     void fill_last_step(const SampleDef &def, Sample<T> &smp, const T &forward, const T &var)
     {
-        smp.survivals.resize(def.barriers.size());
-        for (std::size_t b = 0; b < def.barriers.size(); ++b)
-            if (def.barriers[b].kind != StepQuantity::Survival)
-                smp.survivals[b] = last_step_expectation(def.barriers[b].kind, forward, var, def.barriers[b].level);
+        smp.monitored.resize(def.monitors.size());
+        for (std::size_t b = 0; b < def.monitors.size(); ++b)
+            if (def.monitors[b].kind != StepQuantity::Survival)
+                smp.monitored[b] = last_step_expectation(def.monitors[b].kind, forward, var, def.monitors[b].level);
     }
 
 } // namespace quantModeling::mc

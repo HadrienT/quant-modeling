@@ -74,13 +74,13 @@ namespace quantModeling::scripting
             max_df_ = std::max(max_df_, static_cast<std::int32_t>(n.slot));
             emit(Op::Df, static_cast<std::int32_t>(n.slot)), push();
         }
-        void visit(const NodeSurvival &n) override
+        void visit(const NodeStepQuantity &n) override
         {
-            if (n.slot == NodeSurvival::unindexed)
-                throw InvalidInput("survivalAbove/Below(): not resolved -- BarrierLookupResolver must run before "
+            if (n.slot == NodeStepQuantity::unindexed)
+                throw InvalidInput("survivalAbove/Below(): not resolved -- StepMonitorResolver must run before "
                                    "compiling");
             max_surv_ = std::max(max_surv_, static_cast<std::int32_t>(n.slot));
-            p_.has_survival = true;
+            p_.has_monitor = true;
             p_.has_bridge = p_.has_bridge || n.kind == StepQuantity::Survival;
             emit(Op::Surv, static_cast<std::int32_t>(n.slot)), push();
         }

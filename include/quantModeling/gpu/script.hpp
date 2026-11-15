@@ -47,12 +47,12 @@ namespace quantModeling::gpu
 
     /// "" when the GPU engine can run this program on this model, else the
     /// reason, in words a user can read.
-    /// QM_SCRIPT_JIT=0 (the switch src/gpu/script_jit.cpp reads): the
-    /// interpreted kernels cannot compute lastStep*(), only the compiled ones.
-    inline bool last_step_needs_compilation()
+    /// False when QM_SCRIPT_JIT=0: the scripts then run on the interpreted
+    /// kernels (the one place the switch is read; jit::enabled() asks here).
+    inline bool script_jit_enabled()
     {
         const char *v = std::getenv("QM_SCRIPT_JIT");
-        return v && std::strcmp(v, "0") == 0;
+        return !(v && std::strcmp(v, "0") == 0);
     }
 
     inline std::string script_gpu_unsupported(const scripting::Program &p, const DeviceModel &m,
@@ -64,7 +64,8 @@ namespace quantModeling::gpu
         if (p.has_bridge)
             return "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the bridge "
                    "survival probabilities yet";
-        if (p.has_survival && last_step_needs_compilation())
+        // the interpreted kernels cannot compute lastStep*(), only the compiled ones
+        if (p.has_monitor && !script_jit_enabled())
             return "lastStep*() run in the GPU kernels compiled from the IR, and compilation is off "
                    "(QM_SCRIPT_JIT=0)";
         if (p.n_vars > L::kVars)

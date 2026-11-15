@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -23,6 +24,7 @@
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
 #include "quantModeling/models/equity/slv_sim_model.hpp"
+#include "quantModeling/scripting/ir_ad.hpp"
 #include "quantModeling/scripting/ir_path.hpp"
 
 namespace quantModeling::ir_test
@@ -159,6 +161,69 @@ namespace quantModeling::ir_test
             mats = discount_mats(product);
             base = product.baseline();
             host = std::make_unique<mc::ScriptPathHost>(product.program(), dm, mats, base);
+        }
+    };
+
+    /// Every risk of a layout, as derivative directions.
+    inline std::vector<std::int32_t> all_risks(const scripting::ir::PathLayout &l)
+    {
+        std::vector<std::int32_t> d(static_cast<std::size_t>(l.n_risks));
+        std::iota(d.begin(), d.end(), 0);
+        return d;
+    }
+
+    /// The payoff of one path, its gradient and its Hessian (n_risks x
+    /// n_risks, row-major by parameter then direction).
+    struct SecondOrder
+    {
+        double payoff = 0.0;
+        std::vector<double> gradient, hessian;
+    };
+
+    /// One script on one model with its second-order programs (tangent over
+    /// adjoint, WP 27 §5.3): a path's Hessian at any parameters.
+    struct SecondOrderCase
+    {
+        Case c;
+        scripting::ir::PathProgram primal, forward, backward;
+        int K;
+        std::uint64_t seed;
+        SecondOrderCase(const std::string &source, Dyn dyn, const ScriptSettings &settings = {},
+                        std::uint64_t seed_ = 19)
+            : c(source, dyn, settings),
+              primal(scripting::ir::path_program(c.product.ir(), c.dm.kind, c.dm.n_assets, true)),
+              forward(scripting::ir::tangent(primal, all_risks(primal.layout))),
+              backward(scripting::ir::tangent(scripting::ir::adjoint(primal), all_risks(primal.layout))),
+              K(primal.layout.n_risks),
+              seed(seed_)
+        {
+        }
+
+        /// The parameters (the layout's order) the case starts from.
+        std::vector<double> theta() const
+        {
+            const scripting::ir::PathData data =
+                scripting::ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
+            return std::vector<double>(data.theta.begin(), data.theta.begin() + K);
+        }
+
+        /// Path `path` with the parameters at `theta`.
+        SecondOrder at(const std::vector<double> &theta, int path) const
+        {
+            scripting::ir::PathData data =
+                scripting::ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
+            std::copy(theta.begin(), theta.end(), data.theta.begin());
+            SecondOrder out;
+            out.gradient.assign(data.theta.size(), 0.0);
+            out.hessian.assign(data.theta.size() * static_cast<std::size_t>(K), 0.0);
+            scripting::ir::DerivativeScratch w;
+            mc::PathDraws draws;
+            draws.seed = seed;
+            draws.stride = c.host->view.stride;
+            draws.begin(static_cast<uint64_t>(path));
+            out.payoff = scripting::ir::run_path_second_order(forward, backward, K, data, c.dm, c.product.ir(), draws,
+                                                              1.0, w, out.gradient.data(), out.hessian.data());
+            return out;
         }
     };
 

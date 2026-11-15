@@ -291,7 +291,7 @@ namespace quantModeling::scripting::ir
         /// to a path knows what to compute for it. Part of the block's
         /// identity: two events reading slot 0 for different strikes are
         /// different blocks.
-        std::vector<BarrierMonitor> quantities;
+        std::vector<StepMonitor> quantities;
 
         bool operator==(const Block &o) const
         {
@@ -330,7 +330,7 @@ namespace quantModeling::scripting::ir
         std::vector<std::vector<double>> event_terms;
         int n_vars = 0;
         bool fuzzy = false;
-        bool has_survival = false;  ///< a Surv slot of any kind (what the CPU model fills)
+        bool has_monitor = false;   ///< a Surv slot of any kind (what the CPU model fills)
         bool has_bridge = false;    ///< a bridge survival (survivalAbove / survivalBelow): not in the paths yet
         bool has_last_step = false; ///< a last-step expectation: the paths compute it (WP 27 §14.9)
 
@@ -474,7 +474,7 @@ namespace quantModeling::scripting::ir
         double *payoff = nullptr;
         const double *spots = nullptr;
         const double *discounts = nullptr;
-        const double *survivals = nullptr;
+        const double *monitored = nullptr;
         double numeraire = 1.0;
         const double *terms = nullptr;
         // path level
@@ -545,7 +545,7 @@ namespace quantModeling::scripting::ir
                     r = f.discounts[in.a];
                     break;
                 case Op::Surv:
-                    r = f.survivals[in.a];
+                    r = f.monitored[in.a];
                     break;
                 case Op::Num:
                     r = f.numeraire;
@@ -774,7 +774,7 @@ namespace quantModeling::scripting::ir
         f.payoff = &payoff;
         f.spots = spots;
         f.discounts = discounts;
-        f.survivals = survivals;
+        f.monitored = survivals;
         f.numeraire = numeraire;
         f.terms = terms;
         run_block(b, f, val);

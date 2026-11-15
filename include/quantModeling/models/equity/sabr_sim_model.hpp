@@ -93,7 +93,7 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
-            refuse_barrier_monitoring(defline, "SABRSimModel");
+            refuse_step_monitors(defline, "SABRSimModel");
             timeline_ = canonical_timeline(product_timeline);
             sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;

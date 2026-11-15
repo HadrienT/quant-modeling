@@ -139,7 +139,7 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
-            refuse_barrier_monitoring(defline, "RoughBergomiSimModel");
+            refuse_step_monitors(defline, "RoughBergomiSimModel");
             timeline_ = canonical_timeline(product_timeline);
             if (timeline_.empty())
                 throw InvalidInput("RoughBergomiSimModel: the product has no event date");

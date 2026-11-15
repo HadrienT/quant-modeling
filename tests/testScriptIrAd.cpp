@@ -36,17 +36,10 @@ namespace quantModeling
         constexpr int kPaths = 64;
         constexpr std::uint64_t kSeed = 19;
 
-        std::vector<std::int32_t> all_risks(const ir::PathLayout &l)
-        {
-            std::vector<std::int32_t> d(static_cast<std::size_t>(l.n_risks));
-            std::iota(d.begin(), d.end(), 0);
-            return d;
-        }
-
         bool skip(const std::string &source, const ScriptSettings &ss, Dyn dyn)
         {
             const ScriptedProduct<Real> probe(source, kCtx, ss);
-            return probe.program().code.empty() || probe.program().has_survival ||
+            return probe.program().code.empty() || probe.program().has_monitor ||
                    (dyn != Dyn::BlackScholes && probe.n_underlyings() > 1);
         }
 
@@ -337,57 +330,6 @@ namespace quantModeling
 
     namespace
     {
-        /// The Hessian of the payoff of path `p` (n_risks x n_risks,
-        /// row-major by parameter then direction), its gradient and value.
-        struct SecondOrder
-        {
-            double payoff = 0.0;
-            std::vector<double> gradient, hessian;
-        };
-
-        struct SecondOrderCase
-        {
-            Case c;
-            ir::PathProgram primal, forward, backward;
-            int K;
-            SecondOrderCase(const std::string &source, Dyn dyn, bool fuzzy)
-                : SecondOrderCase(source, dyn, [&]
-                                  { ScriptSettings ss; ss.fuzzy = fuzzy; return ss; }())
-            {
-            }
-            SecondOrderCase(const std::string &source, Dyn dyn, const ScriptSettings &settings)
-                : c(source, dyn, settings),
-                  primal(ir::path_program(c.product.ir(), c.dm.kind, c.dm.n_assets, true)),
-                  forward(ir::tangent(primal, all_risks(primal.layout))),
-                  backward(ir::tangent(ir::adjoint(primal), all_risks(primal.layout))),
-                  K(primal.layout.n_risks)
-            {
-            }
-
-            /// With the parameters at `theta` (the layout's order).
-            SecondOrder at(const std::vector<double> &theta, int path) const
-            {
-                ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
-                std::copy(theta.begin(), theta.end(), data.theta.begin());
-                SecondOrder out;
-                out.gradient.assign(data.theta.size(), 0.0);
-                out.hessian.assign(data.theta.size() * static_cast<std::size_t>(K), 0.0);
-                ir::DerivativeScratch w;
-                mc::PathDraws draws;
-                draws.seed = kSeed;
-                draws.stride = c.host->view.stride;
-                draws.begin(static_cast<uint64_t>(path));
-                out.payoff = ir::run_path_second_order(forward, backward, K, data, c.dm, c.product.ir(), draws, 1.0, w,
-                                                       out.gradient.data(), out.hessian.data());
-                return out;
-            }
-            std::vector<double> theta() const
-            {
-                const ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
-                return std::vector<double>(data.theta.begin(), data.theta.begin() + K);
-            }
-        };
-
         // Payoffs that are smooth along a path: a pathwise second derivative
         // sees all of them.
         const char *const kSmooth[] = {
@@ -405,7 +347,7 @@ namespace quantModeling
         {
             for (const char *source : kSmooth)
             {
-                const SecondOrderCase sc(source, dyn, false);
+                const SecondOrderCase sc(source, dyn);
                 const std::vector<double> theta = sc.theta();
                 const auto K = static_cast<std::size_t>(sc.K);
                 for (int path = 0; path < 6; ++path)
@@ -454,7 +396,7 @@ namespace quantModeling
     // within their error.
     TEST(ScriptIrSecondOrder, PowerContractGammaVannaVolgaAreTheClosedForms)
     {
-        const SecondOrderCase sc(kSmooth[0], Dyn::BlackScholes, false);
+        const SecondOrderCase sc(kSmooth[0], Dyn::BlackScholes);
         const std::vector<double> theta = sc.theta(); // spot, rate, div, vol
         const double S = theta[0], r = theta[1], q = theta[2], vol = theta[3];
         const double T = sc.c.dm.t.back();
@@ -482,7 +424,7 @@ namespace quantModeling
     // Recorded here so that the day it is fixed this test says so.
     TEST(ScriptIrSecondOrder, ACallsKinkIsInvisibleWithoutSmoothing)
     {
-        const SecondOrderCase sc("2027-06-01\n    pays max(spot() - 100, 0)\n", Dyn::BlackScholes, false);
+        const SecondOrderCase sc("2027-06-01\n    pays max(spot() - 100, 0)\n", Dyn::BlackScholes);
         const std::vector<double> theta = sc.theta();
         double gamma = 0.0;
         for (int p = 0; p < 500; ++p)

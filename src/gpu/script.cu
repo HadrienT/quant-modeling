@@ -453,7 +453,7 @@ namespace quantModeling::gpu
                 // The interpreted kernels (and the hand-written adjoint and
                 // duals) read no last-step expectation: only the kernels
                 // compiled from the IR compute them (WP 27 §14.9).
-                if (req.program && req.program->has_survival)
+                if (req.program && req.program->has_monitor)
                     throw InvalidInput("GPU: lastStep*() need the kernels compiled from the IR, and they are not "
                                        "available here (" + why + ")");
                 out.note = "interpreted bytecode (" + why + ")";

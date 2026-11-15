@@ -153,7 +153,7 @@ namespace quantModeling::scripting
                 case Op::Surv:
                     // Never reached: the per-path adjoint carries no survival
                     // probabilities and its callers refuse a program with
-                    // Program::has_survival.
+                    // Program::has_monitor.
                     --sp;
                     break;
                 case Op::Num:

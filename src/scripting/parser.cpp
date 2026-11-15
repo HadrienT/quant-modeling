@@ -652,7 +652,7 @@ namespace quantModeling::scripting
             case TokenKind::LastStepPut:
             case TokenKind::LastStepDigital:
             {
-                auto node = std::make_unique<NodeSurvival>();
+                auto node = std::make_unique<NodeStepQuantity>();
                 const char *name = "survivalAbove";
                 const char *what = "a barrier level (a positive number)";
                 switch (tok.kind)
