@@ -2,10 +2,12 @@
 
 #include "quantModeling/pricers/registry.hpp"
 #include "quantModeling/models/volatility.hpp"
+#include "quantModeling/pricers/adapters/equity_lookback.hpp"
 #include "quantModeling/pricers/adapters/equity_vanilla_lv.hpp"
 #include "quantModeling/utils/rng.hpp"
 
 #include <cmath>
+#include <string>
 #include <vector>
 
 namespace quantModeling
@@ -243,7 +245,11 @@ namespace quantModeling
     {
         const LocalVolInput in = makeSkewedInput(false);
         const PricingResult script = price_local_vol_mc(in);
-        const auto [oracle, oracle_se] = hand_written_euler(in, 200000, 11);
+        // The route prices with its steps halved (WP 26 §10.4): the oracle
+        // steps on that grid.
+        LocalVolInput halved = in;
+        halved.n_steps_per_year = 2 * in.n_steps_per_year;
+        const auto [oracle, oracle_se] = hand_written_euler(halved, 200000, 11);
         EXPECT_NEAR(script.npv, oracle, 4.0 * std::hypot(script.mc_std_error, oracle_se))
             << "script " << script.npv << " +- " << script.mc_std_error << ", oracle " << oracle << " +- "
             << oracle_se;
@@ -411,6 +417,50 @@ namespace quantModeling
         ASSERT_GT(low.npv, high.npv);
         EXPECT_LT(lv.npv, low.npv - 5.0 * low.mc_std_error);
         EXPECT_GT(lv.npv, high.npv + 5.0 * high.mc_std_error);
+    }
+
+    // ── WP 26 §10.4: a registry price carries its discretisation bias ───
+
+    TEST(LocalVolMC, ThePriceCarriesItsDiscretisationBias)
+    {
+        // A model that steps on a grid: priced with the steps halved, the
+        // bias read from the unhalved run -- small against the price, and
+        // the size of the halving's effect on the oracle.
+        const LocalVolInput in = makeSkewedInput(false);
+        const PricingResult res = price_local_vol_mc(in);
+        ASSERT_TRUE(res.discretisation_bias.has_value()) << res.diagnostics;
+        EXPECT_GT(*res.discretisation_bias, 0.0);
+        EXPECT_LT(*res.discretisation_bias, 0.02 * res.npv) << res.diagnostics;
+        EXPECT_NE(res.diagnostics.find("steps halved"), std::string::npos) << res.diagnostics;
+
+        // With greeks, the same price and bias: the differences are taken on
+        // the route's own grid, beside the priced run.
+        LocalVolInput with_greeks = in;
+        with_greeks.compute_greeks = true;
+        const PricingResult g = price_local_vol_mc(with_greeks);
+        EXPECT_EQ(g.npv, res.npv);
+        EXPECT_EQ(*g.discretisation_bias, *res.discretisation_bias);
+        EXPECT_TRUE(g.greeks.delta.has_value());
+    }
+
+    TEST(LocalVolMC, ARouteExactBetweenItsDatesHasNoBias)
+    {
+        LookbackBSInput in{};
+        in.spot = 100.0;
+        in.strike = 100.0;
+        in.maturity = 1.0;
+        in.rate = 0.03;
+        in.dividend = 0.01;
+        in.vol = 0.2;
+        in.is_call = true;
+        in.style = LookbackStyle::FixedStrike;
+        in.extremum = LookbackExtremum::Maximum;
+        in.n_steps = 12;
+        in.n_paths = 1 << 13;
+        in.seed = 1;
+        const PricingResult res = price_equity_lookback_bs_mc(in);
+        ASSERT_TRUE(res.discretisation_bias.has_value()) << res.diagnostics;
+        EXPECT_EQ(*res.discretisation_bias, 0.0);
     }
 
 } // namespace quantModeling

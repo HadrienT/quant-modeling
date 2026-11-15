@@ -147,18 +147,30 @@ namespace quantModeling
     PricingResult price_by_script(const ScriptRoute &route, const PricingSettings &settings, bool greeks)
     {
         const RouteDays counter = counter_for(route);
-        const SimulationMCResult base = run(route, route.model, 0, settings);
+        // The price with its discretisation bias, as the scripting API
+        // returns it (WP 26 §9.4, §10.4): a model that steps on a grid is
+        // priced with every step halved and its bias read from the unhalved
+        // run; a model exact between the dates has bias 0, at no cost.
+        PricingSettings with_bias = settings;
+        with_bias.mc_bias_estimate = true;
+        const SimulationMCResult priced = run(route, route.model, 0, with_bias);
         PricingResult res;
-        res.npv = base.npv();
-        res.mc_std_error = base.std_error();
-        res.device = base.device;
-        res.gpus = base.gpus;
-        res.diagnostics = "WP 26 script route (" + route.name + "): " + base.diagnostics;
+        res.npv = priced.npv();
+        res.mc_std_error = priced.std_error();
+        res.discretisation_bias = priced.discretisation_bias;
+        res.device = priced.device;
+        res.gpus = priced.gpus;
+        res.diagnostics = "WP 26 script route (" + route.name + "): " + priced.diagnostics;
         if (!greeks)
         {
             res.diagnostics += " | price only";
             return res;
         }
+        // The differences below bump runs on the route's own grid: their
+        // centre is the unhalved run (the priced one when nothing was
+        // halved).
+        const bool halved = priced.discretisation_bias.value_or(0.0) > 0.0;
+        const SimulationMCResult base = halved ? run(route, route.model, 0, settings) : priced;
 
         // Delta, vega, rho: one adjoint run without the control (the adjoint
         // engines have none: unbiased, wider) -- on the GPU when the request

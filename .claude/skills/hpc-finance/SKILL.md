@@ -72,6 +72,13 @@ not move. A change with only one of them is not done.
 5. **Re-profile** to confirm the diagnosis changed as predicted (e.g. excessive
    sectors gone), then **record the gain** in the commit message and in a code
    comment near the change: workload, before → after, device, date.
+6. **At the end of a lot, rerun the whole matrix**
+   (`.venv/bin/python benchmarks/perf_matrix.py`, ~10 min, nothing else
+   running) and compare every column with the last stored run in
+   `benchmarks/results/`, not only the route the lot worked on: between
+   2026-11-11 and 2026-11-13 the CPU PCG32 route lost 9 to 22 % over two lots
+   that never touched it on purpose (WP 26 §11), and no bench of those lots
+   looked at it.
 
 GPU tests that fail with `out of memory` while the LLM is loaded are an
 environment limit, not a regression: check the failing test does not depend on

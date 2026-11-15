@@ -1308,9 +1308,58 @@ multilevel under local vol only, where it was measured fast; Heston and SLV
 get the plain engine with their bias estimated and shown; "on" forces
 multilevel on any model that refines.
 
-Left: a better-coupled scheme for the variance (an implicit or QE step whose
-levels' differences shrink with h) and a leverage interpolated in T would
-make multilevel pay under Heston and SLV; P6 for speed.
+Left when written: a better-coupled scheme for the variance and a leverage
+interpolated in T, to make multilevel pay under Heston and SLV -- measured
+since, and bounded by the calibration itself: §9.6. P6 for speed: §10.
+
+### 9.6 Why multilevel cannot pay under SPY's Heston: the Feller ratio (2026-11-13)
+
+§9.5 left "a better-coupled scheme for the variance" as the way to make
+multilevel pay under Heston and SLV. Measured before writing one, on the
+calibration production serves (SPY, snapshot of 2026-11-12: v0 0.0189,
+kappa 9.16, theta 0.0365, xi 2.06, rho −0.62; one-year call, target 1 % of
+the price, CPU):
+
+| | beta (decay of the corrections' variance) | Levels | Time |
+|---|---|---|---|
+| Heston, MLMC | 0.21 | 0..2 | 11.5 s |
+| Heston, MLQMC | 0.24 | 0..4 | 5.2 s |
+| SLV, MLMC | 0.24 | 0..2 | 17.3 s |
+| SLV, MLQMC | 0.90 (three levels, noisy) | 0..2 | 2.1 s |
+
+Multilevel needs beta close to 1 to beat plain Monte Carlo and above 1 to
+reach its eps^-2 cost. A beta of 0.2 is not the full-truncation Euler step's
+doing. These parameters break the Feller condition by a wide margin:
+delta = 4 kappa theta / xi^2 = 0.31 (Feller needs delta >= 2), so the
+variance sits at zero much of the time, where its square-root diffusion is
+not Lipschitz. For the CIR process in that regime:
+
+- no scheme that reads the Brownian path at equidistant points converges
+  strongly faster than order delta / 2 (Hefter & Jentzen, *On arbitrarily
+  slow convergence rates for strong numerical approximations of
+  Cox-Ingersoll-Ross processes and squared Bessel processes*, Finance and
+  Stochastics 23, 2019);
+- the truncated Milstein scheme reaches min(1/2, delta / 2) up to an epsilon
+  (Hefter & Herzwurm, *Strong convergence rates for Cox-Ingersoll-Ross
+  processes -- full parameter range*, J. Math. Anal. Appl. 459, 2018).
+
+Order delta / 2 = 0.16 in L1 means a variance decaying as about
+2^(−0.31 l): what we measure. An implicit or Milstein variance step would
+change the constant, not the rate; QE (Andersen 2008) is not driven by
+Brownian increments at all and has no natural coupling between levels. So:
+
+- **Time-step multilevel stays off under Heston and SLV** (`mlmc = "auto"`
+  is local vol only, §9.5), and this is a property of the calibrated
+  parameters, not a gap in the engine. It would pay on a calibration that
+  respects Feller (delta >= 2), which SPY's smile does not give (#146).
+- What remains improvable is the **bias of the plain run** (0.17 to 0.43 on
+  a price of 55 to 62, estimated and shown since §9.5): a QE variance step
+  has a far smaller weak error at the same number of steps. That is a
+  change of scheme on the CPU, the GPU and their derivatives, and moves
+  every Heston and SLV price: a decision for the maintainer, outside
+  multilevel.
+- The leverage interpolated in T (§9.5) would smooth SLV's levels, which
+  the Heston factor underneath bounds all the same: not pursued.
 
 ## 10. P6 — Multilevel on the GPU
 
@@ -1320,6 +1369,166 @@ and the pilot and correction rounds of the adaptive algorithm are launches.
 Bits identical on one or two cards, CPU = GPU within error.
 
 Acceptance: §11's P6 column; `GpuTwoCardsTest`-style test for MLMC.
+
+### 10.1 P6 done: multilevel QMC on the GPU, with no new kernel (2026-11-13)
+
+**Why first.** Production runs the API on two CPUs (`docker-compose.prod.yml`),
+not the 16 threads of §9.4's measurements: the default local-vol route took
+2.0 s (SPY one-year at-the-money call) to 12 s (the 120 % call) there.
+
+**Departure from the plan above.** No kernel prices a fine and a coarse path
+together. A level is **two ordinary Sobol runs** of the script's compiled
+kernel (P1b), one on the fine grid and one on the coarse grid, on the same
+points; replicate b's sample of the correction is the difference of its two
+means. What couples them is the tables alone
+(`mc::coupled_sobol_tables`, `engines/mc/sobol_bridge_host.hpp`):
+
+- the fine grid's Brownian bridge is built in a **nested order**: its first
+  n_c variates construct W on the coarse dates with the coarse bridge's own
+  indices and weights, the n_c others fill each coarse step's midpoint;
+- the coarse run reads the first n_c × factors coordinates of the same
+  randomised sequences (Joe-Kuo directions and digital shifts are prefixes).
+
+Point p of replicate b therefore gives both grids the same Brownian path, as
+`LevelSampler` does by summing increments. The estimator is P5's
+(`simulate_mlqmc_levels`, the adaptive loop now written on an `IQmcLevel`:
+the CPU's `QmcLevel`, the GPU's `GpuQmcLevel` in
+`src/engines/mc/script_engine.cpp`), with the CPU's keys per level and
+replicate. Every existing property of a GPU script run carries over: the
+compiled kernel, the logical-block reduction, the same bits on one or two
+cards.
+
+Limits, each said in the diagnostics:
+
+- levels start at 1024 points a replicate (16 on the CPU): a launch has a
+  fixed cost. (A level whose points grew was first run again from its first
+  point; §10.3 removed that.)
+- draws that are not Brownian increments (a jump's) do not nest: refused,
+  the CPU runs;
+- what the device cannot step (Milstein, a model without `describe_device`,
+  `survivalAbove()`) stays on the CPU on `device = "auto"` and is refused on
+  `"gpu"`;
+- **the API's default** (maintainer, 2026-11-13): a script request that
+  names no device (`ScriptPricingInputs.device`, now optional) runs a
+  multilevel price on `"auto"` -- the GPU when the server has one -- and
+  every other run on the CPU as before; a named device is obeyed. The
+  scripting page starts with no device picked and says so.
+
+Tests: `tests/testMlmc.cpp` (host, in the CI): every coarse increment is the
+sum of its two fine ones to 1e-12 on an uneven two-factor grid, the fine
+draws stay independent N(0, 1), the coarse bridge is the coarse grid's own,
+grids that do not nest are refused. `tests/gpu/testGpuMlqmc.cpp`: under a
+flat surface the estimated bias is below 1e-10 (two runs on unrelated points
+would leave noise); GPU = CPU within the target on a call and a 12-fixing
+Asian; the same bits on one or two cards; Milstein refused on `"gpu"`, on the
+CPU with the reason on `"auto"`.
+
+Measured on SPY through the API (snapshot of 2026-11-12, rate 4 %, one-year
+contracts of the script library, target 0.2 % of the price, warm kernel
+cache, one V100; the request's time, calibration read included):
+
+| | GPU multilevel | CPU multilevel, dev (16 threads) | CPU multilevel, production (2 CPUs) | Plain GPU, no bias estimate |
+|---|---|---|---|---|
+| Call 100 % | 56.087 ± 0.078, bias ~0.060, **0.38 s** | 56.160 ± 0.070, bias ~0.070, 1.95 s | 2.0 s | 56.217 ± 0.035, 0.15 s |
+| Call 120 % | 12.633 ± 0.018, bias ~0.012, **0.32 s** | 12.646 ± 0.017, bias ~0.011, 2.26 s | 12.1 s | 12.664 ± 0.034, 0.17 s |
+| Arithmetic Asian | 33.137 ± 0.043, bias ~0.026, **0.51 s** | 33.202 ± 0.040, bias ~0.047, 0.75 s | | 33.242 ± 0.014, 0.19 s |
+
+The GPU launches themselves take about 0.15 s of each request (the 120 %
+call: 12 launches of 3 to 37 ms); the first request of a script pays the
+kernel's compilation once (WP 27 L1b removes it).
+
+Left: multilevel under Heston and SLV stays a matter of coupling (§9.5), not
+of device.
+
+### 10.2 The risks of a multilevel price (2026-11-13)
+
+Before: a request for AAD greeks dropped multilevel ("not available under
+AAD"), and both the scripting page and the workbench ask for greeks by
+default -- from the site, the multilevel route was only reached with the
+greeks off.
+
+The multilevel price is a sum of expectations, so each risk is the sum of
+its levels' risks: the pathwise derivative of the fine payoff minus that of
+the coarse one on the same Brownian path (Burgos & Giles 2012). With §10.1's
+design this is the same run with another kernel: each launch is the GPU's
+per-path adjoint (WP 19 lot G3, local vol) instead of the price kernel, fine
+then coarse, and a replicate's sample of a level's risks is the difference of
+its two rows (`simulate_script_aad_mlqmc_gpu`; `ScriptAdjointGpuResult` now
+returns each replicate's price and risks). A risk's error is the spread of
+the replicates, summed over the levels. The points per level follow the
+price's target: the risks get an error, not a target of their own.
+
+- GPU, local vol, Sobol. On the CPU, under another model, or for a script the
+  device cannot take, the risks come from the plain engine as before and the
+  diagnostics say why. The other models wait for WP 27's generated adjoint
+  (lot L4); a CPU version needs the tape inside `LevelSampler`.
+- The API's default device (§10.1) covers it: no device named, local vol,
+  greeks by AAD -> `"auto"`.
+- A discontinuous payoff's pathwise derivative is as wrong per level as on
+  one grid: `fuzzy` applies as before (WP 27 §8 is where it gets exact).
+
+Tests (`tests/gpu/testGpuMlqmc.cpp`): on a flat surface the delta is
+Black-Scholes's and the sigma_loc risks add up to its vega; on a skewed one
+the price is the price route's to 1e-9 and the delta the central difference
+of that price within error; a model without time-step bias is refused with
+the reason. API: `test_script_mlmc.py`.
+
+Measured on SPY as in §10.1 (5003 risks: spot, rate, dividend, the 100 x 50
+sigma_loc grid), against the plain adjoint at 65 536 points:
+
+| | Multilevel, GPU | Plain adjoint, GPU | Plain adjoint, CPU tape (16 threads) |
+|---|---|---|---|
+| Call 100 % | 56.087 ± 0.078, bias ~0.060, delta −0.2512 ± 0.0096, **0.69 s** | 56.217 ± 0.035, delta −0.2389 ± 0.0023, 0.30 s | 6.0 s |
+| Call 120 % | 12.633 ± 0.018, bias ~0.012, delta −0.0085 ± 0.0017, **0.96 s** | 12.664 ± 0.034, delta −0.0096 ± 0.0012, 0.28 s | 5.8 s |
+| Arithmetic Asian | 33.137 ± 0.043, bias ~0.026, delta −0.2541 ± 0.0043, **0.71 s** | 33.242 ± 0.014, delta −0.2568 ± 0.0015, 0.27 s | 6.3 s |
+
+(The library's contracts fix their strike on the spot a week ahead: their
+delta is the surface's, small and negative.) The risks agree within their
+errors. The multilevel errors are larger on these contracts because the
+default target, 0.2 % of the price, asks for fewer points than the plain
+run's 65 536: what multilevel adds is the bias, estimated and bounded, not a
+smaller statistical error at this target.
+
+### 10.3 A run over a range of points; the directions built once (2026-11-13)
+
+- `SobolTables::first_point` (and `SobolBridgeView`): a run prices points
+  first_point .. first_point + n_units − 1 of every replicate. A level that
+  doubles its points prices the new half alone and folds it into its means
+  and risks. Every GPU script kernel reads the field (0 for every other
+  run: the same bits as before). Test: two halves of a Sobol run of 10 000
+  points give the whole run's replicate means to 1e-12, on other points.
+- `sobol_tables` built a `SobolSequence` per replicate, each recomputing the
+  direction integers of every dimension -- 32 times the work for a
+  multilevel level. They are built once; the shifts come from
+  `SobolSequence::shifts_for` (the constructor's own draws: the same bits).
+
+The requests of §10.1 and §10.2 after both (same prices and errors):
+
+| | Price | Price and 5003 risks |
+|---|---|---|
+| Call 100 % | 0.35 s | 0.61 s |
+| Call 120 % (one level doubles three times) | 0.26 s | 0.81 s |
+| Arithmetic Asian | 0.33 s | 0.64 s |
+
+### 10.4 The registry's prices carry their bias (2026-11-13)
+
+The scripting API returns the discretisation bias of every Monte-Carlo price
+since §9.4; the registry's script routes (`price_by_script`: the workbench's
+local-vol vanilla, barrier, Asian and lookback, and the catalogue under
+Black-Scholes) did not. They now ask for it the same way
+(`mc_bias_estimate`): a model that steps on a grid is priced with every step
+halved and its bias read from the unhalved run on the same points; a model
+exact between the dates returns 0 at no cost; a model that cannot refine its
+grid returns none. With greeks, the central differences stay on the route's
+own grid, beside the priced run. The workbench's result panel shows the
+bias under the price, as the scripting page does.
+
+What moves: a local-vol registry price is now the halved-step one (closer to
+the limit by about its former bias), at three runs instead of one (§11's
+local-vol rows of the first column: 0.008 → 0.023 s for the barrier). Tests
+(`tests/testLocalVol.cpp`): the bias is there, positive and small against
+the price, the same with and without greeks; the hand-written oracle steps
+on the halved grid; a Black-Scholes route returns exactly 0.
 
 ## 11. Results
 
@@ -1357,7 +1566,57 @@ The CPU columns of the reference are not in the table: on one thread its
 Philox + Φ⁻¹ gaussians make it slower than PCG32 + Box-Muller engines (§2.2),
 so it is not a ceiling there until P1f.
 
-Later lots add their columns (P1, P3, P4 MLMC, P5 MLQMC, P6 GPU).
+**Today** (2026-11-13, after P1 to P6;
+`benchmarks/results/2026-11-13-699a1e2.json`, run on that commit plus §10.4
+and the two fixes below). The first column is no longer a hand-written
+engine: since P3 the registry's route is the script engine with Sobol, on the
+GPU when present, and it estimates its bias (§10.4).
+
+| Product (model) | Registry route | Script, CPU PCG32 | Script, CPU Sobol | Script, 1 V100 Philox | Script, 1 V100 Sobol |
+|---|---|---|---|---|---|
+| Vanilla call (BS) | 0.002 s | 0.187 s | 0.001 s | 0.002 s | 0.002 s |
+| Arithmetic Asian, 252 fixings (BS) | 0.101 s | 27.5 s | 0.077 s | 0.055 s | 0.043 s |
+| Arithmetic Asian, 252 fixings (local vol) | 0.079 s | 42.4 s | 0.098 s | 0.060 s | 0.041 s |
+| Up-and-out call, 52 weekly dates (BS) | 0.005 s | 7.77 s | 0.169 s | 0.006 s | 0.006 s |
+| Up-and-out call, 52 weekly dates (local vol) | 0.023 s | 12.5 s | 0.286 s | 0.011 s | 0.006 s |
+| Fixed-strike lookback, 52 weekly dates (BS) | 0.016 s | 1.91 s | 0.009 s | 0.002 s | 0.002 s |
+| Fixed-strike lookback, 52 weekly dates (local vol) | 0.023 s | 3.04 s | 0.015 s | 0.003 s | 0.002 s |
+| Basket call, 3 assets (BS) | 0.018 s | 0.418 s | 0.002 s | 0.002 s | 0.002 s |
+| Worst-of call, 3 assets (BS) | 0.001 s | 1.18 s | 0.002 s | 0.003 s | 0.002 s |
+| Best-of call, 3 assets (BS) | 0.001 s | | | | |
+| Autocall, 4 quarterly dates (BS) | 0.001 s | | | | |
+| Mountain range, 3 assets, 3 dates (BS) | 0.002 s | | | | |
+| Dispersion swap, 3 assets, 52 dates (BS) | 0.006 s | | | | |
+| Variance swap, 52 dates (BS) | 0.002 s | | | | |
+| Volatility swap, 52 dates (BS) | 0.002 s | | | | |
+| Quanto call (BS) | 0.044 s | | | | |
+
+Against v1: the routes the site uses went from seconds to milliseconds
+(Asian under local vol 60.3 s → 0.079 s, up-and-out under local vol
+9.31 s → 0.023 s, mountain range 0.939 s → 0.002 s); the CPU Sobol script
+route is 5 to 13 times faster on the path-dependent products (batched
+interpreter, AS 241).
+
+**A regression this run found, and its fix.** The first run of the day had
+the CPU PCG32 column 9 to 22 % *slower* than v1 at the same paths and the
+same prices (Asian BS 30.7 → 36.2 s, lookback BS 1.96 → 2.37 s). Timed commit
+by commit on a 52-date lookback (800 000 paths, one thread): 1.83 s at v1,
+2.20 s after P1a, 2.36 s after P2a, 2.32 s today. Two causes, both fixed:
+
+- the PCG32 loop was the one route left on the path-by-path interpreter
+  (P1a batched Philox and Sobol only), and its code got slower when the
+  engine's function grew around it. It now feeds the batched interpreter
+  like a Sobol sequence does (`batch_path` / `flush_batch`: the payoffs
+  added in the same order);
+- since P2a the Black-Scholes model resized every event's survival vector on
+  every path, barrier or not. It now touches it only for an event that has
+  one (`allocate_scenario` sized it already).
+
+After both: 1.80 s on the lookback, below v1, and the nine PCG32 prices of
+the matrix identical to v1's to 17 digits. The table above is the run after
+the fix. Lesson for the method (`hpc-finance`): the matrix compares
+*columns*, so a route nobody was optimising was not watched; rerun it at the
+end of each lot, not only its own bench.
 
 ## 12. Risks and open decisions
 

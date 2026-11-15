@@ -6206,11 +6206,8 @@ export interface components {
              * @default 0.01
              */
             default_eps: number;
-            /**
-             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
-             * @default cpu
-             */
-            device: components["schemas"]["ComputeDevice"];
+            /** @description Where the paths run (blueprint WP 19 §8). Omitted (the default): 'auto' for a multilevel price and its local-vol AAD greeks (WP 26 §10: the GPU when the server has one, the CPU otherwise, said in the diagnostics), 'cpu' for every other run. The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. */
+            device?: components["schemas"]["ComputeDevice"] | null;
             /**
              * Dividend
              * @default 0
@@ -6244,14 +6241,14 @@ export interface components {
             milstein: boolean;
             /**
              * Mlmc
-             * @description 'auto' (the default): multilevel Monte Carlo over the time step for a local_vol script that suits it -- one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'on': also under heston and slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU against about 2 s for the usual engine with its bias estimated; blueprint WP 26 §9.5). 'off': the usual engine (§9.4).
+             * @description 'auto' (the default): multilevel Monte Carlo over the time step for a local_vol script that suits it -- one payoff, no early exercise -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. With greeks_method='aad' the risks come from the same levels (each level's adjoint, fine minus coarse) on the GPU, device 'gpu' or 'auto'; on the CPU they come from the usual engine (WP 26 §10.2). 'on': also under heston and slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU against about 2 s for the usual engine with its bias estimated; blueprint WP 26 §9.5). 'off': the usual engine (§9.4).
              * @default auto
              * @enum {string}
              */
             mlmc: "auto" | "on" | "off";
             /**
              * Mlmc Eps
-             * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.
+             * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9), on the GPU with device 'gpu' or 'auto' (each level's fine and coarse grids as two runs of the compiled script on the same points, WP 26 §10); with 'pseudo', multilevel Monte Carlo on the CPU. Price only; n_paths is then ignored.
              * @default 0
              */
             mlmc_eps: number;
@@ -6458,11 +6455,8 @@ export interface components {
              * @default 0.01
              */
             default_eps: number;
-            /**
-             * @description Where the paths run (blueprint WP 19 §8). The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses.
-             * @default cpu
-             */
-            device: components["schemas"]["ComputeDevice"];
+            /** @description Where the paths run (blueprint WP 19 §8). Omitted (the default): 'auto' for a multilevel price and its local-vol AAD greeks (WP 26 §10: the GPU when the server has one, the CPU otherwise, said in the diagnostics), 'cpu' for every other run. The GPU prices the compiled script under Black-Scholes, local vol, Heston or SLV, pseudo-random, stratified or Sobol; with greeks_method='aad' it computes the risks under Black-Scholes, Heston (forward-mode duals) and local vol (per-path adjoint). 'auto' falls back to the CPU otherwise and says why in the diagnostics, 'gpu' refuses. */
+            device?: components["schemas"]["ComputeDevice"] | null;
             /**
              * Dividend
              * @default 0
@@ -6496,14 +6490,14 @@ export interface components {
             milstein: boolean;
             /**
              * Mlmc
-             * @description 'auto' (the default): multilevel Monte Carlo over the time step for a local_vol script that suits it -- one payoff, no early exercise, no AAD greeks -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. 'on': also under heston and slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU against about 2 s for the usual engine with its bias estimated; blueprint WP 26 §9.5). 'off': the usual engine (§9.4).
+             * @description 'auto' (the default): multilevel Monte Carlo over the time step for a local_vol script that suits it -- one payoff, no early exercise -- to a root-mean-square error of mlmc_rel_eps of the price, or mlmc_eps when given; the usual engine otherwise, the diagnostics saying why. With greeks_method='aad' the risks come from the same levels (each level's adjoint, fine minus coarse) on the GPU, device 'gpu' or 'auto'; on the CPU they come from the usual engine (WP 26 §10.2). 'on': also under heston and slv, whose levels couple poorly (on SPY, 12 to 160 s on the CPU against about 2 s for the usual engine with its bias estimated; blueprint WP 26 §9.5). 'off': the usual engine (§9.4).
              * @default auto
              * @enum {string}
              */
             mlmc: "auto" | "on" | "off";
             /**
              * Mlmc Eps
-             * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9); with 'pseudo', multilevel Monte Carlo. CPU, price only; n_paths and device are then ignored.
+             * @description An absolute multilevel target instead of mlmc_rel_eps (0, the default: the relative one). The levels are refined until the estimated discretisation bias is below the target / sqrt(2). With sampler='sobol' (the default) the levels are Sobol points, multilevel QMC (WP 26 §9), on the GPU with device 'gpu' or 'auto' (each level's fine and coarse grids as two runs of the compiled script on the same points, WP 26 §10); with 'pseudo', multilevel Monte Carlo on the CPU. Price only; n_paths is then ignored.
              * @default 0
              */
             mlmc_eps: number;

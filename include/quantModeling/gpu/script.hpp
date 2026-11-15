@@ -151,6 +151,10 @@ namespace quantModeling::gpu
         std::vector<Real> risks;           ///< spot, rate, div, then sigma_loc K-major
         std::vector<Real> risk_std_errors; ///< over batches of 512 paths (one warp)
         long long batches = 0;
+        /// Sobol RQMC only: each replicate's price and risks
+        /// (replicates x risks, replicate-major) -- what a multilevel level
+        /// subtracts, replicate by replicate (WP 26 §10.2).
+        std::vector<Real> replicate_prices, replicate_risks;
     };
 
     /// The per-path adjoint of a script under local vol: d price / d (spot,

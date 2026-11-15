@@ -187,6 +187,167 @@ namespace quantModeling
             return {};
         }
 
+        /**
+         * One multilevel QMC level on the GPU (WP 26 P6, §10). The fine and
+         * the coarse grids are two ordinary Sobol runs of the script's
+         * kernel on the same points (mc::coupled_sobol_tables): replicate
+         * b's sample of the correction is the difference of its two means.
+         * More points are a run of the new points alone (the tables'
+         * first_point, §10.3).
+         */
+        class GpuQmcLevel final : public IQmcLevel
+        {
+          public:
+            /// What the levels of a run report of their launches.
+            struct Note
+            {
+                int gpus = 0;
+                std::string events; ///< compiled or interpreted, and why
+            };
+
+            /// The risks of a run's levels (§10.2): per level, each
+            /// replicate's fine-minus-coarse risks, replicate-major. The
+            /// run's levels are released with it; this outlives them.
+            struct Risks
+            {
+                std::vector<std::vector<double>> levels;
+                int replicates = 0;
+            };
+
+            /// With `risks`, every launch is the per-path adjoint instead
+            /// of the price kernel (local vol), and the level's risks are
+            /// kept there.
+            GpuQmcLevel(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &base, int level,
+                        const MlqmcSettings &s, int max_gpus, Note &note, Risks *risks = nullptr)
+                : product_(product), mats_(discount_lists(product)), devices_(gpu::devices_for(max_gpus)), note_(note), risks_(risks), level_(level)
+            {
+                if (risks_)
+                {
+                    risks_->replicates = s.replicates;
+                    if (risks_->levels.size() <= static_cast<std::size_t>(level))
+                        risks_->levels.resize(static_cast<std::size_t>(level) + 1);
+                }
+                fine_ = describe(base, level, dm_fine_);
+                cost_ = static_cast<double>(fine_->sim_dim());
+                std::vector<uint64_t> keys; // the CPU levels' keys (QmcLevel)
+                for (int r = 0; r < s.replicates; ++r)
+                    keys.push_back((s.seed << 32) ^ (static_cast<std::uint64_t>(level) << 16) ^
+                                   static_cast<std::uint64_t>(r));
+                if (level == 0)
+                {
+                    tables_.fine = mc::sobol_tables(fine_->sim_dim(), keys, fine_->brownian_layout(), true, s.owen);
+                    return;
+                }
+                coarse_ = describe(base, level - 1, dm_coarse_);
+                cost_ += static_cast<double>(coarse_->sim_dim());
+                tables_ = mc::coupled_sobol_tables(fine_->brownian_layout(), coarse_->brownian_layout(), keys, s.owen);
+            }
+
+            /// Points points_ .. points_ + n - 1 of every replicate, folded
+            /// into the level's means (and risks).
+            void add(long long n) override
+            {
+                std::vector<double> *rows = risks_ ? &risks_->levels[static_cast<std::size_t>(level_)] : nullptr;
+                std::vector<double> more_rows, coarse_rows;
+                tables_.fine.first_point = tables_.coarse.first_point = static_cast<uint32_t>(points_);
+                std::vector<double> more = run(dm_fine_, tables_.fine, n, rows ? &more_rows : nullptr);
+                if (coarse_)
+                {
+                    const std::vector<double> coarse =
+                        run(dm_coarse_, tables_.coarse, n, rows ? &coarse_rows : nullptr);
+                    for (std::size_t r = 0; r < more.size(); ++r)
+                        more[r] -= coarse[r];
+                    for (std::size_t i = 0; i < coarse_rows.size(); ++i)
+                        more_rows[i] -= coarse_rows[i];
+                }
+                // Each mean over all the points so far.
+                const double had = static_cast<double>(points_), got = static_cast<double>(n);
+                auto fold = [&](std::vector<double> &all, const std::vector<double> &extra)
+                {
+                    if (all.empty())
+                        all.assign(extra.size(), 0.0);
+                    for (std::size_t i = 0; i < all.size(); ++i)
+                        all[i] = (had * all[i] + got * extra[i]) / (had + got);
+                };
+                fold(means_, more);
+                if (rows)
+                    fold(*rows, more_rows);
+                points_ += n;
+            }
+
+            long long points() const override { return points_; }
+            double cost() const override { return cost_; }
+            double mean() const override { return mlqmc_detail::replicate_mean(means_); }
+            double estimator_variance() const override { return mlqmc_detail::replicate_variance(means_); }
+
+          private:
+            /// The model of `level`'s fine grid, as the device steps it.
+            std::unique_ptr<ISimulationModel<Real>> describe(const ISimulationModel<Real> &base, int level,
+                                                             DeviceModel &dm) const
+            {
+                auto m = mlmc_detail::at_refinement(base, mlmc_detail::refinement_of(level), product_);
+                if (!m->describe_device(dm))
+                    throw InvalidInput("this model runs on the CPU only");
+                if (risks_ && dm.kind != DeviceModel::Kind::LocalVol)
+                    throw InvalidInput("multilevel risks run under local vol (the GPU's per-path adjoint)");
+                if (m->sim_dim() > static_cast<std::size_t>(sobol_detail::kMaxDimension))
+                    throw InvalidInput("multilevel QMC: level " + std::to_string(level) + " needs " +
+                                       std::to_string(m->sim_dim()) + " draws per path, more than the " +
+                                       std::to_string(sobol_detail::kMaxDimension) + " Sobol dimensions");
+                const std::string why = gpu::script_gpu_unsupported(product_.program(), dm, mats_);
+                if (!why.empty())
+                    throw InvalidInput(why);
+                return m;
+            }
+
+            /// Each replicate's mean over the `n` points from the tables'
+            /// first_point; with `rows`, by the adjoint, and each
+            /// replicate's risks there.
+            std::vector<double> run(const DeviceModel &dm, const mc::SobolTables &tables, long long n,
+                                    std::vector<double> *rows)
+            {
+                gpu::ScriptGpuRequest req;
+                req.program = &product_.program();
+                req.model = &dm;
+                req.baseline = product_.baseline();
+                req.discount_mats = mats_;
+                req.antithetic = false;
+                req.devices = devices_;
+                req.n_units = static_cast<uint64_t>(n);
+                req.sobol = &tables;
+                note_.gpus = std::max(note_.gpus, gpu::gpus_used(req));
+                if (rows)
+                {
+                    gpu::ScriptAdjointGpuResult r = gpu::simulate_script_adjoint(req);
+                    *rows = std::move(r.replicate_risks);
+                    return r.replicate_prices;
+                }
+                const gpu::ScriptGpuStats st = gpu::simulate_script(req);
+                note_.events = st.events_note;
+                std::vector<double> means;
+                for (const WelfordAccumulator &w : st.plain)
+                    means.push_back(w.mean);
+                return means;
+            }
+
+            const ScriptedProduct<Real> &product_;
+            std::vector<std::vector<Time>> mats_;
+            std::vector<int> devices_;
+            std::unique_ptr<ISimulationModel<Real>> fine_, coarse_;
+            DeviceModel dm_fine_, dm_coarse_;
+            mc::CoupledSobolTables tables_;
+            std::vector<double> means_;
+            long long points_ = 0;
+            double cost_ = 0.0;
+            Note &note_;
+            Risks *risks_ = nullptr;
+            int level_ = 0;
+        };
+
+        /// Points per replicate a GPU level starts with: a launch has a
+        /// fixed cost that 16 points (the CPU's start) would not repay.
+        constexpr long long kGpuMlqmcInitialPoints = 1024;
+
         SimulationMCResult run_mlmc(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model,
                                     const PricingSettings &settings, ThreadPool *pool)
         {
@@ -198,6 +359,8 @@ namespace quantModeling
             MlmcResult r;
             std::string sampler_note = " (CPU, pseudo-random)";
             bool done = false;
+            std::string device = "cpu";
+            int gpus = 0;
             if (settings.mc_sampler == SamplerKind::Sobol)
             {
                 MlqmcSettings q;
@@ -205,16 +368,50 @@ namespace quantModeling
                 q.rel_eps = settings.mc_mlmc_rel_eps;
                 q.seed = seed;
                 q.owen = settings.mc_sobol_owen;
-                try
+                // On the GPU when asked for and the device can take the
+                // script and the model (WP 26 P6); otherwise the CPU, saying
+                // why.
+                const bool explicit_gpu = settings.mc_device == ComputeDevice::Gpu;
+                std::string gpu_off;
+                if (explicit_gpu || (settings.mc_device == ComputeDevice::Auto && gpu::device_count() > 0))
                 {
-                    r = simulate_mlqmc(product, model, q, pool);
-                    sampler_note = " (CPU)";
-                    done = true;
+                    MlqmcSettings g = q;
+                    g.initial_points = kGpuMlqmcInitialPoints;
+                    GpuQmcLevel::Note note;
+                    try
+                    {
+                        r = simulate_mlqmc_levels(
+                            [&](int level) -> std::unique_ptr<IQmcLevel>
+                            {
+                                return std::make_unique<GpuQmcLevel>(product, model, level, g, settings.mc_gpus, note);
+                            },
+                            g);
+                        done = true;
+                        device = "gpu";
+                        gpus = note.gpus;
+                        const std::vector<int> all = gpu::devices_for(settings.mc_gpus);
+                        sampler_note = " (GPU: " +
+                                       gpu::devices_label(std::vector<int>(all.begin(), all.begin() + gpus)) +
+                                       (note.events.empty() ? "" : ", " + note.events) + ")";
+                    }
+                    catch (const InvalidInput &e)
+                    {
+                        if (explicit_gpu)
+                            throw InvalidInput(std::string("GPU: ") + e.what());
+                        gpu_off = std::string("; not on the GPU: ") + e.what();
+                    }
                 }
-                catch (const InvalidInput &e)
-                {
-                    sampler_note = std::string(" (CPU, pseudo-random: ") + e.what() + ")";
-                }
+                if (!done)
+                    try
+                    {
+                        r = simulate_mlqmc(product, model, q, pool);
+                        sampler_note = " (CPU" + gpu_off + ")";
+                        done = true;
+                    }
+                    catch (const InvalidInput &e)
+                    {
+                        sampler_note = std::string(" (CPU, pseudo-random: ") + e.what() + gpu_off + ")";
+                    }
             }
             if (!done)
             {
@@ -241,6 +438,8 @@ namespace quantModeling
             os << "SimulationMCEngine, " << r.diagnostics << "; target RMS error " << r.eps
                << ", estimated remaining bias " << r.bias << sampler_note;
             res.diagnostics = os.str();
+            res.device = device;
+            res.gpus = gpus;
             return res;
         }
 
@@ -489,6 +688,83 @@ namespace quantModeling
             why = e.what();
             return std::nullopt;
         }
+    }
+
+    std::optional<AADSimulResults> simulate_script_aad_mlqmc_gpu(const ScriptedProduct<Real> &product,
+                                                                 const ISimulationModel<Real> &model, double eps,
+                                                                 double rel_eps, std::uint64_t seed,
+                                                                 std::string &why, int max_gpus)
+    {
+        if (gpu::device_count() == 0)
+        {
+            why = "this server has no usable CUDA device";
+            return std::nullopt;
+        }
+        why = mlmc_unsuitable(product, model);
+        if (!why.empty())
+            return std::nullopt;
+
+        MlqmcSettings s;
+        s.eps = eps;
+        s.rel_eps = rel_eps;
+        s.seed = seed;
+        s.initial_points = kGpuMlqmcInitialPoints;
+        GpuQmcLevel::Note note;
+        GpuQmcLevel::Risks risks;
+        MlmcResult r;
+        try
+        {
+            r = simulate_mlqmc_levels(
+                [&](int level) -> std::unique_ptr<IQmcLevel>
+                { return std::make_unique<GpuQmcLevel>(product, model, level, s, max_gpus, note, &risks); },
+                s);
+        }
+        catch (const InvalidInput &e)
+        {
+            why = e.what();
+            return std::nullopt;
+        }
+        catch (const gpu::GpuUnavailable &e)
+        {
+            why = e.what();
+            return std::nullopt;
+        }
+
+        AADSimulResults res;
+        res.price = r.value;
+        res.price_std_error = r.std_error;
+        res.discretisation_bias = r.bias;
+        res.gpus = note.gpus;
+        for (const MlmcLevel &l : r.levels)
+            res.n_paths += l.n;
+        {
+            auto m = model.clone();
+            m->init(product.timeline(), product.defline());
+            res.risk_labels = m->parameter_labels();
+        }
+        // A risk is the sum of its levels' estimates, each the mean of the
+        // level's replicates; its variance the sum of theirs.
+        const std::size_t np = res.risk_labels.size(), R = static_cast<std::size_t>(risks.replicates);
+        res.risks.assign(np, 0.0);
+        std::vector<double> var(np, 0.0), column(R);
+        for (const std::vector<double> &rows : risks.levels)
+            for (std::size_t p = 0; p < np && rows.size() == R * np; ++p)
+            {
+                for (std::size_t b = 0; b < R; ++b)
+                    column[b] = rows[b * np + p];
+                res.risks[p] += mlqmc_detail::replicate_mean(column);
+                var[p] += mlqmc_detail::replicate_variance(column);
+            }
+        for (const double v : var)
+            res.risk_std_errors.push_back(std::sqrt(v));
+
+        const std::vector<int> all = gpu::devices_for(max_gpus);
+        std::ostringstream os;
+        os << r.diagnostics << "; target RMS error " << r.eps << ", estimated remaining bias " << r.bias
+           << "; risks by the per-path adjoint of every level (" << np << " risks, GPU: "
+           << gpu::devices_label(std::vector<int>(all.begin(), all.begin() + note.gpus)) << ")";
+        res.diagnostics = os.str();
+        return res;
     }
 
 } // namespace quantModeling

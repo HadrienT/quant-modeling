@@ -8,6 +8,8 @@
 #include "quantModeling/utils/thread_pool.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
+#include "quantModeling/engines/mc/sobol_bridge_host.hpp"
+#include "quantModeling/gpu/device.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/models/device_model.hpp"
@@ -728,6 +730,90 @@ namespace quantModeling
         PricingSettings no_floor = s;
         no_floor.mc_mlmc_eps = 0.0;
         EXPECT_THROW(simulate_script(product, *m, no_floor), InvalidInput);
+    }
+
+    // ── WP 26 P6: the levels coupled through the Sobol point (§10) ──────
+
+    TEST(Mlmc, CoupledSobolTablesGiveBothGridsTheSameBrownianPath)
+    {
+        // An uneven coarse grid, each step halved, two factors.
+        BrownianLayout coarse{{0.1, 0.35, 0.5, 1.0, 1.25}, 2, 2}, fine{{}, 2, 2};
+        Time prev = 0.0;
+        for (const Time t : coarse.times)
+        {
+            fine.times.push_back(0.5 * (prev + t));
+            fine.times.push_back(t);
+            prev = t;
+        }
+        const std::vector<uint64_t> keys{11, 12, 13};
+        const mc::CoupledSobolTables t = mc::coupled_sobol_tables(fine, coarse, keys);
+        const std::size_t nf = fine.times.size(), nc = coarse.times.size();
+        ASSERT_EQ(t.fine.dim, static_cast<int>(2 * nf));
+        ASSERT_EQ(t.coarse.dim, static_cast<int>(2 * nc));
+
+        std::vector<double> zf(2 * nf), zc(2 * nc), pt(2 * nf);
+        std::vector<double> moment(4 * nf * nf, 0.0); // E[z_i z_j] over the fine draws
+        const uint32_t n_points = 1u << 14;
+        for (uint64_t b = 0; b < keys.size(); ++b)
+            for (uint32_t p = 0; p < n_points; ++p)
+            {
+                mc::sobol_bridged_gaussians(t.fine.view(), b, p, pt.data(), 1, zf.data(), 1);
+                mc::sobol_bridged_gaussians(t.coarse.view(), b, p, pt.data(), 1, zc.data(), 1);
+                // Each coarse increment is the sum of its two fine ones.
+                Time t0 = 0.0;
+                for (std::size_t s = 0; s < nc; ++s)
+                {
+                    const Time tm = fine.times[2 * s], t1 = fine.times[2 * s + 1];
+                    for (std::size_t f = 0; f < 2; ++f)
+                        ASSERT_NEAR(zc[2 * s + f] * std::sqrt(t1 - t0),
+                                    zf[2 * (2 * s) + f] * std::sqrt(tm - t0) +
+                                        zf[2 * (2 * s + 1) + f] * std::sqrt(t1 - tm),
+                                    1e-12);
+                    t0 = t1;
+                }
+                if (b == 0)
+                    for (std::size_t i = 0; i < 2 * nf; ++i)
+                        for (std::size_t j = 0; j < 2 * nf; ++j)
+                            moment[i * 2 * nf + j] += zf[i] * zf[j] / n_points;
+            }
+        // The fine draws are still independent N(0, 1): the nested order is
+        // a Brownian bridge like any other.
+        for (std::size_t i = 0; i < 2 * nf; ++i)
+            for (std::size_t j = 0; j < 2 * nf; ++j)
+                EXPECT_NEAR(moment[i * 2 * nf + j], i == j ? 1.0 : 0.0, 0.03) << i << ' ' << j;
+
+        // The coarse grid's bridge is its own: the coupling does not change
+        // the coarse level's construction.
+        const mc::SobolTables own = mc::sobol_tables(2 * nc, keys, coarse, true);
+        EXPECT_EQ(t.coarse.bridge_index, own.bridge_index);
+        EXPECT_EQ(t.coarse.std_dev, own.std_dev);
+    }
+
+    TEST(Mlmc, CoupledSobolTablesRefuseGridsThatDoNotNest)
+    {
+        const std::vector<uint64_t> keys{1, 2};
+        const BrownianLayout coarse{{0.5, 1.0}, 1, 1};
+        EXPECT_THROW(mc::coupled_sobol_tables(BrownianLayout{{0.25, 0.5, 1.0}, 1, 1}, coarse, keys), InvalidInput);
+        EXPECT_THROW(mc::coupled_sobol_tables(BrownianLayout{{0.25, 0.6, 0.75, 1.0}, 1, 1}, coarse, keys),
+                     InvalidInput);
+        // A draw that is not a Brownian increment (a jump's).
+        EXPECT_THROW(mc::coupled_sobol_tables(BrownianLayout{{0.25, 0.5, 0.75, 1.0}, 1, 2},
+                                              BrownianLayout{{0.5, 1.0}, 1, 2}, keys),
+                     InvalidInput);
+    }
+
+    TEST(Mlmc, WithoutACudaDeviceTheMultilevelRouteStaysOnTheCpuAndSaysSo)
+    {
+        if (gpu::device_count() > 0)
+            GTEST_SKIP() << "a CUDA device is present (tests/gpu/testGpuMlqmc.cpp covers it)";
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        PricingSettings s;
+        s.mc_mlmc_eps = 0.05;
+        s.mc_device = ComputeDevice::Auto;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        EXPECT_EQ(r.device, "cpu");
+        EXPECT_NE(r.diagnostics.find("multilevel QMC"), std::string::npos) << r.diagnostics;
     }
 
 } // namespace quantModeling

@@ -74,6 +74,8 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
     script = product_templates.render(req.product, req.terms, m.valuation_date)
     size = len(m.K_grid) * len(m.T_grid)
     per_batch = max(req.n_paths // BATCHES, 1000)
+    # AAD greeks: the CPU unless the request names a device.
+    device = req.device.value if req.device is not None else "cpu"
 
     def run(b: int):
         priced = qm.price_script(
@@ -91,7 +93,7 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             T_grid=m.T_grid,
             sigma_loc_flat=m.sigma_loc_flat,
             steps_per_year=req.steps_per_year,
-            device=req.device.value,
+            device=device,
             rng=req.rng.value,
             sampler=req.sampler,
         )
@@ -108,7 +110,7 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
         )
         return priced["npv"], bucket["quotes"], priced.get("device", "cpu")
 
-    workers = 1 if req.device.value != "cpu" else WORKERS
+    workers = 1 if device != "cpu" else WORKERS
     with ThreadPoolExecutor(max_workers=workers) as pool:
         batches = list(pool.map(run, range(BATCHES)))
     device = "gpu" if all(b[2] == "gpu" for b in batches) else "cpu"

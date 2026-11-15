@@ -10,13 +10,16 @@ const CHOICES: { key: ComputeDevice; label: string }[] = [
 
 /**
  * Where the Monte-Carlo paths run (blueprint WP 19 §8). GPU is greyed, with
- * the reason, when the server has no usable CUDA device.
+ * the reason, when the server has no usable CUDA device. With no `device`
+ * picked (the scripting page's start) the request leaves the choice to the
+ * server: the GPU for a multilevel price, the CPU for every other run
+ * (blueprint WP 26 §10).
  */
 export function ComputeDevicePicker({
 	device,
 	onChange,
 }: {
-	device: ComputeDevice;
+	device: ComputeDevice | undefined;
 	onChange: (d: ComputeDevice) => void;
 }) {
 	const q = useComputeDevices();
@@ -65,6 +68,9 @@ export function ComputeDevicePicker({
 					);
 				})}
 				<span className="text-2xs text-ink-muted">
+					{device === undefined
+						? "default: GPU for a multilevel price, CPU otherwise · "
+						: ""}
 					{gpus.length > 0
 						? `${gpus.length} × ${gpus[0]}`
 						: noGpu

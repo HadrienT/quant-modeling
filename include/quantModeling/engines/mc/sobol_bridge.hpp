@@ -39,6 +39,10 @@ namespace quantModeling::mc
         const uint32_t *shift = nullptr; ///< replicates x dim digital shifts (Owen: the seeds)
         int dim = 0;
         bool owen = false; ///< Owen's scrambling instead of the digital shift
+        /// The sequence's point a run's unit 0 is: a run prices points
+        /// first_point .. first_point + n_units - 1 of every replicate
+        /// (a multilevel level adding points, WP 26 §10.3).
+        uint32_t first_point = 0;
 
         // Bridge (n == 0: the point is already in the model's time order).
         int n = 0, factors = 0, stride = 0;
@@ -107,6 +111,7 @@ namespace quantModeling::mc
         int dim = 0, n = 0, factors = 0, stride = 0;
         int replicates = 0;
         bool owen = false;
+        uint32_t first_point = 0; ///< see SobolBridgeView
 
         bool bridged() const { return n > 0; }
 
@@ -118,6 +123,7 @@ namespace quantModeling::mc
             v.shift = shift.data();
             v.dim = dim;
             v.owen = owen;
+            v.first_point = first_point;
             v.n = n;
             v.factors = factors;
             v.stride = stride;
