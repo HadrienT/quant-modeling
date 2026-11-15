@@ -102,10 +102,49 @@ namespace qm_reference
         return m.discount * fmax(sum / m.steps - m.strike, 0.0);
     }
 
+    /// One path of a worst-of Phoenix autocall on three assets of the same
+    /// spot and vol, pairwise correlation 0.4, observed at the `steps` equal
+    /// dates: redeemed with its coupon when the worst performance is at or
+    /// above 100 %, a coupon when at or above 70 %, capital at risk below
+    /// 60 % at maturity (the script library's worst-of-autocall). The value
+    /// is the sum of the discounted payments.
+    QM_HOST_DEVICE inline double worst_of_autocall(const Terms &m, uint64_t seed, uint64_t path, double sign)
+    {
+        const double notional = 1000.0, coupon = 0.025, autocall = 1.0, coupon_barrier = 0.7, protection = 0.6;
+        const double rho = 0.4; // Cholesky of the constant-correlation 3 x 3
+        const double l22 = sqrt(1.0 - rho * rho), l32 = (rho - rho * rho) / l22,
+                     l33 = sqrt(1.0 - rho * rho - l32 * l32);
+        quantModeling::PhiloxGaussianSource z(seed, path);
+        const double dt = m.maturity / m.steps, drift = (m.r - m.q - 0.5 * m.sigma * m.sigma) * dt,
+                     vol = m.sigma * sqrt(dt);
+        double x0 = 0.0, x1 = 0.0, x2 = 0.0, pv = 0.0; // log performances
+        for (int i = 0; i < m.steps; ++i)
+        {
+            const double z0 = sign * z.next(), z1 = sign * z.next(), z2 = sign * z.next();
+            x0 += drift + vol * z0;
+            x1 += drift + vol * (rho * z0 + l22 * z1);
+            x2 += drift + vol * (rho * z0 + l32 * z1 + l33 * z2);
+            const double worst = exp(fmin(x0, fmin(x1, x2)));
+            const double df = exp(-m.r * (i + 1) * dt);
+            if (i + 1 == m.steps)
+            {
+                if (worst >= coupon_barrier)
+                    return pv + df * notional * (1.0 + coupon);
+                return pv + df * notional * (worst < protection ? worst : 1.0);
+            }
+            if (worst >= autocall)
+                return pv + df * notional * (1.0 + coupon);
+            if (worst >= coupon_barrier)
+                pv += df * notional * coupon;
+        }
+        return pv;
+    }
+
     enum class Product
     {
         UpAndOut,
-        Asian
+        Asian,
+        WorstOfAutocall
     };
 
     /// One unit: the mean of a path and its antithetic.
@@ -114,6 +153,8 @@ namespace qm_reference
     {
         if (p == Product::UpAndOut)
             return 0.5 * (up_and_out(m, grid, seed, u, 1.0) + up_and_out(m, grid, seed, u, -1.0));
+        if (p == Product::WorstOfAutocall)
+            return 0.5 * (worst_of_autocall(m, seed, u, 1.0) + worst_of_autocall(m, seed, u, -1.0));
         return 0.5 * (asian(m, grid, seed, u, 1.0) + asian(m, grid, seed, u, -1.0));
     }
 

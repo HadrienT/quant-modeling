@@ -12,6 +12,7 @@
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/scripting/bytecode.hpp"
+#include "quantModeling/scripting/ir.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/variance_reduction/multi_control.hpp"
 
@@ -70,6 +71,9 @@ namespace quantModeling::gpu
     struct ScriptGpuRequest
     {
         const scripting::Program *program = nullptr;
+        /// The script's IR (blueprint/wp/27-ir-ad.md): what the compiled
+        /// kernels are generated from. Null: the request runs interpreted.
+        const scripting::ir::Script *ir = nullptr;
         const DeviceModel *model = nullptr;
         std::vector<Real> baseline;                   ///< starting variables; empty = zeros
         std::vector<std::vector<Time>> discount_mats; ///< per event: the df() maturities
@@ -127,6 +131,32 @@ namespace quantModeling::gpu
     /// script_gpu_unsupported() is not empty.
     ScriptGpuStats simulate_script(const ScriptGpuRequest &req);
 
+    /// The directory compiled kernels are stored in, to be read back by a
+    /// later process instead of compiled (blueprint/wp/27-ir-ad.md §6.1, lot
+    /// L1b): QM_KERNEL_CACHE_DIR, else under the user's cache directory;
+    /// empty when QM_KERNEL_CACHE=0 or without a GPU backend.
+    std::string script_kernel_cache_dir();
+
+    struct ScriptKernelsRebuilt
+    {
+        int current = 0; ///< kernels of the cache already built for this library
+        int rebuilt = 0; ///< kernels of an older build compiled again
+        int failed = 0;  ///< sources that no longer compile (dropped)
+    };
+
+    /// Compile again, for this build of the library, every script the cache
+    /// directory holds a kernel of from an older build (the cache stores
+    /// each kernel's source): after a deployment that changed the kernel,
+    /// the scripts priced before -- the catalogue's shapes and the users'
+    /// scripts -- are ready before the first request. No effect without a
+    /// cache directory; on a CPU-only build returns zeros.
+    ScriptKernelsRebuilt rebuild_script_kernels(int device = 0);
+
+    /// Drop the compiled kernels this process holds in memory, as a restart
+    /// would: the next request reads the cache on disk, or compiles. For
+    /// tests and benchmarks.
+    void forget_compiled_scripts();
+
     /// The devices of `req` its logical blocks actually go to (lot G4): a
     /// card joins only with kMinBlocksPerDevice blocks to do.
     inline int gpus_used(const ScriptGpuRequest &req)
@@ -143,7 +173,12 @@ namespace quantModeling::gpu
     /// replicate (one without Sobol), the price's Welford, then one per
     /// derivative, in the CPU model's label order (mc::dual_directions). One
     /// path per unit, no mirror.
-    std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req);
+    /// Since WP 27 (lot L3) the tangent kernel generated from the script's
+    /// IR runs them, in any number of directions; the dual numbers on the
+    /// interpreter remain where the script is not compiled (`note` says
+    /// which, and why).
+    std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req,
+                                                                       std::string *note = nullptr);
 
     struct ScriptAdjointGpuResult
     {
@@ -155,10 +190,16 @@ namespace quantModeling::gpu
         /// (replicates x risks, replicate-major) -- what a multilevel level
         /// subtracts, replicate by replicate (WP 26 §10.2).
         std::vector<Real> replicate_prices, replicate_risks;
+        /// Which adjoint ran: the kernel generated from the IR, or the one
+        /// written by hand (and why).
+        std::string note;
     };
 
-    /// The per-path adjoint of a script under local vol: d price / d (spot,
-    /// rate, div, every sigma_loc point). One path per unit, no mirror.
+    /// The per-path adjoint of a script: d price / d (every scalar parameter
+    /// of the model, in its label order, then every point of its grid --
+    /// local vol's sigma_loc, SLV's leverage). One path per unit, no mirror.
+    /// Generated from the script's IR (WP 27, lot L4) for every model whose
+    /// step is in it; the adjoint written by hand covers local vol alone.
     ScriptAdjointGpuResult simulate_script_adjoint(const ScriptGpuRequest &req);
 
 } // namespace quantModeling::gpu

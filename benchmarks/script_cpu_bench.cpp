@@ -2,8 +2,8 @@
 // paths, at the same number of paths (blueprint/wp/26-performance.md §5,
 // lots P1a / P1f).
 //
-// The four products of P0 (benchmarks/reference/), as perf_matrix.py writes
-// them as scripts; Philox + antithetic on both sides, so that the draws cost
+// The products of P0 (benchmarks/reference/), as perf_matrix.py writes them
+// as scripts, and the worst-of autocall (three assets); Philox + antithetic on both sides, so that the draws cost
 // the same and the difference is the engine. Median of five timed runs after
 // a warm-up; time per antithetic unit (a pair of paths).
 //
@@ -28,6 +28,7 @@
 #include "quantModeling/scripting/script_model_factory.hpp"
 
 #include "reference/reference_cases.hpp"
+#include "reference/reference_scripts.hpp"
 
 using namespace quantModeling;
 
@@ -101,7 +102,8 @@ int main(int argc, char **argv)
     const qm_reference::Grid g = qm_reference::local_vol_grid();
     const qm_reference::LocalVolGrid view{g.K.data(), static_cast<int>(g.K.size()), g.T.data(),
                                           static_cast<int>(g.T.size()), g.sigma.data()};
-    const std::vector<std::string> scripts = {weekly_barrier(), weekly_barrier(), kDailyAsian, kDailyAsian};
+    const std::vector<std::string> scripts = {weekly_barrier(), weekly_barrier(), kDailyAsian, kDailyAsian,
+                                              qm_reference::worst_of_autocall_script(kValuation)};
     const std::vector<qm_reference::Case> cases = qm_reference::cases();
 
     std::printf("One CPU thread, Philox + antithetic, %ld units (pairs of paths), %s, %s\n", units,
@@ -114,7 +116,9 @@ int main(int argc, char **argv)
         if (!only.empty() && only != name)
             continue;
         const ScriptedProduct<Real> product(scripts[i], ValuationContext{kValuation}, script_settings);
-        auto model = scripting::make_script_model<Real>(spec(c.local_vol, g));
+        auto model = scripting::make_script_model<Real>(c.product == qm_reference::Product::WorstOfAutocall
+                                                            ? qm_reference::worst_of_autocall_model(c.terms.r)
+                                                            : spec(c.local_vol, g));
         PricingSettings s;
         s.mc_paths = static_cast<int>(2 * units);
         s.mc_seed = 1;

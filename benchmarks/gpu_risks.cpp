@@ -92,6 +92,7 @@ namespace
 int main(int argc, char **argv)
 {
     const std::size_t paths = argc > 1 ? static_cast<std::size_t>(std::atol(argv[1])) : 100000;
+    const bool gpu_only = argc > 2 && std::string(argv[2]) == "gpu"; // skip the CPU tape (minutes at 1M paths)
     if (qm::gpu::device_count() == 0)
     {
         std::fprintf(stderr, "no CUDA device\n");
@@ -113,15 +114,36 @@ int main(int argc, char **argv)
         const qm::ScriptedProduct<qm::Real> product(src, ctx);
         auto gpu_model = make<qm::Real>(model);
         std::string why;
+        // The first call of a script pays for its kernel (compiled, or read
+        // from the cache and loaded on the card); the time is the median of
+        // the next three.
         auto t0 = std::chrono::steady_clock::now();
-        const auto gpu = qm::simulate_script_aad_gpu(product, *gpu_model, paths, seed, why);
-        const double gpu_ms = ms_since(t0);
+        auto gpu = qm::simulate_script_aad_gpu(product, *gpu_model, paths, seed, why);
+        const double first_ms = ms_since(t0);
+        double runs[3] = {first_ms, first_ms, first_ms};
+        for (double &r : runs)
+        {
+            if (!gpu)
+                break;
+            auto again = make<qm::Real>(model);
+            t0 = std::chrono::steady_clock::now();
+            gpu = qm::simulate_script_aad_gpu(product, *again, paths, seed, why);
+            r = ms_since(t0);
+        }
+        std::sort(runs, runs + 3);
+        const double gpu_ms = runs[1];
         if (!gpu)
         {
             std::printf("%-18s %-10s  (GPU: %s)\n", name, model, why.c_str());
             continue;
         }
 
+        if (gpu_only)
+        {
+            std::printf("%-18s %-10s %7zu %11s %11.1f %9s %12s   (first call %.0f ms; %s)\n", name, model,
+                        gpu->risks.size(), "-", gpu_ms, "-", "-", first_ms, gpu->diagnostics.c_str());
+            continue;
+        }
         const qm::ScriptedProduct<qm::aad::Number> tape_product(src, ctx);
         auto tape_model = make<qm::aad::Number>(model);
         t0 = std::chrono::steady_clock::now();
@@ -135,8 +157,8 @@ int main(int argc, char **argv)
             gap = std::max(gap, std::abs(cpu.risks[i] - gpu->risks[i]));
             scale = std::max(scale, std::abs(cpu.risks[i]));
         }
-        std::printf("%-18s %-10s %7zu %11.0f %11.1f %9.0f %12.1e\n", name, model, cpu.risks.size(), cpu_ms, gpu_ms,
-                    cpu_ms / gpu_ms, gap / scale);
+        std::printf("%-18s %-10s %7zu %11.0f %11.1f %9.0f %12.1e   (first call %.0f ms)\n", name, model,
+                    cpu.risks.size(), cpu_ms, gpu_ms, cpu_ms / gpu_ms, gap / scale, first_ms);
     }
     std::printf("\nmax |gap|: largest difference between the two risk vectors, relative to the largest risk\n"
                 "(the tape averages batches of 64 paths: exact only when the path count is a multiple of 64).\n");

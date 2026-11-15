@@ -7,6 +7,7 @@
 #include "quantModeling/instruments/simulatable.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/bytecode.hpp"
+#include "quantModeling/scripting/ir.hpp"
 #include "quantModeling/scripting/compiler.hpp"
 #include "quantModeling/scripting/evaluator.hpp"
 #include "quantModeling/scripting/event.hpp"
@@ -96,6 +97,14 @@ namespace quantModeling
         /// uses them as a control variate. Without it, controlPays is
         /// computed and ignored.
         std::optional<double> control_mean{};
+        /// The numbers written in the script are a product's terms (strike,
+        /// barriers, coupons): the GPU's compiled kernel reads them as data
+        /// instead of holding them as constants, so that one kernel serves
+        /// every set of terms and every number of dates of the same product
+        /// shape (blueprint/wp/27-ir-ad.md §6.1, lot L1b). For the scripts
+        /// the library writes (pricers/script_builders); a script a user
+        /// wrote keeps its numbers as constants. Same bits either way.
+        bool terms_as_parameters = false;
     };
 
     /**
@@ -236,6 +245,7 @@ namespace quantModeling
             if (settings.bytecode && !has_exercise_)
             {
                 program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy);
+                ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy, settings.terms_as_parameters);
                 buffers_.vars.assign(static_cast<std::size_t>(program_.n_vars), T(0));
                 buffers_.stack.assign(static_cast<std::size_t>(program_.max_stack), T(0));
                 buffers_.degrees.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
@@ -323,6 +333,10 @@ namespace quantModeling
 
         /// The compiled script (empty when ScriptSettings::bytecode is off).
         const scripting::Program &program() const { return program_; }
+        /// The script's intermediate representation (blueprint/wp/27-ir-ad.md):
+        /// what the GPU compiles, and what the derivatives are built from.
+        /// Empty when the bytecode is.
+        const scripting::ir::Script &ir() const { return ir_; }
         /// Variable state every future path starts from (empty: all zero).
         const std::vector<T> &baseline() const { return baseline_; }
 
@@ -629,6 +643,7 @@ namespace quantModeling
             evaluator_; ///< per-path state (§5.4); hard or fuzzy
         std::vector<T> baseline_;
         scripting::Program program_;
+        scripting::ir::Script ir_;
         bool compiled_ = false;
         bool batchable_ = false; ///< run_event_batch can run it (P1a)
         // The machine's per-path buffers for payoffs(); payoffs_with_state()

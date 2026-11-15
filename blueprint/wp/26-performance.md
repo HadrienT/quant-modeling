@@ -180,6 +180,16 @@ Measure before changing anything.
 - **qmharness baseline**: one `full` run stored, the reference for every later
   `qm_compare`.
 
+**Follow-up (2026-11-14): the worst-of autocall reference.** The third
+reference kernel, left out of P0: `qm_reference::worst_of_autocall` (three
+assets, 8 quarters, the script library's Phoenix terms) and the same product
+as a script (`benchmarks/reference/reference_scripts.hpp`). One CPU thread,
+Philox + antithetic, 100 000 pairs: script 247 ms against 102 ms hand-written
+(2.4x, the highest ratio of the five cases: eight dates, so the per-event
+overhead is not amortised over steps). One V100: the reference reaches 1e-3
+in 0.9 ms; the compiled script runs 2 000 000 paths in 3.5 ms (9.0 ms
+interpreted), the same bits.
+
 Acceptance: `qm_perf_bench` reproduces its own numbers within 10 % on two runs;
 §11's "v1" column is filled; the barrier's price-only time replaces the
 estimate of §2.2.
@@ -273,7 +283,10 @@ measurements changed in the design above:
   stack depth is static at every instruction, so each stack slot becomes a
   named local and each jump a `goto`; the source has no include and no user
   text (constants as hexadecimal literals). Events with the same statements
-  share one `case`: a daily schedule is three bodies, not 252.
+  share one `case`: a daily schedule is three bodies, not 252. (Since WP 27
+  lot L1 the generator reads the script's IR, `scripting/ir_cuda.cpp`: the
+  same operations, SSA values instead of stack slots, `if`s instead of
+  `goto`s; the bytecode generator is gone.)
 - *Linking, not compiling the kernel.* NVRTC has no standard library, and the
   kernel's headers use `<vector>`, `<string>`, `std::function`. So NVRTC
   compiles only the events, to LTO-IR; the kernel (`src/gpu/script_jit_kernel.cu`,

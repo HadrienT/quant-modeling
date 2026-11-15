@@ -66,6 +66,23 @@ namespace quantModeling
                                                                  double rel_eps, std::uint64_t seed,
                                                                  std::string &why, int max_gpus = 0);
 
+    /**
+     * @brief A script's model risks on the CPU without the tape
+     *        (blueprint/wp/27-ir-ad.md §7, lot L7): the adjoint blocks built
+     *        from the script's IR, run by the IR's evaluator -- a checkpoint
+     *        of the state per step and per date instead of a node per
+     *        operation.
+     *
+     * simulate_aad(..., RngKind::Philox)'s paths, labels and estimates
+     * (risks averaged over batches of 64 paths, their error the batches'
+     * spread), its oracle. Pseudo-random Philox paths. nullopt, with `why`,
+     * for what the IR does not cover (a model without a device description,
+     * early exercise, survivalAbove / Below, jumps).
+     */
+    std::optional<AADSimulResults> simulate_script_aad_ir(const ScriptedProduct<Real> &product,
+                                                          ISimulationModel<Real> &model, std::size_t n_paths,
+                                                          std::uint64_t seed, std::string &why);
+
 } // namespace quantModeling
 
 #endif // QM_ENGINES_MC_SCRIPT_ENGINE_HPP

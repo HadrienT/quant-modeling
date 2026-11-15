@@ -2,8 +2,9 @@
 #define GPU_SCRIPT_UNITS_CUH
 
 // The units of the GPU script kernel (src/gpu/script.cu), shared with the
-// kernel the compiled scripts link at run time (script_jit_kernel.cu, lot P1b
-// of blueprint/wp/26-performance.md): both must lay them out the same way.
+// kernels the compiled scripts link at run time (script_jit_kernel.cu, lot P1b
+// of blueprint/wp/26-performance.md, generated from the IR since WP 27): both
+// must lay them out the same way.
 
 #include <cstdint>
 #include <type_traits>
@@ -13,6 +14,26 @@
 #include "quantModeling/engines/mc/sobol_bridge.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/variance_reduction/multi_control.hpp"
+
+/// What a generated block runs against: scripting/ir_cuda.cpp writes the same
+/// struct into the source it generates, field for field.
+struct QmFrame
+{
+    double *st;
+    double *dst;
+    double *ast;
+    double *lth;
+    double *ath;
+    long ath_stride;
+    const double *z;
+    const double *dat;
+    const double *th;
+    const double *tm;
+    const double *gK;
+    const double *gT;
+    int nK, nT, grid0, reserved;
+    void *cell;
+};
 
 namespace quantModeling::gpu::detail
 {
@@ -102,15 +123,41 @@ namespace quantModeling::gpu::detail
     };
 
     /**
-     * Events run by the script's generated code (lot P1b): the function
-     * scripting::cuda_event_source writes, compiled with NVRTC and linked into
-     * script_jit_kernel.cu at run time. Only that kernel calls it; the host
-     * merely lays the unit out.
+     * A path run by generated code (blueprint/wp/27-ir-ad.md, lots L2-L4):
+     * what the kernels of script_jit_kernel.cu need besides the blocks
+     * scripting::cuda_path_source writes -- the draws, and the request's data
+     * (scripting::ir::PathData) on the device. The host lays it out; only
+     * those kernels read it.
      */
-    struct CompiledEvents
+    struct PathUnit
     {
-        __device__ void operator()(int e, scripting::Machine<double> &m, const double *spots, const double *disc,
-                                   const double &numeraire) const;
+        UnitDraws draws;
+        bool antithetic = false;
+        uint64_t per_replicate = 0; ///< units per replicate
+
+        const double *theta = nullptr;      ///< the model's parameters, then its grid
+        const double *step_rows = nullptr;  ///< n_steps x qm_step_cols()
+        const double *event_rows = nullptr; ///< n_events x qm_event_cols()
+        const double *baseline = nullptr;   ///< the script's starting variables
+        const double *terms = nullptr;
+        const std::int32_t *term_begin = nullptr; ///< per event, into `terms`
+        const std::int32_t *kind = nullptr;       ///< per event: the block it runs
+        const int *step_draws = nullptr;          ///< per step: 1 when it draws
+        const int *step_event = nullptr;          ///< per step: its event, or -1
+        int n_steps = 0;
+
+        const Real *grid_K = nullptr; ///< local vol's or the leverage's strikes and times
+        const Real *grid_T = nullptr;
+        int grid_nK = 0, grid_nT = 0, grid0 = 0;
+
+        mc::SpotControls controls;
+
+        // Adjoint: per launch thread `row`, checkpoint c at
+        // checkpoints[c * rows + row] and parameter p's adjoint at
+        // gradient[p * rows + row] (private rows: no atomics).
+        double *checkpoints = nullptr;
+        double *gradient = nullptr;
+        long rows = 0;
     };
 
 } // namespace quantModeling::gpu::detail

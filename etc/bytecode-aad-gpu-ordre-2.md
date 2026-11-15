@@ -308,6 +308,32 @@ inlined into the path loop: no dispatch, no stack in local memory, and a
 kernel specialised for the request's model and sampler (128 registers down
 to 60–70).
 
+Since WP 27's lot L1 (2026-11-14) the source is no longer generated from the
+bytecode but from the script's **IR** (`scripting/ir.hpp`, lowered from the
+tree): every stack slot is an SSA value, a named local assigned once
+(`x7 = __dsub_rn(x3, x6)`), and the jumps are structured `if`s. The
+operations and their order are the bytecode's -- the IR evaluated on the CPU
+gives the interpreter's bits (`tests/testScriptIr.cpp`), and so does the
+kernel compiled from it (`tests/gpu/testGpuScriptJit.cpp`). The bytecode
+stays the CPU's interpreter; the IR is what the derivatives are built from
+(`blueprint/wp/27-ir-ad.md`).
+
+Since lots L2 to L5 (same date) the derivatives on the GPU are no longer
+written by hand either. The model's step is IR too (`scripting/ir_path.*`),
+and `scripting/ir_ad.*` builds a block's **tangent** and **adjoint** as new
+blocks, from a table of local derivatives per operation -- the tape's table,
+with its choices at kinks. The tangent kernel replaces the dual numbers on
+the interpreter (any number of directions, 13 times faster under
+Black-Scholes at a million paths); the adjoint kernel replaces the per-path
+adjoint written for every bytecode instruction and for local vol's step, and
+gives SLV its risks without a line written for it. What part II describes
+below (the trail, the per-instruction adjoints, the duals) is still in the
+code as the oracle the generated kernels are tested against, and as the
+fallback when compilation is off (`QM_SCRIPT_JIT=0`). The adjoint's memory
+changed shape: instead of a record per executed instruction, a checkpoint of
+the state per step and per date, the values recomputed inside each block
+before its reverse sweep.
+
 The interpreter keeps both of its roles: it is the fallback (spot controls,
 duals and adjoint, a compilation failure) and the oracle. The compiled
 script must give its bits exactly, on every library script; this is why both

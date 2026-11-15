@@ -171,6 +171,23 @@ def _start_calibration_warmup() -> None:
     calibration_warmup.start()
 
 
+@app.on_event("startup")
+def _start_kernel_warmup() -> None:
+    # The GPU kernels of the catalogue's shapes and of the scripts priced
+    # before, compiled or read from disk before the first request needs them
+    # (WP 27 lot L1b); off unless QM_KERNEL_WARMUP=1.
+    from . import kernel_warmup
+
+    kernel_warmup.start()
+
+
+@app.on_event("shutdown")
+def _stop_kernel_warmup() -> None:
+    from . import kernel_warmup
+
+    kernel_warmup.stop()
+
+
 @app.on_event("shutdown")
 def _stop_calibration_warmup() -> None:
     from . import calibration_warmup

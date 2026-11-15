@@ -48,10 +48,13 @@ namespace qm_reference
         const double r = 0.03, T_weekly = 364.0 / 365.0;
         const Terms barrier{100.0, r, 0.0, 0.2, 100.0, 130.0, T_weekly, 52, std::exp(-r * T_weekly)};
         const Terms asian{100.0, r, 0.0, 0.2, 100.0, 0.0, 1.0, 252, std::exp(-r)};
+        const Terms autocall{100.0, r, 0.0, 0.25, 0.0, 0.0, 2.0, 8, 0.0}; // 8 quarters; payments discounted at their dates
         return {{"barrier_bs  up-and-out, 52 weekly dates (BS)", Product::UpAndOut, barrier, false},
                 {"barrier_lv  up-and-out, 52 weekly dates (local vol)", Product::UpAndOut, barrier, true},
                 {"asian_bs    arithmetic Asian, 252 fixings (BS)", Product::Asian, asian, false},
-                {"asian_lv    arithmetic Asian, 252 fixings (local vol)", Product::Asian, asian, true}};
+                {"asian_lv    arithmetic Asian, 252 fixings (local vol)", Product::Asian, asian, true},
+                {"autocall_bs worst-of autocall, 3 assets, 8 quarters (BS)", Product::WorstOfAutocall, autocall,
+                 false}};
     }
 
     struct Estimate
