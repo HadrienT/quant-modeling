@@ -186,7 +186,7 @@ namespace quantModeling
         ScriptSettings tree;
         tree.bytecode = false;
         ScriptedProduct<Real> by_tree(src, kCtx, tree), by_code(src, kCtx);
-        ASSERT_TRUE(by_code.program().has_survival);
+        ASSERT_TRUE(by_code.program().has_monitor);
         ASSERT_TRUE(by_code.program().batchable());
 
         LocalVolSimModel<Real> model(S0, r, q, kK, kT, skewed_surface(), 1.0 / 52.0);
@@ -233,8 +233,8 @@ namespace quantModeling
         allocate_scenario(b, prod.defline(), 1);
         model.generate_path(z, a);
         clone->generate_path(z, b);
-        ASSERT_EQ(a.back().survivals.size(), 2u);
-        EXPECT_EQ(a.back().survivals, b.back().survivals);
+        ASSERT_EQ(a.back().monitored.size(), 2u);
+        EXPECT_EQ(a.back().monitored, b.back().monitored);
         std::vector<Real> pa, pb;
         prod.payoffs(a, pa);
         prod.payoffs(b, pb);

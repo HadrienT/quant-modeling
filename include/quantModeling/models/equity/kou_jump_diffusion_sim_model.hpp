@@ -89,7 +89,7 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
-            refuse_barrier_monitoring(defline, "KouJumpDiffusionSimModel");
+            refuse_step_monitors(defline, "KouJumpDiffusionSimModel");
             using std::exp;
 
             timeline_ = canonical_timeline(product_timeline);

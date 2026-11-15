@@ -85,58 +85,6 @@ namespace quantModeling
             }
     }
 
-    namespace
-    {
-        struct SecondOrder
-        {
-            double payoff = 0.0;
-            std::vector<double> gradient, hessian;
-        };
-
-        /// One script on one model: the second-order programs and a path.
-        struct Case2
-        {
-            Case c;
-            ir::PathProgram primal, forward, backward;
-            int K;
-            Case2(const std::string &source, Dyn dyn)
-                : c(source, dyn, ScriptSettings{}),
-                  primal(ir::path_program(c.product.ir(), c.dm.kind, c.dm.n_assets, true)),
-                  forward(ir::tangent(primal, risks())),
-                  backward(ir::tangent(ir::adjoint(primal), risks())),
-                  K(primal.layout.n_risks)
-            {
-            }
-            std::vector<std::int32_t> risks() const
-            {
-                std::vector<std::int32_t> d(static_cast<std::size_t>(primal.layout.n_risks));
-                std::iota(d.begin(), d.end(), 0);
-                return d;
-            }
-            std::vector<double> theta() const
-            {
-                const ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
-                return std::vector<double>(data.theta.begin(), data.theta.begin() + K);
-            }
-            SecondOrder at(const std::vector<double> &theta, int path) const
-            {
-                ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
-                std::copy(theta.begin(), theta.end(), data.theta.begin());
-                SecondOrder out;
-                out.gradient.assign(data.theta.size(), 0.0);
-                out.hessian.assign(data.theta.size() * static_cast<std::size_t>(K), 0.0);
-                ir::DerivativeScratch w;
-                mc::PathDraws draws;
-                draws.seed = kSeed;
-                draws.stride = c.host->view.stride;
-                draws.begin(static_cast<uint64_t>(path));
-                out.payoff = ir::run_path_second_order(forward, backward, K, data, c.dm, c.product.ir(), draws, 1.0,
-                                                       w, out.gradient.data(), out.hessian.data());
-                return out;
-            }
-        };
-    } // namespace
-
     // Path by path, no noise: every entry of the Hessian against the central
     // difference of the gradient, and its symmetry. (Local vol and SLV refuse
     // second order through their grid, WP 27 §14.5.)
@@ -145,7 +93,7 @@ namespace quantModeling
         for (const Dyn dyn : {Dyn::BlackScholes, Dyn::Heston})
             for (const std::string &source : kScripts)
             {
-                const Case2 sc(source, dyn);
+                const SecondOrderCase sc(source, dyn, {}, kSeed);
                 const std::vector<double> theta = sc.theta();
                 const auto K = static_cast<std::size_t>(sc.K);
                 const double step = dyn == Dyn::Heston ? 1e-7 : 1e-5; // as testScriptIrAd
@@ -181,7 +129,7 @@ namespace quantModeling
     // a gamma of exactly 0.
     TEST(ScriptIrLastStep, SecondOrderRisksAreBlackScholess)
     {
-        const Case2 sc(kScripts[0], Dyn::BlackScholes);
+        const SecondOrderCase sc(kScripts[0], Dyn::BlackScholes, {}, kSeed);
         const std::vector<double> theta = sc.theta(); // spot, rate, div, vol
         const double S = theta[0], r = theta[1], q = theta[2], vol = theta[3], K = 100.0;
         const double T = sc.c.dm.t.back(), sqT = std::sqrt(T);
@@ -203,7 +151,7 @@ namespace quantModeling
         EXPECT_NEAR(vo.mean, volga, 4.0 * vo.std_error());
         EXPECT_LT(g.std_error(), 0.02 * gamma);
 
-        const Case2 kink(kMid + "2027-06-01\n    pays max(spot() - 100, 0)\n", Dyn::BlackScholes);
+        const SecondOrderCase kink(kMid + "2027-06-01\n    pays max(spot() - 100, 0)\n", Dyn::BlackScholes, {}, kSeed);
         double kink_gamma = 0.0;
         for (int p = 0; p < 500; ++p)
             kink_gamma += kink.at(theta, p).hessian[0];

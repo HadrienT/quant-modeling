@@ -17,7 +17,7 @@ namespace quantModeling
      * timeline(). The model reads it in allocate()/init() to size its output
      * and to know which discount factors / forwards to evaluate.
      */
-    /// What the model computes for a slot of Sample::survivals.
+    /// What the model computes for a slot of Sample::monitored.
     ///
     ///  - `Survival` (survivalAbove / survivalBelow, WP 26 P2): the
     ///    probability that the spot of `asset` stayed above (`above`) or
@@ -39,24 +39,24 @@ namespace quantModeling
         LastStepDigital,
     };
 
-    /// One slot of Sample::survivals: a quantity the model computes over its
+    /// One slot of Sample::monitored: a quantity the model computes over its
     /// steps since the previous event (see StepQuantity).
-    struct BarrierMonitor
+    struct StepMonitor
     {
         Real level = 0.0;
         std::size_t asset = 0;
         bool above = true; ///< Survival only
         StepQuantity kind = StepQuantity::Survival;
 
-        bool operator==(const BarrierMonitor &) const = default;
+        bool operator==(const StepMonitor &) const = default;
     };
 
     struct SampleDef
     {
-        bool numeraire = true;                ///< need the numeraire at this date
-        std::vector<Time> discount_mats;      ///< P(t, T) for these maturities T
-        std::vector<Time> forward_mats;       ///< F(t, T) for these maturities T
-        std::vector<BarrierMonitor> barriers; ///< survivals and last-step expectations (StepQuantity)
+        bool numeraire = true;             ///< need the numeraire at this date
+        std::vector<Time> discount_mats;   ///< P(t, T) for these maturities T
+        std::vector<Time> forward_mats;    ///< F(t, T) for these maturities T
+        std::vector<StepMonitor> monitors; ///< survivals and last-step expectations (StepQuantity)
     };
 
     /**
@@ -72,14 +72,14 @@ namespace quantModeling
         std::vector<T> spots;     ///< underlying level(s), one per asset
         std::vector<T> discounts; ///< aligned with SampleDef::discount_mats
         std::vector<T> forwards;  ///< aligned with SampleDef::forward_mats
-        std::vector<T> survivals; ///< aligned with SampleDef::barriers
+        std::vector<T> monitored; ///< aligned with SampleDef::monitors
 
         void allocate(const SampleDef &def, std::size_t n_underlyings)
         {
             spots.resize(n_underlyings);
             discounts.resize(def.discount_mats.size());
             forwards.resize(def.forward_mats.size());
-            survivals.resize(def.barriers.size());
+            monitored.resize(def.monitors.size());
         }
 
         void initialize()
@@ -88,7 +88,7 @@ namespace quantModeling
             std::fill(spots.begin(), spots.end(), T(0));
             std::fill(discounts.begin(), discounts.end(), T(1));
             std::fill(forwards.begin(), forwards.end(), T(0));
-            std::fill(survivals.begin(), survivals.end(), T(1));
+            std::fill(monitored.begin(), monitored.end(), T(1));
         }
     };
 

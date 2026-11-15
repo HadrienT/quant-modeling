@@ -84,7 +84,7 @@ namespace quantModeling::scripting::ir
         /// sd = sqrt(max(v, 1e-200)) so that an event with no step before it
         /// (v = 0) gets the payoff of F as the limit, with no branch and no
         /// infinity for the derivatives to multiply by zero.
-        std::int32_t last_step_expectation(Builder &b, const PathLayout &l, const BarrierMonitor &q)
+        std::int32_t last_step_expectation(Builder &b, const PathLayout &l, const StepMonitor &q)
         {
             if (!l.last_step)
                 throw InvalidInput("script IR: a last-step expectation in a layout without the step's forward");

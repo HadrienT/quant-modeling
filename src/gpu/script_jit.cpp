@@ -19,6 +19,7 @@
 #include <nvrtc.h>
 
 #include "quantModeling/gpu/device.hpp"
+#include "quantModeling/gpu/script.hpp"
 
 // The LTO-IR fatbins of script_jit_kernel.cu, one per kernel (0 prices,
 // 1 tangent, 2 adjoint), embedded by CMake.
@@ -342,8 +343,7 @@ namespace quantModeling::gpu::jit
 
     bool enabled()
     {
-        const char *v = std::getenv("QM_SCRIPT_JIT");
-        return !(v && std::strcmp(v, "0") == 0);
+        return script_jit_enabled();
     }
 
     std::string disk_cache_dir()

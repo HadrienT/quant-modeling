@@ -203,7 +203,7 @@ namespace quantModeling
         ScriptSettings tree;
         tree.bytecode = false;
         ScriptedProduct<Real> by_tree(src, ctx(), tree), by_code(src, ctx());
-        ASSERT_TRUE(by_code.program().has_survival);
+        ASSERT_TRUE(by_code.program().has_monitor);
         ASSERT_TRUE(by_code.program().batchable());
 
         LocalVolSimModel<Real> model(S0, r, q, kK, kT, surface(true), 1.0 / 52.0);

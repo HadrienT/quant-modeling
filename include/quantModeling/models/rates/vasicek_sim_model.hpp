@@ -99,7 +99,7 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
-            refuse_barrier_monitoring(defline, "VasicekSimModel");
+            refuse_step_monitors(defline, "VasicekSimModel");
             using std::exp;
             using std::sqrt;
 

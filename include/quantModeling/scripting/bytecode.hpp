@@ -1029,7 +1029,7 @@ namespace quantModeling::scripting
         /// The script reads survivalAbove/Below: a path that does not carry
         /// the model's survival probabilities (the GPU kernels, the per-path
         /// adjoint) must refuse it.
-        bool has_survival = false;
+        bool has_monitor = false;
         /// Of those, a bridge survival (survivalAbove/Below), which no GPU
         /// kernel computes; a last-step expectation alone runs in the kernels
         /// compiled from the IR (WP 27 §14.9), not in the interpreted ones.

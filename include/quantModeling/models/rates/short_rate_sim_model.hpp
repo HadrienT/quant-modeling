@@ -47,7 +47,7 @@ namespace quantModeling
 
         void init(const TimeLine &product_timeline, const std::vector<SampleDef> &defline) override
         {
-            refuse_barrier_monitoring(defline, "ShortRateSimModel");
+            refuse_step_monitors(defline, "ShortRateSimModel");
             for (const SampleDef &def : defline)
                 if (!def.forward_mats.empty())
                     throw InvalidInput("ShortRateSimModel: no forward lookups (df() only)");

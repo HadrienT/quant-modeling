@@ -15,7 +15,7 @@
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/parser.hpp"
-#include "quantModeling/scripting/visitors/barrier_lookup_resolver.hpp"
+#include "quantModeling/scripting/visitors/step_monitor_resolver.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
 #include "quantModeling/scripting/visitors/discount_lookup_resolver.hpp"
@@ -216,8 +216,8 @@ namespace quantModeling
 
             const std::vector<std::vector<Time>> discount_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(events_);
-            const std::vector<std::vector<BarrierMonitor>> barriers =
-                scripting::BarrierLookupResolver().resolve(events_);
+            const std::vector<std::vector<StepMonitor>> barriers =
+                scripting::StepMonitorResolver().resolve(events_);
             defline_ = scripting::build_defline(events_, discount_mats, barriers);
 
             const std::vector<std::vector<Time>> historical_mats =
@@ -228,8 +228,8 @@ namespace quantModeling
                         "ScriptedProduct: df() is not supported in a "
                         "historical (pre-valuation) event (" +
                         historical_events_[i].date.to_iso() + ")");
-            const std::vector<std::vector<BarrierMonitor>> historical_barriers =
-                scripting::BarrierLookupResolver().resolve(historical_events_);
+            const std::vector<std::vector<StepMonitor>> historical_barriers =
+                scripting::StepMonitorResolver().resolve(historical_events_);
             for (std::size_t i = 0; i < historical_barriers.size(); ++i)
                 if (!historical_barriers[i].empty())
                     throw InvalidInput("ScriptedProduct: survivalAbove() / survivalBelow() on a past date (" +
@@ -481,7 +481,7 @@ namespace quantModeling
                         const Sample<T> &smp = (*paths[l < count ? l : 0])[i];
                         spots[l] = smp.spots.data();
                         discounts[l] = smp.discounts.data();
-                        survivals[l] = smp.survivals.data();
+                        survivals[l] = smp.monitored.data();
                         numeraire[l] = smp.numeraire;
                     }
                     check_event_sizes((*paths[0])[i], i);
@@ -558,7 +558,7 @@ namespace quantModeling
                 throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
                                    "DiscountLookupResolver must run before this product is priced");
             const std::int32_t max_surv = program_.event_max_surv[i];
-            if (max_surv >= 0 && static_cast<std::size_t>(max_surv) >= smp.survivals.size())
+            if (max_surv >= 0 && static_cast<std::size_t>(max_surv) >= smp.monitored.size())
                 throw InvalidInput("survivalAbove/Below(): the model did not fill this event's survival "
                                    "probabilities -- it must support barrier monitoring");
         }
@@ -577,7 +577,7 @@ namespace quantModeling
                 const Sample<T> &smp = path[i];
                 check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
-                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.survivals.data());
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data());
             }
             out.assign(1, m.payoff);
         }

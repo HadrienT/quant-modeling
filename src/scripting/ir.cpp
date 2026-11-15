@@ -279,7 +279,7 @@ namespace quantModeling::scripting::ir
                 pay_ = first_pay_ = b_.raw(Op::PayIn);
                 values_.clear();
                 degrees_.clear();
-                has_survival_ = false;
+                has_monitor_ = false;
                 has_bridge_ = has_last_step_ = false;
                 quantities_.clear();
                 term_values_.clear();
@@ -297,7 +297,7 @@ namespace quantModeling::scripting::ir
                 return out;
             }
 
-            bool has_survival() const { return has_survival_; }
+            bool has_monitor() const { return has_monitor_; }
             bool has_bridge() const { return has_bridge_; }
             bool has_last_step() const { return has_last_step_; }
             /// The numbers of the event just lowered, in the order its
@@ -330,19 +330,19 @@ namespace quantModeling::scripting::ir
                 b_.block().max_df = std::max(b_.block().max_df, i);
                 push(b_.value(Op::Df, i));
             }
-            void visit(const NodeSurvival &n) override
+            void visit(const NodeStepQuantity &n) override
             {
-                if (n.slot == NodeSurvival::unindexed)
-                    throw InvalidInput("survivalAbove/Below(): not resolved -- BarrierLookupResolver must run "
+                if (n.slot == NodeStepQuantity::unindexed)
+                    throw InvalidInput("survivalAbove/Below(): not resolved -- StepMonitorResolver must run "
                                        "before lowering");
                 const auto i = static_cast<std::int32_t>(n.slot);
                 b_.block().max_surv = std::max(b_.block().max_surv, i);
-                has_survival_ = true;
+                has_monitor_ = true;
                 const bool bridge = n.kind == StepQuantity::Survival;
                 (bridge ? has_bridge_ : has_last_step_) = true;
                 if (quantities_.size() <= n.slot)
                     quantities_.resize(n.slot + 1);
-                quantities_[n.slot] = BarrierMonitor{n.level, n.asset, bridge ? n.above : true, n.kind};
+                quantities_[n.slot] = StepMonitor{n.level, n.asset, bridge ? n.above : true, n.kind};
                 push(b_.value(Op::Surv, i));
             }
 
@@ -566,9 +566,9 @@ namespace quantModeling::scripting::ir
             std::vector<std::int32_t> vars_, first_; ///< each variable's current value, and its VarIn
             std::int32_t pay_ = -1, first_pay_ = -1;
             std::vector<std::int32_t> values_, degrees_;
-            bool has_survival_ = false;
+            bool has_monitor_ = false;
             bool has_bridge_ = false, has_last_step_ = false;
-            std::vector<BarrierMonitor> quantities_;
+            std::vector<StepMonitor> quantities_;
         };
     } // namespace
 
@@ -582,7 +582,7 @@ namespace quantModeling::scripting::ir
         {
             Block b = lowering.lower(event);
             s.event_terms.push_back(lowering.term_values());
-            s.has_survival = s.has_survival || lowering.has_survival();
+            s.has_monitor = s.has_monitor || lowering.has_monitor();
             s.has_bridge = s.has_bridge || lowering.has_bridge();
             s.has_last_step = s.has_last_step || lowering.has_last_step();
             auto it = std::find(s.blocks.begin(), s.blocks.end(), b);

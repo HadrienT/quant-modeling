@@ -160,13 +160,13 @@ namespace quantModeling::scripting
                     "product is priced");
             push(discounts[n.slot]);
         }
-        void visit(const NodeSurvival &n) override
+        void visit(const NodeStepQuantity &n) override
         {
-            const std::vector<T> &survivals = (*scenario_)[event_index_].survivals;
+            const std::vector<T> &survivals = (*scenario_)[event_index_].monitored;
             if (n.slot >= survivals.size())
                 throw InvalidInput(std::string(n.above ? "survivalAbove" : "survivalBelow") +
                                    "(): the model did not fill this event's survival probabilities -- "
-                                   "BarrierLookupResolver must run before this product is priced, and the "
+                                   "StepMonitorResolver must run before this product is priced, and the "
                                    "model must support barrier monitoring");
             push(survivals[n.slot]);
         }

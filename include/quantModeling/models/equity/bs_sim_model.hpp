@@ -175,21 +175,20 @@ namespace quantModeling
                 // The last-step expectations (WP 27 §8 rung 1) are over the
                 // same exact step: lognormal with forward
                 // S_before exp(drift + var / 2) and log-variance var.
-                const std::vector<BarrierMonitor> &bars = defline_[i].barriers;
-                if (!bars.empty())
+                const SampleDef &mdef = defline_[i];
+                if (!mdef.monitors.empty())
                 {
                     const T var = st.draws ? T(st.vol_sqrt_dt * st.vol_sqrt_dt) : T(0.0);
-                    smp.survivals.resize(bars.size());
-                    for (std::size_t k = 0; k < bars.size(); ++k)
+                    smp.monitored.resize(mdef.monitors.size());
+                    for (std::size_t k = 0; k < mdef.monitors.size(); ++k)
                     {
-                        if (bars[k].kind == StepQuantity::Survival)
-                            smp.survivals[k] = mc::bridge_survival(S_before, S, bars[k].level, bars[k].above, var);
-                        else
-                        {
-                            const T forward = st.draws ? T(S_before * exp(st.drift + 0.5 * var)) : S_before;
-                            smp.survivals[k] = mc::last_step_expectation(bars[k].kind, forward, var, bars[k].level);
-                        }
+                        const StepMonitor &b = mdef.monitors[k];
+                        if (b.kind == StepQuantity::Survival)
+                            smp.monitored[k] = mc::bridge_survival(S_before, S, b.level, b.above, var);
                     }
+                    if (mc::asks_last_step(mdef))
+                        mc::fill_last_step(mdef, smp, st.draws ? T(S_before * exp(st.drift + 0.5 * var)) : S_before,
+                                           var);
                 }
                 smp.numeraire = curve_ ? T(1.0 / curve_->discount(st.t))
                                        : T(exp(r_ * st.t));

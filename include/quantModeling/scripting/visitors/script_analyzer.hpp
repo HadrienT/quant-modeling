@@ -56,7 +56,7 @@ namespace quantModeling::scripting
     {
         inline bool is_spot_derived(const Node &n, const std::vector<char> &tainted)
         {
-            if (dynamic_cast<const NodeSpot *>(&n) || dynamic_cast<const NodeSurvival *>(&n))
+            if (dynamic_cast<const NodeSpot *>(&n) || dynamic_cast<const NodeStepQuantity *>(&n))
                 return true;
             if (const auto *v = dynamic_cast<const NodeVar *>(&n))
                 return v->index < tainted.size() && tainted[v->index];
@@ -141,7 +141,7 @@ namespace quantModeling::scripting
                 // at that date, smoothed by the model: non-linear in the
                 // spot, a threshold for the digital, and computed by the
                 // model like the survivals.
-                if (const auto *s = dynamic_cast<const NodeSurvival *>(&n))
+                if (const auto *s = dynamic_cast<const NodeStepQuantity *>(&n))
                 {
                     out.barrier_monitoring = true;
                     out.nonlinear_in_spot = true;

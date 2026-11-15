@@ -43,7 +43,7 @@ namespace quantModeling
                     ss.terms_as_parameters = (mode & 2) != 0;
                     {
                         const ScriptedProduct<Real> probe(script.source, kCtx, ss);
-                        if (probe.program().code.empty() || probe.program().has_survival)
+                        if (probe.program().code.empty() || probe.program().has_monitor)
                             continue;
                         if (dyn != Dyn::BlackScholes && probe.n_underlyings() > 1)
                             continue;

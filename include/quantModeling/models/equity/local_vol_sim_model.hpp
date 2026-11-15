@@ -84,10 +84,7 @@ namespace quantModeling
             sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
             check_barrier_assets(defline_, 1, "LocalVolSimModel");
-            has_last_step_ = false;
-            for (const SampleDef &def : defline_)
-                for (const BarrierMonitor &b : def.barriers)
-                    has_last_step_ = has_last_step_ || b.kind != StepQuantity::Survival;
+            has_last_step_ = mc::asks_last_step(defline_);
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
 
@@ -143,12 +140,9 @@ namespace quantModeling
             T S = s0_;
             const auto start_event = [&](std::size_t e)
             {
-                const std::vector<BarrierMonitor> &bars = defline_[e].barriers;
-                std::vector<T> &surv = path[e].survivals;
-                surv.assign(bars.size(), T(1.0));
-                for (std::size_t b = 0; b < bars.size(); ++b)
-                    if (bars[b].kind != StepQuantity::Survival)
-                        surv[b] = mc::last_step_expectation(bars[b].kind, S, T(0.0), bars[b].level);
+                path[e].monitored.assign(defline_[e].monitors.size(), T(1.0));
+                if (has_last_step_)
+                    mc::fill_last_step(defline_[e], path[e], S, T(0.0));
             };
             std::size_t next = 0; // the event the current step leads to
             if (!defline_.empty())
@@ -167,8 +161,8 @@ namespace quantModeling
 
                 if (next < defline_.size())
                 {
-                    const std::vector<BarrierMonitor> &bars = defline_[next].barriers;
-                    std::vector<T> &surv = path[next].survivals;
+                    const std::vector<StepMonitor> &bars = defline_[next].monitors;
+                    std::vector<T> &surv = path[next].monitored;
                     for (std::size_t b = 0; b < bars.size(); ++b)
                         if (bars[b].kind == StepQuantity::Survival)
                             surv[b] *= mc::bridge_survival(S_before, S, bars[b].level, bars[b].above, var);
@@ -177,17 +171,9 @@ namespace quantModeling
                 const std::ptrdiff_t event = event_index_of_step_[k];
                 if (event < 0)
                     continue;
-                if (has_last_step_)
-                {
-                    // This step reaches the event: log-Euler, lognormal with
-                    // forward S_before exp((r - q) dt) and log-variance var.
-                    const std::vector<BarrierMonitor> &bars = defline_[static_cast<std::size_t>(event)].barriers;
-                    std::vector<T> &surv = path[static_cast<std::size_t>(event)].survivals;
-                    for (std::size_t b = 0; b < bars.size(); ++b)
-                        if (bars[b].kind != StepQuantity::Survival)
-                            surv[b] = mc::last_step_expectation(bars[b].kind, T(S_before * exp((r_ - q_) * dt)), var,
-                                                                bars[b].level);
-                }
+                if (has_last_step_) // this step reaches the event: log-Euler, forward S_before e^{(r - q) dt}
+                    mc::fill_last_step(defline_[static_cast<std::size_t>(event)], path[static_cast<std::size_t>(event)],
+                                       T(S_before * exp((r_ - q_) * dt)), var);
                 next = static_cast<std::size_t>(event) + 1;
                 if (next < defline_.size())
                     start_event(next);
