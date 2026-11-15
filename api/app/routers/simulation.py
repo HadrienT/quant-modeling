@@ -161,7 +161,7 @@ def simulate_model(req: ModelPathRequest) -> SimulationPathsResponse:
                 kw.update(
                     heston=sv.heston,
                     K_grid=m.K_grid,
-                    T_grid=m.T_grid,
+                    T_grid=list(sv.leverage_T_grid),  # the leverage's own (issue #227)
                     leverage_flat=list(sv.leverage_flat),
                 )
     try:

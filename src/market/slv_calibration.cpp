@@ -71,13 +71,36 @@ namespace quantModeling
         const std::size_t nT = T_grid.size();
         const std::size_t N = settings.n_particles;
 
-        std::vector<Real> leverage(nK * nT);
-        std::vector<Real> prev_column(nK); // leverage at the previous T_grid slice
+        // The leverage is calibrated -- and returned -- at every substep of
+        // max_dt, not only at the surface's maturities: SLV holds a column
+        // over the interval after it (mc::leverage_staircase), and E[v | S]
+        // moves within a surface interval of a quarter or half a year, so a
+        // leverage held that long carried the wrong variance (issue #227: a
+        // skewed surface's one-year 90 put 4.7 % off; with a column every
+        // 0.02 year, 0.08 %). The target sigma_loc at a substep is the
+        // surface's, linear in time between its columns as LocalVolSimModel
+        // reads it (column 0 before the first maturity).
+        const auto sigma_at = [&](std::size_t i, Time t)
+        {
+            if (t <= T_grid.front())
+                return sigma_loc[i * nT];
+            if (t >= T_grid.back())
+                return sigma_loc[i * nT + nT - 1];
+            std::size_t j = 1;
+            while (T_grid[j] < t)
+                ++j;
+            const Real w = (t - T_grid[j - 1]) / (T_grid[j] - T_grid[j - 1]);
+            return (1.0 - w) * sigma_loc[i * nT + j - 1] + w * sigma_loc[i * nT + j];
+        };
+
+        std::vector<Time> times;    // the returned grid's maturities: every substep
+        std::vector<Real> leverage; // K-major over `times`, filled column by column below
+        std::vector<std::vector<Real>> columns;
+        std::vector<Real> prev_column(nK); // leverage at the previous substep
 
         // Bootstrap: every particle starts exactly at s0, so the only
         // leverage value the very first step ever reads is L(s0, ~0), a
-        // single scalar -- there is no distribution to bucket yet. sigma_loc
-        // is K-major, so column 0 is sigma_loc[i*nT + 0] for i in [0,nK).
+        // single scalar -- there is no distribution to bucket yet.
         std::vector<Real> col0(nK);
         for (std::size_t i = 0; i < nK; ++i)
             col0[i] = sigma_loc[i * nT + 0];
@@ -119,56 +142,50 @@ namespace quantModeling
                     v[p] = v[p] + heston.kappa * (heston.theta - v_plus) * dt +
                            heston.xi * sqrt_v_plus * sqdt * dW_vol;
                 }
+                const Time t_now = sub + 1 == n_sub ? t_target : t_prev + dt * static_cast<Real>(sub + 1);
+
+                // Bucket the particles by nearest strike, and read off each
+                // bucket's mean variance as the E[v|S] estimate -- of the
+                // variance the spot actually diffuses with, max(v, floor).
+                // Full-truncation Euler lets v itself go negative, and
+                // averaging the raw v understated E[v|S] wherever the Feller
+                // condition fails (issue #113).
+                std::vector<Real> v_sum(nK, 0.0);
+                std::vector<std::size_t> count(nK, 0);
+                for (std::size_t p = 0; p < N; ++p)
+                {
+                    const std::size_t b = nearest_bucket(K_grid, S[p]);
+                    v_sum[b] += std::max(v[p], settings.variance_floor);
+                    ++count[b];
+                }
+
+                std::vector<Real> column(nK);
+                for (std::size_t i = 0; i < nK; ++i)
+                {
+                    // An empty bucket (the grid's far tails): the long-run
+                    // variance, a defensible order of magnitude where no
+                    // particle carries weight.
+                    const Real mean_v = count[i] > 0 ? v_sum[i] / static_cast<Real>(count[i]) : heston.theta;
+                    Real L = sigma_at(i, t_now) / std::sqrt(std::max(mean_v, settings.variance_floor));
+                    if (L <= settings.leverage_floor || L >= settings.leverage_cap)
+                        clamped_particles += count[i];
+                    L = std::clamp(L, settings.leverage_floor, settings.leverage_cap);
+                    column[i] = L;
+                }
+                times.push_back(t_now);
+                columns.push_back(column);
+                prev_column = std::move(column);
             }
             t_prev = t_target;
-
-            // Bucket the particles now at T_grid[j] by nearest strike, and
-            // read off each bucket's mean variance as the E[v|S] estimate --
-            // of the variance the spot actually diffuses with, max(v, floor).
-            // Full-truncation Euler lets v itself go negative, and averaging
-            // the raw v understated E[v|S] wherever the Feller condition
-            // fails, so the leverage came out too large and SLV carried more
-            // variance than the surface (issue #113: on SPY, xi = 0.74, a
-            // 3-month 105 % call at 6.17 against local vol's 4.92).
-            std::vector<Real> v_sum(nK, 0.0);
-            std::vector<std::size_t> count(nK, 0);
-            for (std::size_t p = 0; p < N; ++p)
-            {
-                const std::size_t b = nearest_bucket(K_grid, S[p]);
-                v_sum[b] += std::max(v[p], settings.variance_floor);
-                ++count[b];
-            }
-
-            std::vector<Real> column(nK);
-            for (std::size_t i = 0; i < nK; ++i)
-            {
-                Real mean_v;
-                if (count[i] > 0)
-                    mean_v = v_sum[i] / static_cast<Real>(count[i]);
-                else
-                {
-                    // No particle landed exactly in this bucket this
-                    // column (common at the grid's far tails): fall back to
-                    // the long-run variance rather than guess from
-                    // neighbours -- theta is always a defensible order of
-                    // magnitude, and an empty bucket already means this
-                    // strike/maturity carries little weight in whatever
-                    // priced it.
-                    mean_v = heston.theta;
-                }
-                const Real sigma_ij = sigma_loc[i * nT + j];
-                Real L = sigma_ij / std::sqrt(std::max(mean_v, settings.variance_floor));
-                if (L <= settings.leverage_floor || L >= settings.leverage_cap)
-                    clamped_particles += count[i];
-                L = std::clamp(L, settings.leverage_floor, settings.leverage_cap);
-                column[i] = L;
-                leverage[i * nT + j] = L;
-            }
-            prev_column = column;
         }
 
-        return SLVLeverageGrid{K_grid, T_grid, leverage,
-                               static_cast<Real>(clamped_particles) / static_cast<Real>(N * nT)};
+        const std::size_t nOut = times.size();
+        leverage.assign(nK * nOut, 0.0);
+        for (std::size_t c = 0; c < nOut; ++c)
+            for (std::size_t i = 0; i < nK; ++i)
+                leverage[i * nOut + c] = columns[c][i];
+        return SLVLeverageGrid{K_grid, times, leverage,
+                               static_cast<Real>(clamped_particles) / static_cast<Real>(N * nOut)};
     }
 
 } // namespace quantModeling
