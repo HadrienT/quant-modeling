@@ -5,6 +5,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/market/discount_curve.hpp"
 #include "quantModeling/models/equity/black_scholes.hpp"
+#include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
@@ -171,14 +172,24 @@ namespace quantModeling
                 // variance: the spot only has to be on the safe side).
                 // (allocate_scenario sized the survivals; nothing to do for
                 // an event without a barrier, which is most of them.)
+                // The last-step expectations (WP 27 §8 rung 1) are over the
+                // same exact step: lognormal with forward
+                // S_before exp(drift + var / 2) and log-variance var.
                 const std::vector<BarrierMonitor> &bars = defline_[i].barriers;
                 if (!bars.empty())
                 {
+                    const T var = st.draws ? T(st.vol_sqrt_dt * st.vol_sqrt_dt) : T(0.0);
                     smp.survivals.resize(bars.size());
                     for (std::size_t k = 0; k < bars.size(); ++k)
-                        smp.survivals[k] =
-                            mc::bridge_survival(S_before, S, bars[k].level, bars[k].above,
-                                                st.draws ? T(st.vol_sqrt_dt * st.vol_sqrt_dt) : T(0.0));
+                    {
+                        if (bars[k].kind == StepQuantity::Survival)
+                            smp.survivals[k] = mc::bridge_survival(S_before, S, bars[k].level, bars[k].above, var);
+                        else
+                        {
+                            const T forward = st.draws ? T(S_before * exp(st.drift + 0.5 * var)) : S_before;
+                            smp.survivals[k] = mc::last_step_expectation(bars[k].kind, forward, var, bars[k].level);
+                        }
+                    }
                 }
                 smp.numeraire = curve_ ? T(1.0 / curve_->discount(st.t))
                                        : T(exp(r_ * st.t));

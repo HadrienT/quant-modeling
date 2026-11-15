@@ -53,6 +53,12 @@ namespace quantModeling::scripting
                 return "'survivalAbove'";
             case TokenKind::SurvivalBelow:
                 return "'survivalBelow'";
+            case TokenKind::LastStepCall:
+                return "'lastStepCall'";
+            case TokenKind::LastStepPut:
+                return "'lastStepPut'";
+            case TokenKind::LastStepDigital:
+                return "'lastStepDigital'";
             case TokenKind::ControlPays:
                 return "'controlPays'";
             case TokenKind::Schedule:

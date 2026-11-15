@@ -13,8 +13,10 @@ namespace quantModeling::scripting
 {
 
     /**
-     * @brief Give every `survivalAbove(L)` / `survivalBelow(L)` a slot in its
-     *        own event's barrier list (WP 26 P2).
+     * @brief Give every `survivalAbove(L)` / `survivalBelow(L)` (WP 26 P2)
+     *        and every `lastStepCall(K)` / `lastStepPut(K)` /
+     *        `lastStepDigital(K)` (WP 27 §8 rung 1) a slot in its own
+     *        event's list of model-computed quantities.
      *
      * The same route as df() (DiscountLookupResolver): a slot is local to
      * the event, it indexes that event's SampleDef::barriers and
@@ -42,7 +44,10 @@ namespace quantModeling::scripting
 
         void visit(NodeSurvival &n) override
         {
-            const BarrierMonitor want{n.level, n.asset, n.above};
+            // A last-step expectation has no side: `above` is left at its
+            // default so that two calls with the same strike share a slot.
+            const bool survival = n.kind == StepQuantity::Survival;
+            const BarrierMonitor want{n.level, n.asset, survival ? n.above : true, n.kind};
             const auto it = std::find(current_->begin(), current_->end(), want);
             n.slot = static_cast<std::size_t>(it - current_->begin());
             if (it == current_->end())

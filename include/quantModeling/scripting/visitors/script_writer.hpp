@@ -103,7 +103,7 @@ namespace quantModeling::scripting
             void visit(const NodeDf &n) override { out += "df(" + n.date.to_iso() + ")"; }
             void visit(const NodeSurvival &n) override
             {
-                out += std::string(n.above ? "survivalAbove(" : "survivalBelow(") + number(n.level);
+                out += std::string(n.function()) + "(" + number(n.level);
                 if (n.asset != 0)
                     out += ", " + std::to_string(n.asset);
                 out += ")";

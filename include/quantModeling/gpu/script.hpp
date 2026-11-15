@@ -52,8 +52,8 @@ namespace quantModeling::gpu
         if (p.code.empty())
             return "the script is not compiled to bytecode";
         if (p.has_survival)
-            return "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the "
-                   "bridge survival probabilities yet";
+            return "survivalAbove() / survivalBelow() and the lastStep*() expectations run on the CPU: the GPU "
+                   "paths do not compute them yet";
         if (p.n_vars > L::kVars)
             return "the script has more than " + std::to_string(L::kVars) + " variables";
         if (p.max_stack > L::kStack || p.max_degrees > L::kDegrees)

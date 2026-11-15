@@ -106,7 +106,8 @@ namespace quantModeling::scripting::ir
                                 : b.input(Op::Data, 1 + in.a);
                     break;
                 case Op::Surv:
-                    throw InvalidInput("script IR: survivalAbove() / survivalBelow() are not bound to a path yet");
+                    throw InvalidInput("script IR: survivalAbove() / survivalBelow() and the lastStep*() expectations are not bound to a "
+                                       "path yet");
                 default:
                     r.copy(k);
                     continue;

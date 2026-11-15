@@ -997,7 +997,7 @@ second order reaches the API (WP 27 L6).
 | Fonction | `simulate_aad_bumped_second_order` | `simulate_aad_second_order` |
 | Coût | trois AAD | une AAD sur une tape plus longue |
 | Biais | en h² | aucun |
-| Payoffs scriptés, digitales, barrières, vanilles | **oui** | **non** : faux d'un facteur 2 sur un call flou, nul sur un payoff dur; **exact on fuzzy payoffs with the C¹ ramp** (`smooth_ramp`, 2026-11-15) |
+| Payoffs scriptés, digitales, barrières, vanilles | **oui** | **non** : faux d'un facteur 2 sur un call flou, nul sur un payoff dur; **exact on fuzzy payoffs with the C¹ ramp** (`smooth_ramp`), and on vanillas and digitals written with `lastStepCall` / `lastStepPut` / `lastStepDigital` (WP 27 §14.8, 2026-11-15) |
 | Payoffs réguliers (puissances, log-contrats, fonctions lisses) | oui | oui, exact |
 | Rôle dans le dépôt | méthode par défaut | payoffs C¹ et vérifications |
 

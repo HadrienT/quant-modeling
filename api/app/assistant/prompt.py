@@ -39,6 +39,9 @@ EXAMPLES: dict[str, str] = {
     "Up-and-in call, continuously monitored barrier at 130, strike 100": (
         "2027-09-10\n" "    pays (1 - survivalBelow(130)) * max(spot() - 100, 0)\n"
     ),
+    "European call, strike 100, smooth for exact gamma (last-step expectation)": (
+        "2027-09-10\n" "    pays lastStepCall(100)\n"
+    ),
     "Arithmetic Asian call, monthly fixings, strike 100, maturity 2027-09-20": (
         "2026-10-19\n"
         "    acc = spot()\n"
@@ -189,7 +192,7 @@ Statements (nothing else exists):
                                     the keywords, not by indentation
 
 Expressions: numbers, variables, spot(), df(DATE), survivalAbove(L),
-survivalBelow(L), parentheses, + - * / and ^ (right-associative), and the
+survivalBelow(L), lastStepCall(K), lastStepPut(K), lastStepDigital(K), parentheses, + - * / and ^ (right-associative), and the
 functions min(a,b) max(a,b) log exp sqrt abs smooth(x, half_width).
 Conditions: = != < <= > >= combined with and / or / not. Comments start
 with #.
@@ -208,6 +211,17 @@ barrier is survivalAbove(L, i). Use it whenever the user says "continuous" or
 does not name observation dates for a barrier; keep `if spot() ...` tests for
 barriers observed on given dates (daily closes). It runs under Black-Scholes
 and local vol, on the CPU.
+
+Last-step expectations: lastStepCall(K) is the expectation of
+max(spot() - K, 0) at the current event over the model's last time step,
+given the path before it (Black's formula on that step); lastStepPut(K) the
+same for max(K - spot(), 0), lastStepDigital(K) for the probability that
+spot() > K. Same price as the payoff itself, but smooth, so second-order
+greeks (gamma, vanna, volga) are exact instead of zero or biased. Use them
+only when the user asks for exact or smooth gammas/second-order greeks, as
+`pays lastStepCall(100)`; otherwise write max(spot() - 100, 0). K is a
+number written in the script; spot(i)'s is lastStepCall(K, i). They run under
+Black-Scholes and local vol, on the CPU.
 
 Generated dates: a date line may be
   schedule(START, END, TENOR, CALENDAR, CONVENTION)

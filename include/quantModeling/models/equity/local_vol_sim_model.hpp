@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
@@ -83,6 +84,10 @@ namespace quantModeling
             sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
             check_barrier_assets(defline_, 1, "LocalVolSimModel");
+            has_last_step_ = false;
+            for (const SampleDef &def : defline_)
+                for (const BarrierMonitor &b : def.barriers)
+                    has_last_step_ = has_last_step_ || b.kind != StepQuantity::Survival;
 
             event_index_of_step_ = event_index_of_step(sim_timeline_, timeline_);
 
@@ -125,14 +130,30 @@ namespace quantModeling
             using std::exp;
             using std::sqrt;
 
+            if (has_last_step_ && milstein_)
+                throw InvalidInput("LocalVolSimModel: lastStepCall() / lastStepPut() / lastStepDigital() need the "
+                                   "log-Euler step, whose last step is lognormal; the Milstein step is not");
+
             // Barrier monitoring (WP 26 P2): each event's survivals are the
             // product of the bridge survivals over the fine steps since the
-            // previous event, each at the step's own local volatility.
+            // previous event, each at the step's own local volatility. A
+            // last-step expectation (WP 27 §8 rung 1) starts as the payoff of
+            // the spot (an event with no step before it) and is computed on
+            // the step that reaches its event.
+            T S = s0_;
+            const auto start_event = [&](std::size_t e)
+            {
+                const std::vector<BarrierMonitor> &bars = defline_[e].barriers;
+                std::vector<T> &surv = path[e].survivals;
+                surv.assign(bars.size(), T(1.0));
+                for (std::size_t b = 0; b < bars.size(); ++b)
+                    if (bars[b].kind != StepQuantity::Survival)
+                        surv[b] = mc::last_step_expectation(bars[b].kind, S, T(0.0), bars[b].level);
+            };
             std::size_t next = 0; // the event the current step leads to
             if (!defline_.empty())
-                path[0].survivals.assign(defline_[0].barriers.size(), T(1.0));
+                start_event(0);
 
-            T S = s0_;
             Time t_prev = 0.0;
             for (std::size_t k = 0; k < sim_timeline_.size(); ++k)
             {
@@ -149,15 +170,27 @@ namespace quantModeling
                     const std::vector<BarrierMonitor> &bars = defline_[next].barriers;
                     std::vector<T> &surv = path[next].survivals;
                     for (std::size_t b = 0; b < bars.size(); ++b)
-                        surv[b] *= mc::bridge_survival(S_before, S, bars[b].level, bars[b].above, var);
+                        if (bars[b].kind == StepQuantity::Survival)
+                            surv[b] *= mc::bridge_survival(S_before, S, bars[b].level, bars[b].above, var);
                 }
 
                 const std::ptrdiff_t event = event_index_of_step_[k];
                 if (event < 0)
                     continue;
+                if (has_last_step_)
+                {
+                    // This step reaches the event: log-Euler, lognormal with
+                    // forward S_before exp((r - q) dt) and log-variance var.
+                    const std::vector<BarrierMonitor> &bars = defline_[static_cast<std::size_t>(event)].barriers;
+                    std::vector<T> &surv = path[static_cast<std::size_t>(event)].survivals;
+                    for (std::size_t b = 0; b < bars.size(); ++b)
+                        if (bars[b].kind != StepQuantity::Survival)
+                            surv[b] = mc::last_step_expectation(bars[b].kind, T(S_before * exp((r_ - q_) * dt)), var,
+                                                                bars[b].level);
+                }
                 next = static_cast<std::size_t>(event) + 1;
                 if (next < defline_.size())
-                    path[next].survivals.assign(defline_[next].barriers.size(), T(1.0));
+                    start_event(next);
 
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots.assign(1, S);
@@ -263,6 +296,7 @@ namespace quantModeling
         Time max_dt_;
         int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
         bool milstein_ = false;
+        bool has_last_step_ = false; ///< the defline asks for a lastStep*() expectation
 
         TimeLine timeline_;     // the product's own event dates
         TimeLine sim_timeline_; // timeline_ plus internal Euler steps

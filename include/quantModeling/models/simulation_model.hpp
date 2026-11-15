@@ -74,8 +74,9 @@ namespace quantModeling
         for (const SampleDef &def : defline)
             if (!def.barriers.empty())
                 throw InvalidInput(std::string(model) +
-                                   " does not monitor barriers between dates: survivalAbove() / survivalBelow() "
-                                   "need Black-Scholes or local vol");
+                                   " does not compute quantities over its steps: survivalAbove() / survivalBelow() "
+                                   "and lastStepCall() / lastStepPut() / lastStepDigital() need Black-Scholes or "
+                                   "local vol");
     }
 
     /// Checks the barriers a model that monitors them is asked for: each one
