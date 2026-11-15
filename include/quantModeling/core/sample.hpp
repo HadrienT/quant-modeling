@@ -17,16 +17,36 @@ namespace quantModeling
      * timeline(). The model reads it in allocate()/init() to size its output
      * and to know which discount factors / forwards to evaluate.
      */
-    /// A barrier the model monitors continuously between the previous event
-    /// date and this one (WP 26 P2): it returns the probability that the
-    /// spot of `asset` stayed above (`above`) or below `level`, conditional
-    /// on the simulated path -- the product of the Brownian-bridge survival
-    /// probabilities over its own steps.
+    /// What the model computes for a slot of Sample::survivals.
+    ///
+    ///  - `Survival` (survivalAbove / survivalBelow, WP 26 P2): the
+    ///    probability that the spot of `asset` stayed above (`above`) or
+    ///    below `level` since the previous event date, conditional on the
+    ///    simulated path -- the product of the Brownian-bridge survival
+    ///    probabilities over the model's own steps.
+    ///  - `LastStepCall` / `LastStepPut` / `LastStepDigital` (lastStepCall /
+    ///    lastStepPut / lastStepDigital, WP 27 §8 rung 1): the expectation of
+    ///    max(S - K, 0), max(K - S, 0) or 1{S > K} at this date, K = `level`,
+    ///    over the model's last step into it, given the path before that step
+    ///    -- Black's formula on the step's lognormal law. Same expectation as
+    ///    the payoff itself, but smooth to every order in the parameters
+    ///    along a path, so that pathwise second-order risks are exact.
+    enum class StepQuantity : unsigned char
+    {
+        Survival,
+        LastStepCall,
+        LastStepPut,
+        LastStepDigital,
+    };
+
+    /// One slot of Sample::survivals: a quantity the model computes over its
+    /// steps since the previous event (see StepQuantity).
     struct BarrierMonitor
     {
         Real level = 0.0;
         std::size_t asset = 0;
-        bool above = true;
+        bool above = true; ///< Survival only
+        StepQuantity kind = StepQuantity::Survival;
 
         bool operator==(const BarrierMonitor &) const = default;
     };
@@ -36,7 +56,7 @@ namespace quantModeling
         bool numeraire = true;                ///< need the numeraire at this date
         std::vector<Time> discount_mats;      ///< P(t, T) for these maturities T
         std::vector<Time> forward_mats;       ///< F(t, T) for these maturities T
-        std::vector<BarrierMonitor> barriers; ///< survival probabilities since the previous event
+        std::vector<BarrierMonitor> barriers; ///< survivals and last-step expectations (StepQuantity)
     };
 
     /**

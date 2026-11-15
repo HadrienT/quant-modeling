@@ -45,8 +45,9 @@ namespace quantModeling::scripting
         /// alone.
         bool path_dependent = false;
 
-        /// The script reads survivalAbove / survivalBelow: the model must
-        /// monitor barriers between dates (Black-Scholes or local vol today,
+        /// The script reads survivalAbove / survivalBelow or a lastStep*
+        /// expectation: the model must compute them over its steps
+        /// (Black-Scholes or local vol today,
         /// ISimulationModel::monitors_barriers).
         bool barrier_monitoring = false;
     };
@@ -135,13 +136,20 @@ namespace quantModeling::scripting
                     out.nonlinear_in_spot = true;
 
                 // A bridge survival is a barrier on the whole path between two
-                // dates: a threshold, path-dependent by construction.
-                if (dynamic_cast<const NodeSurvival *>(&n))
+                // dates: a threshold, path-dependent by construction. A
+                // last-step expectation is a vanilla's (or digital's) payoff
+                // at that date, smoothed by the model: non-linear in the
+                // spot, a threshold for the digital, and computed by the
+                // model like the survivals.
+                if (const auto *s = dynamic_cast<const NodeSurvival *>(&n))
                 {
                     out.barrier_monitoring = true;
                     out.nonlinear_in_spot = true;
-                    out.spot_threshold_test = true;
-                    out.path_dependent = true;
+                    const bool survival = s->kind == StepQuantity::Survival;
+                    if (survival || s->kind == StepQuantity::LastStepDigital)
+                        out.spot_threshold_test = true;
+                    if (survival)
+                        out.path_dependent = true;
                 }
 
                 if (const auto *cmp = dynamic_cast<const NodeComparison *>(&n))

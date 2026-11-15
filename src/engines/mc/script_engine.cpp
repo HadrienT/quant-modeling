@@ -791,7 +791,7 @@ namespace quantModeling
         if (product.has_exercise() || product.ir().empty())
             why = "early exercise runs on the tree evaluator, whose risks take the tape";
         else if (product.ir().has_survival)
-            why = "survivalAbove() / survivalBelow() are not in the IR's paths yet";
+            why = "survivalAbove() / survivalBelow() and the lastStep*() expectations are not in the IR's paths yet";
         else if (!model.describe_device(dm))
             why = "this model's step is not in the IR";
         else if (dm.kind == DeviceModel::Kind::Heston && dm.jump_k != 0.0)

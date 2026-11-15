@@ -2,6 +2,7 @@
 #define QM_SCRIPTING_NODE_HPP
 
 #include "quantModeling/core/date.hpp"
+#include "quantModeling/core/sample.hpp"
 #include "quantModeling/core/types.hpp"
 
 #include <cstddef>
@@ -150,7 +151,29 @@ namespace quantModeling::scripting
         double level = 0.0;
         std::size_t asset = 0;
         bool above = true;
+        /// `Survival`, or one of `lastStepCall(K)` / `lastStepPut(K)` /
+        /// `lastStepDigital(K)` (WP 27 §8 rung 1), K in `level`: the
+        /// expectation of the payoff over the model's last step into this
+        /// date, given the path before it. Same route as the survivals: the
+        /// model computes it into the same slots.
+        StepQuantity kind = StepQuantity::Survival;
         std::size_t slot = unindexed;
+
+        /// The function's name in the language.
+        const char *function() const
+        {
+            switch (kind)
+            {
+                case StepQuantity::LastStepCall:
+                    return "lastStepCall";
+                case StepQuantity::LastStepPut:
+                    return "lastStepPut";
+                case StepQuantity::LastStepDigital:
+                    return "lastStepDigital";
+                default:
+                    return above ? "survivalAbove" : "survivalBelow";
+            }
+        }
     };
 
     // ── arithmetic ────────────────────────────────────────────────────────────

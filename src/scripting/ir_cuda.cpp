@@ -385,8 +385,8 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         }
         if (script.has_survival)
         {
-            out.why = "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the "
-                      "bridge survival probabilities yet";
+            out.why = "survivalAbove() / survivalBelow() and the lastStep*() expectations run on the CPU: the GPU "
+                      "paths do not compute them yet";
             return out;
         }
         const auto kind = static_cast<DeviceModel::Kind>(model_kind);

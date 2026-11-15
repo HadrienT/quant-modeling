@@ -49,8 +49,9 @@ namespace quantModeling::scripting
         void visit(const NodeDf &n) override { leaf("Df " + n.date.to_iso()); }
         void visit(const NodeSurvival &n) override
         {
-            leaf(std::string(n.above ? "SurvivalAbove " : "SurvivalBelow ") + std::to_string(n.level) + " " +
-                 std::to_string(n.asset));
+            std::string name = n.function();
+            name[0] = static_cast<char>(name[0] - 'a' + 'A'); // SurvivalAbove, LastStepCall, ...
+            leaf(name + " " + std::to_string(n.level) + " " + std::to_string(n.asset));
         }
 
         void visit(const NodeAdd &n) override { node("Add", n); }

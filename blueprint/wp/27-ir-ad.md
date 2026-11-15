@@ -753,3 +753,55 @@ replaced by the two tests above.
 Left in L6: rung 1 (the conditional expectation on the last step), Vibrato,
 the bump on the adjoint as the fallback, second order through a grid (local
 vol, SLV), the GPU second-order kernel, the API fields and the front end.
+
+### 14.8 L6, rung 1: the last-step expectations, first part (2026-11-15)
+
+Decided by the maintainer (2026-11-15): rung 1 is **script primitives**, not
+the engine recognising payoffs by their shape nor a generic quadrature.
+`lastStepCall(K)`, `lastStepPut(K)` and `lastStepDigital(K)` (optionally
+`(K, i)` for asset i) return the expectation of max(S − K, 0),
+max(K − S, 0) and 1{S > K} at the current event over the model's last step
+into it, given the path before that step. Under a log-Euler step the end of
+the step is lognormal, with forward F = S exp(m + v/2) and log-variance v, so
+the expectation is Black's formula (`models/equity/last_step.hpp`). It is the
+scheme's own law: the price has no bias against the payoff it replaces (the
+tower property), and the result is smooth to every order along a path.
+
+Built on the survivals' route (WP 26 P2) rather than beside it: a survival
+and a last-step expectation are both "a number the model computes over its
+steps for this event", so `BarrierMonitor` and `NodeSurvival` gained a
+`StepQuantity` kind and everything that carries survivals carries these
+(the slot resolver, `Sample::survivals`, the tree evaluator, the bytecode's
+`Surv` and the batched interpreter, the tape). The models compute them:
+Black-Scholes on its exact step between dates, local vol on the last fine
+step (refused with the Milstein step, whose step is not lognormal). The
+other models refuse them as they refuse survivals, the GPU and the IR's
+paths leave them to the CPU with the reason, and the assistant's prompt
+describes them (used only when exact second-order greeks are asked for).
+
+Checked (`tests/testLastStep.cpp`):
+
+- one event under Black-Scholes: the last step is the whole path, the script
+  is the closed form on every path (error < 1e-10);
+- with a mid-life event (Black-Scholes, T = 1, 100 000 Sobol points): call
+  10.7609 ± 0.0007 against 10.7624, put 8.8027 ± 0.0003 against 8.8020,
+  digital 0.467788 ± 0.000006 against 0.467807; at 2 million paths, no bias
+  (−0.2 and −0.0 standard errors pseudo-random, 1.3 and 1.1 Sobol);
+- the error on the same pseudo-random paths: 0.0354 against 0.0549 for the
+  call, 0.00089 against 0.00153 for the digital (the last step carries half
+  the variance here; on local vol's weekly last step there is little to
+  remove);
+- skewed local vol: the payoff's price (9.5301 ± 0.0006 against 9.5299 ±
+  0.0006), and put-call parity against the scheme's forward;
+- tree = bytecode = batched bytecode to the bit, mixed with a survival;
+- **the acceptance** (§10 L6, "gamma, vanna, volga against closed forms"),
+  adjoint over tangent on the tape, 20 000 paths: gamma 0.015547 ± 0.000045
+  against 0.015470, vanna 0.0659 ± 0.0040 against 0.0696, volga −1.76 ± 0.41
+  against −1.43; the payoff max(S − K, 0) on the same paths gives exactly 0.
+
+Left for rung 1: bind the model-computed quantities into the IR's paths
+(the survivals included, which the IR refuses today), so that the IR's
+second order and the GPU compute them; Heston and SLV (their S step is
+lognormal given the variance, so the same formula applies); and the
+catalogue's vanillas and digitals switched to the primitives, which waits
+for the GPU (today it would send them to the CPU).

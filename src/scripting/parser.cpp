@@ -648,27 +648,55 @@ namespace quantModeling::scripting
             }
             case TokenKind::SurvivalAbove:
             case TokenKind::SurvivalBelow:
+            case TokenKind::LastStepCall:
+            case TokenKind::LastStepPut:
+            case TokenKind::LastStepDigital:
             {
-                const bool above = tok.kind == TokenKind::SurvivalAbove;
-                const char *name = above ? "survivalAbove" : "survivalBelow";
+                auto node = std::make_unique<NodeSurvival>();
+                const char *name = "survivalAbove";
+                const char *what = "a barrier level (a positive number)";
+                switch (tok.kind)
+                {
+                    case TokenKind::SurvivalBelow:
+                        node->above = false;
+                        name = "survivalBelow";
+                        break;
+                    case TokenKind::LastStepCall:
+                        node->kind = StepQuantity::LastStepCall;
+                        name = "lastStepCall";
+                        break;
+                    case TokenKind::LastStepPut:
+                        node->kind = StepQuantity::LastStepPut;
+                        name = "lastStepPut";
+                        break;
+                    case TokenKind::LastStepDigital:
+                        node->kind = StepQuantity::LastStepDigital;
+                        name = "lastStepDigital";
+                        break;
+                    default:
+                        break;
+                }
+                const bool barrier = node->kind == StepQuantity::Survival;
+                if (!barrier)
+                    what = "a strike (a positive number)";
+                const char *letter = barrier ? "L" : "K";
                 advance();
                 const std::string open = std::string("'(' after '") + name + "'";
                 expect(TokenKind::LParen, open.c_str());
-                auto node = std::make_unique<NodeSurvival>();
-                node->above = above;
-                // The level is a literal: the model needs it before the
-                // simulation, as df() needs its date.
-                const Token &level = expect(TokenKind::Number, "a barrier level (a positive number)");
+                // The level (or strike) is a literal: the model needs it
+                // before the simulation, as df() needs its date.
+                const Token &level = expect(TokenKind::Number, what);
                 try
                 {
                     node->level = std::stod(level.lexeme);
                 }
                 catch (const std::exception &)
                 {
-                    fail("invalid barrier level: '" + level.lexeme + "'", level);
+                    fail(std::string("invalid ") + (barrier ? "barrier level" : "strike") + ": '" + level.lexeme + "'",
+                         level);
                 }
                 if (!(node->level > 0.0))
-                    fail(std::string(name) + "(L): L must be a positive number", level);
+                    fail(std::string(name) + "(" + letter + "): " + letter + " must be a positive number", level);
                 if (check(TokenKind::Comma))
                 {
                     advance();
@@ -683,7 +711,7 @@ namespace quantModeling::scripting
                         fail("invalid asset index: '" + idx.lexeme + "'", idx);
                     }
                     if (value < 0.0 || value != std::floor(value))
-                        fail(std::string(name) + "(L, i): i must be a non-negative integer", idx);
+                        fail(std::string(name) + "(" + letter + ", i): i must be a non-negative integer", idx);
                     node->asset = static_cast<std::size_t>(value);
                 }
                 const std::string close = std::string("')' to close '") + name + "(...)'";
