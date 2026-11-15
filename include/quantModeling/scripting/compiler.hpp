@@ -33,10 +33,11 @@ namespace quantModeling::scripting
     class Compiler final : public ConstVisitor
     {
       public:
-        Program compile(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy)
+        Program compile(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool smooth_ramp = false)
         {
             p_ = Program{};
             p_.fuzzy = fuzzy;
+            smooth_ = smooth_ramp;
             p_.n_vars = static_cast<int>(n_vars);
             for (const Event &event : events)
             {
@@ -247,7 +248,7 @@ namespace quantModeling::scripting
             n.arguments[0]->accept(*this);
             n.arguments[1]->accept(*this);
             const bool crisp = n.discrete || n.eps <= 0.0;
-            emit(fuzzy_op, crisp ? 1 : 0, 0, n.eps), pop(), pop(), push_degree();
+            emit(fuzzy_op, crisp ? 1 : 0, smooth_ && !crisp ? 1 : 0, n.eps), pop(), pop(), push_degree();
         }
         void connective(const Node &n, Op hard_op, Op fuzzy_op)
         {
@@ -265,6 +266,7 @@ namespace quantModeling::scripting
         }
 
         Program p_;
+        bool smooth_ = false;
         int sp_ = 0;
         int dp_ = 0;
         int slot_ = 0;
@@ -274,9 +276,10 @@ namespace quantModeling::scripting
         std::int32_t max_surv_ = -1;
     };
 
-    inline Program compile_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy)
+    inline Program compile_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy,
+                                  bool smooth_ramp = false)
     {
-        return Compiler().compile(events, n_vars, fuzzy);
+        return Compiler().compile(events, n_vars, fuzzy, smooth_ramp);
     }
 
 } // namespace quantModeling::scripting

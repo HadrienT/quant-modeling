@@ -351,8 +351,12 @@ namespace quantModeling
             ir::PathProgram primal, forward, backward;
             int K;
             SecondOrderCase(const std::string &source, Dyn dyn, bool fuzzy)
-                : c(source, dyn, [&]
-                    { ScriptSettings ss; ss.fuzzy = fuzzy; return ss; }()),
+                : SecondOrderCase(source, dyn, [&]
+                                  { ScriptSettings ss; ss.fuzzy = fuzzy; return ss; }())
+            {
+            }
+            SecondOrderCase(const std::string &source, Dyn dyn, const ScriptSettings &settings)
+                : c(source, dyn, settings),
                   primal(ir::path_program(c.product.ir(), c.dm.kind, c.dm.n_assets, true)),
                   forward(ir::tangent(primal, all_risks(primal.layout))),
                   backward(ir::tangent(ir::adjoint(primal), all_risks(primal.layout))),
@@ -484,6 +488,95 @@ namespace quantModeling
         for (int p = 0; p < 500; ++p)
             gamma += sc.at(theta, p).hessian[0];
         EXPECT_EQ(gamma, 0.0); // exactly: max is piecewise linear in the spot
+    }
+
+    namespace
+    {
+        /// Fuzzy settings with a band of half-width `eps` (absolute, in the
+        /// condition's units: here the spot's) and the linear or C1 ramp.
+        ScriptSettings fuzzy_settings(double eps, bool smooth)
+        {
+            ScriptSettings ss;
+            ss.fuzzy = true;
+            ss.default_eps = eps;
+            ss.smooth_ramp = smooth;
+            return ss;
+        }
+
+        const char *const kFuzzyDigital = "2027-06-01\n    if spot() > 100 then pays 100 endIf\n";
+        const char *const kFuzzyCall = "2027-06-01\n    if spot() > 100 then pays spot() - 100 endIf\n";
+    } // namespace
+
+    // Rung 2 of §8, path by path and without noise: with the C1 ramp a fuzzy
+    // digital and a fuzzy call are twice differentiable along a path, so the
+    // Hessian row equals the central difference of the gradient on paths
+    // whose final spot falls inside the band (where the second derivative is
+    // not 0). The band is wide (eps = 2) so that many paths fall in it.
+    TEST(ScriptIrSecondOrder, TheSmoothRampsHessianIsTheGradientsDerivativeInsideTheBand)
+    {
+        for (const char *source : {kFuzzyDigital, kFuzzyCall})
+        {
+            const SecondOrderCase sc(source, Dyn::BlackScholes, fuzzy_settings(2.0, true));
+            const std::vector<double> theta = sc.theta();
+            const auto K = static_cast<std::size_t>(sc.K);
+            int inside = 0;
+            for (int path = 0; path < 400 && inside < 8; ++path)
+            {
+                const SecondOrder base = sc.at(theta, path);
+                if (base.hessian[0] == 0.0)
+                    continue; // outside the band: nothing to differentiate
+                ++inside;
+                double scale = 1e-9;
+                for (std::size_t i = 0; i < K * K; ++i)
+                    scale = std::max(scale, std::abs(base.hessian[i]));
+                for (std::size_t d = 0; d < K; ++d)
+                {
+                    const double h = 1e-6 * std::max(1.0, std::abs(theta[d]));
+                    std::vector<double> up = theta, down = theta;
+                    up[d] += h;
+                    down[d] -= h;
+                    const SecondOrder a = sc.at(up, path), b = sc.at(down, path);
+                    for (std::size_t p = 0; p < K; ++p)
+                    {
+                        const double fd = (a.gradient[p] - b.gradient[p]) / (2.0 * h);
+                        EXPECT_NEAR(base.hessian[p * K + d], fd, 1e-5 * scale)
+                            << "path " << path << ", d2 / d theta_" << p << " d theta_" << d << "\n"
+                            << source;
+                        EXPECT_NEAR(base.hessian[p * K + d], base.hessian[d * K + p], 1e-10 * scale);
+                    }
+                }
+            }
+            EXPECT_EQ(inside, 8) << source;
+        }
+    }
+
+    // The acceptance of L6 (§10): the fuzzy call's factor 2. With the linear
+    // ramp the smoothed call (S - K) u(S - K) has, along a path, a second
+    // derivative 2 u' that integrates to 2 over the band: its average
+    // pathwise gamma is twice Black-Scholes's (the corners' negative mass is
+    // invisible). With the C1 ramp the second derivative 2 u' + (S - K) u''
+    // integrates to 1, and the pathwise gamma is Black-Scholes's gamma,
+    // smoothed by a kernel of width 2 eps (a bias of order eps^2 gamma'',
+    // here about 0.1 %, far inside the Monte-Carlo error).
+    TEST(ScriptIrSecondOrder, TheSmoothRampRemovesTheFuzzyCallsFactorTwo)
+    {
+        for (const bool smooth : {true, false})
+        {
+            const SecondOrderCase sc(kFuzzyCall, Dyn::BlackScholes, fuzzy_settings(2.0, smooth));
+            const std::vector<double> theta = sc.theta(); // spot, rate, div, vol
+            const double S = theta[0], r = theta[1], q = theta[2], vol = theta[3], K = 100.0;
+            const double T = sc.c.dm.t.back();
+            const double d1 = (std::log(S / K) + (r - q + 0.5 * vol * vol) * T) / (vol * std::sqrt(T));
+            const double bs_gamma =
+                std::exp(-q * T) * std::exp(-0.5 * d1 * d1) / std::sqrt(2.0 * M_PI) / (S * vol * std::sqrt(T));
+            WelfordAccumulator gamma;
+            for (int p = 0; p < 40000; ++p)
+                gamma.add(sc.at(theta, p).hessian[0]);
+            const double expected = smooth ? bs_gamma : 2.0 * bs_gamma;
+            EXPECT_NEAR(gamma.mean, expected, 4.0 * gamma.std_error())
+                << (smooth ? "C1" : "linear") << " ramp, Black-Scholes gamma " << bs_gamma;
+            EXPECT_LT(gamma.std_error(), 0.1 * bs_gamma); // so that a factor 2 cannot hide in the error
+        }
     }
 
 } // namespace quantModeling

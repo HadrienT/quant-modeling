@@ -125,6 +125,19 @@ namespace quantModeling
         EXPECT_NEAR(r.first, std::exp(-Q) * norm_cdf(d1), 4.0 * r.first_std_error + 0.005); // delta is fine
     }
 
+    TEST(AADSecondOrder, WithTheSmoothRampTheTapesPathwiseGammaIsBlackScholesGamma)
+    {
+        // The C1 ramp u^2 (3 - 2 u) (ScriptSettings::smooth_ramp, WP 27 §8
+        // rung 2) has no corners: P'' = 2 H' + x H'' integrates to 1 over the
+        // band and has no Dirac mass, so adjoint over tangent on the tape gives
+        // the smoothed call's gamma -- Black-Scholes's up to O(eps²).
+        ScriptSettings settings = fuzzy_settings();
+        settings.smooth_ramp = true;
+        const auto r = run(kFuzzyCall, kSpot, 100000, settings);
+        EXPECT_NEAR(r.second[kSpot], bs_gamma(), 4.0 * r.second_std_errors[kSpot] + 0.005 * bs_gamma());
+        EXPECT_LT(r.second_std_errors[kSpot], 0.1 * bs_gamma()); // a factor 2 cannot hide in the error
+    }
+
     TEST(AADSecondOrder, TheBooksBumpedAdjointGammaOfAFuzzyCallIsBlackScholesGamma)
     {
         // §12.1: the delta of the smoothed call is continuous, so its central

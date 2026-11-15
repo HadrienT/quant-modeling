@@ -264,8 +264,10 @@ namespace quantModeling::scripting::ir
         class Lowering final : public ConstVisitor
         {
           public:
-            Lowering(std::size_t n_vars, bool fuzzy, bool terms)
-                : n_vars_(n_vars), fuzzy_(fuzzy), terms_(terms) {}
+            Lowering(std::size_t n_vars, bool fuzzy, bool terms, bool smooth)
+                : n_vars_(n_vars), fuzzy_(fuzzy), terms_(terms), smooth_(smooth)
+            {
+            }
 
             Block lower(const Event &event)
             {
@@ -503,17 +505,26 @@ namespace quantModeling::scripting::ir
                 const std::int32_t x = b_.value(Op::Sub, lhs, rhs); // the condition is x ⋈ 0
                 if (n.discrete || n.eps <= 0.0)
                     return push_degree(b_.value(op, x, b_.constant(0.0)));
+                // The ramp, linear or C1 (u^2 (3 - 2 u), the interpreter's
+                // operations in its order).
+                const auto ramp = [&](Op which)
+                {
+                    const std::int32_t u = b_.value(which, x, -1, n.eps);
+                    if (!smooth_)
+                        return u;
+                    return b_.mul(b_.mul(u, u), b_.sub(b_.constant(3.0), b_.mul(b_.constant(2.0), u)));
+                };
                 switch (op)
                 {
                     case Op::Lt:
                     case Op::Le:
-                        return push_degree(b_.value(Op::Sub, b_.constant(1.0), b_.value(Op::Up, x, -1, n.eps)));
+                        return push_degree(b_.value(Op::Sub, b_.constant(1.0), ramp(Op::Up)));
                     case Op::Eq:
-                        return push_degree(b_.value(Op::Tent, x, -1, n.eps));
+                        return push_degree(ramp(Op::Tent));
                     case Op::Ne:
-                        return push_degree(b_.value(Op::Sub, b_.constant(1.0), b_.value(Op::Tent, x, -1, n.eps)));
+                        return push_degree(b_.value(Op::Sub, b_.constant(1.0), ramp(Op::Tent)));
                     default:
-                        return push_degree(b_.value(Op::Up, x, -1, n.eps));
+                        return push_degree(ramp(Op::Up));
                 }
             }
             void connective(const Node &n, Op hard_op, Op fuzzy_op)
@@ -539,6 +550,7 @@ namespace quantModeling::scripting::ir
             std::size_t n_vars_;
             bool fuzzy_;
             bool terms_;
+            bool smooth_;
             std::vector<double> term_values_;
             Builder b_;
             std::vector<std::int32_t> vars_, first_; ///< each variable's current value, and its VarIn
@@ -548,12 +560,12 @@ namespace quantModeling::scripting::ir
         };
     } // namespace
 
-    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms)
+    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms, bool smooth_ramp)
     {
         Script s;
         s.n_vars = static_cast<int>(n_vars);
         s.fuzzy = fuzzy;
-        Lowering lowering(n_vars, fuzzy, terms);
+        Lowering lowering(n_vars, fuzzy, terms, smooth_ramp);
         for (const Event &event : events)
         {
             Block b = lowering.lower(event);
