@@ -6,6 +6,7 @@ import {
 	Uncertainty,
 } from "@/shared/ui/density";
 import { ScriptGreeks } from "./ScriptGreeks";
+import { SecondOrderGreeks } from "./SecondOrderGreeks";
 
 /** A scripted product's price, its Monte-Carlo error, its time-step bias and
  * how long it took,
@@ -40,6 +41,9 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 				)}
 			</div>
 			{r.risks && r.risks.length > 0 && <ScriptGreeks risks={r.risks} />}
+			{r.second_order_method && (
+				<SecondOrderGreeks greeks={r.greeks} method={r.second_order_method} />
+			)}
 		</div>
 	);
 }

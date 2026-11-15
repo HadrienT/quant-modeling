@@ -33,15 +33,34 @@ const RISKS = [
 ];
 
 function mount(status?: Record<string, unknown>) {
-	const bodies: { greeks_method?: string }[] = [];
+	const bodies: { greeks_method?: string; second_order?: boolean }[] = [];
 	server.use(
 		http.post("*/price/scripted", async ({ request }) => {
-			const body = (await request.json()) as { greeks_method?: string };
+			const body = (await request.json()) as {
+				greeks_method?: string;
+				second_order?: boolean;
+			};
 			bodies.push(body);
+			const second = body.second_order
+				? {
+						greeks: {
+							...pricingResponse().greeks,
+							gamma: 0.01547,
+							gamma_std_error: 0.00002,
+							vanna: 0.0699,
+							vanna_std_error: 0.0001,
+							volga: -1.405,
+							volga_std_error: 0.021,
+						},
+						second_order_method:
+							"bump on the adjoint: central differences of the GPU's first-order risks",
+					}
+				: {};
 			return HttpResponse.json(
 				pricingResponse({
 					risks: body.greeks_method === "aad" ? RISKS : null,
 					warnings: [],
+					...second,
 				}),
 			);
 		}),
@@ -97,6 +116,36 @@ describe("scripting page — greeks", () => {
 		expect(
 			within(greeks).getByText(/Plus 2 sensitivities to the nodes/),
 		).toBeInTheDocument();
+	});
+
+	it("asks for the second order when ticked and shows it with its method", async () => {
+		const bodies = mount();
+		fireEvent.click(screen.getByLabelText(/second order/));
+		price();
+		const second = await screen.findByRole("region", {
+			name: "Second-order greeks",
+		});
+		expect(bodies[0]!.greeks_method).toBe("aad");
+		expect(bodies[0]!.second_order).toBe(true);
+		expect(
+			within(second).getByRole("row", { name: /^Gamma/ }),
+		).toHaveTextContent("±");
+		expect(
+			within(second).getByRole("row", { name: /^Volga/ }),
+		).toHaveTextContent("1.405");
+		expect(
+			within(second).getByText(/central differences of the GPU/),
+		).toHaveTextContent("bias");
+	});
+
+	it("does not ask for the second order by default", async () => {
+		const bodies = mount();
+		price();
+		await screen.findByRole("region", { name: "Greeks" });
+		expect(bodies[0]!.second_order).toBeUndefined();
+		expect(
+			screen.queryByRole("region", { name: "Second-order greeks" }),
+		).not.toBeInTheDocument();
 	});
 
 	it("prices without greeks when they are switched off", async () => {

@@ -3990,10 +3990,18 @@ export interface components {
             theta?: number | null;
             /** Theta Std Error */
             theta_std_error?: number | null;
+            /** Vanna */
+            vanna?: number | null;
+            /** Vanna Std Error */
+            vanna_std_error?: number | null;
             /** Vega */
             vega?: number | null;
             /** Vega Std Error */
             vega_std_error?: number | null;
+            /** Volga */
+            volga?: number | null;
+            /** Volga Std Error */
+            volga_std_error?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5360,6 +5368,11 @@ export interface components {
              * @description Scripted library products only: the script priced.
              */
             script?: string | null;
+            /**
+             * Second Order Method
+             * @description Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.
+             */
+            second_order_method?: string | null;
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];
         };
@@ -6290,6 +6303,12 @@ export interface components {
              */
             script: string;
             /**
+             * Second Order
+             * @description With greeks_method='aad': also gamma, vanna and volga, each with its standard error, by the bump on the GPU's adjoint (blueprint/wp/27-ir-ad.md §14.10): central differences of the first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same Sobol points. Vanna and volga need a model with one vol (Black-Scholes, local vol). About four first-order runs more; on the GPU only (otherwise the diagnostics say why and the first-order answer stands).
+             * @default false
+             */
+            second_order: boolean;
+            /**
              * Seed
              * @default 1
              */
@@ -6538,6 +6557,12 @@ export interface components {
              * @enum {string}
              */
             sampler: "pseudo" | "sobol" | "stratified";
+            /**
+             * Second Order
+             * @description With greeks_method='aad': also gamma, vanna and volga, each with its standard error, by the bump on the GPU's adjoint (blueprint/wp/27-ir-ad.md §14.10): central differences of the first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same Sobol points. Vanna and volga need a model with one vol (Black-Scholes, local vol). About four first-order runs more; on the GPU only (otherwise the diagnostics say why and the first-order answer stands).
+             * @default false
+             */
+            second_order: boolean;
             /**
              * Seed
              * @default 1
@@ -7125,6 +7150,11 @@ export interface components {
              * @description Scripted library products only: the script priced.
              */
             script?: string | null;
+            /**
+             * Second Order Method
+             * @description Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.
+             */
+            second_order_method?: string | null;
             swap: components["schemas"]["SwapResult"];
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];
@@ -7275,6 +7305,11 @@ export interface components {
              * @description Scripted library products only: the script priced.
              */
             script?: string | null;
+            /**
+             * Second Order Method
+             * @description Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.
+             */
+            second_order_method?: string | null;
             swaption: components["schemas"]["SwaptionResult"];
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];

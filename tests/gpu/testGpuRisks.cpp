@@ -607,4 +607,70 @@ namespace quantModeling
         EXPECT_NE(why.find("QM_SCRIPT_JIT=0"), std::string::npos) << why;
     }
 
+    // WP 27 §14.10: second-order risks by the bump on the adjoint, against
+    // Black-Scholes's closed forms (S = K = 100, r = 0.03, q = 0.01,
+    // vol = 0.25, T = 1). A hard call (its pathwise gamma is exactly 0, so
+    // the bump is what gives it one), the same call written with
+    // lastStepCall, and local vol on a flat surface, which is Black-Scholes.
+    TEST_F(GpuRisksTest, SecondOrderByTheBumpOnTheAdjointIsBlackScholess)
+    {
+        const double S = 100.0, K = 100.0, r = 0.03, q = 0.01, vol = 0.25, T = 1.0;
+        const double d1 = (std::log(S / K) + (r - q + 0.5 * vol * vol) * T) / (vol * std::sqrt(T)),
+                     d2 = d1 - vol * std::sqrt(T);
+        const double n1 = std::exp(-0.5 * d1 * d1) / std::sqrt(2.0 * M_PI);
+        const double gamma = std::exp(-q * T) * n1 / (S * vol * std::sqrt(T));
+        const double vanna = -std::exp(-q * T) * n1 * d2 / vol;
+        const double volga = S * std::exp(-q * T) * n1 * std::sqrt(T) * d1 * d2 / vol;
+
+        std::vector<Real> flat;
+        for (std::size_t i = 0; i < kK.size() * kT.size(); ++i)
+            flat.push_back(vol);
+        const auto check = [&](const std::string &source, ISimulationModel<Real> &m, const std::string &what)
+        {
+            const ScriptedProduct<Real> product(source, kCtx);
+            std::string why;
+            // 2^18 points: with a hard payoff the vega differences have heavy
+            // tails, and 16 replicates of 2^12 points underestimate their
+            // error (measured, §14.10); the volga converges all the same.
+            const auto so = simulate_script_second_order_gpu(product, m, 1 << 18, kSeed, why);
+            ASSERT_TRUE(so.has_value()) << what << ": " << why;
+            // the bump's bias is O(h^2): 1 % of the closed form on top of the error
+            EXPECT_NEAR(so->gamma, gamma, 4.0 * so->gamma_std_error + 0.01 * gamma) << what << "\n"
+                                                                                    << so->method;
+            ASSERT_TRUE(so->vanna.has_value()) << what;
+            EXPECT_NEAR(*so->vanna, vanna, 4.0 * *so->vanna_std_error + 0.02 * std::abs(vanna)) << what;
+            EXPECT_NEAR(*so->volga, volga, 4.0 * *so->volga_std_error + 0.02 * std::abs(volga)) << what;
+            EXPECT_LT(so->gamma_std_error, 0.05 * gamma) << what;
+            EXPECT_NE(so->method.find("bump on the adjoint"), std::string::npos) << so->method;
+        };
+        const std::string hard = "2027-06-01\n    pays max(spot() - 100, 0)\n";
+        const std::string smooth = "2026-12-01\n    a = spot()\n2027-06-01\n    pays lastStepCall(100)\n";
+        {
+            BlackScholesSimModel<Real> m(S, r, q, vol);
+            check(hard, m, "Black-Scholes, hard call");
+        }
+        {
+            BlackScholesSimModel<Real> m(S, r, q, vol);
+            check(smooth, m, "Black-Scholes, lastStepCall");
+        }
+        {
+            LocalVolSimModel<Real> m(S, r, q, kK, kT, flat, 1.0 / 24.0);
+            check(hard, m, "flat local vol, hard call");
+        }
+    }
+
+    // Heston has no single vol: gamma and the spot's row only.
+    TEST_F(GpuRisksTest, SecondOrderUnderHestonGivesGammaOnly)
+    {
+        const ScriptedProduct<Real> product("2027-06-01\n    pays max(spot() - 100, 0)\n", kCtx);
+        BatesSimModel<Real> m(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, 0.0, 0.0, 0.0);
+        std::string why;
+        const auto so = simulate_script_second_order_gpu(product, m, 1 << 16, kSeed, why);
+        ASSERT_TRUE(so.has_value()) << why;
+        EXPECT_GT(so->gamma, 0.0);
+        EXPECT_LT(so->gamma_std_error, 0.05 * so->gamma);
+        EXPECT_FALSE(so->vanna.has_value());
+        EXPECT_EQ(so->spot_row.size(), m.parameter_labels().size());
+    }
+
 } // namespace quantModeling
