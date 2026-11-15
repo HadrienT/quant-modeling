@@ -454,6 +454,7 @@ if(QM_BUILD_TESTS)
     tests/testScriptIr.cpp
     tests/testScriptIrPath.cpp
     tests/testScriptIrAd.cpp
+    tests/testScriptIrLastStep.cpp
     tests/testScriptBatch.cpp
     tests/testSamplerDefault.cpp
     tests/testDual.cpp

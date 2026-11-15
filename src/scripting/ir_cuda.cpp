@@ -228,6 +228,9 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     case Op::Abs:
                         o << x(k) << " = fabs(" << a << ");";
                         break;
+                    case Op::Ncdf: // the host's formula (ir.hpp), not CUDA's normcdf
+                        o << x(k) << " = 0.5 * erfc(-" << a << " * 0.70710678118654752440);";
+                        break;
                     case Op::Smooth:
                         o << "if (" << c << " <= 0.0) " << x(k) << " = " << a << " > 0.0 ? 1.0 : 0.0; else " << x(k)
                           << " = qm_clamp01((" << a << " + " << c << ") / (" << c << " + " << c << "));";
@@ -383,10 +386,10 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
             out.why = "the script is not compiled";
             return out;
         }
-        if (script.has_survival)
+        if (script.has_bridge)
         {
-            out.why = "survivalAbove() / survivalBelow() and the lastStep*() expectations run on the CPU: the GPU "
-                      "paths do not compute them yet";
+            out.why = "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the bridge "
+                      "survival probabilities yet";
             return out;
         }
         const auto kind = static_cast<DeviceModel::Kind>(model_kind);

@@ -75,8 +75,21 @@ namespace quantModeling
             if (!def.barriers.empty())
                 throw InvalidInput(std::string(model) +
                                    " does not compute quantities over its steps: survivalAbove() / survivalBelow() "
-                                   "and lastStepCall() / lastStepPut() / lastStepDigital() need Black-Scholes or "
-                                   "local vol");
+                                   "need Black-Scholes or local vol, lastStepCall() / lastStepPut() / "
+                                   "lastStepDigital() Black-Scholes, local vol, Heston or SLV");
+    }
+
+    /// Throws when the defline asks for a bridge survival (survivalAbove /
+    /// survivalBelow): for a model that computes the last-step expectations
+    /// but not the survivals (Heston, SLV).
+    inline void refuse_bridge_survivals(const std::vector<SampleDef> &defline, const char *model)
+    {
+        for (const SampleDef &def : defline)
+            for (const BarrierMonitor &b : def.barriers)
+                if (b.kind == StepQuantity::Survival)
+                    throw InvalidInput(std::string(model) +
+                                       " does not monitor barriers between dates: survivalAbove() / survivalBelow() "
+                                       "need Black-Scholes or local vol");
     }
 
     /// Checks the barriers a model that monitors them is asked for: each one

@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
@@ -98,7 +99,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         BatesSimModel(const BatesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
         {
             set_param_pointers();
         }
@@ -108,7 +109,11 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
-            refuse_barrier_monitoring(defline, "BatesSimModel");
+            refuse_bridge_survivals(defline, "BatesSimModel");
+            has_last_step_ = mc::asks_last_step(defline);
+            if (has_last_step_ && !(to_double(lambda_) == 0.0))
+                throw InvalidInput("BatesSimModel: lastStepCall() / lastStepPut() / lastStepDigital() need a lognormal "
+                                   "last step, and jumps make it a mixture (Heston, lambda = 0, has one)");
             timeline_ = canonical_timeline(product_timeline);
             sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
@@ -154,6 +159,11 @@ namespace quantModeling
 
             T S = s0_;
             T v = v0_;
+            // The last-step expectations (WP 27 §8 rung 1): an event before
+            // any step pays its payoff of S0; the others are computed on the
+            // step that reaches them (lognormal given v: no jumps, init()).
+            if (has_last_step_ && !defline_.empty())
+                mc::fill_last_step(defline_[0], path[0], S, T(0.0));
             Time t_prev = 0.0;
             std::size_t g = 0;
             for (std::size_t i = 0; i < sim_timeline_.size(); ++i)
@@ -161,6 +171,7 @@ namespace quantModeling
                 const Time t = sim_timeline_[i];
                 const Time dt = t - t_prev;
                 const double sqdt = sqrt(dt);
+                const T S_before = S;
 
                 const double z_spot = gaussians[g++];
                 const double z_vol_indep = gaussians[g++];
@@ -187,6 +198,9 @@ namespace quantModeling
                 const std::ptrdiff_t event = event_index_of_step_[i];
                 if (event < 0)
                     continue;
+                if (has_last_step_) // given v: lognormal, forward S e^{(r - q) dt}, log-variance v+ dt
+                    mc::fill_last_step(defline_[static_cast<std::size_t>(event)], path[static_cast<std::size_t>(event)],
+                                       T(S_before * exp((r_ - q_) * dt)), T(v_plus * dt));
 
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots.assign(1, S);
@@ -294,6 +308,7 @@ namespace quantModeling
         std::vector<SampleDef> defline_;
         std::vector<std::ptrdiff_t> event_index_of_step_;
         std::size_t sim_dim_ = 0;
+        bool has_last_step_ = false; ///< the defline asks for a lastStep*() expectation
         std::vector<T *> params_;
     };
 

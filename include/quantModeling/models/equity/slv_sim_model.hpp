@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
 #include "quantModeling/models/simulation_model.hpp"
@@ -74,7 +75,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         SLVSimModel(const SLVSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
         {
             set_param_pointers();
         }
@@ -84,7 +85,8 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
-            refuse_barrier_monitoring(defline, "SLVSimModel");
+            refuse_bridge_survivals(defline, "SLVSimModel");
+            has_last_step_ = mc::asks_last_step(defline);
             timeline_ = canonical_timeline(product_timeline);
             sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
@@ -125,6 +127,9 @@ namespace quantModeling
 
             T S = s0_;
             T v = v0_;
+            // The last-step expectations (WP 27 §8 rung 1), as BatesSimModel.
+            if (has_last_step_ && !defline_.empty())
+                mc::fill_last_step(defline_[0], path[0], S, T(0.0));
             Time t_prev = 0.0;
             std::size_t g = 0;
             for (std::size_t i = 0; i < sim_timeline_.size(); ++i)
@@ -133,12 +138,22 @@ namespace quantModeling
                 const Time dt = t - t_prev;
                 const double z_spot = gaussians[g++];
                 const double z_indep = gaussians[g++];
+                const std::ptrdiff_t event = event_index_of_step_[i];
+                const T S_before = S;
+                T var(0.0);
+                if (has_last_step_ && event >= 0) // the step's log-variance L^2 v+ dt, as slv_step takes it
+                {
+                    const T lev = mc::leverage_staircase(leverage_grid(), S, t);
+                    var = lev * lev * max(v, mc::variance_floor()) * dt;
+                }
                 mc::slv_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
                 t_prev = t;
 
-                const std::ptrdiff_t event = event_index_of_step_[i];
                 if (event < 0)
                     continue;
+                if (has_last_step_) // given v: lognormal, forward S e^{(r - q) dt}
+                    mc::fill_last_step(defline_[static_cast<std::size_t>(event)], path[static_cast<std::size_t>(event)],
+                                       T(S_before * exp((r_ - q_) * dt)), var);
 
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots.assign(1, S);
@@ -256,6 +271,7 @@ namespace quantModeling
         std::vector<SampleDef> defline_;
         std::vector<std::ptrdiff_t> event_index_of_step_;
         std::size_t sim_dim_ = 0;
+        bool has_last_step_ = false; ///< the defline asks for a lastStep*() expectation
 
         std::vector<T *> params_;
         std::vector<std::string> labels_;

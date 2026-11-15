@@ -9,6 +9,7 @@
 #include <tuple>
 #include <vector>
 
+#include "quantModeling/core/sample.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/scripting/event.hpp"
@@ -114,6 +115,7 @@ namespace quantModeling::scripting::ir
         Exp,
         Sqrt,
         Abs,
+        Ncdf,   ///< the standard normal CDF, 0.5 erfc(-a / sqrt 2) (the last-step expectations, WP 27 §8 rung 1)
         Smooth, ///< smooth(a, b): b <= 0 ? [a > 0] : clamp01((a + b) / (b + b))
         // ── crisp logic: 1.0 or 0.0 ─────────────────────────────────────────
         Eq,
@@ -221,6 +223,7 @@ namespace quantModeling::scripting::ir
             case Op::Exp:
             case Op::Sqrt:
             case Op::Abs:
+            case Op::Ncdf:
             case Op::Not:
             case Op::Up:
             case Op::Tent:
@@ -283,8 +286,17 @@ namespace quantModeling::scripting::ir
         std::vector<Out> outs;
         /// Highest spot index / discount slot / survival slot read (-1: none).
         std::int32_t max_spot = -1, max_df = -1, max_surv = -1;
+        /// Script level: what each `Surv` slot is (a bridge survival or a
+        /// last-step expectation, with its level and asset), so that binding
+        /// to a path knows what to compute for it. Part of the block's
+        /// identity: two events reading slot 0 for different strikes are
+        /// different blocks.
+        std::vector<BarrierMonitor> quantities;
 
-        bool operator==(const Block &o) const { return code == o.code && outs == o.outs; }
+        bool operator==(const Block &o) const
+        {
+            return code == o.code && outs == o.outs && quantities == o.quantities;
+        }
 
         /// The value a script-level block leaves in variable i (-1: as it
         /// was), and in the payoff.
@@ -318,7 +330,9 @@ namespace quantModeling::scripting::ir
         std::vector<std::vector<double>> event_terms;
         int n_vars = 0;
         bool fuzzy = false;
-        bool has_survival = false;
+        bool has_survival = false;  ///< a Surv slot of any kind (what the CPU model fills)
+        bool has_bridge = false;    ///< a bridge survival (survivalAbove / survivalBelow): not in the paths yet
+        bool has_last_step = false; ///< a last-step expectation: the paths compute it (WP 27 §14.9)
 
         std::size_t n_events() const { return event_block.size(); }
         const Block &event(std::size_t e) const { return blocks[static_cast<std::size_t>(event_block[e])]; }
@@ -589,6 +603,9 @@ namespace quantModeling::scripting::ir
                     break;
                 case Op::Abs:
                     r = std::fabs(a);
+                    break;
+                case Op::Ncdf:
+                    r = 0.5 * std::erfc(-a * 0.70710678118654752440);
                     break;
                 case Op::Smooth:
                     if (c <= 0.0)

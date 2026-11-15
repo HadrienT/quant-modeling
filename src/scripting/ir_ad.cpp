@@ -16,6 +16,15 @@ namespace quantModeling::scripting::ir
                                "a path first)");
         }
 
+        /// The standard normal density at `x`, exp(-x^2 / 2) / sqrt(2 pi):
+        /// Ncdf's derivative, in operations the transformations already
+        /// differentiate (so tangent over adjoint gets its second derivative).
+        std::int32_t normal_density(Builder &b, std::int32_t x)
+        {
+            return b.mul(b.value(Op::Exp, b.mul(b.constant(-0.5), b.mul(x, x))),
+                         b.constant(0.39894228040143267794));
+        }
+
         /// Whether a sensitivity can flow into what instruction `in` defines.
         bool differentiable(const Inst &in)
         {
@@ -140,6 +149,10 @@ namespace quantModeling::scripting::ir
                     case Op::Abs:
                         if (ta >= 0)
                             t = b.select(b.value(Op::Ge, A, zero()), ta, b.neg(ta));
+                        break;
+                    case Op::Ncdf: // N'(a) = exp(-a^2 / 2) / sqrt(2 pi), in operations the transformations know
+                        if (ta >= 0)
+                            t = times(normal_density(b, A), ta);
                         break;
                     case Op::Pow:
                         t = sum(ta < 0 ? -1 : times(b.div(b.mul(B, id), A), ta),
@@ -504,6 +517,9 @@ namespace quantModeling::scripting::ir
                             break;
                         case Op::Abs:
                             accumulate(in.a, b_.select(b_.value(Op::Ge, A, zero()), a, b_.neg(a)));
+                            break;
+                        case Op::Ncdf:
+                            accumulate(in.a, b_.mul(a, normal_density(b_, A)));
                             break;
                         case Op::Pow:
                             if (wants(in.a))

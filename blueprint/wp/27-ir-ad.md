@@ -805,3 +805,64 @@ second order and the GPU compute them; Heston and SLV (their S step is
 lognormal given the variance, so the same formula applies); and the
 catalogue's vanillas and digitals switched to the primitives, which waits
 for the GPU (today it would send them to the CPU).
+
+### 14.9 L6, rung 1: the last-step expectations in the IR's paths and on the GPU (2026-11-15)
+
+§14.8 left the expectations to the CPU models. They are now in the IR's
+paths, hence in every kernel generated from them (price, tangent, adjoint)
+and in the IR's second order on the host:
+
+- **a step leaves its forward and variance.** Every model's step in the IR
+  has the form S' = S exp(m + s z); when the script reads a last-step
+  expectation (`Script::has_last_step`), the step also writes, per asset,
+  F = S exp(m + s²/2) and v = s² to two state slots past the payoff
+  (`PathLayout::last_step`, `last0()`). The primal's operations are not
+  touched, and a script without the expectations gets neither the slots
+  nor the operations: its prices keep their bits;
+- **an event computes Black's formula from them.** Binding a block to a
+  path replaces a `Surv` slot whose descriptor (`Block::quantities`, new,
+  part of the block's identity so that two strikes are two blocks) is a
+  last-step expectation by the formula, with sd = sqrt(max(v, 1e-200)): an
+  event with no step before it gets the payoff of F as a limit, with no
+  branch and no infinity for the derivatives to multiply by zero. A bridge
+  survival is still refused there;
+- **a new operation, `Ncdf`**, 0.5 erfc(−x/√2), the host's formula in the
+  CUDA source too (not CUDA's `normcdf`). Its derivative is written with
+  operations the transformations already know (exp of −x²/2 times
+  1/√(2π)), so tangent over adjoint differentiates it again with nothing
+  more;
+- **the GPU takes them in its compiled kernels only.** `Program::has_bridge`
+  (new) keeps bridge survivals on the CPU; a last-step expectation alone
+  passes the gate unless compilation is off (`QM_SCRIPT_JIT=0`), and the
+  interpreted kernels and hand-written adjoint and duals, which cannot read
+  them, throw rather than read a slot nobody filled;
+- **Heston and SLV on the CPU too**, so that the CPU and the IR cover the
+  same models: their step is lognormal given the variance (forward
+  S e^{(r−q)dt}, log-variance v⁺dt, times L² for SLV). Bates with jumps
+  refuses (a mixture, not a lognormal).
+
+Two bugs found on the way. `LocalVolSimModel`'s copy constructor left the
+flag of §14.8 out, so a clone (one per thread, one per multilevel level)
+stopped computing the expectations (fixed on #258 with a test that fails
+without the fix). And the GPU adjoint's checkpoints were sized as
+`n_vars + 1` slots per date where the kernel saves every slot past the
+model's: with the two new slots per asset the threads wrote into each
+other's trails and the local-vol and SLV gradients were garbage while the
+prices were right; the size is now `n_state − n_model`.
+
+Checked: the IR's engine on the CPU against the tape (price 1e-12, risks
+1e-10) under Black-Scholes, local vol, Heston and SLV, on three scripts
+(call; put, digital and a path variable; two strikes on the same slot of two
+events); the Hessian against central differences of the gradient path by
+path (Black-Scholes, Heston); gamma, vanna and volga from the IR's second
+order against Black-Scholes's closed forms (`testScriptIrLastStep`). On the
+V100: the GPU's prices equal the CPU's on the same draws (1e-9) under the
+four models, the GPU's risks the tape's (tangent kernel under Black-Scholes
+and Heston, adjoint under local vol and SLV, 1e-8), and with compilation
+off the risks stay on the CPU and say why.
+
+Left for rung 1: the bridge survivals in the paths (a product over the
+steps, with its own adjoint), and the catalogue's vanillas and digitals
+switched to the primitives, which would move displayed greeks (a decision
+for the maintainer). Left for L6: the GPU second-order kernel, the API and
+the front end.

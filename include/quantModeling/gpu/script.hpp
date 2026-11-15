@@ -2,6 +2,8 @@
 #define GPU_SCRIPT_HPP
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -45,15 +47,26 @@ namespace quantModeling::gpu
 
     /// "" when the GPU engine can run this program on this model, else the
     /// reason, in words a user can read.
+    /// QM_SCRIPT_JIT=0 (the switch src/gpu/script_jit.cpp reads): the
+    /// interpreted kernels cannot compute lastStep*(), only the compiled ones.
+    inline bool last_step_needs_compilation()
+    {
+        const char *v = std::getenv("QM_SCRIPT_JIT");
+        return v && std::strcmp(v, "0") == 0;
+    }
+
     inline std::string script_gpu_unsupported(const scripting::Program &p, const DeviceModel &m,
                                               const std::vector<std::vector<Time>> &discount_mats)
     {
         using L = ScriptLimits;
         if (p.code.empty())
             return "the script is not compiled to bytecode";
-        if (p.has_survival)
-            return "survivalAbove() / survivalBelow() and the lastStep*() expectations run on the CPU: the GPU "
-                   "paths do not compute them yet";
+        if (p.has_bridge)
+            return "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the bridge "
+                   "survival probabilities yet";
+        if (p.has_survival && last_step_needs_compilation())
+            return "lastStep*() run in the GPU kernels compiled from the IR, and compilation is off "
+                   "(QM_SCRIPT_JIT=0)";
         if (p.n_vars > L::kVars)
             return "the script has more than " + std::to_string(L::kVars) + " variables";
         if (p.max_stack > L::kStack || p.max_degrees > L::kDegrees)

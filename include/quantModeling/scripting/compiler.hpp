@@ -81,6 +81,7 @@ namespace quantModeling::scripting
                                    "compiling");
             max_surv_ = std::max(max_surv_, static_cast<std::int32_t>(n.slot));
             p_.has_survival = true;
+            p_.has_bridge = p_.has_bridge || n.kind == StepQuantity::Survival;
             emit(Op::Surv, static_cast<std::int32_t>(n.slot)), push();
         }
 
