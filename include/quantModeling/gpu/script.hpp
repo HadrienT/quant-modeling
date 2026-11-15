@@ -194,6 +194,14 @@ namespace quantModeling::gpu
     std::vector<std::vector<WelfordAccumulator>> simulate_script_duals(const ScriptGpuRequest &req,
                                                                        std::string *note = nullptr);
 
+    /// Vibrato (WP 27 §14.11) in the kernel compiled from the IR: per
+    /// replicate, the price's Welford then one per scalar risk (`dirs` of
+    /// them, the path layout's: Black-Scholes's four, local vol's three),
+    /// as simulate_script_duals. One underlying under Black-Scholes or local
+    /// vol; throws when the kernel cannot be compiled.
+    std::vector<std::vector<WelfordAccumulator>> simulate_script_vibrato(const ScriptGpuRequest &req, int dirs,
+                                                                         std::string *note = nullptr);
+
     struct ScriptAdjointGpuResult
     {
         WelfordAccumulator price;

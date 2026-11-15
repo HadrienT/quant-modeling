@@ -300,6 +300,111 @@ extern "C" __device__ void qm_drive(const void *unit_, void *draws_, double *out
         out[1 + k] = dst[pay * K + k];
 }
 
+extern "C" __device__ int qm_last0();
+
+/// The final date at X = m + s z: the state and tangents the last step left
+/// (st0, dst0), the spot set to exp(X) with its tangent held at 0 (X fixed),
+/// then the dates from the last step to the final one. The payoff, and its
+/// tangents in d (fixed X).
+__device__ double qm_vibrato_at(const PathUnit &u, QmFrame &f, const double *st0, const double *dst0, int s_last,
+                                int s_final, double X, double *d)
+{
+    const int K = qm_n_risks(), n_state = qm_n_state();
+    for (int i = 0; i < n_state; ++i)
+        f.st[i] = st0[i];
+    for (int i = 0; i < n_state * K; ++i)
+        f.dst[i] = dst0[i];
+    f.st[0] = exp(X);
+    for (int k = 0; k < K; ++k)
+        f.dst[k] = 0.0;
+    const long event_cols = qm_event_cols();
+    for (int s = s_last; s <= s_final; ++s)
+    {
+        const int e = u.step_event[s];
+        if (e < 0)
+            continue;
+        f.dat = u.event_rows + e * event_cols;
+        f.tm = u.terms + u.term_begin[e];
+        qm_event(u.kind[e], &f);
+    }
+    const int pay = qm_pay_slot();
+    for (int k = 0; k < K; ++k)
+        d[k] = f.dst[pay * K + k];
+    return f.st[pay];
+}
+
+/// Vibrato (blueprint/wp/27-ir-ad.md §14.11; the host's ir::run_path_vibrato):
+/// the path and its tangents up to the last step into the final date, then a
+/// likelihood ratio over that step, lognormal with the forward F and variance
+/// v it leaves at qm_last0(). out[0] the payoff, out[1 + d] its derivative.
+extern "C" __device__ void qm_drive_vibrato(const void *unit_, void *draws_, double *out, double *st, double *dst,
+                                            double *st0, double *dst0)
+{
+    const PathUnit &u = *static_cast<const PathUnit *>(unit_);
+    mc::PathDraws &draws = *static_cast<mc::PathDraws *>(draws_);
+    const int K = qm_n_risks(), n_state = qm_n_state();
+    constexpr int kMaxK = 8; // one underlying: Black-Scholes's four risks, local vol's three
+    for (int i = 0; i < n_state * K; ++i)
+        dst[i] = 0.0;
+    int s_final = -1, s_last = -1;
+    for (int s = 0; s < u.n_steps; ++s)
+        if (u.step_event[s] >= 0)
+            s_final = s;
+    for (int s = 0; s <= s_final; ++s)
+        if (u.step_draws[s])
+            s_last = s;
+    double z[mc::ScriptLimits::kAssets];
+    QmFrame f = frame_of(u);
+    f.st = st;
+    f.dst = dst;
+    f.z = z;
+    f.dat = u.baseline;
+    qm_init(&f);
+    const int factors = qm_factors();
+    const long step_cols = qm_step_cols(), event_cols = qm_event_cols();
+    int d = 0;
+    for (int s = 0; s < s_last; ++s)
+    {
+        if (u.step_draws[s])
+        {
+            for (int k = 0; k < factors; ++k)
+                z[k] = draws.draw(d, k, 1.0);
+            f.dat = u.step_rows + s * step_cols;
+            qm_step(&f);
+            ++d;
+        }
+        const int e = u.step_event[s];
+        if (e < 0)
+            continue;
+        f.dat = u.event_rows + e * event_cols;
+        f.tm = u.terms + u.term_begin[e];
+        qm_event(u.kind[e], &f);
+    }
+    for (int k = 0; k < factors; ++k)
+        z[k] = draws.draw(d, k, 1.0);
+    f.dat = u.step_rows + s_last * step_cols;
+    qm_step(&f);
+    for (int i = 0; i < n_state; ++i)
+        st0[i] = st[i];
+    for (int i = 0; i < n_state * K; ++i)
+        dst0[i] = dst[i];
+    const int L = qm_last0();
+    const double F = st0[L], v = st0[L + 1];
+    const double sd = sqrt(v), m = log(F) - 0.5 * v, Z = z[0];
+    double up[kMaxK], down[kMaxK], none[kMaxK];
+    const double b_up = qm_vibrato_at(u, f, st0, dst0, s_last, s_final, m + sd * Z, up);
+    const double b_down = qm_vibrato_at(u, f, st0, dst0, s_last, s_final, m - sd * Z, down);
+    const double b0 = qm_vibrato_at(u, f, st0, dst0, s_last, s_final, m, none);
+    const double g_m = 0.5 * (b_up - b_down) * Z / sd;
+    const double g_s = (0.5 * (b_up + b_down) - b0) * (Z * Z - 1.0) / sd;
+    out[0] = 0.5 * (b_up + b_down);
+    for (int k = 0; k < K && k < kMaxK; ++k)
+    {
+        const double dF = dst0[L * K + k], dv = dst0[(L + 1) * K + k];
+        out[1 + k] = 0.5 * (up[k] + down[k]) + g_m * (dF / F - 0.5 * dv) + g_s * dv / (2.0 * sd);
+    }
+}
+
 /// One thread per unit (a path, no mirror): its payoff and derivatives to
 /// samples[i * stride ...], a Dual<stride - 1> the library's
 /// logical_reduce_kernel reduces in logical-block order.

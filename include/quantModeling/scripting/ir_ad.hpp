@@ -74,6 +74,31 @@ namespace quantModeling::scripting::ir
                             DerivativeScratch &scratch, double *derivatives);
 
     /**
+     * @brief One path by Vibrato (Giles 2009; WP 27 §8 rung 3, §14.11):
+     *        pathwise up to the last step into the final date, a likelihood
+     *        ratio over that step. The payoff and its derivative in each of
+     *        the tangent program's directions in `derivatives`.
+     *
+     * The last step is lognormal given the path before it, X = log S' =
+     * m + s Z with m = log F - v / 2 and s = sqrt(v) (the step's forward and
+     * variance, which a program built with `last_step` leaves in the
+     * state). The final date's payoff B(y, X) -- y the rest of the state --
+     * is evaluated at Z and -Z (Z the path's own draw) and at 0, and
+     *
+     *     dV/dtheta = E[ dB/dtheta at fixed X ]
+     *               + E[ B Z / s ] dm/dtheta + E[ B (Z^2 - 1) / s ] ds/dtheta
+     *
+     * (antithetic, B(0) subtracted from the second weight), so that a payoff
+     * that jumps in X at the final date -- a hard digital -- gets its greeks
+     * without being smoothed. One underlying; a payoff that jumps at an
+     * earlier date is the caller's to refuse (its pathwise part would miss
+     * the jump).
+     */
+    double run_path_vibrato(const PathProgram &tangent_program, int directions, const PathData &data,
+                            const DeviceModel &model, const Script &script, mc::PathDraws &draws,
+                            DerivativeScratch &scratch, double *derivatives);
+
+    /**
      * @brief One path forward through `primal`, the state checkpointed
      *        before every block, then backward through `adjoint_program`
      *        (`adjoint(primal)`): the payoff, and `weight` times its
