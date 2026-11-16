@@ -2,6 +2,7 @@
 #define QUANT_MODELING_MODELS_VOLATILITY_HPP
 
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/path_steps.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -63,12 +64,13 @@ namespace quantModeling
     };
 
     // ─────────────────────────────────────────────────────────────────────────────
-    //  GridLocalVol — bilinear-interpolated local-vol surface on a (K × T) grid
+    //  GridLocalVol — local-vol surface on a (K × T) grid, C¹ in the strike
     // ─────────────────────────────────────────────────────────────────────────────
 
     /**
-     * @brief Local-vol surface stored on a rectangular grid with bilinear
-     *        interpolation and flat extrapolation at the boundaries.
+     * @brief Local-vol surface stored on a rectangular grid: a cubic Hermite
+     *        in the strike (C¹, mc::GridView::strike_hermite), linear in
+     *        time, flat extrapolation at the boundaries.
      *
      * Grid layout:  sigma_loc[i * n_T + j]  corresponds to (K_grid[i], T_grid[j]).
      * K-major ordering matches the flat array produced by the Dupire calibration
@@ -108,60 +110,26 @@ namespace quantModeling
 
         Real value(Real S, Real t) const noexcept override
         {
-            const int nK = static_cast<int>(K_grid_.size());
-            const int nT = static_cast<int>(T_grid_.size());
-
-            // Clamp to grid bounds (flat extrapolation)
-            S = std::clamp(S, K_grid_.front(), K_grid_.back());
+            // mc::local_vol_bilinear's interpolation (C¹ in the strike since
+            // 2026-11-16, linear in time), the shift added before the floor.
+            mc::GridView<Real> g;
+            g.K = K_grid_.data();
+            g.nK = static_cast<int>(K_grid_.size());
+            g.T_grid = T_grid_.data();
+            g.nT = static_cast<int>(T_grid_.size());
+            g.v = sigma_loc_.data();
+            int idx[4], j0, j1;
+            Real w[4], dw[4];
+            g.strike_hermite(S, idx, w, dw);
             t = std::clamp(t, T_grid_.front(), T_grid_.back());
-
-            // Locate bracketing index pair — K dimension
-            auto it_K = std::lower_bound(K_grid_.begin(), K_grid_.end(), S);
-            int i1 = static_cast<int>(it_K - K_grid_.begin());
-            if (i1 >= nK)
-                i1 = nK - 1;
-            int i0 = (i1 > 0) ? i1 - 1 : 0;
-            if (i0 == i1)
-            {
-                if (i1 > 0)
-                    i0 = i1 - 1;
-                else
-                    i1 = 1;
-            }
-
-            // Locate bracketing index pair — T dimension
-            auto it_T = std::lower_bound(T_grid_.begin(), T_grid_.end(), t);
-            int j1 = static_cast<int>(it_T - T_grid_.begin());
-            if (j1 >= nT)
-                j1 = nT - 1;
-            int j0 = (j1 > 0) ? j1 - 1 : 0;
-            if (j0 == j1)
-            {
-                if (j1 > 0)
-                    j0 = j1 - 1;
-                else
-                    j1 = 1;
-            }
-
-            const Real K0 = K_grid_[i0], K1 = K_grid_[i1];
-            const Real T0 = T_grid_[j0], T1 = T_grid_[j1];
-
-            const Real dK = K1 - K0;
-            const Real dT = T1 - T0;
-            const Real wK = (dK > 1e-12) ? (S - K0) / dK : 0.0;
+            mc::bracket(g.T_grid, g.nT, t, j0, j1);
+            const Real T0 = T_grid_[static_cast<std::size_t>(j0)];
+            const Real dT = T_grid_[static_cast<std::size_t>(j1)] - T0;
             const Real wT = (dT > 1e-12) ? (t - T0) / dT : 0.0;
-
-            const auto cell = [&](int i, int j) -> Real
-            {
-                return sigma_loc_[static_cast<std::size_t>(i) *
-                                      static_cast<std::size_t>(nT) +
-                                  static_cast<std::size_t>(j)];
-            };
-
-            const Real sigma =
-                (1.0 - wK) * (1.0 - wT) * cell(i0, j0) + wK * (1.0 - wT) * cell(i1, j0) + (1.0 - wK) * wT * cell(i0, j1) + wK * wT * cell(i1, j1) + vol_shift_;
-
-            return std::max(sigma, Real{1e-6});
+            Real sigma = 0.0;
+            for (int k = 0; k < 4; ++k)
+                sigma = sigma + w[k] * ((1.0 - wT) * g.at(idx[k], j0) + wT * g.at(idx[k], j1));
+            return std::max(sigma + vol_shift_, Real{1e-6});
         }
 
         // ── Accessors ────────────────────────────────────────────────────────────

@@ -1078,3 +1078,33 @@ checked against the adjoint and both against the tape. `qm_gpu_table`'s
 superbucket CPU column now times the tape. Left: the bytecode interpreter's
 recording hooks (`Rec`), compiled out when nothing records, have no consumer
 any more.
+
+### 14.15 The local-vol grid made C¹ in the strike (2026-11-16)
+
+Decided by the maintainer (§14.10 had kept it bilinear): the local vol is now
+a cubic Hermite in the strike through the grid's nodes, with finite-difference
+slopes (the weighted three-point one inside, exact for a quadratic; one-sided
+at the two ends), still linear in time and flat outside the grid
+(`mc::GridView::strike_hermite`). Its slope in the spot no longer jumps at the
+strikes, which is what the exact route to second order needs; and it is a
+linear function of the nodes, so a vega is still a share per node -- eight of
+them (four strikes by two times) instead of four. A two-node grid, or one
+linear in the strike, gives the linear interpolation exactly, which is why
+most tests did not move.
+
+One implementation everywhere the grid is read: the CPU models (and their
+tape), `GridLocalVol` (the PDE and the calibrations), the IR's GridVol,
+GridSlope and GridAccum (`ir_grid.hpp`'s GridCell, four strikes), hence the
+generated GPU kernels; the SLV leverage keeps its own convention (linear in
+the strike, a staircase in time, as calibrated).
+
+Prices move within the grid's bias. On the day's SPY surface (local vol,
+262 144 points, the same draws): call 100 % 55.166 → 55.142, call 120 %
+8.041 → 8.032, put 80 % 9.172 → 9.164, Asian 34.733 → 34.717, up-and-out
+37.577 → 37.568 -- 0.05 to 0.1 %. The coarse, steep test grid of
+`Mlmc.TheScriptEngineRunsItWhenAsked` (five strikes from 0.80 to 0.22 vol)
+moves its reference 14.20 → 14.02, the multilevel QMC and MC runs agreeing.
+
+Not done yet: second order through the grid by transformation (the tangent
+of GridSlope needs the curvature, the tangent of GridAccum the weights'
+slopes): local vol keeps the bump on the adjoint until then.
