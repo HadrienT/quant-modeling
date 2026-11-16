@@ -280,9 +280,15 @@ Semantics you must respect:
   also has spot(0) and spot(1). Performances of several underlyings are
   ratios to their own initial levels (s0 = spot(0), s1 = spot(1) at the first
   event); min and max take two arguments, so nest them for three or more.
-- `controlPays expr` also exists: it declares a control variate whose
-  expectation a product builder knows in closed form. This page cannot give
-  that expectation, so it has no effect here: never write it.
+- `controlPays expr` declares a control variate: a cash flow, correlated
+  with the payoff, whose expectation the engine knows in closed form. Under
+  Black-Scholes it recognises a vanilla call or put on one spot
+  (`controlPays max(spot() - 100, 0)`), the spot itself, a fixed amount,
+  constant multiples and sums of these, on the event's date and outside any
+  if; the price then subtracts the control's error, which lowers the
+  standard error. Under other models, or with any other expression, it is
+  ignored and the diagnostics say so. Write it only when the user asks for
+  variance reduction.
 - No rates or forward accessors (no libor, no fwd), no loops, no `elseif`, no
   functions beyond the list above and exercise() / call() (no pow, no
   normcdf: use ^). Nest an if

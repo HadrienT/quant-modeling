@@ -548,13 +548,30 @@ static py::dict price_script(const std::string &script, double spot, double rate
     std::optional<SimulationMCResult> mc;
     std::vector<scripting::Advice> advice;
     std::size_t n_events = 0;
-    std::string lsm_note;
+    std::string lsm_note, control_note;
     {
         py::gil_scoped_release release;
         ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps},
                                       fixings);
         auto sim_model = scripting::make_script_model<Real>(spec);
         check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+        // controlPays (WP 26 P2): under Black-Scholes the engine knows the
+        // closed forms of a vanilla, a forward and a fixed amount, so the
+        // control's expectation is its own and the variance reduction runs.
+        if (spec.model == "black_scholes" && product.control_variable() >= 0)
+        {
+            const bool multi = spec.spots.size() >= 2;
+            const std::optional<double> mean = product.black_scholes_control_mean(
+                multi ? spec.spots : std::vector<Real>{spec.spot}, spec.rate,
+                multi ? spec.dividends : std::vector<Real>{spec.dividend},
+                multi ? spec.vols : std::vector<Real>{spec.vol});
+            product.set_control_mean(mean);
+            control_note = mean ? " | controlPays: its Black-Scholes expectation computed by the engine"
+                                : " | controlPays ignored: a cash flow with no closed form the engine knows "
+                                  "(vanilla, forward or fixed amount on a date, outside an if)";
+        }
+        else if (product.control_variable() >= 0)
+            control_note = " | controlPays ignored: its expectation is known in closed form under Black-Scholes only";
 
         PricingSettings settings;
         settings.mc_paths = paths;
@@ -602,7 +619,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.npv = mc->npv();
     res.mc_std_error = mc->std_error();
     res.diagnostics = mc->diagnostics + " | scripted, " + std::to_string(n_events) +
-                      " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
+                      " events" + (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note + control_note;
     res.device = mc->device;
     res.gpus = mc->gpus;
     res.discretisation_bias = mc->discretisation_bias;
