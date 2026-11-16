@@ -34,6 +34,8 @@ extern "C" __device__ int qm_factors();
 extern "C" __device__ int qm_step_cols();
 extern "C" __device__ int qm_event_cols();
 extern "C" __device__ int qm_n_risks();
+extern "C" __device__ int qm_surv0();
+extern "C" __device__ int qm_n_surv();
 
 // The request the kernel is linked for (scripting::CudaKernelSpec), defined
 // next to the blocks: constants after link-time optimisation.
@@ -440,7 +442,9 @@ extern "C" __device__ double qm_path(const void *unit, void *draws);
 /**
  * One path forward, then back (blueprint/wp/27-ir-ad.md §5.2). Forward, the
  * thread checkpoints what each block is about to overwrite: the model's
- * state before a step, the script's variables and the payoff before a date.
+ * state (and the bridge survivals' running products, which a step reads and
+ * multiplies) before a step, the script's variables and the payoff before a
+ * date.
  * Backward, it puts them back -- `st` is rolled back in place, last in first
  * out -- and runs the block's adjoint on the state the block started from.
  * The draws are not stored: Philox and the Sobol point regenerate them.
@@ -456,6 +460,7 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
     double *ck = u.checkpoints + row;
     const long rows = u.rows;
     const int n_state = qm_n_state(), n_model = qm_n_model(), factors = qm_factors(), n_risks = qm_n_risks();
+    const int surv0 = qm_surv0(), n_surv = qm_n_surv();
     const long step_cols = qm_step_cols(), event_cols = qm_event_cols();
     double z[mc::ScriptLimits::kAssets];
     QmFrame f = frame_of(u);
@@ -471,6 +476,8 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
         {
             for (int k = 0; k < n_model; ++k)
                 ck[(c++) * rows] = st[k];
+            for (int j = 0; j < n_surv; ++j)
+                ck[(c++) * rows] = st[surv0 + j];
             for (int k = 0; k < factors; ++k)
                 z[k] = draws.at(d, k);
             f.dat = u.step_rows + s * step_cols;
@@ -513,6 +520,8 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
         if (u.step_draws[s])
         {
             --d;
+            for (int j = n_surv - 1; j >= 0; --j)
+                st[surv0 + j] = ck[(--c) * rows];
             for (int k = n_model - 1; k >= 0; --k)
                 st[k] = ck[(--c) * rows];
             for (int k = 0; k < factors; ++k)

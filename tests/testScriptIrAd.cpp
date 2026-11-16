@@ -318,12 +318,13 @@ namespace quantModeling
             expect_rows_near(got->risks, tape.risks, 1e-10, name(dyn));
             expect_rows_near(got->risk_std_errors, tape.risk_std_errors, 1e-9, std::string(name(dyn)) + " errors");
         }
-        // What the IR does not cover says why.
-        const ScriptedProduct<Real> barrier("2027-06-01\n    pays survivalAbove(80) * spot()\n", kCtx);
+        // What the IR does not cover says why: early exercise.
+        const ScriptedProduct<Real> american(
+            "2027-06-01\n    if exercise(spot()) then\n        pays max(100 - spot(), 0)\n    endIf\n", kCtx);
         auto model = make_model<Real>(Dyn::BlackScholes, 1);
         std::string why;
-        EXPECT_FALSE(simulate_script_aad_ir(barrier, *model, 64, kSeed, why).has_value());
-        EXPECT_NE(why.find("survival"), std::string::npos) << why;
+        EXPECT_FALSE(simulate_script_aad_ir(american, *model, 64, kSeed, why).has_value());
+        EXPECT_NE(why.find("exercise"), std::string::npos) << why;
     }
 
     // ── lot L6: second order, the tangent of the adjoint ──────────────────

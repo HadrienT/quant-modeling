@@ -716,6 +716,14 @@ Acceptance: the barrier with the primitive matches the hand-written engine's
 continuous-monitoring price (bridge on) within error; the arithmetic Asian
 with its declared control reaches the hand-written engine's variance.
 
+**Follow-up done (2026-11-16): the bridge survivals on the GPU.** P2's
+survivals ran on the CPU only, waiting for WP 27's IR. They are now in its
+paths and in the compiled kernels, prices and risks, under Black-Scholes and
+local vol (WP 27 §14.12): a local-vol knock-out call at 200 000 points, 3.6 s
+on two CPU threads → 0.016 s on one V100, with AAD risks 14.3 s → 0.05 s.
+Barrier monitoring under Heston, SLV and several assets stays refused, by the
+CPU models as by the IR.
+
 ## 7. P3 — Catalogue products as scripts
 
 Each Monte-Carlo route of the registry gets a **C++ script builder**: the

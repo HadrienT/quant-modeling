@@ -158,18 +158,6 @@ namespace quantModeling
         EXPECT_EQ(kink_gamma, 0.0);
     }
 
-    // A bridge survival is still not in the paths, and says so.
-    TEST(ScriptIrLastStep, ABridgeSurvivalIsStillRefused)
-    {
-        const ScriptedProduct<Real> product(kMid + "2027-06-01\n    pays survivalAbove(80) * lastStepCall(100)\n",
-                                            kCtx);
-        EXPECT_TRUE(product.ir().has_bridge);
-        auto model = make_model<Real>(Dyn::BlackScholes, 1);
-        std::string why;
-        EXPECT_FALSE(simulate_script_aad_ir(product, *model, 64, kSeed, why).has_value());
-        EXPECT_NE(why.find("survival"), std::string::npos) << why;
-    }
-
     // WP 27 §14.10: a payoff that jumps (a crisp comparison of the spot)
     // has a pathwise delta of 0 on every path, so the bump on the adjoint
     // would show 0 +- 0. The engine refuses it, before any GPU work, and says
@@ -198,4 +186,65 @@ namespace quantModeling
         EXPECT_EQ(why.find("jumps"), std::string::npos) << why;
     }
 
+} // namespace quantModeling
+
+// WP 26 P2 / WP 27 rung 1: the bridge survivals (survivalAbove /
+// survivalBelow) in the IR's paths. The step multiplies a running product by
+// its bridge factor (mc::bridge_survival, operation for operation), the date
+// reads it and sets it back to 1: the tape's results, which the CPU models
+// compute their own way.
+namespace quantModeling
+{
+    namespace
+    {
+        const std::vector<std::string> kSurvivalScripts = {
+            "2027-06-01\n    pays survivalAbove(85) * max(spot() - 100, 0)\n",
+            "2027-06-01\n    pays survivalAbove(80) * survivalBelow(140) * max(spot() - 100, 0)\n",
+            "2026-12-01\n    a = survivalBelow(130)\n"
+            "2027-06-01\n    pays a * survivalBelow(125) * max(spot() - 100, 0)\n",
+            "2026-12-01\n    a = spot()\n2027-06-01\n    pays survivalAbove(85) * lastStepCall(100) + a / 1000\n",
+        };
+    } // namespace
+
+    TEST(ScriptIrSurvival, TheIrsEngineOnTheCpuGivesTheTapesResults)
+    {
+        using namespace ir_test;
+        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::LocalVol})
+            for (const std::string &source : kSurvivalScripts)
+            {
+                const ScriptedProduct<Real> product(source, kCtx);
+                ASSERT_TRUE(product.ir().has_bridge);
+                auto model = make_model<Real>(dyn, 1);
+                std::string why;
+                const auto got = simulate_script_aad_ir(product, *model, 300, 23, why);
+                ASSERT_TRUE(got.has_value()) << name(dyn) << ": " << why;
+                const ScriptedProduct<aad::Number> tape_product(source, kCtx);
+                auto tape_model = make_model<aad::Number>(dyn, 1);
+                const AADSimulResults tape =
+                    simulate_aad(tape_product, *tape_model, 300, 23, first_aad_payoff, RngKind::Philox);
+                const std::string what = std::string(name(dyn)) + "\n" + source;
+                EXPECT_GT(tape.price, 0.0) << what;
+                EXPECT_EQ(got->risk_labels, tape.risk_labels) << what;
+                EXPECT_NEAR(got->price, tape.price, 1e-12 * std::max(1.0, std::abs(tape.price))) << what;
+                ASSERT_EQ(got->risks.size(), tape.risks.size()) << what;
+                double scale = 1e-12;
+                for (double x : tape.risks)
+                    scale = std::max(scale, std::abs(x));
+                for (std::size_t i = 0; i < tape.risks.size(); ++i)
+                    EXPECT_NEAR(got->risks[i], tape.risks[i], 1e-10 * scale) << what << ", risk " << i;
+            }
+    }
+
+    TEST(ScriptIrSurvival, StochasticVolatilityAndSeveralAssetsAreRefusedWithTheReason)
+    {
+        using namespace ir_test;
+        namespace ir = scripting::ir;
+        const ScriptedProduct<Real> product(kSurvivalScripts[0], kCtx);
+        EXPECT_NE(ir::path_program_unsupported(product.ir(), DeviceModel::Kind::Heston, 1).find("Black-Scholes"),
+                  std::string::npos);
+        EXPECT_NE(ir::path_program_unsupported(product.ir(), DeviceModel::Kind::BlackScholes, 2).find("one underlying"),
+                  std::string::npos);
+        EXPECT_EQ(ir::path_program_unsupported(product.ir(), DeviceModel::Kind::LocalVol, 1), "");
+        EXPECT_THROW(ir::path_program(product.ir(), DeviceModel::Kind::Heston, 1, false), InvalidInput);
+    }
 } // namespace quantModeling

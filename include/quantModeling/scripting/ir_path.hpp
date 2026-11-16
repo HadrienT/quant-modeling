@@ -63,10 +63,16 @@ namespace quantModeling::scripting::ir
         /// forward F and the log-variance v of the step it just took, and
         /// the events compute Black's formula from them.
         bool last_step = false;
+        /// The script reads bridge survivals (survivalAbove / survivalBelow,
+        /// WP 26 P2): n_surv running products, one per survival slot of
+        /// the date the path is heading for, multiplied by every step's
+        /// bridge factor and set back to 1 once the date has read them.
+        int n_surv = 0;
         int var0() const { return n_model; }
         int pay() const { return n_model + n_vars; }
         int last0() const { return n_model + n_vars + 1; } ///< F of asset a at last0() + 2a, v at + 1
-        int n_state() const { return n_model + n_vars + 1 + (last_step ? 2 * n_assets : 0); }
+        int surv0() const { return last0() + (last_step ? 2 * n_assets : 0); }
+        int n_state() const { return surv0() + n_surv; }
 
         // theta: the differentiable parameters first, in the CPU model's
         // label order (mc::dual_directions), then what is not differentiated
@@ -79,7 +85,10 @@ namespace quantModeling::scripting::ir
         int n_risks = 0;    ///< leading thetas that are risks (then the grid's points)
 
         // data rows
-        int step_cols = 0;  ///< per step
+        int step_cols = 0; ///< per step
+        /// The step row's first survival column: level and "above" (1/0)
+        /// of each survival slot of the date the step leads to.
+        int surv_col0 = 0;
         int event_cols = 1; ///< per date: 1 + the most df() slots a date reads
     };
 
@@ -102,6 +111,9 @@ namespace quantModeling::scripting::ir
 
     /// "" when `path_program` covers the model, else why not.
     std::string path_program_unsupported(DeviceModel::Kind kind, int n_assets);
+    /// The same, for a script: its bridge survivals need one underlying
+    /// under Black-Scholes or local vol (the CPU models' own scope).
+    std::string path_program_unsupported(const Script &script, DeviceModel::Kind kind, int n_assets);
 
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
                              bool last_step = false);

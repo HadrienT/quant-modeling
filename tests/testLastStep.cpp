@@ -321,8 +321,12 @@ namespace quantModeling
         else
             unsetenv("QM_SCRIPT_JIT");
 
+        // A bridge survival is compiled too (WP 27 §14.12), but not under a
+        // stochastic variance.
         ScriptedProduct<Real> bridge("2025-06-03\n    pays survivalAbove(80) * lastStepCall(100)\n", kCtx);
-        EXPECT_NE(gpu::script_gpu_unsupported(bridge.program(), dm, {{}}).find("survivalAbove"), std::string::npos);
+        DeviceModel heston = dm;
+        heston.kind = DeviceModel::Kind::Heston;
+        EXPECT_NE(gpu::script_gpu_unsupported(bridge.program(), heston, {{}}).find("survivalAbove"), std::string::npos);
     }
 
 } // namespace quantModeling

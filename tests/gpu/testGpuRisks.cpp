@@ -599,6 +599,38 @@ namespace quantModeling
         }
     }
 
+    // WP 26 P2: the risks of a bridge survival from the generated tangent
+    // (Black-Scholes) and adjoint (local vol) kernels, against the tape.
+    TEST_F(GpuRisksTest, BridgeSurvivalRisksMatchTheTape)
+    {
+        const std::string source = "2026-12-01\n    a = survivalBelow(135)\n2027-06-01\n"
+                                   "    pays a * survivalAbove(80) * max(spot() - 100, 0)\n";
+        const ScriptedProduct<Real> product(source, kCtx);
+        const ScriptedProduct<aad::Number> tape_product(source, kCtx);
+        const auto compare = [&](ISimulationModel<Real> &m, ISimulationModel<aad::Number> &tape_m, const char *what)
+        {
+            std::string why;
+            const auto gpu = simulate_script_aad_gpu(product, m, kPaths, kSeed, why);
+            ASSERT_TRUE(gpu.has_value()) << what << ": " << why;
+            const AADSimulResults cpu =
+                simulate_aad(tape_product, tape_m, kPaths, kSeed, first_aad_payoff, RngKind::Philox);
+            EXPECT_GT(cpu.price, 0.0) << what;
+            EXPECT_NEAR(gpu->price, cpu.price, 1e-9 * std::max(1.0, std::abs(cpu.price))) << what;
+            expect_same_risks(*gpu, cpu, 1e-8, what);
+        };
+        {
+            BlackScholesSimModel<Real> m(100.0, 0.03, 0.01, 0.25);
+            BlackScholesSimModel<aad::Number> t(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01),
+                                                aad::Number(0.25));
+            compare(m, t, "Black-Scholes");
+        }
+        {
+            auto m = local_vol<Real>();
+            auto t = local_vol<aad::Number>();
+            compare(*m, *t, "local vol");
+        }
+    }
+
     // With compilation off, a last-step expectation stays on the CPU and
     // says why; nothing reaches the interpreted kernels.
     TEST_F(GpuRisksTest, WithoutCompilationLastStepStaysOnTheCpu)

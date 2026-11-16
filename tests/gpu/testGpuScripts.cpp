@@ -144,4 +144,29 @@ namespace quantModeling
             }
     }
 
+    // WP 26 P2: the bridge survivals in the kernels compiled from the IR --
+    // the CPU's numbers on the same draws, under Black-Scholes and local vol.
+    TEST_F(GpuScriptsTest, BridgeSurvivalsGiveTheCpuNumbers)
+    {
+        const std::vector<std::string> scripts = {
+            "2027-06-01\n    pays survivalAbove(85) * max(spot() - 100, 0)\n",
+            "2027-06-01\n    pays survivalAbove(80) * survivalBelow(140) * max(spot() - 100, 0)\n",
+            "2026-12-01\n    a = survivalBelow(130)\n2027-06-01\n    pays a * survivalBelow(125) * max(spot() - 100, 0)\n",
+        };
+        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::LocalVol})
+            for (const std::string &source : scripts)
+            {
+                const ScriptedProduct<Real> product(source, kCtx);
+                auto cpu_model = model(dyn, 1);
+                auto gpu_model = model(dyn, 1);
+                const SimulationMCResult cpu = simulate_script(product, *cpu_model, settings(ComputeDevice::Cpu));
+                const SimulationMCResult gpu = simulate_script(product, *gpu_model, settings(ComputeDevice::Gpu));
+                ASSERT_EQ(gpu.device, "gpu") << source << ": " << gpu.diagnostics;
+                EXPECT_GT(cpu.npv(), 0.0) << source;
+                const double scale = std::max(1.0, std::abs(cpu.npv()));
+                EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * scale) << source;
+                EXPECT_NEAR(gpu.std_error(), cpu.std_error(), 1e-7 * std::max(1e-12, cpu.std_error())) << source;
+            }
+    }
+
 } // namespace quantModeling

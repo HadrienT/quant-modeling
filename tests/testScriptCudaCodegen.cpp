@@ -115,14 +115,20 @@ namespace quantModeling
     }
 
     // What cannot be generated is refused with a reason (the interpreter
-    // runs): no IR, or a script that reads the bridge survival.
+    // runs): no IR, or a bridge survival under a stochastic variance. Under
+    // Black-Scholes the survival is generated (WP 27 §14.12).
     TEST(ScriptCudaCodegen, WhatCannotBeGeneratedIsRefused)
     {
         EXPECT_FALSE(scripting::cuda_path_source(scripting::ir::Script{}, 0, 1, scripting::PathKernel::Price).why.empty());
         const ScriptedProduct<Real> product("2027-06-01\n    pays survivalAbove(80) * spot()\n", kCtx);
-        const scripting::CudaSource src = scripting::cuda_path_source(product.ir(), 0, static_cast<int>(product.n_underlyings()), scripting::PathKernel::Price);
-        EXPECT_TRUE(src.source.empty());
-        EXPECT_NE(src.why.find("survival"), std::string::npos) << src.why;
+        const int n = static_cast<int>(product.n_underlyings());
+        const scripting::CudaSource heston = scripting::cuda_path_source(
+            product.ir(), static_cast<int>(DeviceModel::Kind::Heston), n, scripting::PathKernel::Price);
+        EXPECT_TRUE(heston.source.empty());
+        EXPECT_NE(heston.why.find("survival"), std::string::npos) << heston.why;
+        const scripting::CudaSource bs = scripting::cuda_path_source(
+            product.ir(), static_cast<int>(DeviceModel::Kind::BlackScholes), n, scripting::PathKernel::Price);
+        EXPECT_FALSE(bs.source.empty()) << bs.why;
     }
 
     // Lot L1b of blueprint/wp/27-ir-ad.md: with its numbers as terms, a

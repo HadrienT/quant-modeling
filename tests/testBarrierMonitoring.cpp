@@ -253,13 +253,20 @@ namespace quantModeling
         EXPECT_THROW(bs.init(prod.timeline(), prod.defline()), InvalidInput);
     }
 
-    TEST(BarrierMonitoring, TheGpuLeavesItToTheCpuAndSaysWhy)
+    TEST(BarrierMonitoring, TheGpuTakesItUnderBlackScholesAndLocalVolOnly)
     {
+        // The kernels compiled from the IR compute the bridge (WP 26 P2);
+        // a stochastic variance or several assets stay on the CPU, and say why.
         ScriptedProduct<Real> prod(kOneEvent, ctx());
         DeviceModel dm;
         dm.kind = DeviceModel::Kind::BlackScholes;
-        const std::string why = gpu::script_gpu_unsupported(prod.program(), dm, {{}});
-        EXPECT_NE(why.find("survivalAbove"), std::string::npos) << why;
+        if (gpu::script_jit_enabled())
+            EXPECT_EQ(gpu::script_gpu_unsupported(prod.program(), dm, {{}}), "");
+        dm.kind = DeviceModel::Kind::Heston;
+        EXPECT_NE(gpu::script_gpu_unsupported(prod.program(), dm, {{}}).find("survivalAbove"), std::string::npos);
+        dm.kind = DeviceModel::Kind::BlackScholes;
+        dm.n_assets = 2;
+        EXPECT_NE(gpu::script_gpu_unsupported(prod.program(), dm, {{}}).find("survivalAbove"), std::string::npos);
     }
 
 } // namespace quantModeling

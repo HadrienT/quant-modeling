@@ -22,6 +22,32 @@ namespace quantModeling::scripting::ir
         return "unknown model";
     }
 
+    std::string path_program_unsupported(const Script &script, DeviceModel::Kind kind, int n_assets)
+    {
+        std::string why = path_program_unsupported(kind, n_assets);
+        if (!why.empty() || !script.has_bridge)
+            return why;
+        if (n_assets != 1)
+            return "survivalAbove() / survivalBelow() cover one underlying";
+        if (kind != DeviceModel::Kind::BlackScholes && kind != DeviceModel::Kind::LocalVol)
+            return "survivalAbove() / survivalBelow() run under Black-Scholes and local vol";
+        return "";
+    }
+
+    namespace
+    {
+        /// The survival slots of a block: their positions among its
+        /// quantities, in order.
+        std::vector<std::size_t> survival_slots(const Block &b)
+        {
+            std::vector<std::size_t> out;
+            for (std::size_t k = 0; k < b.quantities.size(); ++k)
+                if (b.quantities[k].kind == StepQuantity::Survival)
+                    out.push_back(k);
+            return out;
+        }
+    } // namespace
+
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk, bool last_step)
     {
         PathLayout l;
@@ -72,8 +98,13 @@ namespace quantModeling::scripting::ir
         }
         int max_df = -1;
         for (const Block &b : script.blocks)
+        {
             max_df = std::max(max_df, static_cast<int>(b.max_df));
+            l.n_surv = std::max(l.n_surv, static_cast<int>(survival_slots(b).size()));
+        }
         l.event_cols = 2 + max_df;
+        l.surv_col0 = l.step_cols;
+        l.step_cols += 2 * l.n_surv;
         return l;
     }
 
@@ -144,9 +175,25 @@ namespace quantModeling::scripting::ir
                 case Op::Surv:
                 {
                     const auto slot = static_cast<std::size_t>(in.a);
-                    if (slot >= event.quantities.size() || event.quantities[slot].kind == StepQuantity::Survival)
-                        throw InvalidInput("script IR: survivalAbove() / survivalBelow() are not bound to a path yet");
-                    id = last_step_expectation(b, l, event.quantities[slot]);
+                    if (slot >= event.quantities.size())
+                        throw InvalidInput("script IR: a monitored quantity out of the date's slots");
+                    const StepMonitor &q = event.quantities[slot];
+                    if (q.kind != StepQuantity::Survival)
+                    {
+                        id = last_step_expectation(b, l, q);
+                        break;
+                    }
+                    // The running product of the steps' bridge factors,
+                    // times the spot of the date on the safe side: what the
+                    // CPU model gives a date with no step before it (its
+                    // bridge has no variance), and 1 -- the same bits --
+                    // after a step, which already required it.
+                    const std::vector<std::size_t> slots = survival_slots(event);
+                    const auto j = static_cast<int>(std::find(slots.begin(), slots.end(), slot) - slots.begin());
+                    const std::int32_t S = b.input(Op::State, static_cast<int>(q.asset));
+                    const std::int32_t L = b.constant(q.level);
+                    const std::int32_t unsafe = b.value(q.above ? Op::Le : Op::Ge, S, L);
+                    id = b.select(unsafe, b.constant(0.0), b.input(Op::State, l.surv0() + j));
                     break;
                 }
                 default:
@@ -155,9 +202,15 @@ namespace quantModeling::scripting::ir
             }
             r.map[static_cast<std::size_t>(k)] = id;
         }
+        // The next date's survivals start from 1.
+        std::vector<std::int32_t> reset;
+        for (int j = 0; j < l.n_surv; ++j)
+            reset.push_back(b.constant(1.0));
         Block out = b.take();
         for (const Out &o : event.outs)
             out.outs.push_back({Op::State, o.cls == Op::VarIn ? l.var0() + o.index : l.pay(), kPrimal, r[o.value], false});
+        for (int j = 0; j < l.n_surv; ++j)
+            out.outs.push_back({Op::State, l.surv0() + j, kPrimal, reset[static_cast<std::size_t>(j)], false});
         out.max_spot = event.max_spot;
         out.max_df = event.max_df;
         remove_dead_code(out);
@@ -183,6 +236,8 @@ namespace quantModeling::scripting::ir
                     out.outs.push_back({Op::State, l.last0() + 2 * k, kPrimal, b.input(Op::Theta, l.th_spot + k), false});
                     out.outs.push_back({Op::State, l.last0() + 2 * k + 1, kPrimal, b.constant(0.0), false});
                 }
+            for (int j = 0; j < l.n_surv; ++j)
+                out.outs.push_back({Op::State, l.surv0() + j, kPrimal, b.constant(1.0), false});
             return b.take();
         }
 
@@ -215,6 +270,28 @@ namespace quantModeling::scripting::ir
                 out(l.last0() + 2 * a, b.mul(S, exp(b.add(m, b.mul(b.constant(0.5), v)))));
                 out(l.last0() + 2 * a + 1, v);
             };
+            // The bridge factor of every survival slot over this step from
+            // a to b with log-variance var: mc::bridge_survival, operation
+            // for operation (the level and the side are the step row's).
+            const auto survive = [&](std::int32_t a, std::int32_t b2, std::int32_t var)
+            {
+                for (int j = 0; j < l.n_surv; ++j)
+                {
+                    const std::int32_t L = data(l.surv_col0 + 2 * j);
+                    const std::int32_t above = data(l.surv_col0 + 2 * j + 1);
+                    const std::int32_t unsafe =
+                        b.select(above, b.value(Op::Or, b.value(Op::Le, a, L), b.value(Op::Le, b2, L)),
+                                 b.value(Op::Or, b.value(Op::Ge, a, L), b.value(Op::Ge, b2, L)));
+                    const std::int32_t exponent =
+                        b.div(b.mul(b.mul(b.constant(-2.0), b.value(Op::Log, b.div(L, a))), b.value(Op::Log, b.div(L, b2))),
+                              var);
+                    const std::int32_t p =
+                        b.select(unsafe, b.constant(0.0),
+                                 b.select(b.value(Op::Lt, exponent, b.constant(0.0)),
+                                          b.sub(b.constant(1.0), b.value(Op::Exp, exponent)), b.constant(0.0)));
+                    out(l.surv0() + j, b.mul(state(l.surv0() + j), p));
+                }
+            };
             const int n = l.n_assets;
             switch (l.kind)
             {
@@ -242,7 +319,10 @@ namespace quantModeling::scripting::ir
                         }
                         const std::int32_t x = b.add(m, b.mul(sz, z));
                         last(a, state(a), m, sz);
-                        out(a, b.mul(state(a), exp(x)));
+                        const std::int32_t S_next = b.mul(state(a), exp(x));
+                        out(a, S_next);
+                        if (a == 0 && l.n_surv > 0)
+                            survive(state(0), S_next, b.mul(sz, sz));
                     }
                     break;
                 case DeviceModel::Kind::LocalVol:
@@ -253,8 +333,11 @@ namespace quantModeling::scripting::ir
                         b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(b.mul(b.constant(0.5), sig), sig)),
                               data(1));
                     const std::int32_t vol_sqrt_dt = b.mul(sig, data(2));
-                    out(0, b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0))))));
+                    const std::int32_t S_next = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0)))));
+                    out(0, S_next);
                     last(0, S, drift, vol_sqrt_dt);
+                    if (l.n_surv > 0)
+                        survive(S, S_next, b.mul(vol_sqrt_dt, vol_sqrt_dt));
                     break;
                 }
                 case DeviceModel::Kind::Heston:
@@ -308,7 +391,7 @@ namespace quantModeling::scripting::ir
 
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk, bool last_step)
     {
-        const std::string why = path_program_unsupported(kind, n_assets);
+        const std::string why = path_program_unsupported(script, kind, n_assets);
         if (!why.empty())
             throw InvalidInput("script IR: " + why);
         PathProgram p;
@@ -373,6 +456,33 @@ namespace quantModeling::scripting::ir
             t_prev = ts;
             if (m.event[s] >= 0)
                 event_time[static_cast<std::size_t>(m.event[s])] = ts;
+        }
+        if (l.n_surv > 0)
+        {
+            // Each step's levels are those of the date it leads to: the
+            // first date at or after it. A slot that date does not use
+            // gets a harmless level of 1, above.
+            int next = -1;
+            for (std::size_t s = n_steps; s-- > 0;)
+            {
+                if (m.event[s] >= 0)
+                    next = m.event[s];
+                double *row = d.step_rows.data() + s * cols + l.surv_col0;
+                std::vector<std::size_t> slots;
+                const Block *block = nullptr;
+                if (next >= 0)
+                {
+                    block = &script.blocks[static_cast<std::size_t>(script.event_block[static_cast<std::size_t>(next)])];
+                    slots = survival_slots(*block);
+                }
+                for (int j = 0; j < l.n_surv; ++j)
+                {
+                    const bool used = static_cast<std::size_t>(j) < slots.size();
+                    const StepMonitor *q = used ? &block->quantities[slots[static_cast<std::size_t>(j)]] : nullptr;
+                    row[2 * j] = used ? q->level : 1.0;
+                    row[2 * j + 1] = used ? (q->above ? 1.0 : 0.0) : 1.0;
+                }
+            }
         }
 
         const std::size_t ecols = static_cast<std::size_t>(l.event_cols);
