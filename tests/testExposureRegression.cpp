@@ -370,6 +370,93 @@ namespace quantModeling
         EXPECT_GT(paths.trade_values_today[0], paths.trade_values_today[2]);
     }
 
+    // ── The pilot ────────────────────────────────────────────────────────────
+
+    TEST(ExposureRegression, NoPilotWithoutATradeValuedByRegression)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        engine.add(par_swap(m, 0.0, 5.0, true));
+        EXPECT_EQ(engine.simulate(settings(500)).pilot_paths, 0u);
+        engine.add(bermudan(m));
+        ExposureSimulationSettings s = settings(500);
+        EXPECT_GE(engine.simulate(s).pilot_paths, 20000u);
+        s.pilot_paths = 3000;
+        EXPECT_EQ(engine.simulate(s).pilot_paths, 3000u);
+        EXPECT_EQ(engine.pilot_dispersion(), 0.0);
+        // The pilot counts against the memory limit, like the cube.
+        s.pilot_paths = 0;
+        s.memory_limit_bytes = std::size_t{2} << 20;
+        EXPECT_THROW(engine.simulate(s), InvalidInput);
+    }
+
+    TEST(ExposureRegression, SameBitsWhateverTheNumberOfThreads)
+    {
+        const HullWhiteCurveModel m = model();
+        const auto run = [&](ThreadPool *pool)
+        {
+            HullWhiteExposureEngine engine(m);
+            engine.add(bermudan(m));
+            engine.add(make_regression_future_value(
+                make_hull_white_future_value(par_swap(m, 0.0, 7.0, false), m)));
+            ExposureSimulationSettings s = settings(3000); // not a multiple of the chunk size
+            s.pilot_paths = 5000;
+            s.keep_cashflows = true;
+            return engine.simulate(s, pool);
+        };
+        const ExposurePaths serial = run(nullptr);
+        ThreadPool many;
+        many.start(8);
+        const ExposurePaths parallel = run(&many);
+        EXPECT_EQ(parallel.trade_values, serial.trade_values);
+        EXPECT_EQ(parallel.trade_cashflows, serial.trade_cashflows);
+    }
+
+    TEST(ExposureRegression, UnderTheHistoricalMeasureThePilotCoversWhereTheScenariosGo)
+    {
+        // A flat 4 % curve: the historical measure needs a short rate to
+        // start from, which a curve held flat before its first pillar lacks.
+        const HullWhiteCurveModel m(0.03, 0.01, DiscountCurve(0.04));
+        // Rates pulled to zero within a year or two, from forwards at 4 %:
+        // scenarios the pricing measure hardly ever visits that early.
+        ExposureSimulationSettings s = settings(20000);
+        s.historical = HistoricalRateDynamics{1.0, 0.0, 0.006};
+        const InterestRateSwap swap = par_swap(m, 0.0, 10.0, true);
+        const auto run = [&](std::optional<Real> dispersion)
+        {
+            HullWhiteExposureEngine engine(m);
+            engine.add(swap);
+            engine.add(make_regression_future_value(make_hull_white_future_value(swap, m)));
+            ExposureSimulationSettings with = s;
+            with.pilot_dispersion = dispersion;
+            const ExposurePaths paths = engine.simulate(with);
+            EXPECT_EQ(paths.measure, ExposureMeasure::Historical);
+            return std::pair{engine.pilot_dispersion(),
+                             relative_rms(paths.trade_values[1], paths.trade_values[0])};
+        };
+        const auto [automatic, covered] = run(std::nullopt);
+        const auto [none, uncovered] = run(0.0);
+        // The pilot had to start from a dispersed state...
+        EXPECT_GT(automatic, 0.005);
+        EXPECT_EQ(none, 0.0);
+        // ...with which the regression prices these scenarios as the closed
+        // form does, path by path. Fitted only where the pricing measure
+        // goes, it extrapolates: a swap's value is smooth enough for that to
+        // hold up, at close to twice the error.
+        EXPECT_LT(covered, 0.01);
+        EXPECT_GT(uncovered, 1.5 * covered);
+
+        // A Bermudan runs under the historical measure too.
+        HullWhiteExposureEngine engine(m);
+        engine.add(bermudan(m));
+        ExposureSimulationSettings small = s;
+        small.paths = 2000;
+        EXPECT_EQ(engine.simulate(small).measure, ExposureMeasure::Historical);
+        EXPECT_GT(engine.pilot_dispersion(), 0.005);
+        small.pilot_dispersion = -1.0;
+        EXPECT_THROW(engine.simulate(small), InvalidInput);
+    }
+
     // ── Lot M2 (blueprint/wp/25-ml.md §3.3): the differential regression ────
 
     TEST(ExposureRegression, WithoutWeightTheDifferentialRegressionIsThePlainOne)
@@ -507,93 +594,6 @@ namespace quantModeling
         RecordProperty("differential_worst_gap_in_standard_errors", std::to_string(differential));
         EXPECT_LT(differential, plain + 0.5);
         EXPECT_LT(differential, 6.0);
-    }
-
-    // ── The pilot ────────────────────────────────────────────────────────────
-
-    TEST(ExposureRegression, NoPilotWithoutATradeValuedByRegression)
-    {
-        const HullWhiteCurveModel m = model();
-        HullWhiteExposureEngine engine(m);
-        engine.add(par_swap(m, 0.0, 5.0, true));
-        EXPECT_EQ(engine.simulate(settings(500)).pilot_paths, 0u);
-        engine.add(bermudan(m));
-        ExposureSimulationSettings s = settings(500);
-        EXPECT_GE(engine.simulate(s).pilot_paths, 20000u);
-        s.pilot_paths = 3000;
-        EXPECT_EQ(engine.simulate(s).pilot_paths, 3000u);
-        EXPECT_EQ(engine.pilot_dispersion(), 0.0);
-        // The pilot counts against the memory limit, like the cube.
-        s.pilot_paths = 0;
-        s.memory_limit_bytes = std::size_t{2} << 20;
-        EXPECT_THROW(engine.simulate(s), InvalidInput);
-    }
-
-    TEST(ExposureRegression, SameBitsWhateverTheNumberOfThreads)
-    {
-        const HullWhiteCurveModel m = model();
-        const auto run = [&](ThreadPool *pool)
-        {
-            HullWhiteExposureEngine engine(m);
-            engine.add(bermudan(m));
-            engine.add(make_regression_future_value(
-                make_hull_white_future_value(par_swap(m, 0.0, 7.0, false), m)));
-            ExposureSimulationSettings s = settings(3000); // not a multiple of the chunk size
-            s.pilot_paths = 5000;
-            s.keep_cashflows = true;
-            return engine.simulate(s, pool);
-        };
-        const ExposurePaths serial = run(nullptr);
-        ThreadPool many;
-        many.start(8);
-        const ExposurePaths parallel = run(&many);
-        EXPECT_EQ(parallel.trade_values, serial.trade_values);
-        EXPECT_EQ(parallel.trade_cashflows, serial.trade_cashflows);
-    }
-
-    TEST(ExposureRegression, UnderTheHistoricalMeasureThePilotCoversWhereTheScenariosGo)
-    {
-        // A flat 4 % curve: the historical measure needs a short rate to
-        // start from, which a curve held flat before its first pillar lacks.
-        const HullWhiteCurveModel m(0.03, 0.01, DiscountCurve(0.04));
-        // Rates pulled to zero within a year or two, from forwards at 4 %:
-        // scenarios the pricing measure hardly ever visits that early.
-        ExposureSimulationSettings s = settings(20000);
-        s.historical = HistoricalRateDynamics{1.0, 0.0, 0.006};
-        const InterestRateSwap swap = par_swap(m, 0.0, 10.0, true);
-        const auto run = [&](std::optional<Real> dispersion)
-        {
-            HullWhiteExposureEngine engine(m);
-            engine.add(swap);
-            engine.add(make_regression_future_value(make_hull_white_future_value(swap, m)));
-            ExposureSimulationSettings with = s;
-            with.pilot_dispersion = dispersion;
-            const ExposurePaths paths = engine.simulate(with);
-            EXPECT_EQ(paths.measure, ExposureMeasure::Historical);
-            return std::pair{engine.pilot_dispersion(),
-                             relative_rms(paths.trade_values[1], paths.trade_values[0])};
-        };
-        const auto [automatic, covered] = run(std::nullopt);
-        const auto [none, uncovered] = run(0.0);
-        // The pilot had to start from a dispersed state...
-        EXPECT_GT(automatic, 0.005);
-        EXPECT_EQ(none, 0.0);
-        // ...with which the regression prices these scenarios as the closed
-        // form does, path by path. Fitted only where the pricing measure
-        // goes, it extrapolates: a swap's value is smooth enough for that to
-        // hold up, at close to twice the error.
-        EXPECT_LT(covered, 0.01);
-        EXPECT_GT(uncovered, 1.5 * covered);
-
-        // A Bermudan runs under the historical measure too.
-        HullWhiteExposureEngine engine(m);
-        engine.add(bermudan(m));
-        ExposureSimulationSettings small = s;
-        small.paths = 2000;
-        EXPECT_EQ(engine.simulate(small).measure, ExposureMeasure::Historical);
-        EXPECT_GT(engine.pilot_dispersion(), 0.005);
-        small.pilot_dispersion = -1.0;
-        EXPECT_THROW(engine.simulate(small), InvalidInput);
     }
 
 } // namespace quantModeling
