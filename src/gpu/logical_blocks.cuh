@@ -154,7 +154,7 @@ namespace quantModeling::gpu::detail
         }
     }
 
-    /// One logical block: each thread runs its 16 units one after the other
+    /// One logical block: each thread runs its 8 units one after the other
     /// and reduces them (the units computed where they are added).
     template <class Stats, class UnitFn>
     __device__ __forceinline__ void logical_block_body(uint64_t first_block, uint64_t blocks_per_segment,
@@ -168,7 +168,7 @@ namespace quantModeling::gpu::detail
     /**
      * Parallel units (lot P1g of blueprint/wp/26-performance.md): one thread
      * per unit of the launch's logical blocks, whatever the grid -- thread i
-     * computes unit l = i % 4096 of logical block i / 4096 and stores its
+     * computes unit l = i % kUnitsPerBlock of logical block i / kUnitsPerBlock and stores its
      * sample at samples[i]. logical_block_reduce then adds the stored samples
      * in the order above: the same additions, the same bits, sixteen times
      * the threads in flight.

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 
+#include "quantModeling/engines/mc/logical_blocks.hpp"
 #include "quantModeling/core/platform.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/utils/inverse_normal.hpp"
@@ -149,15 +150,16 @@ namespace quantModeling::mc
     /**
      * @brief The stratum of unit u among m (a bijection of [0, m)).
      *
-     * Inside every full logical block of 4 096 units, the thread that
-     * reduces units t, t + 256, ... (engines/mc/logical_blocks.hpp) gets 16
-     * *consecutive* strata, in order: its successive paths are neighbours,
+     * Inside every full logical block of 2 048 units, the thread that
+     * reduces units t, t + 256, ... (engines/mc/logical_blocks.hpp) gets its
+     * kUnitsPerThread *consecutive* strata, in order: its successive paths are neighbours,
      * which is what the within-stratum control slope needs
      * (StratifiedControlAccumulator). A partial last block keeps u.
      */
     QM_HOST_DEVICE inline uint64_t stratum_of(uint64_t u, uint64_t m)
     {
-        constexpr uint64_t kBlock = 4096, kThreads = 256, kPerThread = 16;
+        constexpr uint64_t kBlock = LogicalBlocks::kUnitsPerBlock, kThreads = LogicalBlocks::kThreadsPerBlock,
+                           kPerThread = LogicalBlocks::kUnitsPerThread;
         const uint64_t block = u / kBlock;
         if ((block + 1) * kBlock > m)
             return u;

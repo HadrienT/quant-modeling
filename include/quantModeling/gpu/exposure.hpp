@@ -48,7 +48,7 @@ namespace quantModeling::gpu
         uint64_t paths = 0;
         /// The devices that share the logical blocks; empty runs on device 0.
         std::vector<int> devices;
-        /// Logical blocks (4 096 paths) per launch; 0 takes what half of the
+        /// Logical blocks (2 048 paths) per launch; 0 takes what half of the
         /// free memory holds. Tests set it to force several launches.
         uint64_t max_blocks_per_launch = 0;
     };

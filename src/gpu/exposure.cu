@@ -275,7 +275,7 @@ namespace quantModeling::gpu
             const std::size_t budget = free_memory(device) / 2;
             uint64_t blocks = budget / per_block;
             if (blocks == 0)
-                throw GpuUnavailable("exposure on GPU: 4096 paths need " + std::to_string(per_block >> 20) +
+                throw GpuUnavailable("exposure on GPU: " + std::to_string(L::kUnitsPerBlock) + " paths need " + std::to_string(per_block >> 20) +
                                      " MiB on the device and half of what is free is " +
                                      std::to_string(budget >> 20) + " MiB; fewer trades or dates, or the CPU");
             blocks = std::min(blocks, kMaxBlocksPerLaunch);

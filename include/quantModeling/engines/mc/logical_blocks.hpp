@@ -46,8 +46,8 @@ namespace quantModeling::mc
     struct LogicalBlocks
     {
         static constexpr int kThreadsPerBlock = 256;
-        static constexpr int kUnitsPerThread = 16;
-        static constexpr int kUnitsPerBlock = kThreadsPerBlock * kUnitsPerThread; // 4 096
+        static constexpr int kUnitsPerThread = 8;
+        static constexpr int kUnitsPerBlock = kThreadsPerBlock * kUnitsPerThread; // 2 048
         static constexpr int kWarpSize = 32;
         static constexpr int kWarpsPerBlock = kThreadsPerBlock / kWarpSize;
 

@@ -127,7 +127,7 @@ namespace quantModeling
         /// The cards a GPU run shares its paths between: the first
         /// `max_gpus` usable ones, all of them for 0.
         int max_gpus = 0;
-        /// Logical blocks (4 096 paths) per GPU launch; 0 takes what half of
+        /// Logical blocks (2 048 paths) per GPU launch; 0 takes what half of
         /// the free device memory holds. The result does not depend on it.
         std::uint64_t gpu_blocks_per_launch = 0;
     };

@@ -173,7 +173,7 @@ namespace quantModeling::gpu
         };
 
         /// `parallel_units`: one thread per unit (lot P1g), so a logical
-        /// block's Sobol scratch is 4 096 rows, not 256.
+        /// block's Sobol scratch is 2 048 rows, not 256.
         DrawSetup draw_setup(const ScriptGpuRequest &req, const mc::ScriptPathView &v, DeviceArrays &mem, int device,
                              std::size_t other_bytes_per_block = 0, bool parallel_units = false)
         {
@@ -228,7 +228,7 @@ namespace quantModeling::gpu
                 const uint64_t n_blocks = LB::count(req.n_units) * s.replicates;
                 uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / per_block);
                 // And at most kScratchBytes: one thread per unit (P1g) made a
-                // Sobol launch's scratch 4 096 rows a block -- 4.8 GB for the
+                // Sobol launch's scratch 4 096 rows a block (2 048 since 2026-11-16) -- 4.8 GB for the
                 // daily Asian's 1.16 M paths, whose allocation after the last
                 // call's free cost 89 ms of a 131 ms call (one V100,
                 // 2026-11-11). 1 GiB is still 60 blocks of 4 096 threads at
