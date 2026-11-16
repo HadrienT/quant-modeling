@@ -99,11 +99,11 @@ namespace quantModeling
         const std::size_t N = paths.paths;
         const Real today = value_today(paths, model.trades_);
 
-        std::vector<Real> rows(N), targets(N);
+        std::vector<Real> rows(N), moves(N), targets(N);
         const MarginPeriod *longest_from_today = nullptr;
         for (const MarginPeriod &pair : pairs)
         {
-            Date date{pair.date, pair.lagged, {}};
+            Date date{pair.date, pair.lagged, {}, {}, 0.0};
             if (pair.lagged == MarginPeriod::kToday)
             {
                 // Periods that start today: one state, nothing to regress.
@@ -114,12 +114,26 @@ namespace quantModeling
             {
                 for (std::size_t p = 0; p < N; ++p)
                 {
-                    const Real m = move(paths, model.trades_, pair, today, p);
+                    moves[p] = move(paths, model.trades_, pair, today, p);
                     rows[p] = value_at(paths, model.trades_, p, pair.lagged);
-                    // The drift over ten days is negligible next to the move.
-                    targets[p] = m * m;
+                }
+                // The drift first, then the variance around it: once a
+                // swap's last coupon is fixed the move is all drift, and a
+                // variance of the raw move would size the margin on it.
+                date.mean = BucketedRegression::fit(rows, 1, moves, settings.regression);
+                for (std::size_t p = 0; p < N; ++p)
+                {
+                    const Real r = moves[p] - date.mean(&rows[p]);
+                    targets[p] = r * r;
                 }
                 date.variance = BucketedRegression::fit(rows, 1, targets, settings.regression);
+                // Where the quadratic dips to zero or below (it does at the
+                // edges, and on 13 % of the paths at a swap's last quarter),
+                // the date's average residual variance stands in for it.
+                Real mean_square = 0.0;
+                for (std::size_t p = 0; p < N; ++p)
+                    mean_square += targets[p] / static_cast<Real>(N);
+                date.average_variance = mean_square;
             }
             model.dates_.push_back(std::move(date));
         }
@@ -186,8 +200,11 @@ namespace quantModeling
                 if (date.lagged != MarginPeriod::kToday)
                 {
                     const Real v = value_at(paths, trades_, p, date.lagged);
-                    // A fitted variance can dip below zero at the edges.
-                    im = scaling_ * quantile_ * std::sqrt(std::max(date.variance(&v), 0.0));
+                    // |drift| + z sd; where the fitted variance is not
+                    // positive, the date's average.
+                    const Real fitted = date.variance(&v);
+                    im = scaling_ * (std::abs(date.mean(&v)) +
+                                     quantile_ * std::sqrt(fitted > 0.0 ? fitted : date.average_variance));
                 }
                 out.margin[p * m + r] = im;
                 sum += paths.discount_weight[p * n + date.index] * im;

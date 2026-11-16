@@ -2846,8 +2846,8 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 
 | # | Amélioration | Pourquoi |
 |---|---|---|
-| B1 | DIM : régresser aussi la **dérive** du mouvement | marge dépassée 0,91 % à la hausse et 1,07 % à la baisse au lieu de 1 % des deux côtés |
-| B2 | DIM : cas dégénéré après le dernier fixing (mouvement tout en portage) | fréquences de dépassement de 13 à 40 % sur une marge infime |
+| B1 | DIM : régresser aussi la **dérive** du mouvement | **Done (2026-11-16, maintainer's decision)**: the move's conditional mean is regressed, then its residual's variance; IM = \|μ\| + z σ. Backtest on fresh paths (10Y payer + 5Y receiver, 20 000 paths): 0.86 % up / 1.02 % down over the profile (0.91 / 1.07 before). On a book under CSA with IM: expected IM +0.7 %, MVA −0.8 %, IM today unchanged |
+| B2 | DIM : cas dégénéré après le dernier fixing (mouvement tout en portage) | **Done (2026-11-16)**: with the drift in the margin, and the date's average residual variance standing in where the quadratic is not positive (13 % of the paths at the last quarter), the worst date after the last fixing is exceeded 1.08 % of the time (13 to 40 % before) |
 | B3 | DIM dans la mesure historique du rapport (PFE sous marge initiale) | le modèle s'y applique déjà (`DynamicInitialMargin::margin`), le rapport ne le fait pas |
 | B4 | DIM réajustée pour chaque sous-ensemble (CVA incrémental) : mise en cache ou allocation | 14 s pour le book équilibré sous CSA et marge initiale |
 | B5 | Capital : delta prudentiel à la monnaie **future**, état d'exercice par chemin | aujourd'hui figé à la monnaie d'aujourd'hui, et l'option échue est portée comme son swap |

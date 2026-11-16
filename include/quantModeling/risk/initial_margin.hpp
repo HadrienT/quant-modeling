@@ -25,11 +25,18 @@ namespace quantModeling
      * it **in every scenario**.
      *
      * The method is the regression of Anfuso, Aziz, Giltinan & Loukopoulos
-     * (2017): on the simulated paths, the squared move of the value over
-     * (t, t + MPoR] is regressed on the value at t, which estimates the
-     * conditional variance σ²(t, V); the move is taken as Gaussian, so
+     * (2017): on the simulated paths, the move of the value over
+     * (t, t + MPoR] is regressed on the value at t, which estimates its
+     * conditional mean μ(t, V) -- the drift, all of the move once a swap's
+     * last coupon is fixed -- and the squared residual is regressed on the
+     * value too, which estimates the conditional variance σ²(t, V); the move
+     * is taken as Gaussian around its drift, and one amount covers both
+     * sides (lot X5 follow-up, B1/B2 of blueprint/wp/23-xva.md §20):
      *
-     *   IM(t) = Φ⁻¹(confidence) × σ(t, V(t)).
+     *   IM(t) = |μ(t, V(t))| + Φ⁻¹(confidence) × σ(t, V(t)).
+     *
+     * The side the drift points to is exceeded at 1 - confidence, the other
+     * less often.
      *
      * This is a model of the margin, not the margin rule itself (ISDA SIMM
      * works from sensitivities): `im_today` anchors it, scaling the whole
@@ -46,9 +53,9 @@ namespace quantModeling
         /// One-sided confidence level of the margin; 99 % is the rule for
         /// non-cleared derivatives.
         Real confidence = 0.99;
-        /// The regression of the squared move on the value: one quadratic by
-        /// default. A variance has no kink to follow, and buckets would only
-        /// add noise.
+        /// The regressions of the move and of the squared residual on the
+        /// value: one quadratic each by default. Neither has a kink to
+        /// follow, and buckets would only add noise.
         RegressionSettings regression{2, 1};
         /// The initial margin actually computed today (a SIMM amount, for
         /// instance): the profile is scaled to start from it. Unset: the
@@ -78,8 +85,9 @@ namespace quantModeling
     };
 
     /**
-     * @brief The fitted model: for each date, the conditional standard
-     *        deviation of the move over the MPoR as a function of the value.
+     * @brief The fitted model: for each date, the conditional mean and
+     *        standard deviation of the move over the MPoR as functions of
+     *        the value.
      *
      * Fitted on one cube, it gives the margin on that cube or on any other
      * with the same grid — fresh paths for a backtest, or the scenarios of
@@ -118,12 +126,17 @@ namespace quantModeling
         Time mpor_ = 0.0;
         Real quantile_ = 0.0;
         /// Per reporting date: its index on the grid, that of its lagged
-        /// date (npos: today), and the variance regression at the lagged date.
+        /// date (npos: today), and the regressions of the move's mean and of
+        /// its residual's variance on the value at the lagged date.
         struct Date
         {
             std::size_t index;
             std::size_t lagged;
+            BucketedRegression mean;
             BucketedRegression variance;
+            /// The residuals' average square: what stands in where the
+            /// fitted variance is not positive.
+            Real average_variance = 0.0;
         };
         std::vector<Date> dates_;
         /// Unscaled margin in place today.
@@ -167,12 +180,8 @@ namespace quantModeling
      *        MPoR within the margin that was in place?
      *
      * Run it on paths the model was **not** fitted on, and read each
-     * frequency against 1 - confidence. Two things the model leaves out show
-     * in it: the drift of the value over the period (the margin is centred
-     * on no move, so one side is covered slightly more often than the
-     * other), and the dates at which the value hardly varies any more — once
-     * the last coupon of a swap is fixed its move is all drift, a tiny
-     * amount the Gaussian margin does not describe.
+     * frequency against 1 - confidence: the side the drift points to at
+     * about that level, the other below it.
      */
     MarginBacktest backtest_initial_margin(const ExposurePaths &paths, const InitialMargin &margin,
                                            Time margin_period_of_risk,
