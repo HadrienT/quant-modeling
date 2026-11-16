@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 
@@ -74,6 +75,53 @@ namespace quantModeling::scripting
         return issuer ? g < 0.0 : g > 0.0;
     }
 
+    namespace
+    {
+        /// Mean and scale of each regressor over the rows.
+        void standardise(const std::vector<std::vector<double>> &rows, ExerciseRegression &r)
+        {
+            const std::size_t n = rows.front().size(), m = rows.size();
+            r.mean.assign(n, 0.0);
+            r.scale.assign(n, 1.0);
+            for (const auto &row : rows)
+                for (std::size_t i = 0; i < n; ++i)
+                    r.mean[i] += row[i] / static_cast<double>(m);
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                double var = 0.0;
+                for (const auto &row : rows)
+                    var += (row[i] - r.mean[i]) * (row[i] - r.mean[i]);
+                const double sd = std::sqrt(var / static_cast<double>(m));
+                r.scale[i] = sd > 1e-12 * (1.0 + std::abs(r.mean[i])) ? sd : 1.0;
+            }
+        }
+
+        /// β from the stacked rows A β = b.
+        void solve(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, ExerciseRegression &r)
+        {
+            // A rank threshold well above rounding: regressors collinear on the
+            // fitted paths (the payoff and the spot of a put, in the money,
+            // where max(K - S, 0) = K - S) leave pivots of 1e-14 that the default
+            // threshold keeps, and dividing by them fills beta with cancelling
+            // giants whose rounding is the prediction (issue #228).
+            Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr;
+            qr.setThreshold(1e-10);
+            qr.compute(A);
+            const Eigen::VectorXd beta = qr.solve(b);
+            r.beta.assign(beta.data(), beta.data() + beta.size());
+        }
+
+        double variance(const std::vector<double> &x)
+        {
+            double mean = 0.0, var = 0.0;
+            for (const double v : x)
+                mean += v / static_cast<double>(x.size());
+            for (const double v : x)
+                var += (v - mean) * (v - mean) / static_cast<double>(x.size());
+            return var;
+        }
+    } // namespace
+
     ExerciseRegression fit_exercise_regression(const std::vector<std::vector<double>> &rows,
                                                const std::vector<double> &targets, int degree)
     {
@@ -82,19 +130,7 @@ namespace quantModeling::scripting
         const std::size_t n = rows.front().size(), m = rows.size();
         ExerciseRegression r;
         r.degree = degree;
-        r.mean.assign(n, 0.0);
-        r.scale.assign(n, 1.0);
-        for (const auto &row : rows)
-            for (std::size_t i = 0; i < n; ++i)
-                r.mean[i] += row[i] / static_cast<double>(m);
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            double var = 0.0;
-            for (const auto &row : rows)
-                var += (row[i] - r.mean[i]) * (row[i] - r.mean[i]);
-            const double sd = std::sqrt(var / static_cast<double>(m));
-            r.scale[i] = sd > 1e-12 * (1.0 + std::abs(r.mean[i])) ? sd : 1.0;
-        }
+        standardise(rows, r);
         const auto terms = monomials(n, degree);
         Eigen::MatrixXd A(static_cast<Eigen::Index>(m), static_cast<Eigen::Index>(terms.size()));
         Eigen::VectorXd b(static_cast<Eigen::Index>(m));
@@ -108,16 +144,71 @@ namespace quantModeling::scripting
                 A(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(t)) = phi[t];
             b(static_cast<Eigen::Index>(p)) = targets[p];
         }
-        // A rank threshold well above rounding: regressors collinear on the
-        // fitted paths (the payoff and the spot of a put, in the money,
-        // where max(K - S, 0) = K - S) leave pivots of 1e-14 that the default
-        // threshold keeps, and dividing by them fills beta with cancelling
-        // giants whose rounding is the prediction (issue #228).
-        Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr;
-        qr.setThreshold(1e-10);
-        qr.compute(A);
-        const Eigen::VectorXd beta = qr.solve(b);
-        r.beta.assign(beta.data(), beta.data() + beta.size());
+        solve(A, b, r);
+        r.terms = terms;
+        return r;
+    }
+
+    ExerciseRegression fit_differential_regression(const std::vector<std::vector<double>> &rows,
+                                                   const std::vector<double> &targets,
+                                                   const std::vector<double> &derivatives, int degree,
+                                                   double lambda)
+    {
+        if (rows.empty() || rows.size() != targets.size() || derivatives.size() != targets.size())
+            throw InvalidInput("differential regression: need as many targets and derivatives as rows");
+        if (!(lambda >= 0.0) || !std::isfinite(lambda))
+            throw InvalidInput("differential regression: the weight of the derivatives must be >= 0");
+        // λ₀ = Var(y) / Var(z); a slope that hardly varies (a swap's, in a
+        // narrow bucket) is information all the same: its variance is
+        // floored at a millionth of its mean square. Derivatives all zero (an
+        // expired option) and targets that do not vary leave the plain fit.
+        double square_z = 0.0;
+        for (const double v : derivatives)
+            square_z += v * v / static_cast<double>(derivatives.size());
+        if (lambda == 0.0 || !(square_z > 0.0))
+            return fit_exercise_regression(rows, targets, degree);
+        const double weight = std::sqrt(lambda * variance(targets) / std::max(variance(derivatives), 1e-6 * square_z));
+        if (!(weight > 0.0) || !std::isfinite(weight))
+            return fit_exercise_regression(rows, targets, degree);
+
+        const std::size_t n = rows.front().size(), m = rows.size();
+        ExerciseRegression r;
+        r.degree = degree;
+        standardise(rows, r);
+        const auto terms = monomials(n, degree);
+        const auto T = static_cast<Eigen::Index>(terms.size());
+        Eigen::MatrixXd A(static_cast<Eigen::Index>(2 * m), T);
+        Eigen::VectorXd b(static_cast<Eigen::Index>(2 * m));
+        std::vector<double> z(n);
+        for (std::size_t p = 0; p < m; ++p)
+        {
+            for (std::size_t i = 0; i < n; ++i)
+                z[i] = (rows[p][i] - r.mean[i]) / r.scale[i];
+            const auto row = static_cast<Eigen::Index>(p), drow = static_cast<Eigen::Index>(m + p);
+            for (Eigen::Index t = 0; t < T; ++t)
+            {
+                const std::vector<int> &e = terms[static_cast<std::size_t>(t)];
+                double phi = 1.0, dphi = 0.0;
+                // d/dx0 of Π z_k^e_k, with z0 = (x0 - mean) / scale.
+                if (e[0] > 0)
+                {
+                    dphi = static_cast<double>(e[0]) / r.scale[0];
+                    for (int k = 1; k < e[0]; ++k)
+                        dphi *= z[0];
+                }
+                for (std::size_t i = 0; i < n; ++i)
+                    for (int k = 0; k < e[i]; ++k)
+                        phi *= z[i];
+                for (std::size_t i = 1; i < n; ++i)
+                    for (int k = 0; k < e[i]; ++k)
+                        dphi *= z[i];
+                A(row, t) = phi;
+                A(drow, t) = weight * dphi;
+            }
+            b(row) = targets[p];
+            b(drow) = weight * derivatives[p];
+        }
+        solve(A, b, r);
         r.terms = terms;
         return r;
     }

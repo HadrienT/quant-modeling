@@ -70,6 +70,27 @@ namespace quantModeling::scripting
     ExerciseRegression fit_exercise_regression(const std::vector<std::vector<double>> &rows,
                                                const std::vector<double> &targets, int degree);
 
+    /**
+     * @brief The differential regression (Huge & Savine, Differential
+     *        Machine Learning, 2020, appendix; blueprint/wp/25-ml.md §3.3,
+     *        lot M2): the same basis fitted to the targets y and to their
+     *        derivatives z with respect to the first regressor,
+     *
+     *   β = argmin |Φβ - y|² + λ λ₀ |Φ₀β - z|²,   Φ₀ = ∂Φ/∂(first regressor),
+     *
+     * with λ₀ = Var(y) / Var(z), which puts the two sums on one scale, and λ
+     * the weight the caller gives the derivatives. Solved as the stacked
+     * least-squares problem [Φ; √(λλ₀) Φ₀] β = [y; √(λλ₀) z], by the same
+     * column-pivoting QR and the same standardisation as
+     * fit_exercise_regression -- which it is, to the bit, when λ = 0, the
+     * derivatives are all zero or the targets do not vary. Var(z) is floored
+     * at 1e-6 E[z²]: a slope that hardly varies still constrains the fit.
+     */
+    ExerciseRegression fit_differential_regression(const std::vector<std::vector<double>> &rows,
+                                                   const std::vector<double> &targets,
+                                                   const std::vector<double> &derivatives, int degree,
+                                                   double lambda);
+
 } // namespace quantModeling::scripting
 
 #endif // QM_SCRIPTING_EXERCISE_HPP

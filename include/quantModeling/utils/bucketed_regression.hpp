@@ -30,6 +30,15 @@ namespace quantModeling
         /// each with its own polynomial; 0 picks 4. One bucket is a single
         /// global polynomial.
         int buckets = 0;
+        /**
+         * @brief λ of the differential regression (blueprint/wp/25-ml.md
+         *        §3.3, lot M2): the weight of the targets' derivatives with
+         *        respect to the first regressor, on the scale of the targets
+         *        (scripting::fit_differential_regression). 0, the default, is
+         *        the plain regression, to the bit; it applies only where the
+         *        caller has the derivatives.
+         */
+        Real differential = 0.0;
     };
 
     /**
@@ -49,6 +58,11 @@ namespace quantModeling
         /// `rows` holds `count` rows of `n` regressors each, one after the other.
         static PolynomialRegression fit(const std::vector<Real> &rows, std::size_t n,
                                         const std::vector<Real> &targets, int degree);
+        /// The differential fit: `derivatives` holds d target / d first
+        /// regressor, one per row; λ = 0 is fit() above, to the bit.
+        static PolynomialRegression fit(const std::vector<Real> &rows, std::size_t n,
+                                        const std::vector<Real> &targets,
+                                        const std::vector<Real> &derivatives, int degree, Real lambda);
 
         Real operator()(const Real *regressors) const;
         bool empty() const { return fit_.beta.empty(); }
@@ -77,6 +91,12 @@ namespace quantModeling
         /// `rows` holds `targets.size()` rows of `n` regressors each.
         static BucketedRegression fit(const std::vector<Real> &rows, std::size_t n,
                                       const std::vector<Real> &targets, const RegressionSettings &settings);
+        /// The same buckets, each a differential fit with λ =
+        /// settings.differential (`derivatives`: d target / d first
+        /// regressor, one per row).
+        static BucketedRegression fit(const std::vector<Real> &rows, std::size_t n,
+                                      const std::vector<Real> &targets, const std::vector<Real> &derivatives,
+                                      const RegressionSettings &settings);
 
         Real operator()(const Real *regressors) const;
         bool empty() const { return buckets_.empty(); }

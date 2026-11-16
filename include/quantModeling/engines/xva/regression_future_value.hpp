@@ -32,7 +32,10 @@ namespace quantModeling
      */
 
     /// The regression of a trade's future value: degree and buckets of the
-    /// state (utils/bucketed_regression.hpp).
+    /// state (utils/bucketed_regression.hpp), and the weight of the pathwise
+    /// differentials (`differential`, lot M2 of blueprint/wp/25-ml.md: 0 is
+    /// the plain regression; > 0 needs a pilot with sensitivities and a
+    /// trade that gives the gradient of its cash flows).
     using AmcSettings = RegressionSettings;
 
     /**
