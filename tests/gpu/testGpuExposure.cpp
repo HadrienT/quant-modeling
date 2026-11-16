@@ -237,8 +237,6 @@ namespace quantModeling
                 engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu), r);
             EXPECT_EQ(gpu.device, "gpu");
             EXPECT_EQ(gpu.gpus, 1);
-            // No quantile without the paths.
-            EXPECT_TRUE(gpu.statistics.pfe.empty());
             expect_same_profiles(gpu, cpu);
             (collateralised ? with_csa : open) = gpu.statistics.epe;
         }
@@ -273,6 +271,58 @@ namespace quantModeling
             const NettingSetExposure gpu =
                 engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu), r);
             expect_same_profiles(gpu, cpu);
+        }
+    }
+
+    // Lot G3: the PFE, its error and further quantiles off the paths the
+    // device sorted -- the CPU's order statistics (the values agree to the
+    // CPU/GPU tolerance, so the selected ones do).
+    TEST_F(GpuExposureTest, ThePfeAndTheQuantilesOfTheDeviceAreTheCpus)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        fill(engine, m);
+        const std::size_t paths = 3 * 2048 + 777;
+        for (const bool collateralised : {false, true})
+        {
+            NettingSetRequest r = request(collateralised);
+            r.pfe_confidence = 0.99;
+            r.quantile_levels = {0.01, 0.25, 0.5, 0.975};
+            const NettingSetExposure cpu = engine.simulate_netting_set(settings(paths, ComputeDevice::Cpu), r);
+            ExposureSimulationSettings launches = settings(paths, ComputeDevice::Gpu);
+            launches.gpu_blocks_per_launch = 2; // several launches into one distribution
+            const NettingSetExposure gpu = engine.simulate_netting_set(launches, r);
+            ASSERT_EQ(gpu.device, "gpu") << gpu.device_note;
+            const std::size_t n = cpu.statistics.times.size();
+            ASSERT_EQ(gpu.statistics.pfe.size(), n);
+            ASSERT_EQ(gpu.statistics.value_quantiles.size(), 4u);
+            Real scale = 1.0, largest = 0.0;
+            for (const Real x : cpu.statistics.pfe)
+                scale = std::max(scale, std::abs(x));
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                EXPECT_NEAR(gpu.statistics.pfe[i], cpu.statistics.pfe[i], 1e-10 * scale) << "date " << i;
+                EXPECT_NEAR(gpu.statistics.pfe_error[i], cpu.statistics.pfe_error[i], 1e-10 * scale) << "date " << i;
+                for (std::size_t k = 0; k < 4; ++k)
+                    EXPECT_NEAR(gpu.statistics.value_quantiles[k][i], cpu.statistics.value_quantiles[k][i],
+                                1e-10 * scale)
+                        << "date " << i << ", level " << k;
+                largest = std::max(largest, cpu.statistics.pfe[i]);
+            }
+            EXPECT_GT(largest, 0.0);
+
+            // On two cards: the same order statistics.
+            if (gpu::device_count() >= 2)
+            {
+                const NettingSetExposure two =
+                    engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu, 2), r);
+                EXPECT_EQ(two.gpus, 2);
+                EXPECT_EQ(two.statistics.pfe, gpu.statistics.pfe);
+                EXPECT_EQ(two.statistics.value_quantiles, gpu.statistics.value_quantiles);
+            }
+            // Not asked for: the profiles alone.
+            r.distribution = false;
+            EXPECT_TRUE(engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu), r).statistics.pfe.empty());
         }
     }
 

@@ -528,6 +528,12 @@ namespace quantModeling
                 throw InvalidInput("exposure engine: a trade is netted twice");
             seen[k] = true;
         }
+        if (!(request.pfe_confidence > 0.0 && request.pfe_confidence < 1.0))
+            throw InvalidInput("exposure engine: the PFE confidence must be in (0, 1)");
+        for (std::size_t k = 0; k < request.quantile_levels.size(); ++k)
+            if (!(request.quantile_levels[k] > 0.0 && request.quantile_levels[k] < 1.0) ||
+                (k > 0 && !(request.quantile_levels[k] > request.quantile_levels[k - 1])))
+                throw InvalidInput("quantile levels must be in (0, 1) and increasing");
         const CollateralSettings &collateral = request.collateral;
         if (!collateral.initial_margin_received_paths.empty() ||
             !collateral.initial_margin_posted_paths.empty())
@@ -616,9 +622,23 @@ namespace quantModeling
                 run.devices = gpu::devices_for(settings.max_gpus);
                 run.max_blocks_per_launch = settings.gpu_blocks_per_launch;
                 std::optional<gpu::NettingSetGpuProfile> ran;
+                netting.distribution = request.distribution;
+                std::string no_distribution;
                 try
                 {
-                    ran = gpu::simulate_netting_set(run, netting);
+                    try
+                    {
+                        ran = gpu::simulate_netting_set(run, netting);
+                    }
+                    catch (const gpu::GpuUnavailable &e)
+                    {
+                        // The sorted paths did not fit: the profiles alone.
+                        if (!netting.distribution)
+                            throw;
+                        no_distribution = e.what();
+                        netting.distribution = false;
+                        ran = gpu::simulate_netting_set(run, netting);
+                    }
                 }
                 catch (const gpu::GpuUnavailable &e)
                 {
@@ -652,6 +672,52 @@ namespace quantModeling
                     }
                     s.epe = expected_positive_exposure(s.times, s.ee);
                     s.eepe = effective_expected_positive_exposure(s.times, s.ee);
+                    s.pfe_confidence = request.pfe_confidence;
+                    if (!profile.sorted.empty())
+                    {
+                        // The PFE and the quantiles, read as on the CPU
+                        // (weighted_quantiles) off the devices' sorted paths,
+                        // merged by value.
+                        s.quantile_levels = request.quantile_levels;
+                        s.value_quantiles.assign(request.quantile_levels.size(), std::vector<Real>(m));
+                        s.pfe.resize(m);
+                        s.pfe_error.resize(m);
+                        std::vector<std::pair<Real, Real>> order, merged, part;
+                        const auto by_value = [](const std::pair<Real, Real> &a, const std::pair<Real, Real> &b)
+                        { return a.first < b.first; };
+                        for (std::size_t r = 0; r < m; ++r)
+                        {
+                            order.clear();
+                            for (const std::vector<gpu::SortedExposures> &device : profile.sorted)
+                            {
+                                if (device.empty())
+                                    continue;
+                                const gpu::SortedExposures &d = device[r];
+                                part.resize(d.value.size());
+                                for (std::size_t p = 0; p < part.size(); ++p)
+                                    part[p] = {d.value[p], d.weight[p]};
+                                merged.resize(order.size() + part.size());
+                                std::merge(order.begin(), order.end(), part.begin(), part.end(), merged.begin(),
+                                           by_value);
+                                order.swap(merged);
+                            }
+                            Real weights = 0.0, weights2 = 0.0;
+                            for (const auto &[value, weight] : order)
+                            {
+                                weights += weight;
+                                weights2 += weight * weight;
+                            }
+                            const WeightedQuantiles q = weighted_quantiles(order, weights, weights2,
+                                                                           request.pfe_confidence,
+                                                                           request.quantile_levels);
+                            s.pfe[r] = q.pfe;
+                            s.pfe_error[r] = q.pfe_error;
+                            for (std::size_t level = 0; level < q.levels.size(); ++level)
+                                s.value_quantiles[level][r] = q.levels[level];
+                        }
+                    }
+                    else if (!no_distribution.empty())
+                        result.device_note = "no PFE: " + no_distribution;
                     result.weighted_positive = {profile.weighted.positive.mean,
                                                 profile.weighted.positive.std_error()};
                     result.weighted_negative = {profile.weighted.negative.mean,
@@ -689,7 +755,7 @@ namespace quantModeling
             }
             netted.trade_values_today = {value_today};
         }
-        result.statistics = exposure_statistics(netted);
+        result.statistics = exposure_statistics(netted, {}, request.pfe_confidence, request.quantile_levels);
         result.statistics.trades = set;
         ask_weights(netted.times);
         if (request.weights)
