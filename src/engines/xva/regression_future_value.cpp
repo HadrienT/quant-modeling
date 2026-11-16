@@ -1,5 +1,7 @@
 #include "quantModeling/engines/xva/regression_future_value.hpp"
 
+#include "quantModeling/engines/xva/pilot_targets.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -43,6 +45,12 @@ namespace quantModeling
                 const std::size_t N = pilot.paths;
                 if (n != fits_.size())
                     throw InvalidInput("AMC: the pilot paths are not on the trade's grid");
+
+                if (settings_.differential > 0.0)
+                {
+                    fit_differential(pilot);
+                    return;
+                }
 
                 // future[p] = Σ_{j>i} flow_j deflator_j on path p, built
                 // backward: what the value at t_i is the expectation of, once
@@ -117,6 +125,57 @@ namespace quantModeling
             }
 
           private:
+            /**
+             * The differential regression (blueprint/wp/25-ml.md §3.3, lot
+             * M2): each date's targets Y_i and their pathwise derivatives
+             * Z_i = ∂Y_i/∂state_i (engines/xva/pilot_targets.hpp, lot M1),
+             * regime by regime. Z_i is a derivative with respect to the
+             * state of the date; it is used where the regime's first
+             * regressor is that state on every pilot path (the default
+             * regressors, a swap, an exercised swaption) and the plain fit
+             * is kept where it is not (a script's own state variables).
+             */
+            void fit_differential(const PilotPaths &pilot)
+            {
+                const std::size_t n = pilot.dates();
+                const std::size_t N = pilot.paths;
+                const PilotTargets targets = pilot_targets(*trade_, pilot, true);
+                struct Sample
+                {
+                    std::size_t regressors = 0;
+                    bool on_state = true; ///< the first regressor is state_i on every path
+                    std::vector<Real> rows, targets, derivatives;
+                };
+                std::array<Real, kMaxRegressors> z{};
+                for (std::size_t i = n; i-- > 0;)
+                {
+                    std::map<std::size_t, Sample> by_regime;
+                    for (std::size_t p = 0; p < N; ++p)
+                    {
+                        const Real *state = pilot.state_row(p);
+                        Sample &sample = by_regime[trade_->regime(i, state)];
+                        const std::size_t count = trade_->regressors(i, state, z.data());
+                        if (sample.targets.empty())
+                            sample.regressors = count;
+                        else if (count != sample.regressors)
+                            throw InvalidInput("AMC: a regime must have the same regressors on "
+                                               "every path at a given date");
+                        sample.on_state = sample.on_state && z[0] == state[i];
+                        sample.rows.insert(sample.rows.end(), z.begin(),
+                                           z.begin() + static_cast<std::ptrdiff_t>(count));
+                        sample.targets.push_back(targets.value[p * n + i]);
+                        sample.derivatives.push_back(targets.differential[p * n + i]);
+                    }
+                    for (auto &[regime, sample] : by_regime)
+                        fits_[i].emplace_back(
+                            regime, sample.on_state
+                                        ? BucketedRegression::fit(sample.rows, sample.regressors, sample.targets,
+                                                                  sample.derivatives, settings_)
+                                        : BucketedRegression::fit(sample.rows, sample.regressors, sample.targets,
+                                                                  settings_));
+                }
+            }
+
             std::unique_ptr<FutureValue> trade_;
             AmcSettings settings_;
             /// Per date: one regression per regime seen on the pilot paths.

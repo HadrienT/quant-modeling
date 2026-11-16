@@ -23,11 +23,22 @@ namespace quantModeling
         if (settings.buckets < 0 || settings.buckets > kMaxBuckets)
             throw InvalidInput("regression: the number of buckets must be between 0 (automatic) and " +
                                std::to_string(kMaxBuckets));
-        return {settings.degree > 0 ? settings.degree : 2, settings.buckets > 0 ? settings.buckets : 4};
+        if (!(settings.differential >= 0.0) || !std::isfinite(settings.differential))
+            throw InvalidInput("regression: the weight of the differentials must be finite and >= 0");
+        return {settings.degree > 0 ? settings.degree : 2, settings.buckets > 0 ? settings.buckets : 4,
+                settings.differential};
     }
 
     PolynomialRegression PolynomialRegression::fit(const std::vector<Real> &rows, std::size_t n,
                                                    const std::vector<Real> &targets, int degree)
+    {
+        static const std::vector<Real> none;
+        return fit(rows, n, targets, none, degree, 0.0);
+    }
+
+    PolynomialRegression PolynomialRegression::fit(const std::vector<Real> &rows, std::size_t n,
+                                                   const std::vector<Real> &targets,
+                                                   const std::vector<Real> &derivatives, int degree, Real lambda)
     {
         PolynomialRegression out;
         const std::size_t count = targets.size();
@@ -35,6 +46,9 @@ namespace quantModeling
             return out;
         if (n == 0 || n > kMaxRegressors || rows.size() != count * n)
             throw InvalidInput("regression: inconsistent regressors");
+        const bool differential = lambda > 0.0;
+        if (differential && derivatives.size() != count)
+            throw InvalidInput("regression: one derivative per row is needed");
         // Fewer points than the basis can be trusted with: a lower degree,
         // down to the mean of the targets.
         while (degree > 0 && count < kRowsPerTerm * scripting::monomials(n, degree).size())
@@ -42,7 +56,8 @@ namespace quantModeling
         std::vector<std::vector<double>> table(count, std::vector<double>(n));
         for (std::size_t r = 0; r < count; ++r)
             std::copy_n(rows.begin() + static_cast<std::ptrdiff_t>(r * n), n, table[r].begin());
-        out.fit_ = scripting::fit_exercise_regression(table, targets, degree);
+        out.fit_ = differential ? scripting::fit_differential_regression(table, targets, derivatives, degree, lambda)
+                                : scripting::fit_exercise_regression(table, targets, degree);
         return out;
     }
 
@@ -75,7 +90,21 @@ namespace quantModeling
                                                const std::vector<Real> &targets,
                                                const RegressionSettings &settings)
     {
+        RegressionSettings plain = settings;
+        plain.differential = 0.0;
+        static const std::vector<Real> none;
+        return fit(rows, n, targets, none, plain);
+    }
+
+    BucketedRegression BucketedRegression::fit(const std::vector<Real> &rows, std::size_t n,
+                                               const std::vector<Real> &targets,
+                                               const std::vector<Real> &derivatives,
+                                               const RegressionSettings &settings)
+    {
         const RegressionSettings s = resolved(settings);
+        const bool differential = s.differential > 0.0;
+        if (differential && derivatives.size() != targets.size())
+            throw InvalidInput("regression: one derivative per row is needed");
         BucketedRegression out;
         const std::size_t count = targets.size();
         if (count == 0)
@@ -95,12 +124,13 @@ namespace quantModeling
         // sorting algorithm.
         std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b)
                          { return rows[a * n] < rows[b * n]; });
-        std::vector<Real> bucket_rows, bucket_targets;
+        std::vector<Real> bucket_rows, bucket_targets, bucket_derivatives;
         for (std::size_t b = 0; b < buckets; ++b)
         {
             const std::size_t first = b * count / buckets, last = (b + 1) * count / buckets;
             bucket_rows.clear();
             bucket_targets.clear();
+            bucket_derivatives.clear();
             for (std::size_t r = first; r < last; ++r)
             {
                 const std::size_t row = order[r];
@@ -108,8 +138,11 @@ namespace quantModeling
                                    rows.begin() + static_cast<std::ptrdiff_t>(row * n),
                                    rows.begin() + static_cast<std::ptrdiff_t>((row + 1) * n));
                 bucket_targets.push_back(targets[row]);
+                if (differential)
+                    bucket_derivatives.push_back(derivatives[row]);
             }
-            out.buckets_.push_back(PolynomialRegression::fit(bucket_rows, n, bucket_targets, s.degree));
+            out.buckets_.push_back(PolynomialRegression::fit(bucket_rows, n, bucket_targets, bucket_derivatives,
+                                                             s.degree, s.differential));
             if (b + 1 < buckets)
                 out.edges_.push_back(0.5 * (rows[order[last - 1] * n] + rows[order[last] * n]));
         }

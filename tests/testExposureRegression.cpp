@@ -8,6 +8,9 @@
 #include "quantModeling/market/curve_bootstrap.hpp"
 #include "quantModeling/market/multi_curve_bootstrap.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
+#include "quantModeling/scripting/exercise.hpp"
+
+#include <random>
 
 #include <algorithm>
 #include <cmath>
@@ -490,6 +493,145 @@ namespace quantModeling
         EXPECT_GT(engine.pilot_dispersion(), 0.005);
         small.pilot_dispersion = -1.0;
         EXPECT_THROW(engine.simulate(small), InvalidInput);
+    }
+
+    // ── Lot M2 (blueprint/wp/25-ml.md §3.3): the differential regression ────
+
+    TEST(ExposureRegression, WithoutWeightTheDifferentialRegressionIsThePlainOne)
+    {
+        std::mt19937_64 rng(5);
+        std::normal_distribution<Real> g;
+        std::vector<Real> rows, targets, slopes;
+        for (int p = 0; p < 4000; ++p)
+        {
+            const Real x = g(rng), c = g(rng);
+            rows.insert(rows.end(), {x, c});
+            targets.push_back(x * x + 0.3 * c + g(rng));
+            slopes.push_back(2.0 * x + 0.1 * g(rng));
+        }
+        RegressionSettings plain, weightless;
+        weightless.differential = 0.0;
+        const BucketedRegression a = BucketedRegression::fit(rows, 2, targets, plain);
+        const BucketedRegression b = BucketedRegression::fit(rows, 2, targets, slopes, weightless);
+        // Derivatives all zero (an expired option's regime): the plain fit too.
+        RegressionSettings weighted;
+        weighted.differential = 1.0;
+        const BucketedRegression c =
+            BucketedRegression::fit(rows, 2, targets, std::vector<Real>(targets.size(), 0.0), weighted);
+        for (int k = 0; k < 50; ++k)
+        {
+            const Real z[2] = {-3.0 + 0.12 * k, 0.1 * (k % 7) - 0.3};
+            EXPECT_EQ(a(z), b(z));
+            EXPECT_EQ(a(z), c(z));
+        }
+        RegressionSettings negative;
+        negative.differential = -1.0;
+        EXPECT_THROW(BucketedRegression::fit(rows, 2, targets, slopes, negative), InvalidInput);
+    }
+
+    TEST(ExposureRegression, TheSlopesOfTheTargetsSharpenANoisyFit)
+    {
+        // y = x³ with noise ten times its own scale; the slope 3x² known to
+        // within 1 %: the differential fit finds the curve the plain one
+        // cannot see through the noise (one global cubic).
+        std::mt19937_64 rng(11);
+        std::normal_distribution<Real> g;
+        std::vector<std::vector<double>> rows;
+        std::vector<double> y, z;
+        for (int p = 0; p < 2000; ++p)
+        {
+            const Real x = g(rng);
+            rows.push_back({x});
+            y.push_back(x * x * x + 10.0 * g(rng));
+            z.push_back(3.0 * x * x * (1.0 + 0.01 * g(rng)));
+        }
+        const auto plain = scripting::fit_exercise_regression(rows, y, 3);
+        const auto differential = scripting::fit_differential_regression(rows, y, z, 3, 1.0);
+        Real plain_error = 0.0, differential_error = 0.0;
+        for (int k = -20; k <= 20; ++k)
+        {
+            const Real x = 0.1 * k;
+            plain_error = std::max(plain_error, std::abs(plain.gain({x}) - x * x * x));
+            differential_error = std::max(differential_error, std::abs(differential.gain({x}) - x * x * x));
+        }
+        EXPECT_LT(differential_error, 0.3);
+        EXPECT_LT(differential_error, 0.25 * plain_error);
+    }
+
+    TEST(ExposureRegression, DifferentialsBringTheSwapAndSwaptionCloserToTheirClosedForms)
+    {
+        // The table of blueprint/wp/23-xva.md §14.6 with the differential
+        // column (blueprint/wp/25-ml.md §6, lot M2): at 20 000 pilot paths the
+        // path-by-path error of the plain regression falls by about 40 %,
+        // the swaption's 99 % PFE gap by more than half.
+        const HullWhiteCurveModel m = model();
+        AmcSettings differential;
+        differential.differential = 1.0;
+        ExposureSimulationSettings s = settings(20000);
+        s.pilot_paths = 20000;
+        const InterestRateSwap swap = par_swap(m, 0.0, 10.0, true);
+        const Swaption swaption{par_swap(m, 2.0, 8.0, true), 2.0};
+
+        const Oracle swap_plain = oracle(m, swap, s), swap_dml = oracle(m, swap, s, 0.99, differential);
+        const Real swap_rms_plain = relative_rms(swap_plain.paths.trade_values[1], swap_plain.paths.trade_values[0]);
+        const Real swap_rms_dml = relative_rms(swap_dml.paths.trade_values[1], swap_dml.paths.trade_values[0]);
+        EXPECT_LT(swap_rms_dml, 0.7 * swap_rms_plain);
+        EXPECT_LT(worst_gap(swap_dml.regression.ee, swap_dml.exact.ee), 0.025 * maximum(swap_dml.exact.ee));
+        EXPECT_LT(worst_gap(swap_dml.regression.pfe, swap_dml.exact.pfe), 0.04 * maximum(swap_dml.exact.pfe));
+
+        const Oracle opt_plain = oracle(m, swaption, s), opt_dml = oracle(m, swaption, s, 0.99, differential);
+        EXPECT_LT(relative_rms(opt_dml.paths.trade_values[1], opt_dml.paths.trade_values[0]),
+                  0.7 * relative_rms(opt_plain.paths.trade_values[1], opt_plain.paths.trade_values[0]));
+        EXPECT_LT(worst_gap(opt_dml.regression.pfe, opt_dml.exact.pfe),
+                  0.5 * worst_gap(opt_plain.regression.pfe, opt_plain.exact.pfe));
+        EXPECT_LT(worst_gap(opt_dml.regression.ee, opt_dml.exact.ee), 0.025 * maximum(opt_dml.exact.ee));
+    }
+
+    TEST(ExposureRegression, TheDifferentialFitKeepsTheMartingaleOfThePlainOne)
+    {
+        // Discounted value plus the flows paid, against the closed-form price
+        // today, at every date of a 2Y-into-8Y swaption valued by regression
+        // (40 000 paths, 160 000 pilot paths). Measured 2026-11-16: the plain
+        // regression's worst date sits 4.4 standard errors off the closed
+        // form, the differential one's 4.5 -- the regression's own bias at a
+        // few dates, which the differentials do not add to.
+        const HullWhiteCurveModel m = model();
+        const Swaption swaption{par_swap(m, 2.0, 8.0, true), 2.0};
+        const auto worst_gap_in_errors = [&](Real lambda)
+        {
+            AmcSettings amc;
+            amc.differential = lambda;
+            HullWhiteExposureEngine engine(m);
+            engine.add(make_regression_future_value(make_hull_white_future_value(swaption, m), amc));
+            ExposureSimulationSettings s = settings(40000);
+            s.keep_cashflows = true;
+            const ExposurePaths paths = engine.simulate(s);
+            const std::size_t n = paths.dates(), N = paths.paths;
+            std::vector<Real> paid(N, 0.0);
+            Real worst = 0.0;
+            const Real today = paths.trade_values_today[0];
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                Real sum = 0.0, squares = 0.0;
+                for (std::size_t p = 0; p < N; ++p)
+                {
+                    const Real w = paths.discount_weight[p * n + i];
+                    paid[p] += w * paths.trade_cashflows[0][p * n + i];
+                    const Real x = w * paths.trade_values[0][p * n + i] + paid[p];
+                    sum += x;
+                    squares += x * x;
+                }
+                const Real mean = sum / static_cast<Real>(N);
+                const Real se = std::sqrt((squares / static_cast<Real>(N) - mean * mean) / static_cast<Real>(N));
+                worst = std::max(worst, std::abs(mean - today) / se);
+            }
+            return worst;
+        };
+        const Real plain = worst_gap_in_errors(0.0), differential = worst_gap_in_errors(1.0);
+        RecordProperty("plain_worst_gap_in_standard_errors", std::to_string(plain));
+        RecordProperty("differential_worst_gap_in_standard_errors", std::to_string(differential));
+        EXPECT_LT(differential, plain + 0.5);
+        EXPECT_LT(differential, 6.0);
     }
 
 } // namespace quantModeling
