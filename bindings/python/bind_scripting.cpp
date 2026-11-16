@@ -462,9 +462,19 @@ static py::dict price_script(const std::string &script, double spot, double rate
                     product.set_exercise_policy(*policy);
                 auto sim_model = scripting::make_script_model<aad::Number>(spec);
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
+                // The tape on several threads, as the plain run (WP 26):
+                // Sobol replicates or Philox batches, one tape per thread,
+                // the same bits on any number of them. PCG32 and early
+                // exercise stay on one thread.
+                ThreadPool aad_pool;
+                const std::size_t aad_workers =
+                    threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
+                if (aad_workers > 0)
+                    aad_pool.start(aad_workers);
                 aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
                                        seed_value, first_aad_payoff,
-                                       rng == "philox" ? RngKind::Philox : RngKind::Pcg32, aad_sampler);
+                                       rng == "philox" ? RngKind::Philox : RngKind::Pcg32, aad_sampler,
+                                       nullptr, aad_workers > 0 ? &aad_pool : nullptr);
                 aad_events = product.timeline().size();
                 aad_advice = scripting::advise(product.analysis(), kind,
                                                product.timeline().back(), surface_T);
