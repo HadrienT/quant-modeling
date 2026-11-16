@@ -145,8 +145,8 @@ namespace quantModeling
             times.push_back((d - kToday) / 365.0);
         const double tree = bermudan_put_tree(36.0, 40.0, 0.06, 0.2, times, 26 * 60);
         const double se = r.mc.std_error();
-        EXPECT_LT(r.mc.npv(), tree + 3.0 * se); // a lower bound, up to noise
-        EXPECT_GT(r.mc.npv(), tree - 0.02);
+        EXPECT_LT(r.mc.npv(), tree + 3.0 * se);                                           // a lower bound, up to noise
+        EXPECT_GT(r.mc.npv(), tree - 0.005);                                              // measured -0.0005 since issue #228's fit (-0.0048 before)
         EXPECT_GT(r.mc.npv(), bs(false, 36.0, 40.0, times.back(), 0.06, 0.0, 0.2) + 0.2); // early-exercise premium
         EXPECT_EQ(r.lsm.dates.size(), 26u);
         EXPECT_EQ(r.lsm.regressors, 2u);
@@ -160,11 +160,11 @@ namespace quantModeling
                                                       "        pays max(spot() - 100, 0)\n    endIf\n";
         const Priced r = price(script, black_scholes(100.0, 0.05, 0.25));
         const double european = bs(true, 100.0, 100.0, (dates.back() - kToday) / 365.0, 0.05, 0.0, 0.25);
-        // The fitted rule is a lower bound: it loses about 1 % here (measured
-        // 12.119 +- 0.009 against 12.236 with 4 M pseudo-random paths,
-        // 2026-11-11), which the old 0.02 slack hid under pseudo-random noise.
-        // Issue #228.
-        EXPECT_NEAR(r.mc.npv(), european, 4.0 * r.mc.std_error() + 0.015 * european);
+        // The fitted rule is a lower bound. It lost about 1 % here (12.104
+        // against 12.236) while the regression ran on every path: fitted on
+        // the paths where exercising changes the value, and exercising only
+        // where it was fitted, it loses 0.11 % (12.223 +- 0.003, issue #228).
+        EXPECT_NEAR(r.mc.npv(), european, 4.0 * r.mc.std_error() + 0.002 * european);
     }
 
     TEST(Lsm, SimpleChooserMatchesRubinstein)

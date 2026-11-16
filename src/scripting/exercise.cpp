@@ -66,7 +66,11 @@ namespace quantModeling::scripting
             return false;
         if (regressors.size() != it->second.mean.size())
             throw InvalidInput("exercise(): the number of regressors changed between the pilot and the pricing");
-        const double g = it->second.gain(regressors);
+        const ExerciseRegression &reg = it->second;
+        for (std::size_t i = 0; i < reg.lo.size() && i < regressors.size(); ++i)
+            if (regressors[i] < reg.lo[i] || regressors[i] > reg.hi[i])
+                return false; // outside where the rule was fitted
+        const double g = reg.gain(regressors);
         return issuer ? g < 0.0 : g > 0.0;
     }
 
@@ -104,7 +108,15 @@ namespace quantModeling::scripting
                 A(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(t)) = phi[t];
             b(static_cast<Eigen::Index>(p)) = targets[p];
         }
-        const Eigen::VectorXd beta = A.colPivHouseholderQr().solve(b);
+        // A rank threshold well above rounding: regressors collinear on the
+        // fitted paths (the payoff and the spot of a put, in the money,
+        // where max(K - S, 0) = K - S) leave pivots of 1e-14 that the default
+        // threshold keeps, and dividing by them fills beta with cancelling
+        // giants whose rounding is the prediction (issue #228).
+        Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr;
+        qr.setThreshold(1e-10);
+        qr.compute(A);
+        const Eigen::VectorXd beta = qr.solve(b);
         r.beta.assign(beta.data(), beta.data() + beta.size());
         r.terms = terms;
         return r;
