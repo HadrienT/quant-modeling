@@ -367,6 +367,44 @@ namespace quantModeling
         EXPECT_GT(paths.trade_values_today[0], paths.trade_values_today[2]);
     }
 
+    TEST(ExposureRegression, ABermudansWholePathIsItsDateByDateValues)
+    {
+        // evaluate_path finds the exercise date once per path (lot A3): the
+        // same evaluations as value() and cashflow() date by date, the same
+        // bits.
+        const HullWhiteCurveModel m = model();
+        const BermudanSwaption b = bermudan(m);
+        HullWhiteExposureEngine engine(m);
+        engine.add(b);
+        const ExposureSimulationSettings s = settings(2000);
+        const PilotPaths pilot = engine.simulate_pilot(s);
+        std::unique_ptr<FutureValue> trade = make_future_value(b, m, AmcSettings{});
+        trade->bind(pilot.times);
+        trade->fit(pilot);
+        const std::size_t n = pilot.dates();
+        std::vector<Real> values(n), flows(n);
+        std::size_t exercised = 0;
+        for (std::size_t p = 0; p < pilot.paths; ++p)
+        {
+            const Real *state = pilot.state_row(p);
+            trade->evaluate_path(state, n, values.data(), flows.data(), nullptr);
+            bool paid = false;
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                ASSERT_EQ(values[i], trade->value(i, state)) << "path " << p << " date " << i;
+                ASSERT_EQ(flows[i], trade->cashflow(i, state)) << "path " << p << " date " << i;
+                paid = paid || flows[i] != 0.0;
+            }
+            exercised += paid;
+            // Without the cash flows asked for: the same values.
+            std::vector<Real> alone(n);
+            trade->evaluate_path(state, n, alone.data(), nullptr, nullptr);
+            ASSERT_EQ(alone, values);
+        }
+        EXPECT_GT(exercised, 0u);
+        EXPECT_LT(exercised, pilot.paths);
+    }
+
     // ── The pilot ────────────────────────────────────────────────────────────
 
     TEST(ExposureRegression, NoPilotWithoutATradeValuedByRegression)

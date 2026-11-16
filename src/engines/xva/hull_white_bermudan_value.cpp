@@ -138,6 +138,29 @@ namespace quantModeling
                 return k != kNever && exercise_index_[k] < i ? tails_[k]->cashflow(i, state) : 0.0;
             }
 
+            /**
+             * The whole path at once (lot A3 of blueprint/wp/23-xva.md §20):
+             * the date on which the path exercises does not depend on the
+             * date it is valued at -- it is the first exercise date where the
+             * rule exercises -- so it is found once, where value() and
+             * cashflow() ask exercised_by() at every date and replay every
+             * exercise date up to it (each a swap valuation and a regression).
+             * The same evaluations, hence the same bits.
+             */
+            void evaluate_path(const Real *state, std::size_t dates, Real *values, Real *cashflows,
+                               Workspace * /*workspace*/) const override
+            {
+                const std::size_t last = dates == 0 ? 0 : dates - 1;
+                const std::size_t k = exercised_by(last, state);
+                for (std::size_t i = 0; i < dates; ++i)
+                {
+                    const bool exercised = k != kNever && exercise_index_[k] <= i;
+                    values[i] = exercised ? tails_[k]->value(i, state) : std::max(continuation_[i](state + i), 0.0);
+                    if (cashflows != nullptr)
+                        cashflows[i] = exercised && exercise_index_[k] < i ? tails_[k]->cashflow(i, state) : 0.0;
+                }
+            }
+
             /// The exercised swap's, the exercise date held fixed.
             bool cashflow_gradient(std::size_t i, const Real *state,
                                    std::vector<StateDerivative> &out) const override
