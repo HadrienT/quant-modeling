@@ -206,4 +206,34 @@ namespace quantModeling
         }
     }
 
+    // The scripting page's controlPays (WP 26 P2, 2026-11-16): under
+    // Black-Scholes the engine computes the control's expectation itself
+    // when every controlPays is a closed form it knows.
+    TEST(AnalyticControls, TheEngineKnowsTheBlackScholesExpectationOfSimpleControls)
+    {
+        const ValuationContext c{Date::from_iso("2026-11-16")};
+        const auto mean = [&](const std::string &source)
+        {
+            const ScriptedProduct<Real> p(source, c);
+            return p.black_scholes_control_mean({100.0}, 0.03, {0.01}, {0.25});
+        };
+        const std::string date = "2027-11-16\n    pays spot()\n";
+        const double t = 365.0 / 365.0, df = std::exp(-0.03 * t), F = 100.0 * std::exp((0.03 - 0.01) * t);
+        const double sd = 0.25 * std::sqrt(t), d1 = (std::log(F / 95.0) + 0.5 * sd * sd) / sd, d2 = d1 - sd;
+        const double call = df * (F * norm_cdf(d1) - 95.0 * norm_cdf(d2));
+        const double put = df * (95.0 * norm_cdf(-d2) - F * norm_cdf(-d1));
+        ASSERT_TRUE(mean(date + "    controlPays max(spot() - 95, 0)\n").has_value());
+        EXPECT_NEAR(*mean(date + "    controlPays max(spot() - 95, 0)\n"), call, 1e-12);
+        EXPECT_NEAR(*mean(date + "    controlPays max(95 - spot(), 0)\n"), put, 1e-12);
+        EXPECT_NEAR(*mean(date + "    controlPays spot()\n"), df * F, 1e-12);
+        EXPECT_NEAR(*mean(date + "    controlPays 2 * max(spot() - 95, 0) + 10\n"), 2.0 * call + 10.0 * df, 1e-12);
+        // Put-call parity through the recogniser.
+        EXPECT_NEAR(*mean(date + "    controlPays max(spot() - 95, 0)\n") - *mean(date + "    controlPays max(95 - spot(), 0)\n"),
+                    df * (F - 95.0), 1e-12);
+        // What it does not know, or a control inside an if: no expectation.
+        EXPECT_FALSE(mean(date + "    controlPays max(spot() - 95, 0) * spot()\n").has_value());
+        EXPECT_FALSE(mean(date + "    if spot() > 90 then\n        controlPays spot()\n    endIf\n").has_value());
+        EXPECT_FALSE(mean(date).has_value()); // no control at all
+    }
+
 } // namespace quantModeling

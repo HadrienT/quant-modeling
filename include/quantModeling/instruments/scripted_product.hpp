@@ -2,6 +2,7 @@
 #define QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP
 
 #include "quantModeling/core/sample.hpp"
+#include <functional>
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
@@ -21,6 +22,7 @@
 #include "quantModeling/scripting/visitors/discount_lookup_resolver.hpp"
 #include "quantModeling/scripting/visitors/domain_processor.hpp"
 #include "quantModeling/scripting/visitors/if_processor.hpp"
+#include "quantModeling/utils/stats.hpp"
 #include "quantModeling/scripting/visitors/script_analyzer.hpp"
 #include "quantModeling/scripting/visitors/var_indexer.hpp"
 
@@ -56,6 +58,17 @@ namespace quantModeling
         }
 
         /// The exercise() / call() nodes of a subtree, in evaluation order.
+        /// A controlPays anywhere below this node.
+        inline bool contains_control(const scripting::Node &node)
+        {
+            if (dynamic_cast<const scripting::NodeControlPays *>(&node))
+                return true;
+            for (const auto &child : node.arguments)
+                if (child && contains_control(*child))
+                    return true;
+            return false;
+        }
+
         inline void collect_exercises(const scripting::Node &node,
                                       std::vector<const scripting::NodeExercise *> &out)
         {
@@ -282,6 +295,141 @@ namespace quantModeling
 
         /// The controlPays variable's slot, -1 without one.
         std::ptrdiff_t control_variable() const { return control_index_; }
+
+        /// The expectation of the script's controlPays cash flows given from
+        /// outside (ScriptSettings::control_mean, or the engine's own closed
+        /// form below); nullopt turns the control off.
+        void set_control_mean(std::optional<double> mean) { control_mean_ = mean; }
+
+        /**
+         * @brief The discounted expectation of the controlPays cash flows
+         *        under Black-Scholes, when every one of them is a closed form
+         *        the engine knows (WP 26 P2, the maintainer's choice of
+         *        2026-11-16 for the scripting page): a vanilla call or put on
+         *        one asset's spot, that spot itself (a forward), a fixed
+         *        amount -- each possibly times a constant, and sums of them --
+         *        paid at an event's date, at the top level of the event (not
+         *        inside an if). nullopt when there is no controlPays, or one
+         *        it does not recognise: the control is then left off.
+         *
+         * @param spots, dividends, vols one per asset (spot(i)); the rate is
+         *        flat, and the numeraire exp(r t), as BlackScholesSimModel.
+         */
+        std::optional<double> black_scholes_control_mean(const std::vector<Real> &spots, Real rate,
+                                                         const std::vector<Real> &dividends,
+                                                         const std::vector<Real> &vols) const
+        {
+            if (control_index_ < 0)
+                return std::nullopt;
+            using namespace scripting;
+            const auto constant = [](const Node &n, double &x)
+            {
+                if (const auto *c = dynamic_cast<const NodeConst *>(&n))
+                {
+                    x = c->value;
+                    return true;
+                }
+                return false;
+            };
+            // E[amount] at time t (undiscounted), or nullopt.
+            std::function<std::optional<double>(const Node &, Time)> forward_value =
+                [&](const Node &n, Time t) -> std::optional<double>
+            {
+                double x = 0.0;
+                if (constant(n, x))
+                    return x;
+                const auto asset_of = [&](const NodeSpot &sp) -> std::optional<std::size_t>
+                {
+                    if (sp.index >= spots.size() || sp.index >= vols.size())
+                        return std::nullopt;
+                    return sp.index;
+                };
+                const auto fwd = [&](std::size_t a)
+                { return spots[a] * std::exp((rate - (a < dividends.size() ? dividends[a] : 0.0)) * t); };
+                if (const auto *sp = dynamic_cast<const NodeSpot *>(&n))
+                {
+                    const auto a = asset_of(*sp);
+                    return a ? std::optional<double>(fwd(*a)) : std::nullopt;
+                }
+                if (dynamic_cast<const NodeAdd *>(&n) && n.arguments.size() == 2)
+                {
+                    const auto l = forward_value(*n.arguments[0], t), r = forward_value(*n.arguments[1], t);
+                    return l && r ? std::optional<double>(*l + *r) : std::nullopt;
+                }
+                if (dynamic_cast<const NodeMult *>(&n) && n.arguments.size() == 2)
+                {
+                    if (constant(*n.arguments[0], x))
+                    {
+                        const auto r = forward_value(*n.arguments[1], t);
+                        return r ? std::optional<double>(x * *r) : std::nullopt;
+                    }
+                    if (constant(*n.arguments[1], x))
+                    {
+                        const auto l = forward_value(*n.arguments[0], t);
+                        return l ? std::optional<double>(x * *l) : std::nullopt;
+                    }
+                    return std::nullopt;
+                }
+                // max(spot(i) - K, 0) and max(K - spot(i), 0): Black's formula.
+                if (dynamic_cast<const NodeMax *>(&n) && n.arguments.size() == 2)
+                {
+                    double zero = 1.0;
+                    if (!constant(*n.arguments[1], zero) || zero != 0.0)
+                        return std::nullopt;
+                    const auto *diff = dynamic_cast<const NodeSub *>(n.arguments[0].get());
+                    if (!diff || diff->arguments.size() != 2)
+                        return std::nullopt;
+                    double K = 0.0;
+                    const NodeSpot *sp = nullptr;
+                    bool call = false;
+                    if ((sp = dynamic_cast<const NodeSpot *>(diff->arguments[0].get())) &&
+                        constant(*diff->arguments[1], K))
+                        call = true;
+                    else if (!(constant(*diff->arguments[0], K) &&
+                               (sp = dynamic_cast<const NodeSpot *>(diff->arguments[1].get()))))
+                        return std::nullopt;
+                    const auto a = asset_of(*sp);
+                    if (!a || !(K > 0.0) || !(t > 0.0))
+                        return std::nullopt;
+                    const double F = fwd(*a), sd = vols[*a] * std::sqrt(t);
+                    if (!(sd > 0.0))
+                        return call ? std::max(F - K, 0.0) : std::max(K - F, 0.0);
+                    const double d1 = (std::log(F / K) + 0.5 * sd * sd) / sd, d2 = d1 - sd;
+                    return call ? F * norm_cdf(d1) - K * norm_cdf(d2) : K * norm_cdf(-d2) - F * norm_cdf(-d1);
+                }
+                return std::nullopt;
+            };
+            double mean = 0.0;
+            bool any = false;
+            for (std::size_t e = 0; e < events_.size(); ++e)
+            {
+                const Time t = timeline_[e];
+                for (const ExprTree &statement : events_[e].statements)
+                {
+                    if (!statement)
+                        continue;
+                    // The parser wraps each statement in a NodeCollect.
+                    const Node *node = statement.get();
+                    while (dynamic_cast<const NodeCollect *>(node) && node->arguments.size() == 1 &&
+                           node->arguments[0])
+                        node = node->arguments[0].get();
+                    const auto *top = dynamic_cast<const NodeControlPays *>(node);
+                    if (!top)
+                    {
+                        // a controlPays inside an if: no closed form here
+                        if (quantModeling::detail::contains_control(*statement))
+                            return std::nullopt;
+                        continue;
+                    }
+                    const auto v = forward_value(*top->arguments[1], t);
+                    if (!v)
+                        return std::nullopt;
+                    mean += std::exp(-rate * t) * *v;
+                    any = true;
+                }
+            }
+            return any ? std::optional<double>(mean) : std::nullopt;
+        }
 
         Real control_value(const typename ISimulatableProduct<T>::PayoffState *state) const override
         {
