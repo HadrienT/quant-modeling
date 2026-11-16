@@ -61,7 +61,7 @@ namespace quantModeling
         Greeks greeks;
         BondAnalytics bond_analytics;
         std::string diagnostics;
-        Real mc_std_error;
+        Real mc_std_error = 0.0;
         // New field last, matching the project's convention for structs
         // that could be aggregate-initialized (see PricingSettings in
         // pricers/context.hpp) -- cheap insurance against a future
