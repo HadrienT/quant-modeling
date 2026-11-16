@@ -687,7 +687,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
         device_note = cube.device_note;
         if (settings.simm)
             simm_today = cube.simm_today;
-        report = qm_::xva_report(cube, inputs);
+        report = qm_::xva_report(cube, inputs, workers > 0 ? &pool : nullptr);
         if (inputs.csa)
         {
             // The same paths without the CSA: what the collateral is worth.
@@ -696,7 +696,7 @@ static py::dict xva_netting_set_impl(std::vector<qm_::Time> dt, std::vector<qm_:
             open.initial_margin.reset();
             if (open.capital)
                 open.capital->margin.reset();
-            uncollateralised = qm_::xva_report(cube, open);
+            uncollateralised = qm_::xva_report(cube, open, workers > 0 ? &pool : nullptr);
         }
         if (historical)
         {
