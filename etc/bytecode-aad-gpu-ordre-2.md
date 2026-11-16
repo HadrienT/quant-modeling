@@ -349,6 +349,19 @@ AAD fast is an open question of WP 26.
 
 # Partie II — L'AAD sur GPU
 
+> **Update (2026-11-16).** The two mechanisms this part describes -- the dual
+> numbers on the interpreter (II.2) and the local-vol per-path adjoint
+> written by hand (II.3) -- were **deleted** once the kernels generated from
+> the script's IR (blueprint/wp/27-ir-ad.md, lots L3-L5: the tangent and the
+> adjoint by source transformation) beat them (§14.3, §14.6). Their code
+> (`engines/mc/script_adjoint.hpp`'s adjoint, `scripting/bytecode_adjoint.hpp`,
+> the GPU's interpreted duals) is gone; with compilation off
+> (`QM_SCRIPT_JIT=0`) the GPU's risks fall back to the CPU tape, which stays
+> the oracle of every derivative. The ideas below are still what the
+> generated kernels do -- forward-mode directions, a per-path adjoint with
+> checkpoints instead of a tape -- written by the transformation instead of
+> by hand. Kept as the explanation of the method.
+
 ## II.1 Pourquoi la tape de Savine ne monte pas sur la carte
 
 Rappel du livre : chaque opération sur un `Number` crée un **nœud** sur la

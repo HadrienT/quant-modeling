@@ -461,7 +461,6 @@ if(QM_BUILD_TESTS)
     tests/testDual.cpp
     tests/testMultiControl.cpp
     tests/testVarianceReduction.cpp
-    tests/testScriptAdjoint.cpp
     tests/testSobolAndImportance.cpp
     tests/testSobolOwen.cpp
     tests/testSimulationThreads.cpp

@@ -112,7 +112,10 @@ namespace quantModeling
                 req.n_units = 3 * 4096 + 1000;
                 req.seed = 23;
                 req.antithetic = est == Estimator::Plain || est == Estimator::Controls;
-                req.compile = false;
+                // the interpreted kernels, except for the risks: the duals
+                // run in the compiled tangent only (the interpreter's were
+                // deleted, 2026-11-16)
+                req.compile = est == Estimator::Duals;
                 std::optional<mc::SobolTables> tables;
                 mc::SpotControlSet controls;
                 if (est == Estimator::Sobol)
