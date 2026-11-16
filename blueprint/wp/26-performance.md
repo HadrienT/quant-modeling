@@ -1725,3 +1725,11 @@ aside for them is measured again and kept only if it pays.
   shorten them, and the 5-7 % P1b measured has since been taken where it
   pays by `mul_add` in Φ⁻¹ (P1h). The compiled-against-interpreted tests now
   check the tolerance anyway (`GpuScriptJitTest.*WithinTolerance`).
+- **FMA and AVX2 on the CPU** (the wheel built for x86-64-v3, the server's
+  ISA, instead of the baseline x86-64): **not kept.** `perf_matrix.py
+  --no-gpu`, same machine, back to back: the Sobol script routes unchanged
+  (0.97-1.03), the PCG32 ones 5-28 % slower (basket 0.41 → 0.52 s, worst-of
+  1.27 → 1.56 s), one hand-written engine faster (barrier under local vol
+  0.079 → 0.046 s); rough Bergomi's price 6.60 → 5.68 s on two threads, its
+  AAD unchanged. Prices moved by at most 6.5e-16 relative. Mixed, slower
+  where the routes are the site's: the baseline ISA stays.
