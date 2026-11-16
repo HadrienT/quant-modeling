@@ -7,7 +7,8 @@
 //
 // Local vol (the superbucket's input: dV/dsigma_loc on a 30 x 12 Dupire
 // grid, the market_vega endpoint's size), by the per-path adjoint; Black-
-// Scholes and Heston by forward-mode duals.
+// Scholes and Heston by forward-mode duals; SLV (8 parameters and the
+// leverage grid) by the generated adjoint.
 
 #include <algorithm>
 #include <chrono>
@@ -33,6 +34,7 @@
 #include "quantModeling/models/equity/bates_sim_model.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
+#include "quantModeling/models/equity/slv_sim_model.hpp"
 
 namespace qm = quantModeling;
 
@@ -82,6 +84,17 @@ namespace
         if (model == "local_vol")
             return std::make_unique<qm::LocalVolSimModel<T>>(T(100.0), T(0.03), T(0.01), strikes(), maturities(),
                                                              sigma_loc<T>(), 1.0 / 252.0);
+        if (model == "slv")
+        {
+            // A leverage around 1 on the same 30 x 12 grid, skewed like the
+            // local vol above.
+            std::vector<T> leverage;
+            for (qm::Real k : strikes())
+                for (qm::Real t : maturities())
+                    leverage.push_back(T(1.0 + 0.6 * (100.0 - k) / 100.0 + 0.02 * t));
+            return std::make_unique<qm::SLVSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.04), T(1.5), T(0.05), T(0.6),
+                                                        T(-0.7), strikes(), maturities(), leverage, 1.0 / 252.0);
+        }
         if (model == "heston")
             return std::make_unique<qm::BatesSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.04), T(1.5), T(0.05),
                                                           T(0.6), T(-0.7), T(0.0), T(0.0), T(0.0), 1.0 / 252.0);
@@ -107,7 +120,7 @@ int main(int argc, char **argv)
     std::printf("%-18s %-10s %7s %11s %11s %9s %12s\n", "script", "model", "risks", "CPU tape ms", "GPU ms",
                 "speed-up", "max |gap|");
     const std::pair<const char *, const char *> cases[] = {
-        {"european-call", "local_vol"}, {"up-and-out-call", "local_vol"}, {"phoenix-autocall", "local_vol"}, {"variance-swap", "local_vol"}, {"phoenix-autocall", "black_scholes"}, {"phoenix-autocall", "heston"}, {"up-and-out-call", "heston"}};
+        {"european-call", "local_vol"}, {"up-and-out-call", "local_vol"}, {"phoenix-autocall", "local_vol"}, {"variance-swap", "local_vol"}, {"phoenix-autocall", "black_scholes"}, {"phoenix-autocall", "heston"}, {"up-and-out-call", "heston"}, {"european-call", "slv"}, {"up-and-out-call", "slv"}};
     for (const auto &[name, model] : cases)
     {
         const std::string src = read_script(name);

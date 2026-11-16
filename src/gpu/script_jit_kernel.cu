@@ -118,17 +118,33 @@ extern "C" __device__ void qm_grid_accumulate(const QmFrame *f, double spot, dou
     else
         grid::grid_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
 }
+// The SLV leverage the same way: on the backward sweep its cell is looked up
+// once, by the leverage, and kept for its slope and its corners' shares
+// (WP 27 §14.6 left SLV with three lookups a step). The leverage is then the
+// cell's own expression, mc::leverage_staircase's.
 extern "C" __device__ double qm_grid_leverage(const QmFrame *f, double spot, double t)
 {
+    if (f->cell)
+    {
+        grid::LeverageCell &c = *static_cast<grid::LeverageCell *>(f->cell);
+        c = grid::leverage_cell(grid_of(f), spot, t);
+        return grid::leverage_value(grid_of(f), c);
+    }
     return mc::leverage_staircase<Real>(grid_of(f), spot, t);
 }
 extern "C" __device__ double qm_grid_leverage_slope(const QmFrame *f, double spot, double t)
 {
+    if (f->cell)
+        return grid::leverage_slope(grid_of(f), *static_cast<const grid::LeverageCell *>(f->cell));
     return grid::leverage_slope(grid_of(f), spot, t);
 }
 extern "C" __device__ void qm_grid_leverage_accumulate(const QmFrame *f, double spot, double t, double adjoint)
 {
-    grid::leverage_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
+    if (f->cell)
+        grid::leverage_accumulate(*static_cast<const grid::LeverageCell *>(f->cell), f->nT, adjoint, f->ath,
+                                  f->ath_stride, f->grid0);
+    else
+        grid::leverage_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
 }
 
 #if QM_JIT_KERNEL == 0
@@ -493,7 +509,12 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
     ast[qm_pay_slot()] = 1.0;
     for (int p = 0; p < n_risks; ++p)
         lth[p] = 0.0;
-    grid::GridCell cell{};
+    // the cell of a backward step: the local vol's or the SLV leverage's
+    union
+    {
+        grid::GridCell vol;
+        grid::LeverageCell leverage;
+    } cell{};
     f.ast = ast;
     f.lth = lth;
     f.ath = u.gradient + row;

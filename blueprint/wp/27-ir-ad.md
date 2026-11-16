@@ -704,7 +704,12 @@ price's bits, is untouched. One V100, 1M paths, 363 risks, ms:
 
 Faster than the hand-written adjoint in the four cases, by 4 to 23 %. The
 tests of §14.3 pass unchanged (the same price to the bit, the gradient to
-1e-11). SLV's leverage does not use the cache yet (two lookups a step).
+1e-11). SLV's leverage does not use the cache yet (two lookups a step). **Done
+2026-11-16**: the leverage's backward step looks its cell up once too
+(`grid::LeverageCell` in the same slot as the vol's cell, the leverage the
+cell's own `leverage_staircase` expression); `qm_gpu_risk_bench`'s new SLV
+rows, 1M paths, 368 risks: european-call 271 → 221 ms, up-and-out-call 450 →
+364 ms, the tape matched to 5e-10 as before.
 The gradient row in global memory remains the lever for more.
 
 ### 14.7 L6, rung 2: the C¹ ramp (2026-11-15)
