@@ -612,7 +612,12 @@ interpreter and the hand-written adjoint):
   (more code than the events alone), then the caches of §14.2.
 
 **Not done in these lots:** the API's choice between tangent and adjoint is
-by model (grid models take the adjoint) rather than by cost; multilevel
+by model (grid models take the adjoint) rather than by cost (**measured
+2026-11-16: the model is the cost** -- forcing the generated adjoint on the
+tangent's models, one V100, ms at 200k / 1M paths: phoenix-autocall
+Black-Scholes 1.4 / 2.6 tangent against 1.7 / 3.2 adjoint; phoenix-autocall
+Heston 25.7 / 122 against 65.2 / 191; up-and-out-call Heston 20.7 / 97
+against 53.7 / 202 -- so the choice stays); multilevel
 risks (`simulate_script_aad_mlqmc_gpu`) reach the generated adjoint through
 the same entry point but were not re-measured.
 
