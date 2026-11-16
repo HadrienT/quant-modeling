@@ -249,12 +249,16 @@ int main(int argc, char **argv)
     // What only the device can do: paths whose cube the host could not hold.
     std::printf("\n%zu paths (the cube would take %.0f GiB on the host):\n", large,
                 static_cast<double>(large * dates * (engine.trades() + 1) * sizeof(double)) / (1u << 30));
+    // The profiles and the CVA alone: at this size the sorted paths the PFE
+    // needs would be gigabytes to bring home (lot G3).
+    qm::NettingSetRequest profiles = netting;
+    profiles.distribution = false;
     for (int g = 1; g <= std::min(gpus, 2); ++g)
     {
         qm::NettingSetExposure out;
         const double secs = seconds([&]
                                     { out = engine.simulate_netting_set(settings(large, qm::ComputeDevice::Gpu, g),
-                                                                        netting); });
+                                                                        profiles); });
         std::printf("  %d V100   %8.3f s   CVA %12.2f   std err %9.2f (%.2e relative)   %.2e paths/s\n", g, secs,
                     out.weighted_positive.value, out.weighted_positive.error,
                     out.weighted_positive.error / std::abs(out.weighted_positive.value),

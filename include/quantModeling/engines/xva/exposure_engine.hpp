@@ -159,13 +159,27 @@ namespace quantModeling
         std::function<void(const std::vector<Time> &times, std::vector<Real> &on_positive,
                            std::vector<Real> &on_negative)>
             weights;
+        /// The PFE's quantile, and more quantiles of V(t) to report (each in
+        /// (0, 1), increasing), as exposure_statistics() takes them.
+        Real pfe_confidence = 0.95;
+        std::vector<Real> quantile_levels;
+        /**
+         * @brief On a device: keep every path's value at every reporting date
+         *        there, sorted, for the PFE and the quantiles (lot G3). One
+         *        matrix of paths x dates; when it does not fit on the card
+         *        the profiles come back without them and `device_note` says
+         *        so. False skips it (a run of millions of paths for the
+         *        profiles alone).
+         */
+        bool distribution = true;
     };
 
     /// The exposure of a netting set, reduced over the paths.
     struct NettingSetExposure
     {
-        /// On the reporting dates. Reduced on a device it has no PFE and no
-        /// Euler allocation: both need the paths.
+        /// On the reporting dates. Reduced on a device it has no Euler
+        /// allocation (it needs each trade's paths), and no PFE either when
+        /// the distribution was not kept (NettingSetRequest::distribution).
         ExposureStatistics statistics;
         /// The two weighted sums of NettingSetRequest::weights.
         Estimate weighted_positive, weighted_negative;

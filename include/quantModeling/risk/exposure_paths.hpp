@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace quantModeling
@@ -215,6 +216,27 @@ namespace quantModeling
                                            const std::vector<std::size_t> &trades = {},
                                            Real pfe_confidence = 0.95,
                                            const std::vector<Real> &quantile_levels = {});
+
+    /// The PFE, its error and further quantiles of one date.
+    struct WeightedQuantiles
+    {
+        Real pfe = 0.0;       ///< max(quantile, 0)
+        Real pfe_error = 0.0; ///< see ExposureStatistics::pfe_error
+        std::vector<Real> levels;
+    };
+
+    /**
+     * @brief The quantiles of values sorted with their weights: the value at
+     *        which the running sum of the weights reaches level x `weights`.
+     *        What exposure_statistics() reads the PFE with, and what the
+     *        device's reduction is read with once it has sorted its paths
+     *        (engines/xva/exposure_engine.hpp, lot G3).
+     * @param order    (value, weight), sorted by value; not empty.
+     * @param weights  the sum of the weights; `weights2` of their squares.
+     */
+    WeightedQuantiles weighted_quantiles(const std::vector<std::pair<Real, Real>> &order, Real weights,
+                                         Real weights2, Real pfe_confidence,
+                                         const std::vector<Real> &quantile_levels);
 
     /**
      * @brief How many batches the paths are cut into to estimate the error of

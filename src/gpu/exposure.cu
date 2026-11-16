@@ -4,6 +4,9 @@
 
 #include "logical_blocks.cuh"
 
+#include <thrust/execution_policy.h>
+#include <thrust/sort.h>
+
 // The exposure engine on the device (blueprint/wp/23-xva.md §14.11, lot X7).
 // One thread per path: it simulates the Hull-White state on the grid, then
 // values every trade of the program at every date with the functions of
@@ -180,9 +183,13 @@ namespace quantModeling::gpu
         /// netted value, netted flow, collateral balance). Out: the
         /// discounted collateralised value, date-major over the reporting
         /// dates, and the two weighted sums of each path.
+        /// dist_value / dist_weight (or null): each path's undiscounted
+        /// value and discount weight, date-major with `dist_rows` slots a
+        /// reporting date, path `dist_first + local` of the device's share.
         __global__ void netting_kernel(xva::ProgramView p, DynamicsView d, NettingView ns, uint64_t seed,
                                        uint64_t first_path, uint32_t count, size_t rows, Real *scratch,
-                                       Real *discounted, Real *weighted)
+                                       Real *discounted, Real *weighted, Real *dist_value, Real *dist_weight,
+                                       size_t dist_rows, size_t dist_first)
         {
             const uint32_t local = blockIdx.x * blockDim.x + threadIdx.x;
             if (local >= count)
@@ -224,8 +231,15 @@ namespace quantModeling::gpu
                 if (ns.im_received != nullptr || ns.im_posted != nullptr)
                     exposure = net_of_initial_margin(exposure, ns.im_received != nullptr ? ns.im_received[r] : 0.0,
                                                      ns.im_posted != nullptr ? ns.im_posted[r] : 0.0);
-                const Real v = d.weight_scale[i] * exp(d.weight_G[i] * x[i]) * exposure;
+                const Real w = d.weight_scale[i] * exp(d.weight_G[i] * x[i]);
+                const Real v = w * exposure;
                 out[r] = v;
+                if (dist_value != nullptr)
+                {
+                    const size_t at = static_cast<size_t>(r) * dist_rows + dist_first + local;
+                    dist_value[at] = exposure;
+                    dist_weight[at] = w;
+                }
                 if (ns.positive_weights != nullptr && v > 0.0)
                     positive += ns.positive_weights[r] * v;
                 if (ns.negative_weights != nullptr && v < 0.0)
@@ -412,12 +426,35 @@ namespace quantModeling::gpu
         const std::size_t segments = m + 1;
         std::vector<ExposureDateStats> partials(static_cast<std::size_t>(n_blocks) * segments);
 
+        // The sorted distributions, one slot per device (in block order).
+        const std::size_t n_devices = std::max<std::size_t>(req.devices.size(), 1);
+        std::vector<std::vector<SortedExposures>> sorted(netting.distribution ? n_devices : 0);
+        std::vector<uint64_t> device_first(n_devices, 0);
+        for (std::size_t k = 0; k < n_devices; ++k)
+            device_first[k] = n_blocks * k / std::min<uint64_t>(n_devices, std::max<uint64_t>(n_blocks, 1));
+
         const auto job = [&](int device, uint64_t first, uint64_t last)
         {
             detail::require_device(device);
             detail::check(cudaSetDevice(device), "cudaSetDevice");
             const DeviceProgram program(*req.program);
             const DeviceDynamics dynamics(*req.dynamics);
+            // This device's whole share of the paths, kept for the sort.
+            const std::size_t share = static_cast<std::size_t>(std::min(N, last * L::kUnitsPerBlock) -
+                                                                first * L::kUnitsPerBlock);
+            if (netting.distribution)
+            {
+                const std::size_t need = 2 * share * m * sizeof(Real);
+                // the sort's own scratch is as large again
+                if (2 * need > free_memory(device) / 2)
+                    throw GpuUnavailable("exposure on GPU: the distribution of " + std::to_string(share) +
+                                         " paths over " + std::to_string(m) + " dates needs " +
+                                         std::to_string((2 * need) >> 20) +
+                                         " MiB on the device, more than half of what is free: fewer paths, "
+                                         "or the CPU");
+            }
+            const DeviceArray<Real> dist_value(netting.distribution ? share * m : 0),
+                dist_weight(netting.distribution ? share * m : 0);
             const DeviceArray<int> trades(netting.trades), lagged(plan.lagged), reporting(plan.reporting);
             const DeviceArray<unsigned char> is_call_date(plan.is_call_date);
             const DeviceArray<Real> im_received(netting.initial_margin_received),
@@ -453,7 +490,10 @@ namespace quantModeling::gpu
                 netting_kernel<<<grid_of(count), L::kThreadsPerBlock>>>(program.view(), dynamics.view(), ns,
                                                                         req.seed, first_path,
                                                                         static_cast<uint32_t>(count), rows, scratch.get(),
-                                                                        discounted.get(), weighted.get());
+                                                                        discounted.get(), weighted.get(),
+                                                                        dist_value.get(), dist_weight.get(), share,
+                                                                        static_cast<std::size_t>(
+                                                                            first_path - first * L::kUnitsPerBlock));
                 detail::check(cudaGetLastError(), "kernel launch");
                 // The paths of the launch are `launch_blocks` whole logical
                 // blocks (the last one of the run may be short): reducing
@@ -465,6 +505,27 @@ namespace quantModeling::gpu
                     for (uint64_t j = 0; j < launch_blocks; ++j)
                         partials[static_cast<std::size_t>(b + j) * segments + s] =
                             reduced[s * static_cast<std::size_t>(launch_blocks) + static_cast<std::size_t>(j)];
+            }
+            if (netting.distribution)
+            {
+                // Each date sorted by value on the device, its weights
+                // carried along (a radix sort: deterministic), then home.
+                std::size_t slot = 0;
+                while (slot + 1 < n_devices && device_first[slot] != first)
+                    ++slot;
+                std::vector<SortedExposures> &out = sorted[slot];
+                out.resize(m);
+                for (std::size_t r = 0; r < m; ++r)
+                {
+                    Real *v = dist_value.get() + r * share, *w = dist_weight.get() + r * share;
+                    thrust::sort_by_key(thrust::device, v, v + share, w);
+                    out[r].value.resize(share);
+                    out[r].weight.resize(share);
+                    detail::check(cudaMemcpy(out[r].value.data(), v, share * sizeof(Real), cudaMemcpyDeviceToHost),
+                                  "cudaMemcpy");
+                    detail::check(cudaMemcpy(out[r].weight.data(), w, share * sizeof(Real), cudaMemcpyDeviceToHost),
+                                  "cudaMemcpy");
+                }
             }
         };
 
@@ -482,6 +543,7 @@ namespace quantModeling::gpu
         for (std::size_t s = 0; s < m; ++s)
             out.dates.push_back(fold(s));
         out.weighted = fold(m);
+        out.sorted = std::move(sorted);
         return out;
     }
 

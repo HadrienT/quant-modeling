@@ -44,6 +44,71 @@ namespace quantModeling
         return mean_and_error(sum, sum2, B).second;
     }
 
+    WeightedQuantiles weighted_quantiles(const std::vector<std::pair<Real, Real>> &order, Real weights,
+                                         Real weights2, Real pfe_confidence,
+                                         const std::vector<Real> &quantile_levels)
+    {
+        if (order.empty())
+            throw InvalidInput("weighted quantiles: no value");
+        const std::size_t N = order.size();
+        WeightedQuantiles out;
+        out.levels.assign(quantile_levels.size(), order.back().first);
+        const Real target = pfe_confidence * weights;
+        Real cumulative = 0.0;
+        Real quantile = order.back().first;
+        for (const auto &[value, weight] : order)
+        {
+            cumulative += weight;
+            if (cumulative >= target)
+            {
+                quantile = value;
+                break;
+            }
+        }
+        out.pfe = std::max(quantile, 0.0);
+
+        // Its error: the quantiles one standard deviation of the
+        // empirical level away on each side.
+        if (N > 1 && weights2 > 0.0)
+        {
+            const Real effective = weights * weights / weights2;
+            const Real half = std::sqrt(pfe_confidence * (1.0 - pfe_confidence) / effective);
+            const Real low_target = std::max(pfe_confidence - half, 0.0) * weights;
+            const Real high_target = std::min(pfe_confidence + half, 1.0) * weights;
+            Real low = order.back().first, high = order.back().first;
+            bool low_found = false;
+            cumulative = 0.0;
+            for (const auto &[value, weight] : order)
+            {
+                cumulative += weight;
+                if (!low_found && cumulative >= low_target)
+                {
+                    low = value;
+                    low_found = true;
+                }
+                if (cumulative >= high_target)
+                {
+                    high = value;
+                    break;
+                }
+            }
+            out.pfe_error = 0.5 * (std::max(high, 0.0) - std::max(low, 0.0));
+        }
+
+        // The other quantiles, off the same sorted values.
+        cumulative = 0.0;
+        std::size_t level = 0;
+        for (const auto &[value, weight] : order)
+        {
+            cumulative += weight;
+            while (level < quantile_levels.size() && cumulative >= quantile_levels[level] * weights)
+                out.levels[level++] = value;
+            if (level == quantile_levels.size())
+                break;
+        }
+        return out;
+    }
+
     ExposureProfile ExposureStatistics::profile() const
     {
         if (measure != ExposureMeasure::RiskNeutral)
@@ -171,61 +236,12 @@ namespace quantModeling
             std::sort(order.begin(), order.end(),
                       [](const std::pair<Real, Real> &a, const std::pair<Real, Real> &b)
                       { return a.first < b.first; });
-            const Real target = pfe_confidence * weights;
-            Real cumulative = 0.0;
-            Real quantile = order.back().first;
-            for (const auto &[value, weight] : order)
-            {
-                cumulative += weight;
-                if (cumulative >= target)
-                {
-                    quantile = value;
-                    break;
-                }
-            }
-            s.pfe[i] = std::max(quantile, 0.0);
-
-            // Its error: the quantiles one standard deviation of the
-            // empirical level away on each side.
-            if (N > 1 && weights2 > 0.0)
-            {
-                const Real effective = weights * weights / weights2;
-                const Real half = std::sqrt(pfe_confidence * (1.0 - pfe_confidence) / effective);
-                const Real low_target = std::max(pfe_confidence - half, 0.0) * weights;
-                const Real high_target = std::min(pfe_confidence + half, 1.0) * weights;
-                Real low = order.back().first, high = order.back().first;
-                bool low_found = false;
-                cumulative = 0.0;
-                for (const auto &[value, weight] : order)
-                {
-                    cumulative += weight;
-                    if (!low_found && cumulative >= low_target)
-                    {
-                        low = value;
-                        low_found = true;
-                    }
-                    if (cumulative >= high_target)
-                    {
-                        high = value;
-                        break;
-                    }
-                }
-                s.pfe_error[i] = 0.5 * (std::max(high, 0.0) - std::max(low, 0.0));
-            }
-
-            // The other quantiles, off the same sorted values.
-            cumulative = 0.0;
-            std::size_t level = 0;
-            for (const auto &[value, weight] : order)
-            {
-                cumulative += weight;
-                while (level < quantile_levels.size() && cumulative >= quantile_levels[level] * weights)
-                    s.value_quantiles[level++][i] = value;
-                if (level == quantile_levels.size())
-                    break;
-            }
-            for (; level < quantile_levels.size(); ++level)
-                s.value_quantiles[level][i] = order.back().first;
+            const WeightedQuantiles q =
+                weighted_quantiles(order, weights, weights2, pfe_confidence, quantile_levels);
+            s.pfe[i] = q.pfe;
+            s.pfe_error[i] = q.pfe_error;
+            for (std::size_t level = 0; level < quantile_levels.size(); ++level)
+                s.value_quantiles[level][i] = q.levels[level];
         }
 
         s.epe = expected_positive_exposure(s.times, s.ee);

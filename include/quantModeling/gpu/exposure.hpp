@@ -119,10 +119,29 @@ namespace quantModeling::gpu
          * and DVA). Empty for zeros.
          */
         std::vector<Real> positive_weights, negative_weights;
+        /**
+         * @brief Keep the distribution (lot G3, blueprint/wp/23-xva.md §20):
+         *        every path's value V and discount weight at every reporting
+         *        date stay on the device, each date is sorted there by value
+         *        (Thrust), and the sorted pairs come back -- what a quantile
+         *        (the PFE) is read from. One matrix of paths x dates for the
+         *        netting set, not the cube's one per trade; the request is
+         *        refused (GpuUnavailable) when even that does not fit.
+         */
+        bool distribution = false;
+    };
+
+    /// One device's paths at one date, sorted by value.
+    struct SortedExposures
+    {
+        std::vector<Real> value;  ///< V, undiscounted, ascending
+        std::vector<Real> weight; ///< the paths' discount weights, in that order
     };
 
     struct NettingSetGpuProfile
     {
+        /// With NettingSetGpuRequest::distribution: [device][reporting date].
+        std::vector<std::vector<SortedExposures>> sorted;
         /// Per reporting date: statistics of D max(V, 0), D min(V, 0), D V.
         std::vector<ExposureDateStats> dates;
         /// `positive` and `negative`: the two weighted sums; `value` unused.
