@@ -331,7 +331,7 @@ namespace quantModeling::scripting::ir
         int n_vars = 0;
         bool fuzzy = false;
         bool has_monitor = false;   ///< a Surv slot of any kind (what the CPU model fills)
-        bool has_bridge = false;    ///< a bridge survival (survivalAbove / survivalBelow): not in the paths yet
+        bool has_bridge = false;    ///< a bridge survival (survivalAbove / survivalBelow): one asset, BS or local vol
         bool has_last_step = false; ///< a last-step expectation: the paths compute it (WP 27 §14.9)
 
         std::size_t n_events() const { return event_block.size(); }

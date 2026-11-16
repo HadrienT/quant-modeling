@@ -386,14 +386,8 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
             out.why = "the script is not compiled";
             return out;
         }
-        if (script.has_bridge)
-        {
-            out.why = "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the bridge "
-                      "survival probabilities yet";
-            return out;
-        }
         const auto kind = static_cast<DeviceModel::Kind>(model_kind);
-        out.why = ir::path_program_unsupported(kind, n_assets);
+        out.why = ir::path_program_unsupported(script, kind, n_assets);
         if (!out.why.empty())
             return out;
 
@@ -416,6 +410,10 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         constant(src, "qm_step_cols", l.step_cols);
         constant(src, "qm_event_cols", l.event_cols);
         constant(src, "qm_n_risks", l.n_risks);
+        // The bridge survivals' running products: state a step both reads
+        // and overwrites, which the adjoint checkpoints with the model's.
+        constant(src, "qm_surv0", l.surv0());
+        constant(src, "qm_n_surv", l.n_surv);
         const int ns = l.n_state();
         src << "\n";
         Emit e;

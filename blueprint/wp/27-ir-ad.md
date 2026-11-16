@@ -1002,3 +1002,45 @@ GPU kernel was built rather than shipping the host's alone.
 L6 is done to the extent decided: rungs 1, 2, 4 and 3; second order in the
 API and on the page. Not built, by decision: the exact route on the GPU
 (§14.10), a C¹ local-vol grid (a model change), a Vibrato at every date.
+
+### 14.12 Rung 1's last piece: the bridge survivals in the IR's paths (2026-11-16)
+
+§14.9 left `survivalAbove()` / `survivalBelow()` out of the IR's paths, so a
+barrier written with them ran on the CPU only (prices and risks), the one
+script primitive the GPU did not take. Now:
+
+- **Layout.** `PathLayout::n_surv` running products (the most survival slots
+  a date reads), after the last step's forward and variance; the step row
+  gains a level and an "above" flag per slot, those of the date the step
+  leads to (`path_data`, a level of 1 where the date has fewer slots).
+- **Step.** After the spot's own step, each product is multiplied by the
+  bridge factor from the spot before to the spot after, with the step's
+  log-variance: `mc::bridge_survival` operation for operation (`Select` for
+  its two edge cases), so the price keeps the CPU model's bits. Under
+  Black-Scholes the step is the whole interval (exact); under local vol a
+  product over the steps, as `LocalVolSimModel` computes it.
+- **Date.** A survival slot reads its product (0 if the date's own spot is on
+  the wrong side: the CPU's answer for a date with no step before it, and the
+  same bits after a step, which already required it); the date then sets the
+  products back to 1.
+- **Adjoint on the GPU.** A step now reads state it overwrites besides the
+  model's: `qm_drive` checkpoints the survival products with the model's
+  state before each step (`qm_surv0`, `qm_n_surv`), and the trail grows by
+  `n_surv` per drawing step. Without it the local-vol risks were 5 % off the
+  tape while the price was right -- the test that caught it is
+  `GpuRisksTest.BridgeSurvivalRisksMatchTheTape`.
+- **Scope.** One underlying, Black-Scholes or local vol: the CPU models'
+  own scope (Heston, SLV and the multi-asset models refuse bridge survivals).
+  Vibrato still refuses them: it re-evaluates the final date at X, Z and -Z,
+  and the last step's bridge factor would not move with it.
+
+Checked: the IR's engine on the CPU against the tape (price 1e-12, risks
+1e-10; one survival, two on a date, two dates, with `lastStepCall`); the
+compiled GPU price against the CPU on the same draws (1e-9) and the GPU
+risks against the tape (1e-8), Black-Scholes (tangent) and local vol
+(adjoint).
+
+**Measured** (a one-year call knocked out above 130, local vol, 252 steps a
+year, 200 000 Sobol points; CPU two threads, one V100 with the kernel
+cached): price 3.6 s → 0.016 s (1.9 s the first call, compilation); price
+and AAD risks 14.3 s → 0.05 s (1.1 s cold). Same price to 1e-15.

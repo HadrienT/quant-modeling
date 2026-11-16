@@ -811,14 +811,12 @@ namespace quantModeling
         DeviceModel dm;
         if (product.has_exercise() || product.ir().empty())
             why = "early exercise runs on the tree evaluator, whose risks take the tape";
-        else if (product.ir().has_bridge)
-            why = "survivalAbove() / survivalBelow() are not in the IR's paths yet";
         else if (!model.describe_device(dm))
             why = "this model's step is not in the IR";
         else if (dm.kind == DeviceModel::Kind::Heston && dm.jump_k != 0.0)
             why = "jump parameters are set: the IR's Heston step has no jumps";
         else
-            why = ir::path_program_unsupported(dm.kind, dm.n_assets);
+            why = ir::path_program_unsupported(product.ir(), dm.kind, dm.n_assets);
         if (!why.empty())
             return std::nullopt;
 
@@ -1022,8 +1020,10 @@ namespace quantModeling
             const scripting::ir::Script &ir = product.ir();
             if (product.has_exercise() || ir.empty())
                 return "early exercise runs on the tree evaluator, which Vibrato does not cover";
+            // Vibrato re-evaluates the final date at X, Z and -Z; the last
+            // step's bridge factor is the step's, which it would not move.
             if (ir.has_bridge)
-                return "survivalAbove() / survivalBelow() are not in the IR's paths";
+                return "survivalAbove() / survivalBelow() are not covered by Vibrato: tick fuzzy";
             if (dm.n_assets != 1)
                 return "Vibrato covers one underlying";
             // Vibrato's weight is Z / s, s the last step's standard deviation.

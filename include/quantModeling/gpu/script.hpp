@@ -61,13 +61,15 @@ namespace quantModeling::gpu
         using L = ScriptLimits;
         if (p.code.empty())
             return "the script is not compiled to bytecode";
-        if (p.has_bridge)
-            return "survivalAbove() / survivalBelow() run on the CPU: the GPU paths do not compute the bridge "
-                   "survival probabilities yet";
-        // the interpreted kernels cannot compute lastStep*(), only the compiled ones
+        // the interpreted kernels compute neither lastStep*() nor the bridge
+        // survivals, only the kernels compiled from the IR
         if (p.has_monitor && !script_jit_enabled())
-            return "lastStep*() run in the GPU kernels compiled from the IR, and compilation is off "
-                   "(QM_SCRIPT_JIT=0)";
+            return "lastStep*() and survivalAbove() / survivalBelow() run in the GPU kernels compiled from the IR, "
+                   "and compilation is off (QM_SCRIPT_JIT=0)";
+        if (p.has_bridge && m.n_assets != 1)
+            return "survivalAbove() / survivalBelow() cover one underlying";
+        if (p.has_bridge && m.kind != DeviceModel::Kind::BlackScholes && m.kind != DeviceModel::Kind::LocalVol)
+            return "survivalAbove() / survivalBelow() run under Black-Scholes and local vol";
         if (p.n_vars > L::kVars)
             return "the script has more than " + std::to_string(L::kVars) + " variables";
         if (p.max_stack > L::kStack || p.max_degrees > L::kDegrees)

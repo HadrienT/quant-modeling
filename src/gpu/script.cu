@@ -454,8 +454,8 @@ namespace quantModeling::gpu
                 // duals) read no last-step expectation: only the kernels
                 // compiled from the IR compute them (WP 27 §14.9).
                 if (req.program && req.program->has_monitor)
-                    throw InvalidInput("GPU: lastStep*() need the kernels compiled from the IR, and they are not "
-                                       "available here (" + why + ")");
+                    throw InvalidInput("GPU: lastStep*() and survivalAbove() / survivalBelow() need the kernels "
+                                       "compiled from the IR, and they are not available here (" + why + ")");
                 out.note = "interpreted bytecode (" + why + ")";
                 return out;
             };
@@ -710,7 +710,9 @@ namespace quantModeling::gpu
                 // per date, what qm_drive saves: every slot past the
                 // model's (the variables, the payoff, and the last step's
                 // forward and variance when the script reads them)
-                trail_len = drawing * layout.n_model +
+                // per drawing step: the model's state and the survivals'
+                // running products
+                trail_len = drawing * (layout.n_model + layout.n_surv) +
                             static_cast<long>(req.program->n_events()) * (layout.n_state() - layout.n_model);
             }
             else
