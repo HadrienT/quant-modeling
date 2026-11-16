@@ -2910,7 +2910,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | G4 | Transactions par régression sur la carte : évaluer les polynômes par bucket dans le kernel ; puis le pilote lui-même | bermudans et scripts renvoient tout le netting set sur le CPU |
 | G5 | SIMM par chemin sur la carte (S7) | la marge SIMM renvoie aussi sur le CPU |
 | G6 | Mémoire épinglée et pas de remise à zéro du cube rapatrié | 1,7 s pour 2 Gio, contre 0,2 s pour tout le calcul réduit sur la carte |
-| G7 | Fusionner les obligations de même échéance dans `bind` (les coupons flottants se télescopent) | environ 2,5 fois moins d'exponentielles, sur CPU comme sur carte |
+| G7 | Fusionner les obligations de même échéance dans `bind` (les coupons flottants se télescopent) | **Done (2026-11-16)**: `HullWhiteSwapValue::add_bond` sums the coefficients of a date's bonds of equal maturity before the exponential. `qm_gpu_exposure_bench 0.002` (10 trades, 198 dates): CPU one thread 4.76 → 3.12 s, sixteen 0.75 → 0.48 s; 2 M paths on one V100 0.96 → 0.72 s, two 0.69 → 0.58 s; the CVA moved by 4e-14 relative |
 | G8 | Marge initiale par chemin et wrong-way risk dans la réduction | aujourd'hui : profil de marge seulement, pas de $b$ |
 | G9 | Flux de la période de marge par sommes cumulées | la boucle relit toute la période à chaque date de reporting |
 
