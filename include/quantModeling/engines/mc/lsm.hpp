@@ -8,7 +8,9 @@
 #include "quantModeling/utils/philox.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <span>
 #include <string>
@@ -124,22 +126,77 @@ namespace quantModeling
         for (std::size_t p = 0; p < pilot.size(); ++p)
             Y[p] = pilot[p].never;
 
+        const std::size_t n_basis = scripting::monomials(report.regressors, degree).size();
         for (auto it = by_event.rbegin(); it != by_event.rend(); ++it)
         {
             const auto &members = it->second;
-            std::vector<std::vector<double>> rows;
-            std::vector<double> gains;
-            rows.reserve(members.size());
-            for (const auto &[p, k] : members)
+            // The holder's "in the money" (Longstaff & Schwartz), for any
+            // script: exercising now changes the path's value. Where it does
+            // not, the gain is never - Y <= 0 (continuing under the best rule
+            // is worth at least never exercising): those paths do not
+            // exercise, and fitting them only bends the polynomial where the
+            // decision is made (issue #228). Too few such paths for the
+            // basis: all of them, as before. The issuer fits every path.
+            const auto changes = [&](std::size_t m)
             {
+                const auto &[p, k] = members[m];
+                const double ex = pilot[p].opportunities[k].exercised, nv = pilot[p].never;
+                return std::abs(ex - nv) > 1e-12 * std::max({1.0, std::abs(ex), std::abs(nv)});
+            };
+            std::size_t in_money = 0;
+            if (!policy.issuer)
+                for (std::size_t m = 0; m < members.size(); ++m)
+                    in_money += changes(m) ? 1 : 0;
+            const bool restrict = !policy.issuer && in_money >= 2 * n_basis && in_money < members.size();
+            std::vector<std::vector<double>> rows, fit_rows;
+            std::vector<double> fit_gains;
+            rows.reserve(members.size());
+            for (std::size_t m = 0; m < members.size(); ++m)
+            {
+                const auto &[p, k] = members[m];
                 const auto &opp = pilot[p].opportunities[k];
                 rows.push_back(opp.regressors);
-                gains.push_back(opp.exercised - Y[p]);
+                if (!restrict || changes(m))
+                {
+                    fit_rows.push_back(opp.regressors);
+                    fit_gains.push_back(opp.exercised - Y[p]);
+                }
             }
-            const scripting::ExerciseRegression reg = scripting::fit_exercise_regression(rows, gains, degree);
+            scripting::ExerciseRegression reg = scripting::fit_exercise_regression(fit_rows, fit_gains, degree);
+            if (restrict)
+            {
+                // The box the rule may exercise in: the in-the-money paths'
+                // regressors, unbounded on a side where no other path lies.
+                const std::size_t n = report.regressors;
+                reg.lo.assign(n, std::numeric_limits<double>::infinity());
+                reg.hi.assign(n, -std::numeric_limits<double>::infinity());
+                for (const auto &row : fit_rows)
+                    for (std::size_t i = 0; i < n; ++i)
+                    {
+                        reg.lo[i] = std::min(reg.lo[i], row[i]);
+                        reg.hi[i] = std::max(reg.hi[i], row[i]);
+                    }
+                std::vector<char> below(n, 0), above(n, 0);
+                for (std::size_t m = 0; m < members.size(); ++m)
+                    if (!changes(m))
+                        for (std::size_t i = 0; i < n; ++i)
+                        {
+                            below[i] |= rows[m][i] < reg.lo[i] ? 1 : 0;
+                            above[i] |= rows[m][i] > reg.hi[i] ? 1 : 0;
+                        }
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    if (!below[i])
+                        reg.lo[i] = -std::numeric_limits<double>::infinity();
+                    if (!above[i])
+                        reg.hi[i] = std::numeric_limits<double>::infinity();
+                }
+            }
             int exercised = 0;
             for (std::size_t m = 0; m < members.size(); ++m)
             {
+                if (restrict && !changes(m))
+                    continue; // gain <= 0: not exercised there
                 const double g = reg.gain(rows[m]);
                 if (policy.issuer ? g < 0.0 : g > 0.0)
                 {

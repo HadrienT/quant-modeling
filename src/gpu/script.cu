@@ -482,8 +482,11 @@ namespace quantModeling::gpu
             const std::vector<int> devices = devices_of(req);
             std::string why;
             bool cached = false;
-            const auto built = jit::compile(src.source + scripting::cuda_spec_source(spec), static_cast<int>(kernel),
-                                            devices.front(), why, &cached);
+            // Vibrato's blocks link with the tangent's kernel (its driver is there).
+            const int fatbin = kernel == PathKernel::Vibrato ? static_cast<int>(PathKernel::Tangent)
+                                                             : static_cast<int>(kernel);
+            const auto built = jit::compile(src.source + scripting::cuda_spec_source(spec), fatbin, devices.front(),
+                                            why, &cached);
             if (!built)
                 return refuse(why);
             for (int device : devices)
@@ -644,6 +647,23 @@ namespace quantModeling::gpu
             throw InvalidInput("GPU: forward-mode risks in more than 8 directions need the compiled tangent (" +
                                k.note + ")");
         return dirs <= 4 ? run_duals<4>(req, dirs) : run_duals<8>(req, dirs);
+    }
+
+    std::vector<std::vector<WelfordAccumulator>> simulate_script_vibrato(const ScriptGpuRequest &req, int dirs,
+                                                                         std::string *note)
+    {
+        if (!req.model)
+            throw InvalidInput("simulate_script: program and model are required");
+        ScriptGpuRequest unmirrored = req;
+        unmirrored.antithetic = false;
+        const CompiledKernels k = compiled_kernels(unmirrored, PathKernel::Vibrato, "qm_script_tangent");
+        if (!k.ok())
+            throw InvalidInput("GPU: Vibrato runs in the kernels compiled from the IR (" + k.note + ")");
+        if (note)
+            *note = "Vibrato kernel, " + k.note;
+        if (dirs > 8)
+            throw InvalidInput("GPU: Vibrato covers one underlying (at most 8 risks)");
+        return run_compiled_tangent<8>(unmirrored, k, dirs);
     }
 
     ScriptAdjointGpuResult simulate_script_adjoint(const ScriptGpuRequest &req)

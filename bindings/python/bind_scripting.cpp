@@ -494,18 +494,20 @@ static py::dict price_script(const std::string &script, double spot, double rate
         // answer stands when the GPU cannot take it; the diagnostics say why.
         if (second_order)
         {
+            // A hard payoff that jumps takes Vibrato (the CPU); the others the
+            // bump on the GPU's adjoint.
             std::optional<ScriptSecondOrderResults> so;
-            std::string why = "early exercise runs on the CPU, the second order on the GPU";
-            if (device == "cpu")
-                why = "the second order runs on the GPU and the request asked for the CPU";
-            else if (!lsm_note.empty())
-                ; // early exercise: the why above
-            else
+            std::string why = "early exercise is not covered by the second order";
+            if (lsm_note.empty())
             {
                 py::gil_scoped_release release;
                 ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
                 auto sim_model = scripting::make_script_model<Real>(spec);
-                so = simulate_script_second_order_gpu(product, *sim_model, static_cast<std::size_t>(paths),
+                const bool vibrato = product.analysis().spot_comparison && !fuzzy;
+                if (device == "cpu" && !vibrato)
+                    why = "the second order of this payoff runs on the GPU and the request asked for the CPU";
+                else
+                    so = simulate_script_second_order(product, *sim_model, static_cast<std::size_t>(paths),
                                                       seed_value, why);
             }
             py::dict greeks = out["greeks"].cast<py::dict>();

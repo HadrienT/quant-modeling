@@ -608,7 +608,11 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             req.greeks_method,
             model,
             k_grid if model in ("local_vol", "slv") else [],
-            t_grid if model in ("local_vol", "slv") else [],
+            (
+                list(sv.leverage_T_grid)
+                if model == "slv" and sv is not None
+                else t_grid if model == "local_vol" else []
+            ),
             sigma,
             req.steps_per_year,
             heston=heston,

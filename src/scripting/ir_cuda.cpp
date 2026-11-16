@@ -397,7 +397,14 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         if (!out.why.empty())
             return out;
 
-        const ir::PathProgram primal = ir::path_program(script, kind, n_assets, kernel != PathKernel::Price);
+        if (kernel == PathKernel::Vibrato &&
+            (n_assets != 1 || (kind != DeviceModel::Kind::BlackScholes && kind != DeviceModel::Kind::LocalVol)))
+        {
+            out.why = "Vibrato covers one underlying under Black-Scholes or local vol";
+            return out;
+        }
+        const ir::PathProgram primal =
+            ir::path_program(script, kind, n_assets, kernel != PathKernel::Price, kernel == PathKernel::Vibrato);
         const ir::PathLayout &l = primal.layout;
         std::ostringstream src;
         src << kPrelude;
@@ -425,19 +432,30 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     << ns << "];\n    return qm_drive(unit, draws, sign, controls, st);\n}\n";
                 break;
             case PathKernel::Tangent:
+            case PathKernel::Vibrato:
             {
                 std::vector<std::int32_t> dirs(static_cast<std::size_t>(l.n_risks));
                 std::iota(dirs.begin(), dirs.end(), 0);
                 const ir::PathProgram tan = ir::tangent(primal, dirs);
                 e.K = l.n_risks;
+                // the tangent kernel's Vibrato driver reads it (-1 without the slots)
+                constant(src, "qm_last0", l.last_step ? l.last0() : -1);
                 function(src, "qm_init", tan.init, e);
                 function(src, "qm_step", tan.step, e);
                 events(src, "qm_event", tan.events, e);
-                src << "extern \"C\" __device__ void qm_drive(const void *unit, void *draws, double *out, double "
-                       "*st, double *dst);\n"
-                    << "extern \"C\" __device__ void qm_path(const void *unit, void *draws, double *out)\n{\n"
-                    << "    double st[" << ns << "];\n    double dst[" << ns * e.K << "];\n"
-                    << "    qm_drive(unit, draws, out, st, dst);\n}\n";
+                if (kernel == PathKernel::Tangent)
+                    src << "extern \"C\" __device__ void qm_drive(const void *unit, void *draws, double *out, double "
+                           "*st, double *dst);\n"
+                        << "extern \"C\" __device__ void qm_path(const void *unit, void *draws, double *out)\n{\n"
+                        << "    double st[" << ns << "];\n    double dst[" << ns * e.K << "];\n"
+                        << "    qm_drive(unit, draws, out, st, dst);\n}\n";
+                else
+                    src << "extern \"C\" __device__ void qm_drive_vibrato(const void *unit, void *draws, double "
+                           "*out, double *st, double *dst, double *st0, double *dst0);\n"
+                        << "extern \"C\" __device__ void qm_path(const void *unit, void *draws, double *out)\n{\n"
+                        << "    double st[" << ns << "], st0[" << ns << "];\n    double dst[" << ns * e.K
+                        << "], dst0[" << ns * e.K << "];\n"
+                        << "    qm_drive_vibrato(unit, draws, out, st, dst, st0, dst0);\n}\n";
                 break;
             }
             case PathKernel::Adjoint:

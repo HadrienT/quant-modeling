@@ -72,6 +72,13 @@ namespace quantModeling::gpu
                              "without the CUDA backend: QM_ENABLE_CUDA=ON)");
     }
 
+    std::vector<std::vector<WelfordAccumulator>> simulate_script_vibrato(const ScriptGpuRequest &, int,
+                                                                         std::string *)
+    {
+        throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "
+                             "without the CUDA backend: QM_ENABLE_CUDA=ON)");
+    }
+
     ScriptAdjointGpuResult simulate_script_adjoint(const ScriptGpuRequest &)
     {
         throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built "

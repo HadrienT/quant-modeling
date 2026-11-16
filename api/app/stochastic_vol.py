@@ -89,8 +89,11 @@ class StochasticVol:
     n_quotes: int
     n_maturities: int
     feller: bool
-    #: The leverage, K-major on the Dupire grid's (K_grid, T_grid).
+    #: The leverage, K-major on the Dupire grid's strikes and on its own time
+    #: grid, leverage_T_grid: a column every calibration substep (issue #227),
+    #: finer than the surface's maturities. Pass that grid with it.
     leverage_flat: Tuple[float, ...]
+    leverage_T_grid: Tuple[float, ...]
     leverage_min: float
     leverage_max: float
     #: Share of leverage points held at the calibration's floor or cap: where
@@ -211,6 +214,7 @@ def _calibrate(market: LocalVolMarket) -> StochasticVol:
         n_maturities=int(fit["n_maturities"]),
         feller=bool(fit["feller"]),
         leverage_flat=tuple(L),
+        leverage_T_grid=tuple(lev["T_grid"]),
         leverage_min=min(L),
         leverage_max=max(L),
         leverage_clamped_share=clamped / len(L),
@@ -231,6 +235,9 @@ def store_key(market: LocalVolMarket) -> str:
     return calibration_store.digest(
         {
             "method": METHOD,
+            # 2: the leverage on its own time grid (issue #227); the fits
+            # stored before it held a column over a surface interval
+            "leverage": 2,
             "particles": SLV_PARTICLES,
             "seed": SLV_SEED,
             "ticker": market.ticker,
@@ -246,7 +253,7 @@ def store_key(market: LocalVolMarket) -> str:
     )
 
 
-_TUPLE_FIELDS = ("leverage_flat",)
+_TUPLE_FIELDS = ("leverage_flat", "leverage_T_grid")
 
 
 def _load(key: str) -> Optional[StochasticVol]:

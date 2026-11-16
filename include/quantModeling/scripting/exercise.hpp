@@ -23,6 +23,12 @@ namespace quantModeling::scripting
         int degree = 2;
         std::vector<std::vector<int>> terms; ///< the monomials, monomials(n, degree)
         std::vector<double> beta;            ///< one per monomial
+        /// Where the rule may exercise (empty: everywhere): the box of the
+        /// regressors of the paths it was fitted on, bounded only on the
+        /// sides where paths it was not fitted on lie (issue #228). Outside,
+        /// the polynomial is an extrapolation and the holder does not
+        /// exercise.
+        std::vector<double> lo, hi;
 
         /// β · φ(z): the estimated gain of exercising now over continuing,
         /// in deflated currency, from the holder's side.

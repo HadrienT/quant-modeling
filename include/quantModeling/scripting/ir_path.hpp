@@ -85,7 +85,11 @@ namespace quantModeling::scripting::ir
 
     /// The layout of a script on a model kind; `max_df` from the script's
     /// blocks.
-    PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk);
+    /// `last_step`: leave the last step's forward and variance in the state
+    /// even when the script reads no last-step expectation (Vibrato needs
+    /// them, WP 27 §14.11).
+    PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk,
+                           bool last_step = false);
 
     /// The whole program.
     struct PathProgram
@@ -99,7 +103,8 @@ namespace quantModeling::scripting::ir
     /// "" when `path_program` covers the model, else why not.
     std::string path_program_unsupported(DeviceModel::Kind kind, int n_assets);
 
-    PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk);
+    PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
+                             bool last_step = false);
 
     /// A script-level block bound to the path's state and data (VarIn, PayIn
     /// and Spot become State; Num and Df the date's data, or exp of the rate

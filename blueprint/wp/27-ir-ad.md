@@ -949,3 +949,56 @@ greeks without smoothing it;
 and a C¹ interpolation of the local-vol grid, which would make the exact
 route possible under local vol, changes the model (a maintainer decision;
 kept bilinear on 2026-11-15).
+
+### 14.11 L6, rung 3: Vibrato for a payoff that jumps at its final date (2026-11-15)
+
+§14.10 refused the second order of a hard payoff that compares the spot: its
+pathwise delta is 0 on every path. Vibrato (Giles 2009) gives it one without
+smoothing it: pathwise up to the last step into the final date, a likelihood
+ratio over that step. The step is lognormal given the path before it, X =
+log S' = m + s Z, with m = log F − v/2 and s = √v from the forward F and
+variance v the IR's step already leaves (§14.9; a program built with
+`last_step` keeps them even when the script reads no `lastStep*`). The final
+date's payoff B(y, X) is evaluated at Z, −Z (Z the path's own draw) and 0:
+
+    dV/dθ = E[ dB/dθ at fixed X ] + E[ B Z / s ] dm/dθ + E[ B (Z² − 1) / s ] ds/dθ
+
+(antithetic, B(0) subtracted from the second weight), the first term by the
+tangent with the spot's tangent held at 0. `ir::run_path_vibrato` on the host,
+`qm_drive_vibrato` in the tangent kernel (its blocks, `PathKernel::Vibrato`,
+link with the tangent's fatbin and share its per-path output and reduction,
+so no new kernel entry and no new fatbin). The second order is §14.10's paired
+central differences of those first-order risks (`simulate_script_second_order_gpu`
+with `vibrato`, Sobol replicates; on the CPU, Philox paths). A dispatcher
+(`simulate_script_second_order`) picks Vibrato for a hard payoff that compares
+the spot, the bump on the adjoint otherwise; the scripting API and page go
+through it.
+
+**What it covers, and why not more.** One underlying under Black-Scholes or
+local vol, a jump at the final date. Refused with the reason:
+
+- a jump at an earlier date (a barrier observed on dates): the pathwise part
+  would miss it (a Vibrato at every date is not built);
+- Heston and SLV: the weight is Z / s with s = √(v dt), and the variance comes
+  near 0; with Feller's condition failing (our parameters: 2κθ = 0.15 < ξ² =
+  0.36) the density of v near 0 goes like v^−0.58 and E[1/s] diverges -- the
+  estimator has no finite variance. Measured before the refusal: a digital's
+  delta 13 % off the price's central difference at 9 "standard errors", which
+  mean nothing there;
+- local vol gets gamma only: Vibrato differentiates the scalar risks, not the
+  grid's points.
+
+**Measured.** Black-Scholes hard digital (S = K = 100, vol 25 %, T = 1): delta
+and vega equal the closed forms within their errors, on one and two steps;
+gamma, vanna and volga within errors plus 1-2 % of bump bias, through the
+dispatcher. Flat local vol is Black-Scholes; under a skewed one the delta
+equals the central difference of the price on the same paths. On the V100 the
+kernel's risks are the host's mean on the same Philox paths to 1e-8. Time of
+the second order of a one-year digital under local vol, 252 steps a year,
+200 000 points: 33 ms on the GPU with the kernel cached (0.9 s with its
+compilation), against an estimated 45 s on one CPU thread -- the reason the
+GPU kernel was built rather than shipping the host's alone.
+
+L6 is done to the extent decided: rungs 1, 2, 4 and 3; second order in the
+API and on the page. Not built, by decision: the exact route on the GPU
+(§14.10), a C¹ local-vol grid (a model change), a Vibrato at every date.

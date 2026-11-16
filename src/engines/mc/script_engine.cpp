@@ -3,6 +3,7 @@
 #include "quantModeling/scripting/ir_ad.hpp"
 
 #include <algorithm>
+#include <numeric>
 #include <sstream>
 
 #include "quantModeling/engines/mc/importance_sampling.hpp"
@@ -562,7 +563,7 @@ namespace quantModeling
     std::optional<AADSimulResults> simulate_script_aad_gpu(const ScriptedProduct<Real> &product,
                                                            ISimulationModel<Real> &model, std::size_t n_paths,
                                                            std::uint64_t seed, std::string &why,
-                                                           SamplerKind sampler, int max_gpus)
+                                                           SamplerKind sampler, int max_gpus, bool vibrato)
     {
         if (gpu::device_count() == 0)
         {
@@ -584,8 +585,20 @@ namespace quantModeling
         // A model with a grid (every sigma_loc point, every leverage point)
         // takes the adjoint; the others the tangent, a pass per parameter.
         // Both are generated from the script's IR (WP 27, lots L3-L5).
-        const bool adjoint = dm.kind == DeviceModel::Kind::LocalVol || dm.kind == DeviceModel::Kind::SLV;
-        const int dirs = mc::dual_directions(dm.kind, dm.n_assets);
+        // vibrato: the tangent's blocks driven by Vibrato, over the scalar
+        // risks only (WP 27 §14.11).
+        const bool adjoint =
+            !vibrato && (dm.kind == DeviceModel::Kind::LocalVol || dm.kind == DeviceModel::Kind::SLV);
+        const int dirs = !vibrato                                     ? mc::dual_directions(dm.kind, dm.n_assets)
+                         : dm.n_assets != 1                           ? 0
+                         : dm.kind == DeviceModel::Kind::BlackScholes ? 4
+                         : dm.kind == DeviceModel::Kind::LocalVol     ? 3
+                                                                      : 0;
+        if (vibrato && dirs == 0)
+        {
+            why = "Vibrato covers one underlying under Black-Scholes or local vol";
+            return std::nullopt;
+        }
         if (dm.kind == DeviceModel::Kind::Heston && dm.jump_k != 0.0)
         {
             why = "jump parameters are set: the GPU does not differentiate the jump compensator";
@@ -654,7 +667,8 @@ namespace quantModeling
             else
             {
                 std::string how;
-                const auto reps = gpu::simulate_script_duals(req, &how);
+                const auto reps =
+                    vibrato ? gpu::simulate_script_vibrato(req, dirs, &how) : gpu::simulate_script_duals(req, &how);
                 if (!sobol)
                 {
                     const std::vector<WelfordAccumulator> &w = reps.front();
@@ -686,8 +700,8 @@ namespace quantModeling
                         res.risk_std_errors[i] = acc[i + 1].std_error();
                     }
                 }
-                res.diagnostics = "forward-mode risks on GPU (" + card + ", " + std::to_string(dirs) +
-                                  " directions)" + draws + " + " + how;
+                res.diagnostics = std::string(vibrato ? "Vibrato" : "forward-mode") + " risks on GPU (" + card + ", " +
+                                  std::to_string(dirs) + " directions)" + draws + " + " + how;
             }
             return res;
         };
@@ -892,14 +906,15 @@ namespace quantModeling
                                                                              const ISimulationModel<Real> &model,
                                                                              std::size_t n_paths, std::uint64_t seed,
                                                                              std::string &why, double rel_spot_bump,
-                                                                             double vol_bump, int max_gpus)
+                                                                             double vol_bump, int max_gpus,
+                                                                             bool vibrato)
     {
         if (!(rel_spot_bump > 0.0) || !(vol_bump > 0.0))
             throw InvalidInput("second-order risks: the bumps must be positive");
         // A payoff that jumps has a pathwise delta of 0 on every path, and so
         // a bumped one: the second order would read 0 +- 0, a wrong number
         // shown as an exact one.
-        if (product.analysis().spot_comparison && !product.program().fuzzy)
+        if (!vibrato && product.analysis().spot_comparison && !product.program().fuzzy)
         {
             why = "the payoff jumps where the script compares the spot to a level, and a pathwise delta (so its "
                   "bump) sees none of the jump: tick fuzzy, or write the digital with lastStepDigital";
@@ -913,15 +928,16 @@ namespace quantModeling
         }
         // The vol direction: Black-Scholes's vol, or every point of a local-vol grid.
         std::vector<std::size_t> vol_index;
+        // (Vibrato differentiates the scalar risks only: no grid vega.)
         for (std::size_t i = 0; i < labels.size(); ++i)
-            if (labels[i] == "vol" || labels[i].rfind("lvol[", 0) == 0)
+            if (labels[i] == "vol" || (!vibrato && labels[i].rfind("lvol[", 0) == 0))
                 vol_index.push_back(i);
         const auto run_bumped = [&](const std::vector<std::size_t> &which, double h) -> std::optional<AADSimulResults>
         {
             std::unique_ptr<ISimulationModel<Real>> m = model.clone();
             for (std::size_t i : which)
                 *m->parameters()[i] += h;
-            return simulate_script_aad_gpu(product, *m, n_paths, seed, why, SamplerKind::Sobol, max_gpus);
+            return simulate_script_aad_gpu(product, *m, n_paths, seed, why, SamplerKind::Sobol, max_gpus, vibrato);
         };
         const double S = *model.parameters().front();
         const double hs = rel_spot_bump * std::abs(S);
@@ -975,8 +991,14 @@ namespace quantModeling
         }
         const bool grid = vol_index.size() > 1;
         std::ostringstream method;
-        method << "bump on the adjoint: central differences of the GPU's first-order risks, spot +-"
-               << rel_spot_bump * 100.0 << " %";
+        if (vibrato)
+            method << "Vibrato on the GPU: each path pathwise up to the last step and a likelihood ratio over it, "
+                      "so that the payoff's jump at its final date has its greeks; central differences of those "
+                      "risks, spot +-"
+                   << rel_spot_bump * 100.0 << " %";
+        else
+            method << "bump on the adjoint: central differences of the GPU's first-order risks, spot +-"
+                   << rel_spot_bump * 100.0 << " %";
         if (!vol_index.empty())
             method << ", vol +-" << vol_bump * 1e4 << " bp" << (grid ? " (a parallel shift of the local-vol grid)" : "");
         method << ", each pair on the same Sobol points (the error is the " << kAadRqmcReplicates
@@ -984,6 +1006,178 @@ namespace quantModeling
         res.method = method.str();
         res.diagnostics = up->diagnostics;
         return res;
+    }
+
+    namespace
+    {
+        bool crisp_comparison(scripting::ir::Op op)
+        {
+            using scripting::ir::Op;
+            return op == Op::Eq || op == Op::Ne || op == Op::Gt || op == Op::Ge || op == Op::Lt || op == Op::Le;
+        }
+
+        /// "" when Vibrato covers the product on this model, else why not.
+        std::string vibrato_unsupported(const ScriptedProduct<Real> &product, const DeviceModel &dm)
+        {
+            const scripting::ir::Script &ir = product.ir();
+            if (product.has_exercise() || ir.empty())
+                return "early exercise runs on the tree evaluator, which Vibrato does not cover";
+            if (ir.has_bridge)
+                return "survivalAbove() / survivalBelow() are not in the IR's paths";
+            if (dm.n_assets != 1)
+                return "Vibrato covers one underlying";
+            // Vibrato's weight is Z / s, s the last step's standard deviation.
+            // Under Heston and SLV, s = sqrt(v dt) with a variance that comes
+            // near 0 (always so when Feller's condition fails): E[1 / s]
+            // diverges and the estimator has no finite variance (§14.11).
+            if (dm.kind == DeviceModel::Kind::Heston || dm.kind == DeviceModel::Kind::SLV)
+                return "under a stochastic variance the last step's variance comes near zero, where Vibrato's "
+                       "likelihood-ratio weight has no finite variance: tick fuzzy for this payoff";
+            if (const std::string w = scripting::ir::path_program_unsupported(dm.kind, 1); !w.empty())
+                return w;
+            // A comparison at an earlier date: a jump that the pathwise part
+            // of Vibrato would miss (a barrier observed on dates).
+            for (std::size_t e = 0; e + 1 < ir.n_events(); ++e)
+                for (const scripting::ir::Inst &in : ir.event(e).code)
+                    if (crisp_comparison(in.op))
+                        return "the payoff jumps before its final date (a comparison at an earlier date): Vibrato "
+                               "covers a jump at the final date only; tick fuzzy for the others";
+            return "";
+        }
+    } // namespace
+
+    std::optional<ScriptSecondOrderResults> simulate_script_second_order_vibrato(
+        const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model_in, std::size_t n_paths,
+        std::uint64_t seed, std::string &why, double rel_spot_bump, double vol_bump)
+    {
+        namespace ir = scripting::ir;
+        if (n_paths == 0)
+            throw InvalidInput("second-order risks: need at least one path");
+        if (!(rel_spot_bump > 0.0) || !(vol_bump > 0.0))
+            throw InvalidInput("second-order risks: the bumps must be positive");
+        std::unique_ptr<ISimulationModel<Real>> model = model_in.clone();
+        model->init(product.timeline(), product.defline());
+        DeviceModel dm;
+        if (!model->describe_device(dm))
+        {
+            why = "this model's step is not in the IR";
+            return std::nullopt;
+        }
+        why = vibrato_unsupported(product, dm);
+        if (!why.empty())
+            return std::nullopt;
+
+        const ir::PathProgram primal = ir::path_program(product.ir(), dm.kind, 1, true, true);
+        const ir::PathLayout &l = primal.layout;
+        const int K = l.n_risks;
+        std::vector<std::int32_t> dirs(static_cast<std::size_t>(K));
+        std::iota(dirs.begin(), dirs.end(), 0);
+        const ir::PathProgram tan = ir::tangent(primal, dirs);
+        const ir::PathData base =
+            ir::path_data(l, dm, product.ir(), discount_lists(product), product.baseline());
+        const auto bumped = [&](int slot, double h)
+        {
+            ir::PathData d = base;
+            d.theta[static_cast<std::size_t>(slot)] += h;
+            return d;
+        };
+        const double S = base.theta[static_cast<std::size_t>(l.th_spot)];
+        const double hs = rel_spot_bump * std::abs(S);
+        const ir::PathData spot_up = bumped(l.th_spot, hs), spot_down = bumped(l.th_spot, -hs);
+        const bool one_vol = dm.kind == DeviceModel::Kind::BlackScholes;
+        const ir::PathData vol_up = one_vol ? bumped(l.th_vol, vol_bump) : base;
+        const ir::PathData vol_down = one_vol ? bumped(l.th_vol, -vol_bump) : base;
+
+        const auto nk = static_cast<std::size_t>(K);
+        std::vector<WelfordAccumulator> row(nk), volga(1);
+        std::vector<double> up(nk), down(nk), vup(nk), vdown(nk);
+        ir::DerivativeScratch w;
+        mc::PathDraws draws;
+        draws.seed = seed;
+        draws.stride = dm.stride;
+        const auto run = [&](const ir::PathData &d, std::uint64_t p, std::vector<double> &out)
+        {
+            draws.begin(p);
+            ir::run_path_vibrato(tan, K, d, dm, product.ir(), draws, w, out.data());
+        };
+        for (std::size_t p = 0; p < n_paths; ++p)
+        {
+            run(spot_up, p, up);
+            run(spot_down, p, down);
+            for (std::size_t k = 0; k < nk; ++k)
+                row[k].add((up[k] - down[k]) / (2.0 * hs));
+            if (one_vol)
+            {
+                run(vol_up, p, vup);
+                run(vol_down, p, vdown);
+                const auto v = static_cast<std::size_t>(l.th_vol);
+                volga[0].add((vup[v] - vdown[v]) / (2.0 * vol_bump));
+            }
+        }
+
+        ScriptSecondOrderResults res;
+        res.labels = model->parameter_labels();
+        res.spot_row.assign(res.labels.size(), 0.0);
+        res.spot_row_std_errors.assign(res.labels.size(), 0.0);
+        for (std::size_t k = 0; k < nk && k < res.labels.size(); ++k)
+        {
+            res.spot_row[k] = row[k].mean;
+            res.spot_row_std_errors[k] = row[k].std_error();
+        }
+        res.spot_bump = hs;
+        res.gamma = row[static_cast<std::size_t>(l.th_spot)].mean;
+        res.gamma_std_error = row[static_cast<std::size_t>(l.th_spot)].std_error();
+        if (one_vol)
+        {
+            const auto v = static_cast<std::size_t>(l.th_vol);
+            res.vanna = row[v].mean;
+            res.vanna_std_error = row[v].std_error();
+            res.volga = volga[0].mean;
+            res.volga_std_error = volga[0].std_error();
+            res.vol_bump = vol_bump;
+        }
+        std::ostringstream method;
+        method << "Vibrato: each path pathwise up to the last step and a likelihood ratio over it, so that the "
+                  "payoff's jump at its final date has its greeks; gamma by central differences of that delta at "
+                  "spot +-"
+               << rel_spot_bump * 100.0 << " %";
+        if (one_vol)
+            method << ", vanna and volga of its vega (vol +-" << vol_bump * 1e4 << " bp)";
+        method << ", each pair on the same paths (" << n_paths << " Philox paths on the CPU, the error their spread)";
+        res.method = method.str();
+        res.diagnostics = "Vibrato from the script's IR on the CPU";
+        return res;
+    }
+
+    std::optional<ScriptSecondOrderResults> simulate_script_second_order(const ScriptedProduct<Real> &product,
+                                                                         const ISimulationModel<Real> &model,
+                                                                         std::size_t n_paths, std::uint64_t seed,
+                                                                         std::string &why)
+    {
+        if (!(product.analysis().spot_comparison && !product.program().fuzzy))
+            return simulate_script_second_order_gpu(product, model, n_paths, seed, why);
+        // A payoff that jumps: Vibrato, on the GPU when it can take it (the
+        // same checks first), else on the CPU.
+        {
+            std::unique_ptr<ISimulationModel<Real>> m = model.clone();
+            m->init(product.timeline(), product.defline());
+            DeviceModel dm;
+            if (!m->describe_device(dm))
+            {
+                why = "this model's step is not in the IR";
+                return std::nullopt;
+            }
+            why = vibrato_unsupported(product, dm);
+            if (!why.empty())
+                return std::nullopt;
+        }
+        std::string gpu_why;
+        if (auto so = simulate_script_second_order_gpu(product, model, n_paths, seed, gpu_why, 1e-2, 2.5e-3, 0, true))
+            return so;
+        auto so = simulate_script_second_order_vibrato(product, model, n_paths, seed, why);
+        if (so)
+            so->diagnostics += " (on the CPU: " + gpu_why + ")";
+        return so;
     }
 
 } // namespace quantModeling

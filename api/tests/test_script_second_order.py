@@ -75,7 +75,14 @@ def test_on_the_cpu_the_first_order_answer_stands_and_says_why():
     assert resp.risks  # the first-order report is still there
 
 
-def test_a_payoff_that_jumps_gets_no_second_order_and_says_what_to_do():
+def _digital_gamma(S, K, r, vol, T):
+    d2 = (math.log(S / K) + (r - 0.5 * vol * vol) * T) / (vol * math.sqrt(T))
+    d1 = d2 + vol * math.sqrt(T)
+    n2 = math.exp(-0.5 * d2 * d2) / math.sqrt(2.0 * math.pi)
+    return -math.exp(-r * T) * n2 * d1 / (S * S * vol * vol * T)
+
+
+def test_a_hard_digital_gets_its_gamma_by_vibrato_on_the_cpu():
     resp = pricing_service.price_script(
         _req(
             "2027-09-13\n    if spot() > 100 then pays 1 endIf\n",
@@ -83,12 +90,34 @@ def test_a_payoff_that_jumps_gets_no_second_order_and_says_what_to_do():
             vol=0.2,
             model="black_scholes",
             greeks_method="aad",
-            sampler="sobol",
+            second_order=True,
+            device="cpu",
+            n_paths=100_000,
+        )
+    )
+    assert resp.second_order_method is not None
+    assert "Vibrato" in resp.second_order_method
+    T = (date(2027, 9, 13) - SNAP).days / 365.0
+    gamma = _digital_gamma(100.0, 100.0, 0.03, 0.2, T)
+    g = resp.greeks
+    assert g.gamma == pytest.approx(
+        gamma, abs=4 * g.gamma_std_error + 0.01 * abs(gamma)
+    )
+
+
+def test_a_jump_before_the_final_date_gets_no_second_order_and_says_why():
+    resp = pricing_service.price_script(
+        _req(
+            "2027-03-11\n    if spot() < 80 then out = 1 endIf\n"
+            "2027-09-13\n    if out = 0 then pays max(spot() - 100, 0) endIf\n",
+            spot=100.0,
+            vol=0.2,
+            model="black_scholes",
+            greeks_method="aad",
             second_order=True,
             device="auto",
         )
     )
     assert resp.second_order_method is None
     assert resp.greeks.vanna is None
-    assert "the payoff jumps" in resp.diagnostics
-    assert "lastStepDigital" in resp.diagnostics
+    assert "before its final date" in resp.diagnostics

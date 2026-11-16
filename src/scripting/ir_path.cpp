@@ -22,14 +22,14 @@ namespace quantModeling::scripting::ir
         return "unknown model";
     }
 
-    PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk)
+    PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk, bool last_step)
     {
         PathLayout l;
         l.kind = kind;
         l.n_assets = n_assets;
         l.n_vars = script.n_vars;
         l.risk = risk;
-        l.last_step = script.has_last_step;
+        l.last_step = script.has_last_step || last_step;
         const int n = n_assets;
         switch (kind)
         {
@@ -306,13 +306,13 @@ namespace quantModeling::scripting::ir
         }
     } // namespace
 
-    PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk)
+    PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk, bool last_step)
     {
         const std::string why = path_program_unsupported(kind, n_assets);
         if (!why.empty())
             throw InvalidInput("script IR: " + why);
         PathProgram p;
-        p.layout = path_layout(kind, n_assets, script, risk);
+        p.layout = path_layout(kind, n_assets, script, risk, last_step);
         p.init = init_block(p.layout);
         p.step = step_block(p.layout);
         for (const Block &b : script.blocks)
