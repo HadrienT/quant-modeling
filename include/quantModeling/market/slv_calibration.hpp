@@ -12,12 +12,15 @@ namespace quantModeling
 {
 
     /**
-     * @brief A calibrated leverage function on the same (K, T) grid as the
-     *        Dupire local-vol surface it was calibrated against.
+     * @brief A calibrated leverage function on the strikes of the Dupire
+     *        local-vol surface it was calibrated against and on a finer time
+     *        grid: every calibration substep (SLVCalibrationSettings::max_dt),
+     *        the surface's maturities among them (issue #227).
      *
      * K-major layout, identical to models/volatility.hpp's GridLocalVol and
      * models/equity/local_vol_sim_model.hpp's sigma_loc: leverage[i*n_T + j]
-     * corresponds to (K_grid[i], T_grid[j]).
+     * corresponds to (K_grid[i], T_grid[j]) -- this struct's T_grid, which a
+     * caller passes to SLVSimModel in place of the surface's.
      */
     struct SLVLeverageGrid
     {
@@ -36,7 +39,9 @@ namespace quantModeling
     {
         std::size_t n_particles = 50000;
         std::uint64_t seed = 1;
-        Time max_dt = 1.0 / 50.0; ///< internal Euler substep inside one T_grid interval
+        /// Euler substep inside one surface interval, and the spacing of the
+        /// returned leverage's columns.
+        Time max_dt = 1.0 / 50.0;
         Real variance_floor = 1e-8;
         Real leverage_floor = 1e-3; ///< guards a near-empty bucket's estimate
         Real leverage_cap = 5.0;    ///< guards a near-empty bucket's estimate

@@ -201,16 +201,19 @@ namespace quantModeling
         const std::string put = "2025-06-03\n    pays max(90 - spot(), 0)\n";
         ScriptModelSpec slv = spec("slv", g);
         slv.heston = kHeston;
+        slv.T_grid = lev.T_grid; // the leverage's own, finer time grid
         slv.leverage_flat = lev.leverage;
         slv.max_dt = 1.0 / 50.0;
         const SimulationMCResult under_slv = run(put, slv);
         const SimulationMCResult under_lv = run(put, spec("local_vol", g));
 
-        // The calibration's own error on this put: measured -0.145 +- 0.005
-        // with 4 M pseudo-random paths (2026-11-11), beyond the 0.10 this test
-        // allowed, which pseudo-random noise used to cover. Issue #227.
+        // Issue #227: with the leverage held over the surface's intervals
+        // (up to half a year) this put was 4.7 % off (-0.155 on 3.317); with
+        // a column every substep, -0.003 (0.08 %, 1 M paths). The leverage
+        // grid is finer than the surface's.
+        EXPECT_GT(lev.T_grid.size(), g.T.size());
         EXPECT_NEAR(under_slv.npv(), under_lv.npv(),
-                    4.0 * (under_slv.std_error() + under_lv.std_error()) + 0.20);
+                    4.0 * (under_slv.std_error() + under_lv.std_error()) + 0.02);
     }
 
     namespace

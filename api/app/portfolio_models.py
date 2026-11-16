@@ -441,7 +441,9 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
                 d.isoformat(),
                 model="slv",
                 K_grid=list(smile.K_grid),
-                T_grid=list(smile.T_grid),
+                T_grid=list(
+                    sv.leverage_T_grid
+                ),  # the leverage's own time grid (issue #227)
                 steps_per_year=252,
                 heston=sv.heston,
                 leverage_flat=list(sv.leverage_flat),
