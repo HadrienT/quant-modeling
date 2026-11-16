@@ -1042,6 +1042,15 @@ namespace quantModeling
                     if (crisp_comparison(in.op))
                         return "the payoff jumps before its final date (a comparison at an earlier date): Vibrato "
                                "covers a jump at the final date only; tick fuzzy for the others";
+            // A level fixed from the spot at an earlier date and read at the
+            // final one (a strike set at a later fixing, an average): the
+            // jump's position then moves with the spot's path, a dependence
+            // the likelihood ratio over the last step does not see. A digital
+            // struck at 100 % of a later fixing priced with a gamma of -0.019
+            // where its price does not depend on today's spot at all.
+            if (product.analysis().path_dependent)
+                return "the payoff reads the spot at an earlier date (a strike fixed later, an average), so where it "
+                       "jumps moves with the path, which Vibrato does not follow; tick fuzzy for this payoff";
             return "";
         }
     } // namespace
