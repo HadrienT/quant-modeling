@@ -619,7 +619,17 @@ Black-Scholes 1.4 / 2.6 tangent against 1.7 / 3.2 adjoint; phoenix-autocall
 Heston 25.7 / 122 against 65.2 / 191; up-and-out-call Heston 20.7 / 97
 against 53.7 / 202 -- so the choice stays); multilevel
 risks (`simulate_script_aad_mlqmc_gpu`) reach the generated adjoint through
-the same entry point but were not re-measured.
+the same entry point but were not re-measured. **Re-measured 2026-11-16**
+(SPY snapshot of the day, local vol, 5003 risks, one V100, WP 26 §10.2's
+three contracts; multilevel at its default target against the plain adjoint
+at 65 536 points): call 100 % 55.174 ± 0.071 (bias ~0.078), delta −0.1362 ±
+0.0097, 1.11 s, against 55.211 ± 0.040, −0.1390 ± 0.0025, 0.23 s; call 120 %
+8.042 ± 0.011 (bias ~0.009), delta −0.0277 ± 0.0018, 1.63 s, against 7.999 ±
+0.026, −0.0336 ± 0.0016, 0.19 s; Asian 34.730 ± 0.040 (bias ~0.021), delta
+−0.1101 ± 0.0043, 0.39 s, against 34.758 ± 0.028, −0.1132 ± 0.0017, 0.19 s.
+The deltas agree within their errors (the 120 % call's at 2.4 of them, the
+size of what the fine limit removes); the times are not §10.2's to compare
+with, the snapshot and so the number of levels differ.
 
 ### 14.4 L7 measured: the IR's adjoint on the CPU is correct, and slower than the tape (2026-11-14)
 
