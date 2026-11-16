@@ -887,6 +887,20 @@ switched to the primitives, which would move displayed greeks (a decision
 for the maintainer). Left for L6: the GPU second-order kernel, the API and
 the front end.
 
+**The catalogue's vanilla on lastStep\* (2026-11-16).**
+
+Decided by the maintainer: `script_builders::european` -- the local-vol
+vanilla of the API's `/local-vol/price` (`price_local_vol_mc`) -- now pays
+`lastStepCall(K)` / `lastStepPut(K)`, the last step's expectation of the
+payoff. Same price in law, less variance. Measured on the route's defaults
+(50 000 paths, 252 steps a year, K = 95, one year, a skewed surface): call
+12.4694 ± 0.0016 against ± 0.0017, delta's error 0.0001 → below 0.00005,
+gamma 0.01777 ± 0.00003 against 0.01779 ± 0.00006; the put alike. The other
+builders keep their payoffs: the Black-Scholes vanilla stays on its
+reference engine, the digital is analytic, and in a barrier the survival and
+the last step's expectation share that step (their product's expectation is
+not the product of theirs).
+
 ### 14.10 L6: second order a user can ask for -- the bump on the adjoint (2026-11-15)
 
 **Why not tangent over adjoint everywhere.** Exactness along a path needs the

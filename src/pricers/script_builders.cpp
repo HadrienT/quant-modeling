@@ -83,7 +83,10 @@ namespace quantModeling::script_builders
 
     std::string european(bool is_call, Real strike, int days)
     {
-        return iso(days) + "\n    pays " + vanilla(is_call, strike) + "\n";
+        // The last step's conditional expectation (WP 27 §8 rung 1, the
+        // maintainer's decision of 2026-11-16): the same price in law, less
+        // variance, and a pathwise gamma that is the true one instead of 0.
+        return iso(days) + "\n    pays " + (is_call ? "lastStepCall(" : "lastStepPut(") + number(strike) + ")\n";
     }
 
     std::string barrier(const BarrierTerms &t, int days, int observations)

@@ -32,7 +32,8 @@ namespace quantModeling::script_builders
     /// A number as the script parser reads it back to the bit.
     std::string number(double x);
 
-    /// European call (put) paid at expiry: max(spot() - K, 0).
+    /// European call (put) paid at expiry, as the last step's expectation of
+    /// max(spot() - K, 0): lastStepCall(K) (lastStepPut(K)).
     std::string european(bool is_call, Real strike, int days);
 
     struct BarrierTerms
