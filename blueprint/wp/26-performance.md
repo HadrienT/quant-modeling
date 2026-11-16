@@ -1682,3 +1682,25 @@ end of each lot, not only its own bench.
   (13 to 14 GB of 16 when loaded): the benchmarks note what was free, and the
   GPU tests that fail with `out of memory` while it is loaded are an
   environment limit, not a regression.
+
+## 13. Eight units per thread (2026-11-16)
+
+Measured on the maintainer's request, then adopted by them: the logical
+block's units per thread (`LogicalBlocks::kUnitsPerThread`) from 16 to 8,
+so a block is 2 048 units. At 200 000 paths a 4 096-unit block left the
+generated adjoint with 49 blocks for 80 SMs (0.31 wave, Nsight Compute).
+One V100, ms, 16 → 8 (→ 4):
+
+| | 200k paths | 1M paths |
+|---|---|---|
+| local vol adjoint (4 scripts, 363 risks) | 61-100 → 67-109 (→ 101-164) | 425-748 → 241-394 (→ 282-451) |
+| Heston tangent | 20.7-25.7 → 20.9-25.9 | 97-122 → 51-64 |
+| SLV adjoint | 71-88 → 51-64 | 222-366 → 159-211 |
+
+The price kernels (`perf_matrix.py`, GPU columns) 5-15 % faster; the CPU
+columns unchanged (same prices); the exposure engine at 2M paths 0.72 →
+0.74 s on one card, 0.58 → 0.40 s on two. Local vol's adjoint at 200k is the
+one case slower (about 8 %); every GPU result keeps being the same bits on
+one or two cards, and its last bits change once (the tree's shape).
+`mc::stratum_of`, which hard-coded the 4 096-unit block, now reads the
+constants.

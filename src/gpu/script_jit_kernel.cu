@@ -573,7 +573,7 @@ namespace
     };
 } // namespace
 
-/// Each thread runs its 16 units in turn and reduces their payoffs (the
+/// Each thread runs its 8 units in turn and reduces their payoffs (the
 /// library's logical_block_body); its gradient row accumulates over them.
 extern "C" __global__ void __launch_bounds__(quantModeling::mc::LogicalBlocks::kThreadsPerBlock)
     qm_script_adjoint(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units,

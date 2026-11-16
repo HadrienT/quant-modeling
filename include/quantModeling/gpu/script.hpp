@@ -123,7 +123,7 @@ namespace quantModeling::gpu
         bool compile = true;
         /// One thread per unit, the samples reduced in logical-block order
         /// (lot P1g): the serial kernel's bits, more threads in flight.
-        /// False: each thread runs its 16 units in turn (the oracle in tests;
+        /// False: each thread runs its 8 units in turn (the oracle in tests;
         /// the compiled kernel is parallel only, so the interpreter runs).
         bool parallel_units = true;
     };
