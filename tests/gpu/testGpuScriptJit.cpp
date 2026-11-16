@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "../support/cpu_gpu_tolerance.hpp"
+
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -80,10 +82,14 @@ namespace quantModeling
                     << what << ": " << compiled.diagnostics;
                 EXPECT_NE(interpreted.diagnostics.find("interpreted bytecode"), std::string::npos)
                     << what << ": " << interpreted.diagnostics;
-                EXPECT_TRUE(same_bits(compiled.npv(), interpreted.npv()))
+                // Within the CPU/GPU tolerance since FMA contraction came
+                // back (2026-11-16); the bits before.
+                EXPECT_NEAR(compiled.npv(), interpreted.npv(), test_support::price_tolerance(interpreted.npv()))
                     << what << ": compiled " << compiled.npv() << ", interpreted " << interpreted.npv() << " (diff "
                     << compiled.npv() - interpreted.npv() << ")";
-                EXPECT_TRUE(same_bits(compiled.std_error(), interpreted.std_error())) << what;
+                EXPECT_NEAR(compiled.std_error(), interpreted.std_error(),
+                            test_support::kCpuGpuRiskRel * interpreted.std_error())
+                    << what;
                 ++compared;
             }
             EXPECT_GT(compared, 0);
@@ -100,42 +106,42 @@ namespace quantModeling
         }
     };
 
-    TEST_F(GpuScriptJitTest, BlackScholesHardSameBits)
+    TEST_F(GpuScriptJitTest, BlackScholesHardWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::BlackScholes, false, false, SamplerKind::PseudoRandom);
     }
-    TEST_F(GpuScriptJitTest, BlackScholesFuzzySameBits)
+    TEST_F(GpuScriptJitTest, BlackScholesFuzzyWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::BlackScholes, true, false, SamplerKind::PseudoRandom);
     }
-    TEST_F(GpuScriptJitTest, BlackScholesSobolSameBits)
+    TEST_F(GpuScriptJitTest, BlackScholesSobolWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::BlackScholes, false, false, SamplerKind::Sobol);
     }
-    TEST_F(GpuScriptJitTest, LocalVolSameBits)
+    TEST_F(GpuScriptJitTest, LocalVolWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::LocalVol, false, true, SamplerKind::PseudoRandom);
     }
-    TEST_F(GpuScriptJitTest, LocalVolFuzzySobolSameBits)
+    TEST_F(GpuScriptJitTest, LocalVolFuzzySobolWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::LocalVol, true, true, SamplerKind::Sobol);
     }
-    TEST_F(GpuScriptJitTest, HestonSameBits)
+    TEST_F(GpuScriptJitTest, HestonWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::Heston, false, true, SamplerKind::PseudoRandom);
     }
-    TEST_F(GpuScriptJitTest, SlvFuzzySameBits)
+    TEST_F(GpuScriptJitTest, SlvFuzzyWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::SLV, true, true, SamplerKind::PseudoRandom);
     }
 
     // WP 27 lot L1b: the script's numbers read as terms, from data -- the
     // same bits as the interpreter, which holds them as constants.
-    TEST_F(GpuScriptJitTest, TermsAsParametersBlackScholesSameBits)
+    TEST_F(GpuScriptJitTest, TermsAsParametersBlackScholesWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::BlackScholes, false, false, SamplerKind::PseudoRandom, true);
     }
-    TEST_F(GpuScriptJitTest, TermsAsParametersLocalVolFuzzySobolSameBits)
+    TEST_F(GpuScriptJitTest, TermsAsParametersLocalVolFuzzySobolWithinTolerance)
     {
         expect_compiled_equals_interpreted(Dyn::LocalVol, true, true, SamplerKind::Sobol, true);
     }
@@ -218,7 +224,7 @@ namespace quantModeling
     // Spot control variates run on the compiled kernel too (WP 27, lot L2;
     // #239's "compiled control variates"): the regression samples, hence
     // the controlled estimate and its error, are the interpreter's bits.
-    TEST_F(GpuScriptJitTest, SpotControlsSameBits)
+    TEST_F(GpuScriptJitTest, SpotControlsWithinTolerance)
     {
         int compared = 0;
         for (const SamplerKind sampler : {SamplerKind::PseudoRandom, SamplerKind::Stratified})
@@ -244,9 +250,11 @@ namespace quantModeling
                     << s.name << ": " << compiled.diagnostics;
                 EXPECT_NE(interpreted.diagnostics.find("interpreted bytecode"), std::string::npos)
                     << s.name << ": " << interpreted.diagnostics;
-                EXPECT_TRUE(same_bits(compiled.npv(), interpreted.npv()))
+                EXPECT_NEAR(compiled.npv(), interpreted.npv(), test_support::price_tolerance(interpreted.npv()))
                     << s.name << ": compiled " << compiled.npv() << ", interpreted " << interpreted.npv();
-                EXPECT_TRUE(same_bits(compiled.std_error(), interpreted.std_error())) << s.name;
+                EXPECT_NEAR(compiled.std_error(), interpreted.std_error(),
+                            test_support::kCpuGpuRiskRel * interpreted.std_error())
+                    << s.name;
                 ++compared;
             }
         EXPECT_GT(compared, 20);

@@ -6,8 +6,9 @@
 |---|---|---|
 | Memory layout, launch configuration, buffers, streams, RAII | **identical bits** (same operations in the same order) | full-precision output before/after (benchmarks print `%.17g`); GPU tests; `qm_compare` |
 | Number of threads / GPUs | **identical bits** (logical blocks) | `GpuTwoCardsTest.*SameBits*`, CPU thread-count tests |
-| Reordered floating-point sum, fused operations, different `exp` implementation | differences at the last bits only: relative ~1e-15 per operation, accumulated | compare against the previous build within a stated tolerance; say why the order changed |
-| CPU vs GPU on the same draws | equal up to the last bits of `exp`/`erfc` (device libm differs) | `|GPU − CPU| / std err` (the exposure bench prints ~1e-14) |
+| Reordered floating-point sum, fused operations, different `exp` implementation | differences at the last bits only: relative ~1e-15 per operation, accumulated | compare against the previous build within the CPU/GPU tolerance; say why |
+| CPU vs GPU on the same draws (since 2026-11-16) | prices within **1e-12 relative**, risks within **1e-10 relative** -- FMA, the device libm and reassociated sums allowed | `tests/support/cpu_gpu_tolerance.hpp`; `|GPU − CPU| / std err` printed by the benches |
+| One configuration run twice (threads, GPUs, launches) | **identical bits** (deterministic: the API's replays) | `GpuTwoCardsTest.*SameBits*`, CPU thread-count tests |
 | New estimator, variance reduction, other RNG | equal **within Monte-Carlo error** | z-score `|a − b| / sqrt(se_a² + se_b²) < 3–4`; CI coverage over seeds (`qmharness` statistics family) |
 | Single precision or approximations | only with a measured error budget and the maintainer's agreement | error vs the double result over the product grid |
 
