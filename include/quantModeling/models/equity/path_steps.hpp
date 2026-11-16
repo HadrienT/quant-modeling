@@ -87,6 +87,86 @@ namespace quantModeling::mc
             return v[static_cast<long>(i) * nT + j];
         }
 
+        /**
+         * The local vol's strike interpolation since 2026-11-16 (maintainer's
+         * decision, WP 27 §14.15): a cubic Hermite through the nodes with
+         * finite-difference slopes (the weighted three-point one inside --
+         * exact for a quadratic -- one-sided at the two ends), so the
+         * surface is C¹ in the spot, which a pathwise second derivative
+         * needs, and it is a linear function of the node values, so an
+         * adjoint is still a share per node. In the cell (i0, i1) the value
+         * is sum_k w[k] value(idx[k], j): four nodes, i0 - 1 .. i1 + 1
+         * (clamped at the ends, where the outer weight is 0). The weights
+         * are functions of the spot itself (T) inside the grid and constants
+         * outside, where the surface is flat in S; dw[k] = d w[k] / d S
+         * (0 outside). A two-node grid, or values linear in the strike, give
+         * the linear interpolation.
+         */
+        QM_HOST_DEVICE void strike_hermite(const T &S_t, int idx[4], T w[4], T dw[4]) const
+        {
+            const double S_raw = value_of(S_t);
+            const double Sc = std::clamp(S_raw, K[0], K[nK - 1]);
+            const bool inside = Sc == S_raw;
+            int i0, i1;
+            bracket(K, nK, Sc, i0, i1);
+            const double h = K[i1] - K[i0];
+            idx[0] = i0 > 0 ? i0 - 1 : i0;
+            idx[1] = i0;
+            idx[2] = i1;
+            idx[3] = i1 + 1 < nK ? i1 + 1 : i1;
+            if (h <= 1e-12)
+            {
+                w[0] = w[2] = w[3] = T(0.0), w[1] = T(1.0);
+                dw[0] = dw[1] = dw[2] = dw[3] = T(0.0);
+                return;
+            }
+            // The node slopes as combinations of the node values:
+            // m(i) = a y(i-1) + b y(i) + c y(i+1).
+            const auto slope = [&](int i, double &a, double &b, double &c)
+            {
+                if (i == 0)
+                {
+                    const double hr = K[1] - K[0];
+                    a = 0.0, b = -1.0 / hr, c = 1.0 / hr;
+                }
+                else if (i == nK - 1)
+                {
+                    const double hl = K[i] - K[i - 1];
+                    a = -1.0 / hl, b = 1.0 / hl, c = 0.0;
+                }
+                else
+                {
+                    const double hl = K[i] - K[i - 1], hr = K[i + 1] - K[i];
+                    a = -hr / (hl * (hl + hr));
+                    c = hl / (hr * (hl + hr));
+                    b = -(a + c);
+                }
+            };
+            double a0, b0, c0, a1, b1, c1;
+            slope(i0, a0, b0, c0);
+            slope(i1, a1, b1, c1);
+            const T u = inside ? T((S_t - K[i0]) / h) : T((Sc - K[i0]) / h);
+            const T u2 = u * u, u3 = u2 * u;
+            const T h00 = 2.0 * u3 - 3.0 * u2 + 1.0, h10 = u3 - 2.0 * u2 + u;
+            const T h01 = -2.0 * u3 + 3.0 * u2, h11 = u3 - u2;
+            // y(i0 - 1) enters through m(i0) only, y(i1 + 1) through m(i1).
+            w[0] = h * h10 * a0;
+            w[1] = h00 + h * h10 * b0 + h * h11 * a1;
+            w[2] = h01 + h * h10 * c0 + h * h11 * b1;
+            w[3] = h * h11 * c1;
+            if (!inside)
+            {
+                dw[0] = dw[1] = dw[2] = dw[3] = T(0.0);
+                return;
+            }
+            const T d00 = (6.0 * u2 - 6.0 * u) / h, d10 = (3.0 * u2 - 4.0 * u + 1.0) / h;
+            const T d01 = (-6.0 * u2 + 6.0 * u) / h, d11 = (3.0 * u2 - 2.0 * u) / h;
+            dw[0] = h * d10 * a0;
+            dw[1] = d00 + h * d10 * b0 + h * d11 * a1;
+            dw[2] = d01 + h * d10 * c0 + h * d11 * b1;
+            dw[3] = h * d11 * c1;
+        }
+
         /// Strike weight of S_t in its cell: a function of the spot itself
         /// (T) inside the grid, a constant outside where the surface is flat
         /// in S. Sets the cell (i0, i1).
@@ -103,31 +183,33 @@ namespace quantModeling::mc
         }
     };
 
-    /// Local vol: bilinear in (K, T), floored at 1e-6 -- LocalVolSimModel's
-    /// lookup, the same bracketing as models/volatility.hpp's
-    /// GridLocalVol::value(), generalised so the corners can be Number.
-    /// The cell is chosen on the double value of the spot, but the strike
-    /// weight is a function of the spot itself (T): sigma_loc(S_t) moves
-    /// with S_t, and S_t with every earlier vol, so dropping that
+    /// Local vol: C¹ in the strike (GridView::strike_hermite), linear in
+    /// time, floored at 1e-6 -- LocalVolSimModel's lookup, the same as
+    /// models/volatility.hpp's GridLocalVol::value(), generalised so the
+    /// nodes can be Number. (Bilinear until 2026-11-16: its slope in the spot
+    /// jumped at every strike, which a pathwise second derivative cannot
+    /// see.) The cell is chosen on the double value of the spot, but the
+    /// strike weights are functions of the spot itself (T): sigma_loc(S_t)
+    /// moves with S_t, and S_t with every earlier vol, so dropping that
     /// dependence would lose the part of a local vega (and of the delta)
     /// that flows through the path -- measured at ~19 % of the vega on a
-    /// skewed SPY surface before this was fixed. Outside the grid the vol
-    /// is flat in S, so the weight is then a constant.
+    /// skewed SPY surface before this was fixed. Outside the grid the vol is
+    /// flat in S, so the weights are then constants.
     template <class T>
     QM_HOST_DEVICE T local_vol_bilinear(const GridView<T> &g, const T &S_t, double t)
     {
         using std::max;
-        int i0, i1, j0, j1;
-        const T wK = g.strike_weight(S_t, i0, i1);
+        int idx[4], j0, j1;
+        T w[4], dw[4];
+        g.strike_hermite(S_t, idx, w, dw);
         t = std::clamp(t, g.T_grid[0], g.T_grid[g.nT - 1]);
         bracket(g.T_grid, g.nT, t, j0, j1);
         const double T0 = g.T_grid[j0];
         const double dT = g.T_grid[j1] - T0;
         const double wT = (dT > 1e-12) ? (t - T0) / dT : 0.0;
-        const T sigma = (1.0 - wK) * (1.0 - wT) * g.at(i0, j0) +
-                        wK * (1.0 - wT) * g.at(i1, j0) +
-                        (1.0 - wK) * wT * g.at(i0, j1) +
-                        wK * wT * g.at(i1, j1);
+        T sigma = T(0.0);
+        for (int k = 0; k < 4; ++k)
+            sigma = sigma + w[k] * ((1.0 - wT) * g.at(idx[k], j0) + wT * g.at(idx[k], j1));
         return max(sigma, 1e-6);
     }
 
@@ -178,28 +260,27 @@ namespace quantModeling::mc
         return vol_sqrt_dt * vol_sqrt_dt;
     }
 
-    /// The local vol and its slope in the spot, ∂σ/∂S, of the bilinear
-    /// lookup above: the strike interpolation's slope blended in time, 0
-    /// outside the strike grid (flat there) and where the floor binds.
+    /// The local vol and its slope in the spot, ∂σ/∂S, of the lookup above:
+    /// 0 outside the strike grid (flat there) and where the floor binds.
     template <class T>
     QM_HOST_DEVICE T local_vol_with_slope(const GridView<T> &g, const T &S_t, double t, T &dsigma_dS)
     {
-        int i0, i1, j0, j1;
-        const T wK = g.strike_weight(S_t, i0, i1);
-        const double S_raw = value_of(S_t);
-        const bool inside = S_raw >= g.K[0] && S_raw <= g.K[g.nK - 1];
+        int idx[4], j0, j1;
+        T w[4], dw[4];
+        g.strike_hermite(S_t, idx, w, dw);
         t = std::clamp(t, g.T_grid[0], g.T_grid[g.nT - 1]);
         bracket(g.T_grid, g.nT, t, j0, j1);
         const double T0 = g.T_grid[j0];
         const double dT = g.T_grid[j1] - T0;
         const double wT = (dT > 1e-12) ? (t - T0) / dT : 0.0;
-        const T sigma = (1.0 - wK) * (1.0 - wT) * g.at(i0, j0) + wK * (1.0 - wT) * g.at(i1, j0) +
-                        (1.0 - wK) * wT * g.at(i0, j1) + wK * wT * g.at(i1, j1);
-        const double dK = g.K[i1] - g.K[i0];
-        if (!inside || dK <= 1e-12 || value_of(sigma) <= 1e-6)
-            dsigma_dS = T(0.0);
-        else
-            dsigma_dS = ((1.0 - wT) * (g.at(i1, j0) - g.at(i0, j0)) + wT * (g.at(i1, j1) - g.at(i0, j1))) / dK;
+        T sigma = T(0.0), slope = T(0.0);
+        for (int k = 0; k < 4; ++k)
+        {
+            const T node = (1.0 - wT) * g.at(idx[k], j0) + wT * g.at(idx[k], j1);
+            sigma = sigma + w[k] * node;
+            slope = slope + dw[k] * node;
+        }
+        dsigma_dS = value_of(sigma) <= 1e-6 ? T(0.0) : slope;
         return value_of(sigma) > 1e-6 ? sigma : T(1e-6);
     }
 

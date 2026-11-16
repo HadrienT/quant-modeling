@@ -403,14 +403,16 @@ namespace quantModeling
         EXPECT_NE(r.diagnostics.find("multilevel QMC"), std::string::npos) << r.diagnostics;
         EXPECT_LE(r.std_error(), 1.02 * 0.02 / std::sqrt(2.0));
         EXPECT_GT(r.n_paths, 0);
-        // The reference price of the skewed call (P4a/P4b runs): 14.20.
-        EXPECT_NEAR(r.npv(), 14.20, 3.0 * 0.02) << r.diagnostics;
+        // The reference price of the skewed call: 14.02 since the surface
+        // is C¹ in the strike (2026-11-16; 14.20 on the bilinear one), the
+        // multilevel QMC and MC runs agreeing within their 0.02.
+        EXPECT_NEAR(r.npv(), 14.02, 3.0 * 0.02) << r.diagnostics;
 
         PricingSettings pseudo = s;
         pseudo.mc_sampler = SamplerKind::PseudoRandom;
         const SimulationMCResult p = simulate_script(product, *m, pseudo);
         EXPECT_NE(p.diagnostics.find("multilevel Monte Carlo"), std::string::npos) << p.diagnostics;
-        EXPECT_NEAR(p.npv(), 14.20, 3.0 * 0.02) << p.diagnostics;
+        EXPECT_NEAR(p.npv(), 14.02, 3.0 * 0.02) << p.diagnostics;
     }
 
     TEST(Mlmc, TheScriptEngineSaysWhyItDidNotRunIt)

@@ -22,44 +22,44 @@
 namespace quantModeling::scripting::ir::detail
 {
 
-    /// The four corners and weights of the local vol at (S, t), and whether
+    /// The nodes and weights of the local vol at (S, t) -- four strikes
+    /// (GridView::strike_hermite, C¹ in the spot) by two times -- and whether
     /// the floor leaves it free (mc::local_vol_bilinear's arithmetic).
     struct GridCell
     {
-        int i0, i1, j0, j1;
-        double wK, wT, dK;
-        double sigma; ///< the bilinear value, before the floor
+        int idx[4], j0, j1;
+        double w[4], dw[4], wT;
+        double sigma; ///< the interpolated value, before the floor
         bool inside, free;
     };
 
     QM_HOST_DEVICE inline GridCell grid_cell(const mc::GridView<Real> &g, double S, double t)
     {
         GridCell c{};
-        const double Sc = S < g.K[0] ? g.K[0] : (S > g.K[g.nK - 1] ? g.K[g.nK - 1] : S);
-        c.inside = Sc == S;
-        mc::bracket(g.K, g.nK, Sc, c.i0, c.i1);
-        const double K0 = g.K[c.i0];
-        c.dK = g.K[c.i1] - K0;
-        c.wK = c.dK <= 1e-12 ? 0.0 : (c.inside ? (S - K0) / c.dK : (Sc - K0) / c.dK);
+        c.inside = S >= g.K[0] && S <= g.K[g.nK - 1];
+        g.strike_hermite(S, c.idx, c.w, c.dw);
         const double tc = t < g.T_grid[0] ? g.T_grid[0] : (t > g.T_grid[g.nT - 1] ? g.T_grid[g.nT - 1] : t);
         mc::bracket(g.T_grid, g.nT, tc, c.j0, c.j1);
         const double T0 = g.T_grid[c.j0];
         const double dT = g.T_grid[c.j1] - T0;
         c.wT = (dT > 1e-12) ? (tc - T0) / dT : 0.0;
-        c.sigma = (1.0 - c.wK) * (1.0 - c.wT) * g.at(c.i0, c.j0) + c.wK * (1.0 - c.wT) * g.at(c.i1, c.j0) +
-                  (1.0 - c.wK) * c.wT * g.at(c.i0, c.j1) + c.wK * c.wT * g.at(c.i1, c.j1);
+        c.sigma = 0.0;
+        for (int k = 0; k < 4; ++k)
+            c.sigma = c.sigma + c.w[k] * ((1.0 - c.wT) * g.at(c.idx[k], c.j0) + c.wT * g.at(c.idx[k], c.j1));
         c.free = c.sigma > 1e-6;
         return c;
     }
 
     // The same from a cell already found: a backward step looks its cell up
-    // once for the vol, its slope and the corners' shares.
+    // once for the vol, its slope and the nodes' shares.
     QM_HOST_DEVICE inline double grid_slope(const mc::GridView<Real> &g, const GridCell &c)
     {
-        if (!c.free || !c.inside || c.dK <= 1e-12)
+        if (!c.free || !c.inside)
             return 0.0;
-        return ((1.0 - c.wT) * (g.at(c.i1, c.j0) - g.at(c.i0, c.j0)) + c.wT * (g.at(c.i1, c.j1) - g.at(c.i0, c.j1))) /
-               c.dK;
+        double slope = 0.0;
+        for (int k = 0; k < 4; ++k)
+            slope += c.dw[k] * ((1.0 - c.wT) * g.at(c.idx[k], c.j0) + c.wT * g.at(c.idx[k], c.j1));
+        return slope;
     }
 
     QM_HOST_DEVICE inline void grid_accumulate(const GridCell &c, long nT, double a, double *base, long stride,
@@ -67,35 +67,25 @@ namespace quantModeling::scripting::ir::detail
     {
         if (!c.free)
             return;
-        base[(grid0 + c.i0 * nT + c.j0) * stride] += a * ((1.0 - c.wK) * (1.0 - c.wT));
-        base[(grid0 + c.i1 * nT + c.j0) * stride] += a * (c.wK * (1.0 - c.wT));
-        base[(grid0 + c.i0 * nT + c.j1) * stride] += a * ((1.0 - c.wK) * c.wT);
-        base[(grid0 + c.i1 * nT + c.j1) * stride] += a * (c.wK * c.wT);
+        for (int k = 0; k < 4; ++k)
+        {
+            base[(grid0 + c.idx[k] * nT + c.j0) * stride] += a * (c.w[k] * (1.0 - c.wT));
+            base[(grid0 + c.idx[k] * nT + c.j1) * stride] += a * (c.w[k] * c.wT);
+        }
     }
 
     /// d sigma_loc / d S: 0 outside the strikes and where the floor binds.
     QM_HOST_DEVICE inline double grid_slope(const mc::GridView<Real> &g, double S, double t)
     {
-        const GridCell c = grid_cell(g, S, t);
-        if (!c.free || !c.inside || c.dK <= 1e-12)
-            return 0.0;
-        return ((1.0 - c.wT) * (g.at(c.i1, c.j0) - g.at(c.i0, c.j0)) + c.wT * (g.at(c.i1, c.j1) - g.at(c.i0, c.j1))) /
-               c.dK;
+        return grid_slope(g, grid_cell(g, S, t));
     }
 
-    /// `a` times each corner's weight, added to the corners' adjoints
+    /// `a` times each node's weight, added to the nodes' adjoints
     /// (parameter p at base[p * stride]).
     QM_HOST_DEVICE inline void grid_accumulate(const mc::GridView<Real> &g, double S, double t, double a,
                                                double *base, long stride, int grid0)
     {
-        const GridCell c = grid_cell(g, S, t);
-        if (!c.free)
-            return;
-        const long nT = g.nT;
-        base[(grid0 + c.i0 * nT + c.j0) * stride] += a * ((1.0 - c.wK) * (1.0 - c.wT));
-        base[(grid0 + c.i1 * nT + c.j0) * stride] += a * (c.wK * (1.0 - c.wT));
-        base[(grid0 + c.i0 * nT + c.j1) * stride] += a * ((1.0 - c.wK) * c.wT);
-        base[(grid0 + c.i1 * nT + c.j1) * stride] += a * (c.wK * c.wT);
+        grid_accumulate(grid_cell(g, S, t), g.nT, a, base, stride, grid0);
     }
 
     /// The two corners of the SLV leverage at (S, t): linear in the strike,
