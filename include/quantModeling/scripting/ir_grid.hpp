@@ -123,6 +123,30 @@ namespace quantModeling::scripting::ir::detail
         return c;
     }
 
+    // The same from a cell already found (a backward step looks it up once).
+    // The leverage as mc::leverage_staircase computes it: the floor at 1e-4.
+    QM_HOST_DEVICE inline double leverage_value(const mc::GridView<Real> &g, const LeverageCell &c)
+    {
+        const double lev = (1.0 - c.wK) * g.at(c.i0, c.j) + c.wK * g.at(c.i1, c.j);
+        return lev < 1e-4 ? 1e-4 : lev;
+    }
+
+    QM_HOST_DEVICE inline double leverage_slope(const mc::GridView<Real> &g, const LeverageCell &c)
+    {
+        if (!c.free || !c.inside || c.dK <= 1e-12)
+            return 0.0;
+        return (g.at(c.i1, c.j) - g.at(c.i0, c.j)) / c.dK;
+    }
+
+    QM_HOST_DEVICE inline void leverage_accumulate(const LeverageCell &c, long nT, double a, double *base, long stride,
+                                                   int grid0)
+    {
+        if (!c.free)
+            return;
+        base[(grid0 + c.i0 * nT + c.j) * stride] += a * (1.0 - c.wK);
+        base[(grid0 + c.i1 * nT + c.j) * stride] += a * c.wK;
+    }
+
     QM_HOST_DEVICE inline double leverage_slope(const mc::GridView<Real> &g, double S, double t)
     {
         const LeverageCell c = leverage_cell(g, S, t);
