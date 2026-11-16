@@ -73,8 +73,8 @@ namespace quantModeling
                 EXPECT_LT(backtest.uncovered_bank[r], 0.01);
                 continue;
             }
-            // After the last fixing of the 10-year swap its value hardly
-            // moves: nothing left for a margin to cover (see the header).
+            // After the last fixing of the 10-year swap its move is all drift
+            // (the next test).
             if (backtest.times[r] > 9.0)
                 continue;
             // 99 %: one path in a hundred on each side, date by date...
@@ -90,6 +90,43 @@ namespace quantModeling
         // ...and on average over the dates and the two sides.
         const Real pooled = (up + down) / static_cast<Real>(2 * dates);
         EXPECT_NEAR(pooled, 0.01, 0.0015);
+    }
+
+    TEST(InitialMargin, TheDriftIsInTheMarginSoNeitherSideIsExceededMoreThanOncePerHundred)
+    {
+        // B1/B2 of blueprint/wp/23-xva.md §20: the margin is |drift| + z sd.
+        // Over the whole profile neither side goes past 1 % by more than the
+        // noise, and after the 10-year swap's last fixing -- its move all
+        // drift -- the margin still covers it (13 to 40 % of exceedances
+        // there when the drift was left out).
+        const HullWhiteCurveModel m = model();
+        const ExposurePaths fitted = simulate(m, 1), fresh = simulate(m, 2);
+        const InitialMargin im = DynamicInitialMargin::fit(fitted, kMpor).margin(fresh);
+        const MarginBacktest backtest = backtest_initial_margin(fresh, im, kMpor);
+        Real up = 0.0, down = 0.0, late_worst = 0.0;
+        std::size_t dates = 0, late = 0;
+        for (std::size_t r = 0; r < backtest.times.size(); ++r)
+        {
+            if (!backtest.full_period[r])
+                continue;
+            const Real worst = std::max(backtest.uncovered_bank[r], backtest.uncovered_counterparty[r]);
+            if (backtest.times[r] > 9.0)
+            {
+                late_worst = std::max(late_worst, worst);
+                ++late;
+                continue;
+            }
+            up += backtest.uncovered_bank[r];
+            down += backtest.uncovered_counterparty[r];
+            ++dates;
+        }
+        ASSERT_GT(late, 3u);
+        RecordProperty("uncovered_up", std::to_string(up / static_cast<Real>(dates)));
+        RecordProperty("uncovered_down", std::to_string(down / static_cast<Real>(dates)));
+        RecordProperty("after_last_fixing_worst", std::to_string(late_worst));
+        EXPECT_LT(up / static_cast<Real>(dates), 0.0115);
+        EXPECT_LT(down / static_cast<Real>(dates), 0.0115);
+        EXPECT_LT(late_worst, 0.02);
     }
 
     TEST(InitialMargin, ALowerConfidenceIsExceededMoreOften)
