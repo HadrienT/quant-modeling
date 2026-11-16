@@ -289,7 +289,8 @@ namespace quantModeling
                 return 0.0;
             const auto v = static_cast<std::size_t>(control_index_);
             if (!compiled_)
-                return static_cast<Real>(evaluator_->variables()[v]);
+                return static_cast<Real>(
+                    (state ? *static_cast<const TreeState *>(state)->evaluator : *evaluator_).variables()[v]);
             const auto *b = state ? static_cast<const MachineBuffers *>(state) : &buffers_;
             return static_cast<Real>(b->vars[v]);
         }
@@ -404,21 +405,42 @@ namespace quantModeling
             std::vector<int> if_mode;
         };
 
-        /// Concurrent payoffs on the bytecode path (hard or fuzzy): its
-        /// state is five buffers. The tree evaluator (bytecode off, or early
-        /// exercise) keeps one evaluator per product and stays on one thread.
+        /// The tree evaluator's per-thread state (bytecode off, or early
+        /// exercise): a copy of the product's evaluator -- its variables,
+        /// baseline and settings, and the exercise rule it points to, which
+        /// pricing only reads. The same evaluations as payoffs(), so the
+        /// same bits on any number of threads.
+        struct TreeState final : ISimulatableProduct<T>::PayoffState
+        {
+            std::unique_ptr<scripting::Evaluator<T>> evaluator;
+        };
+
+        /// Concurrent payoffs: on the bytecode path (hard or fuzzy) the state
+        /// is five buffers; on the tree evaluator, a copy of it (WP 26: a
+        /// script with exercise() then runs on every thread, its price and
+        /// its tape's risks alike). Made once the exercise rule is set -- the
+        /// engines ask for it after fit_exercise_policy.
         std::unique_ptr<typename ISimulatableProduct<T>::PayoffState> make_payoff_state() const override
         {
-            if (!compiled_)
-                return nullptr;
-            return std::make_unique<MachineBuffers>(buffers_);
+            if (compiled_)
+                return std::make_unique<MachineBuffers>(buffers_);
+            auto state = std::make_unique<TreeState>();
+            if (const auto *fuzzy = dynamic_cast<const scripting::FuzzyEvaluator<T> *>(evaluator_.get()))
+                state->evaluator = std::make_unique<scripting::FuzzyEvaluator<T>>(*fuzzy);
+            else
+                state->evaluator = std::make_unique<scripting::Evaluator<T>>(*evaluator_);
+            state->evaluator->record_exercises(nullptr);
+            return state;
         }
 
         void payoffs_with_state(const Scenario<T> &path, std::vector<T> &out,
                                 typename ISimulatableProduct<T>::PayoffState &state) const override
         {
             if (!compiled_)
-                return payoffs(path, out);
+            {
+                out.assign(1, run_tree(path, *static_cast<TreeState &>(state).evaluator));
+                return;
+            }
             payoffs_compiled(path, out, static_cast<MachineBuffers &>(state));
         }
 
@@ -527,19 +549,23 @@ namespace quantModeling
         }
 
       private:
-        T run_tree(const Scenario<T> &path) const
+        T run_tree(const Scenario<T> &path) const { return run_tree(path, *evaluator_); }
+
+        T run_tree(const Scenario<T> &path, scripting::Evaluator<T> &evaluator) const
         {
-            evaluator_->initialize();
+            evaluator.initialize();
             for (std::size_t i = 0; i < events_.size(); ++i)
-                run_event(path, i);
-            return evaluator_->payoff();
+                run_event(path, i, evaluator);
+            return evaluator.payoff();
         }
 
-        void run_event(const Scenario<T> &path, std::size_t i) const
+        void run_event(const Scenario<T> &path, std::size_t i) const { run_event(path, i, *evaluator_); }
+
+        void run_event(const Scenario<T> &path, std::size_t i, scripting::Evaluator<T> &evaluator) const
         {
-            evaluator_->set_event(path, i);
+            evaluator.set_event(path, i);
             for (const scripting::ExprTree &statement : events_[i].statements)
-                evaluator_->run(*statement);
+                evaluator.run(*statement);
         }
 
         /// The bytecode path: the tree evaluator's semantics, including its

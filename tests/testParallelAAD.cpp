@@ -4,6 +4,8 @@
 #include "quantModeling/engines/mc/simulation_engine_parallel_aad.hpp"
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
+#include "quantModeling/engines/mc/lsm.hpp"
+#include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/script_model_factory.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
@@ -248,6 +250,63 @@ namespace quantModeling
         const AADSimulResults four = script_aad(rough_bergomi_spec(), call, SamplerKind::PseudoRandom, RngKind::Pcg32, 3);
         expect_same_bits(one, four);
         EXPECT_EQ(four.diagnostics.find("threads"), std::string::npos) << four.diagnostics;
+    }
+
+    TEST(SimulateAadOnAPool, AScriptWithEarlyExerciseRunsOnEveryThreadWithTheSameBits)
+    {
+        // The tree evaluator's per-thread copy (ScriptedProduct::TreeState):
+        // a Bermudan put under the fitted rule, its price and its tape's
+        // risks, on one thread and on four.
+        const ValuationContext ctx{Date::from_iso("2026-11-16")};
+        std::string script;
+        for (int m = 1; m <= 6; ++m)
+            script += "2027-0" + std::to_string(m) +
+                      "-16\n    if exercise(max(100 - spot(), 0), spot()) then\n        pays max(100 - spot(), 0)\n"
+                      "    endIf\n";
+        scripting::ScriptModelSpec spec;
+        spec.model = "black_scholes";
+        spec.spot = 100.0;
+        spec.rate = 0.03;
+        spec.vol = 0.25;
+        ScriptedProduct<Real> priced(script, ctx);
+        auto model = scripting::make_script_model<Real>(spec);
+        fit_exercise_policy(priced, *model, 4096, 3);
+        ASSERT_TRUE(priced.has_exercise());
+        ASSERT_NE(priced.make_payoff_state(), nullptr);
+
+        const auto aad = [&](std::size_t workers)
+        {
+            ScriptedProduct<Number> product(script, ctx);
+            product.set_exercise_policy(priced.exercise_policy());
+            auto m = scripting::make_script_model<Number>(spec);
+            ThreadPool pool;
+            if (workers > 0)
+                pool.start(workers);
+            return simulate_aad(product, *m, 4096, 7, first_aad_payoff, RngKind::Philox, SamplerKind::Sobol, nullptr,
+                                workers > 0 ? &pool : nullptr);
+        };
+        const AADSimulResults one = aad(0), four = aad(3);
+        expect_same_bits(one, four);
+        EXPECT_NE(four.diagnostics.find("on 4 threads"), std::string::npos) << four.diagnostics;
+        EXPECT_GT(one.price, 0.0);
+        EXPECT_LT(one.risks.front(), 0.0); // a put's delta
+
+        // The price engine too.
+        const auto price = [&](std::size_t workers)
+        {
+            auto m = scripting::make_script_model<Real>(spec);
+            PricingSettings s;
+            s.mc_paths = 8192;
+            s.mc_seed = 5;
+            s.mc_sampler = SamplerKind::Sobol;
+            ThreadPool pool;
+            if (workers > 0)
+                pool.start(workers);
+            return simulate_script(priced, *m, s, workers > 0 ? &pool : nullptr);
+        };
+        const SimulationMCResult p1 = price(0), p4 = price(3);
+        EXPECT_EQ(p1.npv(), p4.npv());
+        EXPECT_EQ(p1.std_error(), p4.std_error());
     }
 
 } // namespace quantModeling

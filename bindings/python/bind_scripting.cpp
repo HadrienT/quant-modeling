@@ -464,8 +464,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                 // The tape on several threads, as the plain run (WP 26):
                 // Sobol replicates or Philox batches, one tape per thread,
-                // the same bits on any number of them. PCG32 and early
-                // exercise stay on one thread.
+                // the same bits on any number of them (early exercise too:
+                // each thread its copy of the tree evaluator). PCG32 stays
+                // on one thread.
                 ThreadPool aad_pool;
                 const std::size_t aad_workers =
                     threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
@@ -706,8 +707,8 @@ void register_scripting(py::module_ &m)
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. threads: CPU threads of a CPU run "
           "(0, the default: the available CPUs, at most 16); Philox, Sobol and "
-          "stratified runs give the same bits on any number of them, a PCG32 "
-          "run and a script with early exercise stay on one thread "
+          "stratified runs give the same bits on any number of them (a script "
+          "with early exercise included), a PCG32 run stays on one thread "
           "(blueprint/wp/26-performance.md, P1e). Raises on a malformed script, with "
           "the offending line and column in the message. mlmc_eps > 0: "
           "multilevel Monte Carlo over the time step to that root-mean-square "
