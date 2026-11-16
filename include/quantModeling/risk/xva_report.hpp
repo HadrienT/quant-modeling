@@ -8,6 +8,7 @@
 #include "quantModeling/risk/collateral.hpp"
 #include "quantModeling/risk/initial_margin.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 
 #include <optional>
 #include <vector>
@@ -208,8 +209,17 @@ namespace quantModeling
      *         initial margin without a CSA, on capital inputs that do not
      *         describe the netted trades, or on whatever exposure_statistics
      *         / collateralise reject.
+     *
+     * @param pool worker threads for the parts that are independent of each
+     *        other (lot G2 of blueprint/wp/23-xva.md §20): the 2K netting
+     *        sets of the trades' stand-alone and incremental CVA, each a
+     *        collateralisation (and a margin regression) of its own, and the
+     *        KVA's batches. nullptr runs on the calling thread. Each task
+     *        writes its own slot: the worker count changes the wall time,
+     *        never the numbers.
      */
-    XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &inputs);
+    XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &inputs,
+                         ThreadPool *pool = nullptr);
 
 } // namespace quantModeling
 

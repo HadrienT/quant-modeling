@@ -303,7 +303,7 @@ namespace quantModeling
         return weights;
     }
 
-    XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &in)
+    XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &in, ThreadPool *pool)
     {
         if (paths.measure != ExposureMeasure::RiskNeutral)
             throw InvalidInput("xVA report: adjustments are prices and need a risk-neutral "
@@ -448,19 +448,23 @@ namespace quantModeling
             // The same projection on each batch of paths.
             const std::size_t B = error_batches(N);
             std::vector<Real> batches(B);
-            for (std::size_t b = 0; b < B; ++b)
-            {
-                const std::size_t size = N / B, first = b * size;
-                const std::size_t count = b + 1 < B ? size : N - first;
-                const ExposurePaths part = batch_of(variation_only, first, count);
-                std::optional<InitialMargin> held;
-                if (margin)
-                    held = batch_of(*margin, first, count);
-                const CapitalProfile capital =
-                    projected_capital(part, *in.capital, held ? &*held : nullptr);
-                batches[b] = kva(capital.times, capital.discounted_capital, in.counterparty, in.own,
-                                 in.cost_of_capital);
-            }
+            run_in_chunks(pool, B, 1,
+                          [&](std::size_t begin, std::size_t end)
+                          {
+                              for (std::size_t b = begin; b < end; ++b)
+                              {
+                                  const std::size_t size = N / B, first = b * size;
+                                  const std::size_t count = b + 1 < B ? size : N - first;
+                                  const ExposurePaths part = batch_of(variation_only, first, count);
+                                  std::optional<InitialMargin> held;
+                                  if (margin)
+                                      held = batch_of(*margin, first, count);
+                                  const CapitalProfile capital =
+                                      projected_capital(part, *in.capital, held ? &*held : nullptr);
+                                  batches[b] = kva(capital.times, capital.discounted_capital,
+                                                   in.counterparty, in.own, in.cost_of_capital);
+                              }
+                          });
             report.kva_error = batch_error(batches);
         }
 
@@ -486,16 +490,33 @@ namespace quantModeling
             }
         }
 
-        for (std::size_t j = 0; j < trades.size(); ++j)
+        // 2K independent netting sets: task 2j is trade j alone, task 2j + 1
+        // the netting set without it. Each writes its own slot.
+        const std::size_t K = trades.size();
+        std::vector<Real> standalone(K, 0.0), without(K, 0.0);
+        run_in_chunks(pool, 2 * K, 1,
+                      [&](std::size_t begin, std::size_t end)
+                      {
+                          for (std::size_t task = begin; task < end; ++task)
+                          {
+                              const std::size_t j = task / 2;
+                              if (task % 2 == 0)
+                              {
+                                  standalone[j] = bilateral_cva(paths, in, {trades[j]}, margin_scaling);
+                                  continue;
+                              }
+                              std::vector<std::size_t> others = trades;
+                              others.erase(others.begin() + static_cast<std::ptrdiff_t>(j));
+                              if (!others.empty())
+                                  without[j] = bilateral_cva(paths, in, others, margin_scaling);
+                          }
+                      });
+        for (std::size_t j = 0; j < K; ++j)
         {
             TradeContribution c;
             c.trade = trades[j];
-            c.standalone_cva = bilateral_cva(paths, in, {trades[j]}, margin_scaling);
-            std::vector<std::size_t> others = trades;
-            others.erase(others.begin() + static_cast<std::ptrdiff_t>(j));
-            c.incremental_cva =
-                report.cva.value -
-                (others.empty() ? 0.0 : bilateral_cva(paths, in, others, margin_scaling));
+            c.standalone_cva = standalone[j];
+            c.incremental_cva = report.cva.value - without[j];
             c.marginal_cva = marginal[j];
             report.contributions.push_back(c);
         }

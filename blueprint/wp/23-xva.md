@@ -2905,7 +2905,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | # | Amélioration | Pourquoi |
 |---|---|---|
 | G1 | **Le rapport xVA réduit sur la carte** : le CVA autonome et incrémental de chaque transaction comme autant de netting sets du même lancement | le temps d'une requête est celui du post-traitement sur l'hôte : environ 7 s sur 7,6 (50 000 chemins, CSA) ; la carte fait un netting set de 126 000 chemins en 0,2 s |
-| G2 | Paralléliser `xva_report` sur l'hôte : les `2K + 1` appels à `collateralise` sont indépendants | l'alternative à G1 sans carte, et ce qui sert les bermudans |
+| G2 | Paralléliser `xva_report` sur l'hôte : les `2K + 1` appels à `collateralise` sont indépendants | **Done (2026-11-16)**: `xva_report(paths, inputs, pool)` runs the 2K netting sets of the trades' stand-alone and incremental CVA, and the KVA's batches, as pool tasks, each writing its own slot (same bits, `XvaReport.WorkerThreadsChangeTheTimeNotTheNumbers`). Ten swaps under a CSA with regression initial margin, 20 000 paths: 10.3–11.1 s on one thread, 4.8–5.2 s on four, 3.2–3.6 s on sixteen (server under a load of about 10). What stays serial is the netting set's own margin regression (0.65 s), its collateralisation and statistics (0.3 s) and the collateral paths (0.15 s); each subset still refits its own margin model (B4) |
 | G3 | PFE sur la carte (histogramme, ou tri sur la carte) | la réduction ne rend pas de quantile |
 | G4 | Transactions par régression sur la carte : évaluer les polynômes par bucket dans le kernel ; puis le pilote lui-même | bermudans et scripts renvoient tout le netting set sur le CPU |
 | G5 | SIMM par chemin sur la carte (S7) | la marge SIMM renvoie aussi sur le CPU |

@@ -565,4 +565,44 @@ namespace quantModeling
         EXPECT_THROW(xva_report(simulate(false), in), InvalidInput);
     }
 
+    // ── Lot G2: the independent parts on worker threads ──────────────────────
+
+    TEST(XvaReport, WorkerThreadsChangeTheTimeNotTheNumbers)
+    {
+        const HullWhiteCurveModel m = model();
+        const ExposurePaths paths = book(m, 4000, 1.0, 42, kTenDays);
+        XvaInputs in = margined_inputs();
+        in.initial_margin = DimSettings{};
+        CapitalInputs capital;
+        capital.trades = book_trades();
+        capital.pd = 0.02;
+        capital.margin = sa_ccr::MarginAgreement{0.0, 0.0, 0.0, kTenDays};
+        in.capital = capital;
+
+        ThreadPool pool;
+        pool.start(3);
+        for (const Real b : {0.0, 0.02})
+        {
+            in.wrong_way_b = b;
+            const XvaReport serial = xva_report(paths, in);
+            const XvaReport parallel = xva_report(paths, in, &pool);
+            EXPECT_EQ(serial.cva.value, parallel.cva.value);
+            EXPECT_EQ(serial.kva, parallel.kva);
+            EXPECT_EQ(serial.kva_error, parallel.kva_error);
+            ASSERT_EQ(serial.contributions.size(), parallel.contributions.size());
+            for (std::size_t j = 0; j < serial.contributions.size(); ++j)
+            {
+                EXPECT_EQ(serial.contributions[j].trade, parallel.contributions[j].trade);
+                EXPECT_EQ(serial.contributions[j].standalone_cva,
+                          parallel.contributions[j].standalone_cva);
+                EXPECT_EQ(serial.contributions[j].incremental_cva,
+                          parallel.contributions[j].incremental_cva);
+            }
+        }
+        // The inputs are still checked with a pool.
+        XvaInputs bad = inputs();
+        bad.trades = {0, 7};
+        EXPECT_THROW(xva_report(paths, bad, &pool), InvalidInput);
+    }
+
 } // namespace quantModeling
