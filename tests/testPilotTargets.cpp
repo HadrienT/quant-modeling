@@ -333,22 +333,27 @@ namespace quantModeling
 
     TEST(PilotTargets, TheDifferentialsCostLessThanFourPassesWithout)
     {
-        const Bound s(swap_value, 20000);
-        const auto seconds = [&](bool differentials)
+        // A wall-clock ratio on a shared CI runner (#223): the two passes are
+        // timed in alternation, so that a slow spell of the machine falls on
+        // both, and each keeps its best of nine runs of about 25 ms (40 000
+        // paths), well above the scheduler's noise. On the server the ratio
+        // is about 2.
+        const Bound s(swap_value, 40000);
+        const auto once = [&](bool differentials)
         {
-            Real best = 1e30;
-            for (int repeat = 0; repeat < 5; ++repeat)
-            {
-                const auto start = std::chrono::steady_clock::now();
-                const PilotTargets targets = pilot_targets(*s.trade, s.pilot, differentials);
-                best = std::min(best, std::chrono::duration<Real>(
-                                          std::chrono::steady_clock::now() - start)
-                                          .count());
-                EXPECT_FALSE(targets.value.empty());
-            }
-            return best;
+            const auto start = std::chrono::steady_clock::now();
+            const PilotTargets targets = pilot_targets(*s.trade, s.pilot, differentials);
+            const Real elapsed =
+                std::chrono::duration<Real>(std::chrono::steady_clock::now() - start).count();
+            EXPECT_FALSE(targets.value.empty());
+            return elapsed;
         };
-        const Real without = seconds(false), with = seconds(true);
+        Real without = 1e30, with = 1e30;
+        for (int repeat = 0; repeat < 9; ++repeat)
+        {
+            without = std::min(without, once(false));
+            with = std::min(with, once(true));
+        }
         RecordProperty("seconds_without", std::to_string(without));
         RecordProperty("seconds_with", std::to_string(with));
         EXPECT_LT(with, 4.0 * without) << "without=" << without << " with=" << with;
