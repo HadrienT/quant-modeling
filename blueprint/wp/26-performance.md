@@ -1659,6 +1659,11 @@ end of each lot, not only its own bench.
   interpreter keeps separate (`--fmad=false`, `-ffp-contract=off`). Done for
   the GPU script kernels in P1b, both sides: allowing FMA again (5–7 %) means
   giving up the same-bits test between compiled and interpreted scripts.
+  **Decided otherwise on 2026-11-16 (maintainer)**: CPU and GPU, and the
+  compiled and interpreted scripts, no longer need the same bits -- prices
+  within 1e-12 relative, risks within 1e-10, on the same draws; one
+  configuration stays deterministic run to run (the API's replays). The
+  optimisations set aside for the bits come back one by one, measured (§14).
 - **Wheel size.** NVRTC and nvJitLink are linked statically (P1b): the GPU
   wheel grows by their size. Loading them with `dlopen` from the toolkit's
   shared libraries would avoid it, at the price of shipping those in the
@@ -1704,3 +1709,49 @@ one case slower (about 8 %); every GPU result keeps being the same bits on
 one or two cards, and its last bits change once (the tree's shape).
 `mc::stratum_of`, which hard-coded the 4 096-unit block, now reads the
 constants.
+
+## 14. The optimisations set aside for the bits, measured again (2026-11-16)
+
+With CPU and GPU no longer held to the same bits (§12), each optimisation set
+aside for them is measured again and kept only if it pays.
+
+- **FMA contraction in the GPU script kernels** (`--fmad=true`, and plain
+  operators instead of `__dadd_rn` / `__dmul_rn` in the generated code):
+  **no gain, not kept.** `qm_script_jit_bench` (one V100): compiled scripts
+  6.31 / 12.03 / 15.98 / 28.55 / 3.53 ms before, 6.33 / 12.05 / 15.95 /
+  28.51 / 3.67 after; `qm_gpu_risk_bench 1000000 gpu` (three runs):
+  local-vol adjoint +1-3 %, SLV +8 % (134 → 146 ms), Heston unchanged. The
+  kernels are instruction-cache bound (§2.2): fusing operations does not
+  shorten them, and the 5-7 % P1b measured has since been taken where it
+  pays by `mul_add` in Φ⁻¹ (P1h). The compiled-against-interpreted tests now
+  check the tolerance anyway (`GpuScriptJitTest.*WithinTolerance`).
+- **FMA and AVX2 on the CPU** (the wheel built for x86-64-v3, the server's
+  ISA, instead of the baseline x86-64): **not kept.** `perf_matrix.py
+  --no-gpu`, same machine, back to back: the Sobol script routes unchanged
+  (0.97-1.03), the PCG32 ones 5-28 % slower (basket 0.41 → 0.52 s, worst-of
+  1.27 → 1.56 s), one hand-written engine faster (barrier under local vol
+  0.079 → 0.046 s); rough Bergomi's price 6.60 → 5.68 s on two threads, its
+  AAD unchanged. Prices moved by at most 6.5e-16 relative. Mixed, slower
+  where the routes are the site's: the baseline ISA stays.
+- **The gradient row buffered per grid cell in the GPU adjoint** (tried and
+  reverted on 2026-11-16 under the bits rule, #239): **kept, for local vol.**
+  The C¹ grid's step reaches eight nodes, whose read-modify-writes in the
+  thread's global gradient row dominated; consecutive steps mostly share a
+  cell, so the nodes' adjoints are summed per thread and written when the
+  cell changes. The pending nodes exist in the local-vol kernels only (a
+  generated constant, `qm_vol_grid`, folded at link time): with them in
+  every kernel SLV was 13 % slower. One V100, `qm_gpu_risk_bench`, ms
+  (four scripts, 363 risks): 200k paths 132 / 183 / 232 / 181 → 108 / 135 /
+  179 / 141; 1M paths 497 / 640 / 800 / 655 → 337 / 403 / 528 / 453; SLV
+  and Heston unchanged; the tape matched to 1e-15 as before (the sum is
+  reassociated, within the tolerance; deterministic run to run).
+- **CUDA's own Φ⁻¹ on the device** (`normcdfinv`, libdevice, a few ulps),
+  where AS 241 ran on both sides for the bits: **kept.** `qm_script_jit_bench`
+  (one V100, compiled scripts, ms): barrier BS 6.28 → 4.89, barrier LV
+  12.02 → 10.55, Asian BS 15.51 → 11.30, Asian LV 28.48 → 24.84, autocall
+  3.61 → 3.08 (12-27 %); the GPU suite passes unchanged (its CPU/GPU checks
+  already had tolerances); the host keeps AS 241.
+- **Reassociating rough Bergomi's far-field sums** on the CPU: not done --
+  they already run as eight independent chains per path (§ WP 26 rough
+  Bergomi), and only an FFT would change their order of cost, for at most
+  about 12 % of that model's path.

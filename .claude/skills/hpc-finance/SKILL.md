@@ -11,16 +11,24 @@ not move. A change with only one of them is not done.
 
 ## Non-negotiable rules
 
-1. **Reproducibility first.** A result must not depend on the number of
-   threads, of GPUs, or on launch sizes. Keep the logical-block reduction tree
+1. **Deterministic, not bit-identical across devices** (maintainer's decision,
+   2026-11-16). One configuration -- the same build, device kind, number of
+   threads or GPUs -- gives the same bits on every run: the API replays
+   valuations for audit. Keep the logical-block reduction tree
    (`engines/mc/logical_blocks.hpp`, `src/gpu/logical_blocks.cuh`): fixed tree
-   inside a block, partials folded **in block order** on the host. Counter-based
-   RNG (Philox: draw `j` of path `p` is a pure function of `(seed, p, j)`) or
-   Sobol split by point index. Never `atomicAdd` on a double result.
+   inside a block, partials folded **in block order** on the host, so the
+   result does not depend on the number of threads, GPUs or launch sizes.
+   Counter-based RNG (Philox: draw `j` of path `p` is a pure function of
+   `(seed, p, j)`) or Sobol split by point index. Never `atomicAdd` on a double
+   result. **CPU and GPU on the same draws need not agree to the bit**: prices
+   within **1e-12 relative**, risks within **1e-10 relative**
+   (`tests/support/cpu_gpu_tolerance.hpp`). FMA contraction, the device libm
+   and reassociated sums are allowed where they pay.
 2. **No `-ffast-math` / `--use_fast_math`**, no `__expf`-style intrinsics on
-   pricing paths: they break NaN/Inf handling, reorder sums and change the bits.
-   Single precision only with a measured error budget and the maintainer's
-   agreement. The V100 runs FP64 at half its FP32 rate: `double` is the default.
+   pricing paths: they break NaN/Inf handling and lose precision beyond the
+   tolerance above. Single precision only with a measured error budget and the
+   maintainer's agreement. The V100 runs FP64 at half its FP32 rate: `double`
+   is the default.
 3. **Host and device share the math.** Payoff and model code is `QM_HOST_DEVICE`
    and written once (`engines/xva/exposure_program.hpp`, `engines/mc/*`); the GPU
    is tested against the CPU. Never fork a "GPU version" of a formula.
@@ -63,8 +71,9 @@ not move. A change with only one of them is not done.
    [cpu-patterns.md](cpu-patterns.md) for what to try for each diagnosis.
 4. **Prove nothing moved** — see [numerics.md](numerics.md) for tolerances:
    - same seed, same result: compare full-precision outputs before/after
-     (the benchmarks print 17 digits); on the GPU expect **identical bits**
-     unless the change reorders a floating-point sum on purpose;
+     (the benchmarks print 17 digits); a change of layout or launch keeps the
+     bits, a change of arithmetic (FMA, a reordered sum, another libm) stays
+     within the CPU/GPU tolerance of rule 1 and says so;
    - `ctest --test-dir build-cuda -L gpu` and `ctest --test-dir build -j16`
      (or `scripts/make.sh`); `scripts/make_asan.sh` when memory handling changed;
    - `qmharness` MCP: `qm_run` before and after, then `qm_compare` (golden
@@ -86,7 +95,7 @@ the changed files (`ninja -t deps <object>`), and say so explicitly.
 
 ## What already works here (keep it)
 
-- Deterministic logical-block reduction, bit-identical on one or two V100s.
+- Deterministic logical-block reduction: the same bits on one or two V100s.
 - Warp reduction with `__shfl_down_sync`, `__launch_bounds__(256)`.
 - Option flags (call/put, antithetic, importance sampling) as template
   parameters: no runtime branch inside the kernel (`src/gpu/vanilla_bs.cu`).
