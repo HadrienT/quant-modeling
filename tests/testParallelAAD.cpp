@@ -2,6 +2,10 @@
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/engines/mc/simulation_engine_parallel_aad.hpp"
+#include "quantModeling/core/date.hpp"
+#include "quantModeling/instruments/scripted_product.hpp"
+#include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/scripting/script_model_factory.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/utils/rng_interface.hpp"
@@ -164,6 +168,86 @@ namespace quantModeling
         const AADSimulResults a = run(2, 20000, 1);
         const AADSimulResults b = run(2, 20000, 2);
         EXPECT_NE(a.price, b.price);
+    }
+
+    // ── simulate_aad on a pool (WP 26): scripts, Sobol replicates and Philox
+    // batches on their own tapes, the same bits as on one thread ───────────
+
+    namespace
+    {
+        AADSimulResults script_aad(const scripting::ScriptModelSpec &spec, const std::string &script,
+                                   SamplerKind sampler, RngKind rng, std::size_t workers,
+                                   std::vector<std::vector<Real>> *batches = nullptr)
+        {
+            const ValuationContext ctx{Date::from_iso("2026-11-16")};
+            const ScriptedProduct<Number> product(script, ctx);
+            auto model = scripting::make_script_model<Number>(spec);
+            ThreadPool pool;
+            if (workers > 0)
+                pool.start(workers);
+            return simulate_aad(product, *model, 4096, 7, first_aad_payoff, rng, sampler, batches,
+                                workers > 0 ? &pool : nullptr);
+        }
+
+        void expect_same_bits(const AADSimulResults &a, const AADSimulResults &b)
+        {
+            EXPECT_EQ(a.price, b.price);
+            EXPECT_EQ(a.price_std_error, b.price_std_error);
+            ASSERT_EQ(a.risks.size(), b.risks.size());
+            for (std::size_t j = 0; j < a.risks.size(); ++j)
+            {
+                EXPECT_EQ(a.risks[j], b.risks[j]) << a.risk_labels[j];
+                EXPECT_EQ(a.risk_std_errors[j], b.risk_std_errors[j]) << a.risk_labels[j];
+            }
+        }
+
+        scripting::ScriptModelSpec rough_bergomi_spec()
+        {
+            scripting::ScriptModelSpec s;
+            s.model = "rough_bergomi";
+            s.spot = 100.0;
+            s.rate = 0.03;
+            s.dividend = 0.01;
+            s.rb_H = 0.1;
+            s.rb_eta = 1.9;
+            s.rb_rho = -0.9;
+            s.xi_times = {0.5, 1.0};
+            s.xi_values = {0.04, 0.05};
+            s.max_dt = 1.0 / 252.0;
+            return s;
+        }
+    } // namespace
+
+    TEST(SimulateAadOnAPool, AScriptsRisksDoNotDependOnTheThreadCount)
+    {
+        const std::string barrier = "2027-05-16\n    s1 = spot()\n"
+                                    "2027-11-16\n    if s1 > 95 then pays max(spot() - 100, 0) endIf\n";
+        scripting::ScriptModelSpec heston;
+        heston.model = "heston";
+        heston.spot = 100.0;
+        heston.rate = 0.03;
+        heston.heston = HestonParams{0.04, 1.5, 0.04, 0.5, -0.7};
+        for (const scripting::ScriptModelSpec &spec : {rough_bergomi_spec(), heston})
+            for (const SamplerKind sampler : {SamplerKind::Sobol, SamplerKind::PseudoRandom})
+            {
+                std::vector<std::vector<Real>> one_batches, four_batches;
+                const AADSimulResults one = script_aad(spec, barrier, sampler, RngKind::Philox, 0, &one_batches);
+                const AADSimulResults four = script_aad(spec, barrier, sampler, RngKind::Philox, 3, &four_batches);
+                SCOPED_TRACE(spec.model);
+                expect_same_bits(one, four);
+                EXPECT_EQ(one_batches, four_batches);
+                EXPECT_NE(four.diagnostics.find("on 4 threads"), std::string::npos) << four.diagnostics;
+                EXPECT_GT(one.risks.front(), 0.0); // delta of a call
+            }
+    }
+
+    TEST(SimulateAadOnAPool, PCG32StaysOnOneThread)
+    {
+        const std::string call = "2027-11-16\n    pays max(spot() - 100, 0)\n";
+        const AADSimulResults one = script_aad(rough_bergomi_spec(), call, SamplerKind::PseudoRandom, RngKind::Pcg32, 0);
+        const AADSimulResults four = script_aad(rough_bergomi_spec(), call, SamplerKind::PseudoRandom, RngKind::Pcg32, 3);
+        expect_same_bits(one, four);
+        EXPECT_EQ(four.diagnostics.find("threads"), std::string::npos) << four.diagnostics;
     }
 
 } // namespace quantModeling
