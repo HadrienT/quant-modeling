@@ -2834,7 +2834,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 |---|---|---|
 | A1 | Cible de régression moins bruitée : régresser la valeur estimée à la date suivante plutôt que tous les flux futurs, ou une variable de contrôle en forme fermée | c'est le bruit qui limite : 2 % d'écart sur l'EE à 20 000 chemins pilotes, d'où un pilote quatre fois plus gros que la simulation |
 | A2 | Borne supérieure duale de la règle d'exercice (Andersen-Broadie) | le biais du LSMC n'est borné que par le bas (4,942 pour 4,949 au réseau) |
-| A3 | État d'exercice du bermudan calculé une fois par chemin (`evaluate_path`) au lieu d'être recalculé à chaque date | 9 s pour 40 000 chemins sur un thread |
+| A3 | État d'exercice du bermudan calculé une fois par chemin (`evaluate_path`) au lieu d'être recalculé à chaque date | **Done (2026-11-16)**: `HullWhiteBermudanValue::evaluate_path` finds the exercise date once a path, the same evaluations as `value()`/`cashflow()` (same bits, `ExposureRegression.ABermudansWholePathIsItsDateByDateValues`). A 1Y-into-9Y payer Bermudan, nine dates, 40 000 paths, one thread: 9.0–9.3 s → 3.9 s, of which most is now the pilot's fit (160 000 paths) |
 | A4 | Bermudan réglé en espèces ; régresseurs autres que l'état (taux swap résiduel) | couverture des produits ; qualité de la continuation |
 | A5 | Scripts : rendre l'état « exercé » de l'évaluateur visible comme régime automatique | aujourd'hui le script doit poser lui-même un drapeau, sinon son exposition après exercice est fausse |
 | A6 | Scripts : erreur Monte-Carlo de la valeur d'aujourd'hui ; `forward()` ; scripts actions (le modèle joint existe depuis le lot X14, pour les options européennes) | la valeur d'aujourd'hui d'un script est un prix simulé, sans son erreur |
