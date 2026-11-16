@@ -1733,3 +1733,15 @@ aside for them is measured again and kept only if it pays.
   0.079 → 0.046 s); rough Bergomi's price 6.60 → 5.68 s on two threads, its
   AAD unchanged. Prices moved by at most 6.5e-16 relative. Mixed, slower
   where the routes are the site's: the baseline ISA stays.
+- **The gradient row buffered per grid cell in the GPU adjoint** (tried and
+  reverted on 2026-11-16 under the bits rule, #239): **kept, for local vol.**
+  The C¹ grid's step reaches eight nodes, whose read-modify-writes in the
+  thread's global gradient row dominated; consecutive steps mostly share a
+  cell, so the nodes' adjoints are summed per thread and written when the
+  cell changes. The pending nodes exist in the local-vol kernels only (a
+  generated constant, `qm_vol_grid`, folded at link time): with them in
+  every kernel SLV was 13 % slower. One V100, `qm_gpu_risk_bench`, ms
+  (four scripts, 363 risks): 200k paths 132 / 183 / 232 / 181 → 108 / 135 /
+  179 / 141; 1M paths 497 / 640 / 800 / 655 → 337 / 403 / 528 / 453; SLV
+  and Heston unchanged; the tape matched to 1e-15 as before (the sum is
+  reassociated, within the tolerance; deterministic run to run).

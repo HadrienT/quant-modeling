@@ -36,6 +36,7 @@ extern "C" __device__ int qm_event_cols();
 extern "C" __device__ int qm_n_risks();
 extern "C" __device__ int qm_surv0();
 extern "C" __device__ int qm_n_surv();
+extern "C" __device__ int qm_vol_grid();
 
 // The request the kernel is linked for (scripting::CudaKernelSpec), defined
 // next to the blocks: constants after link-time optimisation.
@@ -88,6 +89,62 @@ namespace
     }
 } // namespace
 
+// The backward sweep's grid state: the cell of the step being differentiated
+// (the local vol's or the SLV leverage's), and the adjoints not yet added to
+// the thread's gradient row. A row lives in global memory, one parameter
+// every `rows` doubles, and the C¹ grid's step reaches eight nodes: their
+// read-modify-writes were the adjoint's main stall. Consecutive steps mostly
+// fall in the same cell, so its nodes' adjoints are summed per thread and
+// written when the cell changes and at the end of the path
+// (pending_flush) -- a reassociated sum, within the CPU/GPU tolerance
+// (2026-11-16), deterministic run to run.
+struct PendingNodes
+{
+    int nodes = 0; ///< 0 or 8
+    long index[8]; ///< their parameters' offsets in the row
+    double sum[8];
+};
+
+struct BackwardCell
+{
+    union
+    {
+        grid::GridCell vol;
+        grid::LeverageCell leverage;
+    } cell;
+    /// The local vol's pending nodes; null in the other models' kernels,
+    /// whose frames the buffer made larger and slower (SLV +13 %).
+    PendingNodes *pending = nullptr;
+};
+
+__device__ inline void pending_flush(PendingNodes &b, const QmFrame *f)
+{
+    for (int k = 0; k < b.nodes; ++k)
+        f->ath[b.index[k] * f->ath_stride] += b.sum[k];
+    b.nodes = 0;
+}
+
+/// Adds the eight nodes' adjoints, summing them per thread while the nodes
+/// stay those of the pending cell.
+__device__ inline void pending_add(PendingNodes &b, const QmFrame *f, const long *index, const double *add)
+{
+    bool same = b.nodes == 8;
+    for (int k = 0; k < 8 && same; ++k)
+        same = b.index[k] == index[k];
+    if (!same)
+    {
+        pending_flush(b, f);
+        b.nodes = 8;
+        for (int k = 0; k < 8; ++k)
+        {
+            b.index[k] = index[k];
+            b.sum[k] = 0.0;
+        }
+    }
+    for (int k = 0; k < 8; ++k)
+        b.sum[k] += add[k];
+}
+
 // The grid's lookups: the models' own functions (path_steps.hpp), so that a
 // generated local-vol step is local_vol_step's, bit for bit.
 //
@@ -100,7 +157,7 @@ extern "C" __device__ double qm_grid_vol(const QmFrame *f, double spot, double t
 {
     if (f->cell)
     {
-        grid::GridCell &c = *static_cast<grid::GridCell *>(f->cell);
+        grid::GridCell &c = static_cast<BackwardCell *>(f->cell)->cell.vol;
         c = grid::grid_cell(grid_of(f), spot, t);
         return c.sigma < 1e-6 ? 1e-6 : c.sigma;
     }
@@ -109,14 +166,32 @@ extern "C" __device__ double qm_grid_vol(const QmFrame *f, double spot, double t
 extern "C" __device__ double qm_grid_slope(const QmFrame *f, double spot, double t)
 {
     if (f->cell)
-        return grid::grid_slope(grid_of(f), *static_cast<const grid::GridCell *>(f->cell));
+        return grid::grid_slope(grid_of(f), static_cast<const BackwardCell *>(f->cell)->cell.vol);
     return grid::grid_slope(grid_of(f), spot, t);
 }
 extern "C" __device__ void qm_grid_accumulate(const QmFrame *f, double spot, double t, double adjoint)
 {
-    if (f->cell)
-        grid::grid_accumulate(*static_cast<const grid::GridCell *>(f->cell), f->nT, adjoint, f->ath, f->ath_stride,
-                              f->grid0);
+    if (f->cell && static_cast<BackwardCell *>(f->cell)->pending)
+    {
+        BackwardCell &b = *static_cast<BackwardCell *>(f->cell);
+        const grid::GridCell &c = b.cell.vol;
+        if (!c.free)
+            return;
+        const long nT = f->nT, g0 = f->grid0;
+        long index[8];
+        double add[8];
+        for (int k = 0; k < 4; ++k)
+        {
+            index[2 * k] = g0 + c.idx[k] * nT + c.j0;
+            index[2 * k + 1] = g0 + c.idx[k] * nT + c.j1;
+            add[2 * k] = adjoint * (c.w[k] * (1.0 - c.wT));
+            add[2 * k + 1] = adjoint * (c.w[k] * c.wT);
+        }
+        pending_add(*b.pending, f, index, add);
+    }
+    else if (f->cell)
+        grid::grid_accumulate(static_cast<const BackwardCell *>(f->cell)->cell.vol, f->nT, adjoint, f->ath,
+                              f->ath_stride, f->grid0);
     else
         grid::grid_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
 }
@@ -128,7 +203,7 @@ extern "C" __device__ double qm_grid_leverage(const QmFrame *f, double spot, dou
 {
     if (f->cell)
     {
-        grid::LeverageCell &c = *static_cast<grid::LeverageCell *>(f->cell);
+        grid::LeverageCell &c = static_cast<BackwardCell *>(f->cell)->cell.leverage;
         c = grid::leverage_cell(grid_of(f), spot, t);
         return grid::leverage_value(grid_of(f), c);
     }
@@ -137,13 +212,15 @@ extern "C" __device__ double qm_grid_leverage(const QmFrame *f, double spot, dou
 extern "C" __device__ double qm_grid_leverage_slope(const QmFrame *f, double spot, double t)
 {
     if (f->cell)
-        return grid::leverage_slope(grid_of(f), *static_cast<const grid::LeverageCell *>(f->cell));
+        return grid::leverage_slope(grid_of(f), static_cast<const BackwardCell *>(f->cell)->cell.leverage);
     return grid::leverage_slope(grid_of(f), spot, t);
 }
 extern "C" __device__ void qm_grid_leverage_accumulate(const QmFrame *f, double spot, double t, double adjoint)
 {
+    // Written straight to the row: two nodes a step, which the buffer made
+    // 6 % slower (2026-11-16).
     if (f->cell)
-        grid::leverage_accumulate(*static_cast<const grid::LeverageCell *>(f->cell), f->nT, adjoint, f->ath,
+        grid::leverage_accumulate(static_cast<const BackwardCell *>(f->cell)->cell.leverage, f->nT, adjoint, f->ath,
                                   f->ath_stride, f->grid0);
     else
         grid::leverage_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
@@ -516,41 +593,53 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
     ast[qm_pay_slot()] = 1.0;
     for (int p = 0; p < n_risks; ++p)
         lth[p] = 0.0;
-    // the cell of a backward step: the local vol's or the SLV leverage's
-    union
-    {
-        grid::GridCell vol;
-        grid::LeverageCell leverage;
-    } cell{};
+    // the cell of a backward step, and (local vol) the grid adjoints not yet
+    // in the row
+    BackwardCell cell{};
     f.ast = ast;
     f.lth = lth;
     f.ath = u.gradient + row;
     f.ath_stride = rows;
     f.cell = &cell;
-    for (int s = u.n_steps - 1; s >= 0; --s)
+    const auto sweep = [&]()
     {
-        const int e = u.step_event[s];
-        if (e >= 0)
+        for (int s = u.n_steps - 1; s >= 0; --s)
         {
-            for (int i = n_state - 1; i >= n_model; --i)
-                st[i] = ck[(--c) * rows];
-            f.dat = u.event_rows + e * event_cols;
-            f.tm = u.terms + u.term_begin[e];
-            qm_event_adjoint(u.kind[e], &f);
+            const int e = u.step_event[s];
+            if (e >= 0)
+            {
+                for (int i = n_state - 1; i >= n_model; --i)
+                    st[i] = ck[(--c) * rows];
+                f.dat = u.event_rows + e * event_cols;
+                f.tm = u.terms + u.term_begin[e];
+                qm_event_adjoint(u.kind[e], &f);
+            }
+            if (u.step_draws[s])
+            {
+                --d;
+                for (int j = n_surv - 1; j >= 0; --j)
+                    st[surv0 + j] = ck[(--c) * rows];
+                for (int k = n_model - 1; k >= 0; --k)
+                    st[k] = ck[(--c) * rows];
+                for (int k = 0; k < factors; ++k)
+                    z[k] = draws.at(d, k);
+                f.dat = u.step_rows + s * step_cols;
+                qm_step_adjoint(&f);
+            }
         }
-        if (u.step_draws[s])
-        {
-            --d;
-            for (int j = n_surv - 1; j >= 0; --j)
-                st[surv0 + j] = ck[(--c) * rows];
-            for (int k = n_model - 1; k >= 0; --k)
-                st[k] = ck[(--c) * rows];
-            for (int k = 0; k < factors; ++k)
-                z[k] = draws.at(d, k);
-            f.dat = u.step_rows + s * step_cols;
-            qm_step_adjoint(&f);
-        }
+    };
+    // qm_vol_grid() is a constant of the generated code: after link-time
+    // optimisation only one branch is left, and the pending nodes' frame
+    // exists in the local-vol kernels alone.
+    if (qm_vol_grid())
+    {
+        PendingNodes pending;
+        cell.pending = &pending;
+        sweep();
+        pending_flush(pending, &f);
     }
+    else
+        sweep();
     f.dat = u.baseline;
     qm_init_adjoint(&f);
     for (int p = 0; p < n_risks; ++p)

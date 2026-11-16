@@ -414,6 +414,8 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         // and overwrites, which the adjoint checkpoints with the model's.
         constant(src, "qm_surv0", l.surv0());
         constant(src, "qm_n_surv", l.n_surv);
+        // The local-vol grid: its adjoint buffers the nodes of a cell.
+        constant(src, "qm_vol_grid", kind == DeviceModel::Kind::LocalVol ? 1 : 0);
         const int ns = l.n_state();
         src << "\n";
         Emit e;
