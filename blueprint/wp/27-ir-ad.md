@@ -1064,3 +1064,17 @@ risks against the tape (1e-8), Black-Scholes (tangent) and local vol
 year, 200 000 Sobol points; CPU two threads, one V100 with the kernel
 cached): price 3.6 s → 0.016 s (1.9 s the first call, compilation); price
 and AAD risks 14.3 s → 0.05 s (1.1 s cold). Same price to 1e-15.
+
+### 14.13 The hand-written GPU derivatives deleted (2026-11-16)
+
+Decided by the maintainer once §14.3 and §14.6 had the generated tangent and
+adjoint beat them: the interpreter's dual numbers on the GPU (`run_duals`,
+`script_dual_inputs`), the local-vol per-path adjoint written by hand
+(`script_lv_adjoint_path`, `local_vol_step_adjoint`, `bytecode_adjoint.hpp`'s
+reverse sweep) and their tests against the generated kernels are gone. With
+compilation off the GPU's risks fall back to the CPU tape and say why
+(`GpuRisksTest.WithoutCompilationTheRisksStayOnTheCpu`); the tangent is still
+checked against the adjoint and both against the tape. `qm_gpu_table`'s
+superbucket CPU column now times the tape. Left: the bytecode interpreter's
+recording hooks (`Rec`), compiled out when nothing records, have no consumer
+any more.

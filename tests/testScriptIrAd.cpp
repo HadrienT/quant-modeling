@@ -17,13 +17,12 @@
 
 // Lots L3 and L4 of blueprint/wp/27-ir-ad.md: the derivatives built from the
 // IR by transformation, on the host (the CI has no GPU), path by path:
-//   - the tangent against the dual numbers it replaces (mc::script_path on
-//     Dual<N>), Black-Scholes with one and several assets and Heston;
 //   - the adjoint against the tangent (two transformations that share only
 //     the table of local derivatives);
-//   - the adjoint under local vol against the adjoint written by hand
-//     (mc::script_lv_adjoint_path), every point of the grid;
 //   - the adjoint against the CPU tape (simulate_aad), the oracle.
+// (The tangent against the interpreter's dual numbers and the local-vol
+// adjoint against the one written by hand were the checks while those
+// existed; both were deleted on 2026-11-16, the tape stays the oracle.)
 // Every library script, crisp and fuzzy.
 
 namespace quantModeling
@@ -54,48 +53,6 @@ namespace quantModeling
                 scale = std::max(scale, std::abs(x));
             for (std::size_t i = 0; i < a.size(); ++i)
                 ASSERT_NEAR(a[i], b[i], rel * scale) << what << ", risk " << i;
-        }
-
-        template <int N>
-        void tangent_against_duals(Dyn dyn)
-        {
-            int cases = 0;
-            for (const LibraryScript &script : library())
-                for (bool fuzzy : {false, true})
-                {
-                    ScriptSettings ss;
-                    ss.fuzzy = fuzzy;
-                    if (skip(script.source, ss, dyn))
-                        continue;
-                    const Case c(script.source, dyn, ss);
-                    const mc::ScriptPathView &v = c.host->view;
-                    const int dirs = mc::dual_directions(c.dm.kind, c.dm.n_assets);
-                    ASSERT_LE(dirs, N);
-                    const ir::PathProgram primal = ir::path_program(c.product.ir(), c.dm.kind, c.dm.n_assets, true);
-                    ASSERT_EQ(primal.layout.n_risks, dirs);
-                    const ir::PathProgram tan = ir::tangent(primal, all_risks(primal.layout));
-                    const ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
-                    const auto in = mc::script_dual_inputs<N>(v);
-                    ir::DerivativeScratch w;
-                    mc::PathDraws draws;
-                    draws.seed = kSeed;
-                    draws.stride = v.stride;
-                    const std::string what = script.name + " under " + name(dyn) + (fuzzy ? ", fuzzy" : "");
-                    for (int p = 0; p < kPaths; ++p)
-                    {
-                        draws.begin(static_cast<uint64_t>(p));
-                        const Dual<N> dual = mc::script_path(v, in, draws, 1.0, nullptr);
-                        draws.begin(static_cast<uint64_t>(p));
-                        std::vector<double> got(static_cast<std::size_t>(dirs));
-                        const double price =
-                            ir::run_path_tangent(tan, dirs, data, c.dm, c.product.ir(), draws, 1.0, w, got.data());
-                        ASSERT_TRUE(same_bits(price, dual.v)) << what << ", path " << p;
-                        expect_rows_near(got, std::vector<double>(dual.d, dual.d + dirs), 1e-12,
-                                         what + ", path " + std::to_string(p));
-                    }
-                    ++cases;
-                }
-            EXPECT_GT(cases, 10);
         }
 
         void adjoint_against_tangent(Dyn dyn)
@@ -191,15 +148,6 @@ namespace quantModeling
         }
     } // namespace
 
-    TEST(ScriptIrTangent, BlackScholesIsTheDualPath)
-    {
-        tangent_against_duals<32>(Dyn::BlackScholes);
-    }
-    TEST(ScriptIrTangent, HestonIsTheDualPath)
-    {
-        tangent_against_duals<8>(Dyn::Heston);
-    }
-
     TEST(ScriptIrAdjoint, BlackScholesAgreesWithTheTangent)
     {
         adjoint_against_tangent(Dyn::BlackScholes);
@@ -224,49 +172,6 @@ namespace quantModeling
     TEST(ScriptIrAdjoint, LocalVolIsTheTapesGradient)
     {
         adjoint_against_tape(Dyn::LocalVol);
-    }
-
-    // Local vol: the adjoint built by transformation against the one written
-    // by hand for every bytecode instruction and for the model's step -- the
-    // same price to the bit and the same gradient, path by path, every point
-    // of the grid.
-    TEST(ScriptIrAdjoint, LocalVolIsTheHandWrittenAdjointPathByPath)
-    {
-        int cases = 0;
-        for (const LibraryScript &script : library())
-            for (bool fuzzy : {false, true})
-            {
-                ScriptSettings ss;
-                ss.fuzzy = fuzzy;
-                if (skip(script.source, ss, Dyn::LocalVol))
-                    continue;
-                const Case c(script.source, Dyn::LocalVol, ss);
-                const mc::ScriptPathView &v = c.host->view;
-                const ir::PathProgram primal = ir::path_program(c.product.ir(), c.dm.kind, 1, true);
-                const ir::PathProgram adj = ir::adjoint(primal);
-                const ir::PathData data = ir::path_data(primal.layout, c.dm, c.product.ir(), c.mats, c.base);
-                const std::size_t n_params = data.theta.size();
-                ASSERT_EQ(n_params, 3 + kK.size() * kT.size());
-                std::vector<double> trail(static_cast<std::size_t>(mc::lv_trail_bound(c.product.program(), v.n_steps)));
-                ir::DerivativeScratch w;
-                mc::PathDraws draws;
-                draws.seed = kSeed;
-                const std::string what = script.name + (fuzzy ? ", fuzzy" : "");
-                for (int p = 0; p < kPaths; ++p)
-                {
-                    std::vector<double> hand(n_params, 0.0), got(n_params, 0.0);
-                    mc::AdjointScratch scratch{{trail.data(), 1, 0}, {hand.data(), 1}};
-                    const double a = mc::script_lv_adjoint_path(v, draws, static_cast<uint64_t>(p), 1.0, scratch);
-                    mc::PathDraws d = draws;
-                    d.begin(static_cast<uint64_t>(p));
-                    const double b =
-                        ir::run_path_adjoint(primal, adj, data, c.dm, c.product.ir(), d, 1.0, 1.0, w, got.data());
-                    ASSERT_TRUE(same_bits(a, b)) << what << ", path " << p;
-                    expect_rows_near(got, hand, 1e-11, what + ", path " + std::to_string(p));
-                }
-                ++cases;
-            }
-        EXPECT_GT(cases, 10);
     }
 
     // What the transformations leave out: a tangent of a constant is not

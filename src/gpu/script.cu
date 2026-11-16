@@ -272,48 +272,6 @@ namespace quantModeling::gpu
             }
         };
 
-        template <int N>
-        struct DualUnit
-        {
-            mc::ScriptPathView view;
-            UnitDraws draws;
-            uint64_t per_replicate;
-
-            using Out = Dual<N>;
-
-            __device__ Dual<N> operator()(uint64_t rep, uint64_t u) const
-            {
-                const mc::ScriptModelInputs<Dual<N>> in = mc::script_dual_inputs<N>(view);
-                mc::PathDraws d = draws.begin(rep, u, rep * per_replicate);
-                return mc::script_path<Dual<N>>(view, in, d, 1.0, nullptr);
-            }
-        };
-
-        // ── per-path adjoint, local vol ─────────────────────────────────────
-
-        /// Thread `row` of a launch keeps its trail and its gradient row in
-        /// global memory, element k at base[k * rows + row] (coalesced across
-        /// a warp). Every row is private to its thread: no atomics, so the
-        /// sums do not depend on scheduling -- bit-reproducible.
-        struct AdjointUnit
-        {
-            mc::ScriptPathView view;
-            UnitDraws draws;
-            double *trail;
-            double *grad;
-            long rows;
-            uint64_t per_replicate;
-
-            __device__ double operator()(uint64_t rep, uint64_t u) const
-            {
-                const long row = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
-                const uint64_t first = rep * per_replicate;
-                const mc::PathDraws d = draws.begin(rep, u, first);
-                mc::AdjointScratch w{{trail + row, rows, 0}, {grad + row, rows}};
-                return mc::script_lv_adjoint_path(view, d, first + u, 1.0, w);
-            }
-        };
-
         /// out[p * n_warps + w] = sum over the 32 lanes of warp w of
         /// grad[p * rows + 32 w + lane], in lane order.
         __global__ void fold_warps(const double *grad, long rows, int n_params, long n_warps, double *out)
@@ -540,18 +498,6 @@ namespace quantModeling::gpu
             return detail::merge_segments(detail::run_on_devices<Stats>(devices, bps * reps, job), reps, bps);
         }
 
-        template <int N>
-        std::vector<std::vector<WelfordAccumulator>> run_duals(const ScriptGpuRequest &req, int dirs)
-        {
-            const auto st = run_script_blocks<DualStats<N>>(
-                req, [&](const mc::ScriptPathView &v, const DrawSetup &s)
-                { return DualUnit<N>{v, s.draws, req.n_units}; });
-            std::vector<std::vector<WelfordAccumulator>> out;
-            for (const DualStats<N> &r : st)
-                out.emplace_back(r.w, r.w + 1 + dirs);
-            return out;
-        }
-
         /// One logical block of the adjoint: its price statistics, and the
         /// gradient sums of its 8 warps (8 x n_params, warp-major).
         struct AdjointBlock
@@ -634,19 +580,17 @@ namespace quantModeling::gpu
         if (dirs <= 0)
             throw InvalidInput("GPU: forward-mode risks cover Black-Scholes and Heston");
         // The tangent built from the IR (WP 27 lot L3): any number of
-        // directions. The dual numbers on the interpreter stay as its oracle
-        // (QM_SCRIPT_JIT=0), for up to 8.
+        // directions. The dual numbers on the interpreter, its oracle until
+        // the tangent beat them, are gone (maintainer's decision 2026-11-16):
+        // without compilation the risks take the CPU tape.
         ScriptGpuRequest unmirrored = req;
         unmirrored.antithetic = false;
         const CompiledKernels k = compiled_kernels(unmirrored, PathKernel::Tangent, "qm_script_tangent");
+        if (!k.ok())
+            throw InvalidInput("GPU: forward-mode risks run in the kernels compiled from the IR (" + k.note + ")");
         if (note)
-            *note = k.ok() ? "tangent kernel, " + k.note : "dual numbers, " + k.note;
-        if (k.ok())
-            return dirs <= 8 ? run_compiled_tangent<8>(unmirrored, k, dirs) : run_compiled_tangent<32>(unmirrored, k, dirs);
-        if (dirs > 8)
-            throw InvalidInput("GPU: forward-mode risks in more than 8 directions need the compiled tangent (" +
-                               k.note + ")");
-        return dirs <= 4 ? run_duals<4>(req, dirs) : run_duals<8>(req, dirs);
+            *note = "tangent kernel, " + k.note;
+        return dirs <= 8 ? run_compiled_tangent<8>(unmirrored, k, dirs) : run_compiled_tangent<32>(unmirrored, k, dirs);
     }
 
     std::vector<std::vector<WelfordAccumulator>> simulate_script_vibrato(const ScriptGpuRequest &req, int dirs,
@@ -674,20 +618,20 @@ namespace quantModeling::gpu
             throw InvalidInput("GPU: the per-path adjoint runs pseudo-random or Sobol paths");
 
         // The adjoint built from the IR (WP 27 lot L4), for every model whose
-        // step is in the IR. The adjoint written by hand for local vol stays
-        // as its oracle (QM_SCRIPT_JIT=0).
+        // step is in the IR. The local-vol adjoint written by hand, its oracle
+        // until it was beaten (§14.6), is gone (maintainer's decision
+        // 2026-11-16): without compilation the risks take the CPU tape.
         ScriptGpuRequest unmirrored = req;
         unmirrored.antithetic = false;
         const CompiledKernels compiled = compiled_kernels(unmirrored, PathKernel::Adjoint, "qm_script_adjoint");
-        if (!compiled.ok() && req.model->kind != DeviceModel::Kind::LocalVol)
-            throw InvalidInput("GPU: without the compiled adjoint, the per-path adjoint covers local vol (" +
-                               compiled.note + ")");
+        if (!compiled.ok())
+            throw InvalidInput("GPU: the per-path adjoint runs in the kernels compiled from the IR (" + compiled.note +
+                               ")");
         const scripting::ir::PathLayout layout =
-            compiled.ok() ? scripting::ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, true)
-                          : scripting::ir::PathLayout{};
+            scripting::ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, true);
         // The risks: the model's scalar parameters, then its grid's points.
-        const int n_params = compiled.ok() ? layout.n_risks + (layout.th_grid >= 0 ? static_cast<int>(req.model->grid.size()) : 0)
-                                           : 3 + static_cast<int>(req.model->K.size() * req.model->T_grid.size());
+        const int n_params =
+            layout.n_risks + (layout.th_grid >= 0 ? static_cast<int>(req.model->grid.size()) : 0);
         const auto np = static_cast<std::size_t>(n_params);
         const uint64_t reps = replicates_of(req);
         const uint64_t bps = LB::count(req.n_units);
@@ -698,11 +642,10 @@ namespace quantModeling::gpu
             DeviceArrays mem;
             const mc::ScriptPathView v = device_view(req, mem, device);
             const detail::StackLimitRestore release_stack;
-            // Per thread: the hand-written adjoint's trail, or the compiled
-            // one's checkpoints (the model's state per drawing step, the
-            // script's variables and the payoff per date).
+            // Per thread: the compiled adjoint's checkpoints (the model's
+            // state per drawing step, the script's variables and the payoff
+            // per date).
             long trail_len = 0;
-            if (compiled.ok())
             {
                 long drawing = 0;
                 for (int d : req.model->draws)
@@ -715,8 +658,6 @@ namespace quantModeling::gpu
                 trail_len = drawing * (layout.n_model + layout.n_surv) +
                             static_cast<long>(req.program->n_events()) * (layout.n_state() - layout.n_model);
             }
-            else
-                trail_len = mc::lv_trail_bound(*req.program, v.n_steps);
             trail_len = std::max<long>(trail_len, 1);
 
             // Launch size from the memory a thread needs (its trail, its
@@ -734,15 +675,10 @@ namespace quantModeling::gpu
             double *d_grad = mem.alloc<double>(static_cast<std::size_t>(rows) * np);
             double *d_warps = mem.alloc<double>(static_cast<std::size_t>(max_warps) * np);
             detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * np * sizeof(double)), "cudaMemset");
-            const AdjointUnit unit{v, s.draws, d_trail, d_grad, rows, req.n_units};
-            detail::PathUnit path;
-            if (compiled.ok())
-            {
-                path = path_unit(unmirrored, mem, v, s.draws, true);
-                path.checkpoints = d_trail;
-                path.gradient = d_grad;
-                path.rows = rows;
-            }
+            detail::PathUnit path = path_unit(unmirrored, mem, v, s.draws, true);
+            path.checkpoints = d_trail;
+            path.gradient = d_grad;
+            path.rows = rows;
 
             std::vector<AdjointBlock> blocks(static_cast<std::size_t>(last - first));
             std::vector<double> host(static_cast<std::size_t>(max_warps) * np);
@@ -769,22 +705,16 @@ namespace quantModeling::gpu
                                      static_cast<std::size_t>(c) * LB::kWarpsPerBlock + static_cast<std::size_t>(w)];
                 }
             };
-            std::vector<WelfordAccumulator> price;
-            if (compiled.ok())
+            void *fn = compiled.on(req, device);
+            uint64_t n_units = req.n_units, per_segment = bps;
+            const detail::LaunchBlocks<WelfordAccumulator> launch =
+                [&](uint64_t b, uint64_t count, WelfordAccumulator *d_partials)
             {
-                void *fn = compiled.on(req, device);
-                uint64_t n_units = req.n_units, per_segment = bps;
-                const detail::LaunchBlocks<WelfordAccumulator> launch =
-                    [&](uint64_t b, uint64_t count, WelfordAccumulator *d_partials)
-                {
-                    void *args[] = {&b, &per_segment, &n_units, &path, &d_partials};
-                    jit::launch(fn, static_cast<unsigned>(count), LB::kThreadsPerBlock, args);
-                };
-                price = detail::run_block_range_with<WelfordAccumulator>(device, first, last, per_launch, launch, after);
-            }
-            else
-                price = detail::run_block_range<WelfordAccumulator>(device, first, last, bps, req.n_units, unit,
-                                                                    per_launch, after);
+                void *args[] = {&b, &per_segment, &n_units, &path, &d_partials};
+                jit::launch(fn, static_cast<unsigned>(count), LB::kThreadsPerBlock, args);
+            };
+            const std::vector<WelfordAccumulator> price =
+                detail::run_block_range_with<WelfordAccumulator>(device, first, last, per_launch, launch, after);
             for (std::size_t b = 0; b < blocks.size(); ++b)
                 blocks[b].price = price[b];
             return blocks;
@@ -833,7 +763,7 @@ namespace quantModeling::gpu
             }
 
         ScriptAdjointGpuResult res;
-        res.note = compiled.ok() ? "adjoint kernel, " + compiled.note : "adjoint written by hand, " + compiled.note;
+        res.note = "adjoint kernel, " + compiled.note;
         res.risks.assign(np, 0.0);
         res.risk_std_errors.assign(np, 0.0);
         std::vector<WelfordAccumulator> block_price;

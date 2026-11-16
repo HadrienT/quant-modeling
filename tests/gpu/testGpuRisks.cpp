@@ -412,79 +412,21 @@ namespace quantModeling
         }
     } // namespace
 
-    // The tangent kernel against the dual numbers it replaces, on the device:
-    // the same price to the bit, the same risks to rounding.
-    TEST_F(GpuRisksTest, TangentKernelIsTheDuals)
+    // The dual numbers on the interpreter and the local-vol adjoint written by
+    // hand were deleted (2026-11-16) once the generated kernels beat them:
+    // with compilation off the risks stay on the CPU tape and say why.
+    TEST_F(GpuRisksTest, WithoutCompilationTheRisksStayOnTheCpu)
     {
-        int compared = 0;
-        for (const bool heston : {false, true})
-            for (const auto &s : library())
-            {
-                const ScriptedProduct<Real> product(s.source, kCtx);
-                if (product.n_underlyings() > (heston ? 1u : 2u))
-                    continue;
-                auto make = [&]() -> std::unique_ptr<ISimulationModel<Real>>
-                {
-                    if (heston)
-                        return std::make_unique<BatesSimModel<Real>>(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7,
-                                                                     0.0, 0.0, 0.0);
-                    if (product.n_underlyings() == 1)
-                        return std::make_unique<BlackScholesSimModel<Real>>(100.0, 0.03, 0.01, 0.25);
-                    return multi_bs<Real>(product.n_underlyings());
-                };
-                std::string why;
-                std::optional<AADSimulResults> duals, tangent;
-                {
-                    const JitSwitch off(false);
-                    auto m = make();
-                    duals = simulate_script_aad_gpu(product, *m, 4096, 5, why);
-                }
-                {
-                    const JitSwitch on(true);
-                    auto m = make();
-                    tangent = simulate_script_aad_gpu(product, *m, 4096, 5, why);
-                }
-                ASSERT_TRUE(duals && tangent) << s.name << ": " << why;
-                EXPECT_NE(tangent->diagnostics.find("tangent kernel"), std::string::npos) << tangent->diagnostics;
-                EXPECT_NE(duals->diagnostics.find("dual numbers"), std::string::npos) << duals->diagnostics;
-                EXPECT_EQ(tangent->price, duals->price) << s.name;
-                expect_same_risks(*tangent, *duals, 1e-12, s.name);
-                ++compared;
-            }
-        EXPECT_GT(compared, 40);
-    }
-
-    // The adjoint kernel against the adjoint written by hand, under local
-    // vol: the same price to the bit, every risk -- the whole grid -- to
-    // rounding.
-    TEST_F(GpuRisksTest, AdjointKernelIsTheHandWrittenAdjoint)
-    {
-        int compared = 0;
-        for (const auto &s : library())
-        {
-            const ScriptedProduct<Real> product(s.source, kCtx);
-            if (product.n_underlyings() > 1)
-                continue;
-            std::string why;
-            std::optional<AADSimulResults> hand, kernel;
-            {
-                const JitSwitch off(false);
-                LocalVolSimModel<Real> m(100.0, 0.03, 0.01, kK, kT, skewed<Real>());
-                hand = simulate_script_aad_gpu(product, m, 4096, 5, why);
-            }
-            {
-                const JitSwitch on(true);
-                LocalVolSimModel<Real> m(100.0, 0.03, 0.01, kK, kT, skewed<Real>());
-                kernel = simulate_script_aad_gpu(product, m, 4096, 5, why);
-            }
-            ASSERT_TRUE(hand && kernel) << s.name << ": " << why;
-            EXPECT_NE(kernel->diagnostics.find("adjoint kernel"), std::string::npos) << kernel->diagnostics;
-            EXPECT_NE(hand->diagnostics.find("written by hand"), std::string::npos) << hand->diagnostics;
-            EXPECT_EQ(kernel->price, hand->price) << s.name;
-            expect_same_risks(*kernel, *hand, 1e-11, s.name);
-            ++compared;
-        }
-        EXPECT_GT(compared, 20);
+        const JitSwitch off(false);
+        const ScriptedProduct<Real> product(library().front().source, kCtx);
+        std::string why;
+        BlackScholesSimModel<Real> bs(100.0, 0.03, 0.01, 0.25);
+        EXPECT_FALSE(simulate_script_aad_gpu(product, bs, 4096, 5, why).has_value());
+        EXPECT_NE(why.find("QM_SCRIPT_JIT=0"), std::string::npos) << why;
+        LocalVolSimModel<Real> lv(100.0, 0.03, 0.01, kK, kT, skewed<Real>());
+        why.clear();
+        EXPECT_FALSE(simulate_script_aad_gpu(product, lv, 4096, 5, why).has_value());
+        EXPECT_NE(why.find("QM_SCRIPT_JIT=0"), std::string::npos) << why;
     }
 
     // Lot L5: models nobody wrote a derivative for. SLV's risks -- its eight

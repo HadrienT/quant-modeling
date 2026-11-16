@@ -55,6 +55,8 @@
 #include "quantModeling/engines/mc/kernels/vanilla_bs.hpp"
 #include "quantModeling/engines/mc/logical_blocks.hpp"
 #include "quantModeling/engines/mc/script_adjoint.hpp"
+#include "quantModeling/engines/mc/simulation_engine_aad.hpp"
+#include "quantModeling/aad/number.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/script_path_host.hpp"
 #include "quantModeling/engines/mc/sobol_bridge_host.hpp"
@@ -517,7 +519,6 @@ int main(int argc, char **argv)
         const std::string call = "2027-06-01\n    pays max(spot() - 100, 0)\n";
         const HostScript h(call, make());
         const std::size_t np = 3 + strikes().size() * maturities().size();
-        const long trail_len = qm::mc::lv_trail_bound(h.product->program(), h.host->view.n_steps);
 
         auto gpu = [&](qm::SamplerKind sampler, std::size_t paths, int gpus)
         {
@@ -525,62 +526,21 @@ int main(int argc, char **argv)
             std::string why;
             return *qm::simulate_script_aad_gpu(*h.product, *m, paths, 11, why, sampler, gpus);
         };
-        // The kernel's adjoint on the host, one trail and gradient row per thread.
-        struct Grad
-        {
-            qm::WelfordAccumulator price;
-            std::vector<double> g;
-            void add(const std::pair<double, std::vector<double> *> &x)
-            {
-                price.add(x.first);
-                if (g.empty())
-                    g.assign(x.second->size(), 0.0);
-                for (std::size_t i = 0; i < g.size(); ++i)
-                    g[i] += (*x.second)[i];
-            }
-            void merge(const Grad &o)
-            {
-                price.merge(o.price);
-                if (g.empty())
-                    g = o.g;
-                else
-                    for (std::size_t i = 0; i < g.size() && i < o.g.size(); ++i)
-                        g[i] += o.g[i];
-            }
-        };
+        // The CPU tape on the same paths (the oracle; the local-vol adjoint
+        // written by hand that this column used to time was deleted with the
+        // GPU's, 2026-11-16).
+        const qm::ScriptedProduct<qm::aad::Number> tape_product(call, kCtx);
+        std::vector<qm::aad::Number> tape_skew;
+        for (const Real x : skew())
+            tape_skew.emplace_back(x);
         auto cpu = [&](uint64_t units, const qm::mc::SobolTables *tables, qm::ThreadPool *p)
         {
-            const qm::mc::ScriptPathView &v = h.host->view;
-            const int reps = tables ? tables->replicates : 1;
-            auto one = [&](int b, qm::ThreadPool *inner)
-            {
-                auto fn = [&](uint64_t u)
-                {
-                    thread_local std::vector<double> trail, grad, pt, out;
-                    trail.resize(static_cast<std::size_t>(trail_len));
-                    grad.assign(np, 0.0);
-                    qm::mc::PathDraws d;
-                    d.seed = 11;
-                    d.stride = 1;
-                    if (tables)
-                    {
-                        pt.resize(static_cast<std::size_t>(v.n_steps));
-                        out.resize(static_cast<std::size_t>(v.n_steps));
-                        qm::mc::sobol_bridged_gaussians(tables->view(), static_cast<uint64_t>(b),
-                                                        static_cast<uint32_t>(u), pt.data(), 1, out.data(), 1);
-                        d.given = out.data();
-                    }
-                    qm::mc::AdjointScratch w{{trail.data(), 1, 0}, {grad.data(), 1}};
-                    const double price = qm::mc::script_lv_adjoint_path(v, d, u, 1.0, w);
-                    return std::pair<double, std::vector<double> *>(price, &grad);
-                };
-                qm::mc::reduce_logical_blocks<Grad>(units, fn, inner);
-            };
-            if (tables)
-                for_replicates(reps, p, [&](int b)
-                               { one(b, nullptr); });
-            else
-                one(0, p);
+            qm::LocalVolSimModel<qm::aad::Number> m(qm::aad::Number(100.0), qm::aad::Number(0.03),
+                                                    qm::aad::Number(0.01), strikes(), maturities(),
+                                                    tape_skew, 1.0 / 252.0);
+            const std::size_t paths = static_cast<std::size_t>(std::max<uint64_t>(units, 1)) * (tables ? 16 : 1);
+            qm::simulate_aad(tape_product, m, paths, 11, qm::first_aad_payoff, qm::RngKind::Philox,
+                             tables ? qm::SamplerKind::Sobol : qm::SamplerKind::PseudoRandom, nullptr, p);
         };
 
         const auto pilot = gpu(qm::SamplerKind::PseudoRandom, 1 << 16, 2);
@@ -630,7 +590,8 @@ int main(int argc, char **argv)
     pool.stop();
 
     std::printf("Time to a relative standard error of %.0e on the price (%.0e on the delta for the superbucket).\n"
-                "CPU columns: the kernels' own per-path code on the host; * = timed on a fraction of the work\n"
+                "CPU columns: the kernels' own per-path code on the host (the superbucket: the CPU tape);\n"
+                "* = timed on a fraction of the work\n"
                 "(budget %.0f s per cell) and scaled linearly.\n",
                 target, target_risk, budget);
     print(pseudo, "Pseudo-random (Philox; antithetic pairs except the superbucket)", threads);
