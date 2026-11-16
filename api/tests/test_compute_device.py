@@ -325,3 +325,18 @@ def test_the_cpu_reports_no_gpu(client):
     assert body["gpus"] == 0
     event = next(e for e in sink.events if e.type == "pricing.valuation")
     assert event.payload["engine"]["gpus"] is None
+
+
+def test_heston_and_slv_scripts_default_to_the_gpu_when_there_is_one():
+    # The page's default 200k paths at 252 steps a year ran past the 20 s
+    # timeout on the production CPUs; "auto" falls back to the CPU itself
+    # for what the GPU cannot run, so the default only has to ask for it.
+    from types import SimpleNamespace
+
+    from app import pricing_service
+
+    req = SimpleNamespace(device=None, second_order=False, greeks_method="aad")
+    assert pricing_service._device(req, "heston") == "auto"
+    assert pricing_service._device(req, "slv") == "auto"
+    asked = SimpleNamespace(device=SimpleNamespace(value="cpu"), greeks_method="aad")
+    assert pricing_service._device(asked, "heston") == "cpu"

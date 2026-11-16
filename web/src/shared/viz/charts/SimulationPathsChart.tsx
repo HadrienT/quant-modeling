@@ -39,7 +39,7 @@ export function SimulationPathsChart({
 	const [ref, { width }] = useMeasure<HTMLDivElement>();
 	const w = width || 640;
 	const height = 340;
-	const m = { top: 10, right: 16, bottom: 30, left: 56 };
+	const m = { top: 10, right: 28, bottom: 30, left: 56 };
 	const iw = Math.max(0, w - m.left - m.right);
 	const ih = height - m.top - m.bottom;
 

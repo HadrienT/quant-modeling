@@ -6,7 +6,8 @@ import {
 	Uncertainty,
 } from "@/shared/ui/density";
 import { ScriptGreeks } from "./ScriptGreeks";
-import { SecondOrderGreeks } from "./SecondOrderGreeks";
+import { SecondOrderRefused } from "./SecondOrderGreeks";
+import { secondOrderRefusal } from "./secondOrderRefusal";
 
 /** A scripted product's price, its Monte-Carlo error, its time-step bias and
  * how long it took,
@@ -14,6 +15,7 @@ import { SecondOrderGreeks } from "./SecondOrderGreeks";
  * view: the form above it can be long. */
 export function ScriptResult({ result: r }: { result: PricingResult }) {
 	const ref = useRef<HTMLDivElement>(null);
+	const refused = secondOrderRefusal(r.diagnostics ?? "");
 	useEffect(() => {
 		ref.current?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
 	}, [r]);
@@ -26,11 +28,12 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 					</span>
 					<ComputeTime computeMs={r.compute_ms} roundTripMs={r.round_trip_ms} />
 				</div>
-				<div className="text-xl">
+				<div className="mt-1">
 					<Uncertainty
 						value={r.npv}
 						stdError={r.mc_std_error}
 						magnitude="price"
+						emphasis
 					/>
 				</div>
 				<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
@@ -40,10 +43,17 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 					</p>
 				)}
 			</div>
-			{r.risks && r.risks.length > 0 && <ScriptGreeks risks={r.risks} />}
-			{r.second_order_method && (
-				<SecondOrderGreeks greeks={r.greeks} method={r.second_order_method} />
+			{r.risks && r.risks.length > 0 && (
+				<ScriptGreeks
+					risks={r.risks}
+					secondOrder={
+						r.second_order_method
+							? { greeks: r.greeks, method: r.second_order_method }
+							: undefined
+					}
+				/>
 			)}
+			{refused && <SecondOrderRefused reason={refused} />}
 		</div>
 	);
 }

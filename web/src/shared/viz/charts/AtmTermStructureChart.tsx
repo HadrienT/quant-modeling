@@ -59,14 +59,27 @@ export function AtmTermStructureChart({
 					xFormat={(v) => v.toFixed(1)}
 				>
 					{({ xScale, yScale }) => (
-						<LinePath
-							data={points}
-							x={(p) => xScale(p.ttm)}
-							y={(p) => yScale(p.vol)}
-							stroke={t.series[0]}
-							strokeWidth={1.75}
-							curve={curveMonotoneX}
-						/>
+						<>
+							<LinePath
+								data={points}
+								x={(p) => xScale(p.ttm)}
+								y={(p) => yScale(p.vol)}
+								stroke={t.series[0]}
+								strokeWidth={1.75}
+								curve={curveMonotoneX}
+							/>
+							{/* The quoted maturities: the line between them is an
+							    interpolation, not market data. */}
+							{points.map((p) => (
+								<circle
+									key={p.ttm}
+									cx={xScale(p.ttm)}
+									cy={yScale(p.vol)}
+									r={2.5}
+									fill={t.series[0]}
+								/>
+							))}
+						</>
 					)}
 				</Cartesian>
 			)}

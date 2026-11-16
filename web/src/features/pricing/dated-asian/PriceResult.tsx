@@ -8,11 +8,12 @@ export function PriceResult({ result: r }: { result: PricingResult }) {
 				<span className="text-2xs text-ink-muted uppercase">Present value</span>
 				<ComputeTime computeMs={r.compute_ms} roundTripMs={r.round_trip_ms} />
 			</div>
-			<div className="text-xl">
+			<div className="mt-1">
 				<Uncertainty
 					value={r.npv}
 					stdError={r.mc_std_error}
 					magnitude="price"
+					emphasis
 				/>
 			</div>
 			{r.diagnostics && (

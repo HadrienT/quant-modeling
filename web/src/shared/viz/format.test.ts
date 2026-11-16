@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { niceDomain } from "./format";
+import { logTicks, niceDomain, stepFormat } from "./format";
 
 describe("niceDomain", () => {
 	it("adds headroom without touching zero by default", () => {
@@ -43,5 +43,35 @@ describe("niceDomain", () => {
 		const values = [-0.01, 0.0, 4.9];
 		const [, max] = niceDomain(values, { clipOutliers: true });
 		expect(max).toBeGreaterThan(4);
+	});
+});
+
+describe("stepFormat", () => {
+	it("gives every tick the decimals of the step, so no two ticks share a label", () => {
+		const f = stepFormat([0, 0.02], 4);
+		const labels = [0, 0.005, 0.01, 0.015, 0.02].map(f);
+		expect(labels).toEqual(["0.000", "0.005", "0.010", "0.015", "0.020"]);
+	});
+
+	it("drops decimals a coarse step does not need", () => {
+		expect(stepFormat([0, 40], 4)(30)).toBe("30");
+	});
+
+	it("never writes zero in exponent notation or with a minus sign", () => {
+		expect(stepFormat([-6, 0], 4)(-1e-17)).toBe("0");
+	});
+});
+
+describe("logTicks", () => {
+	it("puts 1, 2 and 5 times each power of ten inside a narrow domain", () => {
+		expect(logTicks([7e-4, 1.1e-2])).toEqual([1e-3, 2e-3, 5e-3, 1e-2]);
+	});
+
+	it("thins to one tick per decade over many decades", () => {
+		expect(logTicks([1e3, 1e7])).toEqual([1e3, 1e4, 1e5, 1e6, 1e7]);
+	});
+
+	it("labels the two ends of a domain narrower than one step", () => {
+		expect(logTicks([3e-3, 4e-3])).toEqual([3e-3, 4e-3]);
 	});
 });

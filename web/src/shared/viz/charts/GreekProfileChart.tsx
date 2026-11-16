@@ -2,7 +2,7 @@ import { LinePath } from "@visx/shape";
 import { curveMonotoneX } from "@visx/curve";
 import { Cartesian } from "../Cartesian";
 import { ChartFrame } from "../ChartFrame";
-import { niceDomain } from "../format";
+import { niceDomain, stepFormat } from "../format";
 import { useChartTheme } from "../theme";
 
 export type GreekProfile = { name: string; spot: number[]; values: number[] };
@@ -62,9 +62,10 @@ export function GreekProfileChart({
 								numYTicks={4}
 								zeroLine
 								xFormat={(v) => v.toFixed(0)}
-								yFormat={(v) =>
-									Math.abs(v) < 0.01 ? v.toExponential(0) : v.toFixed(2)
-								}
+								yFormat={stepFormat(
+									niceDomain(p.values, { includeZero: true }),
+									4,
+								)}
 							>
 								{({ xScale, yScale, innerHeight }) => (
 									<>

@@ -195,4 +195,14 @@ namespace quantModeling
         EXPECT_NEAR(requireGreek(res.greeks.delta), fdDelta, 1e-6);
     }
 
+    // A closed form has no sampling error: the price carries a standard error
+    // of exactly zero, not whatever the field's memory held (the Products page
+    // showed "+- 4.89e-310" from an uninitialised mc_std_error).
+    TEST_F(BSAnalyticFixture, AClosedFormHasNoStandardError)
+    {
+        EXPECT_EQ(PricingResult{}.mc_std_error, 0.0);
+        EXPECT_EQ(priceEuroVanilla(OptionType::Call).mc_std_error, 0.0);
+        EXPECT_EQ(priceEuroVanilla(OptionType::Put).mc_std_error, 0.0);
+    }
+
 } // namespace quantModeling

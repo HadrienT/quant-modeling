@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 import { AxisBottom, AxisLeft } from "@visx/axis";
 import { GridColumns, GridRows } from "@visx/grid";
 import { Group } from "@visx/group";
@@ -44,6 +44,7 @@ export function Cartesian({
 	}) => ReactNode;
 }) {
 	const t = useChartTheme();
+	const clipId = `plot${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 	const [ref, { width }] = useMeasure<HTMLDivElement>();
 	const w = width || 640;
 	const innerWidth = Math.max(0, w - margin.left - margin.right);
@@ -64,6 +65,17 @@ export function Cartesian({
 	return (
 		<div ref={ref} className="w-full">
 			<svg width={w} height={height} role="img">
+				<defs>
+					<clipPath id={clipId}>
+						{/* A few pixels of slack keep a marker on the domain's edge whole. */}
+						<rect
+							x={-4}
+							y={-4}
+							width={innerWidth + 8}
+							height={innerHeight + 8}
+						/>
+					</clipPath>
+				</defs>
 				<Group left={margin.left} top={margin.top}>
 					<GridRows
 						scale={yScale}
@@ -89,12 +101,16 @@ export function Cartesian({
 							strokeWidth={1}
 						/>
 					)}
-					{children({
-						xScale: (v: number) => xScale(v) ?? 0,
-						yScale: (v: number) => yScale(v) ?? 0,
-						innerWidth,
-						innerHeight,
-					})}
+					{/* A domain that leaves outliers out (niceDomain's clipOutliers)
+					    must not let their lines run over the axes. */}
+					<g clipPath={`url(#${clipId})`}>
+						{children({
+							xScale: (v: number) => xScale(v) ?? 0,
+							yScale: (v: number) => yScale(v) ?? 0,
+							innerWidth,
+							innerHeight,
+						})}
+					</g>
 					<AxisBottom
 						top={innerHeight}
 						scale={xScale}

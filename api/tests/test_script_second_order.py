@@ -75,6 +75,15 @@ def test_on_the_cpu_the_first_order_answer_stands_and_says_why():
     assert resp.risks  # the first-order report is still there
 
 
+@pytest.mark.skipif(not HAS_GPU, reason="the second order runs on the GPU")
+def test_a_request_that_names_no_device_gets_its_second_order():
+    # The scripting page sends no device when the user leaves it on Auto:
+    # the second order must not be dropped for the CPU then.
+    resp = _priced(second_order=True)
+    assert resp.second_order_method is not None
+    assert resp.greeks.gamma is not None and resp.greeks.vanna is not None
+
+
 def _digital_gamma(S, K, r, vol, T):
     d2 = (math.log(S / K) + (r - 0.5 * vol * vol) * T) / (vol * math.sqrt(T))
     d1 = d2 + vol * math.sqrt(T)

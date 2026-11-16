@@ -23,64 +23,72 @@ const ROWS: {
 ];
 
 /**
- * A script's second-order greeks (blueprint WP 27 §14.10-14.11), each with
- * its standard error, and the method that gave them, said in full: they are
- * central differences of first-order risks (the adjoint's, or Vibrato's for a
- * payoff that jumps at its final date), so they carry a
- * small bump bias the error does not include. Vanna and volga only exist for
- * a model with one vol (Black-Scholes, or a parallel shift of the local-vol
- * grid); a stochastic-vol model shows gamma alone.
+ * A script's second-order greeks (blueprint WP 27 §14.10-14.11) as rows of
+ * the greeks table, under their own heading, each with its standard error.
+ * They are central differences of first-order risks (the adjoint's, or
+ * Vibrato's for a payoff that jumps at its final date), so they carry a
+ * small bump bias the error does not include; the note below the table says
+ * so. Vanna and volga only exist for a model with one vol (Black-Scholes, or
+ * a parallel shift of the local-vol grid); a stochastic-vol model has gamma
+ * alone.
  */
-export function SecondOrderGreeks({
+export function SecondOrderRows({ greeks }: { greeks: Greeks }) {
+	const rows = ROWS.filter((r) => greeks[r.key] != null);
+	return (
+		<tbody aria-label="Second-order greeks">
+			<tr>
+				<th
+					colSpan={3}
+					scope="colgroup"
+					className="pt-3 pb-1 text-left text-2xs font-normal text-ink-muted uppercase"
+				>
+					Second order · central differences of first-order risks
+				</th>
+			</tr>
+			{rows.map((r) => (
+				<tr key={r.key} className="border-t border-hairline">
+					<td className="py-1 pr-2 text-ink">{r.name}</td>
+					<td className="px-2 py-1 text-right">
+						<Uncertainty
+							value={greeks[r.key] ?? 0}
+							stdError={greeks[`${r.key}_std_error`] ?? 0}
+							magnitude="greek"
+						/>
+					</td>
+					<td className="py-1 pl-2 text-2xs text-ink-secondary">{r.unit}</td>
+				</tr>
+			))}
+		</tbody>
+	);
+}
+
+/** How the second order was computed, and what its error leaves out. */
+export function SecondOrderNote({
 	greeks,
 	method,
 }: {
 	greeks: Greeks;
 	method: string;
 }) {
-	const rows = ROWS.filter((r) => greeks[r.key] != null);
+	const single = greeks.vanna == null && greeks.volga == null;
 	return (
-		<section
-			aria-label="Second-order greeks"
-			className="flex flex-col gap-2 rounded-md border border-hairline bg-surface p-4"
+		<p className="text-2xs text-ink-muted">
+			Second order: {method}. A central difference has a bias of the order of
+			the bump squared, which the standard error does not include.
+			{single && " This model has no single vol, so no vanna or volga."}
+		</p>
+	);
+}
+
+/** Said where the second-order rows would be, not left in the diagnostics:
+ * the user ticked the box and should see why it came back empty. */
+export function SecondOrderRefused({ reason }: { reason: string }) {
+	return (
+		<p
+			role="status"
+			className="rounded-md border border-warning/40 bg-warning/5 p-3 text-sm text-warning"
 		>
-			<h2 className="text-2xs text-ink-muted uppercase">
-				Second-order greeks · central differences of first-order risks
-			</h2>
-			<table className="w-full text-sm">
-				<thead>
-					<tr className="text-left text-2xs text-ink-muted uppercase">
-						<th className="py-1 pr-2 font-normal">Greek</th>
-						<th className="px-2 py-1 text-right font-normal">
-							Value ± std error
-						</th>
-						<th className="py-1 pl-2 font-normal">Unit</th>
-					</tr>
-				</thead>
-				<tbody>
-					{rows.map((r) => (
-						<tr key={r.key} className="border-t border-hairline">
-							<td className="py-1 pr-2 text-ink">{r.name}</td>
-							<td className="px-2 py-1 text-right">
-								<Uncertainty
-									value={greeks[r.key] ?? 0}
-									stdError={greeks[`${r.key}_std_error`] ?? 0}
-									magnitude="greek"
-								/>
-							</td>
-							<td className="py-1 pl-2 text-2xs text-ink-secondary">
-								{r.unit}
-							</td>
-						</tr>
-					))}
-				</tbody>
-			</table>
-			<p className="text-2xs text-ink-muted">
-				{method}. A central difference has a bias of the order of the bump
-				squared, which the standard error does not include.
-				{rows.length === 1 &&
-					" This model has no single vol, so no vanna or volga."}
-			</p>
-		</section>
+			No second-order greeks for this request: {reason}.
+		</p>
 	);
 }

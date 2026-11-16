@@ -65,10 +65,22 @@ def _device(req, model: str) -> str:
     """Where a script request runs when it does not say: the GPU when the
     server has one ("auto") for a multilevel price, which the GPU returns
     several times faster within the same error (WP 26 §10), and for its
-    AAD greeks under local vol, where they are multilevel too (§10.2); the
-    CPU for every other run."""
+    AAD greeks under local vol, where they are multilevel too (§10.2), and
+    for Heston and SLV, which the CPUs cannot price in time; the CPU for
+    every other run. A request for second-order greeks goes to the
+    GPU too: the bump on the adjoint runs only there, and on the CPU the
+    box the user ticked would come back empty."""
     if req.device is not None:
         return req.device.value
+    if getattr(req, "second_order", False) and req.greeks_method == "aad":
+        return "auto"
+    # Heston and SLV step a variance alongside the spot at 252 steps a year:
+    # the page's default 200k paths took 17 s without greeks on the
+    # production CPUs (two), over the 20 s timeout with them, against 0.4-2 s
+    # on the GPU. "auto" stays on the CPU for what the GPU cannot run (early
+    # exercise, a server without one) and says so in the diagnostics.
+    if model in ("heston", "slv"):
+        return "auto"
     multilevel = _multilevel(req, model)["mlmc_eps"] > 0.0 or (
         _multilevel(req, model)["mlmc_rel_eps"] > 0.0
     )

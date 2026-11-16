@@ -25,7 +25,8 @@
 //     delta equals the central difference of the price on the same paths;
 //   - Heston and SLV are refused: their last step's variance comes near 0,
 //     where the weight Z / s has no finite variance;
-//   - what Vibrato does not cover says why.
+//   - what Vibrato does not cover says why, including a digital struck at a
+//     later fixing, whose price does not depend on today's spot.
 
 namespace quantModeling
 {
@@ -205,6 +206,26 @@ namespace quantModeling
         why.clear();
         EXPECT_FALSE(simulate_script_second_order(digital, *heston, 1000, kSeed, why).has_value());
         EXPECT_NE(why.find("finite variance"), std::string::npos) << why;
+    }
+
+    // The scripting library's digital call: struck at 100 % of the spot at a
+    // fixing after today, so its price does not move with today's spot and
+    // its gamma is 0. Vibrato's ratio over the last step ignores that the
+    // strike moves with the path and gave the gamma of a fixed-strike digital
+    // instead (-0.019 on the site): the dispatcher must refuse it.
+    TEST(ScriptIrVibrato, AStrikeFixedFromTheSpotLaterIsRefusedNotMispriced)
+    {
+        auto model = make_model<Real>(Dyn::BlackScholes, 1);
+        const std::string forward = "2026-07-01\n    s0 = spot()\n"
+                                    "2027-06-01\n    if spot() > s0 then pays 1 endIf\n";
+        const ScriptedProduct<Real> product(forward, kCtx);
+        ASSERT_TRUE(product.analysis().path_dependent);
+        std::string why;
+        EXPECT_FALSE(simulate_script_second_order(product, *model, 1000, kSeed, why).has_value());
+        EXPECT_NE(why.find("earlier date"), std::string::npos) << why;
+        // An earlier spot that is assigned but never read again changes nothing.
+        const ScriptedProduct<Real> unread(kDigitalTwoSteps, kCtx);
+        EXPECT_FALSE(unread.analysis().path_dependent);
     }
 
 } // namespace quantModeling
