@@ -46,7 +46,7 @@ namespace quantModeling
                                                            ISimulationModel<Real> &model, std::size_t n_paths,
                                                            std::uint64_t seed, std::string &why,
                                                            SamplerKind sampler = SamplerKind::PseudoRandom,
-                                                           int max_gpus = 0);
+                                                           int max_gpus = 0, bool vibrato = false);
 
     /**
      * @brief A script's price and model risks by multilevel QMC on the GPU
@@ -121,7 +121,32 @@ namespace quantModeling
     std::optional<ScriptSecondOrderResults> simulate_script_second_order_gpu(
         const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model, std::size_t n_paths,
         std::uint64_t seed, std::string &why, double rel_spot_bump = 1e-2, double vol_bump = 2.5e-3,
-        int max_gpus = 0);
+        int max_gpus = 0, bool vibrato = false);
+
+    /**
+     * @brief Second-order risks of a payoff that jumps at its final date, by
+     *        Vibrato (WP 27 §8 rung 3, §14.11): each path pathwise up to the
+     *        last step, a likelihood ratio over it (ir::run_path_vibrato), so
+     *        that a hard digital's delta is right; gamma (and the spot's row)
+     *        the central difference of that delta at the spot +-rel_spot_bump,
+     *        vanna and volga (Black-Scholes) of its vega, the vol +-vol_bump --
+     *        every bumped pair on the same paths, each path one difference, so
+     *        the error is the paths' spread. On the CPU, Philox paths.
+     *
+     * nullopt, with `why`, for what Vibrato does not cover: several
+     * underlyings, a jump before the final date (a barrier observed on
+     * dates), early exercise, bridge survivals, jumps in the model.
+     */
+    std::optional<ScriptSecondOrderResults> simulate_script_second_order_vibrato(
+        const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model, std::size_t n_paths,
+        std::uint64_t seed, std::string &why, double rel_spot_bump = 1e-2, double vol_bump = 2.5e-3);
+
+    /// The second order the payoff allows: Vibrato for a hard payoff that
+    /// compares the spot (it jumps), the bump on the GPU's adjoint otherwise.
+    std::optional<ScriptSecondOrderResults> simulate_script_second_order(const ScriptedProduct<Real> &product,
+                                                                         const ISimulationModel<Real> &model,
+                                                                         std::size_t n_paths, std::uint64_t seed,
+                                                                         std::string &why);
 
 } // namespace quantModeling
 

@@ -30,6 +30,10 @@
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
 #include "quantModeling/models/equity/slv_sim_model.hpp"
+#include "quantModeling/scripting/ir_ad.hpp"
+#include "quantModeling/utils/accumulators.hpp"
+#include <chrono>
+#include <cstdio>
 
 // Lot G3 of blueprint/wp/19-gpu.md on the device:
 //   - the generic variance reduction (spot controls, stratified terminal
@@ -671,6 +675,77 @@ namespace quantModeling
         EXPECT_LT(so->gamma_std_error, 0.05 * so->gamma);
         EXPECT_FALSE(so->vanna.has_value());
         EXPECT_EQ(so->spot_row.size(), m.parameter_labels().size());
+    }
+
+    // WP 27 §14.11: the Vibrato kernel is the host's ir::run_path_vibrato --
+    // on the same Philox paths its risks are the host's mean to rounding,
+    // under Black-Scholes and local vol, on a hard digital. And the
+    // dispatcher runs Vibrato on the GPU for a payoff that jumps.
+    TEST_F(GpuRisksTest, VibratoKernelIsTheHostsVibrato)
+    {
+        namespace ir = scripting::ir;
+        const std::string source = "2026-12-01\n    a = spot()\n2027-06-01\n    if spot() > 100 then pays 1 endIf\n";
+        const ScriptedProduct<Real> product(source, kCtx);
+        const std::size_t paths = 8192;
+        const auto compare = [&](ISimulationModel<Real> &m, const char *what)
+        {
+            std::string why;
+            const auto gpu = simulate_script_aad_gpu(product, m, paths, kSeed, why, SamplerKind::PseudoRandom, 0, true);
+            ASSERT_TRUE(gpu.has_value()) << what << ": " << why;
+            EXPECT_NE(gpu->diagnostics.find("Vibrato kernel"), std::string::npos) << gpu->diagnostics;
+            m.init(product.timeline(), product.defline());
+            DeviceModel dm;
+            ASSERT_TRUE(m.describe_device(dm));
+            const ir::PathProgram primal = ir::path_program(product.ir(), dm.kind, 1, true, true);
+            const int K = primal.layout.n_risks;
+            std::vector<std::int32_t> dirs(static_cast<std::size_t>(K));
+            for (int k = 0; k < K; ++k)
+                dirs[static_cast<std::size_t>(k)] = k;
+            const ir::PathProgram tan = ir::tangent(primal, dirs);
+            std::vector<std::vector<Time>> mats;
+            for (const SampleDef &def : product.defline())
+                mats.push_back(def.discount_mats);
+            const ir::PathData data = ir::path_data(primal.layout, dm, product.ir(), mats, product.baseline());
+            std::vector<WelfordAccumulator> host(static_cast<std::size_t>(K));
+            std::vector<double> d(static_cast<std::size_t>(K));
+            ir::DerivativeScratch w;
+            mc::PathDraws draws;
+            draws.seed = kSeed;
+            draws.stride = dm.stride;
+            WelfordAccumulator price;
+            for (std::size_t p = 0; p < paths; ++p)
+            {
+                draws.begin(p);
+                price.add(ir::run_path_vibrato(tan, K, data, dm, product.ir(), draws, w, d.data()));
+                for (int k = 0; k < K; ++k)
+                    host[static_cast<std::size_t>(k)].add(d[static_cast<std::size_t>(k)]);
+            }
+            EXPECT_NEAR(gpu->price, price.mean, 1e-10) << what;
+            for (int k = 0; k < K; ++k)
+                EXPECT_NEAR(gpu->risks[static_cast<std::size_t>(k)], host[static_cast<std::size_t>(k)].mean,
+                            1e-8 * std::max(1.0, std::abs(host[static_cast<std::size_t>(k)].mean)))
+                    << what << " " << gpu->risk_labels[static_cast<std::size_t>(k)];
+        };
+        {
+            BlackScholesSimModel<Real> m(100.0, 0.03, 0.01, 0.25);
+            compare(m, "Black-Scholes");
+        }
+        {
+            auto m = local_vol<Real>();
+            compare(*m, "local vol");
+        }
+        // the dispatcher, a realistic local vol (252 steps a year), timed
+        LocalVolSimModel<Real> daily(100.0, 0.03, 0.01, kK, kT, skewed<Real>(), 1.0 / 252.0);
+        std::string why;
+        const auto t0 = std::chrono::steady_clock::now();
+        const auto so = simulate_script_second_order(product, daily, 200000, kSeed, why);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        ASSERT_TRUE(so.has_value()) << why;
+        EXPECT_NE(so->method.find("Vibrato on the GPU"), std::string::npos) << so->method;
+        // an at-the-money one-year digital's gamma is near 0 here: an absolute bound
+        EXPECT_LT(so->gamma_std_error, 2e-4);
+        std::printf("Vibrato second order, local vol 252 steps/yr, 200000 points: %.0f ms, gamma %.6f +- %.6f\n", ms,
+                    so->gamma, so->gamma_std_error);
     }
 
 } // namespace quantModeling

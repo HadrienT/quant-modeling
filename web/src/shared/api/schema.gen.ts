@@ -6304,7 +6304,7 @@ export interface components {
             script: string;
             /**
              * Second Order
-             * @description With greeks_method='aad': also gamma, vanna and volga, each with its standard error, by the bump on the GPU's adjoint (blueprint/wp/27-ir-ad.md §14.10): central differences of the first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same Sobol points. Vanna and volga need a model with one vol (Black-Scholes, local vol). About four first-order runs more; on the GPU only (otherwise the diagnostics say why and the first-order answer stands).
+             * @description With greeks_method='aad': also gamma, vanna and volga, each with its standard error (blueprint/wp/27-ir-ad.md §14.10-14.11): central differences of first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same points. The first-order risks are the GPU's adjoint, or, for a hard payoff that jumps at its final date (a digital), Vibrato (pathwise up to the last step, a likelihood ratio over it; Black-Scholes or local vol, the GPU or else the CPU). Vanna and volga need a model with one vol. About four first-order runs more. What cannot be covered (a jump at an earlier date, no GPU for the adjoint) is said in the diagnostics and the first-order answer stands.
              * @default false
              */
             second_order: boolean;
@@ -6559,7 +6559,7 @@ export interface components {
             sampler: "pseudo" | "sobol" | "stratified";
             /**
              * Second Order
-             * @description With greeks_method='aad': also gamma, vanna and volga, each with its standard error, by the bump on the GPU's adjoint (blueprint/wp/27-ir-ad.md §14.10): central differences of the first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same Sobol points. Vanna and volga need a model with one vol (Black-Scholes, local vol). About four first-order runs more; on the GPU only (otherwise the diagnostics say why and the first-order answer stands).
+             * @description With greeks_method='aad': also gamma, vanna and volga, each with its standard error (blueprint/wp/27-ir-ad.md §14.10-14.11): central differences of first-order risks at the spot bumped by 1 % and the vol by 25 bp (a parallel shift of a local-vol grid), each pair on the same points. The first-order risks are the GPU's adjoint, or, for a hard payoff that jumps at its final date (a digital), Vibrato (pathwise up to the last step, a likelihood ratio over it; Black-Scholes or local vol, the GPU or else the CPU). Vanna and volga need a model with one vol. About four first-order runs more. What cannot be covered (a jump at an earlier date, no GPU for the adjoint) is said in the diagnostics and the first-order answer stands.
              * @default false
              */
             second_order: boolean;

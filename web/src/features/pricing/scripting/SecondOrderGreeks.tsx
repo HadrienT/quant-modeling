@@ -23,9 +23,10 @@ const ROWS: {
 ];
 
 /**
- * A script's second-order greeks (blueprint WP 27 §14.10), each with its
- * standard error, and the method that gave them, said in full: they are
- * central differences of the adjoint's first-order risks, so they carry a
+ * A script's second-order greeks (blueprint WP 27 §14.10-14.11), each with
+ * its standard error, and the method that gave them, said in full: they are
+ * central differences of first-order risks (the adjoint's, or Vibrato's for a
+ * payoff that jumps at its final date), so they carry a
  * small bump bias the error does not include. Vanna and volga only exist for
  * a model with one vol (Black-Scholes, or a parallel shift of the local-vol
  * grid); a stochastic-vol model shows gamma alone.
@@ -44,7 +45,7 @@ export function SecondOrderGreeks({
 			className="flex flex-col gap-2 rounded-md border border-hairline bg-surface p-4"
 		>
 			<h2 className="text-2xs text-ink-muted uppercase">
-				Second-order greeks · bump on the adjoint
+				Second-order greeks · central differences of first-order risks
 			</h2>
 			<table className="w-full text-sm">
 				<thead>

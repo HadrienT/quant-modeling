@@ -54,7 +54,10 @@ namespace quantModeling::scripting
     {
         Price = 0,
         Tangent = 1,
-        Adjoint = 2
+        Adjoint = 2,
+        /// The tangent's blocks driven by Vibrato (WP 27 §14.11): linked
+        /// with the tangent's kernel, whose output it shares.
+        Vibrato = 3
     };
 
     /**

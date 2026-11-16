@@ -1,6 +1,7 @@
 #include "quantModeling/scripting/ir_ad.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 
 #include "quantModeling/engines/mc/script_path.hpp"
@@ -679,6 +680,107 @@ namespace quantModeling::scripting::ir
             derivatives[k] = w.tangent[static_cast<std::size_t>(l.pay()) * static_cast<std::size_t>(K) +
                                        static_cast<std::size_t>(k)];
         return w.state[static_cast<std::size_t>(l.pay())];
+    }
+
+    double run_path_vibrato(const PathProgram &p, int K, const PathData &data, const DeviceModel &model,
+                            const Script &script, mc::PathDraws &draws, DerivativeScratch &w, double *derivatives)
+    {
+        const PathLayout &l = p.layout;
+        if (!l.last_step || l.n_assets != 1)
+            throw InvalidInput("script IR: Vibrato needs one underlying and the last step's forward in the state");
+        const auto ns = static_cast<std::size_t>(l.n_state());
+        const auto nk = static_cast<std::size_t>(K);
+        const std::size_t n_events = script.n_events();
+        if (n_events == 0)
+            throw InvalidInput("script IR: Vibrato of a script with no date");
+        // The final date's step, and the last step that draws up to it.
+        std::size_t s_final = model.t.size();
+        for (std::size_t s = 0; s < model.t.size(); ++s)
+            if (model.event[s] == static_cast<int>(n_events) - 1)
+                s_final = s;
+        std::size_t s_last = model.t.size();
+        for (std::size_t s = 0; s <= s_final && s < model.t.size(); ++s)
+            if (model.draws[s])
+                s_last = s;
+        if (s_final == model.t.size() || s_last == model.t.size())
+            throw InvalidInput("script IR: Vibrato needs a drawn step before the final date");
+
+        w.state.assign(ns, 0.0);
+        w.tangent.assign(ns * nk, 0.0);
+        w.val.resize(longest_block(p));
+        double z[mc::ScriptLimits::kAssets] = {};
+        Frame f = frame_of(l, data, model);
+        f.state = w.state.data();
+        f.state_tangent = w.tangent.data();
+        f.directions = K;
+        f.draws = z;
+        f.data = data.baseline.data();
+        run_block(p.init, f, w.val.data());
+        const auto run_event = [&](std::size_t s)
+        {
+            const int e = model.event[s];
+            if (e < 0)
+                return;
+            f.data = data.event_rows.data() + static_cast<std::size_t>(e) * static_cast<std::size_t>(l.event_cols);
+            f.terms = data.terms.data() + data.term_begin[static_cast<std::size_t>(e)];
+            run_block(p.events[static_cast<std::size_t>(script.event_block[static_cast<std::size_t>(e)])], f,
+                      w.val.data());
+        };
+        int d = 0;
+        for (std::size_t s = 0; s < s_last; ++s)
+        {
+            if (model.draws[s])
+            {
+                for (int k = 0; k < l.factors; ++k)
+                    z[k] = draws.draw(d, k, 1.0);
+                f.data = data.step_rows.data() + s * static_cast<std::size_t>(l.step_cols);
+                run_block(p.step, f, w.val.data());
+                ++d;
+            }
+            run_event(s);
+        }
+        // The last step, once: its forward F and variance v, with tangents.
+        for (int k = 0; k < l.factors; ++k)
+            z[k] = draws.draw(d, k, 1.0);
+        f.data = data.step_rows.data() + s_last * static_cast<std::size_t>(l.step_cols);
+        run_block(p.step, f, w.val.data());
+        const std::vector<double> state0 = w.state, tangent0 = w.tangent;
+        const auto F_slot = static_cast<std::size_t>(l.last0()), v_slot = F_slot + 1;
+        const double F = state0[F_slot], v = state0[v_slot];
+        if (!(v > 0.0) || !(F > 0.0))
+            throw InvalidInput("script IR: Vibrato's last step has no variance");
+        const double sd = std::sqrt(v), m = std::log(F) - 0.5 * v, Z = z[0];
+        std::vector<double> dm(nk), ds(nk);
+        for (std::size_t k = 0; k < nk; ++k)
+        {
+            const double dF = tangent0[F_slot * nk + k], dv = tangent0[v_slot * nk + k];
+            dm[k] = dF / F - 0.5 * dv;
+            ds[k] = dv / (2.0 * sd);
+        }
+        // The final date at X = m + s z, the spot's tangent held at 0 (X fixed).
+        std::vector<double> fixed(nk);
+        const auto at = [&](double zz, std::vector<double> *row) -> double
+        {
+            w.state = state0;
+            w.tangent = tangent0;
+            f.state = w.state.data();
+            f.state_tangent = w.tangent.data();
+            w.state[0] = std::exp(m + sd * zz);
+            std::fill(w.tangent.begin(), w.tangent.begin() + static_cast<std::ptrdiff_t>(nk), 0.0);
+            for (std::size_t s = s_last; s <= s_final; ++s)
+                run_event(s);
+            if (row)
+                for (std::size_t k = 0; k < nk; ++k)
+                    (*row)[k] = w.tangent[static_cast<std::size_t>(l.pay()) * nk + k];
+            return w.state[static_cast<std::size_t>(l.pay())];
+        };
+        std::vector<double> up(nk), down(nk);
+        const double b_up = at(Z, &up), b_down = at(-Z, &down), b0 = at(0.0, nullptr);
+        const double g_m = 0.5 * (b_up - b_down) * Z / sd;
+        const double g_s = (0.5 * (b_up + b_down) - b0) * (Z * Z - 1.0) / sd;
+        for (std::size_t k = 0; k < nk; ++k)
+            derivatives[k] = 0.5 * (up[k] + down[k]) + g_m * dm[k] + g_s * ds[k];
+        return 0.5 * (b_up + b_down);
     }
 
     double run_path_adjoint(const PathProgram &primal, const PathProgram &adj, const PathData &data,
