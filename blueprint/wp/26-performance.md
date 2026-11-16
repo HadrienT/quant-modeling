@@ -1668,7 +1668,14 @@ end of each lot, not only its own bench.
   request.
 - **Exercise.** Early exercise runs on the tree evaluator only today
   (`scripted_product.hpp`): Bermudan scripts stay on it until the bytecode
-  handles `exercise()`.
+  handles `exercise()`. **Threads since 2026-11-16**: the tree evaluator has
+  a per-thread copy (`ScriptedProduct::TreeState`), so a script with
+  exercise() prices and takes its tape's risks on every thread, the same
+  bits on any number of them. A monthly Bermudan put under local vol (252
+  steps a year, 200 000 Sobol points, two threads): price 6.9 → 4.4 s, price
+  and AAD risks 25.4 → 13.3 s (it was over the API's 20 s); the exercise
+  rule's fit stays on one thread. The bytecode, the batched interpreter and
+  the GPU still have no exercise().
 - **Sobol dimension.** The finest MLQMC level is capped by 21 201 dimensions
   (§9).
 - **GPU memory.** The LLM of the scripting assistant shares both cards
