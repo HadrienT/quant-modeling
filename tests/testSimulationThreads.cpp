@@ -150,24 +150,30 @@ namespace quantModeling
 
     TEST(SimulationThreads, WhatCannotRunConcurrentlyStaysOnOneThread)
     {
-        // PCG32 is one stream; the tree evaluator (bytecode off, or early
-        // exercise) keeps one evaluator per product. Both run on the calling
-        // thread with a pool present, and give the bits they give without one.
+        // PCG32 is one stream: it runs on the calling thread with a pool
+        // present, and gives the bits it gives without one.
         const ScriptedProduct<Real> hard(library("up-and-out-call"), kCtx);
         const PricingSettings pcg = settings(SamplerKind::PseudoRandom, RngKind::Pcg32);
+        const SimulationMCResult one = run(hard, black_scholes(), pcg, 0);
+        const SimulationMCResult many = run(hard, black_scholes(), pcg, 15);
+        EXPECT_EQ(many.values, one.values);
+        EXPECT_EQ(many.std_errors, one.std_errors);
+        EXPECT_EQ(many.diagnostics.find("threads"), std::string::npos) << many.diagnostics;
+    }
+
+    TEST(SimulationThreads, TheTreeEvaluatorRunsOnEveryThreadWithTheSameBits)
+    {
+        // The tree evaluator (bytecode off, or early exercise) has a
+        // per-thread copy (ScriptedProduct::TreeState, WP 26).
         ScriptSettings no_bytecode;
         no_bytecode.bytecode = false;
         const ScriptedProduct<Real> tree(library("up-and-out-call"), kCtx, no_bytecode);
         const PricingSettings philox = settings(SamplerKind::PseudoRandom);
-        for (const auto &[what, product, s] :
-             {std::tuple{"PCG32", &hard, pcg}, std::tuple{"tree evaluator", &tree, philox}})
-        {
-            const SimulationMCResult one = run(*product, black_scholes(), s, 0);
-            const SimulationMCResult many = run(*product, black_scholes(), s, 15);
-            EXPECT_EQ(many.values, one.values) << what;
-            EXPECT_EQ(many.std_errors, one.std_errors) << what;
-            EXPECT_EQ(many.diagnostics.find("threads"), std::string::npos) << what << ": " << many.diagnostics;
-        }
+        const SimulationMCResult one = run(tree, black_scholes(), philox, 0);
+        const SimulationMCResult many = run(tree, black_scholes(), philox, 15);
+        EXPECT_EQ(many.values, one.values);
+        EXPECT_EQ(many.std_errors, one.std_errors);
+        EXPECT_NE(many.diagnostics.find("threads"), std::string::npos) << many.diagnostics;
     }
 
     TEST(SimulationThreads, AnErrorInAWorkerReachesTheCaller)
