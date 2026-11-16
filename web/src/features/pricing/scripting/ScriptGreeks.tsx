@@ -1,6 +1,7 @@
 import type { PricingResult } from "@/shared/api";
 import { Badge } from "@/shared/ui";
 import { Uncertainty } from "@/shared/ui/density";
+import { SecondOrderNote, SecondOrderRows } from "./SecondOrderGreeks";
 
 type Risk = NonNullable<PricingResult["risks"]>[number];
 
@@ -40,10 +41,13 @@ function describe(label: string): [string, string] {
 export function ScriptGreeks({
 	risks,
 	zeroDeltaNote,
+	secondOrder,
 }: {
 	risks: Risk[];
 	/** why a delta can be exactly zero here, said when it is */
 	zeroDeltaNote?: string;
+	/** gamma, vanna and volga when the request asked for them, and how */
+	secondOrder?: { greeks: PricingResult["greeks"]; method: string };
 }) {
 	const grid = risks.filter((r) => GRID.test(r.label));
 	const scalars = risks.filter((r) => !GRID.test(r.label));
@@ -95,7 +99,9 @@ export function ScriptGreeks({
 						);
 					})}
 				</tbody>
+				{secondOrder && <SecondOrderRows greeks={secondOrder.greeks} />}
 			</table>
+			{secondOrder && <SecondOrderNote {...secondOrder} />}
 			{zero.length > 0 && (
 				<p className="text-2xs text-ink-muted">
 					Exactly zero, so not tabulated:{" "}

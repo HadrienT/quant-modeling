@@ -4,6 +4,7 @@ import { Group } from "@visx/group";
 import { AxisBottom, AxisLeft } from "@visx/axis";
 import { ChartFrame, type TableView } from "../ChartFrame";
 import { useChartTheme } from "../theme";
+import { logTicks } from "../format";
 import { useMeasure } from "../useMeasure";
 
 export type ConvergencePoint = { paths: number; error: number };
@@ -34,7 +35,7 @@ export function ConvergenceChart({
 	const [ref, { width }] = useMeasure<HTMLDivElement>();
 	const w = width || 560;
 	const height = 260;
-	const m = { top: 10, right: 16, bottom: 30, left: 48 };
+	const m = { top: 10, right: 24, bottom: 30, left: 48 };
 	const iw = Math.max(0, w - m.left - m.right);
 	const ih = height - m.top - m.bottom;
 
@@ -138,12 +139,16 @@ export function ConvergenceChart({
 						<AxisBottom
 							top={ih}
 							scale={xs}
-							numTicks={4}
+							tickValues={logTicks(xs.domain() as [number, number])}
 							stroke={t.axis}
 							tickStroke={t.axis}
 							tickFormat={(v) => {
 								const n = Number(v);
-								return n >= 1e6 ? `${n / 1e6}M` : `${n / 1e3}k`;
+								return n >= 1e6
+									? `${n / 1e6}M`
+									: n >= 1e3
+										? `${n / 1e3}k`
+										: `${n}`;
 							}}
 							tickLabelProps={() => ({
 								fill: t.inkMuted,
@@ -153,10 +158,10 @@ export function ConvergenceChart({
 						/>
 						<AxisLeft
 							scale={ys}
-							numTicks={4}
+							tickValues={logTicks(ys.domain() as [number, number])}
 							stroke={t.axis}
 							tickStroke={t.axis}
-							tickFormat={(v) => Number(v).toExponential(0)}
+							tickFormat={(v) => Number(v).toExponential(1).replace(".0e", "e")}
 							tickLabelProps={() => ({
 								fill: t.inkMuted,
 								fontSize: 10,

@@ -32,7 +32,7 @@ export function FuzzyFields(props: {
 			</label>
 			<label
 				className="flex items-center gap-2 text-sm"
-				title="Gamma, vanna and volga with their errors: the adjoint's risks bumped (spot 1 %, vol 25 bp) on the same Sobol points. On the GPU only, about four adjoint runs more."
+				title="Gamma, vanna and volga with their errors: the first-order risks bumped (spot 1 %, vol 25 bp) on the same points. On the GPU, about four adjoint runs more; a digital that jumps at its final date takes Vibrato, on the CPU too. The CPU button refuses the other payoffs and says why."
 			>
 				<input
 					type="checkbox"
@@ -42,7 +42,7 @@ export function FuzzyFields(props: {
 						props.onGreeks(e.target.checked ? "second" : "first")
 					}
 				/>
-				+ second order (gamma, vanna, volga · GPU)
+				+ second order (gamma, vanna, volga)
 			</label>
 			<label className="flex items-center gap-2 text-sm">
 				<input

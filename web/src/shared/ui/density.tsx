@@ -50,11 +50,15 @@ export function Uncertainty({
 	stdError,
 	magnitude = "price",
 	relativeWarnAt = 0.05,
+	emphasis = false,
 	className,
 }: {
 	value: number | null | undefined;
 	stdError: number | null | undefined;
 	magnitude?: Magnitude;
+	/** The headline figure of a result: the value large, its error beside it
+	 * one step smaller. */
+	emphasis?: boolean;
 	/** Relative std error above which the display switches to a warning. */
 	relativeWarnAt?: number;
 	className?: string;
@@ -69,6 +73,7 @@ export function Uncertainty({
 		<span
 			className={cn(
 				"font-mono text-sm whitespace-nowrap tabular-nums",
+				emphasis && "text-2xl font-semibold tracking-tight",
 				noisy ? "text-warning" : "text-ink",
 				className,
 			)}
@@ -82,7 +87,12 @@ export function Uncertainty({
 		>
 			{formatNumber(value, magnitude)}
 			{hasError && (
-				<span className="text-ink-muted">
+				<span
+					className={cn(
+						"text-ink-muted",
+						emphasis && "text-base font-normal tracking-normal",
+					)}
+				>
 					{" "}
 					± {formatNumber(stdError, magnitude)}
 				</span>

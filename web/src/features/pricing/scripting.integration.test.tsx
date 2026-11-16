@@ -122,7 +122,9 @@ describe("scripting page — greeks", () => {
 		const bodies = mount();
 		fireEvent.click(screen.getByLabelText(/second order/));
 		price();
-		const second = await screen.findByRole("region", {
+		const greeks = await screen.findByRole("region", { name: "Greeks" });
+		// One table: the second order is a row group under the first order.
+		const second = within(greeks).getByRole("rowgroup", {
 			name: "Second-order greeks",
 		});
 		expect(bodies[0]!.greeks_method).toBe("aad");
@@ -134,7 +136,7 @@ describe("scripting page — greeks", () => {
 			within(second).getByRole("row", { name: /^Volga/ }),
 		).toHaveTextContent("1.405");
 		expect(
-			within(second).getByText(/central differences of the GPU/),
+			within(greeks).getByText(/central differences of the GPU/),
 		).toHaveTextContent("bias");
 	});
 
@@ -144,7 +146,7 @@ describe("scripting page — greeks", () => {
 		await screen.findByRole("region", { name: "Greeks" });
 		expect(bodies[0]!.second_order).toBeUndefined();
 		expect(
-			screen.queryByRole("region", { name: "Second-order greeks" }),
+			screen.queryByRole("rowgroup", { name: "Second-order greeks" }),
 		).not.toBeInTheDocument();
 	});
 
@@ -158,6 +160,27 @@ describe("scripting page — greeks", () => {
 		expect(
 			screen.queryByRole("region", { name: "Greeks" }),
 		).not.toBeInTheDocument();
+	});
+
+	it("says why when the second order was asked for and not given", async () => {
+		mount();
+		server.use(
+			http.post("*/price/scripted", () =>
+				HttpResponse.json(
+					pricingResponse({
+						risks: RISKS,
+						warnings: [],
+						diagnostics:
+							"simulate_aad | no second-order risks (early exercise is not covered by the second order)",
+					}),
+				),
+			),
+		);
+		fireEvent.click(screen.getByLabelText(/second order/));
+		price();
+		expect(
+			await screen.findByText(/No second-order greeks for this request/),
+		).toHaveTextContent("early exercise is not covered by the second order");
 	});
 });
 

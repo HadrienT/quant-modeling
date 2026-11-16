@@ -70,7 +70,7 @@ export function ChartFrame({
 
 	return (
 		<figure
-			className="flex flex-col gap-2 rounded-md border border-hairline bg-surface p-3"
+			className="flex min-w-0 flex-col gap-2 rounded-md border border-hairline bg-surface p-3"
 			aria-labelledby={title ? headingId : undefined}
 		>
 			<div className="flex items-start justify-between gap-3">

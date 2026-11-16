@@ -97,6 +97,7 @@ export default function PricingPage() {
 						descriptor={wb.descriptor}
 						values={wb.values}
 						onChange={wb.setValues}
+						hide={hiddenEngineFields(wb.engine)}
 					/>
 				)}
 
@@ -203,4 +204,21 @@ export default function PricingPage() {
 			</section>
 		</div>
 	);
+}
+
+/** Fields that only some engines read: the tabs above pick the engine, so a
+ * second engine selector, or paths for a closed form, would only mislead. */
+const ENGINE_ONLY: Record<string, readonly string[]> = {
+	n_paths: ["mc"],
+	seed: ["mc"],
+	tree_steps: ["binomial", "trinomial", "pde"],
+};
+
+function hiddenEngineFields(engine: string): string[] {
+	return [
+		"engine",
+		...Object.entries(ENGINE_ONLY)
+			.filter(([, engines]) => !engines.includes(engine))
+			.map(([name]) => name),
+	];
 }

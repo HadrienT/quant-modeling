@@ -94,13 +94,12 @@ export function ResultsPanel({
 						<span className="text-2xs text-ink-muted uppercase">
 							Present value
 						</span>
-						<span className="text-xl">
-							<Uncertainty
-								value={r.npv}
-								stdError={isMc ? r.mc_std_error : null}
-								magnitude="price"
-							/>
-						</span>
+						<Uncertainty
+							value={r.npv}
+							stdError={isMc ? r.mc_std_error : null}
+							magnitude="price"
+							emphasis
+						/>
 					</div>
 					<div className="flex flex-col items-end gap-1">
 						<EngineTag engine={engine} />
@@ -176,18 +175,19 @@ export function ResultsPanel({
 				)
 			)}
 
-			{r.bond_analytics && (
-				<div className="grid grid-cols-2 gap-3 rounded-md border border-hairline bg-surface p-4 text-sm sm:grid-cols-4">
-					{Object.entries(r.bond_analytics).map(([k, v]) => (
-						<div key={k} className="flex flex-col">
-							<span className="text-2xs text-ink-muted uppercase">
-								{k.replace(/_/g, " ")}
-							</span>
-							<NumberCell value={v as number} magnitude="plain" />
-						</div>
-					))}
-				</div>
-			)}
+			{r.bond_analytics &&
+				Object.values(r.bond_analytics).some((v) => v != null) && (
+					<div className="grid grid-cols-2 gap-3 rounded-md border border-hairline bg-surface p-4 text-sm sm:grid-cols-4">
+						{Object.entries(r.bond_analytics).map(([k, v]) => (
+							<div key={k} className="flex flex-col">
+								<span className="text-2xs text-ink-muted uppercase">
+									{k.replace(/_/g, " ")}
+								</span>
+								<NumberCell value={v as number} magnitude="plain" />
+							</div>
+						))}
+					</div>
+				)}
 
 			{isMc && (
 				<ConvergencePanel
