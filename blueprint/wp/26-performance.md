@@ -1745,3 +1745,13 @@ aside for them is measured again and kept only if it pays.
   179 / 141; 1M paths 497 / 640 / 800 / 655 → 337 / 403 / 528 / 453; SLV
   and Heston unchanged; the tape matched to 1e-15 as before (the sum is
   reassociated, within the tolerance; deterministic run to run).
+- **CUDA's own Φ⁻¹ on the device** (`normcdfinv`, libdevice, a few ulps),
+  where AS 241 ran on both sides for the bits: **kept.** `qm_script_jit_bench`
+  (one V100, compiled scripts, ms): barrier BS 6.28 → 4.89, barrier LV
+  12.02 → 10.55, Asian BS 15.51 → 11.30, Asian LV 28.48 → 24.84, autocall
+  3.61 → 3.08 (12-27 %); the GPU suite passes unchanged (its CPU/GPU checks
+  already had tolerances); the host keeps AS 241.
+- **Reassociating rough Bergomi's far-field sums** on the CPU: not done --
+  they already run as eight independent chains per path (§ WP 26 rough
+  Bergomi), and only an FFT would change their order of cost, for at most
+  about 12 % of that model's path.

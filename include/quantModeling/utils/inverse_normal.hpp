@@ -44,6 +44,13 @@ namespace quantModeling
      */
     QM_HOST_DEVICE QM_DEVICE_NOINLINE inline double inverse_normal_cdf(double p)
     {
+#ifdef __CUDA_ARCH__
+        // On the device, CUDA's own inverse (libdevice, within a few ulps):
+        // since 2026-11-16 the GPU agrees with the CPU within the tolerance,
+        // not to the bit, and it is 12-27 % faster on the compiled scripts
+        // than AS 241 (qm_script_jit_bench, one V100). The host keeps AS 241.
+        return normcdfinv(p);
+#endif
         const double q = p - 0.5;
         if (std::fabs(q) <= 0.425)
         {
