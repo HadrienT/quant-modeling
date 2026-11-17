@@ -13,6 +13,7 @@ import { BacktestControls } from "./BacktestControls";
 import { CostPanel } from "./CostPanel";
 import { DataPanel } from "./DataPanel";
 import { InferencePanel } from "./InferencePanel";
+import { topHoldings } from "./format";
 import { MetricsTable } from "./MetricsTable";
 import { ValidationPanel } from "./ValidationPanel";
 import {
@@ -66,8 +67,32 @@ describe("state", () => {
 			expect(request[key]).toBeTypeOf("number");
 	});
 
+	it("sends no ticker on the S&P 500 universe, and asks for no grid there", () => {
+		const view = { ...DEFAULT_VIEW, universe: "sp500" as const };
+		const request = strategyRequest(view, "2026-10-09");
+		expect(request.universe).toBe("sp500");
+		expect(request.tickers).toEqual([]);
+		expect(validationRequest(view, "2026-10-09")).toBeNull();
+		expect(problems({ ...view, method: "risk_parity" }, "2026-10-09")).toEqual([
+			"Risk parity on some 500 names takes minutes: choose another method.",
+		]);
+		expect(problems(view, "2026-10-09")).toEqual([]);
+	});
+
+	it("groups a large book's holdings beyond the twelve largest", () => {
+		const labels = Array.from({ length: 20 }, (_, j) => `T${j}`);
+		const weights = [labels.map((_, j) => (j + 1) / 210)];
+		const top = topHoldings(labels, weights);
+		expect(top.labels).toHaveLength(13);
+		expect(top.labels[0]).toBe("T19");
+		expect(top.labels[12]).toBe("Others (8)");
+		const sum = top.weights[0]!.reduce((a, w) => a + w, 0);
+		expect(sum).toBeCloseTo(1, 12);
+		expect(topHoldings(["A", "B"], [[0.5, 0.5]]).labels).toEqual(["A", "B"]);
+	});
+
 	it("puts no bound on a method that takes none", () => {
-		const grid = validationRequest(DEFAULT_VIEW, "2026-10-09").grid;
+		const grid = validationRequest(DEFAULT_VIEW, "2026-10-09")!.grid;
 		expect(grid).toHaveLength(9);
 		for (const c of grid)
 			expect(c.max_weight).toBe(c.method === "minimum_variance" ? 0.4 : 1);
@@ -189,7 +214,9 @@ describe("results", () => {
 			await screen.findByText(/it has no standard error/),
 		).toBeInTheDocument();
 		expect(screen.getByText(/the logits/)).toBeInTheDocument();
-		expect(screen.getByText(/is not counted here/)).toBeInTheDocument();
+		expect(
+			screen.getByText(/No other configuration was tried/),
+		).toBeInTheDocument();
 		expect(screen.getAllByText(/^#\d+ /).length).toBeGreaterThan(0);
 	});
 });

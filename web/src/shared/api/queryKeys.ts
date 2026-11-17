@@ -82,6 +82,9 @@ export const queryKeys = {
 			["portfolio", "var", id, confidence, horizon] as const,
 		stress: (id: string) => ["portfolio", "stress", id] as const,
 		snapshot: (ledger: string) => ["portfolio", "snapshot", ledger] as const,
+		ledgerStress: (ledger: string) =>
+			["portfolio", "ledger-stress", ledger] as const,
+		varTask: (id: string | null) => ["portfolio", "var-task", id] as const,
 		history: (ledger: string, window: string) =>
 			["portfolio", "history", ledger, window] as const,
 		demos: () => ["portfolio", "demos"] as const,
@@ -96,6 +99,7 @@ export const queryKeys = {
 		all: () => ["backtest"] as const,
 		universe: () => ["backtest", "universe"] as const,
 		strategy: (request: unknown) => ["backtest", "strategy", request] as const,
+		task: (id: string | null) => ["backtest", "task", id] as const,
 		validation: (request: unknown) =>
 			["backtest", "validation", request] as const,
 	},

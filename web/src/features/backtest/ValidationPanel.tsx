@@ -18,9 +18,17 @@ const r = (v: number | null | undefined) => (v == null ? "n/a" : ratio(v));
 export function ValidationPanel({
 	request,
 }: {
-	request: BacktestValidationRequest;
+	request: BacktestValidationRequest | null;
 }) {
 	const result = useBacktestValidation(request);
+	if (request == null)
+		return (
+			<p className="text-sm text-ink-secondary">
+				The overfitting tests run a grid of configurations on chosen assets: on
+				the S&P 500 members, some 500 names, the grid takes minutes. Choose a
+				basket of assets to run them.
+			</p>
+		);
 	const data = result.data;
 	if (result.error)
 		return <ErrorState error={result.error} onRetry={() => result.refetch()} />;
@@ -100,9 +108,12 @@ export function ValidationPanel({
 				Among N configurations with no skill at all, the best one still shows a
 				positive Sharpe ratio: SR₀, which grows with N and with the dispersion V
 				of the ratios tried. The deflated ratio tests the best against that bar
-				instead of against zero. N is the {d.trials} configurations of this
-				request: every other configuration tried on this universe before
-				settling on one raises the bar further, and is not counted here.
+				instead of against zero. N = {d.trials}: the{" "}
+				{d.trials - d.journal_trials} configurations of this grid
+				{d.journal_trials > 0
+					? ` and ${d.journal_trials} tried before on these assets and this period`
+					: ""}
+				. {d.journal} The best: {d.best_description}.
 			</Explained>
 
 			<DistributionChart

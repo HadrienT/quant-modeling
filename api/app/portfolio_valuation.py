@@ -336,7 +336,8 @@ def _mark_derivative(
     if u and "vol" in params:
         got = md.realised_vol(u, d)
         if got is not None:
-            params["vol"] = got[1]
+            # A stress scenario's parallel vol shift (portfolio_risk.py).
+            params["vol"] = max(got[1] + float(getattr(md, "vol_shift", 0.0)), 0.01)
             inputs.append(
                 Input(f"vol {u} (63-day realised, proxy)", "proxied", got[1], got[0])
             )

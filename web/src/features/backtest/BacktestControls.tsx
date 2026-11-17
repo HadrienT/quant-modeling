@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Play, X } from "lucide-react";
+import { Play } from "lucide-react";
 import type { BacktestUniverse } from "@/shared/api";
-import { Badge, Button, Combobox, Field, Label, Segmented } from "@/shared/ui";
+import { Button, Field, Segmented } from "@/shared/ui";
+import { AssetsField } from "./AssetsField";
 import { type BacktestView, METHODS, isBounded, problems } from "./state";
 
 /**
@@ -28,48 +29,10 @@ export function BacktestControls({
 		(key: keyof BacktestView) => (e: { target: { value: string } }) =>
 			set({ [key]: Number(e.target.value) });
 	const errors = problems(draft, universe.last);
-	const funds = new Set(universe.etfs.map((a) => a.ticker));
-	const stocks = draft.tickers.filter((t) => !funds.has(t));
-	const offered = [...universe.etfs, ...universe.stocks]
-		.filter((a) => !draft.tickers.includes(a.ticker))
-		.map((a) => ({ value: a.ticker, label: `${a.ticker} · ${a.name}` }));
 
 	return (
 		<div className="flex flex-col gap-4 rounded-md border border-hairline bg-surface p-4">
-			<div>
-				<Label>Assets</Label>
-				<div className="mt-1 flex flex-wrap items-center gap-1.5">
-					{draft.tickers.map((t) => (
-						<Badge key={t} tone={funds.has(t) ? "accent" : "warning"}>
-							{t}
-							<button
-								type="button"
-								aria-label={`Remove ${t}`}
-								onClick={() =>
-									set({ tickers: draft.tickers.filter((x) => x !== t) })
-								}
-							>
-								<X className="size-3" />
-							</button>
-						</Badge>
-					))}
-					<div className="w-56">
-						<Combobox
-							options={offered}
-							value={null}
-							onChange={(t) => set({ tickers: [...draft.tickers, t] })}
-							placeholder="Add a fund or a stock…"
-						/>
-					</div>
-				</div>
-				{stocks.length > 0 && (
-					<p className="mt-1.5 text-2xs text-warning">
-						{stocks.join(", ")}: single stocks are picked with hindsight, and
-						the database only has the companies that are still listed. A basket
-						of funds does not carry that bias.
-					</p>
-				)}
-			</div>
+			<AssetsField universe={universe} draft={draft} set={set} />
 
 			<div className="grid grid-cols-2 gap-3 md:grid-cols-4">
 				<Field

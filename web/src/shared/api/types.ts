@@ -92,6 +92,11 @@ export type BacktestReport = Schemas["Report"];
 /** A figure of the backtest engine: never without its interval, the method
  * that produced the interval, and its convention. */
 export type BacktestMetric = Schemas["Metric"];
+export type BacktestHedgingRequest = Schemas["HedgingRequest"];
+export type BacktestHedgingWorld = Schemas["HedgingWorld"];
+export type BacktestHedging = Schemas["HedgingResponse"];
+export type BacktestHedgeResult = Schemas["HedgeResult"];
+export type BacktestTask = Schemas["TaskStatus"];
 
 export type AuthResponse = Schemas["AuthResponse"];
 
@@ -125,6 +130,10 @@ export type RateFxQuote = Schemas["RateFxQuote"];
 export type Trade = Schemas["Trade"];
 export type PortfolioCurrency = Portfolio["base_currency"];
 export type PortfolioSnapshot = Schemas["SnapshotResponse"];
+export type PortfolioStress = Schemas["StressResponse"];
+export type PortfolioStressScenario = Schemas["StressScenarioView"];
+export type PortfolioVarTask = Schemas["VarTask"];
+export type PortfolioVar = Schemas["VarResponse"];
 export type PositionMark = Schemas["PositionMark"];
 export type MarkInput = Schemas["InputView"];
 export type PortfolioHistory = Schemas["HistoryResponse"];

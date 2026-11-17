@@ -54,3 +54,32 @@ export const confidence = (m: BacktestMetric | null | undefined) =>
  * the figure means, exactly as the engine words them. */
 export const provenance = (m: BacktestMetric) =>
 	`Convention: ${m.convention}. Interval: ${m.method}.`;
+
+/** Names shown one by one in the holdings chart; beyond, the rest is one
+ * band (the S&P 500 universe holds some 500). */
+export const SHOWN = 12;
+
+/** The SHOWN names with the largest average weight, the others summed into
+ * "Others": a grouping for the eye, the weights are the engine's. */
+export function topHoldings(labels: string[], weights: number[][]) {
+	if (labels.length <= SHOWN) return { labels, weights };
+	const mean = labels.map(
+		(_, j) => weights.reduce((a, row) => a + (row[j] ?? 0), 0) / weights.length,
+	);
+	const keep = mean
+		.map((m, j) => [m, j] as const)
+		.sort((a, b) => b[0] - a[0])
+		.slice(0, SHOWN)
+		.map(([, j]) => j);
+	const kept = new Set(keep);
+	return {
+		labels: [
+			...keep.map((j) => labels[j]!),
+			`Others (${labels.length - SHOWN})`,
+		],
+		weights: weights.map((row) => [
+			...keep.map((j) => row[j] ?? 0),
+			row.reduce((a, w, j) => (kept.has(j) ? a : a + w), 0),
+		]),
+	};
+}

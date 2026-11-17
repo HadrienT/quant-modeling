@@ -157,3 +157,48 @@ def factors(dataset: str, start: date, end: date) -> Factors:
         values=np.array([[table[d][n] for n in names] for d in days]) / 100.0,
         risk_free=np.array([risk_free[d] for d in days]) / 100.0,
     )
+
+
+def sp500_members(
+    start: date, end: date
+) -> tuple[list[str], list[tuple[str, date, date | None]]]:
+    """The S&P 500 members of a window that have prices in it, and their
+    spells. A member without prices (a delisted company) cannot be held: the
+    survivorship the page warns about."""
+    spells = db.sp500_membership()
+    if not spells:
+        raise MissingData("prices.sp500_membership is empty.")
+    in_window = sorted(
+        {
+            t
+            for t, added, removed in spells
+            if added <= end and (removed is None or removed > start)
+        }
+    )
+    coverage = db.raw_daily_coverage(in_window)
+    tickers = [
+        t
+        for t in in_window
+        if t in coverage and coverage[t][0] <= end and coverage[t][1] >= start
+    ]
+    if len(tickers) < 2:
+        raise MissingData(
+            f"Fewer than two S&P 500 members with prices between {start} and {end}."
+        )
+    return tickers, [sp for sp in spells if sp[0] in set(tickers)]
+
+
+def membership(m: Market, spells: list[tuple[str, date, date | None]]) -> np.ndarray:
+    """days × tickers: True on the days a ticker is a member (added on or
+    before, removed after). A change of shape of the spells, no more."""
+    column = {t: i for i, t in enumerate(m.tickers)}
+    mask = np.zeros(m.close.shape, dtype=bool)
+    for ticker, added, removed in spells:
+        lo = int(np.searchsorted(m.dates, np.datetime64(added)))
+        hi = (
+            len(m.dates)
+            if removed is None
+            else int(np.searchsorted(m.dates, np.datetime64(removed)))
+        )
+        mask[lo:hi, column[ticker]] = True
+    return mask

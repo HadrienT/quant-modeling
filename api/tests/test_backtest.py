@@ -417,3 +417,128 @@ def test_the_universe_lists_the_funds_first(monkeypatch, client):
     assert body["stocks"][0]["name"] == "Apple Inc."
     assert body["benchmark"] == "SPY" and body["cash_series"] == "DGS3MO"
     assert len(body["engine"]["git_sha"]) >= 40
+
+
+# ── The trials journal (deflated Sharpe) and the S&P 500 at date ─────────────
+
+
+class Journal:
+    """The audit trail's backtest.run requests, as the store returns them."""
+
+    def __init__(self, rows):
+        self.rows, self.asked = rows, []
+
+    def get(self, event_id):
+        return None
+
+    def backtest_requests(self, start, end, tickers, universe, limit):
+        self.asked.append((start, end, sorted(tickers), universe))
+        return self.rows
+
+
+@pytest.fixture
+def journal():
+    from api.app.audit import store as audit_store
+
+    tried = [
+        # a strategy tried before: one more trial
+        {
+            "kind": "strategy",
+            "request": {
+                **STRATEGY,
+                "method": "maximum_sharpe",
+                "lookback": 90,
+                "rebalance": "monthly",
+                "max_weight": 0.5,
+            },
+        },
+        # a validation: one configuration already in this grid, one new
+        {
+            "kind": "validation",
+            "request": {
+                **VALIDATION,
+                "grid": [
+                    VALIDATION["grid"][0],
+                    dict(method="equal_weight", lookback=60, rebalance=21),
+                ],
+            },
+        },
+        # a request of another schema is skipped, not an error
+        {"kind": "strategy", "request": {"method": "momentum", "lookback": 5}},
+    ]
+    j = Journal(tried)
+    audit_store.set_store_for_testing(j)
+    yield j
+    audit_store.set_store_for_testing(None)
+
+
+def test_the_deflated_sharpe_counts_the_configurations_tried_before(store, journal):
+    r = engine.run_validation(s.ValidationRequest(**VALIDATION))
+    d = r.deflated_sharpe
+    assert journal.asked == [
+        ("2016-06-01", "2020-12-31", sorted(VALIDATION["tickers"]), "chosen")
+    ]
+    # The grid's own configuration is not counted twice; the maximum-Sharpe
+    # one has no admissible portfolio on these data, so it is no trial here.
+    assert d.journal_trials == 1
+    assert d.trials == len(VALIDATION["grid"]) + 1
+    assert "audit trail" in d.journal and "refuses" in d.journal
+    assert d.best_description
+    assert "journal" in r.data.fingerprints
+
+
+def test_without_the_audit_trail_only_the_request_counts(store):
+    from api.app.audit import store as audit_store
+
+    audit_store.set_store_for_testing(None)
+    r = engine.run_validation(s.ValidationRequest(**VALIDATION))
+    assert r.deflated_sharpe.journal_trials == 0
+    assert r.deflated_sharpe.trials == len(VALIDATION["grid"])
+    assert "only this request's configurations" in r.deflated_sharpe.journal
+
+
+@pytest.fixture
+def members(store, monkeypatch):
+    spells = [
+        ("AAA", date(1990, 1, 1), None),
+        ("BBB", date(1990, 1, 1), None),
+        ("CCC", date(2018, 1, 2), None),  # joins during the window
+        ("DDD", date(1990, 1, 1), date(2017, 6, 1)),  # leaves during it
+        ("ZZZ", date(1990, 1, 1), None),  # a member without prices: cannot be held
+    ]
+    monkeypatch.setattr(db, "sp500_membership", lambda: spells)
+    monkeypatch.setattr(
+        db,
+        "raw_daily_coverage",
+        lambda tickers: {
+            t: (store.days[0], store.days[-1], len(store.days))
+            for t in tickers
+            if t in TICKERS
+        },
+    )
+    return spells
+
+
+def test_the_sp500_universe_holds_a_member_only_while_it_is_one(members):
+    req = {k: v for k, v in STRATEGY.items() if k != "tickers"}
+    r = run({**req, "universe": "sp500", "method": "equal_weight"})
+    assert r.tickers == ["AAA", "BBB", "CCC", "DDD"]  # ZZZ has no prices
+    col = {t: i for i, t in enumerate(r.tickers)}
+    for day, weights in zip(r.allocations.dates, r.allocations.weights):
+        if day < date(2018, 1, 2):
+            assert weights[col["CCC"]] == 0.0, day
+        if day >= date(2017, 6, 1):
+            assert weights[col["DDD"]] == 0.0, day
+    assert any(w[col["CCC"]] > 0 for w in r.allocations.weights)
+    assert "universe" in r.data.fingerprints
+
+
+def test_the_sp500_universe_refuses_what_takes_minutes():
+    req = {k: v for k, v in STRATEGY.items() if k != "tickers"}
+    with pytest.raises(ValueError, match="takes minutes"):
+        s.StrategyRequest(**{**req, "universe": "sp500", "method": "risk_parity"})
+    with pytest.raises(ValueError, match="takes no tickers"):
+        s.StrategyRequest(**{**STRATEGY, "universe": "sp500"})
+    val = {k: v for k, v in VALIDATION.items() if k != "tickers"}
+    with pytest.raises(ValueError, match="one strategy at a time"):
+        s.ValidationRequest(**{**val, "universe": "sp500"})

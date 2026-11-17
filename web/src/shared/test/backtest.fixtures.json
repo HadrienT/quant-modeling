@@ -1980,7 +1980,10 @@
 			"strategy": "minimum variance, Ledoit-Wolf (2004) covariance, estimated on the 252 daily returns that end on the decision day, each weight between 0 % and 50 %, rebalanced on the first day of each month; held: the assets quoted on every day of the window and in the universe on the decision day"
 		},
 		"quality": [],
-		"rules": { "optimal_block_length": 1.0, "newey_west_lag": 5 },
+		"rules": {
+			"optimal_block_length": 1.0,
+			"newey_west_lag": 5
+		},
 		"data": {
 			"first": "2023-01-03",
 			"last": "2024-12-31",
@@ -2700,7 +2703,10 @@
 			"expected_maximum": 0.08607659,
 			"sharpe_deviation": 0.06620559,
 			"trials": 6,
-			"deflated_sharpe_ratio": 0.9664945
+			"deflated_sharpe_ratio": 0.9664945,
+			"best_description": "minimum variance, Ledoit-Wolf (2004) covariance, estimated on the 126 daily returns that end on the decision day, each weight between 0 % and 100 %, rebalanced on the first day of each month; held: the assets quoted on every day of the window and in the universe on the decision day",
+			"journal_trials": 0,
+			"journal": "No other configuration was tried on this universe and period (0 recorded run(s) read from the audit trail)."
 		},
 		"overfitting": {
 			"probability": 0.5142857,

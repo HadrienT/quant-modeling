@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | In progress (lot B8, issue #166). Done: the wheel, the point-in-time reads, the router, the `backtest.run` event and its replay, the strategy tab, the hedging tab with its tasks, the trials journal, the S&P 500 universe at date, the stress tests and VaR of the trade ledger (#292, `portfolio_risk.py`). Left: the risk-model tab on that VaR. |
 | **Dépend de** | le dépôt `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) et ses lots B2 à B7 ; la piste d'audit et le replay ([WP 18](18-observability.md)) ; le portefeuille et sa VaR ([WP 09](09-portfolio-risk.md)) ; le dépôt `~/data-ingest` (lot B1) |
 | **Débloque** | une page `/backtest` dont chaque chiffre est défendable |
 | **Branches** | `feat/backtest-b8-…`, une par tranche |
@@ -33,14 +34,52 @@ Tout le reste est là-bas, et y est canonique :
   (`backtest/record.py`, `POST /api/admin/replay/{id}`), page avec cinq
   volets : performance, coûts, significativité, surapprentissage, données et
   conventions.
-- **Pas de file de tâches** : un run sur une douzaine de fonds et dix-huit ans
-  prend deux secondes, bootstrap compris. La tranche « Tâche » attend le
-  premier onglet qui en a besoin (la couverture, sans doute).
-- **Reste à faire** : onglets couverture et modèle de risque ; journal des
-  essais (le Sharpe déflaté ne compte aujourd'hui que les configurations de
-  la requête, et la page le dit) ; univers S&P 500 à date par
-  `prices.sp500_membership` (la page ne propose que des listes choisies à la
-  main, avec un avertissement dès qu'une action y figure).
+- **The hedging tab is done** (2026-11-17), and with it the "Task" slice: an
+  option bought and delta-hedged in a simulated world (Black-Scholes, Heston
+  typed, or Heston calibrated on a ticker's stored chain by
+  `stochastic_vol.py`), up to five hedges on the same paths, the
+  minimum-variance delta fitted on another seed. A Heston world prices the
+  option on every path at every date (about 60 s for 20 000 paths and the
+  true model's delta on four threads of the development server), so the run
+  is a task: `POST /api/backtest/hedging` returns its id, `GET
+  /api/backtest/tasks/{id}` its progress then its result, `DELETE` cancels
+  it (`api/app/tasks.py`: one worker, the server has two CPUs; at most four
+  tasks queued or running; a finished task readable for an hour). The run is
+  a `backtest.run` event of kind `hedging`, replayed like the others. The
+  strategy runs stay synchronous: two seconds.
+- **The trials journal is done** (2026-11-17). The deflated Sharpe ratio
+  counts, beside the request's grid, every other configuration recorded on
+  the same universe and period: the strategy and validation `backtest.run`
+  events of the audit trail, read with the `audit_reader` role
+  (`audit/store.py`, `backtest_requests`; the same tickers in any order, the
+  same start and end). Their configurations are run again by the wheel on the
+  request's days, cost and timing (at most 96, the most recent), and only the
+  deflated ratio sees them: the walk-forward, the purged cross-validation and
+  the overfitting probability judge the request's grid. A configuration the
+  engine refuses on these data is not a trial, and the text says so. The set
+  counted is fingerprinted (`journal`): a replay after more trials reports
+  drifted inputs, not a different figure. Without the audit database (the
+  development server, CI) only the request counts, and the page says why.
+- **The S&P 500 universe at date is done** (2026-11-17). `universe: "sp500"`
+  takes every member of the window that has prices and hands the engine the
+  membership table (`prices.sp500_membership`, latest snapshot): a name is
+  held only from the day it joins to the day it leaves, with no look-ahead in
+  the composition. Survivorship remains (a delisted company has no prices:
+  271 of the 499 members of January 2010 have one), and the page says so.
+  Risk parity (107 s on 532 names over fourteen years) and the validation
+  grid are refused there; equal weights, minimum variance and maximum Sharpe
+  take 13 to 22 s end to end on the development server. The holdings chart
+  shows the twelve largest names and the others summed.
+- **The ledger's stress tests and VaR are done** (#292, 2026-11-17), in the
+  Risk tab of the Portfolio page: `portfolio_risk.py`, `POST
+  /api/portfolio-valuation/stress` and `/var` (a task: its first run
+  revalues every derivative on each day of the year, 81 s for the
+  options-overlay demo on the development server, then the stored marks
+  serve). The legacy routes on the position model stay, deprecated, API only.
+- **Reste à faire** : onglet modèle de risque — the VaR announced each day
+  (the window to the day before, the holdings of the day before) against the
+  hypothetical P&L of the day, through `var_backtest` (Kupiec,
+  Christoffersen, traffic light).
 - **Lectures « as-of »** : `macro.fred_series` et `factors.french_daily` ne
   sont versionnées que depuis leur chargement (septembre et octobre 2026). Le
   backtest lit le **premier millésime stocké** de chaque date : ce que la base

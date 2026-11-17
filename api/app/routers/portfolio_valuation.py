@@ -12,6 +12,10 @@ GET  /api/portfolio-valuation/close      a ticker's close on a date (trade form)
 GET  /api/portfolio-valuation/demos      read-only demo portfolios
 GET  /api/portfolio-valuation/counterparty-examples   example counterparties
 POST /api/portfolio-valuation/rate-fx/quote   a rate or FX trade at the market
+POST /api/portfolio-valuation/stress     the book under spot, vol and rate shocks
+POST /api/portfolio-valuation/var        historical VaR and ES: a task
+GET  /api/portfolio-valuation/var/{id}   its progress, then its result
+DELETE /api/portfolio-valuation/var/{id} cancel it
 """
 
 from datetime import date, timedelta
@@ -21,8 +25,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from .. import db
+from .. import db, tasks
 from .. import portfolio_counterparties, portfolio_demos, portfolio_rates
+from .. import portfolio_risk as risk
 from .. import portfolio_valuation as pv
 from ..logging_utils import get_logger
 from ..portfolio_ledger import migrate, validate
@@ -310,3 +315,196 @@ async def rate_fx_quote(req: RateFxQuoteRequest) -> RateFxQuote:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# ── Stress tests and value at risk (issue #292) ──────────────────────────────
+
+
+class StressRequest(BaseModel):
+    portfolio: Portfolio
+    as_of: Optional[date] = None
+
+
+class StressRowView(BaseModel):
+    instrument_id: str
+    label: str
+    underlying: str
+    pnl: Optional[float] = Field(
+        None, description="Base currency; null when the position was not revalued."
+    )
+    note: str = ""
+
+
+class StressScenarioView(BaseModel):
+    name: str
+    description: str
+    spot_factor: float
+    vol_shift: float
+    rate_shift: float
+    pnl: float = Field(
+        ..., description="Sum over the revalued positions, base currency."
+    )
+    by_underlying: Dict[str, float]
+    rows: List[StressRowView]
+    not_revalued: List[str]
+
+
+class StressResponse(BaseModel):
+    as_of: date
+    base_currency: str
+    scenarios: List[StressScenarioView]
+    warnings: List[str]
+
+
+@router.post("/stress", response_model=StressResponse)
+async def portfolio_stress(req: StressRequest) -> StressResponse:
+    pf = _checked(req.portfolio)
+    as_of = req.as_of or date.today()
+    results, warnings = await run_in_threadpool(risk.stress, pf, as_of)
+    return StressResponse(
+        as_of=as_of,
+        base_currency=pf.base_currency,
+        scenarios=[
+            StressScenarioView(
+                name=r.scenario.name,
+                description=r.scenario.description,
+                spot_factor=r.scenario.spot,
+                vol_shift=r.scenario.vol,
+                rate_shift=r.scenario.rate,
+                pnl=r.pnl,
+                by_underlying=r.by_underlying,
+                rows=[StressRowView(**vars(row)) for row in r.rows],
+                not_revalued=r.not_revalued,
+            )
+            for r in results
+        ],
+        warnings=warnings,
+    )
+
+
+class VarRequest(BaseModel):
+    portfolio: Portfolio
+    as_of: Optional[date] = None
+    window: int = Field(
+        risk.VAR_WINDOW, ge=risk.VAR_MIN_SCENARIOS, le=500, description="Business days."
+    )
+
+
+class EstimateView(BaseModel):
+    value: float
+    lower: float
+    upper: float
+    confidence: float
+    method: str
+
+
+class VarLevelView(BaseModel):
+    confidence: float
+    var: EstimateView
+    expected_shortfall: EstimateView
+    exceedances: int
+
+
+class VarResponse(BaseModel):
+    as_of: date
+    base_currency: str
+    window_start: date
+    window_end: date
+    scenarios: List[float] = Field(
+        ..., description="P&L of today's holdings, one per day."
+    )
+    dates: List[date]
+    levels: List[VarLevelView]
+    instruments: int
+    left_out: List[str]
+    days_dropped: int
+
+
+class VarTask(BaseModel):
+    id: str
+    status: Literal["queued", "running", "done", "failed", "cancelled"]
+    progress: float
+    step: str
+    ahead: int
+    error: Optional[str] = None
+    var: Optional[VarResponse] = None
+
+
+def _var_task(t: tasks.Task) -> VarTask:
+    return VarTask(
+        id=t.id,
+        status=t.status,
+        progress=t.progress,
+        step=t.step,
+        ahead=tasks.position(t) if t.status == "queued" else 0,
+        error=t.error,
+        var=t.result if t.kind == "portfolio-var" else None,
+    )
+
+
+@router.post(
+    "/var",
+    response_model=VarTask,
+    status_code=202,
+    responses={429: {"description": "Too many long runs queued."}},
+)
+async def portfolio_var(req: VarRequest) -> VarTask:
+    pf = _checked(req.portfolio)
+    as_of = req.as_of or date.today()
+
+    def run(task: tasks.Task) -> VarResponse:
+        task.report(0.0, "Revaluing every position on each day of the window")
+        try:
+            r = risk.value_at_risk(
+                pf, as_of, req.window, lambda f: task.report(0.95 * f)
+            )
+        except ValueError as exc:
+            exc.user_facing = True  # type: ignore[attr-defined]
+            raise
+        return VarResponse(
+            as_of=r.as_of,
+            base_currency=pf.base_currency,
+            window_start=r.window[0],
+            window_end=r.window[1],
+            scenarios=r.scenarios,
+            dates=r.dates,
+            levels=[
+                VarLevelView(
+                    confidence=L.confidence,
+                    var=EstimateView(**vars(L.var)),
+                    expected_shortfall=EstimateView(**vars(L.expected_shortfall)),
+                    exceedances=L.exceedances,
+                )
+                for L in r.levels
+            ],
+            instruments=r.instruments,
+            left_out=r.left_out,
+            days_dropped=r.days_dropped,
+        )
+
+    try:
+        task = tasks.submit("portfolio-var", run)
+    except tasks.QueueFull as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    return _var_task(task)
+
+
+def _known(task_id: str) -> tasks.Task:
+    t = tasks.get(task_id)
+    if t is None or t.kind != "portfolio-var":
+        raise HTTPException(
+            status_code=404,
+            detail="No such task: it finished more than an hour ago, or the server restarted.",
+        )
+    return t
+
+
+@router.get("/var/{task_id}", response_model=VarTask)
+async def portfolio_var_task(task_id: str) -> VarTask:
+    return _var_task(_known(task_id))
+
+
+@router.delete("/var/{task_id}", response_model=VarTask)
+async def portfolio_var_cancel(task_id: str) -> VarTask:
+    _known(task_id)
+    return _var_task(tasks.cancel(task_id))

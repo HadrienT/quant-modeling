@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { LONG_TIMEOUT_MS, api, signalWithTimeout } from "./client";
 import { ApiError } from "./errors";
 import { queryKeys } from "./queryKeys";
@@ -9,6 +9,8 @@ import type {
 	Portfolio,
 	PortfolioHistory,
 	PortfolioSnapshot,
+	PortfolioStress,
+	PortfolioVarTask,
 	PnlWindow,
 	RateFxDraft,
 	RateFxQuote,
@@ -191,4 +193,73 @@ export async function migratePortfolio(pf: Portfolio): Promise<Portfolio> {
 			body: { portfolio: pf as never },
 		}),
 	);
+}
+
+/** Every position revalued under spot, vol and rate shocks of today's market
+ * (portfolio_risk.py): a few seconds, asked for when the Risk tab opens. */
+export function usePortfolioStress(pf: Portfolio | null | undefined) {
+	return useQuery({
+		queryKey: queryKeys.portfolio.ledgerStress(ledgerKey(pf)),
+		enabled: hasTrades(pf),
+		staleTime: STALE.portfolio,
+		retry: false,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal, LONG_TIMEOUT_MS);
+			try {
+				return await unwrap<PortfolioStress>(
+					api.POST("/api/portfolio-valuation/stress", {
+						body: { portfolio: pf! as never },
+						signal: s,
+					}),
+				);
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/** Start the historical VaR of the ledger: a task (the first run revalues
+ * every derivative on each day of a year). */
+export function useStartPortfolioVar() {
+	return useMutation<PortfolioVarTask, ApiError, Portfolio>({
+		mutationFn: (pf) =>
+			unwrap<PortfolioVarTask>(
+				api.POST("/api/portfolio-valuation/var", {
+					body: { portfolio: pf as never, window: 250 },
+				}),
+			),
+	});
+}
+
+/** The VaR task's progress, polled every second while it runs, then its
+ * result (null: no task). */
+export function usePortfolioVarTask(id: string | null) {
+	return useQuery<PortfolioVarTask, ApiError>({
+		queryKey: queryKeys.portfolio.varTask(id),
+		enabled: id != null,
+		retry: false,
+		refetchInterval: (q) => {
+			const status = q.state.data?.status;
+			return status === "queued" || status === "running" ? 1000 : false;
+		},
+		queryFn: ({ signal }) =>
+			unwrap<PortfolioVarTask>(
+				api.GET("/api/portfolio-valuation/var/{task_id}", {
+					params: { path: { task_id: id as string } },
+					signal,
+				}),
+			),
+	});
+}
+
+export function useCancelPortfolioVar() {
+	return useMutation<PortfolioVarTask, ApiError, string>({
+		mutationFn: (id) =>
+			unwrap<PortfolioVarTask>(
+				api.DELETE("/api/portfolio-valuation/var/{task_id}", {
+					params: { path: { task_id: id } },
+				}),
+			),
+	});
 }
