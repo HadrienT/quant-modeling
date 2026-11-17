@@ -135,6 +135,11 @@ namespace quantModeling::scripting::ir
         GridVol,   ///< the local vol at spot a and time b: bilinear, floored (mc::local_vol_bilinear)
         GridSlope, ///< its slope in the spot (0 outside the strikes and where the floor binds)
         GridAccum, ///< a statement: adjoint a of the vol at (spot b, time c), added to its four corners
+        // Second order through the grid (the tangent of an adjoint block;
+        // host only): direction x's row of the Hessian, theta_adjoint_tangent.
+        GridCurv,          ///< the vol's second derivative in the spot at (spot a, time b)
+        GridAccumDir,      ///< a statement: a times each node's weight at (spot b, time c), into direction x
+        GridSlopeAccumDir, ///< a statement: a times each node's weight slope in the spot, into direction x
         // ── the SLV leverage, on the same grid ─────────────────────────────
         GridLev,      ///< the leverage at spot a and time b (mc::leverage_staircase)
         GridLevSlope, ///< its slope in the spot
@@ -189,11 +194,19 @@ namespace quantModeling::scripting::ir
         return (tag & (kAdjoint - 1)) - 1;
     }
 
-    /// Whether `op` defines a number (the region markers and GridAccum do not).
+    /// Whether `op` is a statement, kept for its effect on the parameters'
+    /// adjoints: it defines no number.
+    constexpr bool is_statement(Op op)
+    {
+        return op == Op::GridAccum || op == Op::GridLevAccum || op == Op::GridAccumDir ||
+               op == Op::GridSlopeAccumDir;
+    }
+
+    /// Whether `op` defines a number (the region markers and the statements do not).
     constexpr bool defines_value(Op op)
     {
         return op != Op::If && op != Op::Else && op != Op::EndIf && op != Op::FuzzyIf && op != Op::FuzzyElse &&
-               op != Op::FuzzyEnd && op != Op::GridAccum && op != Op::GridLevAccum;
+               op != Op::FuzzyEnd && !is_statement(op);
     }
 
     /// Operands of `op` that are values: bit 0 for a, 1 for b, 2 for c.
@@ -232,6 +245,8 @@ namespace quantModeling::scripting::ir
             case Op::Select:
             case Op::GridAccum:
             case Op::GridLevAccum:
+            case Op::GridAccumDir:
+            case Op::GridSlopeAccumDir:
                 return 7u;
             default: // binary operations, the phis, FuzzyIf (degree, payoff before or -1)
                 return 3u;
@@ -658,6 +673,17 @@ namespace quantModeling::scripting::ir
                     break;
                 case Op::GridAccum: // adjoint a of the vol at (spot b, time c)
                     grid_accumulate(f.grid(), c, val[in.c], a, f.theta_adjoint, f.theta_stride, f.grid0);
+                    continue;
+                case Op::GridCurv:
+                    r = grid_curvature(f.grid(), a, c);
+                    break;
+                case Op::GridAccumDir: // into the Hessian's row of direction x
+                    grid_accumulate(f.grid(), c, val[in.c], a, f.theta_adjoint_tangent + static_cast<int>(in.x),
+                                    f.directions, f.grid0);
+                    continue;
+                case Op::GridSlopeAccumDir:
+                    grid_slope_accumulate(grid_cell(f.grid(), c, val[in.c]), f.grid_nT, a,
+                                          f.theta_adjoint_tangent + static_cast<int>(in.x), f.directions, f.grid0);
                     continue;
                 case Op::GridLev:
                     r = mc::leverage_staircase<Real>(f.grid(), a, c);

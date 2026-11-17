@@ -270,6 +270,11 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     case Op::GridAccum:
                         o << "qm_grid_accumulate(f, " << c << ", " << x(in.c) << ", " << a << ");";
                         break;
+                    case Op::GridCurv:
+                    case Op::GridAccumDir:
+                    case Op::GridSlopeAccumDir:
+                        throw InvalidInput("script IR: the second order through the local-vol grid runs on the "
+                                           "host only (no device code)");
                     case Op::GridLev:
                         o << x(k) << " = qm_grid_leverage(f, " << a << ", " << c << ");";
                         break;

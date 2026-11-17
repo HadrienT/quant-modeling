@@ -1119,6 +1119,63 @@ Prices move within the grid's bias. On the day's SPY surface (local vol,
 `Mlmc.TheScriptEngineRunsItWhenAsked` (five strikes from 0.80 to 0.22 vol)
 moves its reference 14.20 → 14.02, the multilevel QMC and MC runs agreeing.
 
-Not done yet: second order through the grid by transformation (the tangent
-of GridSlope needs the curvature, the tangent of GridAccum the weights'
-slopes): local vol keeps the bump on the adjoint until then.
+Second order through the grid by transformation: §14.16.
+
+### 14.16 Exact second order through the C¹ grid, on the host (2026-11-17)
+
+With the grid C¹ in the strike, tangent over adjoint goes through it (#283).
+Two rules were missing in `tangent()`, both met only in an adjoint block:
+
+- **`GridSlope`'s tangent is the curvature**: a new value `GridCurv`,
+  `∂²σ/∂S²`, from the second derivatives of the Hermite weights
+  (`GridView::strike_hermite_curvature`; `strike_hermite` itself is
+  unchanged, its node-slope coefficients moved to `node_slope` so both use
+  the same ones).
+- **`GridAccum`'s tangent**: the statement adds `ā w_n(S)` to node n's
+  adjoint, so in direction d it adds `ā̇ w_n + ā w_n′(S) Ṡ` to the node's
+  entry of that direction's Hessian row -- two statements, `GridAccumDir`
+  (the weights) and `GridSlopeAccumDir` (their slopes in the spot), the
+  direction in the instruction's immediate.
+
+So a path gives, in one pass, the scalar parameters' Hessian (gamma, the
+rate's and the dividend's rows) and, for each scalar direction, the cross
+derivative with **every grid node** (the spot's row is a vanna per node).
+Directions stay the scalar parameters; a node as a direction is not built
+(the nodes' own block, volga per pair of nodes, would be nodes² entries).
+
+What stays a kink: the slope still jumps at the two end strikes (the
+surface is flat outside the band) and where the 1e-6 floor starts to bind;
+a path crossing them is missed, as rare as leaving the band. The SLV
+leverage is linear by pieces in the strike (its calibration's convention):
+second order through it is refused, with that reason.
+
+Checked (`ScriptIrSecondOrder.LocalVolHessianThroughTheGridIsTheGradientsDerivative`),
+on a smile curved in the strike (the fixture's own is linear, where the
+curvature is 0), path by path:
+
+- every scalar direction's row, the nodes included, is the central
+  difference of the adjoint's gradient (2e-5 of the largest entry);
+- symmetry on the scalars, to 1e-10;
+- a node's entries are also the difference of the scalars' gradient when
+  the node itself is bumped (the mixed derivative taken the other way);
+- gamma is the second difference of the path's payoff in the spot -- no
+  derivative code at all (1e-4);
+- removing any one of the three terms (the curvature, the weights' slopes,
+  the adjoint's tangent) fails the test (tried);
+- the last-step expectations under local vol (`ScriptIrLastStep`), the same
+  way.
+
+And against the route the API uses, with nothing in common but the model
+(`GpuRisksTest.SecondOrderBumpUnderACurvedLocalVolIsTheExactRoute`,
+`lastStepCall`, the curved smile): gamma 0.018578 ± 0.000077 exact (100 000
+host paths) against 0.018590 ± 0.000012 by the bump on the GPU's adjoint
+(2^18 points); vanna against a parallel shift 0.0688 ± 0.0049 against
+0.0706 ± 0.0020.
+
+**What a user gets is unchanged.** The API's second order under local vol
+stays the bump on the GPU's adjoint: there is no second-order kernel on the
+device (§14.10 set it aside; the CUDA backend refuses the three new
+operations), and the host route is one thread of an evaluator. The exact
+route is the oracle the bump is now checked against under local vol, as it
+was under Black-Scholes and Heston. A device kernel would be the next step
+if the bump's O(h²) bias (0.05 % measured in §14.10) ever matters.

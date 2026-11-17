@@ -1003,6 +1003,19 @@ by default: it is another smoothing, hence another (equally small) bias on
 the price, and the book's linear ramp stays what the catalogue uses until the
 second order reaches the API (WP 27 L6).
 
+**Update (2026-11-17, WP 27 §14.15-§14.16): the model must be C¹ too, and
+local vol now is.** The same condition applies to the model: a bilinear
+local-vol grid has a slope in the spot that jumps at every strike, and the
+pathwise second derivative misses those jumps as it misses a ramp's corners.
+Since 2026-11-16 the grid is a cubic Hermite in the strike (C¹, still linear
+in the node values), and the IR's tangent over adjoint goes through it: the
+tangent of the vol's slope is its curvature, and the tangent of a node's
+share `ā w_n(S)` is `ā̇ w_n + ā w_n′(S) Ṡ`. One pass gives gamma and, for
+the spot's direction, a vanna per grid node. It runs on the host and is the
+oracle of the tests; the API's second order under local vol stays the bump
+on the GPU's adjoint, checked against it. The SLV leverage (linear by pieces
+in the strike) has no exact route.
+
 ## III.4 Laquelle utiliser
 
 | | Bump sur AAD (livre) | Adjoint sur tangent |

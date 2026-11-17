@@ -74,6 +74,39 @@ namespace quantModeling::scripting::ir::detail
         }
     }
 
+    /// `a` times each node's weight slope in the spot, added to the nodes'
+    /// adjoints: the part of the tangent of grid_accumulate that comes from
+    /// the spot moving (0 outside the strikes and where the floor binds).
+    QM_HOST_DEVICE inline void grid_slope_accumulate(const GridCell &c, long nT, double a, double *base, long stride,
+                                                     int grid0)
+    {
+        if (!c.free || !c.inside)
+            return;
+        for (int k = 0; k < 4; ++k)
+        {
+            base[(grid0 + c.idx[k] * nT + c.j0) * stride] += a * (c.dw[k] * (1.0 - c.wT));
+            base[(grid0 + c.idx[k] * nT + c.j1) * stride] += a * (c.dw[k] * c.wT);
+        }
+    }
+
+    /// d² sigma_loc / d S²: 0 outside the strikes and where the floor binds.
+    /// The interpolation is C¹ in the spot inside the strikes, so this
+    /// exists except at the nodes; the slope still jumps at the two end
+    /// strikes (flat outside) and where the floor starts to bind.
+    QM_HOST_DEVICE inline double grid_curvature(const mc::GridView<Real> &g, double S, double t)
+    {
+        const GridCell c = grid_cell(g, S, t);
+        if (!c.free || !c.inside)
+            return 0.0;
+        int idx[4];
+        double d2w[4];
+        g.strike_hermite_curvature(S, idx, d2w);
+        double curvature = 0.0;
+        for (int k = 0; k < 4; ++k)
+            curvature += d2w[k] * ((1.0 - c.wT) * g.at(idx[k], c.j0) + c.wT * g.at(idx[k], c.j1));
+        return curvature;
+    }
+
     /// d sigma_loc / d S: 0 outside the strikes and where the floor binds.
     QM_HOST_DEVICE inline double grid_slope(const mc::GridView<Real> &g, double S, double t)
     {

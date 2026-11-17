@@ -144,6 +144,10 @@ namespace quantModeling::scripting::ir
             case Op::GridLevAccum:
                 id = b.raw(in.op, m(in.a), m(in.b), m(in.c));
                 break;
+            case Op::GridAccumDir:
+            case Op::GridSlopeAccumDir:
+                id = b.raw(in.op, m(in.a), m(in.b), m(in.c), in.x);
+                break;
             case Op::Select:
                 id = b.value(Op::Select, m(in.a), m(in.b), 0.0, m(in.c));
                 break;
@@ -179,7 +183,7 @@ namespace quantModeling::scripting::ir
         for (const Out &o : b.outs)
             mark(o.value);
         for (std::size_t i = 0; i < n; ++i)
-            if (b.code[i].op == Op::GridAccum || b.code[i].op == Op::GridLevAccum) // statements: used by their effect
+            if (is_statement(b.code[i].op)) // used by their effect
                 mark(static_cast<std::int32_t>(i));
         while (!work.empty())
         {
@@ -207,7 +211,7 @@ namespace quantModeling::scripting::ir
                     open.push_back(static_cast<std::int32_t>(i));
                 else if (op == Op::EndIf || op == Op::FuzzyEnd)
                     open.pop_back();
-                else if ((op == Op::GridAccum || op == Op::GridLevAccum) && live[i])
+                else if (is_statement(op) && live[i])
                     for (std::int32_t head : open)
                         mark(head);
             }
@@ -636,6 +640,12 @@ namespace quantModeling::scripting::ir
                     return "grid_slope";
                 case Op::GridAccum:
                     return "grid_accumulate";
+                case Op::GridCurv:
+                    return "grid_curvature";
+                case Op::GridAccumDir:
+                    return "grid_accumulate_direction";
+                case Op::GridSlopeAccumDir:
+                    return "grid_slope_accumulate_direction";
                 case Op::GridLev:
                     return "grid_leverage";
                 case Op::GridLevSlope:

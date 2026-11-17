@@ -87,6 +87,30 @@ namespace quantModeling::mc
             return v[static_cast<long>(i) * nT + j];
         }
 
+        /// The slope of the strike interpolation at node i as a combination
+        /// of the node values, m(i) = a y(i-1) + b y(i) + c y(i+1): the
+        /// weighted three-point difference inside, one-sided at the two ends.
+        QM_HOST_DEVICE void node_slope(int i, double &a, double &b, double &c) const
+        {
+            if (i == 0)
+            {
+                const double hr = K[1] - K[0];
+                a = 0.0, b = -1.0 / hr, c = 1.0 / hr;
+            }
+            else if (i == nK - 1)
+            {
+                const double hl = K[i] - K[i - 1];
+                a = -1.0 / hl, b = 1.0 / hl, c = 0.0;
+            }
+            else
+            {
+                const double hl = K[i] - K[i - 1], hr = K[i + 1] - K[i];
+                a = -hr / (hl * (hl + hr));
+                c = hl / (hr * (hl + hr));
+                b = -(a + c);
+            }
+        }
+
         /**
          * The local vol's strike interpolation since 2026-11-16 (maintainer's
          * decision, WP 27 §14.15): a cubic Hermite through the nodes with
@@ -120,31 +144,9 @@ namespace quantModeling::mc
                 dw[0] = dw[1] = dw[2] = dw[3] = T(0.0);
                 return;
             }
-            // The node slopes as combinations of the node values:
-            // m(i) = a y(i-1) + b y(i) + c y(i+1).
-            const auto slope = [&](int i, double &a, double &b, double &c)
-            {
-                if (i == 0)
-                {
-                    const double hr = K[1] - K[0];
-                    a = 0.0, b = -1.0 / hr, c = 1.0 / hr;
-                }
-                else if (i == nK - 1)
-                {
-                    const double hl = K[i] - K[i - 1];
-                    a = -1.0 / hl, b = 1.0 / hl, c = 0.0;
-                }
-                else
-                {
-                    const double hl = K[i] - K[i - 1], hr = K[i + 1] - K[i];
-                    a = -hr / (hl * (hl + hr));
-                    c = hl / (hr * (hl + hr));
-                    b = -(a + c);
-                }
-            };
             double a0, b0, c0, a1, b1, c1;
-            slope(i0, a0, b0, c0);
-            slope(i1, a1, b1, c1);
+            node_slope(i0, a0, b0, c0);
+            node_slope(i1, a1, b1, c1);
             const T u = inside ? T((S_t - K[i0]) / h) : T((Sc - K[i0]) / h);
             const T u2 = u * u, u3 = u2 * u;
             const T h00 = 2.0 * u3 - 3.0 * u2 + 1.0, h10 = u3 - 2.0 * u2 + u;
@@ -165,6 +167,37 @@ namespace quantModeling::mc
             dw[1] = d00 + h * d10 * b0 + h * d11 * a1;
             dw[2] = d01 + h * d10 * c0 + h * d11 * b1;
             dw[3] = h * d11 * c1;
+        }
+
+        /// The second derivatives of strike_hermite's weights in the spot,
+        /// d2w[k] = d² w[k] / d S², on the same four nodes: what the exact
+        /// second order through the grid needs (WP 27 §14.16). 0 outside the
+        /// strikes, where the surface is flat. They jump at the nodes (the
+        /// interpolation is C¹, not C²), which a pathwise second derivative
+        /// allows.
+        QM_HOST_DEVICE void strike_hermite_curvature(double S, int idx[4], double d2w[4]) const
+        {
+            const double Sc = std::clamp(S, K[0], K[nK - 1]);
+            int i0, i1;
+            bracket(K, nK, Sc, i0, i1);
+            const double h = K[i1] - K[i0];
+            idx[0] = i0 > 0 ? i0 - 1 : i0;
+            idx[1] = i0;
+            idx[2] = i1;
+            idx[3] = i1 + 1 < nK ? i1 + 1 : i1;
+            d2w[0] = d2w[1] = d2w[2] = d2w[3] = 0.0;
+            if (h <= 1e-12 || Sc != S)
+                return;
+            double a0, b0, c0, a1, b1, c1;
+            node_slope(i0, a0, b0, c0);
+            node_slope(i1, a1, b1, c1);
+            const double u = (S - K[i0]) / h, h2 = h * h;
+            const double e00 = (12.0 * u - 6.0) / h2, e10 = (6.0 * u - 4.0) / h2;
+            const double e01 = (-12.0 * u + 6.0) / h2, e11 = (6.0 * u - 2.0) / h2;
+            d2w[0] = h * e10 * a0;
+            d2w[1] = e00 + h * e10 * b0 + h * e11 * a1;
+            d2w[2] = e01 + h * e10 * c0 + h * e11 * b1;
+            d2w[3] = h * e11 * c1;
         }
 
         /// Strike weight of S_t in its cell: a function of the spot itself
