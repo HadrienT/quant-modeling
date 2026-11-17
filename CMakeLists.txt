@@ -463,6 +463,7 @@ if(QM_BUILD_TESTS)
     tests/testScriptCudaCodegen.cpp
     tests/testScriptIr.cpp
     tests/testScriptIrPath.cpp
+    tests/testScriptIrExercise.cpp
     tests/testScriptIrAd.cpp
     tests/testScriptIrLastStep.cpp
     tests/testScriptIrVibrato.cpp

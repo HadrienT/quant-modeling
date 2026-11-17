@@ -414,6 +414,9 @@ namespace quantModeling::gpu
                 if (req.program && req.program->has_monitor)
                     throw InvalidInput("GPU: lastStep*() and survivalAbove() / survivalBelow() need the kernels "
                                        "compiled from the IR, and they are not available here (" + why + ")");
+                if (req.program && req.program->has_exercise)
+                    throw InvalidInput("GPU: exercise() / call() need the kernels compiled from the IR, and they "
+                                       "are not available here (" + why + ")");
                 out.note = "interpreted bytecode (" + why + ")";
                 return out;
             };

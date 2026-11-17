@@ -147,7 +147,7 @@ namespace quantModeling
         const double tree = bermudan_put_tree(36.0, 40.0, 0.06, 0.2, times, 26 * 60);
         const double se = r.mc.std_error();
         EXPECT_LT(r.mc.npv(), tree + 3.0 * se);                                           // a lower bound, up to noise
-        EXPECT_GT(r.mc.npv(), tree - 0.005);                                              // measured -0.0005 since issue #228's fit (-0.0048 before)
+        EXPECT_GT(r.mc.npv(), tree - 0.005);                                              // measured -0.0001 since the rank-truncated fit (WP 26 §16; -0.0005 after issue #228, -0.0048 before)
         EXPECT_GT(r.mc.npv(), bs(false, 36.0, 40.0, times.back(), 0.06, 0.0, 0.2) + 0.2); // early-exercise premium
         EXPECT_EQ(r.lsm.dates.size(), 26u);
         EXPECT_EQ(r.lsm.regressors, 2u);
@@ -304,6 +304,45 @@ namespace quantModeling
                 EXPECT_EQ(batched.std_error(), scalar.std_error()) << script;
                 EXPECT_EQ(threaded.npv(), scalar.npv()) << (fuzzy ? "fuzzy\n" : "hard\n") << script;
             }
+    }
+
+    // WP 26 §17: the pilot on a pool gives the same rule, to the bit, as on
+    // one thread -- the compiled pilot and the tree evaluator's, hard and
+    // fuzzy -- hence the same price.
+    TEST(Lsm, ThePilotOnAPoolFitsTheSameRule)
+    {
+        const ScriptModelSpec spec = black_scholes(36.0, 0.06, 0.2);
+        ThreadPool pool;
+        pool.start(5);
+        for (const std::string &script : early_exercise_scripts())
+            for (const bool fuzzy : {false, true})
+                for (const bool bytecode : {true, false})
+                {
+                    ScriptedProduct<Real> one(script, ctx(), exercise_settings(fuzzy, bytecode));
+                    ScriptedProduct<Real> many(script, ctx(), exercise_settings(fuzzy, bytecode));
+                    auto m1 = make_script_model<Real>(spec);
+                    auto m2 = make_script_model<Real>(spec);
+                    LsmSettings ls;
+                    ls.pilot_paths = 10007; // chunks of unequal size
+                    fit_exercise_policy(one, *m1, 20000, 7, ls);
+                    fit_exercise_policy(many, *m2, 20000, 7, ls, &pool);
+                    const auto &a = one.exercise_policy().by_event, &b = many.exercise_policy().by_event;
+                    ASSERT_EQ(a.size(), b.size()) << script;
+                    ASSERT_FALSE(a.empty()) << script;
+                    for (const auto &[event, reg] : a)
+                    {
+                        const auto &other = b.at(event);
+                        EXPECT_EQ(reg.beta, other.beta) << "event " << event << (fuzzy ? ", fuzzy" : "")
+                                                        << (bytecode ? ", bytecode\n" : ", tree\n") << script;
+                        EXPECT_EQ(reg.mean, other.mean);
+                        EXPECT_EQ(reg.lo, other.lo);
+                        EXPECT_EQ(reg.hi, other.hi);
+                    }
+                    PricingSettings s;
+                    s.mc_paths = 4000;
+                    s.mc_seed = 3;
+                    EXPECT_EQ(simulate<Real>(one, *m1, s).npv(), simulate<Real>(many, *m2, s).npv()) << script;
+                }
     }
 
     TEST(Lsm, TheBytecodesTapeRisksAreTheTreeEvaluators)

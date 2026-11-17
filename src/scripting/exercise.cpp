@@ -48,15 +48,43 @@ namespace quantModeling::scripting
         return phi;
     }
 
+    namespace
+    {
+        /// basis()'s products, for one monomial, without a vector.
+        double monomial(const double *z, std::size_t n, const std::vector<int> &term)
+        {
+            double phi = 1.0;
+            for (std::size_t i = 0; i < n; ++i)
+                for (int k = 0; k < term[i]; ++k)
+                    phi *= z[i];
+            return phi;
+        }
+    } // namespace
+
     double ExerciseRegression::gain(const std::vector<double> &regressors) const
     {
-        std::vector<double> z(regressors.size());
-        for (std::size_t i = 0; i < z.size(); ++i)
+        return gain(regressors.data(), regressors.size());
+    }
+
+    double ExerciseRegression::gain(const double *regressors, std::size_t n) const
+    {
+        // The same operations as basis() then the dot product, without
+        // allocating: it runs for every pilot path at every date, and for
+        // every decision the tree evaluator prices (WP 26 §17).
+        constexpr std::size_t kSmall = 16;
+        double small[kSmall];
+        std::vector<double> large;
+        double *z = small;
+        if (n > kSmall)
+        {
+            large.resize(n);
+            z = large.data();
+        }
+        for (std::size_t i = 0; i < n; ++i)
             z[i] = (regressors[i] - mean[i]) / scale[i];
-        const std::vector<double> phi = basis(z, terms);
         double g = 0.0;
-        for (std::size_t t = 0; t < phi.size(); ++t)
-            g += beta[t] * phi[t];
+        for (std::size_t t = 0; t < terms.size(); ++t)
+            g += beta[t] * monomial(z, n, terms[t]);
         return g;
     }
 
@@ -96,6 +124,25 @@ namespace quantModeling::scripting
             }
         }
 
+        /// standardise() on a row-major matrix of m rows of n: the same
+        /// operations in the same order.
+        void standardise(const double *rows, std::size_t m, std::size_t n, ExerciseRegression &r)
+        {
+            r.mean.assign(n, 0.0);
+            r.scale.assign(n, 1.0);
+            for (std::size_t p = 0; p < m; ++p)
+                for (std::size_t i = 0; i < n; ++i)
+                    r.mean[i] += rows[p * n + i] / static_cast<double>(m);
+            for (std::size_t i = 0; i < n; ++i)
+            {
+                double var = 0.0;
+                for (std::size_t p = 0; p < m; ++p)
+                    var += (rows[p * n + i] - r.mean[i]) * (rows[p * n + i] - r.mean[i]);
+                const double sd = std::sqrt(var / static_cast<double>(m));
+                r.scale[i] = sd > 1e-12 * (1.0 + std::abs(r.mean[i])) ? sd : 1.0;
+            }
+        }
+
         /// β from the stacked rows A β = b.
         void solve(const Eigen::MatrixXd &A, const Eigen::VectorXd &b, ExerciseRegression &r)
         {
@@ -104,10 +151,24 @@ namespace quantModeling::scripting
             // where max(K - S, 0) = K - S) leave pivots of 1e-14 that the default
             // threshold keeps, and dividing by them fills beta with cancelling
             // giants whose rounding is the prediction (issue #228).
+            //
+            // The threshold has to be applied here: Eigen's solve() keeps
+            // every pivot above machine epsilon (nonZeroPivots()), and the
+            // prescribed threshold only reaches rank(). Until 2026-11-17 the
+            // rule of a Bermudan put on (max(K - S, 0), S) still carried
+            // coefficients of 1e13-1e14 that cancelled, and decided by the
+            // last bits of the spot (WP 26 §16). So: the first rank()
+            // pivoted columns, R's leading block solved, the others 0.
             Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr;
             qr.setThreshold(1e-10);
             qr.compute(A);
-            const Eigen::VectorXd beta = qr.solve(b);
+            const Eigen::Index rank = qr.rank();
+            Eigen::VectorXd c = b;
+            c.applyOnTheLeft(qr.householderQ().setLength(rank).adjoint());
+            Eigen::VectorXd y = Eigen::VectorXd::Zero(A.cols());
+            if (rank > 0)
+                y.head(rank) = qr.matrixR().topLeftCorner(rank, rank).triangularView<Eigen::Upper>().solve(c.head(rank));
+            const Eigen::VectorXd beta = qr.colsPermutation() * y;
             r.beta.assign(beta.data(), beta.data() + beta.size());
         }
 
@@ -127,10 +188,22 @@ namespace quantModeling::scripting
     {
         if (rows.empty() || rows.size() != targets.size())
             throw InvalidInput("exercise regression: need as many targets as rows, and at least one");
-        const std::size_t n = rows.front().size(), m = rows.size();
+        const std::size_t n = rows.front().size();
+        std::vector<double> flat;
+        flat.reserve(rows.size() * n);
+        for (const auto &row : rows)
+            flat.insert(flat.end(), row.begin(), row.begin() + static_cast<std::ptrdiff_t>(n));
+        return fit_exercise_regression(flat.data(), rows.size(), n, targets.data(), degree);
+    }
+
+    ExerciseRegression fit_exercise_regression(const double *rows, std::size_t m, std::size_t n,
+                                               const double *targets, int degree)
+    {
+        if (m == 0)
+            throw InvalidInput("exercise regression: need as many targets as rows, and at least one");
         ExerciseRegression r;
         r.degree = degree;
-        standardise(rows, r);
+        standardise(rows, m, n, r);
         const auto terms = monomials(n, degree);
         Eigen::MatrixXd A(static_cast<Eigen::Index>(m), static_cast<Eigen::Index>(terms.size()));
         Eigen::VectorXd b(static_cast<Eigen::Index>(m));
@@ -138,10 +211,9 @@ namespace quantModeling::scripting
         for (std::size_t p = 0; p < m; ++p)
         {
             for (std::size_t i = 0; i < n; ++i)
-                z[i] = (rows[p][i] - r.mean[i]) / r.scale[i];
-            const std::vector<double> phi = basis(z, terms);
-            for (std::size_t t = 0; t < phi.size(); ++t)
-                A(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(t)) = phi[t];
+                z[i] = (rows[p * n + i] - r.mean[i]) / r.scale[i];
+            for (std::size_t t = 0; t < terms.size(); ++t)
+                A(static_cast<Eigen::Index>(p), static_cast<Eigen::Index>(t)) = monomial(z.data(), n, terms[t]);
             b(static_cast<Eigen::Index>(p)) = targets[p];
         }
         solve(A, b, r);
