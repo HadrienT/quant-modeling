@@ -6,6 +6,7 @@ import { ChartSkeleton } from "@/shared/ui/states";
 import { Nav } from "./Nav";
 import { Footer } from "./Footer";
 import { PageGate } from "./PageGate";
+import { SpaceTabs } from "./SpaceTabs";
 
 /**
  * The shell (WP 03). It renders children and loads nothing but /health.
@@ -17,6 +18,7 @@ export function AppLayout() {
 	return (
 		<div className="flex min-h-screen flex-col bg-canvas text-ink">
 			<Nav />
+			<SpaceTabs />
 			<main className="flex-1 px-4 py-5">
 				<Suspense fallback={<PageFallback />}>
 					<PageGate fallback={<PageFallback />}>

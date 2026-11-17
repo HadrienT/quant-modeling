@@ -1,5 +1,6 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useXvaNettingSet, useXvaPortfolios } from "@/shared/api";
+import { useNavPages } from "@/shared/session";
 import { Methodology, WarningList } from "@/shared/ui";
 import { ChartSkeleton, ErrorState } from "@/shared/ui/states";
 import {
@@ -25,6 +26,7 @@ import { XvaSensitivities } from "./XvaSensitivities";
  * portfolio and its terms live in the URL, so a view is a link.
  */
 export default function XvaPage() {
+	const { isShown } = useNavPages();
 	const search = useSearch({ from: "/xva" });
 	const navigate = useNavigate({ from: "/xva" });
 	const view: XvaView = {
@@ -61,6 +63,16 @@ export default function XvaPage() {
 					cost on a set of interest-rate trades — simulated on today&apos;s swap
 					curve, swaption volatilities and credit spreads.
 				</p>
+				{isShown("/portfolio") && (
+					<p className="text-xs text-ink-muted">
+						These netting sets are preset. For the trades you booked yourself,
+						open a{" "}
+						<Link to="/portfolio" className="text-accent hover:underline">
+							portfolio
+						</Link>{" "}
+						and its xVA tab.
+					</p>
+				)}
 			</div>
 			{options.error ? (
 				<ErrorState error={options.error} onRetry={() => options.refetch()} />
