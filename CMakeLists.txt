@@ -147,6 +147,7 @@ target_sources(quantModeling
         src/engines/mc/rough_bergomi_surface.cpp
         src/market/rough_bergomi_calibration.cpp
         src/engines/mc/path_simulation.cpp
+        src/engines/mc/path_distribution.cpp
         src/engines/mc/script_engine.cpp
         src/models/rates/flat_rate.cpp
         src/models/rates/vasicek.cpp
@@ -446,6 +447,7 @@ if(QM_BUILD_TESTS)
     tests/testRoughBergomiHybrid.cpp
     tests/testRoughBergomiCalibration.cpp
     tests/testPathSimulation.cpp
+    tests/testPathDistribution.cpp
     tests/testLocalVol.cpp
     tests/testUtils.cpp
     tests/testRegistry.cpp

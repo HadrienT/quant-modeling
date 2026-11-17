@@ -57,6 +57,10 @@ namespace quantModeling
         std::vector<Time> discount_mats;   ///< P(t, T) for these maturities T
         std::vector<Time> forward_mats;    ///< F(t, T) for these maturities T
         std::vector<StepMonitor> monitors; ///< survivals and last-step expectations (StepQuantity)
+        /// Ask for Sample::inst_vol: the instantaneous volatility of asset 0
+        /// at this date, on the path's state (engines/mc/path_distribution.hpp).
+        /// Off for pricing; a model that does not fill it leaves it untouched.
+        bool inst_vol = false;
     };
 
     /**
@@ -73,6 +77,10 @@ namespace quantModeling
         std::vector<T> discounts; ///< aligned with SampleDef::discount_mats
         std::vector<T> forwards;  ///< aligned with SampleDef::forward_mats
         std::vector<T> monitored; ///< aligned with SampleDef::monitors
+        /// sigma(t) of asset 0 on this path, when SampleDef::inst_vol: the
+        /// diffusion coefficient of d ln S at the path's state at t
+        /// (sqrt(v_t) for Heston, sigma_loc(S_t, t) for local vol...).
+        T inst_vol{};
 
         void allocate(const SampleDef &def, std::size_t n_underlyings)
         {
