@@ -129,6 +129,27 @@ namespace quantModeling::gpu
          *        refused (GpuUnavailable) when even that does not fit.
          */
         bool distribution = false;
+        /**
+         * @brief The trades' contributions (lot G1, blueprint/wp/23-xva.md
+         *        §20): 2K more netting sets of the same paths and terms,
+         *        each trade alone (subset 2j) and the netting set without it
+         *        (subset 2j + 1), with the weighted sums of each. The kernel
+         *        values each trade once per date and nets every subset from
+         *        those values, in the order of `trades`, as the host does.
+         *        Needs no initial margin (a subset's margin is a model of its
+         *        own: lot G8).
+         */
+        bool contributions = false;
+        /// With `contributions` and `collateralised`: the balance after
+        /// today's call of each of the 2K subsets, on its own value today.
+        std::vector<Real> subset_held_today;
+        /**
+         * @brief Euler allocation of the positive sum (no collateral, no
+         *        initial margin): per trade j, Σ_r a_r D v_j 1{V > 0}, V
+         *        the netting set's value. The K sums add up to the netting
+         *        set's, path by path.
+         */
+        bool euler = false;
     };
 
     /// One device's paths at one date, sorted by value.
@@ -146,6 +167,14 @@ namespace quantModeling::gpu
         std::vector<ExposureDateStats> dates;
         /// `positive` and `negative`: the two weighted sums; `value` unused.
         ExposureDateStats weighted;
+        /// With NettingSetGpuRequest::contributions, 2K: at 2j the weighted
+        /// sums of trade j alone; at 2j + 1 the netting set's minus those of
+        /// the netting set without it, path by path (the incremental sums:
+        /// their error is that of the paired difference).
+        std::vector<ExposureDateStats> subsets;
+        /// With NettingSetGpuRequest::euler, K: `positive` is trade j's
+        /// share of the positive weighted sum.
+        std::vector<ExposureDateStats> euler;
         int gpus = 0;
     };
 
