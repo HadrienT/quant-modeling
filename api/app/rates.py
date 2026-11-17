@@ -327,8 +327,8 @@ def derived_curves(
     """Zero rates (continuous) and Δ-forwards (continuous), both sampled on a
     regular grid from the first to the last pillar with the discount curve's
     own interpolation — so what is drawn between pillars is the curve that was
-    built, not a plotting library's spline. Nothing is extrapolated: DiscountCurve
-    is flat before the first pillar, which would read as a fake short end."""
+    built, not a plotting library's spline. Nothing is extrapolated: what lies
+    before the first pillar is the extrapolation's, not the market's."""
     first, last = times[0], times[-1]
     step = 1 / 12 if last <= 2 else 0.25
     grid = sorted(set(_grid(first, last, step)) | set(times))
@@ -539,15 +539,6 @@ _PER_CURRENCY = {
 }
 
 
-def first_pillar_bias_bp(par_yield: float) -> float:
-    """How much the library's flat-before-the-first-pillar convention lowers the
-    first zero rate when that pillar is a semi-annual par bond with no pillar
-    before it (JGB 1Y): the coupon at 6 months is discounted with the 1Y factor.
-    Flat: DF = 1/(1+y), z = ln(1+y). Log-linear from the origin: z = 2 ln(1+y/2).
-    The gap is ln(1 + y²/4 / (1+y)) ≈ y²/4 — in basis points."""
-    return math.log(1 + par_yield**2 / 4 / (1 + par_yield)) * 1e4
-
-
 def methodology(
     currency: str, result: Optional[CurveResult] = None
 ) -> List[tuple[str, List[str]]]:
@@ -563,9 +554,10 @@ def methodology(
         first = min(result.quoted, key=lambda q: q.tenor)
         specifics.append(
             f"The first pillar ({first.label}) is a par bond with a coupon before it "
-            "and no pillar there: the library holds the discount factor flat before "
-            "its first pillar, which lowers that zero rate by ln(1 + y²/4 / (1+y)) "
-            f"≈ y²/4 — {first_pillar_bias_bp(first.rate):.2f} bp for today's "
+            "and no pillar there: the curve holds the forward rate flat from today "
+            "to that pillar, so the 6-month coupon is discounted at the same zero "
+            "rate as the principal, z = 2 ln(1 + y/2) — "
+            f"{2 * math.log(1 + first.rate / 2) * 100:.3f} % for today's "
             f"{first.rate * 100:.3f} % par yield."
         )
     return _COMMON + [(f"{currency} specifics", specifics)]

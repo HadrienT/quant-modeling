@@ -151,17 +151,15 @@ def test_derived_curves_stay_between_the_first_and_last_pillar():
     assert max(p.tenor + 2.0 for p in forward) <= 30.0 + 1e-9
 
 
-def test_jgb_first_pillar_bias_matches_its_closed_form():
-    """Flat-before-the-first-pillar gives z = ln(1+y); log-linear from the
-    origin would give 2 ln(1+y/2); the methodology states the gap."""
+def test_the_jgb_first_pillar_is_the_semiannual_par_rate():
+    """The 1Y JGB has a coupon at 6 months and no pillar before it. With the
+    forward rate held flat from today the 6-month factor is the square root
+    of the 1Y one, and the par bond solves to z = 2 ln(1 + y/2) exactly; the
+    flat discount factor used before gave ln(1 + y), y²/4 too low."""
     spec, quoted, (times, dfs) = _curve("JPY")
     y = quoted["JPY.JGB_1Y"]
-    z_boot = -math.log(dfs[0]) / times[0]
-    z_origin = 2 * math.log(1 + y / 2)
-    assert (z_origin - z_boot) * 1e4 == pytest.approx(
-        rates.first_pillar_bias_bp(y), rel=1e-9
-    )
-    assert rates.first_pillar_bias_bp(y) < 1.0  # at today's ~1.6 %; ≈ y²/4
+    assert times[0] == pytest.approx(1.0)
+    assert -math.log(dfs[0]) == pytest.approx(2 * math.log(1 + y / 2), abs=1e-12)
 
 
 # ── The endpoint ─────────────────────────────────────────────────────────────
@@ -219,10 +217,11 @@ def test_every_currency_ships_its_methodology(client):
         )
 
 
-def test_jpy_methodology_states_todays_bias(client):
+def test_jpy_methodology_states_the_first_zero_rate(client):
     body = client.get("/market/rates/overview?currency=JPY").json()
     text = " ".join(p for s in body["methodology"] for p in s["paragraphs"])
-    assert "0.61 bp" in text and "1.578 %" in text
+    assert "z = 2 ln(1 + y/2)" in text
+    assert "1.572 % for today's 1.578 % par yield" in text
 
 
 def test_an_incomplete_curve_is_reported_not_spliced(client, store):
@@ -251,4 +250,21 @@ def test_history_only_serves_the_currencys_reference_rates(client):
     assert (
         client.get("/market/rates/history?currency=EUR&series_id=DGS10").status_code
         == 404
+    )
+
+
+def test_discount_factors_extrapolate_at_a_constant_forward_rate():
+    """Outside the pillars the forward rate is held, as in the engines'
+    curves and the bootstrap (WP 23, M10): before the first pillar the
+    forward of (0, t_1), past the last the last segment's."""
+    times, dfs = [0.25, 1.0, 2.0], [0.99, 0.96, 0.92]
+    r0 = -math.log(dfs[0]) / times[0]
+    r_last = math.log(dfs[1] / dfs[2]) / (times[2] - times[1])
+    short, inside, far = qm.discount_factors(times, dfs, [0.1, 1.0, 3.0])
+    assert short == pytest.approx(math.exp(-r0 * 0.1), rel=1e-12)
+    assert inside == pytest.approx(0.96, rel=1e-12)
+    assert far == pytest.approx(dfs[2] * math.exp(-r_last), rel=1e-12)
+    queries = [0.1, 0.6, 1.7, 3.0]
+    assert qm.discount_factors(times, dfs, queries) == (
+        qm.rate_curve_discount_factors(times, dfs, queries)
     )

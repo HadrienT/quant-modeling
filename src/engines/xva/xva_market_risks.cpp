@@ -106,7 +106,11 @@ namespace quantModeling
             map.dh.assign(tenors.size(), std::vector<Real>(tenors.size(), 0.0));
             for (std::size_t k = 0; k < tenors.size(); ++k)
             {
-                const Real h = 1e-6 * std::max(map.spreads[k], 1e-4);
+                // The bootstrap bisects each hazard to 1e-14: a bump of 1e-6
+                // of the spread (8e-9) left ~1e-6 of relative noise in dh,
+                // visible on a small FBA. 1e-3 of the spread keeps the
+                // central difference's O(h^2) term below 1e-9 relative.
+                const Real h = 1e-3 * std::max(map.spreads[k], 1e-4);
                 std::vector<Real> up = map.spreads, down = map.spreads;
                 up[k] += h;
                 down[k] -= h;
