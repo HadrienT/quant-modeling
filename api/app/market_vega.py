@@ -96,6 +96,8 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             device=device,
             rng=req.rng.value,
             sampler=req.sampler,
+            # A library product: its numbers are terms (one GPU kernel for all).
+            terms_as_parameters=True,
         )
         bucket = qm.dupire_superbucket(
             m.svi_slices,

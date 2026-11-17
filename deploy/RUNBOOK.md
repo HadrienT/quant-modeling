@@ -542,12 +542,17 @@ second each). Compiled kernels are kept in `/app/data/kernels`
 (`QM_KERNEL_CACHE_DIR`, on the `qm_data` volume): a restart or a deployment
 reads them back. At start, `kernel_warmup` (`QM_KERNEL_WARMUP=1`) recompiles
 the kernels a new image made stale and prices the catalogue's usual shapes
-once; it logs one line, `kernel warm-up: ... rebuilt ..., ... seeds priced
-...`. Nothing depends on it: a missing kernel is compiled by the request
-that needs it.
+once, then every product of the script library (`api/app/product_library`)
+under each model the GPU runs it with (about 350 seeds); it logs one line,
+`kernel warm-up: ... rebuilt ..., ... seeds priced ...`. A library product's
+numbers are its terms, read as data by its kernel, so one kernel serves
+every term sheet: only scripts a visitor writes on `/scripting` are compiled
+live. Nothing depends on the warm-up: a missing kernel is compiled by the
+request that needs it.
 
 - The directory can be deleted at any time (`rm -rf` inside the volume): the
-  next start refills it (about 30 s in the background).
+  next start refills it in the background (about 6 minutes from empty on the
+  V100s: some 190 kernels; a minute when they are all on disk).
 - `QM_KERNEL_CACHE=0` turns the disk cache off; `QM_KERNEL_WARMUP=0` the
   warm-up.
 

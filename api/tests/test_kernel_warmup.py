@@ -26,6 +26,9 @@ def test_off_unless_asked(monkeypatch):
 
 def test_warm_once_reports(monkeypatch, tmp_path):
     monkeypatch.setenv("QM_KERNEL_CACHE_DIR", str(tmp_path))
+    # A few library products: all of them take minutes on a GPU server.
+    few = kernel_warmup._library_seeds(qm)[:6]
+    monkeypatch.setattr(kernel_warmup, "_library_seeds", lambda q: few)
     done = kernel_warmup.warm_once()
     assert done["failed"] == []
     if not qm.gpu_devices():
@@ -35,3 +38,43 @@ def test_warm_once_reports(monkeypatch, tmp_path):
     assert done["rebuilt"]["directory"] == str(tmp_path)
     # The kernels are on disk: a second pass compiles nothing.
     assert kernel_warmup.warm_once()["compiled"] == 0
+
+
+def test_every_library_product_is_seeded_with_its_terms_as_data(monkeypatch):
+    # Each product of the script library, under each model the GPU runs it
+    # with, as the pricing page asks for it; never a CPU-only run (nothing
+    # to compile), always with its numbers as terms (one kernel for every
+    # term sheet).
+    from app import product_templates
+
+    seeds = kernel_warmup._library_seeds(qm)
+    labels = [label for label, _ in seeds]
+    assert len(set(labels)) == len(labels)
+    for slug, t in product_templates.templates().items():
+        mine = [label for label in labels if label.split()[1] == slug]
+        assert mine, slug
+        if t.underlyings == 1:
+            # Heston and SLV always run on the GPU
+            assert any(" heston " in label for label in mine), slug
+            assert any(" slv " in label for label in mine), slug
+    calls = []
+    monkeypatch.setattr(
+        qm, "price_script", lambda *a, **kw: calls.append(kw) or {"npv": 0.0}
+    )
+    for _, price in seeds:
+        price()
+    assert all(kw["terms_as_parameters"] for kw in calls)
+    assert all(kw["device"] != "cpu" for kw in calls)
+
+
+def test_one_seed_per_model_prices():
+    # The seeds' synthetic inputs are valid requests (on the CPU without a GPU).
+    seen = set()
+    for label, price in kernel_warmup._library_seeds(qm):
+        _, slug, model, *variant = label.split()
+        if model in seen or slug != "asian-call":
+            continue
+        seen.add(model)
+        result = price()
+        assert result["npv"] == result["npv"], label  # not NaN
+    assert seen == {"black_scholes", "local_vol", "heston", "slv"}
