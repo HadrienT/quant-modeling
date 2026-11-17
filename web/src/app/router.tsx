@@ -210,6 +210,7 @@ const backtestRoute = createRoute({
 	validateSearch: z.object({
 		c: z.string().optional(),
 		tab: z.string().optional(),
+		view: z.string().optional(),
 	}).parse,
 	component: BacktestPage,
 });

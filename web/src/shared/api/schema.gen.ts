@@ -179,6 +179,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backtest/hedging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backtest Hedging */
+        post: operations["backtest_hedging"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtest/strategy": {
         parameters: {
             query?: never;
@@ -191,6 +208,24 @@ export interface paths {
         /** Backtest Strategy */
         post: operations["backtest_strategy"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backtest Task */
+        get: operations["backtest_task"];
+        put?: never;
+        post?: never;
+        /** Backtest Cancel */
+        delete: operations["backtest_cancel"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4221,6 +4256,219 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** HedgeResult */
+        HedgeResult: {
+            /** Convention */
+            convention: string;
+            /**
+             * Discretisation Noise
+             * @description Derman and Kamal's floor for this number of rebalancings.
+             */
+            discretisation_noise?: number | null;
+            /** Explanation */
+            explanation: {
+                [key: string]: components["schemas"]["Metric"];
+            };
+            /** @description black_scholes_fixed only: the P&L's expected gamma-weighted variance term, with its error. */
+            gamma_integral?: components["schemas"]["Metric"] | null;
+            /** Hedge */
+            hedge: string;
+            /**
+             * Histogram
+             * @description Paths per bin of HedgingResponse.bins.
+             */
+            histogram: number[];
+            /** Kurtosis */
+            kurtosis: number | null;
+            /** Label */
+            label: string;
+            mean: components["schemas"]["Metric"];
+            /** Option Step Deviation */
+            option_step_deviation: number | null;
+            /** Quantiles */
+            quantiles: {
+                [key: string]: number | null;
+            };
+            /** Skewness */
+            skewness: number | null;
+            standard_deviation: components["schemas"]["Metric"];
+            /** Step Error Autocorrelation */
+            step_error_autocorrelation: number | null;
+            /**
+             * Uncalibrated Steps
+             * @description Dates where the implied volatility could not be read: not an error.
+             */
+            uncalibrated_steps: number;
+            /** Unexplained Step Deviation */
+            unexplained_step_deviation: number | null;
+        };
+        /** HedgingData */
+        HedgingData: {
+            /** Fingerprints */
+            fingerprints: {
+                [key: string]: string;
+            };
+            /** Snapshot */
+            snapshot?: string | null;
+            /** Source */
+            source: string;
+        };
+        /** HedgingRequest */
+        HedgingRequest: {
+            /**
+             * Confidence
+             * @default 0.95
+             */
+            confidence: number;
+            /**
+             * Cost Rate
+             * @description Proportional cost of each rebalancing trade.
+             * @default 0
+             */
+            cost_rate: number;
+            /**
+             * Hedge Volatility
+             * @description The fixed volatility of black_scholes_fixed. Default: the world's volatility today (sqrt(v0) in a Heston world).
+             */
+            hedge_volatility?: number | null;
+            /** Hedges */
+            hedges?: ("black_scholes_fixed" | "black_scholes_implied" | "skew_adjusted" | "minimum_variance" | "true_model")[];
+            /**
+             * Is Call
+             * @default true
+             */
+            is_call: boolean;
+            /**
+             * Maturity
+             * @description Years.
+             * @default 0.5
+             */
+            maturity: number;
+            /**
+             * Paths
+             * @default 5000
+             */
+            paths: number;
+            /**
+             * Rebalances
+             * @default 50
+             */
+            rebalances: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /**
+             * Strike
+             * @description As a multiple of the spot.
+             * @default 1
+             */
+            strike: number;
+            world?: components["schemas"]["HedgingWorld"];
+        };
+        /** HedgingResponse */
+        HedgingResponse: {
+            /**
+             * Bins
+             * @description Common bin edges of the P&L histograms.
+             */
+            bins: number[];
+            /**
+             * Coefficients
+             * @description The minimum-variance delta's a, b, c, fitted on another seed.
+             */
+            coefficients?: {
+                [key: string]: number;
+            } | null;
+            /** Compute Ms */
+            compute_ms: number;
+            data: components["schemas"]["HedgingData"];
+            engine: components["schemas"]["EngineBuild"];
+            /** Hedges */
+            hedges: components["schemas"]["HedgeResult"][];
+            /** Is Call */
+            is_call: boolean;
+            /** Maturity */
+            maturity: number;
+            /** Premium */
+            premium: number;
+            /**
+             * Strike
+             * @description In currency.
+             */
+            strike: number;
+            /**
+             * World
+             * @description The world handed to the engine.
+             */
+            world: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * HedgingWorld
+         * @description The market the paths follow. With `ticker`, a Heston world calibrated on
+         *     the stored chain of that ticker (spot, dividend and the five parameters
+         *     from the database); otherwise the parameters typed.
+         */
+        HedgingWorld: {
+            /**
+             * Dividend Yield
+             * @default 0
+             */
+            dividend_yield: number;
+            /**
+             * Kappa
+             * @default 2
+             */
+            kappa: number;
+            /**
+             * Model
+             * @default heston
+             * @enum {string}
+             */
+            model: "black_scholes" | "heston";
+            /**
+             * Rate
+             * @description Continuous, per year.
+             * @default 0.04
+             */
+            rate: number;
+            /**
+             * Rho
+             * @default -0.7
+             */
+            rho: number;
+            /**
+             * Spot
+             * @default 100
+             */
+            spot: number;
+            /**
+             * Theta
+             * @default 0.04
+             */
+            theta: number;
+            /** Ticker */
+            ticker?: string | null;
+            /**
+             * V0
+             * @default 0.04
+             */
+            v0: number;
+            /**
+             * Volatility
+             * @description Black-Scholes world.
+             * @default 0.2
+             */
+            volatility: number;
+            /**
+             * Xi
+             * @default 0.5
+             */
+            xi: number;
+        };
         /**
          * HestonFit
          * @description Heston calibrated to the stored surface (market/heston_calibration.hpp).
@@ -7649,6 +7897,27 @@ export interface components {
             /** Tenor */
             tenor: number;
         };
+        /** TaskStatus */
+        TaskStatus: {
+            /** Ahead */
+            ahead: number;
+            /** Error */
+            error?: string | null;
+            hedging?: components["schemas"]["HedgingResponse"] | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Progress */
+            progress: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "done" | "failed" | "cancelled";
+            /** Step */
+            step: string;
+        };
         /** TenorRate */
         TenorRate: {
             /** Rate */
@@ -8917,6 +9186,46 @@ export interface operations {
             };
         };
     };
+    backtest_hedging: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HedgingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many backtests queued. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     backtest_strategy: {
         parameters: {
             query?: never;
@@ -8952,6 +9261,68 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    backtest_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backtest_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

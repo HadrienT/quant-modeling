@@ -59,10 +59,31 @@ def _validation_headline(r: s.ValidationResponse) -> dict[str, float | None]:
     }
 
 
+def _hedging_headline(r: Any) -> dict[str, float | None]:
+    out: dict[str, float | None] = {"premium": r.premium}
+    for h in r.hedges:
+        out[f"{h.hedge}.mean"] = h.mean.value
+        out[f"{h.hedge}.standard_deviation"] = h.standard_deviation.value
+    return out
+
+
+def _run_hedging(req: BaseModel) -> Any:
+    from . import hedging
+
+    return hedging.run_hedging(req)
+
+
+def _hedging_request() -> type[BaseModel]:
+    from . import hedging
+
+    return hedging.HedgingRequest
+
+
 #: kind → (request model, run, headline)
 KINDS: dict[str, tuple[type[BaseModel], Callable, Callable]] = {
     "strategy": (s.StrategyRequest, engine.run_strategy, _strategy_headline),
     "validation": (s.ValidationRequest, engine.run_validation, _validation_headline),
+    "hedging": (_hedging_request(), _run_hedging, _hedging_headline),
 }
 
 

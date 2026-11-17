@@ -1,0 +1,343 @@
+{
+	"id": "t1",
+	"kind": "hedging",
+	"status": "done",
+	"progress": 1.0,
+	"step": "",
+	"ahead": 0,
+	"error": null,
+	"hedging": {
+		"world": {
+			"model": "black_scholes",
+			"spot": 100.0,
+			"rate": 0.04,
+			"dividend_yield": 0.0,
+			"volatility": 0.2
+		},
+		"strike": 100.0,
+		"maturity": 0.5,
+		"is_call": true,
+		"premium": 6.627078013614738,
+		"hedges": [
+			{
+				"hedge": "black_scholes_fixed",
+				"label": "Black-Scholes delta, one fixed volatility",
+				"mean": {
+					"value": 0.0019574979650141995,
+					"standard_error": 0.02372798363817342,
+					"lower": -0.04454849539156136,
+					"upper": 0.048463491321589766,
+					"confidence": 0.95,
+					"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+					"convention": "mean of the P&L in currency, at maturity, for one option bought and delta-hedged"
+				},
+				"standard_deviation": {
+					"value": 1.061147687679171,
+					"standard_error": 0.022324656355869544,
+					"lower": 1.0173921652544335,
+					"upper": 1.1049032101039085,
+					"confidence": 0.95,
+					"method": "standard deviation over the simulated paths, asymptotic standard error with the sample kurtosis, normal interval",
+					"convention": "standard deviation of the P&L in currency, at maturity, for one option bought and delta-hedged"
+				},
+				"skewness": 0.3439086025443613,
+				"kurtosis": 4.5408529241307605,
+				"quantiles": {
+					"0.01": -2.5511756039147597,
+					"0.05": -1.6466539749616576,
+					"0.95": 1.7862589502357333,
+					"0.99": 2.9062438865900635
+				},
+				"step_error_autocorrelation": 0.012981535872195617,
+				"discretisation_noise": 1.0931591157244103,
+				"gamma_integral": {
+					"value": 0.0,
+					"standard_error": 0.0,
+					"lower": 0.0,
+					"upper": 0.0,
+					"confidence": 0.95,
+					"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+					"convention": "mean of the sum of e^{r(T-t)} (1/2) gamma S^2 (realised variance - hedging variance) dt in currency, at maturity, for one option bought and delta-hedged"
+				},
+				"explanation": {
+					"delta": {
+						"value": 0.9010020444071759,
+						"standard_error": 0.2222235942657373,
+						"lower": 0.46545180313128937,
+						"upper": 1.3365522856830625,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "delta x change of the spot, summed over the life of the option, in currency"
+					},
+					"gamma": {
+						"value": 2.785269663942942,
+						"standard_error": 0.02752101726516065,
+						"lower": 2.731329461285322,
+						"upper": 2.839209866600562,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "(1/2) gamma x squared change of the spot, summed over the life of the option, in currency"
+					},
+					"theta": {
+						"value": -3.811699365900231,
+						"standard_error": 0.023482775312171515,
+						"lower": -3.8577247597691335,
+						"upper": -3.7656739720313284,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "theta x time elapsed, summed over the life of the option, in currency"
+					},
+					"vega": {
+						"value": 0.0,
+						"standard_error": 0.0,
+						"lower": 0.0,
+						"upper": 0.0,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "vega x change of the marking volatility, summed over the life of the option, in currency"
+					},
+					"unexplained": {
+						"value": -0.011007451171334972,
+						"standard_error": 0.00600810774181961,
+						"lower": -0.022783125960537675,
+						"upper": 0.0007682236178677311,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "change of the option's value not explained by the four terms, summed over the life of the option, in currency"
+					}
+				},
+				"unexplained_step_deviation": 0.061818515273107257,
+				"option_step_deviation": 2.165108772903903,
+				"uncalibrated_steps": 0,
+				"convention": "simulated Black-Scholes world; hedge: Black-Scholes delta at a fixed volatility, the option bought and marked at that volatility; 20 equally spaced rebalancings; the option is priced by the quantModeling library",
+				"histogram": [
+					3, 4, 1, 5, 3, 4, 7, 4, 10, 16, 13, 13, 22, 27, 27, 36, 33, 44, 46,
+					51, 64, 68, 73, 76, 87, 87, 93, 102, 88, 96, 81, 72, 88, 51, 63, 61,
+					50, 48, 38, 24, 28, 19, 22, 17, 17, 20, 6, 11, 6, 15, 6, 2, 11, 4, 4,
+					2, 2, 2, 4, 3
+				]
+			},
+			{
+				"hedge": "black_scholes_implied",
+				"label": "Black-Scholes delta at each date's implied volatility",
+				"mean": {
+					"value": 0.0019574979650141995,
+					"standard_error": 0.02372798363817342,
+					"lower": -0.04454849539156136,
+					"upper": 0.048463491321589766,
+					"confidence": 0.95,
+					"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+					"convention": "mean of the P&L in currency, at maturity, for one option bought and delta-hedged"
+				},
+				"standard_deviation": {
+					"value": 1.061147687679171,
+					"standard_error": 0.022324656355869544,
+					"lower": 1.0173921652544335,
+					"upper": 1.1049032101039085,
+					"confidence": 0.95,
+					"method": "standard deviation over the simulated paths, asymptotic standard error with the sample kurtosis, normal interval",
+					"convention": "standard deviation of the P&L in currency, at maturity, for one option bought and delta-hedged"
+				},
+				"skewness": 0.3439086025443613,
+				"kurtosis": 4.5408529241307605,
+				"quantiles": {
+					"0.01": -2.5511756039147597,
+					"0.05": -1.6466539749616576,
+					"0.95": 1.7862589502357333,
+					"0.99": 2.9062438865900635
+				},
+				"step_error_autocorrelation": 0.012981535872195617,
+				"discretisation_noise": 1.0931591157244103,
+				"gamma_integral": null,
+				"explanation": {
+					"delta": {
+						"value": 0.9010020444071759,
+						"standard_error": 0.2222235942657373,
+						"lower": 0.46545180313128937,
+						"upper": 1.3365522856830625,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "delta x change of the spot, summed over the life of the option, in currency"
+					},
+					"gamma": {
+						"value": 2.785269663942942,
+						"standard_error": 0.02752101726516065,
+						"lower": 2.731329461285322,
+						"upper": 2.839209866600562,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "(1/2) gamma x squared change of the spot, summed over the life of the option, in currency"
+					},
+					"theta": {
+						"value": -3.811699365900231,
+						"standard_error": 0.023482775312171515,
+						"lower": -3.8577247597691335,
+						"upper": -3.7656739720313284,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "theta x time elapsed, summed over the life of the option, in currency"
+					},
+					"vega": {
+						"value": 0.0,
+						"standard_error": 0.0,
+						"lower": 0.0,
+						"upper": 0.0,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "vega x change of the marking volatility, summed over the life of the option, in currency"
+					},
+					"unexplained": {
+						"value": -0.011007451171334972,
+						"standard_error": 0.00600810774181961,
+						"lower": -0.022783125960537675,
+						"upper": 0.0007682236178677311,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "change of the option's value not explained by the four terms, summed over the life of the option, in currency"
+					}
+				},
+				"unexplained_step_deviation": 0.061818515273107257,
+				"option_step_deviation": 2.165108772903903,
+				"uncalibrated_steps": 0,
+				"convention": "simulated Black-Scholes world; hedge: Black-Scholes delta at the implied volatility of each date; 20 equally spaced rebalancings; the option is priced by the quantModeling library",
+				"histogram": [
+					3, 4, 1, 5, 3, 4, 7, 4, 10, 16, 13, 13, 22, 27, 27, 36, 33, 44, 46,
+					51, 64, 68, 73, 76, 87, 87, 93, 102, 88, 96, 81, 72, 88, 51, 63, 61,
+					50, 48, 38, 24, 28, 19, 22, 17, 17, 20, 6, 11, 6, 15, 6, 2, 11, 4, 4,
+					2, 2, 2, 4, 3
+				]
+			},
+			{
+				"hedge": "minimum_variance",
+				"label": "Minimum-variance delta (Hull & White, 2017)",
+				"mean": {
+					"value": 0.0020442213108185624,
+					"standard_error": 0.023729184368540032,
+					"lower": -0.0444641254340307,
+					"upper": 0.04855256805566783,
+					"confidence": 0.95,
+					"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+					"convention": "mean of the P&L in currency, at maturity, for one option bought and delta-hedged"
+				},
+				"standard_deviation": {
+					"value": 1.0612013859736187,
+					"standard_error": 0.022356545510613755,
+					"lower": 1.017383361954085,
+					"upper": 1.1050194099931523,
+					"confidence": 0.95,
+					"method": "standard deviation over the simulated paths, asymptotic standard error with the sample kurtosis, normal interval",
+					"convention": "standard deviation of the P&L in currency, at maturity, for one option bought and delta-hedged"
+				},
+				"skewness": 0.35844052285888606,
+				"kurtosis": 4.550616493087174,
+				"quantiles": {
+					"0.01": -2.528344629991924,
+					"0.05": -1.636360052253512,
+					"0.95": 1.7913819916923162,
+					"0.99": 2.9337198042906243
+				},
+				"step_error_autocorrelation": 0.012923917346408756,
+				"discretisation_noise": 1.0931591157244103,
+				"gamma_integral": null,
+				"explanation": {
+					"delta": {
+						"value": 0.9010020444071759,
+						"standard_error": 0.2222235942657373,
+						"lower": 0.46545180313128937,
+						"upper": 1.3365522856830625,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "delta x change of the spot, summed over the life of the option, in currency"
+					},
+					"gamma": {
+						"value": 2.785269663942942,
+						"standard_error": 0.02752101726516065,
+						"lower": 2.731329461285322,
+						"upper": 2.839209866600562,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "(1/2) gamma x squared change of the spot, summed over the life of the option, in currency"
+					},
+					"theta": {
+						"value": -3.811699365900231,
+						"standard_error": 0.023482775312171515,
+						"lower": -3.8577247597691335,
+						"upper": -3.7656739720313284,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "theta x time elapsed, summed over the life of the option, in currency"
+					},
+					"vega": {
+						"value": 0.0,
+						"standard_error": 0.0,
+						"lower": 0.0,
+						"upper": 0.0,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "vega x change of the marking volatility, summed over the life of the option, in currency"
+					},
+					"unexplained": {
+						"value": -0.011007451171334972,
+						"standard_error": 0.00600810774181961,
+						"lower": -0.022783125960537675,
+						"upper": 0.0007682236178677311,
+						"confidence": 0.95,
+						"method": "mean over the simulated paths, Monte-Carlo standard error, normal interval",
+						"convention": "change of the option's value not explained by the four terms, summed over the life of the option, in currency"
+					}
+				},
+				"unexplained_step_deviation": 0.061818515273107257,
+				"option_step_deviation": 2.165108772903903,
+				"uncalibrated_steps": 0,
+				"convention": "simulated Black-Scholes world; hedge: minimum-variance delta of Hull and White (2017) with the given coefficients; 20 equally spaced rebalancings; the option is priced by the quantModeling library",
+				"histogram": [
+					2, 3, 3, 3, 5, 4, 6, 5, 11, 14, 12, 14, 21, 27, 25, 39, 29, 48, 44,
+					54, 65, 68, 73, 85, 80, 86, 98, 99, 82, 98, 86, 71, 84, 50, 63, 63,
+					47, 49, 37, 27, 23, 27, 16, 18, 17, 19, 10, 8, 7, 13, 8, 2, 10, 6, 3,
+					1, 3, 2, 4, 3
+				]
+			}
+		],
+		"bins": [
+			-2.915782904503007, -2.8118743461366447, -2.707965787770283,
+			-2.604057229403921, -2.500148671037559, -2.396240112671197,
+			-2.292331554304835, -2.188422995938473, -2.084514437572111,
+			-1.9806058792057493, -1.8766973208393871, -1.7727887624730252,
+			-1.6688802041066633, -1.5649716457403013, -1.4610630873739392,
+			-1.3571545290075773, -1.2532459706412153, -1.1493374122748534,
+			-1.0454288539084915, -0.9415202955421293, -0.8376117371757674,
+			-0.7337031788094057, -0.6297946204430436, -0.5258860620766814,
+			-0.4219775037103197, -0.3180689453439576, -0.21416038697759587,
+			-0.11025182861123373, -0.006343270244871579, 0.09756528812149012,
+			0.20147384648785227, 0.305382404854214, 0.4092909632205761,
+			0.5131995215869383, 0.6171080799533, 0.7210166383196621,
+			0.8249251966860238, 0.928833755052386, 1.0327423134187481,
+			1.1366508717851103, 1.240559430151472, 1.3444679885178337,
+			1.4483765468841954, 1.552285105250558, 1.6561936636169197,
+			1.7601022219832814, 1.864010780349644, 1.9679193387160057,
+			2.0718278970823674, 2.17573645544873, 2.2796450138150917,
+			2.3835535721814534, 2.487462130547815, 2.5913706889141777,
+			2.6952792472805394, 2.799187805646901, 2.9030963640132637,
+			3.0070049223796254, 3.110913480745987, 3.2148220391123496,
+			3.318730597478712
+		],
+		"coefficients": {
+			"a": 0.020624442357374703,
+			"b": -0.09294879280155711,
+			"c": 0.09695881165835123
+		},
+		"data": {
+			"source": "Black-Scholes, parameters typed",
+			"snapshot": null,
+			"fingerprints": {
+				"world": "sha256:211f239e7138a591584cc22c61ed52e5f9197a693eb728424921e4103a82b25f"
+			}
+		},
+		"engine": {
+			"version": "0.1.0",
+			"git_sha": "2fa334e8993c91aa3b841ecbc266edee8b8f4202",
+			"quantmodeling_sha": "fdc1a10433c4a24564e563e64b8fc1829c1f2213"
+		},
+		"compute_ms": 67.54565192386508
+	}
+}

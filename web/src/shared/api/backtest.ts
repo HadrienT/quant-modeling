@@ -1,9 +1,11 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "./client";
 import type { ApiError } from "./errors";
 import { longCall as call } from "./longCall";
 import { queryKeys } from "./queryKeys";
 import type {
+	BacktestHedgingRequest,
+	BacktestTask,
 	BacktestStrategy,
 	BacktestStrategyRequest,
 	BacktestUniverse,
@@ -63,6 +65,52 @@ export function useBacktestValidation(
 			call<BacktestValidation>(signal, (s) =>
 				api.POST("/api/backtest/validation", {
 					body: request as BacktestValidationRequest,
+					signal: s,
+				}),
+			),
+	});
+}
+
+/** Start a hedging backtest: a task, whose id comes back at once (a Heston
+ * world takes minutes). */
+export function useStartHedging() {
+	return useMutation<BacktestTask, ApiError, BacktestHedgingRequest>({
+		mutationFn: (body) =>
+			call<BacktestTask>(undefined, (s) =>
+				api.POST("/api/backtest/hedging", { body, signal: s }),
+			),
+	});
+}
+
+/** A task's progress, polled every second while it is queued or running,
+ * then its result (null: no task). */
+export function useBacktestTask(id: string | null) {
+	return useQuery<BacktestTask, ApiError>({
+		queryKey: queryKeys.backtest.task(id),
+		enabled: id != null,
+		retry: false,
+		refetchInterval: (q) => {
+			const status = q.state.data?.status;
+			return status === "queued" || status === "running" ? 1000 : false;
+		},
+		queryFn: ({ signal }) =>
+			call<BacktestTask>(signal, (s) =>
+				api.GET("/api/backtest/tasks/{task_id}", {
+					params: { path: { task_id: id as string } },
+					signal: s,
+				}),
+			),
+	});
+}
+
+/** Cancel a task: a queued one never starts, a running one stops at the
+ * engine's next progress report. */
+export function useCancelBacktestTask() {
+	return useMutation<BacktestTask, ApiError, string>({
+		mutationFn: (id) =>
+			call<BacktestTask>(undefined, (s) =>
+				api.DELETE("/api/backtest/tasks/{task_id}", {
+					params: { path: { task_id: id } },
 					signal: s,
 				}),
 			),

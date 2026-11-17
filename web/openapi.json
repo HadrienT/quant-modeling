@@ -5015,6 +5015,460 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HedgeResult": {
+        "properties": {
+          "convention": {
+            "title": "Convention",
+            "type": "string"
+          },
+          "discretisation_noise": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Derman and Kamal's floor for this number of rebalancings.",
+            "title": "Discretisation Noise"
+          },
+          "explanation": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Metric"
+            },
+            "title": "Explanation",
+            "type": "object"
+          },
+          "gamma_integral": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Metric"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "black_scholes_fixed only: the P&L's expected gamma-weighted variance term, with its error."
+          },
+          "hedge": {
+            "title": "Hedge",
+            "type": "string"
+          },
+          "histogram": {
+            "description": "Paths per bin of HedgingResponse.bins.",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Histogram",
+            "type": "array"
+          },
+          "kurtosis": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kurtosis"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "mean": {
+            "$ref": "#/components/schemas/Metric"
+          },
+          "option_step_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Option Step Deviation"
+          },
+          "quantiles": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Quantiles",
+            "type": "object"
+          },
+          "skewness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skewness"
+          },
+          "standard_deviation": {
+            "$ref": "#/components/schemas/Metric"
+          },
+          "step_error_autocorrelation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Error Autocorrelation"
+          },
+          "uncalibrated_steps": {
+            "description": "Dates where the implied volatility could not be read: not an error.",
+            "title": "Uncalibrated Steps",
+            "type": "integer"
+          },
+          "unexplained_step_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unexplained Step Deviation"
+          }
+        },
+        "required": [
+          "hedge",
+          "label",
+          "mean",
+          "standard_deviation",
+          "skewness",
+          "kurtosis",
+          "quantiles",
+          "step_error_autocorrelation",
+          "explanation",
+          "unexplained_step_deviation",
+          "option_step_deviation",
+          "uncalibrated_steps",
+          "convention",
+          "histogram"
+        ],
+        "title": "HedgeResult",
+        "type": "object"
+      },
+      "HedgingData": {
+        "properties": {
+          "fingerprints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fingerprints",
+            "type": "object"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "fingerprints"
+        ],
+        "title": "HedgingData",
+        "type": "object"
+      },
+      "HedgingRequest": {
+        "properties": {
+          "confidence": {
+            "default": 0.95,
+            "exclusiveMaximum": 1.0,
+            "exclusiveMinimum": 0.5,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "cost_rate": {
+            "default": 0.0,
+            "description": "Proportional cost of each rebalancing trade.",
+            "maximum": 0.01,
+            "minimum": 0.0,
+            "title": "Cost Rate",
+            "type": "number"
+          },
+          "hedge_volatility": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 2.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The fixed volatility of black_scholes_fixed. Default: the world's volatility today (sqrt(v0) in a Heston world).",
+            "title": "Hedge Volatility"
+          },
+          "hedges": {
+            "items": {
+              "enum": [
+                "black_scholes_fixed",
+                "black_scholes_implied",
+                "skew_adjusted",
+                "minimum_variance",
+                "true_model"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Hedges",
+            "type": "array"
+          },
+          "is_call": {
+            "default": true,
+            "title": "Is Call",
+            "type": "boolean"
+          },
+          "maturity": {
+            "default": 0.5,
+            "description": "Years.",
+            "maximum": 2.0,
+            "minimum": 0.05,
+            "title": "Maturity",
+            "type": "number"
+          },
+          "paths": {
+            "default": 5000,
+            "maximum": 50000.0,
+            "minimum": 1000.0,
+            "title": "Paths",
+            "type": "integer"
+          },
+          "rebalances": {
+            "default": 50,
+            "maximum": 252.0,
+            "minimum": 4.0,
+            "title": "Rebalances",
+            "type": "integer"
+          },
+          "seed": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "strike": {
+            "default": 1.0,
+            "description": "As a multiple of the spot.",
+            "maximum": 1.5,
+            "minimum": 0.5,
+            "title": "Strike",
+            "type": "number"
+          },
+          "world": {
+            "$ref": "#/components/schemas/HedgingWorld"
+          }
+        },
+        "title": "HedgingRequest",
+        "type": "object"
+      },
+      "HedgingResponse": {
+        "properties": {
+          "bins": {
+            "description": "Common bin edges of the P&L histograms.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Bins",
+            "type": "array"
+          },
+          "coefficients": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The minimum-variance delta's a, b, c, fitted on another seed.",
+            "title": "Coefficients"
+          },
+          "compute_ms": {
+            "title": "Compute Ms",
+            "type": "number"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HedgingData"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineBuild"
+          },
+          "hedges": {
+            "items": {
+              "$ref": "#/components/schemas/HedgeResult"
+            },
+            "title": "Hedges",
+            "type": "array"
+          },
+          "is_call": {
+            "title": "Is Call",
+            "type": "boolean"
+          },
+          "maturity": {
+            "title": "Maturity",
+            "type": "number"
+          },
+          "premium": {
+            "title": "Premium",
+            "type": "number"
+          },
+          "strike": {
+            "description": "In currency.",
+            "title": "Strike",
+            "type": "number"
+          },
+          "world": {
+            "additionalProperties": true,
+            "description": "The world handed to the engine.",
+            "title": "World",
+            "type": "object"
+          }
+        },
+        "required": [
+          "world",
+          "strike",
+          "maturity",
+          "is_call",
+          "premium",
+          "hedges",
+          "bins",
+          "data",
+          "engine",
+          "compute_ms"
+        ],
+        "title": "HedgingResponse",
+        "type": "object"
+      },
+      "HedgingWorld": {
+        "description": "The market the paths follow. With `ticker`, a Heston world calibrated on\nthe stored chain of that ticker (spot, dividend and the five parameters\nfrom the database); otherwise the parameters typed.",
+        "properties": {
+          "dividend_yield": {
+            "default": 0.0,
+            "maximum": 0.25,
+            "minimum": 0.0,
+            "title": "Dividend Yield",
+            "type": "number"
+          },
+          "kappa": {
+            "default": 2.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 50.0,
+            "title": "Kappa",
+            "type": "number"
+          },
+          "model": {
+            "default": "heston",
+            "enum": [
+              "black_scholes",
+              "heston"
+            ],
+            "title": "Model",
+            "type": "string"
+          },
+          "rate": {
+            "default": 0.04,
+            "description": "Continuous, per year.",
+            "maximum": 0.25,
+            "minimum": -0.05,
+            "title": "Rate",
+            "type": "number"
+          },
+          "rho": {
+            "default": -0.7,
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Rho",
+            "type": "number"
+          },
+          "spot": {
+            "default": 100.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Spot",
+            "type": "number"
+          },
+          "theta": {
+            "default": 0.04,
+            "exclusiveMinimum": 0.0,
+            "maximum": 4.0,
+            "title": "Theta",
+            "type": "number"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "maxLength": 12,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
+          },
+          "v0": {
+            "default": 0.04,
+            "exclusiveMinimum": 0.0,
+            "maximum": 4.0,
+            "title": "V0",
+            "type": "number"
+          },
+          "volatility": {
+            "default": 0.2,
+            "description": "Black-Scholes world.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 2.0,
+            "title": "Volatility",
+            "type": "number"
+          },
+          "xi": {
+            "default": 0.5,
+            "exclusiveMinimum": 0.0,
+            "maximum": 5.0,
+            "title": "Xi",
+            "type": "number"
+          }
+        },
+        "title": "HedgingWorld",
+        "type": "object"
+      },
       "HestonFit": {
         "description": "Heston calibrated to the stored surface (market/heston_calibration.hpp).\niv_rmse / iv_worst: exact implied-vol errors over the fitted points, in\nvol (0.01 = one vol point).",
         "properties": {
@@ -12976,6 +13430,72 @@
         "title": "SwaptionVolInput",
         "type": "object"
       },
+      "TaskStatus": {
+        "properties": {
+          "ahead": {
+            "title": "Ahead",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "hedging": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HedgingResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "progress",
+          "step",
+          "ahead"
+        ],
+        "title": "TaskStatus",
+        "type": "object"
+      },
       "TenorRate": {
         "properties": {
           "rate": {
@@ -15575,6 +16095,50 @@
         ]
       }
     },
+    "/api/backtest/hedging": {
+      "post": {
+        "operationId": "backtest_hedging",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HedgingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many backtests queued."
+          }
+        },
+        "summary": "Backtest Hedging",
+        "tags": [
+          "backtest"
+        ]
+      }
+    },
     "/api/backtest/strategy": {
       "post": {
         "operationId": "backtest_strategy",
@@ -15607,6 +16171,88 @@
           }
         },
         "summary": "Backtest Strategy",
+        "tags": [
+          "backtest"
+        ]
+      }
+    },
+    "/api/backtest/tasks/{task_id}": {
+      "delete": {
+        "operationId": "backtest_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backtest Cancel",
+        "tags": [
+          "backtest"
+        ]
+      },
+      "get": {
+        "operationId": "backtest_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Backtest Task",
         "tags": [
           "backtest"
         ]

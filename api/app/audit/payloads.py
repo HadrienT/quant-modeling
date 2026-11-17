@@ -192,7 +192,7 @@ class BacktestRunPayload(BaseModel):
     These events are also the journal of the configurations tried on a
     universe and a period, which the deflated Sharpe ratio counts."""
 
-    kind: str  # "strategy" | "validation"
+    kind: str  # "strategy" | "validation" | "hedging"
     request: dict[str, Any]
     request_hash: str
     fingerprints: dict[str, str]

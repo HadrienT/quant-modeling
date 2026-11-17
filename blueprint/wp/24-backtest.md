@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | In progress (lot B8, issue #166). Done: the wheel, the point-in-time reads, the router, the `backtest.run` event and its replay, the strategy tab, the hedging tab with its tasks. Left, in this order: the trials journal and the S&P 500 universe at date; a stress test and a VaR on the trade ledger (#292); the risk-model tab on them. |
 | **Dépend de** | le dépôt `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) et ses lots B2 à B7 ; la piste d'audit et le replay ([WP 18](18-observability.md)) ; le portefeuille et sa VaR ([WP 09](09-portfolio-risk.md)) ; le dépôt `~/data-ingest` (lot B1) |
 | **Débloque** | une page `/backtest` dont chaque chiffre est défendable |
 | **Branches** | `feat/backtest-b8-…`, une par tranche |
@@ -33,10 +34,20 @@ Tout le reste est là-bas, et y est canonique :
   (`backtest/record.py`, `POST /api/admin/replay/{id}`), page avec cinq
   volets : performance, coûts, significativité, surapprentissage, données et
   conventions.
-- **Pas de file de tâches** : un run sur une douzaine de fonds et dix-huit ans
-  prend deux secondes, bootstrap compris. La tranche « Tâche » attend le
-  premier onglet qui en a besoin (la couverture, sans doute).
-- **Reste à faire** : onglets couverture et modèle de risque ; journal des
+- **The hedging tab is done** (2026-11-17), and with it the "Task" slice: an
+  option bought and delta-hedged in a simulated world (Black-Scholes, Heston
+  typed, or Heston calibrated on a ticker's stored chain by
+  `stochastic_vol.py`), up to five hedges on the same paths, the
+  minimum-variance delta fitted on another seed. A Heston world prices the
+  option on every path at every date (about 60 s for 20 000 paths and the
+  true model's delta on four threads of the development server), so the run
+  is a task: `POST /api/backtest/hedging` returns its id, `GET
+  /api/backtest/tasks/{id}` its progress then its result, `DELETE` cancels
+  it (`backtest/tasks.py`: one worker, the server has two CPUs; at most four
+  tasks queued or running; a finished task readable for an hour). The run is
+  a `backtest.run` event of kind `hedging`, replayed like the others. The
+  strategy runs stay synchronous: two seconds.
+- **Reste à faire** : onglet modèle de risque ; journal des
   essais (le Sharpe déflaté ne compte aujourd'hui que les configurations de
   la requête, et la page le dit) ; univers S&P 500 à date par
   `prices.sp500_membership` (la page ne propose que des listes choisies à la

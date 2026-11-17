@@ -96,6 +96,7 @@ export const queryKeys = {
 		all: () => ["backtest"] as const,
 		universe: () => ["backtest", "universe"] as const,
 		strategy: (request: unknown) => ["backtest", "strategy", request] as const,
+		task: (id: string | null) => ["backtest", "task", id] as const,
 		validation: (request: unknown) =>
 			["backtest", "validation", request] as const,
 	},

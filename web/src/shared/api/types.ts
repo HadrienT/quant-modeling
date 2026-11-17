@@ -92,6 +92,11 @@ export type BacktestReport = Schemas["Report"];
 /** A figure of the backtest engine: never without its interval, the method
  * that produced the interval, and its convention. */
 export type BacktestMetric = Schemas["Metric"];
+export type BacktestHedgingRequest = Schemas["HedgingRequest"];
+export type BacktestHedgingWorld = Schemas["HedgingWorld"];
+export type BacktestHedging = Schemas["HedgingResponse"];
+export type BacktestHedgeResult = Schemas["HedgeResult"];
+export type BacktestTask = Schemas["TaskStatus"];
 
 export type AuthResponse = Schemas["AuthResponse"];
 
