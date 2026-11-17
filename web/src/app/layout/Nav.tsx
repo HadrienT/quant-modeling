@@ -4,6 +4,7 @@ import { Command, Menu, Moon, Sun, X } from "lucide-react";
 import { Button } from "@/shared/ui";
 import { setTheme, useTheme } from "@/app/theme";
 import { SessionMenu } from "@/features/auth";
+import { ContextChip } from "./ContextChip";
 import { NavGroups } from "./NavGroups";
 
 const CommandPalette = lazy(() => import("@/app/command/CommandPalette"));
@@ -67,6 +68,7 @@ export function Nav() {
 				</nav>
 
 				<div className="ml-auto flex items-center gap-1">
+					<ContextChip />
 					<Button
 						variant="ghost"
 						size="sm"

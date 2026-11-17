@@ -1,4 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { rememberTicker, useMarketContext } from "@/shared/session";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import { CompaniesTab } from "./CompaniesTab";
 import { SpreadsTab } from "./SpreadsTab";
@@ -16,6 +18,17 @@ export default function CreditPage() {
 	const tab = search.tab ?? "spreads";
 	const set = (patch: Partial<typeof search>) =>
 		navigate({ search: (prev) => ({ ...prev, ...patch }) });
+	// Companies are S&P 500 filers: the shared underlying (WP 28, U4) is a
+	// starting point only when it is one of them, and a company named in the
+	// URL becomes that underlying for the other pages.
+	const context = useMarketContext();
+	const companyTicker =
+		search.ticker ??
+		(context?.market === "SP500" ? context.ticker : undefined) ??
+		"AAPL";
+	useEffect(() => {
+		if (search.ticker) rememberTicker(search.ticker, "SP500");
+	}, [search.ticker]);
 
 	return (
 		<div className="mx-auto flex max-w-6xl flex-col gap-4">
@@ -39,7 +52,7 @@ export default function CreditPage() {
 				</TabsContent>
 				<TabsContent value="companies">
 					<CompaniesTab
-						ticker={search.ticker ?? "AAPL"}
+						ticker={companyTicker}
 						frequency={search.freq ?? "annual"}
 						onTicker={(ticker) => set({ ticker })}
 						onFrequency={(freq) => set({ freq })}

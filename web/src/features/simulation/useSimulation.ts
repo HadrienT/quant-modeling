@@ -9,6 +9,7 @@ import type {
 	SimulationCalibrateResponse,
 	SimulationModel,
 } from "@/shared/api/types";
+import { useMarketContext } from "@/shared/session";
 import { useHestonParams } from "./useHestonParams";
 import { usePathReveal } from "./usePathReveal";
 
@@ -45,7 +46,10 @@ export function useSimulation() {
 	const [nu, setNu] = useState("0.5");
 
 	// Calibrate-on-ticker mode
-	const [ticker, setTicker] = useState("AAPL");
+	// Starts on the underlying last chosen on Market or Credit (WP 28, lot
+	// U4). A ticker typed here is not written back: it carries no market.
+	const context = useMarketContext();
+	const [ticker, setTicker] = useState(context?.ticker ?? "AAPL");
 	const [calibrated, setCalibrated] =
 		useState<SimulationCalibrateResponse | null>(null);
 
