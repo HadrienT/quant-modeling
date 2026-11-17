@@ -145,7 +145,7 @@ namespace quantModeling
                 ss.terms_as_parameters = terms;
                 ss.smooth_ramp = smooth;
                 const ScriptedProduct<Real> product(script.source, kCtx, ss);
-                if (product.program().code.empty()) // early exercise: the tree evaluator
+                if (product.ir().empty()) // early exercise: no IR
                 {
                     EXPECT_TRUE(product.ir().empty()) << script.name;
                     continue;

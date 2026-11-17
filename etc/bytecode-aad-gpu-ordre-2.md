@@ -276,6 +276,17 @@ sont pas compilés : le compilateur lève une erreur, et ces scripts restent sur
 l'évaluateur à arbre, sur CPU. Une régression entre chemins n'est pas un
 calcul « un chemin à la fois ».
 
+**Update (2026-11-17, WP 26 §15): `exercise()` and `call()` compile.** The
+regression across paths stays where it was (the fit, on the CPU), but once
+the rule is fitted a decision *is* a one-path computation: a polynomial of
+the path's regressors against zero. The instruction `Exercise` pops the
+regressors and reads the rule as flat arrays (`ExerciseView`); the machine
+keeps "exercised or not" per path, and per lane in the batched interpreter.
+The pilot's branches (never exercised; exercised at one date) run on the same
+machine. Same bits as the tree evaluator, prices and tape risks; a monthly
+Bermudan put's request goes from 1.82 s to 0.72 s on one thread. Not on the
+GPU yet: these scripts have no IR.
+
 ## I.9 Ce que cela garantit, et ce que cela rapporte
 
 - **Les mêmes bits que l'arbre.** Le bytecode exécute les mêmes opérations

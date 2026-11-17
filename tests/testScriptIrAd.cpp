@@ -341,8 +341,10 @@ namespace quantModeling
                             << "path " << path << ", d2 / d theta_" << p << " d theta_" << d << "\n"
                             << source;
                         if (p < K)
+                        {
                             ASSERT_NEAR(base.hessian[p * K + d], base.hessian[d * K + p], 1e-10 * scale)
                                 << "path " << path << ", " << p << " and " << d;
+                        }
                     }
                 }
                 // Gamma without any derivative code: the second difference

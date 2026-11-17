@@ -3,6 +3,7 @@
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/lsm.hpp"
 #include "quantModeling/engines/mc/simulation_engine.hpp"
+#include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/scripting/parser.hpp"
@@ -208,6 +209,163 @@ namespace quantModeling
         EXPECT_GT(putable.mc.npv(), plain.mc.npv() + tol);
         EXPECT_TRUE(plain.lsm.dates.empty());
         EXPECT_EQ(callable.lsm.dates.size(), 3u);
+    }
+
+    // WP 26 §15: exercise() / call() in the bytecode. The pilot and the
+    // regression stay on the tree evaluator; under the fitted rule the
+    // bytecode decides as the tree does -- the same bits, prices and tape
+    // risks, hard and fuzzy.
+    namespace
+    {
+        std::vector<std::string> early_exercise_scripts()
+        {
+            const std::string fortnights = date_line(dates_every(14, 26));
+            const std::string months = date_line(dates_every(30, 12));
+            return {
+                // Bermudan put, the exercise value and the spot as regressors
+                fortnights + "\n    if exercise(max(40 - spot(), 0), spot()) then\n"
+                             "        pays max(40 - spot(), 0)\n    endIf\n",
+                // no argument: the event's spots
+                months + "\n    if exercise() then\n        pays max(40 - spot(), 0)\n    endIf\n",
+                // the decision sets a variable read later (chooser)
+                (kToday + 182).to_iso() + "\n    if exercise(spot()) then\n        is_call = 1\n    endIf\n" +
+                    (kToday + 365).to_iso() +
+                    "\n    if is_call = 1 then\n        pays max(spot() - 40, 0)\n    else\n"
+                    "        pays max(40 - spot(), 0)\n    endIf\n",
+                // the issuer's call, nested in an if, with a smoothed condition after it
+                "2025-06-03 2026-06-03 2027-06-03\n    if done = 0 then\n        pays 2\n"
+                "        if call(spot()) then\n            pays 40\n            done = 1\n        endIf\n"
+                "    endIf\n2028-06-05\n    if done = 0 then\n        if spot() > 36 then\n"
+                "            pays 42\n        else\n            pays 42 * spot() / 36\n        endIf\n    endIf\n",
+                // the decision negated and combined
+                months + "\n    if not exercise(spot()) and spot() > 30 then\n        alive = 1\n    else\n"
+                         "        pays max(40 - spot(), 0)\n    endIf\n"};
+        }
+
+        ScriptSettings exercise_settings(bool fuzzy, bool bytecode)
+        {
+            ScriptSettings s;
+            s.fuzzy = fuzzy;
+            s.bytecode = bytecode;
+            return s;
+        }
+    } // namespace
+
+    TEST(Lsm, TheBytecodeDecidesAsTheTreeEvaluatorBitForBit)
+    {
+        const ScriptModelSpec spec = black_scholes(36.0, 0.06, 0.2);
+        for (const std::string &script : early_exercise_scripts())
+            for (const bool fuzzy : {false, true})
+            {
+                SimulationMCResult r[2];
+                for (int b = 0; b < 2; ++b)
+                {
+                    ScriptedProduct<Real> product(script, ctx(), exercise_settings(fuzzy, b == 1));
+                    EXPECT_EQ(product.program().has_exercise, b == 1) << script;
+                    auto model = make_script_model<Real>(spec);
+                    PricingSettings s;
+                    s.mc_paths = 20000;
+                    s.mc_seed = 7;
+                    fit_exercise_policy(product, *model, s.mc_paths, 7);
+                    r[b] = simulate<Real>(product, *model, s);
+                }
+                EXPECT_EQ(r[1].npv(), r[0].npv()) << (fuzzy ? "fuzzy\n" : "hard\n") << script;
+                EXPECT_EQ(r[1].std_error(), r[0].std_error()) << (fuzzy ? "fuzzy\n" : "hard\n") << script;
+                EXPECT_NE(r[0].npv(), 0.0) << script;
+            }
+    }
+
+    // The batched interpreter (P1a): each lane decides as its path does on
+    // the scalar interpreter -- the same bits path by path and batched, on
+    // one thread and on a pool, with a number of paths that leaves a partly
+    // filled batch.
+    TEST(Lsm, TheBatchedInterpreterDecidesLaneByLane)
+    {
+        const ScriptModelSpec spec = black_scholes(36.0, 0.06, 0.2);
+        ThreadPool pool;
+        pool.start(3);
+        for (const std::string &script : early_exercise_scripts())
+            for (const bool fuzzy : {false, true})
+            {
+                ScriptedProduct<Real> product(script, ctx(), exercise_settings(fuzzy, true));
+                EXPECT_EQ(product.batch_width(), 0) << "no rule yet";
+                auto model = make_script_model<Real>(spec);
+                PricingSettings s;
+                s.mc_paths = 20003;
+                s.mc_seed = 7;
+                fit_exercise_policy(product, *model, s.mc_paths, 7);
+                ASSERT_EQ(product.batch_width(), scripting::kBatch) << script;
+                PricingSettings off = s;
+                off.mc_batch = false;
+                const SimulationMCResult scalar = simulate<Real>(product, *model, off);
+                const SimulationMCResult batched = simulate<Real>(product, *model, s);
+                const SimulationMCResult threaded = simulate<Real>(product, *model, s, &pool);
+                EXPECT_EQ(batched.npv(), scalar.npv()) << (fuzzy ? "fuzzy\n" : "hard\n") << script;
+                EXPECT_EQ(batched.std_error(), scalar.std_error()) << script;
+                EXPECT_EQ(threaded.npv(), scalar.npv()) << (fuzzy ? "fuzzy\n" : "hard\n") << script;
+            }
+    }
+
+    TEST(Lsm, TheBytecodesTapeRisksAreTheTreeEvaluators)
+    {
+        const ScriptModelSpec spec = black_scholes(36.0, 0.06, 0.2);
+        for (const std::string &script : early_exercise_scripts())
+            for (const bool fuzzy : {false, true})
+            {
+                // The rule, fitted once in double.
+                ScriptedProduct<Real> fitted(script, ctx(), exercise_settings(fuzzy, true));
+                auto pilot_model = make_script_model<Real>(spec);
+                fit_exercise_policy(fitted, *pilot_model, 4096, 7);
+                AADSimulResults r[2];
+                for (int b = 0; b < 2; ++b)
+                {
+                    ScriptedProduct<aad::Number> product(script, ctx(), exercise_settings(fuzzy, b == 1));
+                    product.set_exercise_policy(fitted.exercise_policy());
+                    auto model = make_script_model<aad::Number>(spec);
+                    r[b] = simulate_aad(product, *model, 2048, 23);
+                }
+                EXPECT_EQ(r[1].price, r[0].price) << script;
+                ASSERT_EQ(r[1].risks.size(), r[0].risks.size());
+                ASSERT_FALSE(r[0].risks.empty());
+                for (std::size_t i = 0; i < r[0].risks.size(); ++i)
+                    EXPECT_EQ(r[1].risks[i], r[0].risks[i]) << r[0].risk_labels[i] << (fuzzy ? ", fuzzy\n" : "\n") << script;
+            }
+    }
+
+    // What the tree evaluator checks, the bytecode checks: no price before a
+    // rule is fitted, and one decision per date.
+    TEST(Lsm, TheBytecodeKeepsTheTreeEvaluatorsErrors)
+    {
+        const std::string twice = "2025-06-03\n    if exercise(spot()) then\n        pays 1\n    endIf\n"
+                                  "    if exercise(spot()) then\n        pays 1\n    endIf\n";
+        ScriptedProduct<Real> product(twice, ctx());
+        ASSERT_TRUE(product.program().has_exercise);
+        auto model = make_script_model<Real>(black_scholes(100, 0.02, 0.2));
+        PricingSettings s;
+        s.mc_paths = 100;
+        EXPECT_THROW(simulate<Real>(product, *model, s), InvalidInput); // no rule
+        product.set_exercise_policy({});
+        try
+        {
+            simulate<Real>(product, *model, s);
+            FAIL() << "two decisions in one event priced";
+        }
+        catch (const InvalidInput &e)
+        {
+            EXPECT_NE(std::string(e.what()).find("twice in one event"), std::string::npos) << e.what();
+        }
+    }
+
+    // More regressors than the machine holds: the tree evaluator, as before.
+    TEST(Lsm, TooManyRegressorsStayOnTheTreeEvaluator)
+    {
+        std::string regressors = "spot()";
+        for (int i = 2; i <= 9; ++i)
+            regressors += ", spot() ^ " + std::to_string(i);
+        ScriptedProduct<Real> product("2025-06-03\n    if exercise(" + regressors + ") then\n        pays 1\n    endIf\n",
+                                      ctx());
+        EXPECT_TRUE(product.has_exercise());
+        EXPECT_TRUE(product.program().code.empty());
     }
 
 } // namespace quantModeling
