@@ -80,7 +80,7 @@ const FEATURES: Feature[] = [
 		to: "/portfolio",
 		title: "Portfolio",
 		icon: Briefcase,
-		text: "Book trades, mark derivatives every day, and follow P&L, risk, stress tests and value at risk.",
+		text: "Book trades, mark derivatives every day, and follow P&L, greeks per underlying and the xVA of each netting set.",
 	},
 	{
 		to: "/backtest",
