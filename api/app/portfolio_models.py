@@ -58,9 +58,15 @@ def _rate(params: dict) -> float:
 def _asset_vol(
     spec: DerivativeSpec, params: dict, d: date, md: "MarketData", K: float, T: float
 ) -> Tuple[float, ModelParam, Input, Optional[vol_smile.Smile]]:
-    """The volatility the model runs at, from the best source available."""
+    """The volatility the model runs at, from the best source available.
+    A stress scenario (portfolio_risk.py) shifts it in parallel through the
+    market it hands in (`vol_shift`, absolute, 0 for a mark)."""
     u = spec.underlying
     fallback = _rate(params)
+    shift = float(getattr(md, "vol_shift", 0.0))
+
+    def moved(v: float) -> float:
+        return max(v + shift, 0.01) if shift else v
 
     def one_year(snap: date) -> float:
         got = md.zero_rate(spec.currency, snap, 1.0)
@@ -68,7 +74,7 @@ def _asset_vol(
 
     smile = vol_smile.smile_for(u, d, one_year)
     if smile is not None:
-        s = smile.implied_vol(K, T)
+        s = moved(smile.implied_vol(K, T))
         src = f"SVI surface of the {u} option chain of {smile.snapshot}"
         return (
             s,
@@ -79,13 +85,14 @@ def _asset_vol(
     got = md.realised_vol(u, d) if u else None
     if got is not None:
         src = f"{u} realised vol, 63 business days to {got[0]}: no option chain stored"
+        v = moved(got[1])
         return (
-            got[1],
-            ModelParam("volatility", got[1], status="proxied", source=src),
-            Input(f"vol {u} (63-day realised, proxy)", "proxied", got[1], got[0]),
+            v,
+            ModelParam("volatility", v, status="proxied", source=src),
+            Input(f"vol {u} (63-day realised, proxy)", "proxied", v, got[0]),
             None,
         )
-    v = float(params.get("vol", 0.2))
+    v = moved(float(params.get("vol", 0.2)))
     return (
         v,
         ModelParam("volatility", v, status="default", source="typed with the trade"),

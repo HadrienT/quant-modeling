@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, model_validator
 from ..valuation import value_hash
 from . import engine
 from . import schemas as s
-from .tasks import Cancelled, Task
+from ..tasks import Cancelled, Task
 
 HedgeName = Literal[
     "black_scholes_fixed",

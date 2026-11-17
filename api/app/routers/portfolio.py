@@ -385,7 +385,16 @@ def _stress_position(pos: Position, bump: StressBump) -> float:
     return bumped_result.npv - base_npv
 
 
-@router.post("/{portfolio_id}/stress", response_model=List[StressResult])
+# The two routes below read the legacy position model (`pf.positions`). The
+# Portfolio page works on the trade ledger, whose stress tests and VaR are
+# POST /api/portfolio-valuation/stress and /var (portfolio_risk.py, issue
+# #292): these stay, API only, for clients of the old model.
+@router.post(
+    "/{portfolio_id}/stress",
+    response_model=List[StressResult],
+    deprecated=True,
+    description="Legacy position model: the ledger's is POST /api/portfolio-valuation/stress.",
+)
 async def api_stress_test(
     portfolio_id: str, bumps: List[StressBump], user: str = Depends(require_user)
 ):
@@ -427,7 +436,12 @@ def _extract_spot_vol(pos: Position) -> tuple:
     return (float(s) if s else 0.0, float(v) if v else 0.0)
 
 
-@router.post("/{portfolio_id}/var", response_model=VaRResult)
+@router.post(
+    "/{portfolio_id}/var",
+    response_model=VaRResult,
+    deprecated=True,
+    description="Legacy position model: the ledger's is POST /api/portfolio-valuation/var.",
+)
 async def api_compute_var(
     portfolio_id: str, req: VaRRequest, user: str = Depends(require_user)
 ):

@@ -19,7 +19,8 @@ from api.app.audit.sinks import (
     reset_sink_for_testing,
     set_sink_for_testing,
 )
-from api.app.backtest import hedging, record, tasks
+from api.app import tasks
+from api.app.backtest import hedging, record
 from api.app.main import app
 from api.app.replay import ReplayOutcome
 

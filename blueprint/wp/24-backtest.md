@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress (lot B8, issue #166). Done: the wheel, the point-in-time reads, the router, the `backtest.run` event and its replay, the strategy tab, the hedging tab with its tasks, the trials journal, the S&P 500 universe at date. Left: a stress test and a VaR on the trade ledger (#292), then the risk-model tab on them. |
+| **Status** | In progress (lot B8, issue #166). Done: the wheel, the point-in-time reads, the router, the `backtest.run` event and its replay, the strategy tab, the hedging tab with its tasks, the trials journal, the S&P 500 universe at date, the stress tests and VaR of the trade ledger (#292, `portfolio_risk.py`). Left: the risk-model tab on that VaR. |
 | **Dépend de** | le dépôt `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) et ses lots B2 à B7 ; la piste d'audit et le replay ([WP 18](18-observability.md)) ; le portefeuille et sa VaR ([WP 09](09-portfolio-risk.md)) ; le dépôt `~/data-ingest` (lot B1) |
 | **Débloque** | une page `/backtest` dont chaque chiffre est défendable |
 | **Branches** | `feat/backtest-b8-…`, une par tranche |
@@ -43,7 +43,7 @@ Tout le reste est là-bas, et y est canonique :
   true model's delta on four threads of the development server), so the run
   is a task: `POST /api/backtest/hedging` returns its id, `GET
   /api/backtest/tasks/{id}` its progress then its result, `DELETE` cancels
-  it (`backtest/tasks.py`: one worker, the server has two CPUs; at most four
+  it (`api/app/tasks.py`: one worker, the server has two CPUs; at most four
   tasks queued or running; a finished task readable for an hour). The run is
   a `backtest.run` event of kind `hedging`, replayed like the others. The
   strategy runs stay synchronous: two seconds.
@@ -70,7 +70,16 @@ Tout le reste est là-bas, et y est canonique :
   grid are refused there; equal weights, minimum variance and maximum Sharpe
   take 13 to 22 s end to end on the development server. The holdings chart
   shows the twelve largest names and the others summed.
-- **Reste à faire** : onglet modèle de risque, sur la VaR du registre (#292).
+- **The ledger's stress tests and VaR are done** (#292, 2026-11-17), in the
+  Risk tab of the Portfolio page: `portfolio_risk.py`, `POST
+  /api/portfolio-valuation/stress` and `/var` (a task: its first run
+  revalues every derivative on each day of the year, 81 s for the
+  options-overlay demo on the development server, then the stored marks
+  serve). The legacy routes on the position model stay, deprecated, API only.
+- **Reste à faire** : onglet modèle de risque — the VaR announced each day
+  (the window to the day before, the holdings of the day before) against the
+  hypothetical P&L of the day, through `var_backtest` (Kupiec,
+  Christoffersen, traffic light).
 - **Lectures « as-of »** : `macro.fred_series` et `factors.french_daily` ne
   sont versionnées que depuis leur chargement (septembre et octobre 2026). Le
   backtest lit le **premier millésime stocké** de chaque date : ce que la base

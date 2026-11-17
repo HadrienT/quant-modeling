@@ -3618,6 +3618,39 @@
         "title": "Estimate",
         "type": "object"
       },
+      "EstimateView": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "lower": {
+            "title": "Lower",
+            "type": "number"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "upper": {
+            "title": "Upper",
+            "type": "number"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value",
+          "lower",
+          "upper",
+          "confidence",
+          "method"
+        ],
+        "title": "EstimateView",
+        "type": "object"
+      },
       "ExposureProfileOut": {
         "properties": {
           "ee": {
@@ -12394,6 +12427,65 @@
         "title": "StressBump",
         "type": "object"
       },
+      "StressRequest": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          }
+        },
+        "required": [
+          "portfolio"
+        ],
+        "title": "StressRequest",
+        "type": "object"
+      },
+      "StressResponse": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "scenarios": {
+            "items": {
+              "$ref": "#/components/schemas/StressScenarioView"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "base_currency",
+          "scenarios",
+          "warnings"
+        ],
+        "title": "StressResponse",
+        "type": "object"
+      },
       "StressResult": {
         "description": "Result for one stress scenario.",
         "properties": {
@@ -12419,6 +12511,109 @@
           "position_pnls"
         ],
         "title": "StressResult",
+        "type": "object"
+      },
+      "StressRowView": {
+        "properties": {
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "pnl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Base currency; null when the position was not revalued.",
+            "title": "Pnl"
+          },
+          "underlying": {
+            "title": "Underlying",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "label",
+          "underlying"
+        ],
+        "title": "StressRowView",
+        "type": "object"
+      },
+      "StressScenarioView": {
+        "properties": {
+          "by_underlying": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "By Underlying",
+            "type": "object"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "not_revalued": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Not Revalued",
+            "type": "array"
+          },
+          "pnl": {
+            "description": "Sum over the revalued positions, base currency.",
+            "title": "Pnl",
+            "type": "number"
+          },
+          "rate_shift": {
+            "title": "Rate Shift",
+            "type": "number"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/StressRowView"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "spot_factor": {
+            "title": "Spot Factor",
+            "type": "number"
+          },
+          "vol_shift": {
+            "title": "Vol Shift",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "spot_factor",
+          "vol_shift",
+          "rate_shift",
+          "pnl",
+          "by_underlying",
+          "rows",
+          "not_revalued"
+        ],
+        "title": "StressScenarioView",
         "type": "object"
       },
       "StructuralInputsResponse": {
@@ -14247,6 +14442,200 @@
           "is_call"
         ],
         "title": "VanillaRequest",
+        "type": "object"
+      },
+      "VarLevelView": {
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "exceedances": {
+            "title": "Exceedances",
+            "type": "integer"
+          },
+          "expected_shortfall": {
+            "$ref": "#/components/schemas/EstimateView"
+          },
+          "var": {
+            "$ref": "#/components/schemas/EstimateView"
+          }
+        },
+        "required": [
+          "confidence",
+          "var",
+          "expected_shortfall",
+          "exceedances"
+        ],
+        "title": "VarLevelView",
+        "type": "object"
+      },
+      "VarRequest": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          },
+          "window": {
+            "default": 250,
+            "description": "Business days.",
+            "maximum": 500.0,
+            "minimum": 60.0,
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "portfolio"
+        ],
+        "title": "VarRequest",
+        "type": "object"
+      },
+      "VarResponse": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "days_dropped": {
+            "title": "Days Dropped",
+            "type": "integer"
+          },
+          "instruments": {
+            "title": "Instruments",
+            "type": "integer"
+          },
+          "left_out": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Left Out",
+            "type": "array"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/VarLevelView"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "scenarios": {
+            "description": "P&L of today's holdings, one per day.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "window_end": {
+            "format": "date",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "as_of",
+          "base_currency",
+          "window_start",
+          "window_end",
+          "scenarios",
+          "dates",
+          "levels",
+          "instruments",
+          "left_out",
+          "days_dropped"
+        ],
+        "title": "VarResponse",
+        "type": "object"
+      },
+      "VarTask": {
+        "properties": {
+          "ahead": {
+            "title": "Ahead",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "title": "Step",
+            "type": "string"
+          },
+          "var": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VarResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "progress",
+          "step",
+          "ahead"
+        ],
+        "title": "VarTask",
         "type": "object"
       },
       "VarianceSwapRequest": {
@@ -17438,6 +17827,173 @@
         ]
       }
     },
+    "/api/portfolio-valuation/stress": {
+      "post": {
+        "operationId": "portfolio_stress",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Stress",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/var": {
+      "post": {
+        "operationId": "portfolio_var",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VarTask"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many long runs queued."
+          }
+        },
+        "summary": "Portfolio Var",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/var/{task_id}": {
+      "delete": {
+        "operationId": "portfolio_var_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VarTask"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Var Cancel",
+        "tags": [
+          "portfolios"
+        ]
+      },
+      "get": {
+        "operationId": "portfolio_var_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VarTask"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Var Task",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
     "/api/portfolios": {
       "get": {
         "operationId": "api_list_portfolios",
@@ -17991,6 +18547,8 @@
     },
     "/api/portfolios/{portfolio_id}/stress": {
       "post": {
+        "deprecated": true,
+        "description": "Legacy position model: the ledger's is POST /api/portfolio-valuation/stress.",
         "operationId": "api_stress_test",
         "parameters": [
           {
@@ -18067,7 +18625,8 @@
     },
     "/api/portfolios/{portfolio_id}/var": {
       "post": {
-        "description": "Delta-gamma VaR with Cornish-Fisher skewness adjustment.\n\nFor each position i with underlying spot S_i, implied vol \u03c3_i:\n  daily return std  = \u03c3_i / \u221a252\n  horizon std       = daily_\u03c3 \u00d7 \u221ah\n  dollar move std   = S_i \u00d7 horizon_\u03c3\n\nPosition P&L (second-order Taylor):\n  \u0394P_i \u2248 \u03b4_i\u00b7\u0394S + \u00bd\u00b7\u0393_i\u00b7(\u0394S)\u00b2\n\nPortfolio moments of the P&L under Gaussian \u0394S:\n  \u03bc\u2081 = \u03a3 \u00bd\u00b7\u0393_i\u00b7\u03c3\u00b2_$  (mean from gamma)\n  \u03bc\u2082 = \u03a3 \u03b4_i\u00b2\u00b7\u03c3\u00b2_$ + \u00bd\u00b7\u0393_i\u00b2\u00b7\u03c3\u2074_$\u00b72  (variance)\n  \u03bc\u2083 = \u03a3 3\u00b7\u03b4_i\u00b7\u0393_i\u00b2\u00b7\u03c3\u2074_$\u00b7... \u2192 skewness from gamma\n\nThen Cornish-Fisher expansion adjusts the z-quantile for\nthe non-zero skewness induced by gamma.",
+        "deprecated": true,
+        "description": "Legacy position model: the ledger's is POST /api/portfolio-valuation/var.",
         "operationId": "api_compute_var",
         "parameters": [
           {

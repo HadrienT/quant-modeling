@@ -601,6 +601,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio-valuation/stress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Portfolio Stress */
+        post: operations["portfolio_stress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio-valuation/var": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Portfolio Var */
+        post: operations["portfolio_var"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio-valuation/var/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Portfolio Var Task */
+        get: operations["portfolio_var_task"];
+        put?: never;
+        post?: never;
+        /** Portfolio Var Cancel */
+        delete: operations["portfolio_var_cancel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolios": {
         parameters: {
             query?: never;
@@ -699,7 +751,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Api Stress Test */
+        /**
+         * Api Stress Test
+         * @deprecated
+         * @description Legacy position model: the ledger's is POST /api/portfolio-valuation/stress.
+         */
         post: operations["api_stress_test"];
         delete?: never;
         options?: never;
@@ -718,23 +774,8 @@ export interface paths {
         put?: never;
         /**
          * Api Compute Var
-         * @description Delta-gamma VaR with Cornish-Fisher skewness adjustment.
-         *
-         *     For each position i with underlying spot S_i, implied vol σ_i:
-         *       daily return std  = σ_i / √252
-         *       horizon std       = daily_σ × √h
-         *       dollar move std   = S_i × horizon_σ
-         *
-         *     Position P&L (second-order Taylor):
-         *       ΔP_i ≈ δ_i·ΔS + ½·Γ_i·(ΔS)²
-         *
-         *     Portfolio moments of the P&L under Gaussian ΔS:
-         *       μ₁ = Σ ½·Γ_i·σ²_$  (mean from gamma)
-         *       μ₂ = Σ δ_i²·σ²_$ + ½·Γ_i²·σ⁴_$·2  (variance)
-         *       μ₃ = Σ 3·δ_i·Γ_i²·σ⁴_$·... → skewness from gamma
-         *
-         *     Then Cornish-Fisher expansion adjusts the z-quantile for
-         *     the non-zero skewness induced by gamma.
+         * @deprecated
+         * @description Legacy position model: the ledger's is POST /api/portfolio-valuation/var.
          */
         post: operations["api_compute_var"];
         delete?: never;
@@ -3689,6 +3730,19 @@ export interface components {
              * @description Monte-Carlo standard error
              */
             error: number;
+            /** Value */
+            value: number;
+        };
+        /** EstimateView */
+        EstimateView: {
+            /** Confidence */
+            confidence: number;
+            /** Lower */
+            lower: number;
+            /** Method */
+            method: string;
+            /** Upper */
+            upper: number;
             /** Value */
             value: number;
         };
@@ -7526,6 +7580,26 @@ export interface components {
              */
             vol_shift: number;
         };
+        /** StressRequest */
+        StressRequest: {
+            /** As Of */
+            as_of?: string | null;
+            portfolio: components["schemas"]["Portfolio-Input"];
+        };
+        /** StressResponse */
+        StressResponse: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Base Currency */
+            base_currency: string;
+            /** Scenarios */
+            scenarios: components["schemas"]["StressScenarioView"][];
+            /** Warnings */
+            warnings: string[];
+        };
         /**
          * StressResult
          * @description Result for one stress scenario.
@@ -7539,6 +7613,51 @@ export interface components {
             position_pnls: {
                 [key: string]: number;
             };
+        };
+        /** StressRowView */
+        StressRowView: {
+            /** Instrument Id */
+            instrument_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Pnl
+             * @description Base currency; null when the position was not revalued.
+             */
+            pnl?: number | null;
+            /** Underlying */
+            underlying: string;
+        };
+        /** StressScenarioView */
+        StressScenarioView: {
+            /** By Underlying */
+            by_underlying: {
+                [key: string]: number;
+            };
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+            /** Not Revalued */
+            not_revalued: string[];
+            /**
+             * Pnl
+             * @description Sum over the revalued positions, base currency.
+             */
+            pnl: number;
+            /** Rate Shift */
+            rate_shift: number;
+            /** Rows */
+            rows: components["schemas"]["StressRowView"][];
+            /** Spot Factor */
+            spot_factor: number;
+            /** Vol Shift */
+            vol_shift: number;
         };
         /** StructuralInputsResponse */
         StructuralInputsResponse: {
@@ -8273,6 +8392,81 @@ export interface components {
             tree_steps: number;
             /** Vol */
             vol: number;
+        };
+        /** VarLevelView */
+        VarLevelView: {
+            /** Confidence */
+            confidence: number;
+            /** Exceedances */
+            exceedances: number;
+            expected_shortfall: components["schemas"]["EstimateView"];
+            var: components["schemas"]["EstimateView"];
+        };
+        /** VarRequest */
+        VarRequest: {
+            /** As Of */
+            as_of?: string | null;
+            portfolio: components["schemas"]["Portfolio-Input"];
+            /**
+             * Window
+             * @description Business days.
+             * @default 250
+             */
+            window: number;
+        };
+        /** VarResponse */
+        VarResponse: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Base Currency */
+            base_currency: string;
+            /** Dates */
+            dates: string[];
+            /** Days Dropped */
+            days_dropped: number;
+            /** Instruments */
+            instruments: number;
+            /** Left Out */
+            left_out: string[];
+            /** Levels */
+            levels: components["schemas"]["VarLevelView"][];
+            /**
+             * Scenarios
+             * @description P&L of today's holdings, one per day.
+             */
+            scenarios: number[];
+            /**
+             * Window End
+             * Format: date
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date
+             */
+            window_start: string;
+        };
+        /** VarTask */
+        VarTask: {
+            /** Ahead */
+            ahead: number;
+            /** Error */
+            error?: string | null;
+            /** Id */
+            id: string;
+            /** Progress */
+            progress: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "done" | "failed" | "cancelled";
+            /** Step */
+            step: string;
+            var?: components["schemas"]["VarResponse"] | null;
         };
         /** VarianceSwapRequest */
         VarianceSwapRequest: {
@@ -9971,6 +10165,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SnapshotResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_stress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StressRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StressResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_var: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VarRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VarTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many long runs queued. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    portfolio_var_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VarTask"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_var_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VarTask"];
                 };
             };
             /** @description Validation Error */

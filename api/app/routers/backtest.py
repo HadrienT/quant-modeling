@@ -25,7 +25,8 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from ..audit import emit
-from ..backtest import engine, market, record, tasks, universe
+from .. import tasks
+from ..backtest import engine, market, record, universe
 from ..backtest.hedging import HedgingRequest, HedgingResponse, run_hedging
 from ..backtest.schemas import (
     StrategyRequest,

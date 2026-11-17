@@ -1,9 +1,10 @@
-"""Long backtest runs as tasks, with progress and cancellation
+"""Long runs as tasks, with progress and cancellation
 (blueprint/wp/24-backtest.md, lot B8, slice "Task"; WP 11 §2).
 
 A hedging backtest in a Heston world prices the option on every path at every
-rebalancing date: minutes on the production server's two CPUs, past what an
-HTTP request should hold. The request creates a task and returns its id at
+rebalancing date, and the value at risk of a portfolio first revalues each of
+its derivatives on every day of a year: minutes on the production server's two
+CPUs, past what an HTTP request should hold. The request creates a task and returns its id at
 once; the page polls the task for its progress and its result, and may cancel
 it.
 
@@ -24,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from ..logging_utils import get_logger
+from .logging_utils import get_logger
 
 _log = get_logger()
 
@@ -66,7 +67,7 @@ class Task:
 
 _lock = threading.Lock()
 _tasks: dict[str, Task] = {}
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="backtest-task")
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="long-task")
 
 
 def _expire(now: float) -> None:
@@ -91,7 +92,7 @@ def submit(
         _expire(time.time())
         if _pending() >= MAX_PENDING:
             raise QueueFull(
-                f"{MAX_PENDING} backtests are already queued or running: try again in a few minutes"
+                f"{MAX_PENDING} long runs are already queued or running: try again in a few minutes"
             )
         task = Task(id=uuid.uuid4().hex, kind=kind)
         _tasks[task.id] = task
@@ -108,14 +109,14 @@ def submit(
         except Exception as exc:  # noqa: BLE001 -- reported to the page, logged
             task.status, task.error = "failed", str(exc)
             if not getattr(exc, "user_facing", False):
-                _log.exception("backtest task %s failed", task.id)
+                _log.exception("task %s failed", task.id)
         else:
             task.result, task.status, task.progress = result, "done", 1.0
             if on_done is not None:
                 try:
                     on_done(result)
                 except Exception:  # noqa: BLE001 -- the result stands
-                    _log.exception("backtest task %s: on_done failed", task.id)
+                    _log.exception("task %s: on_done failed", task.id)
         finally:
             task.finished = time.time()
 

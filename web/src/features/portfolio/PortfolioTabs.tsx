@@ -7,6 +7,8 @@ import { DeletePositionDialog } from "./DeletePositionDialog";
 import { HoldingsTable } from "./HoldingsTable";
 import { PnlHistory } from "./PnlHistory";
 import { RiskPanel } from "./RiskPanel";
+import { StressPanel } from "./StressPanel";
+import { VarPanel } from "./VarPanel";
 import type { TradePreset } from "./TradeForm";
 import { TransactionsTable } from "./TransactionsTable";
 import { XvaTab } from "./XvaTab";
@@ -111,7 +113,15 @@ export function PortfolioTabs({
 				<PnlHistory pf={pf} />
 			</TabsContent>
 			<TabsContent value="risk">
-				<RiskPanel risk={risk} base={pf.base_currency} />
+				<div className="flex flex-col gap-6">
+					<RiskPanel risk={risk} base={pf.base_currency} />
+					{(pf.transactions?.length ?? 0) > 0 && (
+						<>
+							<StressPanel pf={pf} />
+							<VarPanel pf={pf} />
+						</>
+					)}
+				</div>
 			</TabsContent>
 			<TabsContent value="counterparties">
 				<CounterpartiesTab pf={pf} onSave={onSave} />
