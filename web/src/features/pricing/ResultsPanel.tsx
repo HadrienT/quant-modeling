@@ -13,7 +13,6 @@ import {
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
 import { GreekProfileChart, PayoffChart } from "@/shared/viz";
 import { blackScholes } from "@/shared/payoff";
-import { ConvergencePanel } from "./ConvergencePanel";
 import { pricingBody } from "./requestBody";
 import { ScriptGreeks } from "./scripting/ScriptGreeks";
 
@@ -26,7 +25,8 @@ const STRIKE_DATE_NOTE =
 /**
  * The panel that carries the screen's credibility (WP 07 §4): price WITH its
  * standard error, greeks with theirs, EngineTag / Provenance / Freshness,
- * diagnostics shown, bond analytics, MC convergence, payoff + greek profiles.
+ * diagnostics shown, bond analytics, payoff + greek profiles. MC convergence is
+ * in the Diagnostics section below (WP 28, lot U3).
  */
 export function ResultsPanel({
 	descriptor,
@@ -188,14 +188,6 @@ export function ResultsPanel({
 						))}
 					</div>
 				)}
-
-			{isMc && (
-				<ConvergencePanel
-					endpoint={descriptor.endpoint ?? null}
-					body={body}
-					priced={r}
-				/>
-			)}
 
 			{profile && (
 				<>

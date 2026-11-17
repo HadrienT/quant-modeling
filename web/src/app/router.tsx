@@ -139,6 +139,8 @@ const priceRoute = createRoute({
 		p: z.string().optional(), // encoded params
 		compare: z.string().optional(),
 		device: z.enum(["cpu", "gpu", "auto"]).optional(),
+		// the Diagnostics section open (WP 28, lot U3)
+		diag: z.boolean().optional(),
 	}).parse,
 	component: PricingPage,
 });
