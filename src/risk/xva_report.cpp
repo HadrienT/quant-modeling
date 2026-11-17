@@ -303,6 +303,19 @@ namespace quantModeling
         return weights;
     }
 
+    std::vector<Real> running_cost_weights(const std::vector<Time> &times, const CreditCurve &counterparty,
+                                           const CreditCurve &own, Real rate)
+    {
+        std::vector<Real> weights(times.size());
+        Time previous = 0.0;
+        for (std::size_t i = 0; i < times.size(); ++i)
+        {
+            weights[i] = -rate * counterparty.survival(times[i]) * own.survival(times[i]) * (times[i] - previous);
+            previous = times[i];
+        }
+        return weights;
+    }
+
     XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &in, ThreadPool *pool)
     {
         if (paths.measure != ExposureMeasure::RiskNeutral)

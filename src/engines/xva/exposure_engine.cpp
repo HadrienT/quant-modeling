@@ -660,14 +660,26 @@ namespace quantModeling
         NettingSetExposure result;
         result.paths = settings.paths;
         std::vector<Real> on_positive, on_negative;
+        std::vector<Real> on_borrowed, on_lent, on_collateral;
         const auto ask_weights = [&](const std::vector<Time> &times)
         {
-            if (!request.weights)
-                return;
-            request.weights(times, on_positive, on_negative);
-            if (on_positive.size() != times.size() || on_negative.size() != times.size())
-                throw InvalidInput("exposure engine: the weights need one value per reporting date");
+            if (request.weights)
+            {
+                request.weights(times, on_positive, on_negative);
+                if (on_positive.size() != times.size() || on_negative.size() != times.size())
+                    throw InvalidInput("exposure engine: the weights need one value per reporting date");
+            }
+            if (request.running_weights)
+            {
+                request.running_weights(times, on_borrowed, on_lent, on_collateral);
+                for (const std::vector<Real> *w : {&on_borrowed, &on_lent, &on_collateral})
+                    if (!w->empty() && w->size() != times.size())
+                        throw InvalidInput("exposure engine: the running-cost weights need one value per "
+                                           "reporting date, or none");
+            }
         };
+        const auto to_estimate = [](const WelfordAccumulator &a)
+        { return Estimate{a.mean, a.std_error()}; };
 
         if (settings.device != ComputeDevice::Cpu)
         {
@@ -738,6 +750,9 @@ namespace quantModeling
                 ask_weights(s.times);
                 netting.positive_weights = on_positive;
                 netting.negative_weights = on_negative;
+                netting.funding_positive_weights = on_borrowed;
+                netting.funding_negative_weights = on_lent;
+                netting.collateral_weights = on_collateral;
 
                 gpu::ExposureGpuRequest run;
                 run.program = &program;
@@ -863,6 +878,13 @@ namespace quantModeling
                         }
                         result.contributions.push_back(c);
                     }
+                    if (request.running_weights)
+                    {
+                        result.funding_positive = to_estimate(profile.funding.positive);
+                        result.funding_negative = to_estimate(profile.funding.negative);
+                        result.funding = to_estimate(profile.funding.value);
+                        result.weighted_collateral = to_estimate(profile.collateral.positive);
+                    }
                     result.device = "gpu";
                     result.gpus = profile.gpus;
                     return result;
@@ -919,6 +941,47 @@ namespace quantModeling
             }
             result.weighted_positive = {positive.mean, positive.std_error()};
             result.weighted_negative = {negative.mean, negative.std_error()};
+        }
+        if (request.running_weights)
+        {
+            // U: the value after variation margin, without the initial
+            // margin; C: the collateral held, as xva_report() reads them.
+            const bool margined_here = !collateral.initial_margin_received.empty() ||
+                                       !collateral.initial_margin_posted.empty();
+            ExposurePaths variation;
+            if (margined_here)
+            {
+                CollateralSettings vm_only;
+                vm_only.cashflows = collateral.cashflows;
+                variation = collateralise(cube, *request.csa, set, vm_only);
+            }
+            const ExposurePaths &funded = margined_here ? variation : netted;
+            const std::vector<Real> held =
+                request.csa ? discounted_collateral_paths(cube, *request.csa, set) : std::vector<Real>{};
+            const std::size_t m = funded.dates();
+            WelfordAccumulator borrowed, lent, both, collateral_sum;
+            for (std::size_t p = 0; p < funded.paths; ++p)
+            {
+                Real b = 0.0, l = 0.0, c = 0.0;
+                for (std::size_t r = 0; r < m; ++r)
+                {
+                    const Real u = funded.discount_weight[p * m + r] * funded.trade_values[0][p * m + r];
+                    if (!on_borrowed.empty() && u > 0.0)
+                        b += on_borrowed[r] * u;
+                    if (!on_lent.empty() && u < 0.0)
+                        l += on_lent[r] * u;
+                    if (!on_collateral.empty() && !held.empty())
+                        c += on_collateral[r] * held[p * m + r];
+                }
+                borrowed.add(b);
+                lent.add(l);
+                both.add(b + l);
+                collateral_sum.add(c);
+            }
+            result.funding_positive = to_estimate(borrowed);
+            result.funding_negative = to_estimate(lent);
+            result.funding = to_estimate(both);
+            result.weighted_collateral = to_estimate(collateral_sum);
         }
         if (request.contributions)
             result.contributions = cpu_contributions(cube, request, set, netted, on_positive);

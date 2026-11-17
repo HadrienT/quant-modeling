@@ -93,6 +93,8 @@ namespace
 
     const qm::CreditCurve kCounterparty(0.02), kOwn(0.01);
     constexpr double kLgd = 0.6;
+    // The bank's funding spreads and what the CSA pays over the discount rate.
+    constexpr double kBorrowing = 0.012, kLending = 0.007, kCollateralSpread = 0.003;
 
     void weights(const std::vector<qm::Time> &times, std::vector<qm::Real> &on_positive,
                  std::vector<qm::Real> &on_negative)
@@ -285,6 +287,9 @@ int main(int argc, char **argv)
         in.own = kOwn;
         in.lgd_counterparty = kLgd;
         in.lgd_own = kLgd;
+        in.borrowing_spread = kBorrowing;
+        in.lending_spread = kLending;
+        in.collateral_spread = kCollateralSpread;
         double cube_secs = 0.0;
         const double secs = seconds(
             [&]
@@ -321,6 +326,38 @@ int main(int argc, char **argv)
                 std::printf("    %5zu  %12.2f (%8.2f)   %12.2f (%8.2f)\n", c.trade, c.standalone_cva,
                             c.standalone_cva_error, c.incremental_cva, c.incremental_cva_error);
         }
+    }
+
+    // #281 step 3: FCA, FBA, FVA and ColVA as more sums of the same launch.
+    qm::NettingSetRequest running = contributions;
+    running.running_weights = [](const std::vector<qm::Time> &times, std::vector<qm::Real> &funding_positive,
+                                 std::vector<qm::Real> &funding_negative, std::vector<qm::Real> &collateral)
+    {
+        funding_positive = qm::running_cost_weights(times, kCounterparty, kOwn, kBorrowing);
+        funding_negative = qm::running_cost_weights(times, kCounterparty, kOwn, kLending);
+        collateral = qm::running_cost_weights(times, kCounterparty, kOwn, kCollateralSpread);
+    };
+    std::printf("\nWith FCA, FBA, FVA and ColVA in the same launch, %zu paths:\n", contribution_paths);
+    for (int g = 1; g <= std::min(gpus, 2); ++g)
+    {
+        qm::NettingSetExposure out;
+        const double secs = seconds(
+            [&]
+            { out = engine.simulate_netting_set(settings(contribution_paths, qm::ComputeDevice::Gpu, g), running); });
+        const double worst = std::max({std::abs(out.funding_positive.value - report.fca) / std::abs(report.fca),
+                                       std::abs(out.funding_negative.value - report.fba) / std::abs(report.fba),
+                                       std::abs(out.weighted_collateral.value - report.colva) /
+                                           std::abs(report.colva)});
+        std::printf("  %d V100, %-35s %8.3f s   worst relative |card - host| = %.1e\n", g,
+                    "contributions + running costs", secs, worst);
+        if (g == 1)
+            std::printf("    FCA %.2f (%.2f)  FBA %.2f (%.2f)  FVA %.2f (%.2f)  ColVA %.2f (%.2f)\n"
+                        "    host: FCA %.2f (%.2f)  FBA %.2f (%.2f)  FVA %.2f (%.2f)  ColVA %.2f (%.2f)\n",
+                        out.funding_positive.value, out.funding_positive.error, out.funding_negative.value,
+                        out.funding_negative.error, out.funding.value, out.funding.error,
+                        out.weighted_collateral.value, out.weighted_collateral.error, report.fca, report.fca_error,
+                        report.fba, report.fba_error, report.fca + report.fba, report.fva_error, report.colva,
+                        report.colva_error);
     }
     return 0;
 }

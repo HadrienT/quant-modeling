@@ -447,6 +447,107 @@ namespace quantModeling
         }
     }
 
+    // #281 step 3: FCA, FBA, FVA and ColVA as more per-path sums of the
+    // netting set's launch, held to the CPU at the price tolerance.
+    TEST_F(GpuExposureTest, TheRunningCostsAreSummedOnTheDeviceAsOnTheCpu)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        fill(engine, m);
+        const std::size_t paths = 2 * 2048 + 999;
+        const auto with_running = [](NettingSetRequest r)
+        {
+            r.running_weights = [](const std::vector<Time> &times, std::vector<Real> &funding_positive,
+                                   std::vector<Real> &funding_negative, std::vector<Real> &collateral)
+            {
+                const CreditCurve counterparty(0.02), own(0.01);
+                funding_positive = running_cost_weights(times, counterparty, own, 0.012);
+                funding_negative = running_cost_weights(times, counterparty, own, 0.007);
+                collateral = running_cost_weights(times, counterparty, own, 0.003);
+            };
+            return r;
+        };
+        struct Case
+        {
+            bool collateralised;
+            MarginPeriodCashflows cashflows;
+            bool margined;
+            bool contributions;
+        };
+        for (const Case c : {Case{false, MarginPeriodCashflows::Paid, false, false},
+                             Case{false, MarginPeriodCashflows::Paid, false, true},
+                             Case{true, MarginPeriodCashflows::Paid, false, false},
+                             Case{true, MarginPeriodCashflows::Withheld, true, false},
+                             Case{true, MarginPeriodCashflows::OnlyBankPays, false, true}})
+        {
+            NettingSetRequest r = with_running(request(c.collateralised, c.cashflows));
+            r.trades = {0, 2, 3, 1};
+            r.contributions = c.contributions;
+            if (c.margined)
+            {
+                // One value per reporting date: ask the CPU for the dates.
+                const std::size_t m =
+                    engine.simulate_netting_set(settings(16, ComputeDevice::Cpu), r).statistics.times.size();
+                r.collateral.initial_margin_received.assign(m, 3e5);
+                r.collateral.initial_margin_posted.assign(m, 2e5);
+            }
+            const NettingSetExposure cpu = engine.simulate_netting_set(settings(paths, ComputeDevice::Cpu), r);
+            ExposureSimulationSettings launches = settings(paths, ComputeDevice::Gpu);
+            launches.gpu_blocks_per_launch = 1; // several launches
+            const NettingSetExposure gpu = engine.simulate_netting_set(launches, r);
+            ASSERT_EQ(gpu.device, "gpu") << gpu.device_note;
+            expect_same_profiles(gpu, cpu);
+
+            constexpr Real rel = test_support::kCpuGpuPriceRel;
+            const auto near = [](const Estimate &g, const Estimate &e, const char *what)
+            {
+                const Real scale = std::abs(e.value) + e.error;
+                EXPECT_NEAR(g.value, e.value, rel * scale) << what;
+                EXPECT_NEAR(g.error, e.error, rel * scale) << what;
+            };
+            near(gpu.funding_positive, cpu.funding_positive, "FCA");
+            near(gpu.funding_negative, cpu.funding_negative, "FBA");
+            near(gpu.funding, cpu.funding, "FVA");
+            near(gpu.weighted_collateral, cpu.weighted_collateral, "ColVA");
+            EXPECT_LT(gpu.funding_positive.value, 0.0);
+            if (c.collateralised)
+                EXPECT_NE(gpu.weighted_collateral.value, 0.0);
+            else
+                EXPECT_EQ(gpu.weighted_collateral.value, 0.0);
+
+            // Asking for them leaves everything else alone, to the bit.
+            NettingSetRequest plain = r;
+            plain.running_weights = nullptr;
+            const NettingSetExposure without = engine.simulate_netting_set(launches, plain);
+            EXPECT_EQ(without.funding.value, 0.0);
+            EXPECT_EQ(without.statistics.discounted_ee, gpu.statistics.discounted_ee);
+            EXPECT_EQ(without.weighted_positive.value, gpu.weighted_positive.value);
+            EXPECT_EQ(without.weighted_positive.error, gpu.weighted_positive.error);
+            for (std::size_t j = 0; j < without.contributions.size(); ++j)
+            {
+                EXPECT_EQ(without.contributions[j].incremental_cva, gpu.contributions[j].incremental_cva);
+            }
+
+            // The same bits on one launch or several, one card or two.
+            const auto same_bits = [&gpu](const NettingSetExposure &other)
+            {
+                EXPECT_EQ(other.funding_positive.value, gpu.funding_positive.value);
+                EXPECT_EQ(other.funding_negative.value, gpu.funding_negative.value);
+                EXPECT_EQ(other.funding.value, gpu.funding.value);
+                EXPECT_EQ(other.funding.error, gpu.funding.error);
+                EXPECT_EQ(other.weighted_collateral.value, gpu.weighted_collateral.value);
+                EXPECT_EQ(other.weighted_collateral.error, gpu.weighted_collateral.error);
+            };
+            same_bits(engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu), r));
+            if (gpu::device_count() >= 2)
+            {
+                const NettingSetExposure two = engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu, 2), r);
+                EXPECT_EQ(two.gpus, 2);
+                same_bits(two);
+            }
+        }
+    }
+
     TEST_F(GpuExposureTest, WhatTheDeviceCannotValueStaysOnTheCpuAndSaysSo)
     {
         const HullWhiteCurveModel m = model();

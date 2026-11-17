@@ -215,6 +215,19 @@ namespace quantModeling
                                                const CreditCurve &defaulter, const CreditCurve &other);
 
     /**
+     * @brief The weights of a running cost's per-path sum, per date:
+     *        -rate S_C(t_i) S_I(t_i) (t_i - t_{i-1}).
+     *
+     * Applied to a path's discounted funding need (or collateral held, or
+     * margin posted) and summed over the dates, they give that path's
+     * running_cost_adjustment(): with the borrowing and lending spreads on
+     * the positive and negative parts, its FCA and FBA; with r_c - r on the
+     * collateral, its ColVA.
+     */
+    std::vector<Real> running_cost_weights(const std::vector<Time> &times, const CreditCurve &counterparty,
+                                           const CreditCurve &own, Real rate);
+
+    /**
      * @brief The report of a netting set.
      * @throws InvalidInput on a cube simulated under the historical measure
      *         (xVA is a price), on a loss given default outside [0, 1], on

@@ -184,6 +184,26 @@ namespace quantModeling
          *        launch from each trade's values: no cube.
          */
         bool contributions = false;
+        /**
+         * @brief Optional weights of the running costs (#281 step 3,
+         *        blueprint/wp/23-xva.md §20): c_r, d_r and e_r of the
+         *        per-path sums
+         *
+         *   Σ_r c_r D max(U, 0),   Σ_r d_r D min(U, 0)   and   Σ_r e_r D C
+         *
+         * over the reporting dates, U the netting set's value after
+         * variation margin and before any initial margin (segregated margin
+         * funds nothing), C the collateral held (C(t - MPoR) plus the
+         * independent amount; zero without a CSA). With
+         * running_cost_weights() at the borrowing spread, the lending spread
+         * and r_c - r: xva_report()'s FCA, FBA and ColVA, with their errors.
+         * The function fills the three, one value per date (or leaves one
+         * empty for zeros). On a device they are more sums of the same
+         * launch.
+         */
+        std::function<void(const std::vector<Time> &times, std::vector<Real> &funding_positive,
+                           std::vector<Real> &funding_negative, std::vector<Real> &collateral)>
+            running_weights;
     };
 
     /// The exposure of a netting set, reduced over the paths.
@@ -198,6 +218,12 @@ namespace quantModeling
         /// With NettingSetRequest::contributions: one row per netted trade,
         /// the CVA fields read off the positive sums.
         std::vector<TradeContribution> contributions;
+        /// The sums of NettingSetRequest::running_weights: the two funding
+        /// sums (FCA and FBA), their sum path by path (FVA: its error is the
+        /// pair's, smaller than the two added, cost and benefit coming from
+        /// opposite scenarios), and the collateral's (ColVA). Zero without
+        /// the weights.
+        Estimate funding_positive, funding_negative, funding, weighted_collateral;
         std::size_t paths = 0;
         /// "cpu" or "gpu", how many cards, and why the CPU when the request
         /// left the choice.

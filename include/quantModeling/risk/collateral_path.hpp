@@ -200,6 +200,20 @@ namespace quantModeling
     }
 
     /**
+     * @brief C(t - MPoR) at reporting date r of one path: the variation
+     *        margin called at the lagged date plus the independent amount
+     *        (> 0 held by the bank, < 0 posted) -- what the ColVA's rate is
+     *        paid on.
+     */
+    template <class T, class Held>
+    QM_HOST_DEVICE inline T collateral_held(const CollateralPlanView &plan, int r, const Held &held,
+                                            const T &held_today)
+    {
+        const int lagged = plan.lagged[plan.reporting[r]];
+        return (lagged == CollateralPlan::kToday ? held_today : held[lagged]) + plan.terms.independent_amount;
+    }
+
+    /**
      * @brief V(t) - C(t - MPoR) at reporting date r of one path, before any
      *        initial margin: the value, minus the collateral called at the
      *        lagged date and the independent amount, plus the flows of the
@@ -214,8 +228,7 @@ namespace quantModeling
     {
         const int i = plan.reporting[r];
         const int lagged = plan.lagged[i];
-        T exposure = value[i] - ((lagged == CollateralPlan::kToday ? held_today : held[lagged]) +
-                                 plan.terms.independent_amount);
+        T exposure = value[i] - collateral_held(plan, r, held, held_today);
         if (plan.cashflows != static_cast<int>(MarginPeriodCashflows::Paid))
         {
             // Flows due in (t - MPoR, t] that were not exchanged stay in the

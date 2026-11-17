@@ -150,6 +150,22 @@ namespace quantModeling::gpu
          *        set's, path by path.
          */
         bool euler = false;
+        /**
+         * @brief Running costs (#281 step 3, blueprint/wp/23-xva.md §20):
+         *        weights c_r, d_r and e_r, per reporting date, of the
+         *        per-path sums
+         *
+         *   Σ_r c_r D max(U, 0),   Σ_r d_r D min(U, 0)   and   Σ_r e_r D C,
+         *
+         * U the value after variation margin and before any initial margin
+         * (segregated margin funds nothing), C the collateral held,
+         * collateral_held(). With c = d = e = -rate S_C S_I Δt
+         * (running_cost_weights()) and the borrowing spread, the lending
+         * spread and r_c - r: FCA, FBA and ColVA path by path. Without
+         * collateral U = V and C = 0. Each empty for zeros; all three empty
+         * skip them.
+         */
+        std::vector<Real> funding_positive_weights, funding_negative_weights, collateral_weights;
     };
 
     /// One device's paths at one date, sorted by value.
@@ -175,6 +191,12 @@ namespace quantModeling::gpu
         /// With NettingSetGpuRequest::euler, K: `positive` is trade j's
         /// share of the positive weighted sum.
         std::vector<ExposureDateStats> euler;
+        /// With the running-cost weights: `positive` and `negative` the two
+        /// funding sums, `value` their sum path by path (the FVA, whose
+        /// error is that of the pair, not the two added).
+        ExposureDateStats funding;
+        /// With the running-cost weights: `positive` is the collateral sum.
+        ExposureDateStats collateral;
         int gpus = 0;
     };
 

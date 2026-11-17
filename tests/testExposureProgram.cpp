@@ -330,6 +330,98 @@ namespace quantModeling
         }
     }
 
+    // #281 step 3 (blueprint/wp/23-xva.md §20): the running costs read off
+    // the netting set's paths are xva_report()'s FCA, FBA, FVA and ColVA,
+    // with their errors -- the reference the device's sums are held to.
+    TEST(ExposureProgram, TheRunningCostsAreThoseOfTheReport)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        fill(engine, m);
+        Csa csa;
+        csa.threshold_counterparty = 1e5;
+        csa.threshold_bank = 2e5;
+        csa.minimum_transfer_amount = 2.5e4;
+        csa.rounding = 1e3;
+        csa.independent_amount = 1e4;
+        const CreditCurve counterparty(0.02), own(0.01);
+        const Real borrowing = 0.012, lending = 0.007, collateral_spread = 0.003;
+        const std::size_t paths = 3000;
+
+        for (const bool collateralised : {false, true})
+        {
+            NettingSetRequest request;
+            request.trades = {0, 2, 3, 1};
+            if (collateralised)
+            {
+                request.csa = csa;
+                request.collateral.cashflows = MarginPeriodCashflows::OnlyBankPays;
+            }
+            request.running_weights = [&](const std::vector<Time> &times, std::vector<Real> &funding_positive,
+                                          std::vector<Real> &funding_negative, std::vector<Real> &on_collateral)
+            {
+                funding_positive = running_cost_weights(times, counterparty, own, borrowing);
+                funding_negative = running_cost_weights(times, counterparty, own, lending);
+                on_collateral = running_cost_weights(times, counterparty, own, collateral_spread);
+            };
+            const NettingSetExposure direct = engine.simulate_netting_set(settings(paths), request);
+
+            ExposureSimulationSettings s = settings(paths);
+            if (collateralised)
+                s.grid.margin_period_of_risk = csa.margin_period_of_risk;
+            const ExposurePaths cube = engine.simulate(s);
+            XvaInputs in;
+            in.trades = request.trades;
+            if (collateralised)
+            {
+                in.csa = csa;
+                in.collateral.cashflows = MarginPeriodCashflows::OnlyBankPays;
+            }
+            in.counterparty = counterparty;
+            in.own = own;
+            in.borrowing_spread = borrowing;
+            in.lending_spread = lending;
+            in.collateral_spread = collateral_spread;
+            const XvaReport report = xva_report(cube, in);
+
+            const auto near = [](const Real got, const Real want, const char *what)
+            { EXPECT_NEAR(got, want, 1e-9 * (1.0 + std::abs(want))) << what; };
+            near(direct.funding_positive.value, report.fca, "FCA");
+            near(direct.funding_negative.value, report.fba, "FBA");
+            near(direct.funding.value, report.fca + report.fba, "FVA");
+            near(direct.funding_positive.error, report.fca_error, "error of FCA");
+            near(direct.funding_negative.error, report.fba_error, "error of FBA");
+            near(direct.funding.error, report.fva_error, "error of FVA");
+            near(direct.weighted_collateral.value, report.colva, "ColVA");
+            near(direct.weighted_collateral.error, report.colva_error, "error of ColVA");
+            EXPECT_LT(direct.funding_positive.value, 0.0);
+            EXPECT_GT(direct.funding_negative.value, 0.0);
+            // Cost and benefit come from opposite scenarios: the pair's
+            // error is below the two added.
+            EXPECT_LT(direct.funding.error, direct.funding_positive.error + direct.funding_negative.error);
+            if (collateralised)
+            {
+                EXPECT_NE(direct.weighted_collateral.value, 0.0);
+                EXPECT_GT(direct.weighted_collateral.error, 0.0);
+
+                // Segregated initial margin funds nothing: it moves neither
+                // the funding nor the collateral sums.
+                NettingSetRequest margined = request;
+                margined.collateral.initial_margin_received.assign(direct.statistics.times.size(), 3e5);
+                margined.collateral.initial_margin_posted.assign(direct.statistics.times.size(), 2e5);
+                const NettingSetExposure with_margin = engine.simulate_netting_set(settings(paths), margined);
+                EXPECT_EQ(with_margin.funding.value, direct.funding.value);
+                EXPECT_EQ(with_margin.funding.error, direct.funding.error);
+                EXPECT_EQ(with_margin.weighted_collateral.value, direct.weighted_collateral.value);
+                EXPECT_NE(with_margin.statistics.epe, direct.statistics.epe);
+            }
+            else
+            {
+                EXPECT_EQ(direct.weighted_collateral.value, 0.0);
+            }
+        }
+    }
+
     TEST(ExposureProgram, WhatTheNettingSetCannotDoWithoutTheCubeIsRefused)
     {
         const HullWhiteCurveModel m = model();
@@ -353,6 +445,12 @@ namespace quantModeling
         NettingSetRequest no_weights;
         no_weights.contributions = true;
         EXPECT_THROW(engine.simulate_netting_set(settings(100), no_weights), InvalidInput);
+        // A running-cost weight that is not one per reporting date.
+        NettingSetRequest short_running;
+        short_running.running_weights = [](const std::vector<Time> &, std::vector<Real> &a, std::vector<Real> &,
+                                           std::vector<Real> &)
+        { a = {1.0}; };
+        EXPECT_THROW(engine.simulate_netting_set(settings(100), short_running), InvalidInput);
         NettingSetRequest margined;
         margined.csa = Csa{};
         margined.collateral.initial_margin_received = {1.0};
