@@ -5,7 +5,9 @@
 
 #include "quantModeling/pricers/inputs.hpp"
 #include "quantModeling/pricers/adapters/equity_vanilla_lv.hpp"
+#include "quantModeling/engines/mc/path_distribution.hpp"
 #include "quantModeling/engines/mc/path_simulation.hpp"
+#include "quantModeling/models/equity/sabr_sim_model.hpp"
 #include "quantModeling/market/heston_calibration.hpp"
 #include "quantModeling/market/sabr_calibration.hpp"
 #include "quantModeling/market/slv_calibration.hpp"
@@ -300,6 +302,59 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
     return out;
 }
 
+static py::dict smile_to_py(const quantModeling::SmileEstimate &s)
+{
+    py::dict d;
+    d["date"] = s.date;
+    d["ttm"] = s.ttm;
+    d["forward"] = s.forward;
+    d["moneyness"] = s.moneyness;
+    d["strikes"] = s.strikes;
+    d["prices"] = s.prices;
+    d["price_stderr"] = s.price_stderr;
+    d["implied_vols"] = s.implied_vols;
+    d["iv_stderr"] = s.iv_stderr;
+    return d;
+}
+
+static py::dict distribution_to_py(const quantModeling::PathDistribution &r)
+{
+    py::dict out;
+    out["time_grid"] = r.time_grid;
+    out["n_paths"] = r.n_paths;
+    out["paths"] = r.paths;
+    out["vols"] = r.vols;
+    out["has_vol"] = r.has_vol;
+    out["quantile_levels"] = r.quantile_levels;
+    out["spot_quantiles"] = r.spot_quantiles;
+    out["vol_quantiles"] = r.vol_quantiles;
+    out["deflated_mean"] = r.deflated_mean;
+    out["deflated_stderr"] = r.deflated_stderr;
+    out["deflated_exact"] = r.deflated_exact;
+    out["atm_vol"] = r.atm_vol;
+    out["atm_vol_stderr"] = r.atm_vol_stderr;
+    out["hist_lo"] = r.hist_lo;
+    out["hist_hi"] = r.hist_hi;
+    out["hist_counts"] = r.hist_counts;
+    py::list smiles;
+    for (const auto &s : r.smiles)
+        smiles.append(smile_to_py(s));
+    out["smiles"] = smiles;
+    out["forward_smile"] = r.has_forward_smile ? py::object(smile_to_py(r.forward_smile)) : py::none();
+    if (r.has_barrier)
+    {
+        py::dict b;
+        b["price"] = r.barrier_price;
+        b["stderr"] = r.barrier_stderr;
+        b["vanilla_price"] = r.vanilla_price;
+        b["vanilla_stderr"] = r.vanilla_stderr;
+        out["barrier"] = b;
+    }
+    else
+        out["barrier"] = py::none();
+    return out;
+}
+
 void register_market(py::module_ &m)
 {
     m.def("dupire_superbucket", &dupire_superbucket_impl, py::arg("slices"), py::arg("spot"),
@@ -394,4 +449,85 @@ void register_market(py::module_ &m)
         py::arg("steps_per_year") = 252,
         "Illustrative paths of a script model (black_scholes, local_vol, heston, slv) "
         "with its calibrated inputs, on a regular grid of n_steps dates to ttm.");
+    m.def(
+        "simulate_path_distribution",
+        [](const std::string &model, double spot, double rate, double dividend, double vol,
+           const std::vector<double> &K_grid, const std::vector<double> &T_grid,
+           const std::vector<double> &sigma_loc_flat,
+           const std::map<std::string, double> &heston,
+           const std::vector<double> &leverage_flat, const std::map<std::string, double> &sabr,
+           double ttm, std::size_t n_steps, long long n_paths, long long n_display, int seed,
+           int steps_per_year, const std::vector<double> &quantiles, std::size_t n_bins,
+           const std::vector<std::size_t> &smile_dates, const std::vector<double> &smile_moneyness,
+           std::size_t forward_start, double barrier, double barrier_strike)
+        {
+            using namespace quantModeling;
+            DistributionSettings settings;
+            settings.n_steps = n_steps;
+            settings.n_paths = n_paths;
+            settings.n_display = n_display;
+            settings.seed = static_cast<std::uint64_t>(seed > 0 ? seed : 1);
+            settings.quantiles = quantiles;
+            settings.n_bins = n_bins;
+            settings.smile_dates = smile_dates;
+            settings.smile_moneyness = smile_moneyness;
+            settings.forward_start = forward_start;
+            settings.barrier = barrier;
+            settings.barrier_strike = barrier_strike;
+            const double max_dt = 1.0 / static_cast<double>(std::max(steps_per_year, 1));
+
+            PathDistribution res;
+            if (model == "sabr")
+            {
+                // `spot` is the forward, a martingale: no drift, so q = r.
+                auto get = [&](const char *k)
+                {
+                    const auto it = sabr.find(k);
+                    if (it == sabr.end())
+                        throw std::invalid_argument(std::string("simulate_path_distribution: sabr needs '") + k + "'");
+                    return it->second;
+                };
+                SABRSimModel<Real> sim(spot, rate, get("alpha"), get("beta"), get("rho"), get("nu"), max_dt);
+                py::gil_scoped_release release;
+                res = simulate_path_distribution(sim, spot, rate, rate, ttm, settings);
+            }
+            else
+            {
+                scripting::ScriptModelSpec spec;
+                spec.model = model;
+                spec.spot = spot;
+                spec.rate = rate;
+                spec.dividend = dividend;
+                spec.vol = vol;
+                spec.K_grid = K_grid;
+                spec.T_grid = T_grid;
+                spec.sigma_loc_flat = sigma_loc_flat;
+                spec.leverage_flat = leverage_flat;
+                if (model == "heston" || model == "slv")
+                    spec.heston = heston_from_py(heston);
+                spec.max_dt = max_dt;
+                py::gil_scoped_release release;
+                auto sim = scripting::make_script_model<Real>(spec);
+                res = simulate_path_distribution(*sim, spot, rate, dividend, ttm, settings);
+            }
+            return distribution_to_py(res);
+        },
+        py::arg("model"), py::arg("spot"), py::arg("rate"), py::arg("dividend"),
+        py::arg("vol") = 0.0, py::arg("K_grid") = std::vector<double>{},
+        py::arg("T_grid") = std::vector<double>{},
+        py::arg("sigma_loc_flat") = std::vector<double>{},
+        py::arg("heston") = std::map<std::string, double>{},
+        py::arg("leverage_flat") = std::vector<double>{},
+        py::arg("sabr") = std::map<std::string, double>{}, py::arg("ttm") = 1.0,
+        py::arg("n_steps") = 100, py::arg("n_paths") = 10000, py::arg("n_display") = 30,
+        py::arg("seed") = 1, py::arg("steps_per_year") = 252,
+        py::arg("quantiles") = std::vector<double>{0.05, 0.25, 0.5, 0.75, 0.95},
+        py::arg("n_bins") = 50, py::arg("smile_dates") = std::vector<std::size_t>{},
+        py::arg("smile_moneyness") = std::vector<double>{}, py::arg("forward_start") = 0,
+        py::arg("barrier") = 0.0, py::arg("barrier_strike") = 0.0,
+        "The law of a model's paths and the prices they imply "
+        "(engines/mc/path_distribution.hpp): quantiles and histograms of S_t, "
+        "instantaneous vol, martingale check, ATM vol term structure, vanilla "
+        "smiles, forward smile and an up-and-out call, each with its standard "
+        "error. Models: black_scholes, sabr (spot = the forward), local_vol, heston, slv.");
 }

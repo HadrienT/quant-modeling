@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import {
 	useCalibrateSimulation,
-	useSimulateBlackScholesPaths,
-	useSimulateModelPaths,
-	useSimulateSabrPaths,
+	useSimulationDistribution,
 } from "@/shared/api";
 import type {
+	DistributionRequest,
 	SimulationCalibrateResponse,
 	SimulationModel,
 } from "@/shared/api/types";
@@ -16,20 +15,25 @@ import { usePathReveal } from "./usePathReveal";
 /**
  * All state and side effects for the simulation page: model/mode selection,
  * every parameter field (shared, BS-specific, SABR-specific), the calibrate-
- * on-ticker flow, the two path-simulation mutations, and the client-side
+ * on-ticker flow, the distribution request (WP 29: the law of the paths
+ * and the prices they imply), the date under the cursor, and the client-side
  * "drawing" animation over an already-fetched batch of paths. Kept out of
  * SimulationPage.tsx to stay under this project's per-feature-file line
  * budget (tests/discipline.test.ts) — same rationale as pricing's
  * useWorkbench.ts.
  */
+/** The page's up-and-out call: struck at the spot, knocked out 20% above. */
+const BARRIER = 1.2;
+const BARRIER_STRIKE = 1.0;
+
 export function useSimulation() {
 	const [model, setModel] = useState<SimulationModel>("black_scholes");
 	const [mode, setMode] = useState<"manual" | "calibrate">("manual");
 
 	// Shared
 	const [ttm, setTtm] = useState("1.0");
-	const [nSteps, setNSteps] = useState("100");
-	const [nPaths, setNPaths] = useState("30");
+	const [nSteps, setNSteps] = useState("60");
+	const [nPaths, setNPaths] = useState("10000");
 	const [seed, setSeed] = useState("1");
 
 	// Black-Scholes params
@@ -58,23 +62,19 @@ export function useSimulation() {
 	const heston = useHestonParams();
 
 	const calibrate = useCalibrateSimulation();
-	const simulateBS = useSimulateBlackScholesPaths();
-	const simulateSABR = useSimulateSabrPaths();
-	const simulateModel = useSimulateModelPaths();
+	const simulate = useSimulationDistribution();
 	const surfaceModel =
 		model === "local_vol" || model === "heston" || model === "slv";
-	const simulate =
-		model === "black_scholes"
-			? simulateBS
-			: model === "sabr"
-				? simulateSABR
-				: simulateModel;
 
 	const { revealCount, setRevealCount, playAnimation } = usePathReveal();
+	// The date the histogram and the stats are read at: the last one by default.
+	const [cursor, setCursor] = useState(0);
 
 	const data = simulate.data;
 	useEffect(() => {
-		if (data) playAnimation(data.time_grid.length - 1);
+		if (!data) return;
+		setCursor(data.time_grid.length - 1);
+		playAnimation(data.time_grid.length - 1);
 	}, [data, playAnimation]);
 
 	function runCalibration() {
@@ -112,58 +112,48 @@ export function useSimulation() {
 		);
 	}
 
-	function runSimulation() {
-		setRevealCount(0);
-		const grid = {
+	/** The request for the model and parameters on screen: a ticker when the
+	 * model reads its surface or was calibrated on one (the stored surface is
+	 * then returned beside the model), the typed parameters otherwise. */
+	function request(): DistributionRequest {
+		const onTicker =
+			model === "local_vol" ||
+			model === "slv" ||
+			(mode === "calibrate" && calibrated?.model === model);
+		const base = {
+			model,
+			rate: Number(rate) / 100,
 			ttm: Number(ttm),
 			n_steps: Number(nSteps),
 			n_paths: Number(nPaths),
 			seed: Number(seed),
+			n_display: 30,
+			barrier: BARRIER,
+			barrier_strike: BARRIER_STRIKE,
+			...(onTicker
+				? { ticker }
+				: { spot: Number(model === "sabr" ? forward : spot) }),
+			dividend: Number(dividend) / 100,
 		};
-		if (surfaceModel) {
-			// Local vol and SLV read the ticker's surface; Heston runs on the
-			// parameters shown (typed, or filled in by a calibration).
-			simulateModel.mutate(
-				model === "heston"
-					? {
-							model,
-							spot: Number(spot),
-							dividend: Number(dividend) / 100,
-							heston: heston.toParams(),
-							rate: Number(rate) / 100,
-							...grid,
-						}
-					: { model, ticker, rate: Number(rate) / 100, ...grid },
-			);
-		} else if (model === "black_scholes") {
-			simulateBS.mutate({
-				spot: Number(spot),
-				rate: Number(rate) / 100,
-				dividend: Number(dividend) / 100,
-				vol: Number(vol) / 100,
-				ttm: Number(ttm),
-				n_steps: Number(nSteps),
-				n_paths: Number(nPaths),
-				seed: Number(seed),
-			});
-		} else {
-			simulateSABR.mutate({
-				forward: Number(forward),
-				alpha: Number(alpha),
-				beta: Number(beta),
-				rho: Number(rho),
-				nu: Number(nu),
-				ttm: Number(ttm),
-				n_steps: Number(nSteps),
-				n_paths: Number(nPaths),
-				seed: Number(seed),
-			});
-		}
+		if (model === "black_scholes") return { ...base, vol: Number(vol) / 100 };
+		if (model === "sabr")
+			return {
+				...base,
+				sabr: {
+					alpha: Number(alpha),
+					beta: Number(beta),
+					rho: Number(rho),
+					nu: Number(nu),
+				},
+			};
+		if (model === "heston") return { ...base, heston: heston.toParams() };
+		return base;
 	}
 
-	const chartPaths = data?.paths.map((path) =>
-		path.map((value, i) => ({ t: data.time_grid[i] ?? 0, value })),
-	);
+	function runSimulation() {
+		setRevealCount(0);
+		simulate.mutate(request());
+	}
 
 	return {
 		model,
@@ -206,10 +196,12 @@ export function useSimulation() {
 		simulate,
 		runCalibration,
 		runSimulation,
+		request,
 		playAnimation,
 		revealCount,
+		cursor,
+		setCursor,
 		data,
-		chartPaths,
 	};
 }
 

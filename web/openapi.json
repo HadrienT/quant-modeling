@@ -801,6 +801,44 @@
         "title": "BarrierKind",
         "type": "string"
       },
+      "BarrierOut": {
+        "properties": {
+          "barrier": {
+            "title": "Barrier",
+            "type": "number"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "stderr": {
+            "title": "Stderr",
+            "type": "number"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "vanilla_price": {
+            "title": "Vanilla Price",
+            "type": "number"
+          },
+          "vanilla_stderr": {
+            "title": "Vanilla Stderr",
+            "type": "number"
+          }
+        },
+        "required": [
+          "barrier",
+          "strike",
+          "price",
+          "stderr",
+          "vanilla_price",
+          "vanilla_stderr"
+        ],
+        "title": "BarrierOut",
+        "type": "object"
+      },
       "BarrierRequest": {
         "properties": {
           "barrier_kind": {
@@ -2875,6 +2913,416 @@
         "title": "DispersionSwapRequest",
         "type": "object"
       },
+      "DistributionMarket": {
+        "properties": {
+          "arbitrage_dates": {
+            "description": "Dates whose stored smile is not a density (butterfly or call-spread arbitrage): no market density is drawn there.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Arbitrage Dates",
+            "type": "array"
+          },
+          "dividend": {
+            "title": "Dividend",
+            "type": "number"
+          },
+          "first_slice": {
+            "description": "Maturity of the first surface slice, in years.",
+            "title": "First Slice",
+            "type": "number"
+          },
+          "last_slice": {
+            "title": "Last Slice",
+            "type": "number"
+          },
+          "snapshot": {
+            "format": "date",
+            "title": "Snapshot",
+            "type": "string"
+          },
+          "spot": {
+            "title": "Spot",
+            "type": "number"
+          },
+          "ticker": {
+            "title": "Ticker",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticker",
+          "snapshot",
+          "spot",
+          "dividend",
+          "first_slice",
+          "last_slice"
+        ],
+        "title": "DistributionMarket",
+        "type": "object"
+      },
+      "DistributionRequest": {
+        "description": "The law of a model's paths (engines/mc/path_distribution.hpp, WP 29).\n\nBlack-Scholes takes `vol`, SABR `sabr` (with `spot` the forward), Heston\n`heston`, each with `spot` and `dividend` typed; or a `ticker`. Local vol\nand SLV always need the `ticker`: their surface is its stored chain.\nWith a ticker, the stored SVI surface is returned beside the model\n(`market`), at the same dates and moneyness.",
+        "properties": {
+          "barrier": {
+            "default": 1.2,
+            "description": "Up-and-out barrier, as a multiple of the spot.",
+            "exclusiveMinimum": 1.0,
+            "title": "Barrier",
+            "type": "number"
+          },
+          "barrier_strike": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Barrier Strike",
+            "type": "number"
+          },
+          "dividend": {
+            "default": 0.0,
+            "title": "Dividend",
+            "type": "number"
+          },
+          "forward_start": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Start of the forward smile, in years (to ttm). Default: ttm / 2.",
+            "title": "Forward Start"
+          },
+          "heston": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HestonParams"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "$ref": "#/components/schemas/SimulationModel"
+          },
+          "moneyness": {
+            "description": "Strikes as K / F(0, t).",
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "title": "Moneyness",
+            "type": "array"
+          },
+          "n_display": {
+            "default": 30,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "N Display",
+            "type": "integer"
+          },
+          "n_paths": {
+            "default": 10000,
+            "maximum": 20000.0,
+            "minimum": 1000.0,
+            "title": "N Paths",
+            "type": "integer"
+          },
+          "n_steps": {
+            "default": 60,
+            "maximum": 250.0,
+            "minimum": 4.0,
+            "title": "N Steps",
+            "type": "integer"
+          },
+          "rate": {
+            "default": 0.05,
+            "title": "Rate",
+            "type": "number"
+          },
+          "sabr": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SABRParamsIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seed": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Seed",
+            "type": "integer"
+          },
+          "smile_times": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 4,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Maturities of the vanilla smiles, in years (the nearest grid date is used). Default: a quarter, half and all of ttm.",
+            "title": "Smile Times"
+          },
+          "spot": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spot"
+          },
+          "ticker": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticker"
+          },
+          "ttm": {
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 5.0,
+            "title": "Ttm",
+            "type": "number"
+          },
+          "vol": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vol"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "DistributionRequest",
+        "type": "object"
+      },
+      "DistributionResponse": {
+        "properties": {
+          "atm_vol": {
+            "description": "ATM-forward implied vol per date.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Atm Vol",
+            "type": "array"
+          },
+          "atm_vol_stderr": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Atm Vol Stderr",
+            "type": "array"
+          },
+          "barrier": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BarrierOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dividend": {
+            "title": "Dividend",
+            "type": "number"
+          },
+          "forward_smile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SmileOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "histogram": {
+            "$ref": "#/components/schemas/HistogramOut"
+          },
+          "market": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DistributionMarket"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "martingale": {
+            "$ref": "#/components/schemas/MartingaleOut"
+          },
+          "model": {
+            "$ref": "#/components/schemas/SimulationModel"
+          },
+          "n_paths": {
+            "title": "N Paths",
+            "type": "integer"
+          },
+          "paths": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Paths",
+            "type": "array"
+          },
+          "quantile_levels": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Quantile Levels",
+            "type": "array"
+          },
+          "rate": {
+            "title": "Rate",
+            "type": "number"
+          },
+          "smiles": {
+            "items": {
+              "$ref": "#/components/schemas/SmileOut"
+            },
+            "title": "Smiles",
+            "type": "array"
+          },
+          "spot": {
+            "title": "Spot",
+            "type": "number"
+          },
+          "spot_quantiles": {
+            "description": "[level][date]",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Spot Quantiles",
+            "type": "array"
+          },
+          "time_grid": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Time Grid",
+            "type": "array"
+          },
+          "vol_quantiles": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vol Quantiles"
+          },
+          "vols": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Instantaneous vol of each display path (null at t = 0).",
+            "title": "Vols"
+          }
+        },
+        "required": [
+          "model",
+          "spot",
+          "rate",
+          "dividend",
+          "n_paths",
+          "time_grid",
+          "paths",
+          "quantile_levels",
+          "spot_quantiles",
+          "martingale",
+          "atm_vol",
+          "atm_vol_stderr",
+          "histogram",
+          "smiles"
+        ],
+        "title": "DistributionResponse",
+        "type": "object"
+      },
       "DriftedInput": {
         "properties": {
           "current_as_of": {
@@ -4666,6 +5114,76 @@
         "title": "HestonParams",
         "type": "object"
       },
+      "HistogramOut": {
+        "properties": {
+          "counts": {
+            "description": "[date][bin], equal bins on [lo, hi].",
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "title": "Counts",
+            "type": "array"
+          },
+          "hi": {
+            "description": "Per date, the 99.5% quantile of S_t.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Hi",
+            "type": "array"
+          },
+          "lo": {
+            "description": "Per date, the 0.5% quantile of S_t.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Lo",
+            "type": "array"
+          },
+          "market_density": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "[date][bin]: the stored surface's risk-neutral density of S_t at each bin centre (Breeden-Litzenberger); null outside the quoted dates.",
+            "title": "Market Density"
+          }
+        },
+        "required": [
+          "lo",
+          "hi",
+          "counts"
+        ],
+        "title": "HistogramOut",
+        "type": "object"
+      },
       "HistoricalDefaultRate": {
         "description": "The default rate of a rating category on record: the average of the\nyearly rates the agency reported to ESMA (CEREP).",
         "properties": {
@@ -5838,6 +6356,40 @@
           "markets"
         ],
         "title": "MarketsResponse",
+        "type": "object"
+      },
+      "MartingaleOut": {
+        "properties": {
+          "exact": {
+            "description": "S0 e^{-q t}.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Exact",
+            "type": "array"
+          },
+          "mean": {
+            "description": "E[S_t / N_t], Monte Carlo.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Mean",
+            "type": "array"
+          },
+          "stderr": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Stderr",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mean",
+          "stderr",
+          "exact"
+        ],
+        "title": "MartingaleOut",
         "type": "object"
       },
       "MaturityVega": {
@@ -9191,6 +9743,40 @@
         "title": "Run",
         "type": "object"
       },
+      "SABRParamsIn": {
+        "properties": {
+          "alpha": {
+            "exclusiveMinimum": 0.0,
+            "title": "Alpha",
+            "type": "number"
+          },
+          "beta": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Beta",
+            "type": "number"
+          },
+          "nu": {
+            "minimum": 0.0,
+            "title": "Nu",
+            "type": "number"
+          },
+          "rho": {
+            "maximum": 1.0,
+            "minimum": -1.0,
+            "title": "Rho",
+            "type": "number"
+          }
+        },
+        "required": [
+          "alpha",
+          "rho",
+          "nu"
+        ],
+        "title": "SABRParamsIn",
+        "type": "object"
+      },
       "SABRPathRequest": {
         "properties": {
           "alpha": {
@@ -10722,6 +11308,117 @@
           "hidden"
         ],
         "title": "SitePagesUpdate",
+        "type": "object"
+      },
+      "SmileOut": {
+        "properties": {
+          "forward": {
+            "title": "Forward",
+            "type": "number"
+          },
+          "iv_stderr": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Iv Stderr",
+            "type": "array"
+          },
+          "market_iv": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stored SVI surface at the same moneyness; null where not quoted.",
+            "title": "Market Iv"
+          },
+          "model_iv": {
+            "description": "Black-76; null outside the no-arbitrage bounds.",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Model Iv",
+            "type": "array"
+          },
+          "moneyness": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Moneyness",
+            "type": "array"
+          },
+          "price_stderr": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Price Stderr",
+            "type": "array"
+          },
+          "prices": {
+            "description": "Out of the money, discounted to today.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Prices",
+            "type": "array"
+          },
+          "start": {
+            "default": 0.0,
+            "description": "Forward smile: t1. Spot smiles: 0.",
+            "title": "Start",
+            "type": "number"
+          },
+          "strikes": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Strikes",
+            "type": "array"
+          },
+          "time": {
+            "description": "Option maturity in years (T - t1 for the forward smile).",
+            "title": "Time",
+            "type": "number"
+          }
+        },
+        "required": [
+          "time",
+          "forward",
+          "moneyness",
+          "strikes",
+          "prices",
+          "price_stderr",
+          "model_iv",
+          "iv_stderr"
+        ],
+        "title": "SmileOut",
         "type": "object"
       },
       "SnapshotRequest": {
@@ -16871,6 +17568,48 @@
           }
         },
         "summary": "Calibrate",
+        "tags": [
+          "simulation"
+        ]
+      }
+    },
+    "/api/simulation/distribution": {
+      "post": {
+        "description": "The law of the model's paths and the prices they imply, each with its\nMonte Carlo error (engines/mc/path_distribution.hpp), and, with a ticker,\nthe stored SVI surface at the same dates and moneyness\n(simulation_market.py).",
+        "operationId": "distribution",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DistributionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistributionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Distribution",
         "tags": [
           "simulation"
         ]

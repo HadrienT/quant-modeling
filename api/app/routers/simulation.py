@@ -7,6 +7,7 @@ POST /simulation/paths/black-scholes
 POST /simulation/paths/sabr
 POST /simulation/paths/model        local vol, Heston, SLV
 POST /simulation/calibrate
+POST /simulation/distribution  the law of the paths and the prices they imply (WP 29)
 
 Path generation is illustrative, not a pricing engine (see
 engines/mc/path_simulation.hpp's doc comments); calibration reuses the
@@ -18,14 +19,22 @@ from __future__ import annotations
 
 import math
 from datetime import date
+from typing import Any, List, Optional
 
 import quantmodeling as qm
 from fastapi import APIRouter, HTTPException
 
-from .. import market_snapshot, stochastic_vol, vol_surface
+from .. import market_snapshot, simulation_market, stochastic_vol, vol_surface
 from ..logging_utils import get_logger
 from ..schemas import (
+    BarrierOut,
     BSPathRequest,
+    DistributionMarket,
+    DistributionRequest,
+    DistributionResponse,
+    HistogramOut,
+    MartingaleOut,
+    SmileOut,
     HestonFit,
     LeverageFit,
     ModelPathRequest,
@@ -260,4 +269,239 @@ def calibrate(req: SimulationCalibrateRequest) -> SimulationCalibrateResponse:
         converged=cal["converged"],
         n_clean_quotes=stats["final_count"],
         cleaning_summary=_cleaning_summary(stats),
+    )
+
+
+# ── The law of the paths (WP 29) ─────────────────────────────────────────────
+
+
+def _finite(x: Any) -> Any:
+    """NaN and infinities as None, at any depth: JSON has no NaN."""
+    if isinstance(x, float):
+        return x if math.isfinite(x) else None
+    if isinstance(x, list):
+        return [_finite(v) for v in x]
+    return x
+
+
+def _grid_index(
+    t: float, ttm: float, n: int, lo: int = 1, hi: Optional[int] = None
+) -> int:
+    return min(max(round(t / ttm * n), lo), n if hi is None else hi)
+
+
+def _sabr_from_surface(m, rate: float, ttm: float, beta: float) -> dict:
+    """SABR fitted to the stored surface's slice nearest ttm, as /calibrate
+    does on the chain (but on the database only)."""
+    slc = vol_surface.nearest_slice(m.surface_slices(), ttm)
+    forward = m.spot * math.exp((rate - m.dividend) * slc["ttm"])
+    quotes = vol_surface.sabr_quotes_from_svi_slice(slc, forward)
+    if len(quotes) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Not enough usable points on the stored surface of '{m.ticker}' to fit SABR.",
+        )
+    cal = qm.calibrate_sabr_slice(
+        quotes=quotes, forward=forward, ttm=slc["ttm"], beta=beta
+    )
+    return {k: cal[k] for k in ("alpha", "beta", "rho", "nu")}
+
+
+def _distribution_inputs(req: DistributionRequest):
+    """The model's native inputs (kwargs of qm.simulate_path_distribution),
+    its spot and dividend, and the ticker's stored market if there is one."""
+    kw: dict = {}
+    m = _market(req.ticker, req.rate) if req.ticker else None
+    spot = m.spot if m else req.spot
+    dividend = m.dividend if m else req.dividend
+    if req.model == SimulationModel.black_scholes:
+        vol = req.vol
+        if vol is None:  # the stored surface's ATM vol at ttm
+            slices = m.surface_slices()
+            t = min(max(req.ttm, slices[0]["ttm"]), slices[-1]["ttm"])
+            vol = simulation_market.implied_vols(slices, t, [1.0])[0]
+            if vol is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"No ATM vol on the stored surface of '{m.ticker}'.",
+                )
+        kw.update(vol=vol)
+    elif req.model == SimulationModel.sabr:
+        kw.update(
+            sabr=(
+                req.sabr.model_dump()
+                if req.sabr
+                else _sabr_from_surface(m, req.rate, req.ttm, 0.5)
+            )
+        )
+        if m:  # SABR simulates the forward to ttm
+            spot = m.spot * math.exp((req.rate - m.dividend) * req.ttm)
+    elif req.model == SimulationModel.local_vol:
+        kw.update(K_grid=m.K_grid, T_grid=m.T_grid, sigma_loc_flat=m.sigma_loc_flat)
+    else:
+        if req.heston is not None and (
+            m is None or req.model == SimulationModel.heston
+        ):
+            kw.update(heston=req.heston.model_dump())
+        if m is not None and (req.heston is None or req.model == SimulationModel.slv):
+            sv = _stochastic(m)
+            kw.update(heston=sv.heston)
+            if req.model == SimulationModel.slv:
+                # The leverage was calibrated with the calibrated Heston
+                # parameters: SLV always runs with those.
+                kw.update(
+                    K_grid=m.K_grid,
+                    T_grid=list(sv.leverage_T_grid),
+                    leverage_flat=list(sv.leverage_flat),
+                )
+    return kw, spot, dividend, m
+
+
+def _smile_out(
+    s: dict, start: float, market_iv: Optional[List[Optional[float]]]
+) -> SmileOut:
+    return SmileOut(
+        time=s["ttm"],
+        start=start,
+        forward=s["forward"],
+        moneyness=s["moneyness"],
+        strikes=s["strikes"],
+        prices=s["prices"],
+        price_stderr=s["price_stderr"],
+        model_iv=_finite(s["implied_vols"]),
+        iv_stderr=_finite(s["iv_stderr"]),
+        market_iv=market_iv,
+    )
+
+
+@router.post("/distribution", response_model=DistributionResponse)
+def distribution(req: DistributionRequest) -> DistributionResponse:
+    """The law of the model's paths and the prices they imply, each with its
+    Monte Carlo error (engines/mc/path_distribution.hpp), and, with a ticker,
+    the stored SVI surface at the same dates and moneyness
+    (simulation_market.py)."""
+    kw, spot, dividend, m = _distribution_inputs(req)
+    n = req.n_steps
+    times = req.smile_times or [req.ttm / 4, req.ttm / 2, req.ttm]
+    smile_dates = sorted(
+        {_grid_index(t, req.ttm, n) for t in times if 0 < t <= req.ttm}
+    )
+    if not smile_dates:
+        raise HTTPException(status_code=422, detail="smile_times must lie in (0, ttm].")
+    forward_start = _grid_index(req.forward_start or req.ttm / 2, req.ttm, n, hi=n - 1)
+    try:
+        r = qm.simulate_path_distribution(
+            req.model.value,
+            spot,
+            req.rate,
+            dividend,
+            ttm=req.ttm,
+            n_steps=n,
+            n_paths=req.n_paths,
+            n_display=req.n_display,
+            seed=req.seed,
+            smile_dates=smile_dates,
+            smile_moneyness=req.moneyness,
+            forward_start=forward_start,
+            barrier=req.barrier,
+            barrier_strike=req.barrier_strike,
+            **kw,
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    tg = r["time_grid"]
+    slices = m.surface_slices() if m else []
+    # SABR simulates the forward to ttm: only its last date is an option on
+    # the spot at that maturity, comparable with the market.
+    comparable = (
+        (lambda i: i == n) if req.model == SimulationModel.sabr else (lambda i: True)
+    )
+
+    smiles = [
+        _smile_out(
+            s,
+            0.0,
+            (
+                simulation_market.implied_vols(slices, s["ttm"], s["moneyness"])
+                if m and comparable(s["date"])
+                else None
+            ),
+        )
+        for s in r["smiles"]
+    ]
+    fs = r["forward_smile"]
+    forward_smile = _smile_out(fs, tg[fs["date"]], None) if fs else None
+
+    market_density = None
+    arbitrage: List[float] = []
+    if m:
+        market_density = []
+        for i, (lo, hi) in enumerate(zip(r["hist_lo"], r["hist_hi"])):
+            t = tg[i]
+            if i == 0 or not comparable(i) or hi <= lo:
+                market_density.append(None)
+                continue
+            nb = len(r["hist_counts"][i])
+            centres = [lo + (b + 0.5) * (hi - lo) / nb for b in range(nb)]
+            forward = m.spot * math.exp((req.rate - m.dividend) * t)
+            if not simulation_market.is_density(slices, t, forward, centres):
+                arbitrage.append(t)
+                market_density.append(None)
+                continue
+            d = simulation_market.density(slices, t, forward, centres)
+            market_density.append(None if all(x is None for x in d) else d)
+
+    barrier = None
+    if r["barrier"]:
+        b = r["barrier"]
+        barrier = BarrierOut(
+            barrier=req.barrier * spot,
+            strike=req.barrier_strike * spot,
+            price=b["price"],
+            stderr=b["stderr"],
+            vanilla_price=b["vanilla_price"],
+            vanilla_stderr=b["vanilla_stderr"],
+        )
+
+    return DistributionResponse(
+        model=req.model,
+        spot=spot,
+        rate=req.rate,
+        dividend=dividend,
+        n_paths=r["n_paths"],
+        time_grid=tg,
+        paths=r["paths"],
+        vols=_finite(r["vols"]) if r["has_vol"] else None,
+        quantile_levels=r["quantile_levels"],
+        spot_quantiles=r["spot_quantiles"],
+        vol_quantiles=_finite(r["vol_quantiles"]) if r["has_vol"] else None,
+        martingale=MartingaleOut(
+            mean=r["deflated_mean"],
+            stderr=r["deflated_stderr"],
+            exact=r["deflated_exact"],
+        ),
+        atm_vol=_finite(r["atm_vol"]),
+        atm_vol_stderr=_finite(r["atm_vol_stderr"]),
+        histogram=HistogramOut(
+            lo=r["hist_lo"],
+            hi=r["hist_hi"],
+            counts=r["hist_counts"],
+            market_density=market_density,
+        ),
+        smiles=smiles,
+        forward_smile=forward_smile,
+        barrier=barrier,
+        market=(
+            DistributionMarket(
+                ticker=m.ticker,
+                snapshot=m.valuation_date,
+                spot=m.spot,
+                dividend=m.dividend,
+                first_slice=slices[0]["ttm"],
+                last_slice=slices[-1]["ttm"],
+            )
+            if m and slices
+            else None
+        ),
     )

@@ -207,6 +207,8 @@ namespace quantModeling
                 smp.numeraire = exp(r_ * t);
 
                 const SampleDef &def = defline_[static_cast<std::size_t>(event)];
+                if (def.inst_vol) // the diffusion's vol from here (jumps aside): sqrt(v_t+)
+                    smp.inst_vol = sqrt(max(v, kVarianceFloor));
                 smp.discounts.resize(def.discount_mats.size());
                 for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
                     smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));

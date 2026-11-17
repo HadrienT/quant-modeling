@@ -1457,6 +1457,172 @@ class ModelPathRequest(BaseModel):
         return self
 
 
+class SABRParamsIn(BaseModel):
+    alpha: float = Field(..., gt=0)
+    beta: float = Field(0.5, ge=0, le=1)
+    rho: float = Field(..., ge=-1, le=1)
+    nu: float = Field(..., ge=0)
+
+
+class DistributionRequest(BaseModel):
+    """The law of a model's paths (engines/mc/path_distribution.hpp, WP 29).
+
+    Black-Scholes takes `vol`, SABR `sabr` (with `spot` the forward), Heston
+    `heston`, each with `spot` and `dividend` typed; or a `ticker`. Local vol
+    and SLV always need the `ticker`: their surface is its stored chain.
+    With a ticker, the stored SVI surface is returned beside the model
+    (`market`), at the same dates and moneyness."""
+
+    model: SimulationModel
+    ticker: Optional[str] = Field(None, min_length=1)
+    spot: Optional[float] = Field(None, gt=0)
+    dividend: float = 0.0
+    vol: Optional[float] = Field(None, gt=0)
+    sabr: Optional[SABRParamsIn] = None
+    heston: Optional[HestonParams] = None
+    rate: float = 0.05
+    ttm: float = Field(1.0, gt=0, le=5)
+    n_steps: int = Field(60, ge=4, le=250)
+    n_paths: int = Field(10_000, ge=1_000, le=20_000)
+    n_display: int = Field(30, ge=0, le=100)
+    seed: int = Field(1, ge=1)
+    smile_times: Optional[List[float]] = Field(
+        None,
+        max_length=4,
+        description="Maturities of the vanilla smiles, in years (the nearest "
+        "grid date is used). Default: a quarter, half and all of ttm.",
+    )
+    moneyness: List[float] = Field(
+        default_factory=lambda: [round(0.7 + 0.05 * i, 2) for i in range(13)],
+        min_length=1,
+        max_length=25,
+        description="Strikes as K / F(0, t).",
+    )
+    forward_start: Optional[float] = Field(
+        None,
+        gt=0,
+        description="Start of the forward smile, in years (to ttm). Default: ttm / 2.",
+    )
+    barrier: float = Field(
+        1.2, gt=1, description="Up-and-out barrier, as a multiple of the spot."
+    )
+    barrier_strike: float = Field(1.0, gt=0)
+
+    @model_validator(mode="after")
+    def _inputs(self) -> "DistributionRequest":
+        if self.ticker is None:
+            if self.model in (SimulationModel.local_vol, SimulationModel.slv):
+                raise ValueError(
+                    f"{self.model.value} needs a ticker (its surface is calibrated)"
+                )
+            needed = {
+                SimulationModel.black_scholes: self.vol,
+                SimulationModel.sabr: self.sabr,
+                SimulationModel.heston: self.heston,
+            }[self.model]
+            if needed is None or self.spot is None:
+                raise ValueError(
+                    f"{self.model.value} needs its parameters and a spot, or a ticker"
+                )
+        if self.barrier <= self.barrier_strike:
+            raise ValueError("the barrier must be above the strike")
+        if any(m <= 0 for m in self.moneyness):
+            raise ValueError("moneyness must be > 0")
+        return self
+
+
+class SmileOut(BaseModel):
+    time: float = Field(
+        ..., description="Option maturity in years (T - t1 for the forward smile)."
+    )
+    start: float = Field(0.0, description="Forward smile: t1. Spot smiles: 0.")
+    forward: float
+    moneyness: List[float]
+    strikes: List[float]
+    prices: List[float] = Field(
+        ..., description="Out of the money, discounted to today."
+    )
+    price_stderr: List[float]
+    model_iv: List[Optional[float]] = Field(
+        ..., description="Black-76; null outside the no-arbitrage bounds."
+    )
+    iv_stderr: List[Optional[float]]
+    market_iv: Optional[List[Optional[float]]] = Field(
+        None,
+        description="The stored SVI surface at the same moneyness; null where not quoted.",
+    )
+
+
+class MartingaleOut(BaseModel):
+    mean: List[float] = Field(..., description="E[S_t / N_t], Monte Carlo.")
+    stderr: List[float]
+    exact: List[float] = Field(..., description="S0 e^{-q t}.")
+
+
+class HistogramOut(BaseModel):
+    lo: List[float] = Field(..., description="Per date, the 0.5% quantile of S_t.")
+    hi: List[float] = Field(..., description="Per date, the 99.5% quantile of S_t.")
+    counts: List[List[int]] = Field(
+        ..., description="[date][bin], equal bins on [lo, hi]."
+    )
+    market_density: Optional[List[Optional[List[Optional[float]]]]] = Field(
+        None,
+        description="[date][bin]: the stored surface's risk-neutral density of S_t "
+        "at each bin centre (Breeden-Litzenberger); null outside the quoted dates.",
+    )
+
+
+class BarrierOut(BaseModel):
+    barrier: float
+    strike: float
+    price: float
+    stderr: float
+    vanilla_price: float
+    vanilla_stderr: float
+
+
+class DistributionMarket(BaseModel):
+    ticker: str
+    snapshot: date
+    spot: float
+    dividend: float
+    first_slice: float = Field(
+        ..., description="Maturity of the first surface slice, in years."
+    )
+    last_slice: float
+    arbitrage_dates: List[float] = Field(
+        default_factory=list,
+        description="Dates whose stored smile is not a density (butterfly or "
+        "call-spread arbitrage): no market density is drawn there.",
+    )
+
+
+class DistributionResponse(BaseModel):
+    model: SimulationModel
+    spot: float
+    rate: float
+    dividend: float
+    n_paths: int
+    time_grid: List[float]
+    paths: List[List[float]]
+    vols: Optional[List[List[Optional[float]]]] = Field(
+        None, description="Instantaneous vol of each display path (null at t = 0)."
+    )
+    quantile_levels: List[float]
+    spot_quantiles: List[List[float]] = Field(..., description="[level][date]")
+    vol_quantiles: Optional[List[List[Optional[float]]]] = None
+    martingale: MartingaleOut
+    atm_vol: List[Optional[float]] = Field(
+        ..., description="ATM-forward implied vol per date."
+    )
+    atm_vol_stderr: List[Optional[float]]
+    histogram: HistogramOut
+    smiles: List[SmileOut]
+    forward_smile: Optional[SmileOut] = None
+    barrier: Optional[BarrierOut] = None
+    market: Optional[DistributionMarket] = None
+
+
 class RiskProfileRequest(BaseModel):
     """A library product whose risk profile to compute (risk_profile.py)."""
 
