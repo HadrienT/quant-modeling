@@ -2474,8 +2474,19 @@
       "DeflatedSharpe": {
         "properties": {
           "best": {
-            "title": "Best",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best"
+          },
+          "best_description": {
+            "title": "Best Description",
+            "type": "string"
           },
           "deflated_sharpe_ratio": {
             "anyOf": [
@@ -2498,6 +2509,16 @@
               }
             ],
             "title": "Expected Maximum"
+          },
+          "journal": {
+            "default": "",
+            "title": "Journal",
+            "type": "string"
+          },
+          "journal_trials": {
+            "default": 0,
+            "title": "Journal Trials",
+            "type": "integer"
           },
           "sharpe": {
             "anyOf": [
@@ -2528,6 +2549,7 @@
         },
         "required": [
           "best",
+          "best_description",
           "sharpe",
           "expected_maximum",
           "sharpe_deviation",
@@ -12196,11 +12218,11 @@
             "type": "string"
           },
           "tickers": {
+            "description": "2 to 30 tickers with universe 'chosen'; empty with 'sp500'.",
             "items": {
               "type": "string"
             },
             "maxItems": 30,
-            "minItems": 2,
             "title": "Tickers",
             "type": "array"
           },
@@ -12212,13 +12234,21 @@
             ],
             "title": "Timing",
             "type": "string"
+          },
+          "universe": {
+            "default": "chosen",
+            "enum": [
+              "chosen",
+              "sp500"
+            ],
+            "title": "Universe",
+            "type": "string"
           }
         },
         "required": [
           "method",
           "lookback",
           "rebalance",
-          "tickers",
           "start",
           "end",
           "initial_capital",
@@ -13990,11 +14020,11 @@
             "type": "integer"
           },
           "tickers": {
+            "description": "2 to 30 tickers with universe 'chosen'; empty with 'sp500'.",
             "items": {
               "type": "string"
             },
             "maxItems": 30,
-            "minItems": 2,
             "title": "Tickers",
             "type": "array"
           },
@@ -14013,10 +14043,18 @@
             "minimum": 60.0,
             "title": "Train",
             "type": "integer"
+          },
+          "universe": {
+            "default": "chosen",
+            "enum": [
+              "chosen",
+              "sp500"
+            ],
+            "title": "Universe",
+            "type": "string"
           }
         },
         "required": [
-          "tickers",
           "start",
           "end",
           "initial_capital",

@@ -1,8 +1,9 @@
 """Read access to the audit database of `quant-platform` (contract §3).
 
 The API never writes there — only `audit-sink` does (platform principle 2) —
-and reads with the `audit_reader` role, for one purpose: the replay endpoint
-(blueprint WP 18e). Same idiom as the sinks: a `Protocol`, the Postgres
+and reads with the `audit_reader` role, for two purposes: the replay endpoint
+(blueprint WP 18e), and the journal of the backtests tried on a universe and a
+period, which the deflated Sharpe ratio counts (WP 24, lot B8). Same idiom as the sinks: a `Protocol`, the Postgres
 implementation, and a setter for tests.
 
 Connection: `QM_AUDIT_DB_DSN` if set, otherwise `QM_AUDIT_DB_HOST` (default
@@ -26,6 +27,10 @@ class AuditStoreUnavailable(RuntimeError):
 
 class EventStore(Protocol):
     def get(self, event_id: str) -> dict[str, Any] | None: ...
+
+    def backtest_requests(
+        self, start: str, end: str, tickers: list[str], universe: str, limit: int
+    ) -> list[dict[str, Any]]: ...
 
 
 class PostgresEventStore:
@@ -55,6 +60,42 @@ class PostgresEventStore:
             if isinstance(row[col], str):
                 row[col] = json.loads(row[col])
         return row
+
+    def backtest_requests(
+        self, start: str, end: str, tickers: list[str], universe: str, limit: int
+    ) -> list[dict[str, Any]]:
+        """The requests of the strategy and validation backtests recorded on
+        this period and universe (the same tickers in any order, or the same
+        index universe), most recent first: {"kind", "request"}."""
+        import psycopg
+
+        try:
+            with psycopg.connect(self._conninfo, connect_timeout=5) as conn:
+                rows = conn.execute(
+                    "SELECT payload->>'kind', payload->'request' FROM audit.events "
+                    "WHERE type = 'backtest.run' "
+                    "AND payload->>'kind' IN ('strategy', 'validation') "
+                    "AND payload->'request'->>'start' = %s "
+                    "AND payload->'request'->>'end' = %s "
+                    "AND COALESCE(payload->'request'->>'universe', 'chosen') = %s "
+                    "AND (payload->'request'->'tickers') @> %s::jsonb "
+                    "AND %s::jsonb @> (payload->'request'->'tickers') "
+                    "ORDER BY occurred_at DESC LIMIT %s",
+                    (
+                        start,
+                        end,
+                        universe,
+                        json.dumps(tickers),
+                        json.dumps(tickers),
+                        limit,
+                    ),
+                ).fetchall()
+        except psycopg.Error as exc:
+            raise AuditStoreUnavailable(f"audit database unreachable: {exc}") from exc
+        return [
+            {"kind": kind, "request": json.loads(req) if isinstance(req, str) else req}
+            for kind, req in rows
+        ]
 
 
 _STORE: EventStore | None = None

@@ -36,8 +36,26 @@ class Metric(BaseModel):
     convention: str
 
 
+#: "chosen": the tickers of the request. "sp500": every S&P 500 member of the
+#: window that has prices, each held only while it is a member
+#: (`prices.sp500_membership`): no look-ahead in the composition. Survivorship
+#: remains, since a delisted company has no prices (186 of the 491 members of
+#: January 2000 do), and the response says so.
+Universe = Literal["chosen", "sp500"]
+
+#: Methods too slow on some 500 names: risk parity took 107 s on 532 names over
+#: fourteen years on the development server, against 12 s for the minimum
+#: variance and 2 s for equal weights.
+SP500_REFUSED_METHODS = ("risk_parity",)
+
+
 class _Window(BaseModel):
-    tickers: list[str] = Field(..., min_length=2, max_length=30)
+    tickers: list[str] = Field(
+        default_factory=list,
+        max_length=30,
+        description="2 to 30 tickers with universe 'chosen'; empty with 'sp500'.",
+    )
+    universe: Universe = "chosen"
     start: date = Field(..., description="First day the strategy is invested")
     end: date
     initial_capital: float = Field(..., gt=0, le=1e12)
@@ -63,6 +81,12 @@ class _Window(BaseModel):
     def _dates(self):
         if self.end <= self.start:
             raise ValueError("end must be after start")
+        if self.universe == "chosen" and len(self.tickers) < 2:
+            raise ValueError("choose at least two tickers")
+        if self.universe == "sp500" and self.tickers:
+            raise ValueError(
+                "the S&P 500 universe takes no tickers: its members are read at each date"
+            )
         return self
 
 
@@ -89,6 +113,15 @@ class StrategyRequest(_Window, Configuration):
     newey_west_lags: int = Field(..., ge=0, le=60)
     factor_dataset: Literal["ff3", "ff5"] = "ff3"
 
+    @model_validator(mode="after")
+    def _sp500_method(self):
+        if self.universe == "sp500" and self.method in SP500_REFUSED_METHODS:
+            raise ValueError(
+                f"{self.method} on the S&P 500 takes minutes (some 500 names): "
+                "choose equal weights, minimum variance or maximum Sharpe"
+            )
+        return self
+
 
 class ValidationRequest(_Window):
     """Every configuration tried is in `grid`: the number of columns is the
@@ -105,6 +138,11 @@ class ValidationRequest(_Window):
 
     @model_validator(mode="after")
     def _shape(self):
+        if self.universe == "sp500":
+            raise ValueError(
+                "the S&P 500 universe runs one strategy at a time: a grid of "
+                "configurations on some 500 names takes minutes"
+            )
         if self.blocks % 2:
             raise ValueError("blocks must be even")
         if self.test_groups >= self.groups:
@@ -279,12 +317,21 @@ class PurgedCv(BaseModel):
 
 
 class DeflatedSharpe(BaseModel):
-    best: int
+    #: Index into the request's grid; None when the best is a configuration of
+    #: the journal (then `best_description` says which).
+    best: Optional[int]
+    best_description: str
     sharpe: Optional[float]
     expected_maximum: Optional[float]
     sharpe_deviation: Optional[float]
+    #: Every configuration counted: the request's grid and the journal's.
     trials: int
     deflated_sharpe_ratio: Optional[float]
+    #: Configurations tried before on this universe and period (the audit
+    #: trail's backtest.run events), not in the request's grid.
+    journal_trials: int = 0
+    #: How the journal was read, in words (or why it could not be).
+    journal: str = ""
 
 
 class Overfitting(BaseModel):

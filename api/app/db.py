@@ -852,6 +852,19 @@ def raw_daily_coverage(tickers: Sequence[str]) -> dict:
         return {t: (lo, hi, int(n)) for t, lo, hi, n in cur.fetchall()}
 
 
+def sp500_membership() -> List[Tuple[str, date, Optional[date]]]:
+    """Every spell of a ticker in the S&P 500, from the latest snapshot of
+    `prices.sp500_membership`: (ticker, date added, date removed or None). A
+    ticker that left and came back has one row per spell."""
+    with _cursor() as cur:
+        cur.execute(
+            "SELECT ticker, date_added, date_removed FROM prices.sp500_membership "
+            "WHERE as_of = (SELECT max(as_of) FROM prices.sp500_membership) "
+            "ORDER BY ticker, date_added"
+        )
+        return [(t, a, r) for t, a, r in cur.fetchall()]
+
+
 def dividends(
     tickers: Sequence[str], start: date, end: date
 ) -> List[Tuple[str, date, float]]:

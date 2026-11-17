@@ -6,6 +6,8 @@ import type {
 
 /** What the page's URL holds: a backtest is a link. */
 export type BacktestView = {
+	/** "chosen": the tickers below; "sp500": every S&P 500 member at each date. */
+	universe: "chosen" | "sp500";
 	tickers: string[];
 	start: string;
 	/** Empty: the last day the database has. */
@@ -30,6 +32,7 @@ export type BacktestView = {
 /** Seven funds across equities, bonds and gold: none of them was chosen for
  * having survived, which a list of today's large companies would be. */
 export const DEFAULT_VIEW: BacktestView = {
+	universe: "chosen",
 	tickers: ["SPY", "EFA", "EEM", "TLT", "IEF", "LQD", "GLD"],
 	start: "2008-01-02",
 	end: "",
@@ -89,10 +92,19 @@ export function decodeView(text?: string): BacktestView {
 /** What the form refuses before the engine does. */
 export function problems(view: BacktestView, last: string): string[] {
 	const out: string[] = [];
-	if (view.tickers.length < 2) out.push("Pick at least two assets.");
+	const sp500 = view.universe === "sp500";
+	if (!sp500 && view.tickers.length < 2) out.push("Pick at least two assets.");
+	if (sp500 && view.method === "risk_parity")
+		out.push(
+			"Risk parity on some 500 names takes minutes: choose another method.",
+		);
 	if (view.start >= (view.end || last))
 		out.push("The start date must be before the end date.");
-	if (isBounded(view.method) && view.maxWeightPct * view.tickers.length < 100)
+	if (
+		!sp500 &&
+		isBounded(view.method) &&
+		view.maxWeightPct * view.tickers.length < 100
+	)
 		out.push(
 			`A cap of ${view.maxWeightPct}% on ${view.tickers.length} assets cannot add up to 100%.`,
 		);
@@ -114,7 +126,8 @@ function configuration(
 
 function window(view: BacktestView, last: string) {
 	return {
-		tickers: view.tickers,
+		universe: view.universe,
+		tickers: view.universe === "sp500" ? [] : view.tickers,
 		start: view.start,
 		end: view.end || last,
 		initial_capital: INITIAL_CAPITAL,
@@ -160,10 +173,13 @@ export const VALIDATION = {
 	blocks: 10,
 } as const;
 
+/** The grid of the validation panel; null on the S&P 500 universe, which
+ * runs one strategy at a time (a grid on some 500 names takes minutes). */
 export function validationRequest(
 	view: BacktestView,
 	last: string,
-): BacktestValidationRequest {
+): BacktestValidationRequest | null {
+	if (view.universe === "sp500") return null;
 	return {
 		...window(view, last),
 		grid: GRID_METHODS.flatMap((method) =>

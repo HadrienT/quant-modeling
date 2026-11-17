@@ -1,5 +1,6 @@
 import type { BacktestStrategy } from "@/shared/api";
 import { GrowthChart, type GrowthSeries, WeightsChart } from "@/shared/viz";
+import { SHOWN, topHoldings } from "./format";
 import { MetricsTable } from "./MetricsTable";
 import { INITIAL_CAPITAL } from "./state";
 
@@ -71,11 +72,10 @@ export function PerformancePanel({ data }: { data: BacktestStrategy }) {
 			/>
 			<WeightsChart
 				title="What the strategy held"
-				subtitle="Target weights decided on each rebalancing date, held until the next."
+				subtitle={`Target weights decided on each rebalancing date, held until the next${data.tickers.length > SHOWN ? `; the ${SHOWN} largest on average, the others summed` : ""}.`}
 				dates={data.allocations.dates}
 				end={data.dates[data.dates.length - 1]!}
-				labels={data.tickers}
-				weights={data.allocations.weights}
+				{...topHoldings(data.tickers, data.allocations.weights)}
 			/>
 			<MetricsTable columns={columns} />
 		</div>

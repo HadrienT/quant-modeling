@@ -3239,11 +3239,23 @@ export interface components {
         /** DeflatedSharpe */
         DeflatedSharpe: {
             /** Best */
-            best: number;
+            best: number | null;
+            /** Best Description */
+            best_description: string;
             /** Deflated Sharpe Ratio */
             deflated_sharpe_ratio: number | null;
             /** Expected Maximum */
             expected_maximum: number | null;
+            /**
+             * Journal
+             * @default
+             */
+            journal: string;
+            /**
+             * Journal Trials
+             * @default 0
+             */
+            journal_trials: number;
             /** Sharpe */
             sharpe: number | null;
             /** Sharpe Deviation */
@@ -7441,14 +7453,23 @@ export interface components {
              * @description First day the strategy is invested
              */
             start: string;
-            /** Tickers */
-            tickers: string[];
+            /**
+             * Tickers
+             * @description 2 to 30 tickers with universe 'chosen'; empty with 'sp500'.
+             */
+            tickers?: string[];
             /**
              * Timing
              * @default next_close
              * @enum {string}
              */
             timing: "next_close" | "next_open";
+            /**
+             * Universe
+             * @default chosen
+             * @enum {string}
+             */
+            universe: "chosen" | "sp500";
         };
         /** StrategyResponse */
         StrategyResponse: {
@@ -8147,8 +8168,11 @@ export interface components {
             test: number;
             /** Test Groups */
             test_groups: number;
-            /** Tickers */
-            tickers: string[];
+            /**
+             * Tickers
+             * @description 2 to 30 tickers with universe 'chosen'; empty with 'sp500'.
+             */
+            tickers?: string[];
             /**
              * Timing
              * @default next_close
@@ -8160,6 +8184,12 @@ export interface components {
              * @description Walk-forward: choosing window
              */
             train: number;
+            /**
+             * Universe
+             * @default chosen
+             * @enum {string}
+             */
+            universe: "chosen" | "sp500";
         };
         /** ValidationResponse */
         ValidationResponse: {
