@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "../library_exercise.hpp"
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/date.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
@@ -48,6 +49,8 @@ namespace quantModeling
                 std::ifstream in(entry.path());
                 std::stringstream text;
                 text << in.rdbuf();
+                if (library_script_has_exercise(text.str()))
+                    continue;
                 out.push_back({entry.path().stem().string(), text.str()});
             }
             std::sort(out.begin(), out.end(), [](const auto &a, const auto &b)

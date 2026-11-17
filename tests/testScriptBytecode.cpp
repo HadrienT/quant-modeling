@@ -1,3 +1,4 @@
+#include "library_exercise.hpp"
 #include <gtest/gtest.h>
 
 #include <Eigen/Core>
@@ -41,6 +42,8 @@ namespace quantModeling
                 std::ifstream in(entry.path());
                 std::stringstream text;
                 text << in.rdbuf();
+                if (library_script_has_exercise(text.str()))
+                    continue;
                 out.push_back({entry.path().stem().string(), text.str()});
             }
             std::sort(out.begin(), out.end(), [](const auto &a, const auto &b)
@@ -82,9 +85,9 @@ namespace quantModeling
         }
     } // namespace
 
-    TEST(ScriptBytecode, TheLibraryHasItsFortyTwoScripts)
+    TEST(ScriptBytecode, TheLibraryHasItsFortyFourScriptsWithoutExercise)
     {
-        EXPECT_EQ(library().size(), 42u);
+        EXPECT_EQ(library().size(), 44u);
     }
 
     TEST(ScriptBytecode, HardPricesAreBitIdenticalToTheTree)
