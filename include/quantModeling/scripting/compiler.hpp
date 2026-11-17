@@ -33,14 +33,20 @@ namespace quantModeling::scripting
     class Compiler final : public ConstVisitor
     {
       public:
-        Program compile(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool smooth_ramp = false)
+        /// `n_spots`: the script's underlyings, the regressors of an
+        /// exercise() / call() without arguments.
+        Program compile(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool smooth_ramp = false,
+                        std::size_t n_spots = 0)
         {
             p_ = Program{};
             p_.fuzzy = fuzzy;
             smooth_ = smooth_ramp;
+            n_spots_ = static_cast<std::int32_t>(n_spots);
             p_.n_vars = static_cast<int>(n_vars);
+            event_ = -1;
             for (const Event &event : events)
             {
+                ++event_;
                 p_.event_begin.push_back(pc());
                 max_spot_ = max_df_ = max_surv_ = -1;
                 slot_ = mode_ = 0; // an event\'s ifs reuse the previous event\'s slots
@@ -108,10 +114,35 @@ namespace quantModeling::scripting
         void visit(const NodeSupEqual &n) override { comparison(n, Op::Ge, Op::FCmpGe); }
         void visit(const NodeInferior &n) override { comparison(n, Op::Lt, Op::FCmpLt); }
         void visit(const NodeInfEqual &n) override { comparison(n, Op::Le, Op::FCmpLe); }
-        void visit(const NodeExercise &) override
+        /// The regressors left to right (none: every spot of the event, as
+        /// Evaluator::exercise), then the decision of this event.
+        void visit(const NodeExercise &n) override
         {
-            throw InvalidInput("script compiler: exercise() and call() run on the tree evaluator only "
-                               "(the bytecode and the GPU have no early exercise)");
+            std::int32_t count = 0;
+            if (n.arguments.empty())
+                for (; count < n_spots_; ++count)
+                {
+                    max_spot_ = std::max(max_spot_, count);
+                    emit(Op::Spot, count), push();
+                }
+            else
+                for (const ExprTree &argument : n.arguments)
+                {
+                    argument->accept(*this);
+                    ++count;
+                }
+            if (count > kMaxExerciseRegressors)
+                throw InvalidInput("script compiler: exercise() / call() with more than " +
+                                   std::to_string(kMaxExerciseRegressors) +
+                                   " regressors runs on the tree evaluator only");
+            p_.has_exercise = true;
+            emit(Op::Exercise, count, event_, p_.fuzzy ? 1.0 : 0.0);
+            for (std::int32_t i = 0; i < count; ++i)
+                pop();
+            if (p_.fuzzy)
+                push_degree();
+            else
+                push();
         }
         void visit(const NodeAnd &n) override { connective(n, Op::And, Op::FAnd); }
         void visit(const NodeOr &n) override { connective(n, Op::Or, Op::FOr); }
@@ -268,6 +299,8 @@ namespace quantModeling::scripting
 
         Program p_;
         bool smooth_ = false;
+        std::int32_t n_spots_ = 0;
+        std::int32_t event_ = -1;
         int sp_ = 0;
         int dp_ = 0;
         int slot_ = 0;
@@ -278,9 +311,9 @@ namespace quantModeling::scripting
     };
 
     inline Program compile_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy,
-                                  bool smooth_ramp = false)
+                                  bool smooth_ramp = false, std::size_t n_spots = 0)
     {
-        return Compiler().compile(events, n_vars, fuzzy, smooth_ramp);
+        return Compiler().compile(events, n_vars, fuzzy, smooth_ramp, n_spots);
     }
 
 } // namespace quantModeling::scripting

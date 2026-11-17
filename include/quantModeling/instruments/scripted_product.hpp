@@ -266,13 +266,22 @@ namespace quantModeling
                 evaluator_->set_baseline(baseline_);
             }
 
-            // Early exercise runs on the tree evaluator only: the bytecode (and
-            // with it the GPU) has no exercise instruction.
-            if (settings.bytecode && !has_exercise_)
+            // Early exercise compiles too (WP 26 §15): the bytecode decides
+            // with the fitted rule, the pilot stays on the tree evaluator. It
+            // has no IR, hence no GPU kernel; with more regressors than the
+            // machine holds it stays on the tree evaluator altogether.
+            const std::size_t regressors =
+                !has_exercise_ ? 0
+                               : (exercises.front()->arguments.empty() ? n_underlyings_
+                                                                       : exercises.front()->arguments.size());
+            exercise_regressors_ = regressors;
+            if (settings.bytecode && regressors <= static_cast<std::size_t>(scripting::kMaxExerciseRegressors))
             {
-                program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy, settings.smooth_ramp);
-                ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy, settings.terms_as_parameters,
-                                                  settings.smooth_ramp);
+                program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy, settings.smooth_ramp,
+                                                     n_underlyings_);
+                if (!has_exercise_)
+                    ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy,
+                                                      settings.terms_as_parameters, settings.smooth_ramp);
                 buffers_.vars.assign(static_cast<std::size_t>(program_.n_vars), T(0));
                 buffers_.stack.assign(static_cast<std::size_t>(program_.max_stack), T(0));
                 buffers_.degrees.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
@@ -436,7 +445,7 @@ namespace quantModeling
             if (control_index_ < 0)
                 return 0.0;
             const auto v = static_cast<std::size_t>(control_index_);
-            if (!compiled_)
+            if (!runs_bytecode())
                 return static_cast<Real>(
                     (state ? *static_cast<const TreeState *>(state)->evaluator : *evaluator_).variables()[v]);
             const auto *b = state ? static_cast<const MachineBuffers *>(state) : &buffers_;
@@ -448,11 +457,15 @@ namespace quantModeling
         bool has_exercise() const { return has_exercise_; }
         bool issuer_exercise() const { return policy_.issuer; }
 
-        /// The exercise rule payoffs() applies from now on.
+        /// The exercise rule payoffs() applies from now on. A compiled
+        /// script then prices through the bytecode, whose Exercise
+        /// instruction reads the rule as flat data.
         void set_exercise_policy(scripting::ExercisePolicy policy)
         {
             policy_ = std::move(policy);
             evaluator_->set_exercise_policy(&policy_);
+            flatten_policy();
+            policy_set_ = true;
         }
         const scripting::ExercisePolicy &exercise_policy() const { return policy_; }
 
@@ -463,6 +476,8 @@ namespace quantModeling
          */
         ExercisePilotPath exercise_pilot(const Scenario<T> &path) const
         {
+            if (compiled_)
+                return exercise_pilot_compiled(path);
             using Eval = scripting::Evaluator<T>;
             ExercisePilotPath out;
             std::vector<typename Eval::ExerciseObservation> seen;
@@ -541,7 +556,7 @@ namespace quantModeling
 
         void payoffs(const Scenario<T> &path, std::vector<T> &out) const override
         {
-            if (compiled_)
+            if (runs_bytecode())
                 return payoffs_compiled(path, out, buffers_);
             out.assign(1, run_tree(path));
         }
@@ -553,8 +568,8 @@ namespace quantModeling
             std::vector<int> if_mode;
         };
 
-        /// The tree evaluator's per-thread state (bytecode off, or early
-        /// exercise): a copy of the product's evaluator -- its variables,
+        /// The tree evaluator's per-thread state (bytecode off, or an early
+        /// exercise the bytecode does not take): a copy of the product's evaluator -- its variables,
         /// baseline and settings, and the exercise rule it points to, which
         /// pricing only reads. The same evaluations as payoffs(), so the
         /// same bits on any number of threads.
@@ -564,13 +579,13 @@ namespace quantModeling
         };
 
         /// Concurrent payoffs: on the bytecode path (hard or fuzzy) the state
-        /// is five buffers; on the tree evaluator, a copy of it (WP 26: a
-        /// script with exercise() then runs on every thread, its price and
-        /// its tape's risks alike). Made once the exercise rule is set -- the
-        /// engines ask for it after fit_exercise_policy.
+        /// is five buffers; on the tree evaluator, a copy of it. For a script
+        /// with exercise(), made once the exercise rule is set -- the engines
+        /// ask for it after fit_exercise_policy -- and used under that rule:
+        /// the state's kind follows runs_bytecode().
         std::unique_ptr<typename ISimulatableProduct<T>::PayoffState> make_payoff_state() const override
         {
-            if (compiled_)
+            if (runs_bytecode())
                 return std::make_unique<MachineBuffers>(buffers_);
             auto state = std::make_unique<TreeState>();
             if (const auto *fuzzy = dynamic_cast<const scripting::FuzzyEvaluator<T> *>(evaluator_.get()))
@@ -584,7 +599,7 @@ namespace quantModeling
         void payoffs_with_state(const Scenario<T> &path, std::vector<T> &out,
                                 typename ISimulatableProduct<T>::PayoffState &state) const override
         {
-            if (!compiled_)
+            if (!runs_bytecode())
             {
                 out.assign(1, run_tree(path, *static_cast<TreeState &>(state).evaluator));
                 return;
@@ -600,11 +615,12 @@ namespace quantModeling
         };
 
         /// kBatch for a compiled script (hard or fuzzy) priced in double;
-        /// 0 otherwise (the tree evaluator, early exercise, AAD).
+        /// 0 otherwise (the tree evaluator, early exercise before its rule
+        /// is set, AAD).
         int batch_width() const override
         {
             if constexpr (std::is_same_v<T, double>)
-                return compiled_ && batchable_ ? scripting::kBatch : 0;
+                return runs_bytecode() && batchable_ ? scripting::kBatch : 0;
             else
                 return 0;
         }
@@ -639,6 +655,9 @@ namespace quantModeling
                             baseline_.empty() ? 0.0 : baseline_[static_cast<std::size_t>(v)];
                 scripting::BatchMachine m{b.vars.data(), b.stack.data(), b.degrees.data(), b.if_slots.data(), {}};
                 const scripting::ProgramView view = program_.view();
+                const scripting::ExerciseView rule = exercise_view();
+                if (has_exercise_)
+                    m.exercise = &rule;
                 const unsigned lanes = count >= W ? (1u << W) - 1u : (1u << count) - 1u;
                 const double *spots[W];
                 const double *discounts[W];
@@ -658,6 +677,8 @@ namespace quantModeling
                     scripting::run_event_batch(view, program_.event_begin[i], program_.event_begin[i + 1], m, spots,
                                                discounts, numeraire, lanes, survivals);
                 }
+                if (m.exercise_twice)
+                    throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
                 for (int l = 0; l < count; ++l)
                     out[l] = m.payoff[l];
             }
@@ -716,6 +737,120 @@ namespace quantModeling
                 evaluator.run(*statement);
         }
 
+        /// Whether a path runs through the bytecode: a compiled script, and
+        /// for one with early exercise, once its rule is set (before that
+        /// the tree evaluator refuses it, saying what to call).
+        bool runs_bytecode() const { return compiled_ && (!has_exercise_ || policy_set_); }
+
+        /// exercise_pilot through the bytecode (WP 26 §15): the tree
+        /// evaluator's runs, event for event -- the never-exercised run
+        /// logging the decisions it reaches and keeping the variables and
+        /// the payoff at the start of every event, then one run per decision
+        /// restarted there with the right exercised. The same values, to the
+        /// bit.
+        ExercisePilotPath exercise_pilot_compiled(const Scenario<T> &path) const
+        {
+            ExercisePilotPath out;
+            const std::size_t n_events = events_.size(), n_vars = static_cast<std::size_t>(program_.n_vars);
+            PilotScratch &w = pilot_;
+            w.vars.resize(n_events * n_vars);
+            w.payoffs.resize(n_events);
+            w.log_events.resize(n_events + 1);
+            w.log_regressors.resize((n_events + 1) * static_cast<std::size_t>(scripting::kMaxExerciseRegressors));
+            MachineBuffers &b = buffers_;
+            if (baseline_.empty())
+                std::fill(b.vars.begin(), b.vars.end(), T(0));
+            else
+                b.vars = baseline_;
+            scripting::Machine<T> m{b.vars.data(), b.stack.data(), b.degrees.data(), b.if_slots.data(),
+                                    b.if_mode.data(), T(0)};
+            const scripting::ProgramView view = program_.view();
+            const auto run = [&](std::size_t i)
+            {
+                const Sample<T> &smp = path[i];
+                check_event_sizes(smp, i);
+                scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data());
+                if (m.exercise_twice)
+                    throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
+            };
+            scripting::ExerciseLog log{w.log_events.data(), w.log_regressors.data(), 0};
+            m.exercise_mode = scripting::ExerciseMode::Never;
+            m.exercise_log = &log;
+            for (std::size_t i = 0; i < n_events; ++i)
+            {
+                std::copy(b.vars.begin(), b.vars.end(), w.vars.begin() + static_cast<std::ptrdiff_t>(i * n_vars));
+                w.payoffs[i] = m.payoff;
+                run(i);
+            }
+            out.never = static_cast<double>(m.payoff);
+            m.exercise_log = nullptr;
+            m.exercise_mode = scripting::ExerciseMode::AtEvent;
+            out.opportunities.reserve(static_cast<std::size_t>(log.count));
+            for (std::int32_t k = 0; k < log.count; ++k)
+            {
+                const auto event = static_cast<std::size_t>(log.events[k]);
+                std::copy_n(w.vars.begin() + static_cast<std::ptrdiff_t>(event * n_vars), n_vars, b.vars.begin());
+                m.payoff = w.payoffs[event];
+                m.exercised = false;
+                m.exercise_event = -1;
+                m.exercise_at = log.events[k];
+                for (std::size_t i = event; i < n_events; ++i)
+                    run(i);
+                const double *r = w.log_regressors.data() +
+                                  static_cast<std::size_t>(k) * static_cast<std::size_t>(scripting::kMaxExerciseRegressors);
+                out.opportunities.push_back(
+                    {event, std::vector<double>(r, r + exercise_regressors_), static_cast<double>(m.payoff)});
+            }
+            return out;
+        }
+
+        /// policy_ as the flat data the Exercise instruction reads
+        /// (scripting::ExerciseView), one rule per event.
+        void flatten_policy()
+        {
+            exercise_rules_.assign(events_.size(), scripting::ExerciseRule{});
+            exercise_data_.clear();
+            exercise_exponents_.clear();
+            if (!compiled_)
+                return;
+            for (const auto &[event, reg] : policy_.by_event)
+            {
+                if (event >= events_.size())
+                    throw InvalidInput("exercise rule: an event beyond the script's timeline");
+                const std::size_t n = reg.mean.size();
+                if (n != exercise_regressors_)
+                    throw InvalidInput("exercise(): the number of regressors changed between the pilot and the pricing");
+                if (reg.scale.size() != n ||
+                    reg.hi.size() != reg.lo.size() || reg.beta.size() != reg.terms.size())
+                    throw InvalidInput("exercise rule: inconsistent regression at event " + std::to_string(event));
+                scripting::ExerciseRule &rule = exercise_rules_[event];
+                rule.first = static_cast<std::int32_t>(exercise_data_.size());
+                rule.first_exponent = static_cast<std::int32_t>(exercise_exponents_.size());
+                rule.n = static_cast<std::int32_t>(n);
+                rule.n_box = static_cast<std::int32_t>(std::min(reg.lo.size(), n));
+                rule.n_terms = static_cast<std::int32_t>(reg.terms.size());
+                const auto append = [&](const std::vector<double> &v, std::size_t count)
+                { exercise_data_.insert(exercise_data_.end(), v.begin(), v.begin() + static_cast<std::ptrdiff_t>(count)); };
+                append(reg.mean, n);
+                append(reg.scale, n);
+                append(reg.lo, static_cast<std::size_t>(rule.n_box));
+                append(reg.hi, static_cast<std::size_t>(rule.n_box));
+                append(reg.beta, reg.beta.size());
+                for (const std::vector<int> &term : reg.terms)
+                {
+                    if (term.size() != n)
+                        throw InvalidInput("exercise rule: inconsistent monomials at event " + std::to_string(event));
+                    exercise_exponents_.insert(exercise_exponents_.end(), term.begin(), term.end());
+                }
+            }
+        }
+
+        scripting::ExerciseView exercise_view() const
+        {
+            return {exercise_rules_.data(), exercise_data_.data(), exercise_exponents_.data(), policy_.issuer};
+        }
+
         /// The bytecode path: the tree evaluator's semantics, including its
         /// run-time checks on what the model supplies.
         /// The sample of event i carries what the event's bytecode reads.
@@ -746,6 +881,9 @@ namespace quantModeling
             scripting::Machine<T> m{b.vars.data(), b.stack.data(), b.degrees.data(), b.if_slots.data(),
                                     b.if_mode.data(), T(0)};
             const scripting::ProgramView view = program_.view();
+            const scripting::ExerciseView rule = exercise_view();
+            if (has_exercise_)
+                m.exercise = &rule;
             for (std::size_t i = 0; i < events_.size(); ++i)
             {
                 const Sample<T> &smp = path[i];
@@ -753,6 +891,8 @@ namespace quantModeling
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
                                      smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data());
             }
+            if (m.exercise_twice)
+                throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
             out.assign(1, m.payoff);
         }
 
@@ -837,8 +977,23 @@ namespace quantModeling
         // The machine's per-path buffers for payoffs(); payoffs_with_state()
         // runs on a thread's own copy (make_payoff_state()).
         mutable MachineBuffers buffers_;
+        // The compiled pilot's: the variables and the payoff at the start of
+        // each event, and the decisions the never-exercised run reached.
+        struct PilotScratch
+        {
+            std::vector<T> vars, payoffs;
+            std::vector<std::int32_t> log_events;
+            std::vector<double> log_regressors;
+        };
+        mutable PilotScratch pilot_;
         bool has_exercise_ = false;
         scripting::ExercisePolicy policy_;
+        bool policy_set_ = false;
+        std::size_t exercise_regressors_ = 0; ///< of each exercise() / call()
+        // policy_ flattened for the bytecode (flatten_policy)
+        std::vector<scripting::ExerciseRule> exercise_rules_;
+        std::vector<double> exercise_data_;
+        std::vector<std::int32_t> exercise_exponents_;
     };
 
 } // namespace quantModeling

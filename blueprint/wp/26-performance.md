@@ -1680,7 +1680,7 @@ end of each lot, not only its own bench.
   steps a year, 200 000 Sobol points, two threads): price 6.9 → 4.4 s, price
   and AAD risks 25.4 → 13.3 s (it was over the API's 20 s); the exercise
   rule's fit stays on one thread. The bytecode, the batched interpreter and
-  the GPU still have no exercise().
+  the GPU still have no exercise(). **Since 2026-11-17 it compiles (§15)**: the scalar and the batched interpreter, the pilot included; the GPU is what remains.
 - **Sobol dimension.** The finest MLQMC level is capped by 21 201 dimensions
   (§9).
 - **GPU memory.** The LLM of the scripting assistant shares both cards
@@ -1755,3 +1755,69 @@ aside for them is measured again and kept only if it pays.
   they already run as eight independent chains per path (§ WP 26 rough
   Bergomi), and only an FFT would change their order of cost, for at most
   about 12 % of that model's path.
+
+## 15. Early exercise in the bytecode (#282, 2026-11-17)
+
+Scripts with `exercise()` / `call()` ran on the tree evaluator only: the
+pilot, the pricing pass and the tape's risks (§12). They now compile, and
+run on the scalar interpreter (prices and the tape) and on the batched one
+(prices).
+
+**One instruction.** `Exercise a b`: pops `a` regressors (none in the script:
+the event's spots, which the compiler pushes), decides for event `b`, and
+pushes 1 / 0 on the value stack -- a crisp degree on the degree stack in
+fuzzy mode, as `FuzzyEvaluator` does. The machine carries what
+`Evaluator::exercise` carries: the right exercised or not, the last event
+that decided (a second decision in one event is the tree's error, raised
+after the path), and the mode -- the fitted rule, or the pilot's two
+branches (never; at one event) with a log of the decisions reached.
+
+**The rule as flat data.** `ExerciseView` holds one `ExerciseRule` per event
+(means, scales, the box of issue #228, the monomials' exponents and
+coefficients) and `exercise_decide` repeats `ExercisePolicy::decide`
+operation for operation; `ScriptedProduct::set_exercise_policy` flattens the
+rule. No pointer to host structures, so the same function can run on the
+device (step 3).
+
+**The batched interpreter.** Each active lane decides on its own regressors
+and keeps its own state (a bit of `exercised`, its last event); a lane that
+does not reach the instruction (masked by an `if`) is left alone, as its
+path is on the scalar interpreter.
+
+**The pilot too.** With the pricing pass compiled, the pilot became most of a
+request: it runs the script once without exercising and once per decision
+reached, restarted at that event. `exercise_pilot` now does those runs on
+the machine (the variables and the payoff saved at the start of each event);
+the regression itself is unchanged.
+
+**Routing.** Before a rule is set the script still goes to the tree
+evaluator, which refuses it and says what to call. More than 8 regressors
+(`kMaxExerciseRegressors`) stay on the tree evaluator. No IR is lowered for
+these scripts, and `script_gpu_unsupported` says so: the GPU is step 3.
+
+**Same bits.** Tree evaluator against bytecode, the pilot included, on five
+scripts (a Bermudan put with two regressors, `exercise()` without argument,
+a chooser, an issuer's `call()` nested in an `if` before a smoothed
+condition, a negated decision in a conjunction), hard and fuzzy: the price
+and its error (`Lsm.TheBytecodeDecidesAsTheTreeEvaluatorBitForBit`), the
+tape's risks (`TheBytecodesTapeRisksAreTheTreeEvaluators`), path by path
+against batched against a pool with a partly filled batch
+(`TheBatchedInterpreterDecidesLaneByLane`), and the two errors kept.
+
+**Measured** (one thread, the server, a monthly Bermudan put under
+Black-Scholes, two regressors; prices and risks identical to the last bit):
+
+| | tree evaluator | bytecode |
+|---|---|---|
+| pilot, 50 000 paths: the script's runs | 0.758 s | 0.187 s |
+| fit (pilot + regression) | 1.06 s | 0.46-0.51 s |
+| price, 200 000 paths | 0.753 s | 0.290 s path by path, 0.247-0.256 s batched |
+| request (fit + price) | 1.82 s | 0.72 s |
+| tape risks, 100 000 paths | 0.415 s | 0.233 s |
+
+What is left of the fit is the regression (about 0.27 s here: a pivoted QR
+per date on up to 50 000 rows) and it is still one thread, as the pilot is.
+
+**Left.** Step 3 of #282: an `Exercise` operation in the IR reading the rule
+as data, the price kernel on the GPU, then the risks (the decision held
+fixed, as on the tape). The pilot on a pool.

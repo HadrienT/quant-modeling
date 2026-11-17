@@ -85,7 +85,11 @@ namespace quantModeling::scripting
         Jump,        ///< to a
         FIfBegin,    ///< fuzzy if a: pop degree; to b (else) when <= 0
         FIfMid,      ///< fuzzy if a: end of then; to b (end) when then-only
-        FIfEnd       ///< fuzzy if a: blend
+        FIfEnd,      ///< fuzzy if a: blend
+        // early exercise (WP 26 §15): pop a regressors; the decision of event
+        // b under the fitted rule, 1 / 0 on the value stack (x != 0: on the
+        // degree stack, a crisp degree)
+        Exercise
     };
 
     struct Instr
@@ -118,6 +122,84 @@ namespace quantModeling::scripting
         const std::int32_t *aff = nullptr;
     };
 
+    /// The most regressors an exercise() / call() may take in the bytecode
+    /// (a script with more stays on the tree evaluator).
+    inline constexpr int kMaxExerciseRegressors = 8;
+
+    /// The regression of one exercise date as flat data (ExerciseRegression,
+    /// scripting/exercise.hpp): in ExerciseView::data, from `first`, the
+    /// regressors' means and scales (n each), the box where the rule may
+    /// exercise (lo then hi, n_box each) and the monomials' coefficients
+    /// (n_terms); in ExerciseView::exponents, from `first_exponent`, each
+    /// monomial's exponents (n per monomial). first < 0: no rule at this
+    /// event (no pilot path reached it), never exercised.
+    struct ExerciseRule
+    {
+        std::int32_t first = -1;
+        std::int32_t first_exponent = 0;
+        std::int32_t n = 0;
+        std::int32_t n_box = 0;
+        std::int32_t n_terms = 0;
+    };
+
+    /// The fitted exercise rule of a script (ExercisePolicy), read-only, host
+    /// or device memory: one ExerciseRule per event.
+    struct ExerciseView
+    {
+        const ExerciseRule *rules = nullptr;
+        const double *data = nullptr;
+        const std::int32_t *exponents = nullptr;
+        bool issuer = false;
+    };
+
+    /// ExercisePolicy::decide on the flat rule, operation for operation: the
+    /// same decision on the same regressors.
+    QM_HOST_DEVICE inline bool exercise_decide(const ExerciseView &v, int event, const double *regressors)
+    {
+        const ExerciseRule &r = v.rules[event];
+        if (r.first < 0)
+            return false;
+        const double *mean = v.data + r.first, *scale = mean + r.n;
+        const double *lo = scale + r.n, *hi = lo + r.n_box, *beta = hi + r.n_box;
+        for (int i = 0; i < r.n_box; ++i)
+            if (regressors[i] < lo[i] || regressors[i] > hi[i])
+                return false; // outside where the rule was fitted
+        double z[kMaxExerciseRegressors];
+        for (int i = 0; i < r.n; ++i)
+            z[i] = (regressors[i] - mean[i]) / scale[i];
+        const std::int32_t *e = v.exponents + r.first_exponent;
+        double g = 0.0;
+        for (int t = 0; t < r.n_terms; ++t, e += r.n)
+        {
+            double phi = 1.0;
+            for (int i = 0; i < r.n; ++i)
+                for (int k = 0; k < e[i]; ++k)
+                    phi *= z[i];
+            g += beta[t] * phi;
+        }
+        return v.issuer ? g < 0.0 : g > 0.0;
+    }
+
+    /// How the Exercise instruction decides (Evaluator::ExerciseMode): the
+    /// fitted rule, or the pilot's branches -- never, or at one event.
+    enum class ExerciseMode : std::uint8_t
+    {
+        Rule,
+        Never,
+        AtEvent
+    };
+
+    /// The pilot's record of the decisions a path reached before exercising:
+    /// decision k at events[k] with the regressors
+    /// regressors[k * kMaxExerciseRegressors ...]. The caller sizes both for
+    /// one decision per event.
+    struct ExerciseLog
+    {
+        std::int32_t *events = nullptr;
+        double *regressors = nullptr;
+        std::int32_t count = 0;
+    };
+
     /// One path's machine state. Sizes come from the compiled Program.
     template <class T>
     struct Machine
@@ -128,6 +210,19 @@ namespace quantModeling::scripting
         T *if_slots = nullptr;  ///< n_if_slots
         int *if_mode = nullptr; ///< n_if_modes
         T payoff{};
+        // Early exercise: the rule (null when the script has none), whether
+        // the right was exercised on this path, the last event that decided,
+        // and whether an event decided twice (the caller's error: one
+        // decision per date, as the tree evaluator throws).
+        const ExerciseView *exercise = nullptr;
+        bool exercised = false;
+        std::int32_t exercise_event = -1;
+        bool exercise_twice = false;
+        // The pilot (ScriptedProduct::exercise_pilot): the branch to run,
+        // and where the decisions reached are written.
+        ExerciseMode exercise_mode = ExerciseMode::Rule;
+        std::int32_t exercise_at = -1;
+        ExerciseLog *exercise_log = nullptr;
     };
 
     namespace bytecode_detail
@@ -524,6 +619,46 @@ namespace quantModeling::scripting
                     pc = in.a;
                     break;
 
+                case Op::Exercise: // Evaluator::exercise under a fitted rule
+                {
+                    double regressors[kMaxExerciseRegressors];
+                    sp -= in.a;
+                    for (int i = 0; i < in.a; ++i)
+                        regressors[i] = dbl(S[sp + i]);
+                    if (m.exercise_event == in.b)
+                        m.exercise_twice = true;
+                    m.exercise_event = in.b;
+                    bool now = false;
+                    if (!m.exercised)
+                    {
+                        if (m.exercise_log != nullptr)
+                        {
+                            ExerciseLog &log = *m.exercise_log;
+                            log.events[log.count] = in.b;
+                            for (int i = 0; i < in.a; ++i)
+                                log.regressors[log.count * kMaxExerciseRegressors + i] = regressors[i];
+                            ++log.count;
+                        }
+                        switch (m.exercise_mode)
+                        {
+                            case ExerciseMode::Never:
+                                break;
+                            case ExerciseMode::AtEvent:
+                                now = in.b == m.exercise_at;
+                                break;
+                            case ExerciseMode::Rule:
+                                now = m.exercise != nullptr && exercise_decide(*m.exercise, in.b, regressors);
+                                break;
+                        }
+                        m.exercised = now;
+                    }
+                    if (in.x != 0.0)
+                        D[dp++] = now ? T(1) : T(0);
+                    else
+                        S[sp++] = now ? T(1) : T(0);
+                    break;
+                }
+
                 case Op::FIfBegin: // FuzzyEvaluator::visit(NodeIf), up to the then-branch
                 {
                     const FuzzyIf &f = p.ifs[in.a];
@@ -631,7 +766,14 @@ namespace quantModeling::scripting
         double *degrees = nullptr;  ///< max_degrees * kBatch (fuzzy)
         double *if_slots = nullptr; ///< n_if_slots * kBatch (fuzzy)
         double payoff[kBatch] = {};
+        // Early exercise, per lane (Machine's fields): bit l of `exercised`,
+        // exercise_event[l]; one flag for a second decision in an event.
+        const ExerciseView *exercise = nullptr;
+        unsigned exercised = 0u;
+        std::int32_t exercise_event[kBatch] = {-1, -1, -1, -1, -1, -1, -1, -1};
+        bool exercise_twice = false;
     };
+    static_assert(kBatch == 8, "BatchMachine::exercise_event's initialiser lists kBatch lanes");
 
     /**
      * @brief code[begin, end) on up to kBatch paths at once (prices): each
@@ -894,6 +1036,35 @@ namespace quantModeling::scripting
                     ++dp;
                     break;
                 }
+                case Op::Exercise: // each active lane decides, as the scalar interpreter's path
+                {
+                    const double *regressors = S + (sp - in.a) * W; // regressor i of lane l at [i * W + l]
+                    double decision[W];
+                    for (int l = 0; l < W; ++l)
+                    {
+                        decision[l] = 0.0;
+                        if (!on(l)) // the lane does not reach this exercise(): its state stays
+                            continue;
+                        if (m.exercise_event[l] == in.b)
+                            m.exercise_twice = true;
+                        m.exercise_event[l] = in.b;
+                        if (((m.exercised >> l) & 1u) != 0u)
+                            continue;
+                        double lane[kMaxExerciseRegressors];
+                        for (int i = 0; i < in.a; ++i)
+                            lane[i] = regressors[i * W + l];
+                        if (m.exercise != nullptr && exercise_decide(*m.exercise, in.b, lane))
+                        {
+                            m.exercised |= 1u << l;
+                            decision[l] = 1.0;
+                        }
+                    }
+                    sp -= in.a;
+                    double *out = in.x != 0.0 ? D + (dp++) * W : S + (sp++) * W;
+                    for (int l = 0; l < W; ++l)
+                        out[l] = decision[l];
+                    break;
+                }
                 case Op::FConst:
                     for (int l = 0; l < W; ++l)
                         D[dp * W + l] = in.x;
@@ -1034,6 +1205,9 @@ namespace quantModeling::scripting
         /// kernel computes; a last-step expectation alone runs in the kernels
         /// compiled from the IR (WP 27 §14.9), not in the interpreted ones.
         bool has_bridge = false;
+        /// The script decides an early exercise (exercise() / call()): it
+        /// runs under a fitted rule, on the CPU's interpreters (no GPU).
+        bool has_exercise = false;
 
         ProgramView view() const { return {code.data(), ifs.data(), aff.data()}; }
 
