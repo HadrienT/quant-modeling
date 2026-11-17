@@ -97,6 +97,8 @@ export type BacktestHedgingWorld = Schemas["HedgingWorld"];
 export type BacktestHedging = Schemas["HedgingResponse"];
 export type BacktestHedgeResult = Schemas["HedgeResult"];
 export type BacktestTask = Schemas["TaskStatus"];
+export type BacktestRiskModelRequest = Schemas["RiskModelRequest"];
+export type BacktestRiskModel = Schemas["RiskModelResponse"];
 
 export type AuthResponse = Schemas["AuthResponse"];
 

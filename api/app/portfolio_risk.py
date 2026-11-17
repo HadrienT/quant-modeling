@@ -490,3 +490,99 @@ def value_at_risk(
         left_out=left_out,
         days_dropped=int((~usable).sum()),
     )
+
+
+# ── Backtest of the VaR (WP 24, the risk-model tab) ──────────────────────────
+
+
+@dataclass
+class VarHistory:
+    """The VaR announced each day for the next, and the day's hypothetical
+    P&L (the holdings of the day before, held still)."""
+
+    dates: List[date]
+    pnl: List[float]
+    var: List[float]  # positive, a loss
+    confidence: float
+    window: int
+    skipped: int  # days with no holdings, or too few scenarios behind them
+    values_fingerprint: str
+
+
+def var_history(
+    pf: Portfolio,
+    end: date,
+    days: int = 250,
+    window: int = VAR_WINDOW,
+    confidence: float = 0.99,
+    progress: Optional[Callable[[float], bool]] = None,
+) -> VarHistory:
+    """For each of the last `days` business days t up to `end`: the VaR of
+    the holdings of t−1 on the `window` days before t (the same historical
+    simulation as value_at_risk, announced the evening before), and the
+    hypothetical P&L of t: those holdings on t's change of every instrument.
+    The model is judged on that P&L, not on the actual one, which the day's
+    trades would move (Basel's backtesting of internal models)."""
+    import hashlib
+
+    pf = pv.with_contract_starts(pf)
+    test = pv.business_days(
+        np.busday_offset(end, -(days - 1), roll="backward").astype(date), end
+    )
+    first = np.busday_offset(test[0], -(window + 1), roll="backward").astype(date)
+    calendar = pv.business_days(first, end)
+    held_ids = sorted(
+        {
+            iid
+            for d in [pv.previous_business_day(test[0])] + test
+            for iid, h in pv._holdings_at(pf, d).items()
+            if abs(h.quantity) > QTY_EPS
+        }
+    )
+    if not held_ids:
+        raise ValueError("the portfolio held nothing over the period")
+    by_id = {i.id: i for i in pf.instruments}
+    insts = [by_id[i] for i in held_ids]
+    md = pv.MarketData(calendar[0])
+    values = unit_values(pf, insts, calendar, md, progress)
+    listed = np.array([isinstance(i.spec, EquitySpec) for i in insts])
+    change = np.diff(values, axis=0)  # row k: calendar[k+1] against calendar[k]
+    returns = change / values[:-1]
+    p = 1.0 - confidence
+    pos = {d: k for k, d in enumerate(calendar)}
+    out_d, out_pnl, out_var, skipped = [], [], [], 0
+    for t in test:
+        k = pos.get(t)
+        if k is None or k < window + 1:
+            skipped += 1
+            continue
+        prev = calendar[k - 1]
+        hold = pv._holdings_at(pf, prev)
+        q = np.array([hold[i].quantity if i in hold else 0.0 for i in held_ids])
+        live = np.abs(q) > QTY_EPS
+        if not live.any() or not np.all(np.isfinite(values[k - 1, live])):
+            skipped += 1
+            continue
+        # Scenarios: the window's changes before t, scaled as value_at_risk does.
+        rows = slice(k - 1 - window, k - 1)
+        unit = np.where(listed, returns[rows] * values[k - 1], change[rows])[:, live]
+        usable = np.all(np.isfinite(unit), axis=1)
+        today = change[k - 1, live]
+        if usable.sum() < VAR_MIN_SCENARIOS or not np.all(np.isfinite(today)):
+            skipped += 1
+            continue
+        scen = np.sort(unit[usable] @ q[live])
+        n = len(scen)
+        out_var.append(-float(scen[max(int(math.ceil(p * n)), 1) - 1]))
+        out_pnl.append(float(today @ q[live]))
+        out_d.append(t)
+    finite = np.where(np.isfinite(values), values, 0.0)
+    return VarHistory(
+        out_d,
+        out_pnl,
+        out_var,
+        confidence,
+        window,
+        skipped,
+        hashlib.sha256(np.ascontiguousarray(finite).tobytes()).hexdigest(),
+    )

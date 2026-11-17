@@ -124,3 +124,29 @@ def test_the_api_runs_the_var_as_a_task_and_the_stress_at_once():
     assert t["status"] == "done", t
     assert [L["confidence"] for L in t["var"]["levels"]] == [0.99, 0.975]
     assert client.get("/api/portfolio-valuation/var/nope").status_code == 404
+
+
+def test_the_var_announced_each_day_is_the_one_of_the_day_before():
+    pf = _bbb(bought=date(2026, 3, 2))
+    h = pr.var_history(pf, END, days=60, window=60)
+    assert len(h.dates) == 60 and h.skipped == 0
+    for t, var, pnl in list(zip(h.dates, h.var, h.pnl))[::15]:
+        prev = pv.previous_business_day(t)
+        assert var == pytest.approx(
+            pr.value_at_risk(pf, prev, window=60).levels[0].var.value
+        )
+        assert pnl == pytest.approx(100.0 * (CLOSES["BBB"][t] - CLOSES["BBB"][prev]))
+
+
+def test_the_risk_model_tab_runs_the_wheels_tests():
+    from api.app.backtest import risk_model
+
+    r = risk_model.run_risk_model(
+        risk_model.RiskModelRequest(
+            portfolio=_bbb(bought=date(2026, 3, 2)), end=END, days=60, window=60
+        )
+    )
+    assert r.observations == 60 == len(r.pnl) == len(r.value_at_risk)
+    assert r.exceptions == sum(r.exception_days)
+    assert r.expected_exceptions == pytest.approx(0.6)
+    assert r.traffic_light.zone and set(r.data.fingerprints) == {"portfolio", "marks"}

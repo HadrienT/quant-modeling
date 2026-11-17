@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress (lot B8, issue #166). Done: the wheel, the point-in-time reads, the router, the `backtest.run` event and its replay, the strategy tab, the hedging tab with its tasks, the trials journal, the S&P 500 universe at date, the stress tests and VaR of the trade ledger (#292, `portfolio_risk.py`). Left: the risk-model tab on that VaR. |
+| **Status** | Done (lot B8, issue #166): the wheel, the point-in-time reads, the router, the `backtest.run` event and its replay, the strategy tab, the hedging tab with its tasks, the trials journal, the S&P 500 universe at date, the stress tests and VaR of the trade ledger (#292), the risk-model tab. Set aside: risk parity and the validation grid on the S&P 500 universe (minutes on some 500 names); a vol-surface shift for products under stochastic-local or local volatility in the stress tests (listed as not revalued). |
 | **Dépend de** | le dépôt `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) et ses lots B2 à B7 ; la piste d'audit et le replay ([WP 18](18-observability.md)) ; le portefeuille et sa VaR ([WP 09](09-portfolio-risk.md)) ; le dépôt `~/data-ingest` (lot B1) |
 | **Débloque** | une page `/backtest` dont chaque chiffre est défendable |
 | **Branches** | `feat/backtest-b8-…`, une par tranche |
@@ -76,10 +76,14 @@ Tout le reste est là-bas, et y est canonique :
   revalues every derivative on each day of the year, 81 s for the
   options-overlay demo on the development server, then the stored marks
   serve). The legacy routes on the position model stay, deprecated, API only.
-- **Reste à faire** : onglet modèle de risque — the VaR announced each day
-  (the window to the day before, the holdings of the day before) against the
-  hypothetical P&L of the day, through `var_backtest` (Kupiec,
-  Christoffersen, traffic light).
+- **The risk-model tab is done** (2026-11-17): any portfolio (the demos,
+  the visitor's own), each of the last 250 business days the VaR announced
+  the evening before (`portfolio_risk.var_history`: the holdings of the day
+  before, the window before it, the historical simulation of the Risk tab)
+  against the day's hypothetical P&L, then `var_backtest` (Kupiec,
+  Christoffersen, the Basel traffic light). A task, a `backtest.run` event
+  of kind `risk_model`, replayed like the others. Tested: the VaR announced
+  for a day is `value_at_risk` of the day before, to the cent.
 - **Lectures « as-of »** : `macro.fred_series` et `factors.french_daily` ne
   sont versionnées que depuis leur chargement (septembre et octobre 2026). Le
   backtest lit le **premier millésime stocké** de chaque date : ce que la base
