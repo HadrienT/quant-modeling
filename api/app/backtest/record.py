@@ -79,11 +79,34 @@ def _hedging_request() -> type[BaseModel]:
     return hedging.HedgingRequest
 
 
+def _risk_model_headline(r: Any) -> dict[str, float | None]:
+    return {
+        "observations": float(r.observations),
+        "exceptions": float(r.exceptions),
+        "kupiec_p_value": r.unconditional_coverage.p_value,
+        "christoffersen_p_value": r.conditional_coverage.p_value,
+        "last_var": r.value_at_risk[-1] if r.value_at_risk else None,
+    }
+
+
+def _run_risk_model(req: BaseModel) -> Any:
+    from . import risk_model
+
+    return risk_model.run_risk_model(req)
+
+
+def _risk_model_request() -> type[BaseModel]:
+    from . import risk_model
+
+    return risk_model.RiskModelRequest
+
+
 #: kind → (request model, run, headline)
 KINDS: dict[str, tuple[type[BaseModel], Callable, Callable]] = {
     "strategy": (s.StrategyRequest, engine.run_strategy, _strategy_headline),
     "validation": (s.ValidationRequest, engine.run_validation, _validation_headline),
     "hedging": (_hedging_request(), _run_hedging, _hedging_headline),
+    "risk_model": (_risk_model_request(), _run_risk_model, _risk_model_headline),
 }
 
 

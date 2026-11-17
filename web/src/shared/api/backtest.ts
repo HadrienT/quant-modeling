@@ -5,6 +5,7 @@ import { longCall as call } from "./longCall";
 import { queryKeys } from "./queryKeys";
 import type {
 	BacktestHedgingRequest,
+	BacktestRiskModelRequest,
 	BacktestTask,
 	BacktestStrategy,
 	BacktestStrategyRequest,
@@ -113,6 +114,17 @@ export function useCancelBacktestTask() {
 					params: { path: { task_id: id } },
 					signal: s,
 				}),
+			),
+	});
+}
+
+/** Start the backtest of a portfolio's VaR: a task (its first run revalues
+ * the portfolio's derivatives on every day of two years). */
+export function useStartRiskModel() {
+	return useMutation<BacktestTask, ApiError, BacktestRiskModelRequest>({
+		mutationFn: (body) =>
+			call<BacktestTask>(undefined, (s) =>
+				api.POST("/api/backtest/risk-model", { body, signal: s }),
 			),
 	});
 }

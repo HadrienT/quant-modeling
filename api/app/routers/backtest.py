@@ -7,6 +7,8 @@ POST /api/backtest/validation   a grid of configurations against overfitting
 POST /api/backtest/hedging      an option delta-hedged in a simulated world:
                                 a task (minutes in a Heston world), whose id
                                 is returned at once
+POST /api/backtest/risk-model   a portfolio's VaR against its hypothetical
+                                P&L over a year: a task
 GET  /api/backtest/tasks/{id}   a task's progress, then its result
 DELETE /api/backtest/tasks/{id} cancel it
 
@@ -28,6 +30,7 @@ from ..audit import emit
 from .. import tasks
 from ..backtest import engine, market, record, universe
 from ..backtest.hedging import HedgingRequest, HedgingResponse, run_hedging
+from ..backtest.risk_model import RiskModelRequest, RiskModelResponse, run_risk_model
 from ..backtest.schemas import (
     StrategyRequest,
     StrategyResponse,
@@ -85,6 +88,7 @@ class TaskStatus(BaseModel):
     ahead: int
     error: Optional[str] = None
     hedging: Optional[HedgingResponse] = None
+    risk_model: Optional[RiskModelResponse] = None
 
 
 def _status(task: tasks.Task) -> TaskStatus:
@@ -97,6 +101,7 @@ def _status(task: tasks.Task) -> TaskStatus:
         ahead=tasks.position(task) if task.status == "queued" else 0,
         error=task.error,
         hedging=task.result if task.kind == "hedging" else None,
+        risk_model=task.result if task.kind == "risk_model" else None,
     )
 
 
@@ -112,6 +117,25 @@ async def backtest_hedging(req: HedgingRequest) -> TaskStatus:
 
     try:
         task = tasks.submit("hedging", lambda t: run_hedging(req, t), on_done=record_it)
+    except tasks.QueueFull as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    return _status(task)
+
+
+@router.post(
+    "/risk-model",
+    response_model=TaskStatus,
+    status_code=202,
+    responses={429: {"description": "Too many long runs queued."}},
+)
+async def backtest_risk_model(req: RiskModelRequest) -> TaskStatus:
+    def record_it(response: RiskModelResponse) -> None:
+        emit(record.EVENT_TYPE, record.payload("risk_model", req, response))
+
+    try:
+        task = tasks.submit(
+            "risk_model", lambda t: run_risk_model(req, t), on_done=record_it
+        )
     except tasks.QueueFull as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     return _status(task)

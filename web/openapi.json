@@ -9995,6 +9995,189 @@
         "title": "RiskEntry",
         "type": "object"
       },
+      "RiskModelData": {
+        "properties": {
+          "fingerprints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fingerprints",
+            "type": "object"
+          }
+        },
+        "required": [
+          "fingerprints"
+        ],
+        "title": "RiskModelData",
+        "type": "object"
+      },
+      "RiskModelRequest": {
+        "properties": {
+          "confidence": {
+            "default": 0.99,
+            "enum": [
+              0.99,
+              0.975
+            ],
+            "title": "Confidence",
+            "type": "number"
+          },
+          "days": {
+            "default": 250,
+            "description": "Business days judged.",
+            "maximum": 500.0,
+            "minimum": 60.0,
+            "title": "Days",
+            "type": "integer"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last day judged; default today.",
+            "title": "End"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/Portfolio-Input"
+          },
+          "window": {
+            "default": 250,
+            "maximum": 500.0,
+            "minimum": 60.0,
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "portfolio"
+        ],
+        "title": "RiskModelRequest",
+        "type": "object"
+      },
+      "RiskModelResponse": {
+        "properties": {
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "compute_ms": {
+            "title": "Compute Ms",
+            "type": "number"
+          },
+          "conditional_coverage": {
+            "$ref": "#/components/schemas/Test"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "data": {
+            "$ref": "#/components/schemas/RiskModelData"
+          },
+          "dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "Dates",
+            "type": "array"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineBuild"
+          },
+          "exception_days": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Exception Days",
+            "type": "array"
+          },
+          "exceptions": {
+            "title": "Exceptions",
+            "type": "integer"
+          },
+          "expected_exceptions": {
+            "title": "Expected Exceptions",
+            "type": "number"
+          },
+          "independence": {
+            "$ref": "#/components/schemas/Test"
+          },
+          "observations": {
+            "title": "Observations",
+            "type": "integer"
+          },
+          "pnl": {
+            "description": "Hypothetical P&L of each day.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Pnl",
+            "type": "array"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "traffic_light": {
+            "$ref": "#/components/schemas/TrafficLight"
+          },
+          "transitions": {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "title": "Transitions",
+            "type": "array"
+          },
+          "unconditional_coverage": {
+            "$ref": "#/components/schemas/Test"
+          },
+          "value_at_risk": {
+            "description": "VaR announced the evening before, a positive loss.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Value At Risk",
+            "type": "array"
+          },
+          "window": {
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_currency",
+          "confidence",
+          "window",
+          "dates",
+          "pnl",
+          "value_at_risk",
+          "exception_days",
+          "observations",
+          "exceptions",
+          "expected_exceptions",
+          "unconditional_coverage",
+          "independence",
+          "conditional_coverage",
+          "transitions",
+          "traffic_light",
+          "skipped",
+          "data",
+          "engine",
+          "compute_ms"
+        ],
+        "title": "RiskModelResponse",
+        "type": "object"
+      },
       "RiskProfileRequest": {
         "description": "A library product whose risk profile to compute (risk_profile.py).",
         "properties": {
@@ -13694,6 +13877,16 @@
             "title": "Progress",
             "type": "number"
           },
+          "risk_model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskModelResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "enum": [
               "queued",
@@ -13741,6 +13934,50 @@
           "rate"
         ],
         "title": "TenorRate",
+        "type": "object"
+      },
+      "Test": {
+        "properties": {
+          "degrees_of_freedom": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degrees Of Freedom"
+          },
+          "p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Value"
+          },
+          "statistic": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statistic"
+          }
+        },
+        "required": [
+          "statistic",
+          "p_value",
+          "degrees_of_freedom"
+        ],
+        "title": "Test",
         "type": "object"
       },
       "TickerInfo": {
@@ -13853,6 +14090,53 @@
           "price"
         ],
         "title": "Trade",
+        "type": "object"
+      },
+      "TrafficLight": {
+        "properties": {
+          "basel_plus_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basel Plus Factor"
+          },
+          "cumulative_probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cumulative Probability"
+          },
+          "frtb_multiplier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frtb Multiplier"
+          },
+          "zone": {
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone",
+          "cumulative_probability"
+        ],
+        "title": "TrafficLight",
         "type": "object"
       },
       "UnderlyingUsed": {
@@ -16561,6 +16845,50 @@
           }
         },
         "summary": "Backtest Hedging",
+        "tags": [
+          "backtest"
+        ]
+      }
+    },
+    "/api/backtest/risk-model": {
+      "post": {
+        "operationId": "backtest_risk_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many long runs queued."
+          }
+        },
+        "summary": "Backtest Risk Model",
         "tags": [
           "backtest"
         ]

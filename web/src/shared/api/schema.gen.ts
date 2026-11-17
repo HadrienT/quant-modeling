@@ -196,6 +196,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backtest/risk-model": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backtest Risk Model */
+        post: operations["backtest_risk_model"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtest/strategy": {
         parameters: {
             query?: never;
@@ -6493,6 +6510,80 @@ export interface components {
             /** Value */
             value: number;
         };
+        /** RiskModelData */
+        RiskModelData: {
+            /** Fingerprints */
+            fingerprints: {
+                [key: string]: string;
+            };
+        };
+        /** RiskModelRequest */
+        RiskModelRequest: {
+            /**
+             * Confidence
+             * @default 0.99
+             * @enum {number}
+             */
+            confidence: 0.99 | 0.975;
+            /**
+             * Days
+             * @description Business days judged.
+             * @default 250
+             */
+            days: number;
+            /**
+             * End
+             * @description Last day judged; default today.
+             */
+            end?: string | null;
+            portfolio: components["schemas"]["Portfolio-Input"];
+            /**
+             * Window
+             * @default 250
+             */
+            window: number;
+        };
+        /** RiskModelResponse */
+        RiskModelResponse: {
+            /** Base Currency */
+            base_currency: string;
+            /** Compute Ms */
+            compute_ms: number;
+            conditional_coverage: components["schemas"]["Test"];
+            /** Confidence */
+            confidence: number;
+            data: components["schemas"]["RiskModelData"];
+            /** Dates */
+            dates: string[];
+            engine: components["schemas"]["EngineBuild"];
+            /** Exception Days */
+            exception_days: number[];
+            /** Exceptions */
+            exceptions: number;
+            /** Expected Exceptions */
+            expected_exceptions: number;
+            independence: components["schemas"]["Test"];
+            /** Observations */
+            observations: number;
+            /**
+             * Pnl
+             * @description Hypothetical P&L of each day.
+             */
+            pnl: number[];
+            /** Skipped */
+            skipped: number;
+            traffic_light: components["schemas"]["TrafficLight"];
+            /** Transitions */
+            transitions: number[][];
+            unconditional_coverage: components["schemas"]["Test"];
+            /**
+             * Value At Risk
+             * @description VaR announced the evening before, a positive loss.
+             */
+            value_at_risk: number[];
+            /** Window */
+            window: number;
+        };
         /**
          * RiskProfileRequest
          * @description A library product whose risk profile to compute (risk_profile.py).
@@ -8050,6 +8141,7 @@ export interface components {
             kind: string;
             /** Progress */
             progress: number;
+            risk_model?: components["schemas"]["RiskModelResponse"] | null;
             /**
              * Status
              * @enum {string}
@@ -8064,6 +8156,15 @@ export interface components {
             rate: number;
             /** Tenor */
             tenor: number;
+        };
+        /** Test */
+        Test: {
+            /** Degrees Of Freedom */
+            degrees_of_freedom: number | null;
+            /** P Value */
+            p_value: number | null;
+            /** Statistic */
+            statistic: number | null;
         };
         /** TickerInfo */
         TickerInfo: {
@@ -8120,6 +8221,17 @@ export interface components {
              * Format: date
              */
             trade_date: string;
+        };
+        /** TrafficLight */
+        TrafficLight: {
+            /** Basel Plus Factor */
+            basel_plus_factor?: number | null;
+            /** Cumulative Probability */
+            cumulative_probability: number | null;
+            /** Frtb Multiplier */
+            frtb_multiplier?: number | null;
+            /** Zone */
+            zone: string;
         };
         /**
          * UnderlyingUsed
@@ -9442,6 +9554,46 @@ export interface operations {
                 };
             };
             /** @description Too many backtests queued. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    backtest_risk_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskModelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many long runs queued. */
             429: {
                 headers: {
                     [name: string]: unknown;

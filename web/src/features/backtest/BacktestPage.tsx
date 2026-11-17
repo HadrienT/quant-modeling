@@ -12,6 +12,7 @@ import { BacktestControls } from "./BacktestControls";
 import { CostPanel } from "./CostPanel";
 import { DataPanel } from "./DataPanel";
 import { HedgingSection } from "./HedgingSection";
+import { RiskModelSection } from "./RiskModelSection";
 import { InferencePanel } from "./InferencePanel";
 import { PerformancePanel } from "./PerformancePanel";
 import { ValidationPanel } from "./ValidationPanel";
@@ -37,6 +38,7 @@ type Tab = (typeof TABS)[number];
 const VIEWS = [
 	["strategy", "Strategy"],
 	["hedging", "Hedging"],
+	["risk", "Risk model"],
 ] as const;
 type View = (typeof VIEWS)[number][0];
 
@@ -94,6 +96,8 @@ export default function BacktestPage() {
 			</div>
 			{section === "hedging" ? (
 				<HedgingSection />
+			) : section === "risk" ? (
+				<RiskModelSection />
 			) : (
 				<>
 					{universe.error ? (
