@@ -101,7 +101,10 @@ def _price(
             model="heston",
             heston=dict(v0=vol * vol, kappa=2.0, theta=vol * vol, xi=sc.xi, rho=0.0),
         )
-    return qm.price_script(script, spot, rate, div, vol, first, **kw)["npv"]
+    # A library product: its numbers are terms (one GPU kernel for all).
+    return qm.price_script(
+        script, spot, rate, div, vol, first, terms_as_parameters=True, **kw
+    )["npv"]
 
 
 def _paired(values: Dict[Scenario, List[float]], combo: List[Tuple[float, Scenario]]):

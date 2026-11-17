@@ -146,6 +146,40 @@ namespace quantModeling
         expect_compiled_equals_interpreted(Dyn::LocalVol, true, true, SamplerKind::Sobol, true);
     }
 
+    // A library product's terms are data (pricing_service.price_script's
+    // `library`): a term sheet with other numbers runs the kernel already
+    // built for the product, where a script with its numbers as constants
+    // compiles again. What lets the warm-up build the catalogue's kernels
+    // once for every term sheet (kernel_warmup.py).
+    TEST_F(GpuScriptJitTest, AProductsTermSheetsShareOneKernel)
+    {
+        setenv("QM_KERNEL_CACHE", "0", 1); // memory only: the first price compiles
+        // A shape no other test compiles.
+        const auto script = [](const char *strike, const char *cap)
+        {
+            return std::string("2027-06-01\n    pays min(max(spot() - ") + strike + ", 0), " + cap +
+                   ") * 0.37 + 0.011\n";
+        };
+        const auto price = [&](const std::string &source, bool terms)
+        {
+            ScriptSettings ss;
+            ss.terms_as_parameters = terms;
+            const ScriptedProduct<Real> product(source, kCtx, ss);
+            auto m = model(Dyn::BlackScholes, 1);
+            return simulate_script(product, *m, settings(SamplerKind::PseudoRandom));
+        };
+        const SimulationMCResult first = price(script("101.5", "40"), true);
+        EXPECT_NE(first.diagnostics.find("compiled in"), std::string::npos) << first.diagnostics;
+        const SimulationMCResult other = price(script("95.25", "25"), true);
+        EXPECT_NE(other.diagnostics.find("NVRTC, cached"), std::string::npos) << other.diagnostics;
+        EXPECT_FALSE(same_bits(other.npv(), first.npv())); // the terms did reach the kernel
+        // As constants, the other numbers are another kernel.
+        const SimulationMCResult constants = price(script("95.25", "25"), false);
+        EXPECT_NE(constants.diagnostics.find("compiled in"), std::string::npos) << constants.diagnostics;
+        EXPECT_NEAR(constants.npv(), other.npv(), test_support::price_tolerance(other.npv()));
+        unsetenv("QM_KERNEL_CACHE");
+    }
+
     // WP 27 lot L1b: a compiled kernel is stored on disk and read back by a
     // process that does not hold it -- the same bits, without compiling.
     TEST_F(GpuScriptJitTest, KernelsAreReadBackFromTheDiskCache)

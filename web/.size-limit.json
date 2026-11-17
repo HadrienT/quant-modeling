@@ -2,7 +2,7 @@
 	{
 		"name": "initial (React + router + query + shell + home route)",
 		"path": [
-			"dist/assets/index-*.js",
+			"dist/assets/entry-*.js",
 			"dist/assets/react-vendor-*.js",
 			"dist/assets/router-vendor-*.js"
 		],

@@ -235,7 +235,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              const std::vector<double> &curve_times,
                              const std::vector<double> &curve_dfs, std::size_t threads,
                              double mlmc_eps, bool milstein, double mlmc_rel_eps, bool bias_estimate,
-                             bool second_order)
+                             bool second_order, bool terms_as_parameters)
 {
     using namespace quantModeling;
 
@@ -253,6 +253,10 @@ static py::dict price_script(const std::string &script, double spot, double rate
     if (steps_per_year < 1)
         throw std::invalid_argument("price_script: steps_per_year must be >= 1");
     const double max_dt = 1.0 / static_cast<double>(steps_per_year);
+    // A library product's numbers are its terms: read as data by the GPU's
+    // compiled kernel, so one kernel serves every term sheet (same bits).
+    ScriptSettings script_settings{fuzzy, default_eps};
+    script_settings.terms_as_parameters = terms_as_parameters;
 
     scripting::ScriptModelSpec spec;
     spec.model = model;
@@ -395,7 +399,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
             // vanishes, the envelope argument).
             std::optional<scripting::ExercisePolicy> policy;
             {
-                ScriptedProduct<Real> probe(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                ScriptedProduct<Real> probe(script, ctx, script_settings, fixings);
                 if (probe.has_exercise())
                 {
                     auto m = scripting::make_script_model<Real>(spec);
@@ -420,7 +424,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 std::string why = "Sobol points only";
                 if (sampler == "sobol")
                 {
-                    ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                    ScriptedProduct<Real> product(script, ctx, script_settings, fixings);
                     auto sim_model = scripting::make_script_model<Real>(spec);
                     check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                     // The target as simulate_script's: a share of the price,
@@ -443,7 +447,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
             // IR decide under the rule fitted above.
             if (!aad_res && (device == "gpu" || device == "auto"))
             {
-                ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                ScriptedProduct<Real> product(script, ctx, script_settings, fixings);
                 if (policy)
                     product.set_exercise_policy(*policy);
                 auto sim_model = scripting::make_script_model<Real>(spec);
@@ -466,7 +470,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
             if (!aad_res)
             {
                 ScriptedProduct<aad::Number> product(
-                    script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                    script, ctx, script_settings, fixings);
                 if (policy)
                     product.set_exercise_policy(*policy);
                 auto sim_model = scripting::make_script_model<aad::Number>(spec);
@@ -521,7 +525,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
             if (lsm_note.empty())
             {
                 py::gil_scoped_release release;
-                ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                ScriptedProduct<Real> product(script, ctx, script_settings, fixings);
                 auto sim_model = scripting::make_script_model<Real>(spec);
                 const bool vibrato = product.analysis().spot_comparison && !fuzzy;
                 if (device == "cpu" && !vibrato)
@@ -560,7 +564,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     std::string lsm_note, control_note;
     {
         py::gil_scoped_release release;
-        ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps},
+        ScriptedProduct<Real> product(script, ctx, script_settings,
                                       fixings);
         auto sim_model = scripting::make_script_model<Real>(spec);
         check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
@@ -733,8 +737,12 @@ void register_scripting(py::module_ &m)
           py::arg("curve_dfs") = std::vector<double>{}, py::arg("threads") = 0,
           py::arg("mlmc_eps") = 0.0, py::arg("milstein") = false, py::arg("mlmc_rel_eps") = 0.0,
           py::arg("bias_estimate") = false, py::arg("second_order") = false,
+          py::arg("terms_as_parameters") = false,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
-          "timeline simulation engine. threads: CPU threads of a CPU run "
+          "timeline simulation engine. terms_as_parameters: the script's numbers "
+          "are a product's terms (a library product), read as data by the GPU's "
+          "compiled kernel so that one kernel serves every set of terms; same bits. "
+          "threads: CPU threads of a CPU run "
           "(0, the default: the available CPUs, at most 16); Philox, Sobol and "
           "stratified runs give the same bits on any number of them (a script "
           "with early exercise included), a PCG32 run stays on one thread "

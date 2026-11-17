@@ -11,7 +11,13 @@ handles both at API start:
 1. the kernels the cache holds from an older build are compiled again from
    the source stored with them (catalogue shapes and users' scripts alike);
 2. the catalogue's usual shapes are priced once on a few paths, which
-   compiles those the cache has never seen (an empty cache: the first start).
+   compiles those the cache has never seen (an empty cache: the first start);
+3. so is every product of the script library (product_library/*.qms), under
+   each model the pricing page offers it with, with the request the page
+   sends (pricing_service decides the device, so a run the CPU takes needs
+   no kernel). Its numbers are terms, read as data (price_script's
+   `library`): one kernel serves every term sheet, and only scripts a user
+   writes are compiled live.
 
 Nothing here is required: a kernel that is not ready is compiled by the
 request that needs it (about half a second). Enabled by QM_KERNEL_WARMUP=1
@@ -247,6 +253,110 @@ def _seeds(q) -> List[Tuple[str, Callable[[], object]]]:
     return out
 
 
+#: The models the pricing page offers a library product with that the GPU
+#: runs, by its number of underlyings (rough Bergomi and Hull-White, and
+#: local vol on several underlyings, run on the CPU: no kernel to build).
+LIBRARY_MODELS = {1: ("black_scholes", "local_vol", "heston", "slv")}
+LIBRARY_MODELS_MULTI = ("black_scholes",)
+#: The page's requests: greeks by default, without, and with second order.
+LIBRARY_VARIANTS = (("aad", False), ("none", False), ("aad", True))
+
+
+def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
+    """Every library product, at its default terms, under each model and
+    each request of LIBRARY_VARIANTS that pricing_service sends to the GPU:
+    the same arguments as pricing_service.price_script, on synthetic market
+    inputs (a kernel depends on the script, the model's kind, the number of
+    assets and the sampler; the market's numbers are data)."""
+    from datetime import date as _date
+
+    from . import pricing_service as ps
+    from . import product_templates
+    from .schemas import ScriptedProductRequest
+
+    today = today or _date.today()
+    spot, rate, div, vol = 100.0, 0.03, 0.01, 0.2
+    strikes = [40.0 + 10.0 * i for i in range(17)]
+    tenors = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0]
+    sigma = [
+        max(0.08, 0.2 - 0.12 * math.log(k / spot) + 0.01 * t)
+        for k in strikes
+        for t in tenors
+    ]
+    heston = dict(v0=0.04, kappa=2.0, theta=0.04, xi=0.5, rho=-0.7)
+    out: List[Tuple[str, Callable[[], object]]] = []
+    for slug, t in sorted(product_templates.templates().items()):
+        script = product_templates.render(slug, {}, today)
+        n = t.underlyings
+        for model in LIBRARY_MODELS.get(n, LIBRARY_MODELS_MULTI):
+            for greeks, second in LIBRARY_VARIANTS:
+                # Only for pricing_service's choices (device, multilevel):
+                # never priced, so its ticker reads no market.
+                req = ScriptedProductRequest(
+                    product=slug,
+                    ticker="WARMUP",
+                    rate=rate,
+                    spot=spot,
+                    vol=vol,
+                    model=model,
+                    greeks_method=greeks,
+                    second_order=second,
+                    n_paths=SEED_PATHS,
+                )
+                device = ps._device(req, model)
+                if device == "cpu":
+                    continue  # no kernel: the CPU prices it
+                kw = dict(
+                    day_count=req.day_count,
+                    fuzzy=req.fuzzy,
+                    default_eps=req.default_eps,
+                    n_paths=SEED_PATHS,
+                    seed=1,
+                    sampler=req.sampler,
+                    greeks_method=greeks,
+                    model=model,
+                    steps_per_year=req.steps_per_year,
+                    device=device,
+                    rng=req.rng.value,
+                    control_variate=req.control_variate,
+                    antithetic=req.antithetic,
+                    importance_sampling=req.importance_sampling,
+                    second_order=second and greeks == "aad",
+                    terms_as_parameters=True,
+                    **ps._multilevel(req, model),
+                )
+                if n > 1:
+                    kw.update(
+                        spots=[spot] * n,
+                        dividends=[div] * n,
+                        vols=[vol + 0.05 * i for i in range(n)],
+                        correlation=[
+                            1.0 if i == j else 0.5 for i in range(n) for j in range(n)
+                        ],
+                    )
+                elif model in ("local_vol", "slv"):
+                    kw.update(K_grid=strikes, T_grid=tenors)
+                    kw.update(
+                        sigma_loc_flat=(
+                            sigma if model == "local_vol" else [1.0] * len(sigma)
+                        )
+                    )
+                if model == "slv":
+                    kw["leverage_flat"] = kw.pop("sigma_loc_flat")
+                if model in ("heston", "slv"):
+                    kw["heston"] = heston
+                variant = greeks + (" second order" if second else "")
+                out.append(
+                    (
+                        f"library {slug} {model} {variant}",
+                        lambda script=script, kw=kw: q.price_script(
+                            script, spot, rate, div, vol, today.isoformat(), **kw
+                        ),
+                    )
+                )
+    return out
+
+
 def warm_once() -> dict:
     """Rebuild the stale kernels, then price the seeds. Returns what was done:
     {"rebuilt": {...}, "seeds": n, "compiled": n, "failed": [labels], "seconds": s}."""
@@ -257,7 +367,7 @@ def warm_once() -> dict:
     if not qm.gpu_devices():
         return done
     done["rebuilt"] = dict(qm.rebuild_script_kernels())
-    for label, price in _seeds(qm):
+    for label, price in _seeds(qm) + _library_seeds(qm):
         if _stop.is_set():
             break
         try:

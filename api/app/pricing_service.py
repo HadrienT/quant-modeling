@@ -321,7 +321,7 @@ def _local_vol_markets(req: ScriptRequest, m) -> Tuple[Optional[list], str]:
     return markets, ""
 
 
-def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
+def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResponse:
     """A script reading spot(0), spot(1)...: each asset on the Dupire surface
     of its stored chain when every one has one (local vol, drivers
     correlated), else correlated Black-Scholes; inputs from the database
@@ -465,6 +465,7 @@ def _price_multi_asset(req: ScriptRequest) -> PricingResponse:
             importance_sampling=req.importance_sampling,
             milstein=req.milstein,
             second_order=req.second_order and req.greeks_method == "aad",
+            terms_as_parameters=library,
             **_multilevel(req, model if n > 1 else "black_scholes"),
             **grids,
         )
@@ -493,17 +494,24 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
 
     script = product_templates.render(req.product, req.terms, req.valuation_date)
     fields = req.model_dump(exclude={"product", "terms"})
-    response = price_script(ScriptRequest(script=script, **fields))
+    response = price_script(ScriptRequest(script=script, **fields), library=True)
     return response.model_copy(update={"script": script})
 
 
-def price_script(req: ScriptRequest) -> PricingResponse:
+def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
     """Choose the model (req.model, or the one the script needs for 'auto'),
-    calibrate what it needs from the database, then price."""
+    calibrate what it needs from the database, then price.
+
+    `library`: the script is a library product rendered from its term sheet
+    (product_templates.py). Its numbers are then the product's terms, which
+    the GPU's compiled kernel reads as data: one kernel per product shape,
+    whatever the terms, and the kernel warm-up has it ready
+    (kernel_warmup.py). A script a user wrote keeps its numbers as
+    constants."""
     from . import market_snapshot, stochastic_vol
 
     if req.underlyings is not None:
-        return _price_multi_asset(req)
+        return _price_multi_asset(req, library)
 
     market_warnings: List[Dict] = []
     valuation_date = req.valuation_date
@@ -646,6 +654,7 @@ def price_script(req: ScriptRequest) -> PricingResponse:
             curve_dfs=curve_dfs,
             milstein=req.milstein,
             second_order=req.second_order and req.greeks_method == "aad",
+            terms_as_parameters=library,
             **_multilevel(req, model),
         )
     result["warnings"] = (
