@@ -77,8 +77,10 @@ def _device(req, model: str) -> str:
     # Heston and SLV step a variance alongside the spot at 252 steps a year:
     # the page's default 200k paths took 17 s without greeks on the
     # production CPUs (two), over the 20 s timeout with them, against 0.4-2 s
-    # on the GPU. "auto" stays on the CPU for what the GPU cannot run (early
-    # exercise, a server without one) and says so in the diagnostics.
+    # on the GPU. "auto" stays on the CPU for what the GPU cannot run (a
+    # model or a script without a compiled kernel, a server without a GPU)
+    # and says so in the diagnostics; early exercise runs there since WP 26
+    # §16.
     if model in ("heston", "slv"):
         return "auto"
     multilevel = _multilevel(req, model)["mlmc_eps"] > 0.0 or (

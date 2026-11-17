@@ -402,9 +402,6 @@ static py::dict price_script(const std::string &script, double spot, double rate
                     check_underlyings(probe.n_underlyings(), m->n_underlyings());
                     lsm_note = " | " + fit_exercise_policy(probe, *m, paths, seed_value).note();
                     policy = probe.exercise_policy();
-                    if (device == "gpu")
-                        throw InvalidInput("GPU: early exercise (exercise() / call()) runs on the CPU only");
-                    gpu_note = " (on the CPU: early exercise)";
                 }
             }
             // Multilevel (WP 26 §10.2): the price and its risks from the
@@ -434,9 +431,13 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 if (!aad_res)
                     multilevel_note = " | no multilevel risks (" + why + ") -- used the plain engine";
             }
-            if (!aad_res && !policy && (device == "gpu" || device == "auto"))
+            // Early exercise too (WP 26 §16): the kernels compiled from the
+            // IR decide under the rule fitted above.
+            if (!aad_res && (device == "gpu" || device == "auto"))
             {
                 ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                if (policy)
+                    product.set_exercise_policy(*policy);
                 auto sim_model = scripting::make_script_model<Real>(spec);
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                 std::string why;

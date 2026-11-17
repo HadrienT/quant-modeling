@@ -1,9 +1,11 @@
 #include "quantModeling/scripting/ir.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <cstdio>
 #include <sstream>
 
+#include "quantModeling/scripting/bytecode.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/visitor.hpp"
 
@@ -268,13 +270,37 @@ namespace quantModeling::scripting::ir
         class Lowering final : public ConstVisitor
         {
           public:
-            Lowering(std::size_t n_vars, bool fuzzy, bool terms, bool smooth)
-                : n_vars_(n_vars), fuzzy_(fuzzy), terms_(terms), smooth_(smooth)
+            Lowering(std::size_t n_vars, bool fuzzy, bool terms, bool smooth, const ExerciseLowering *exercise)
+                : n_vars_(exercise ? n_vars + 1 : n_vars), fuzzy_(fuzzy), terms_(terms), smooth_(smooth), ex_(exercise), exercised_var_(n_vars)
             {
+                if (!ex_)
+                    return;
+                if (ex_->n_regressors > static_cast<std::size_t>(scripting::kMaxExerciseRegressors))
+                    throw InvalidInput("script IR: exercise() / call() with more than " +
+                                       std::to_string(scripting::kMaxExerciseRegressors) + " regressors");
+                // One set of monomials for every date (fit_exercise_policy
+                // fits one degree): the same code at every date, the
+                // coefficients as data. No date fitted: no monomial, the
+                // gain 0, never exercised.
+                bool first = true;
+                for (const auto &[event, reg] : ex_->policy->by_event)
+                {
+                    (void)event;
+                    if (reg.mean.size() != ex_->n_regressors || reg.scale.size() != ex_->n_regressors ||
+                        reg.beta.size() != reg.terms.size() || reg.lo.size() != reg.hi.size())
+                        throw InvalidInput("script IR: an inconsistent exercise regression");
+                    if (first)
+                        monomials_ = reg.terms;
+                    else if (reg.terms != monomials_)
+                        throw InvalidInput("script IR: the exercise dates' regressions have different monomials");
+                    first = false;
+                }
             }
 
-            Block lower(const Event &event)
+            Block lower(const Event &event, std::size_t index)
             {
+                event_ = index;
+                decisions_ = 0;
                 b_ = Builder();
                 vars_.resize(n_vars_);
                 first_.resize(n_vars_);
@@ -373,9 +399,81 @@ namespace quantModeling::scripting::ir
             void visit(const NodeSupEqual &n) override { comparison(n, Op::Ge); }
             void visit(const NodeInferior &n) override { comparison(n, Op::Lt); }
             void visit(const NodeInfEqual &n) override { comparison(n, Op::Le); }
-            void visit(const NodeExercise &) override
+            /// exercise_decide on the event's rule (its numbers are terms),
+            /// then Evaluator::exercise's state: a right exercised once.
+            void visit(const NodeExercise &n) override
             {
-                throw InvalidInput("script IR: exercise() and call() run on the tree evaluator only");
+                if (!ex_)
+                    throw InvalidInput("script IR: exercise() and call() lower with their fitted rule only");
+                if (++decisions_ > 1)
+                    throw InvalidInput("script IR: two exercise() / call() in one event (the interpreter checks "
+                                       "one decision per date as the path runs)");
+                std::vector<std::int32_t> r;
+                if (n.arguments.empty())
+                    for (std::size_t i = 0; i < ex_->n_spots; ++i)
+                    {
+                        const auto k = static_cast<std::int32_t>(i);
+                        b_.block().max_spot = std::max(b_.block().max_spot, k);
+                        r.push_back(b_.value(Op::Spot, k));
+                    }
+                else
+                    for (const ExprTree &argument : n.arguments)
+                    {
+                        argument->accept(*this);
+                        r.push_back(pop());
+                    }
+                const std::size_t nr = r.size();
+                if (nr != ex_->n_regressors)
+                    throw InvalidInput("script IR: exercise(): the number of regressors changed");
+                const auto it = ex_->policy->by_event.find(event_);
+                const ExerciseRegression *reg = it == ex_->policy->by_event.end() ? nullptr : &it->second;
+                const auto param = [&](double v)
+                {
+                    term_values_.push_back(v);
+                    return b_.raw(Op::Param, static_cast<std::int32_t>(term_values_.size()) - 1);
+                };
+                const double inf = std::numeric_limits<double>::infinity();
+                // The box (issue #228): r < lo or r > hi is outside, where the
+                // rule does not exercise; no box is (-inf, inf), the same
+                // decision for every regressor, NaN included.
+                std::int32_t outside = -1;
+                for (std::size_t i = 0; i < nr; ++i)
+                {
+                    const bool boxed = reg && i < reg->lo.size();
+                    const std::int32_t lo = param(boxed ? reg->lo[i] : -inf);
+                    const std::int32_t hi = param(boxed ? reg->hi[i] : inf);
+                    const std::int32_t out =
+                        b_.value(Op::Or, b_.value(Op::Lt, r[i], lo), b_.value(Op::Gt, r[i], hi));
+                    outside = outside < 0 ? out : b_.value(Op::Or, outside, out);
+                }
+                // The gain, exercise_decide's operations in its order.
+                std::vector<std::int32_t> z(nr);
+                for (std::size_t i = 0; i < nr; ++i)
+                {
+                    const std::int32_t mean = param(reg ? reg->mean[i] : 0.0);
+                    const std::int32_t scale = param(reg ? reg->scale[i] : 1.0);
+                    z[i] = b_.value(Op::Div, b_.value(Op::Sub, r[i], mean), scale);
+                }
+                std::int32_t gain = b_.constant(0.0);
+                for (std::size_t t = 0; t < monomials_.size(); ++t)
+                {
+                    std::int32_t phi = b_.constant(1.0);
+                    for (std::size_t i = 0; i < nr; ++i)
+                        for (int k = 0; k < monomials_[t][i]; ++k)
+                            phi = b_.value(Op::Mul, phi, z[i]);
+                    gain = b_.value(Op::Add, gain, b_.value(Op::Mul, param(reg ? reg->beta[t] : 0.0), phi));
+                }
+                const std::int32_t zero = b_.constant(0.0);
+                std::int32_t worth = b_.value(ex_->policy->issuer ? Op::Lt : Op::Gt, gain, zero);
+                if (outside >= 0)
+                    worth = b_.value(Op::And, b_.value(Op::Not, outside), worth);
+                std::int32_t &exercised = vars_.at(exercised_var_);
+                const std::int32_t now = b_.value(Op::And, b_.value(Op::Not, exercised), worth);
+                exercised = b_.value(Op::Or, exercised, now);
+                if (fuzzy_)
+                    push_degree(now); // a crisp degree, as FuzzyEvaluator::push_condition
+                else
+                    push(now);
             }
             void visit(const NodeAnd &n) override { connective(n, Op::And, Op::Min); }
             void visit(const NodeOr &n) override { connective(n, Op::Or, Op::Max); }
@@ -458,6 +556,21 @@ namespace quantModeling::scripting::ir
                 std::vector<char> affected(n_vars_, 0);
                 for (std::size_t slot : n.affectedVars)
                     affected.at(slot) = 1;
+                // The right exercised is not blended: the interpreters keep
+                // it set when a branch that ran exercised (then runs unless
+                // the degree is 0, else unless it is 1). As the flag only
+                // goes from 0 to 1 and one event decides once, that is the
+                // blend of the two flags read as a condition: then's or
+                // else's when one branch ran, nonzero if either is when both
+                // did.
+                if (ex_)
+                {
+                    const std::size_t x = exercised_var_;
+                    affected.at(x) = 1;
+                    if (then_vars[x] != before[x] || vars_[x] != before[x])
+                        vars_[x] = b_.value(Op::Ne, b_.raw(Op::FuzzyPhi, then_vars[x], vars_[x], head),
+                                            b_.constant(0.0));
+                }
                 for (std::size_t i = 0; i < n_vars_; ++i)
                     if (!affected[i] && (then_vars[i] != before[i] || vars_[i] != before[i]))
                         throw InvalidInput("script IR: a fuzzy if writes a variable its IfProcessor did not list");
@@ -565,6 +678,11 @@ namespace quantModeling::scripting::ir
             bool fuzzy_;
             bool terms_;
             bool smooth_;
+            const ExerciseLowering *ex_ = nullptr;
+            std::size_t exercised_var_ = 0; ///< the hidden variable: the right exercised
+            std::vector<std::vector<int>> monomials_;
+            std::size_t event_ = 0;
+            int decisions_ = 0;
             std::vector<double> term_values_;
             Builder b_;
             std::vector<std::int32_t> vars_, first_; ///< each variable's current value, and its VarIn
@@ -576,15 +694,18 @@ namespace quantModeling::scripting::ir
         };
     } // namespace
 
-    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms, bool smooth_ramp)
+    Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms, bool smooth_ramp,
+                        const ExerciseLowering *exercise)
     {
         Script s;
-        s.n_vars = static_cast<int>(n_vars);
+        s.n_vars = static_cast<int>(exercise ? n_vars + 1 : n_vars);
         s.fuzzy = fuzzy;
-        Lowering lowering(n_vars, fuzzy, terms, smooth_ramp);
-        for (const Event &event : events)
+        s.has_exercise = exercise != nullptr;
+        Lowering lowering(n_vars, fuzzy, terms, smooth_ramp, exercise);
+        for (std::size_t e = 0; e < events.size(); ++e)
         {
-            Block b = lowering.lower(event);
+            const Event &event = events[e];
+            Block b = lowering.lower(event, e);
             s.event_terms.push_back(lowering.term_values());
             s.has_monitor = s.has_monitor || lowering.has_monitor();
             s.has_bridge = s.has_bridge || lowering.has_bridge();

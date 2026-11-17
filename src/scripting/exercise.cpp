@@ -104,10 +104,24 @@ namespace quantModeling::scripting
             // where max(K - S, 0) = K - S) leave pivots of 1e-14 that the default
             // threshold keeps, and dividing by them fills beta with cancelling
             // giants whose rounding is the prediction (issue #228).
+            //
+            // The threshold has to be applied here: Eigen's solve() keeps
+            // every pivot above machine epsilon (nonZeroPivots()), and the
+            // prescribed threshold only reaches rank(). Until 2026-11-17 the
+            // rule of a Bermudan put on (max(K - S, 0), S) still carried
+            // coefficients of 1e13-1e14 that cancelled, and decided by the
+            // last bits of the spot (WP 26 §16). So: the first rank()
+            // pivoted columns, R's leading block solved, the others 0.
             Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr;
             qr.setThreshold(1e-10);
             qr.compute(A);
-            const Eigen::VectorXd beta = qr.solve(b);
+            const Eigen::Index rank = qr.rank();
+            Eigen::VectorXd c = b;
+            c.applyOnTheLeft(qr.householderQ().setLength(rank).adjoint());
+            Eigen::VectorXd y = Eigen::VectorXd::Zero(A.cols());
+            if (rank > 0)
+                y.head(rank) = qr.matrixR().topLeftCorner(rank, rank).triangularView<Eigen::Upper>().solve(c.head(rank));
+            const Eigen::VectorXd beta = qr.colsPermutation() * y;
             r.beta.assign(beta.data(), beta.data() + beta.size());
         }
 

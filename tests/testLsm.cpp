@@ -147,7 +147,7 @@ namespace quantModeling
         const double tree = bermudan_put_tree(36.0, 40.0, 0.06, 0.2, times, 26 * 60);
         const double se = r.mc.std_error();
         EXPECT_LT(r.mc.npv(), tree + 3.0 * se);                                           // a lower bound, up to noise
-        EXPECT_GT(r.mc.npv(), tree - 0.005);                                              // measured -0.0005 since issue #228's fit (-0.0048 before)
+        EXPECT_GT(r.mc.npv(), tree - 0.005);                                              // measured -0.0001 since the rank-truncated fit (WP 26 §16; -0.0005 after issue #228, -0.0048 before)
         EXPECT_GT(r.mc.npv(), bs(false, 36.0, 40.0, times.back(), 0.06, 0.0, 0.2) + 0.2); // early-exercise premium
         EXPECT_EQ(r.lsm.dates.size(), 26u);
         EXPECT_EQ(r.lsm.regressors, 2u);

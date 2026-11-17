@@ -282,6 +282,10 @@ namespace quantModeling
                 if (!has_exercise_)
                     ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy,
                                                       settings.terms_as_parameters, settings.smooth_ramp);
+                else
+                    ir_refusal_ = "early exercise: the IR is lowered once the exercise rule is fitted";
+                ir_settings_ = settings;
+                ir_n_vars_ = indexer.count();
                 buffers_.vars.assign(static_cast<std::size_t>(program_.n_vars), T(0));
                 buffers_.stack.assign(static_cast<std::size_t>(program_.max_stack), T(0));
                 buffers_.degrees.assign(static_cast<std::size_t>(program_.max_degrees), T(0));
@@ -466,7 +470,15 @@ namespace quantModeling
             evaluator_->set_exercise_policy(&policy_);
             flatten_policy();
             policy_set_ = true;
+            lower_with_policy();
         }
+
+        /// Why the script has no IR (hence no GPU kernel), empty when it has
+        /// one.
+        const std::string &ir_refusal() const { return ir_refusal_; }
+
+        /// The rule set by set_exercise_policy, as the bytecode reads it.
+        scripting::ExerciseView exercise_rule() const { return exercise_view(); }
         const scripting::ExercisePolicy &exercise_policy() const { return policy_; }
 
         /**
@@ -846,6 +858,31 @@ namespace quantModeling
             }
         }
 
+        /// The IR of a script with exercise() under the rule just set
+        /// (WP 26 §16): its numbers are the events' terms. What the IR cannot
+        /// follow leaves it empty, the reason kept: the CPU prices it.
+        void lower_with_policy()
+        {
+            if (!compiled_ || !has_exercise_)
+                return;
+            ir_ = {};
+            ir_refusal_.clear();
+            scripting::ir::ExerciseLowering ex;
+            ex.policy = &policy_;
+            ex.n_regressors = exercise_regressors_;
+            ex.n_spots = n_underlyings_;
+            try
+            {
+                ir_ = scripting::ir::lower_script(events_, ir_n_vars_, ir_settings_.fuzzy,
+                                                  ir_settings_.terms_as_parameters, ir_settings_.smooth_ramp, &ex);
+            }
+            catch (const InvalidInput &e)
+            {
+                ir_ = {};
+                ir_refusal_ = e.what();
+            }
+        }
+
         scripting::ExerciseView exercise_view() const
         {
             return {exercise_rules_.data(), exercise_data_.data(), exercise_exponents_.data(), policy_.issuer};
@@ -990,6 +1027,9 @@ namespace quantModeling
         scripting::ExercisePolicy policy_;
         bool policy_set_ = false;
         std::size_t exercise_regressors_ = 0; ///< of each exercise() / call()
+        ScriptSettings ir_settings_;          ///< what the IR is lowered with (again once a rule is set)
+        std::size_t ir_n_vars_ = 0;
+        std::string ir_refusal_;
         // policy_ flattened for the bytecode (flatten_policy)
         std::vector<scripting::ExerciseRule> exercise_rules_;
         std::vector<double> exercise_data_;

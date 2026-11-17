@@ -1821,3 +1821,93 @@ per date on up to 50 000 rows) and it is still one thread, as the pilot is.
 **Left.** Step 3 of #282: an `Exercise` operation in the IR reading the rule
 as data, the price kernel on the GPU, then the risks (the decision held
 fixed, as on the tape). The pilot on a pool.
+
+## 16. Early exercise on the GPU, and the exercise regression's rank (#282 step 3, 2026-11-17)
+
+**In the IR.** A script with `exercise()` / `call()` is lowered once its
+rule is fitted (`ScriptedProduct::set_exercise_policy`, then
+`ir::lower_script(..., ExerciseLowering)`). The decision is written with
+the IR's own operations, `exercise_decide`'s in its order: the box as
+`(r < lo) or (r > hi)` (no box is (-inf, inf), the same decision for every
+regressor), `z = (r - mean) / scale`, the gain `0 + beta_t * phi_t` with
+`phi_t` the product of the z's, then `not exercised and not outside and
+gain > 0` (`< 0` for the issuer). The rule's numbers are each event's
+terms, after the script's own, so the code depends only on the rule's
+shape -- the regressors, the monomials (one degree for every date), holder
+or issuer -- and the dates of a schedule keep sharing one block: one kernel
+per product shape, cached as the others. Whether the right was exercised is
+one more variable (index `n_vars`), which the existing passes carry like any
+other. In a fuzzy `if` the interpreters do not blend it (a branch that ran
+and exercised leaves it set); the IR writes that as the two flags' blend
+read as a condition, `FuzzyPhi(then, else) != 0`, exact because the flag only
+goes from 0 to 1 and one event decides once.
+
+A comparison has no derivative, so the tangent and the adjoint hold the
+decision fixed, as the tape does, with nothing new in the transformations.
+
+What the IR does not follow stays on the CPU, the reason kept
+(`ScriptedProduct::ir_refusal`) and shown in the diagnostics: two
+`exercise()` in one event (the interpreters check one decision per date as
+the path runs; the IR refuses it statically, also when the two sit in
+exclusive branches), more than 8 regressors, a rule whose dates have
+different monomials. The interpreted GPU kernels have no rule: with
+`QM_SCRIPT_JIT=0` the GPU refuses these scripts and `auto` prices them on
+the CPU.
+
+**The rule decided by rounding: fixed.** Comparing the GPU with the CPU
+found the first script that disagreed beyond the tolerance -- a Bermudan put
+on `(max(K - S, 0), S)` -- and the reason was not the GPU. On in-the-money
+paths the two regressors are collinear, and the fitted coefficients were
+`1e13`-`1e14` and cancelling: a move of the spot by 4e-16 relative flipped
+67 236 decisions on a 1e-4 grid of S. Issue #228's fix had set the QR's
+threshold to 1e-10, but Eigen's `ColPivHouseholderQR::solve()` keeps every
+pivot above machine epsilon (`nonzeroPivots()`); the prescribed threshold
+only reaches `rank()`. The solve is now truncated at `rank()`: R's leading
+block, the other coefficients 0. Where the basis has full rank at 1e-10 the
+operations are the same, hence the same bits; only bases dependent to within
+1e-10 move, and there the dropped coefficients were noise. After the fix the
+rule above has no coefficient above 15, no decision flips, and the put on
+`(payoff, spot)` prices as the put on `spot` alone (the payoff is a function
+of the spot) -- which it should.
+
+Displayed prices of early-exercise scripts move (200 000 paths against a
+CRR tree of 60 steps per exercise period):
+
+| Bermudan put | before | after | tree |
+|---|---|---|---|
+| 36/40, r 6 %, vol 20 %, 26 fortnights, (payoff, spot) | 4.46834 ± 0.00134 | 4.46875 ± 0.00175 | 4.46888 |
+| 44/40, vol 40 %, 12 months, (payoff, spot) | 3.90000 ± 0.00187 | 3.90036 ± 0.00235 | 3.90271 |
+| 40/40, vol 20 %, 12 months, (payoff, spot) | 2.28544 ± 0.00088 | 2.28543 ± 0.00099 | 2.28614 |
+| 36/40, 26 fortnights, (spot) | 4.46875 ± 0.00175 | unchanged | 4.46888 |
+
+The same regression fits the xVA's future values and the dynamic initial
+margin (`PolynomialRegression`): it moves there only where a basis was
+dependent to within 1e-10.
+
+**Checked.** The IR's path against the bytecode's under the same rule (the
+rule in `mc::ScriptPathView`), bit for bit, on six scripts -- two
+regressors, none, a chooser, an issuer's call nested in an if, a negated
+decision, an exercise inside an if on the spot whose fuzzy degree runs both
+branches -- hard and fuzzy, numbers as constants and as terms, under
+Black-Scholes, local vol and Heston, and the risks' variant against the dual
+path (`ScriptIrExercise`); two rules of one shape give the same blocks; the
+refusals. On the GPU (`GpuRisksTest.EarlyExercise*`): prices equal to the
+CPU's on the same Philox paths (1e-9), risks to the tape's (1e-8), under
+Black-Scholes (tangent), local vol (adjoint) and Heston, hard and fuzzy;
+with compilation off the GPU refuses and `auto` says why.
+
+**Measured** through `price_script` (one V100 against the CPU on two
+threads, as in production; a monthly Bermudan put, 200 000 Sobol points,
+the same prices and deltas on both):
+
+| | CPU (2 threads) | GPU |
+|---|---|---|
+| Black-Scholes, price | 0.58 s | 0.48 s |
+| Black-Scholes, price + AAD risks | 0.80 s | 0.44 s |
+| local vol 252 steps/yr, price | 5.87 s | 1.98 s |
+| local vol 252 steps/yr, price + AAD risks (38) | 44.6 s | 1.96 s |
+
+The local-vol risks were over the API's 20 s. What the GPU requests spend
+now is mostly the pilot: 50 000 paths simulated and run on one CPU thread.
+
+**Left.** The pilot (and the regression) on a pool or on the device.
