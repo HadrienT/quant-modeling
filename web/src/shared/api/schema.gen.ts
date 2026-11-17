@@ -768,6 +768,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/simulation/distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Distribution
+         * @description The law of the model's paths and the prices they imply, each with its
+         *     Monte Carlo error (engines/mc/path_distribution.hpp), and, with a ticker,
+         *     the stored SVI surface at the same dates and moneyness
+         *     (simulation_market.py).
+         */
+        post: operations["distribution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/simulation/paths/black-scholes": {
         parameters: {
             query?: never;
@@ -2376,6 +2399,21 @@ export interface components {
          * @enum {string}
          */
         BarrierKind: "up-and-in" | "up-and-out" | "down-and-in" | "down-and-out";
+        /** BarrierOut */
+        BarrierOut: {
+            /** Barrier */
+            barrier: number;
+            /** Price */
+            price: number;
+            /** Stderr */
+            stderr: number;
+            /** Strike */
+            strike: number;
+            /** Vanilla Price */
+            vanilla_price: number;
+            /** Vanilla Stderr */
+            vanilla_stderr: number;
+        };
         /** BarrierRequest */
         BarrierRequest: {
             barrier_kind: components["schemas"]["BarrierKind"];
@@ -3337,6 +3375,153 @@ export interface components {
             /** Weights */
             weights?: number[];
         };
+        /** DistributionMarket */
+        DistributionMarket: {
+            /** Dividend */
+            dividend: number;
+            /**
+             * First Slice
+             * @description Maturity of the first surface slice, in years.
+             */
+            first_slice: number;
+            /** Last Slice */
+            last_slice: number;
+            /**
+             * Snapshot
+             * Format: date
+             */
+            snapshot: string;
+            /** Spot */
+            spot: number;
+            /** Ticker */
+            ticker: string;
+        };
+        /**
+         * DistributionRequest
+         * @description The law of a model's paths (engines/mc/path_distribution.hpp, WP 29).
+         *
+         *     Black-Scholes takes `vol`, SABR `sabr` (with `spot` the forward), Heston
+         *     `heston`, each with `spot` and `dividend` typed; or a `ticker`. Local vol
+         *     and SLV always need the `ticker`: their surface is its stored chain.
+         *     With a ticker, the stored SVI surface is returned beside the model
+         *     (`market`), at the same dates and moneyness.
+         */
+        DistributionRequest: {
+            /**
+             * Barrier
+             * @description Up-and-out barrier, as a multiple of the spot.
+             * @default 1.2
+             */
+            barrier: number;
+            /**
+             * Barrier Strike
+             * @default 1
+             */
+            barrier_strike: number;
+            /**
+             * Dividend
+             * @default 0
+             */
+            dividend: number;
+            /**
+             * Forward Start
+             * @description Start of the forward smile, in years (to ttm). Default: ttm / 2.
+             */
+            forward_start?: number | null;
+            heston?: components["schemas"]["HestonParams"] | null;
+            model: components["schemas"]["SimulationModel"];
+            /**
+             * Moneyness
+             * @description Strikes as K / F(0, t).
+             */
+            moneyness?: number[];
+            /**
+             * N Display
+             * @default 30
+             */
+            n_display: number;
+            /**
+             * N Paths
+             * @default 10000
+             */
+            n_paths: number;
+            /**
+             * N Steps
+             * @default 60
+             */
+            n_steps: number;
+            /**
+             * Rate
+             * @default 0.05
+             */
+            rate: number;
+            sabr?: components["schemas"]["SABRParamsIn"] | null;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
+            /**
+             * Smile Times
+             * @description Maturities of the vanilla smiles, in years (the nearest grid date is used). Default: a quarter, half and all of ttm.
+             */
+            smile_times?: number[] | null;
+            /** Spot */
+            spot?: number | null;
+            /** Ticker */
+            ticker?: string | null;
+            /**
+             * Ttm
+             * @default 1
+             */
+            ttm: number;
+            /** Vol */
+            vol?: number | null;
+        };
+        /** DistributionResponse */
+        DistributionResponse: {
+            /**
+             * Atm Vol
+             * @description ATM-forward implied vol per date.
+             */
+            atm_vol: (number | null)[];
+            /** Atm Vol Stderr */
+            atm_vol_stderr: (number | null)[];
+            barrier?: components["schemas"]["BarrierOut"] | null;
+            /** Dividend */
+            dividend: number;
+            forward_smile?: components["schemas"]["SmileOut"] | null;
+            histogram: components["schemas"]["HistogramOut"];
+            market?: components["schemas"]["DistributionMarket"] | null;
+            martingale: components["schemas"]["MartingaleOut"];
+            model: components["schemas"]["SimulationModel"];
+            /** N Paths */
+            n_paths: number;
+            /** Paths */
+            paths: number[][];
+            /** Quantile Levels */
+            quantile_levels: number[];
+            /** Rate */
+            rate: number;
+            /** Smiles */
+            smiles: components["schemas"]["SmileOut"][];
+            /** Spot */
+            spot: number;
+            /**
+             * Spot Quantiles
+             * @description [level][date]
+             */
+            spot_quantiles: number[][];
+            /** Time Grid */
+            time_grid: number[];
+            /** Vol Quantiles */
+            vol_quantiles?: (number | null)[][] | null;
+            /**
+             * Vols
+             * @description Instantaneous vol of each display path (null at t = 0).
+             */
+            vols?: (number | null)[][] | null;
+        };
         /** DriftedInput */
         DriftedInput: {
             /** Current As Of */
@@ -4075,6 +4260,29 @@ export interface components {
             /** Xi */
             xi: number;
         };
+        /** HistogramOut */
+        HistogramOut: {
+            /**
+             * Counts
+             * @description [date][bin], equal bins on [lo, hi].
+             */
+            counts: number[][];
+            /**
+             * Hi
+             * @description Per date, the 99.5% quantile of S_t.
+             */
+            hi: number[];
+            /**
+             * Lo
+             * @description Per date, the 0.5% quantile of S_t.
+             */
+            lo: number[];
+            /**
+             * Market Density
+             * @description [date][bin]: the stored surface's risk-neutral density of S_t at each bin centre (Breeden-Litzenberger); null outside the quoted dates.
+             */
+            market_density?: ((number | null)[] | null)[] | null;
+        };
         /**
          * HistoricalDefaultRate
          * @description The default rate of a rating category on record: the average of the
@@ -4554,6 +4762,21 @@ export interface components {
         MarketsResponse: {
             /** Markets */
             markets: components["schemas"]["MarketInfo"][];
+        };
+        /** MartingaleOut */
+        MartingaleOut: {
+            /**
+             * Exact
+             * @description S0 e^{-q t}.
+             */
+            exact: number[];
+            /**
+             * Mean
+             * @description E[S_t / N_t], Monte Carlo.
+             */
+            mean: number[];
+            /** Stderr */
+            stderr: number[];
         };
         /** MaturityVega */
         MaturityVega: {
@@ -6064,6 +6287,20 @@ export interface components {
             /** Value */
             value: number[] | null;
         };
+        /** SABRParamsIn */
+        SABRParamsIn: {
+            /** Alpha */
+            alpha: number;
+            /**
+             * Beta
+             * @default 0.5
+             */
+            beta: number;
+            /** Nu */
+            nu: number;
+            /** Rho */
+            rho: number;
+        };
         /** SABRPathRequest */
         SABRPathRequest: {
             /** Alpha */
@@ -6779,6 +7016,45 @@ export interface components {
         SitePagesUpdate: {
             /** Hidden */
             hidden: string[];
+        };
+        /** SmileOut */
+        SmileOut: {
+            /** Forward */
+            forward: number;
+            /** Iv Stderr */
+            iv_stderr: (number | null)[];
+            /**
+             * Market Iv
+             * @description The stored SVI surface at the same moneyness; null where not quoted.
+             */
+            market_iv?: (number | null)[] | null;
+            /**
+             * Model Iv
+             * @description Black-76; null outside the no-arbitrage bounds.
+             */
+            model_iv: (number | null)[];
+            /** Moneyness */
+            moneyness: number[];
+            /** Price Stderr */
+            price_stderr: number[];
+            /**
+             * Prices
+             * @description Out of the money, discounted to today.
+             */
+            prices: number[];
+            /**
+             * Start
+             * @description Forward smile: t1. Spot smiles: 0.
+             * @default 0
+             */
+            start: number;
+            /** Strikes */
+            strikes: number[];
+            /**
+             * Time
+             * @description Option maturity in years (T - t1 for the forward smile).
+             */
+            time: number;
         };
         /** SnapshotRequest */
         SnapshotRequest: {
@@ -9767,6 +10043,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SimulationCalibrateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    distribution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DistributionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributionResponse"];
                 };
             };
             /** @description Validation Error */

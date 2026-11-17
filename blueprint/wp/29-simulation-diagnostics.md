@@ -70,8 +70,14 @@ barrier on the same paths.
   surface's implied vols at the same dates and strikes, and the risk-neutral
   density of S_t by Breeden–Litzenberger, q(K) = e^(rT) d²C/dK², computed from
   the SVI total variance (analytic in k, no finite differences on noisy quotes).
-- `POST /api/simulation/compare`: local vol and Heston (or SLV) calibrated on the
-  same ticker, with their spot smiles, forward smiles and up-and-out prices.
+- No comparison endpoint: the comparison tab sends two distribution requests
+  with the same ticker, grid and seed. One route to test and to cache.
+- SABR simulates the forward to `ttm`: only its last date is an option on the
+  spot at a quoted maturity, so the market smile and density are returned at
+  that date only.
+- Black-Scholes or SABR from a ticker without parameters: the ATM vol of the
+  stored surface at `ttm`, or SABR fitted to its nearest slice (the database
+  only; `/calibrate` keeps its live fallback for those two).
 
 ## 5. Front end (lots S3, S4)
 
@@ -88,7 +94,7 @@ barrier on the same paths.
 | Lot | Content | Acceptance |
 |---|---|---|
 | S1 | Engine, `Sample::inst_vol` in the five models, bindings, property tests | Tests green; the pricing paths unchanged (the flag is off) |
-| S2 | API: distribution, market smile and density, comparison | pytest with the real wheel; `openapi.json` regenerated |
+| S2 | API: distribution, market smile and density | pytest with the real wheel; `openapi.json` regenerated |
 | S3 | Page: fan chart, date slider and histogram, vol panel, smile against market, martingale tile | vitest, typecheck, lint; checked on the live front |
 | S4 | Comparison tab | Same |
 
