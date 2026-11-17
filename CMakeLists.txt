@@ -291,6 +291,16 @@ if(QM_NATIVE_ARCH)
   target_compile_options(quantModeling PUBLIC
     $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-march=native>
   )
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+  # The baseline ISA, said rather than left to the compiler's default: some
+  # distributions' GCC now targets x86-64-v3 (Ubuntu 26.04's amd64v3 variant,
+  # which GitHub's ubuntu-latest runners install), where FMA contraction
+  # moves the last bits of every path. The wheel, the production image and
+  # the CI stay on the same ISA (measured and decided,
+  # blueprint/wp/26-performance.md §14).
+  target_compile_options(quantModeling PUBLIC
+    $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-march=x86-64>
+  )
 endif()
 
 # ---- CLI ----
