@@ -252,3 +252,21 @@ def test_history_only_serves_the_currencys_reference_rates(client):
         client.get("/market/rates/history?currency=EUR&series_id=DGS10").status_code
         == 404
     )
+
+
+def test_the_two_curve_queries_differ_only_outside_the_pillars():
+    """`qm.discount_factors` holds the discount factor flat outside the
+    pillars, the convention of the government bootstrap it reads (a JGB's 6M
+    coupon is solved at the 1Y factor); the engines' curves, read by
+    `qm.rate_curve_discount_factors`, hold the forward rate (WP 23, M10).
+    Callers that may query before the first pillar use the second."""
+    times, dfs = [0.25, 1.0, 2.0], [0.99, 0.96, 0.92]
+    inside = [0.25, 0.6, 1.0, 1.7, 2.0]
+    assert qm.discount_factors(times, dfs, inside) == pytest.approx(
+        qm.rate_curve_discount_factors(times, dfs, inside), rel=1e-14
+    )
+    r0 = -math.log(dfs[0]) / times[0]
+    [flat_df] = qm.discount_factors(times, dfs, [0.1])
+    [flat_fwd] = qm.rate_curve_discount_factors(times, dfs, [0.1])
+    assert flat_df == pytest.approx(dfs[0], rel=1e-14)
+    assert flat_fwd == pytest.approx(math.exp(-r0 * 0.1), rel=1e-12)

@@ -27,11 +27,16 @@ export function SurfaceView({
 	mode = "sequential",
 	title,
 	height = 420,
+	viewLabels = { front: "Smile", profile: "Term" },
 }: {
 	grid?: SurfaceGrid;
 	mode?: "sequential" | "divergent";
 	title?: string;
 	height?: number;
+	/** What the front view (along x) and the side view (along y) show: a
+	 * smile and a term structure on a volatility surface, other things on
+	 * other surfaces. */
+	viewLabels?: { front: string; profile: string };
 }) {
 	const webgl = useMemo(hasWebGL2, []);
 	const reducedMotion = useMemo(
@@ -98,8 +103,8 @@ export function SurfaceView({
 					{(
 						[
 							["three-quarter", "3/4"],
-							["front", "Smile"],
-							["profile", "Term"],
+							["front", viewLabels.front],
+							["profile", viewLabels.profile],
 							["top", "Top"],
 						] as [PresetView, string][]
 					).map(([v, label]) => (

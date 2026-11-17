@@ -48,6 +48,7 @@ from .rates_derivatives_schemas import (
     SwaptionPricingRequest,
     SwaptionPricingResponse,
     SwaptionResult,
+    SwaptionRisk,
 )
 from .schemas import Greeks, MethodologySection, ModelWarning
 
@@ -351,6 +352,102 @@ def _nearest_vol(req: SwaptionPricingRequest) -> float:
     return best.normal_vol
 
 
+_BP = 1e-4
+
+
+def _shifted(q: RatesCurveQuotes, h: float) -> RatesCurveQuotes:
+    """Every quoted rate moved by h: deposits, OIS, FRAs and swaps."""
+
+    def move(rows):
+        return [r.model_copy(update={"rate": r.rate + h}) for r in rows]
+
+    return q.model_copy(
+        update={
+            "deposits": move(q.deposits),
+            "ois": move(q.ois),
+            "fras": move(q.fras),
+            "swaps": move(q.swaps),
+        }
+    )
+
+
+def _swaption_risk(
+    q: RatesCurveQuotes,
+    sw: SwaptionInput,
+    strike: float,
+    model: str,
+    normal_vol: float,
+    hw: HullWhiteCalibrationResult,
+    npv: float,
+) -> Tuple[SwaptionRisk, Greeks]:
+    """DV01, its gamma and the vega of the value priced (WP 23, T4), by
+    central differences on the whole chain. The strike is the base one, so an
+    at-the-money swaption stays on its strike when the curve moves."""
+    key = "hull_white_bermudan" if sw.exercise == "bermudan" else model
+    exercises = [sw.expiry + i for i in range(int(round(sw.tenor)))]
+    sabr = sw.sabr
+
+    def value(
+        quotes: RatesCurveQuotes,
+        nv: float = normal_vol,
+        lv: Optional[float] = sw.lognormal_vol,
+        alpha: Optional[float] = sabr.alpha if sabr else None,
+        sigma: float = hw.sigma,
+    ) -> float:
+        ois, proj = _bootstrap(quotes)
+        out = qm.price_swaption(
+            ois["times"],
+            ois["discount_factors"],
+            proj["times"],
+            proj["discount_factors"],
+            sw.expiry,
+            sw.tenor,
+            strike,
+            sw.payer,
+            quotes.fixed_frequency,
+            quotes.float_frequency,
+            sw.notional,
+            normal_vol=nv if key == "bachelier" else None,
+            lognormal_vol=lv if key == "black" else None,
+            shift=sw.shift,
+            sabr=(
+                (alpha, sabr.beta, sabr.rho, sabr.nu)
+                if key == "sabr" and sabr
+                else None
+            ),
+            hull_white=(
+                (hw.mean_reversion, sigma) if key.startswith("hull_white") else None
+            ),
+            bermudan_exercises=exercises if key == "hull_white_bermudan" else [],
+        )
+        return out[key]
+
+    up, down = value(_shifted(q, _BP)), value(_shifted(q, -_BP))
+    dv01 = (up - down) / 2
+    gamma_bp = up - 2 * npv + down
+
+    # The vol bump of each model, in the unit a desk quotes it in.
+    if key == "bachelier":
+        h, unit = _BP, "+1bp of normal vol"
+        v_up, v_down = value(q, nv=normal_vol + h), value(q, nv=normal_vol - h)
+    elif key == "black":
+        lv = sw.lognormal_vol or 0.0
+        h, unit = 0.01, "+1 point of lognormal vol"
+        v_up, v_down = value(q, lv=lv + h), value(q, lv=lv - h)
+    elif key == "sabr" and sabr:
+        h, unit = 0.01 * sabr.alpha, "+1% of SABR α, β, ρ and ν held"
+        v_up, v_down = value(q, alpha=sabr.alpha + h), value(q, alpha=sabr.alpha - h)
+    else:
+        h, unit = _BP, "+1bp of Hull-White σ, the mean reversion held"
+        v_up, v_down = value(q, sigma=hw.sigma + h), value(q, sigma=hw.sigma - h)
+    vega = (v_up - v_down) / 2
+
+    risk = SwaptionRisk(dv01=dv01, gamma_bp=gamma_bp, vega=vega, vega_unit=unit)
+    # The response's greeks per unit of the input: of the rate, of the vol.
+    greeks = Greeks(delta=dv01 / _BP, gamma=gamma_bp / _BP**2, vega=vega / h)
+    return risk, greeks
+
+
 def price_swaption(req: SwaptionPricingRequest) -> SwaptionPricingResponse:
     q, sw = req.curves, req.swaption
     ois, proj = _bootstrap(q)
@@ -433,6 +530,8 @@ def price_swaption(req: SwaptionPricingRequest) -> SwaptionPricingResponse:
     else:
         npv = next(p.price for p in prices if p.key == model)
 
+    risk, greeks = _swaption_risk(q, sw, strike, model, normal_vol, hw, npv)
+
     warnings: List[ModelWarning] = []
     off_the_money_bp = abs(strike - forward) * 1e4
     if model == "bachelier" and sw.normal_vol is None and off_the_money_bp > 1.0:
@@ -463,7 +562,8 @@ def price_swaption(req: SwaptionPricingRequest) -> SwaptionPricingResponse:
 
     return SwaptionPricingResponse(
         npv=npv,
-        greeks=Greeks(),
+        greeks=greeks,
+        bumped_greeks=["delta", "gamma", "vega"],
         diagnostics=(
             f"{sw.exercise.capitalize()} swaption under {_MODEL_NAMES[model]}. "
             + _curve_note(q, ois, proj)
@@ -491,6 +591,7 @@ def price_swaption(req: SwaptionPricingRequest) -> SwaptionPricingResponse:
                 else bermudan - european_hw
             ),
             hull_white=hw,
+            risk=risk,
         ),
     )
 

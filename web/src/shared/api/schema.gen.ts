@@ -7632,10 +7632,39 @@ export interface components {
              * @enum {string}
              */
             requested: "auto" | "bachelier" | "black" | "sabr" | "hull_white";
+            risk: components["schemas"]["SwaptionRisk"];
             /** Strike */
             strike: number;
             /** Switch Premium */
             switch_premium: number | null;
+        };
+        /**
+         * SwaptionRisk
+         * @description The value's sensitivities, by revaluing the whole chain (bootstrap,
+         *     then the pricer) on bumped inputs, the strike held: central differences,
+         *     no closed form, the same for every model and for the Bermudan.
+         */
+        SwaptionRisk: {
+            /**
+             * Dv01
+             * @description Value change for +1bp on every quoted rate (deposits, OIS, FRAs, swaps), vols and Hull-White parameters held
+             */
+            dv01: number;
+            /**
+             * Gamma Bp
+             * @description Change of the DV01 for a further +1bp
+             */
+            gamma_bp: number;
+            /**
+             * Vega
+             * @description Value change for the bump in vega_unit
+             */
+            vega: number;
+            /**
+             * Vega Unit
+             * @description Which vol is bumped, and by how much
+             */
+            vega_unit: string;
         };
         /** SwaptionVolInput */
         SwaptionVolInput: {

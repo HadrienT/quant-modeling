@@ -158,6 +158,23 @@ function SwaptionResults({
 					footnote="Bermudan − European, Hull-White"
 				/>
 			</MetricRow>
+			<MetricRow className="xl:grid-cols-3">
+				<Metric
+					label="DV01"
+					value={signedMoney(s.risk.dv01)}
+					footnote="Every quoted rate +1bp, strike and vols held"
+				/>
+				<Metric
+					label="Gamma"
+					value={signedMoney(s.risk.gamma_bp)}
+					footnote="Change of the DV01 for a further +1bp"
+				/>
+				<Metric
+					label="Vega"
+					value={signedMoney(s.risk.vega)}
+					footnote={s.risk.vega_unit}
+				/>
+			</MetricRow>
 			<SwaptionModelsTable swaption={s} />
 			<CalibrationPanel hw={s.hull_white} />
 		</>

@@ -15,3 +15,9 @@ export { TradesTable } from "./TradesTable";
 export { XvaResultHeader } from "./XvaResultHeader";
 export { type XvaResultTab, XvaResultTabs } from "./XvaResultTabs";
 export * from "./format";
+export {
+	MAX_SCRIPT,
+	decodeScript,
+	encodeScript,
+	isRateScript,
+} from "./scriptLink";

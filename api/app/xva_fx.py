@@ -107,7 +107,7 @@ class TwoCurrencyMarket:
 
     def discount(self, t: float) -> float:
         """P_EUR(0, t) on the curve the engine uses: a constant forward rate
-        before the first pillar, where `qm.discount_factors` would be flat."""
+        before the first pillar."""
         return qm.rate_curve_discount_factors(self.rates.times, self.rates.dfs, [t])[0]
 
     def argument(self) -> dict:

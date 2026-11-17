@@ -7,6 +7,7 @@ import {
 	ForeignMarketPanel,
 	XvaResultHeader,
 	XvaResultTabs,
+	decodeScript,
 } from "@/shared/xva";
 import {
 	DEFAULT_VIEW,
@@ -29,11 +30,21 @@ export default function XvaPage() {
 	const { isShown } = useNavPages();
 	const search = useSearch({ from: "/xva" });
 	const navigate = useNavigate({ from: "/xva" });
+	const script = decodeScript(search.script);
 	const view: XvaView = {
-		portfolio: search.portfolio ?? DEFAULT_VIEW.portfolio,
+		// `custom` is one's own script: without one, the default portfolio.
+		portfolio:
+			search.portfolio === "custom" && !script
+				? DEFAULT_VIEW.portfolio
+				: (search.portfolio ?? DEFAULT_VIEW.portfolio),
+		script,
 		counterparty: search.cpty ?? DEFAULT_VIEW.counterparty,
 		own: search.own ?? DEFAULT_VIEW.own,
 		csa: search.csa ?? DEFAULT_VIEW.csa,
+		threshold: search.threshold ?? DEFAULT_VIEW.threshold,
+		mta: search.mta ?? DEFAULT_VIEW.mta,
+		mpor: search.mpor ?? DEFAULT_VIEW.mpor,
+		flows: search.flows ?? DEFAULT_VIEW.flows,
 		wwr: search.wwr ?? DEFAULT_VIEW.wwr,
 		funding: search.funding ?? DEFAULT_VIEW.funding,
 		paths: search.paths ?? DEFAULT_VIEW.paths,
@@ -45,7 +56,9 @@ export default function XvaPage() {
 				...prev,
 				...("counterparty" in patch ? { cpty: patch.counterparty } : {}),
 				...Object.fromEntries(
-					Object.entries(patch).filter(([k]) => k !== "counterparty"),
+					Object.entries(patch).filter(
+						([k]) => k !== "counterparty" && k !== "script",
+					),
 				),
 			}),
 		});

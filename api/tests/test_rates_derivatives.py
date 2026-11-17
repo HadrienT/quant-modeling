@@ -275,3 +275,70 @@ def test_the_example_is_a_valid_quote_set_and_an_unknown_set_is_refused():
         rates_derivatives.quote_set("eur-illustrative")
     )
     assert client.get("/api/rates/quotes/gbp-sonia").status_code == 422
+
+
+# ── Swaption sensitivities (WP 23, T4) ───────────────────────────────────────
+
+
+def test_the_atm_bachelier_vega_is_the_closed_form(quotes):
+    """At the money the Bachelier price is A N σ √T / √(2π), linear in σ:
+    the bumped vega is that slope, to rounding."""
+    import math
+
+    r = _swaption(quotes, model="bachelier", strike=None, exercise="european")
+    s = r["swaption"]
+    notional, expiry = quotes["swaption"]["notional"], quotes["swaption"]["expiry"]
+    closed = s["annuity"] * notional * math.sqrt(expiry) / math.sqrt(2 * math.pi)
+    assert r["greeks"]["vega"] == pytest.approx(closed, rel=1e-6)
+    assert s["risk"]["vega"] == pytest.approx(closed * 1e-4, rel=1e-6)
+    assert "normal vol" in s["risk"]["vega_unit"]
+    assert set(r["bumped_greeks"]) == {"delta", "gamma", "vega"}
+
+
+def _shifted_curves(curves: dict, h: float) -> dict:
+    move = lambda rows: [{**r, "rate": r["rate"] + h} for r in rows]  # noqa: E731
+    return {
+        **curves,
+        **{k: move(curves[k]) for k in ("deposits", "ois", "fras", "swaps")},
+    }
+
+
+@pytest.mark.parametrize(
+    "model,exercise",
+    [("bachelier", "european"), ("hull_white", "european"), ("hull_white", "bermudan")],
+)
+def test_payer_minus_receiver_has_the_forward_swaps_risk(quotes, model, exercise):
+    """Payer − receiver is the forward swap: their vegas are equal, and the
+    differences of their DV01 and gamma are the swap's own, revalued on the
+    same bumped curves (the annuity makes the swap's gamma non-zero). A
+    Bermudan has no such parity: only the signs are checked there."""
+    strike = _swaption(quotes)["swaption"]["forward"] + 0.002
+    kw = dict(model=model, exercise=exercise, strike=strike)
+    payer = _swaption(quotes, payer=True, **kw)["swaption"]["risk"]
+    receiver = _swaption(quotes, payer=False, **kw)["swaption"]["risk"]
+    assert payer["dv01"] > 0 > receiver["dv01"]
+    assert payer["gamma_bp"] > 0 and receiver["gamma_bp"] > 0
+    assert payer["vega"] > 0 and receiver["vega"] > 0
+    if exercise == "bermudan":
+        return
+    sw = quotes["swaption"]
+    swap = dict(
+        start=sw["expiry"],
+        tenor=sw["tenor"],
+        fixed_rate=strike,
+        notional=sw["notional"],
+        payer=True,
+    )
+
+    def swap_value(h: float) -> float:
+        body = {"curves": _shifted_curves(quotes["curves"], h), "swap": swap}
+        r = client.post("/price/rates/swap", json=body)
+        assert r.status_code == 200, r.text
+        return r.json()["npv"]
+
+    up, mid, down = swap_value(1e-4), swap_value(0.0), swap_value(-1e-4)
+    assert payer["vega"] == pytest.approx(receiver["vega"], rel=1e-6)
+    assert payer["dv01"] - receiver["dv01"] == pytest.approx((up - down) / 2, rel=1e-6)
+    assert payer["gamma_bp"] - receiver["gamma_bp"] == pytest.approx(
+        up - 2 * mid + down, rel=1e-3
+    )

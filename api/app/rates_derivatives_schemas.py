@@ -218,6 +218,20 @@ class SwaptionModelPrice(BaseModel):
     detail: str
 
 
+class SwaptionRisk(BaseModel):
+    """The value's sensitivities, by revaluing the whole chain (bootstrap,
+    then the pricer) on bumped inputs, the strike held: central differences,
+    no closed form, the same for every model and for the Bermudan."""
+
+    dv01: float = Field(
+        description="Value change for +1bp on every quoted rate (deposits, OIS, "
+        "FRAs, swaps), vols and Hull-White parameters held"
+    )
+    gamma_bp: float = Field(description="Change of the DV01 for a further +1bp")
+    vega: float = Field(description="Value change for the bump in vega_unit")
+    vega_unit: str = Field(description="Which vol is bumped, and by how much")
+
+
 class SwaptionResult(BaseModel):
     exercise: Literal["european", "bermudan"]
     requested: Literal["auto", "bachelier", "black", "sabr", "hull_white"]
@@ -233,6 +247,7 @@ class SwaptionResult(BaseModel):
     bermudan_exercises: List[float]
     switch_premium: Optional[float]
     hull_white: HullWhiteCalibrationResult
+    risk: SwaptionRisk
 
 
 class SwaptionPricingResponse(PricingResponse):

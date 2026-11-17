@@ -365,7 +365,9 @@ void register_rates(py::module_ &m)
           py::arg("discount_factors"), py::arg("query_times"),
           "Discount factors at query_times on the curve (times, discount_factors), with "
           "DiscountCurve's log-linear interpolation (flat before the first pillar and "
-          "after the last).");
+          "after the last): the convention bootstrap_discount_curve solved under, so it "
+          "reprices that curve's quotes. The engines' curves hold the forward rate flat "
+          "outside the pillars instead: query those with rate_curve_discount_factors.");
     m.def("bootstrap_credit_curve", &bootstrap_credit_curve_impl, py::arg("spreads"),
           py::arg("discount_times"), py::arg("discount_factors"), py::arg("recovery") = 0.4,
           py::arg("frequency") = 4,

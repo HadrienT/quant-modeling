@@ -2853,7 +2853,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | B5 | Capital : delta prudentiel à la monnaie **future**, état d'exercice par chemin | aujourd'hui figé à la monnaie d'aujourd'hui, et l'option échue est portée comme son swap |
 | B6 | Capital : risque de marché des couvertures, ratio de levier, SA-CVA sur sensibilités AAD (lot X8) | le KVA ne couvre que le défaut (IRB) et le CVA (BA-CVA réduit) |
 | B7 | FVA sur le collatéral non décalé ; FVA asymétrique récursif (Brigo et al.) ; option du collatéral le moins cher | le financement utilise l'exposition collatéralisée à la MPoR |
-| B8 | Exposition sous marge initiale avec le traitement « Paid » des flux : pics de coupons | CVA −529 contre −20 en « Withheld » ; à montrer comme tel sur la page |
+| B8 | Exposition sous marge initiale avec le traitement « Paid » des flux : pics de coupons | **Done (2026-11-17)**: the page offers the flow treatment of the margin period (Withheld, Paid, Only the bank pays) and, outside Withheld, says that the spikes on the bank's payment dates are the model, which initial margin does not cover |
 
 ### SIMM (X5b)
 
@@ -2886,9 +2886,9 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 |---|---|---|
 | P1 | Erreur Monte-Carlo du CVA autonome, incrémental et marginal de chaque transaction, et des profils de marge et d'EAD ; bruit de la régression dans l'erreur du MVA | les ajustements du netting set ont la leur (§14.14) ; la part de chaque transaction est affichée sans |
 | P2 | Quantiles de la valeur sous la mesure historique | l'éventail et la surface n'existent que sous la mesure de pricing |
-| P3 | Termes du CSA réglables (seuil, MTA, période de marge) | la page n'offre que les termes des règles de marge ; l'API accepte les autres |
-| P4 | Scripts de l'utilisateur dans la page (voir K4) | le portefeuille `custom` n'est pas offert |
-| P5 | Libellés des vues prédéfinies de `SurfaceView` (« Smile », « Term ») | ce sont ceux d'une surface de volatilité |
+| P3 | Termes du CSA réglables (seuil, MTA, période de marge) | **Done (2026-11-17)**: threshold (both sides), minimum transfer amount, margin period of risk and the flows during it, in the URL like the rest of the view (`CsaTerms.tsx`) |
+| P4 | Scripts de l'utilisateur dans la page (voir K4) | **Done (2026-11-17)**: `custom` is offered when the URL carries a script; see K4 |
+| P5 | Libellés des vues prédéfinies de `SurfaceView` (« Smile », « Term ») | **Done (2026-11-17)**: `SurfaceView` takes `viewLabels`; the exposure surface reads "Over time" and "Across scenarios" |
 
 ### Capital par modèle interne et scripts (D2, D4)
 
@@ -2897,7 +2897,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | K1 | **Calibration stressée** de l'EEPE (CRE53.7) : le maximum de l'EEPE courante et de celle d'une période de stress | la règle la demande ; il faut une volatilité de Hull-White calée sur une période de stress |
 | K2 | EAD future **par scénario** (régression de l'EEPE à venir sur l'état) au lieu du profil attendu | le KVA par modèle interne ignore la dispersion du capital futur |
 | K3 | Dénominateurs des taux de défaut (cohortes) pour une moyenne pondérée et une catégorie CCC/CC/C | l'ESMA ne les publie pas dans cette vue ; la matrice de transition du CEREP les approche |
-| K4 | Scripts de l'utilisateur depuis la page `/scripting` vers `/xva` | l'API les accepte ; il manque le lien dans le front (X9) |
+| K4 | Scripts de l'utilisateur depuis la page `/scripting` vers `/xva` | **Done (2026-11-17)**: a validated rate script (it reads `df`, no equity underlying, within the API's 4 000 characters) gets a link to `/xva`, the script in the URL as base64url (`shared/xva/scriptLink.ts`), valued as the netting set `custom` |
 | K5 | SA-CCR d'un script par une **visite de son arbre** (dates, sens, notionnel) | permettrait de comparer les deux méthodes sur un script ; aucune règle ne dit comment lire le notionnel d'un payoff quelconque |
 
 ### GPU (X7)
@@ -2938,7 +2938,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | M7 | Corrélations implicites | aucune source libre connue (options quanto, swaptions en devise croisée non publiées) |
 | M8 | Scripts actions et quanto dans le moteur d'exposition (issue #86) | le modèle joint taux-change existe ; il reste le facteur actions |
 | M9 | Autres paires que EUR/USD | le fichier porte JPY, MXN, CAD, AUD ; il faut la courbe et les swaptions de la devise |
-| M10 | `qm.discount_factors` plat avant le premier pilier : l'aligner sur la courbe du moteur, ou revoir ses appelants (`fx.py`) | piège rencontré dans ce lot |
+| M10 | `qm.discount_factors` plat avant le premier pilier : l'aligner sur la courbe du moteur, ou revoir ses appelants (`fx.py`) | **Done (2026-11-17), callers reviewed**: aligning it would break its consistency with the government bootstrap it reads, which solves under the same flat-left rule (a JGB's 6M coupon at the 1Y factor: the 1Y par quote moved by 0.6 bp of price when tried). Every caller (`fx.py`, `rates.py`, `credit.py`, `portfolio_valuation.py`) queries inside the pillars; the docstring now names `rate_curve_discount_factors` for the engines' curves, and `test_the_two_curve_queries_differ_only_outside_the_pillars` pins both. Moving the bootstrap itself to flat forwards is a separate decision (it moves the curves of `xva_market_risks`) |
 
 ### Transverse
 
@@ -2947,5 +2947,5 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | T1 | Rejeu d'un événement `xva.valuation` (issue #141) | prévu au lot X3, pas branché |
 | T2 | ~~Convention de prime des swaptions au-delà de deux ans (issue #142)~~ **fait** : la prime est lue comme payée à l'échéance, la grille va jusqu'à 10 ans | sur les transactions USD d'août à octobre 2026 d'échéance ≥ 5 ans, 72 % sont au niveau que donne la prime actualisée, 6 % au niveau d'une prime payée comptant, 18 % au double (straddles non reconnus, surtout bilatéraux : à traiter) |
 | T3 | Calage Heston / rough Bergomi dégénéré sur SPY (issue #146) | la page Scripting valorise sous un modèle qui ne redonne pas un forward |
-| T4 | Grecques de la swaption dans le workbench de pricing | le bloc `greeks` est vide |
+| T4 | Grecques de la swaption dans le workbench de pricing | **Done (2026-11-17)**: DV01, its gamma and the vega of the model priced (normal vol, lognormal vol, SABR α or Hull-White σ), by central differences on the whole chain, strike held, Bermudan included (`SwaptionResult.risk`, and `greeks` per unit). Checked against the ATM Bachelier closed form and payer − receiver = the forward swap. Cost: +7 ms European, +145 ms Bermudan |
 | T5 | Temps de réponse de l'API xVA avec régression et marge initiale (5 à 15 s) ; sans régression, 7,6 s à 50 000 chemins après le lot X7 | à surveiller avant la page `/xva` ; voir G1 et G2 |

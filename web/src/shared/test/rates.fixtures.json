@@ -1376,16 +1376,20 @@
 		"european": {
 			"npv": 343535.218364376,
 			"greeks": {
-				"delta": null,
-				"gamma": null,
-				"vega": null,
+				"delta": 39563632.12632161,
+				"gamma": 2695030149.9979105,
+				"vega": 47059618.95402404,
 				"theta": null,
 				"rho": null,
 				"delta_std_error": null,
 				"gamma_std_error": null,
 				"vega_std_error": null,
 				"theta_std_error": null,
-				"rho_std_error": null
+				"rho_std_error": null,
+				"vanna": null,
+				"volga": null,
+				"vanna_std_error": null,
+				"volga_std_error": null
 			},
 			"bond_analytics": null,
 			"diagnostics": "European swaption under Bachelier. OIS discounting on 11 pillars, index projection on 10; fixed leg 1/y, floating leg 2/y",
@@ -1394,8 +1398,11 @@
 			"warnings": [],
 			"model_choice": null,
 			"script": null,
+			"bumped_greeks": ["delta", "gamma", "vega"],
 			"device": "cpu",
 			"gpus": 0,
+			"second_order_method": null,
+			"discretisation_bias": null,
 			"swaption": {
 				"exercise": "european",
 				"requested": "auto",
@@ -1506,22 +1513,32 @@
 							"model_vol": 0.006632706154068938
 						}
 					]
+				},
+				"risk": {
+					"dv01": 3956.363212632161,
+					"gamma_bp": 26.950301499979105,
+					"vega": 4705.9618954024045,
+					"vega_unit": "+1bp of normal vol"
 				}
 			}
 		},
 		"bermudan": {
 			"npv": 539342.4037571229,
 			"greeks": {
-				"delta": null,
-				"gamma": null,
-				"vega": null,
+				"delta": 34302226.374996826,
+				"gamma": 1215364832.9665885,
+				"vega": 66729457.606118515,
 				"theta": null,
 				"rho": null,
 				"delta_std_error": null,
 				"gamma_std_error": null,
 				"vega_std_error": null,
 				"theta_std_error": null,
-				"rho_std_error": null
+				"rho_std_error": null,
+				"vanna": null,
+				"volga": null,
+				"vanna_std_error": null,
+				"volga_std_error": null
 			},
 			"bond_analytics": null,
 			"diagnostics": "Bermudan swaption under Hull-White. OIS discounting on 11 pillars, index projection on 10; fixed leg 1/y, floating leg 2/y",
@@ -1536,8 +1553,11 @@
 			],
 			"model_choice": null,
 			"script": null,
+			"bumped_greeks": ["delta", "gamma", "vega"],
 			"device": "cpu",
 			"gpus": 0,
+			"second_order_method": null,
+			"discretisation_bias": null,
 			"swaption": {
 				"exercise": "bermudan",
 				"requested": "auto",
@@ -1648,6 +1668,12 @@
 							"model_vol": 0.006632706154068938
 						}
 					]
+				},
+				"risk": {
+					"dv01": 3430.2226374996826,
+					"gamma_bp": 12.153648329665884,
+					"vega": 6672.945760611852,
+					"vega_unit": "+1bp of Hull-White σ, the mean reversion held"
 				}
 			}
 		}

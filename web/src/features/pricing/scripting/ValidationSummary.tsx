@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+import { encodeScript, isRateScript } from "@/shared/xva";
 type ValidateResult = {
 	events: Array<{ date: string; t: number }>;
 	variables: string[];
@@ -38,7 +40,13 @@ function spacing(events: ValidateResult["events"]): string | null {
 /** What a successful "Validate" resolved to — before spending a Monte-Carlo
  * on it. A daily schedule has hundreds of events: they are summarised in one
  * line and folded, so the form's buttons and the price stay in view. */
-export function ValidationSummary({ result }: { result: ValidateResult }) {
+export function ValidationSummary({
+	result,
+	script,
+}: {
+	result: ValidateResult;
+	script?: string;
+}) {
 	const a = result.analysis;
 	const ev = result.events;
 	const depends = [
@@ -88,6 +96,19 @@ export function ValidationSummary({ result }: { result: ValidateResult }) {
 			{result.variables.length > 0 && (
 				<p className="font-mono break-words text-ink-secondary">
 					{result.variables.length} variable(s): {result.variables.join(", ")}
+				</p>
+			)}
+			{script && isRateScript(script, a.n_underlyings) && (
+				<p className="text-ink-secondary">
+					A rate script:{" "}
+					<Link
+						to="/xva"
+						search={{ portfolio: "custom", script: encodeScript(script) }}
+						className="text-accent hover:underline"
+					>
+						see its exposure and xVA as a netting set
+					</Link>
+					.
 				</p>
 			)}
 		</div>
