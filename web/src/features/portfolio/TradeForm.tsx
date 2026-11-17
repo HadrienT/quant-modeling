@@ -3,6 +3,7 @@ import type { Counterparty, Instrument } from "@/shared/api";
 import { useTickerClose } from "@/shared/api";
 import type { TradeDraft } from "@/shared/portfolio";
 import { Button, Input, Label } from "@/shared/ui";
+import type { InitialDerivative } from "./DerivativeFields";
 import { InstrumentPicker, type Picked } from "./InstrumentPicker";
 
 export type TradePreset = {
@@ -22,11 +23,14 @@ const today = () => new Date().toISOString().slice(0, 10);
  */
 export function TradeForm({
 	preset,
+	initialDerivative,
 	counterparties,
 	onBook,
 	onCancel,
 }: {
 	preset?: TradePreset;
+	/** a derivative's terms carried in from the workbench */
+	initialDerivative?: InitialDerivative;
 	counterparties: Counterparty[];
 	onBook: (instrument: Instrument, draft: TradeDraft) => void;
 	onCancel: () => void;
@@ -104,6 +108,7 @@ export function TradeForm({
 				<InstrumentPicker
 					tradeDate={tradeDate}
 					counterparties={counterparties}
+					initialDerivative={initialDerivative}
 					onChange={setPicked}
 				/>
 			)}

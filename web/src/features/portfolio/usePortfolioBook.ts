@@ -29,11 +29,20 @@ export function usePortfolioBook(repo: PortfolioRepository) {
 
 	useEffect(() => {
 		if (!demoId && list.data && selectedId !== (search.id ?? null)) {
-			navigate({ search: () => (selectedId ? { id: selectedId } : {}) });
+			// A trade carried in from the workbench survives the selection.
+			navigate({
+				search: (s) => ({
+					...(selectedId ? { id: selectedId } : {}),
+					...(s.trade ? { trade: s.trade } : {}),
+				}),
+			});
 		}
 	}, [demoId, list.data, selectedId, search.id, navigate]);
 
-	const select = (id: string) => navigate({ search: () => ({ id }) });
+	const select = (id: string) =>
+		navigate({
+			search: (s) => ({ id, ...(s.trade ? { trade: s.trade } : {}) }),
+		});
 	const selectDemo = (id: string) => navigate({ search: () => ({ demo: id }) });
 	const refresh = () => list.refetch();
 

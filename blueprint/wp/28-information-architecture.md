@@ -1,6 +1,6 @@
 # WP 28 — Information architecture and user journeys *(front end)*
 
-Status: lot U1 in progress. Depends on WP 03 (shell), 07 (workbench), 08 (market),
+Status: lots U1 and U2 done (#290). Depends on WP 03 (shell), 07 (workbench), 08 (market),
 09 (portfolio). No API change before lot U5.
 
 ## 1. Why
@@ -46,7 +46,42 @@ space whose pages are all hidden from a visitor does not show.
 Order: U1, U2 change how the site is perceived without rewriting a page; U3 next;
 U4 and U5 once the journeys exist; U6 can run at any time.
 
-## 4. Rules
+## 4. What was built
+
+**U1.** `NAV_GROUPS` and `PAGE_HINTS` sit next to `NAV_PAGES` in
+`shared/config/pages.ts`; `useNavPages()` returns the visible groups. The bar
+(`app/layout/NavGroups.tsx`) is a disclosure per space: a button that shows a
+panel of plain links, closed on Escape, an outside click, a focus that leaves it
+and navigation. Not Radix's popover: opening it hung the jsdom tests, and a site
+navigation is a list of links, not a menu widget. The bar holds the four spaces
+from `md` (768 px) up, against `lg` for the eleven links before.
+
+**U2.** Four bridges, each a plain link carrying its state in the URL:
+
+| From | To | How |
+|---|---|---|
+| Market, vol tab, each tenor of the delta matrix | Workbench, European option | `?p=` with spot = strike = the surface's spot, the tenor in years, its ATM vol. Rate and dividend are not in the surface: they stay at the form's defaults, which the caption under the matrix says |
+| Credit, ratings table | xVA | `?cpty=` (`CCC and lower` → `CCC`) |
+| Workbench header, products a portfolio can hold | Portfolio, trade form open | `/portfolio?trade=` (the catalog key and the form values). It survives the selection of a portfolio, and a visitor with none is told the form opens once one is created. Dropped from the URL once the trade is booked or cancelled |
+| Portfolio, expanded row of a derivative position | Workbench | The contract terms of the instrument, the market inputs of its latest mark (same names as the request: spot, rate, dividend, vol), the time left to expiry. Offered only when the product is in the workbench and the position has not expired |
+
+The last bridge needs the inverse of a product's `toRequest`
+(`shared/products/portfolioProducts.ts`, `formValuesFromRequest`). Which fields
+the form keeps in percent is written nowhere, so it is read off `toRequest` by
+probing each numeric field, and the result is checked by a round trip: a field
+that would not come back to the same number refuses the link. A property test
+round-trips every product a portfolio can hold. The catalog key → pricer id
+table moved from the portfolio feature to `shared/products`, so the workbench
+and the portfolio share it without importing each other.
+
+Checked in a browser (Playwright, Vite with no API behind it, so no valuation
+reaches the production audit trail): the menus in both themes at 1280 px and at
+800 px, the folded menu at 390 px with no horizontal scroll, the palette, and
+the workbench → portfolio journey through the creation of a first portfolio.
+Not checked in a browser: the two bridges that need market data (vol matrix,
+ratings table); their integration tests check the URLs they build.
+
+## 5. Rules
 
 - A bridge is a link, never shared state between features: a feature does not
   import another feature (`web/tests/discipline.test.ts`). What two features
@@ -57,7 +92,7 @@ U4 and U5 once the journeys exist; U6 can run at any time.
   number, its model and inputs next to it.
 - Interface text in English.
 
-## 5. Out of scope
+## 6. Out of scope
 
 New products, new API routes (before U6 decides), a visual redesign of the pages
 themselves.

@@ -1,10 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { usePortfolioDemos } from "@/shared/api";
+import { decodeParams } from "@/shared/products";
 import type { Ledger } from "@/shared/portfolio";
 import { Button, Disclaimer, toast } from "@/shared/ui";
 import { EmptyState, ErrorState, TableSkeleton } from "@/shared/ui/states";
 import { useMe } from "@/shared/session";
 import { DemoBanner } from "./DemoBanner";
+import type { InitialDerivative } from "./DerivativeFields";
 import { MigrationBanner } from "./MigrationBanner";
 import { PortfolioSidebar } from "./PortfolioSidebar";
 import { PortfolioToolbar } from "./PortfolioToolbar";
@@ -37,6 +40,15 @@ export default function PortfolioPage() {
 		queryFn: () => repo.get(selectedId!),
 	});
 	const pf = demoId ? demo?.portfolio : detail.data;
+	// A derivative carried in from the workbench (WP 28, lot U2).
+	const { trade } = useSearch({ from: "/portfolio" });
+	const navigate = useNavigate({ from: "/portfolio" });
+	const initialTrade = decodeParams<InitialDerivative | undefined>(
+		trade,
+		undefined,
+	);
+	const dropTrade = () =>
+		navigate({ search: ({ trade: _, ...s }) => s, replace: true });
 
 	async function save(ledger: Ledger) {
 		if (!detail.data) return;
@@ -108,7 +120,9 @@ export default function PortfolioPage() {
 						description={
 							demoId
 								? "This demo is not available right now."
-								: "Create one and book trades — or open a demo to see a valued portfolio first."
+								: initialTrade
+									? "Create one: the trade form then opens on the product from the workbench."
+									: "Create one and book trades — or open a demo to see a valued portfolio first."
 						}
 						action={
 							<Button size="sm" onClick={() => void book.create()}>
@@ -121,6 +135,8 @@ export default function PortfolioPage() {
 						key={pf.id}
 						pf={pf}
 						onSave={demoId ? undefined : (l) => void save(l)}
+						initialTrade={demoId ? undefined : initialTrade}
+						onTradeDone={trade ? dropTrade : undefined}
 					/>
 				)}
 				<Disclaimer />

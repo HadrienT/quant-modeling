@@ -14,17 +14,20 @@ import { TooltipProvider } from "@/shared/ui";
 import PortfolioPage from "./PortfolioPage";
 
 /** The Portfolio page at /portfolio, with the providers the app gives it. */
-export function renderPortfolioPage() {
+export function renderPortfolioPage(initialPath = "/portfolio") {
 	const root = createRootRoute();
 	const page = createRoute({
 		getParentRoute: () => root,
 		path: "/portfolio",
-		validateSearch: z.object({ id: z.string().optional() }).parse,
+		validateSearch: z.object({
+			id: z.string().optional(),
+			trade: z.string().optional(),
+		}).parse,
 		component: PortfolioPage,
 	});
 	const router = createRouter({
 		routeTree: root.addChildren([page]),
-		history: createMemoryHistory({ initialEntries: ["/portfolio"] }),
+		history: createMemoryHistory({ initialEntries: [initialPath] }),
 	});
 	return render(
 		<QueryClientProvider client={makeQueryClient()}>

@@ -193,6 +193,8 @@ const portfolioRoute = createRoute({
 	validateSearch: z.object({
 		id: z.string().optional(),
 		demo: z.string().optional(),
+		// a derivative's terms from the workbench, encoded like `?p=` (WP 28)
+		trade: z.string().optional(),
 	}).parse,
 	component: PortfolioPage,
 });

@@ -9,6 +9,7 @@ import {
 } from "@/shared/products";
 import { Button, Disclaimer, cn, copyText, toast } from "@/shared/ui";
 import { useNavPages } from "@/shared/session";
+import { AddToPortfolio } from "./AddToPortfolio";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
 import { DeviceRace } from "./DeviceRace";
 import { RatesForm } from "./rates/RatesForm";
@@ -37,17 +38,20 @@ export default function PricingPage() {
 						{wb.descriptor.label}
 					</h1>
 					<ProductInfo docKey={wb.descriptor.docKey} />
-					{isShown("/products") && (
-						<Link
-							to="/products"
-							search={{ product: wb.productKey }}
-							title="Full reference: payoff, assumptions, sources"
-							className="ml-auto inline-flex items-center gap-1 text-2xs text-ink-muted transition-colors hover:text-accent"
-						>
-							<BookText className="size-3.5" />
-							Reference
-						</Link>
-					)}
+					<span className="ml-auto flex items-center gap-3">
+						<AddToPortfolio productKey={wb.productKey} values={wb.values} />
+						{isShown("/products") && (
+							<Link
+								to="/products"
+								search={{ product: wb.productKey }}
+								title="Full reference: payoff, assumptions, sources"
+								className="inline-flex items-center gap-1 text-2xs text-ink-muted transition-colors hover:text-accent"
+							>
+								<BookText className="size-3.5" />
+								Reference
+							</Link>
+						)}
+					</span>
 				</header>
 
 				{wb.descriptor.engines.length > 1 && (

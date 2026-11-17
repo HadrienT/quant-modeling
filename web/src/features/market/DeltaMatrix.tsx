@@ -1,4 +1,6 @@
+import { Link } from "@tanstack/react-router";
 import type { DeltaBucketRow } from "@/shared/api/types";
+import { encodeParams } from "@/shared/products/workbenchLink";
 import { NumberCell } from "@/shared/ui";
 
 /**
@@ -9,7 +11,14 @@ import { NumberCell } from "@/shared/ui";
  * the fuller rationale and routers/local_vol_pricing.py's delta_surface
  * for how each cell is derived from the calibrated SVI slice.
  */
-export function DeltaMatrix({ rows }: { rows?: DeltaBucketRow[] }) {
+export function DeltaMatrix({
+	rows,
+	spot,
+}: {
+	rows?: DeltaBucketRow[];
+	/** With a spot, each tenor links to the workbench (WP 28, lot U2). */
+	spot?: number;
+}) {
 	if (!rows || rows.length === 0) {
 		return <p className="text-sm text-ink-muted">No calibrated slices yet.</p>;
 	}
@@ -35,6 +44,7 @@ export function DeltaMatrix({ rows }: { rows?: DeltaBucketRow[] }) {
 								{h}
 							</th>
 						))}
+						{spot != null && <th className="p-2 text-right">Workbench</th>}
 					</tr>
 				</thead>
 				<tbody className="font-mono tabular-nums">
@@ -68,10 +78,38 @@ export function DeltaMatrix({ rows }: { rows?: DeltaBucketRow[] }) {
 							<td className="p-2 text-right text-ink-muted">
 								<NumberCell value={r.bf10} magnitude="vol" signed />
 							</td>
+							{spot != null && (
+								<td className="p-2 text-right font-sans">
+									{r.vol_atm != null && (
+										<Link
+											to="/price"
+											search={{ product: "vanilla", p: atmParams(spot, r) }}
+											className="text-accent hover:underline"
+											aria-label={`Price an at-the-money ${r.tenor_label} option`}
+										>
+											Price
+										</Link>
+									)}
+								</td>
+							)}
 						</tr>
 					))}
 				</tbody>
 			</table>
 		</div>
 	);
+}
+
+/**
+ * The workbench form of an at-the-money option on this slice, in the form's
+ * units (percent for the vol). Rate and dividend are not in the surface: they
+ * stay at the form's defaults, which the caption under the matrix says.
+ */
+function atmParams(spot: number, r: DeltaBucketRow): string {
+	return encodeParams({
+		spot: +spot.toFixed(2),
+		strike: +spot.toFixed(2),
+		maturity: +r.ttm.toFixed(4),
+		vol: +(r.vol_atm! * 100).toFixed(2),
+	});
 }

@@ -13,6 +13,7 @@ import { ErrorState, TableSkeleton } from "@/shared/ui/states";
 import { PnlSummary } from "./PnlSummary";
 import { PortfolioMethodology } from "./PortfolioMethodology";
 import { PortfolioTabs } from "./PortfolioTabs";
+import type { InitialDerivative } from "./DerivativeFields";
 import { TradeForm, type TradePreset } from "./TradeForm";
 
 /**
@@ -23,12 +24,24 @@ import { TradeForm, type TradePreset } from "./TradeForm";
 export function PortfolioView({
 	pf,
 	onSave,
+	initialTrade,
+	onTradeDone,
 }: {
 	pf: Portfolio;
 	/** absent for a read-only portfolio */
 	onSave?: (ledger: Ledger) => void;
+	/** a derivative carried in from the workbench: the trade form opens on it */
+	initialTrade?: InitialDerivative;
+	/** the carried-in trade was booked or cancelled */
+	onTradeDone?: () => void;
 }) {
-	const [trading, setTrading] = useState<TradePreset | "new" | null>(null);
+	const [trading, setTrading] = useState<TradePreset | "new" | null>(
+		initialTrade && onSave ? "new" : null,
+	);
+	const close = () => {
+		setTrading(null);
+		onTradeDone?.();
+	};
 	const snapshot = usePortfolioSnapshot(pf);
 	const snap = snapshot.data;
 	const hasTrades = (pf.transactions?.length ?? 0) > 0;
@@ -58,11 +71,12 @@ export function PortfolioView({
 							: `${trading.instrument.id}-${trading.side}`
 					}
 					preset={trading === "new" ? undefined : trading}
+					initialDerivative={trading === "new" ? initialTrade : undefined}
 					counterparties={pf.counterparties ?? []}
-					onCancel={() => setTrading(null)}
+					onCancel={close}
 					onBook={(instrument, draft) => {
 						onSave(bookTrade(pf, instrument, draft));
-						setTrading(null);
+						close();
 					}}
 				/>
 			)}

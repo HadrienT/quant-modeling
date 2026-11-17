@@ -6,7 +6,11 @@ import {
 	rateFxInstrument,
 } from "@/shared/portfolio";
 import { Label } from "@/shared/ui";
-import { type DerivativeDraft, DerivativeFields } from "./DerivativeFields";
+import {
+	type DerivativeDraft,
+	DerivativeFields,
+	type InitialDerivative,
+} from "./DerivativeFields";
 import { NettingSetSelect } from "./NettingSetSelect";
 import { RateFxFields, type RateFxTerms } from "./RateFxFields";
 import { TickerPicker } from "./TickerPicker";
@@ -33,13 +37,17 @@ export type Picked = {
 export function InstrumentPicker({
 	tradeDate,
 	counterparties,
+	initialDerivative,
 	onChange,
 }: {
 	tradeDate: string;
 	counterparties: Counterparty[];
+	initialDerivative?: InitialDerivative;
 	onChange: (picked: Picked) => void;
 }) {
-	const [kind, setKind] = useState<Kind>("equity");
+	const [kind, setKind] = useState<Kind>(
+		initialDerivative ? "derivative" : "equity",
+	);
 	const [ticker, setTicker] = useState<{ t: string; name?: string }>({ t: "" });
 	const [derivative, setDerivative] = useState<DerivativeDraft | null>(null);
 	const [rateFx, setRateFx] = useState<RateFxTerms | null>(null);
@@ -86,7 +94,11 @@ export function InstrumentPicker({
 				</div>
 			)}
 			{kind === "derivative" && (
-				<DerivativeFields tradeDate={tradeDate} onChange={setDerivative} />
+				<DerivativeFields
+					tradeDate={tradeDate}
+					initial={initialDerivative}
+					onChange={setDerivative}
+				/>
 			)}
 			{kind === "rate_fx" && (
 				<RateFxFields tradeDate={tradeDate} onChange={setRateFx} />
