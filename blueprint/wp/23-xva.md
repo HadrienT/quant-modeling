@@ -2938,7 +2938,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | M7 | Corrélations implicites | aucune source libre connue (options quanto, swaptions en devise croisée non publiées) |
 | M8 | Scripts actions et quanto dans le moteur d'exposition (issue #86) | le modèle joint taux-change existe ; il reste le facteur actions |
 | M9 | Autres paires que EUR/USD | le fichier porte JPY, MXN, CAD, AUD ; il faut la courbe et les swaptions de la devise |
-| M10 | `qm.discount_factors` plat avant le premier pilier : l'aligner sur la courbe du moteur, ou revoir ses appelants (`fx.py`) | piège rencontré dans ce lot |
+| M10 | `qm.discount_factors` plat avant le premier pilier : l'aligner sur la courbe du moteur, ou revoir ses appelants (`fx.py`) | **Done (2026-11-17)**: the root was `bootstrap_curve`, which solved under a flat discount factor before its first pillar (a 1Y JGB's 6M coupon at the 1Y factor, the first zero rate y²/4 too low, 0.6 bp at 1.6 %) while the engines read its pillars with flat forwards. It now solves and returns its curve under `CurveExtrapolation::FlatForward`, like the multi-curve bootstrap; `qm.discount_factors` and the credit bindings follow. A flat curve comes back exactly from bonds alone, front and back (`BondsAloneRecoverAFlatCurveExactlyFrontAndBack`). Side fix: the spread bump inside `xva_market_risks` (8e-9) was below the credit bootstrap's bisection noise; at 1e-3 of the spread the adjoint matches the full rebuild to 1e-9 |
 
 ### Transverse
 

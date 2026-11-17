@@ -80,7 +80,7 @@ static std::vector<quantModeling::Real> discount_factors_impl(
     std::vector<quantModeling::Time> times, std::vector<quantModeling::Real> dfs,
     const std::vector<quantModeling::Time> &query_times)
 {
-    const quantModeling::DiscountCurve curve(std::move(times), std::move(dfs));
+    const quantModeling::DiscountCurve curve = rate_curve(std::move(times), std::move(dfs));
     std::vector<quantModeling::Real> out;
     out.reserve(query_times.size());
     for (const quantModeling::Time t : query_times)
@@ -102,7 +102,7 @@ namespace
     {
         if (times.empty())
             return quantModeling::DiscountCurve(0.0);
-        return quantModeling::DiscountCurve(std::move(times), std::move(dfs));
+        return rate_curve(std::move(times), std::move(dfs));
     }
 } // namespace
 
@@ -364,8 +364,9 @@ void register_rates(py::module_ &m)
     m.def("discount_factors", &discount_factors_impl, py::arg("times"),
           py::arg("discount_factors"), py::arg("query_times"),
           "Discount factors at query_times on the curve (times, discount_factors), with "
-          "DiscountCurve's log-linear interpolation (flat before the first pillar and "
-          "after the last).");
+          "DiscountCurve's log-linear interpolation and the forward rate held flat outside "
+          "the pillars (from (0, 1) to the first, the last segment's past the last): the "
+          "rule bootstrap_discount_curve solves under and the engines' curves use.");
     m.def("bootstrap_credit_curve", &bootstrap_credit_curve_impl, py::arg("spreads"),
           py::arg("discount_times"), py::arg("discount_factors"), py::arg("recovery") = 0.4,
           py::arg("frequency") = 4,

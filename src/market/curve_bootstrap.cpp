@@ -8,23 +8,31 @@ namespace quantModeling
 {
     namespace
     {
-        /// Log-linear DF interpolation, flat before the first pillar and past
-        /// the last one — bit-for-bit the same rule DiscountCurve::discount()
-        /// uses (including the flat-left convention, which is a deliberate
-        /// choice there, not an oversight — see DiscountCurve's own tests).
-        /// A bootstrap that solved each pillar under a *different* rule for
-        /// its own short coupons would converge to discount factors that this
-        /// curve then reprices inconsistently — exactly the failure the
-        /// RepricingASemiannualBondReturnsPar test would have caught.
+        /// Log-linear DF interpolation with the forward rate held flat
+        /// outside the pillars: from (0, 1) to the first pillar, the last
+        /// segment's past the last -- bit-for-bit the rule of the curve the
+        /// bootstrap returns (CurveExtrapolation::FlatForward), the one the
+        /// engines and the multi-curve bootstrap use. A bootstrap that solved
+        /// each pillar under a *different* rule for its own short coupons
+        /// would converge to discount factors that its curve then reprices
+        /// inconsistently (the RepricingASemiannualBondReturnsPar test). The
+        /// flat discount factor used before discounted a 1Y bond's 6M coupon
+        /// at the 1Y factor, as if no interest accrued over its first half.
         Real interp_df(const std::vector<Time> &times, const std::vector<Real> &dfs,
                        Time t)
         {
             if (t <= 0.0 || times.empty())
                 return 1.0;
             if (t <= times.front())
-                return dfs.front();
+                return std::exp(std::log(dfs.front()) * t / times.front());
             if (t >= times.back())
-                return dfs.back();
+            {
+                const std::size_t n = times.size();
+                const Real f = n == 1 ? -std::log(dfs[0]) / times[0]
+                                      : -(std::log(dfs[n - 1]) - std::log(dfs[n - 2])) /
+                                            (times[n - 1] - times[n - 2]);
+                return dfs.back() * std::exp(-f * (t - times.back()));
+            }
 
             const auto it = std::upper_bound(times.begin(), times.end(), t);
             const std::size_t idx =
@@ -184,7 +192,7 @@ namespace quantModeling
             }
         }
 
-        return DiscountCurve(times, dfs);
+        return DiscountCurve(times, dfs, CurveExtrapolation::FlatForward);
     }
 
     Real t_bill_bond_equivalent_yield(Real discount_rate, int days)

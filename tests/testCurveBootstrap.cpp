@@ -64,13 +64,8 @@ namespace quantModeling
 
     TEST(CurveBootstrap, RecoversAKnownFlatCurveFromItsParYields)
     {
-        // A short deposit anchors the front pillar close to "now", like a real
-        // curve — DiscountCurve extrapolates flat below its first pillar
-        // (deliberately, see DiscountCurve's own tests), so without a short
-        // anchor every bond's own sub-front coupon would be priced at the
-        // first pillar's DF instead of its true value, biasing the recovered
-        // curve by a few bp. That bias is a property of the flat-front
-        // convention, not of the bootstrap itself.
+        // A short deposit anchors the front pillar close to "now", like a
+        // real curve; the next test shows the bonds alone are enough.
         const Real flat_rate = 0.04;
         const Real one_month = 1.0 / 12.0;
         const std::vector<DepositQuote> deposits = {
@@ -89,6 +84,25 @@ namespace quantModeling
                 << "T = " << T;
         // an interior, off-pillar point too (3.5Y falls in the 3Y->5Y gap)
         EXPECT_NEAR(curve.discount(3.5), std::exp(-flat_rate * 3.5), 1e-4);
+    }
+
+    TEST(CurveBootstrap, BondsAloneRecoverAFlatCurveExactlyFrontAndBack)
+    {
+        // The forward rate is held flat outside the pillars, so a flat zero
+        // curve is exactly representable: with no deposit, the 1Y bond's 6M
+        // coupon is discounted at its own rate, not at the 1Y factor, and the
+        // curve comes back to the bisection's precision everywhere -- before
+        // the first pillar and past the last one included.
+        const Real flat_rate = 0.04;
+        std::vector<ParRateQuote> quotes;
+        for (Real T : {1.0, 2.0, 3.0, 5.0, 7.0, 10.0})
+            quotes.push_back(
+                make_semiannual_bond_quote(T, flat_curve_par_yield(flat_rate, T)));
+        const DiscountCurve curve = bootstrap_curve({}, quotes);
+        EXPECT_EQ(curve.extrapolation(), CurveExtrapolation::FlatForward);
+        for (Real t : {0.1, 0.5, 1.0, 3.5, 10.0, 15.0})
+            EXPECT_NEAR(curve.discount(t), std::exp(-flat_rate * t), 1e-12)
+                << "t = " << t;
     }
 
     TEST(CurveBootstrap, MixedDepositsAndBondsStayMonotoneAndReprice)
