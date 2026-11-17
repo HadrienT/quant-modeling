@@ -303,6 +303,19 @@ namespace quantModeling
         return weights;
     }
 
+    std::vector<Real> running_cost_weights(const std::vector<Time> &times, const CreditCurve &counterparty,
+                                           const CreditCurve &own, Real rate)
+    {
+        std::vector<Real> weights(times.size());
+        Time previous = 0.0;
+        for (std::size_t i = 0; i < times.size(); ++i)
+        {
+            weights[i] = -rate * counterparty.survival(times[i]) * own.survival(times[i]) * (times[i] - previous);
+            previous = times[i];
+        }
+        return weights;
+    }
+
     XvaReport xva_report(const ExposurePaths &paths, const XvaInputs &in, ThreadPool *pool)
     {
         if (paths.measure != ExposureMeasure::RiskNeutral)
@@ -358,7 +371,7 @@ namespace quantModeling
                 settings.im_today = paths.simm_today.total();
             }
             const DynamicInitialMargin model =
-                DynamicInitialMargin::fit(paths, in.csa->margin_period_of_risk, trades, settings);
+                DynamicInitialMargin::fit(paths, in.csa->margin_period_of_risk, trades, settings, pool);
             // The factor the shares of each trade are computed with.
             margin_scaling = model.scaling();
             margin = in.margin_model == XvaInputs::MarginModel::SimmPerPath

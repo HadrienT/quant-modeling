@@ -9,6 +9,7 @@
 #include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/risk/collateral_path.hpp"
+#include "quantModeling/risk/initial_margin_path.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 
 /**
@@ -150,6 +151,36 @@ namespace quantModeling::gpu
          *        set's, path by path.
          */
         bool euler = false;
+        /**
+         * @brief Running costs (#281 step 3, blueprint/wp/23-xva.md §20):
+         *        weights c_r, d_r and e_r, per reporting date, of the
+         *        per-path sums
+         *
+         *   Σ_r c_r D max(U, 0),   Σ_r d_r D min(U, 0)   and   Σ_r e_r D C,
+         *
+         * U the value after variation margin and before any initial margin
+         * (segregated margin funds nothing), C the collateral held,
+         * collateral_held(). With c = d = e = -rate S_C S_I Δt
+         * (running_cost_weights()) and the borrowing spread, the lending
+         * spread and r_c - r: FCA, FBA and ColVA path by path. Without
+         * collateral U = V and C = 0. Each empty for zeros; all three empty
+         * skip them.
+         */
+        std::vector<Real> funding_positive_weights, funding_negative_weights, collateral_weights;
+        /**
+         * @brief Initial margin per path (#281 step 4, lot G8): a dynamic
+         *        initial margin fitted on the host, evaluated on each path
+         *        from the netting set's value at the lagged date
+         *        (initial_margin_at()), received and posted alike. One date
+         *        per reporting date, on the same grid dates. Needs the
+         *        collateral, and excludes the margin profiles above.
+         */
+        bool dynamic_margin = false;
+        InitialMarginTable margin_model;
+        /// With `dynamic_margin`: weights m_r of the per-path sum
+        /// Σ_r m_r D IM -- with running_cost_weights() at FS_B - s_IM, the
+        /// path's MVA. Empty for zeros.
+        std::vector<Real> margin_weights;
     };
 
     /// One device's paths at one date, sorted by value.
@@ -175,6 +206,17 @@ namespace quantModeling::gpu
         /// With NettingSetGpuRequest::euler, K: `positive` is trade j's
         /// share of the positive weighted sum.
         std::vector<ExposureDateStats> euler;
+        /// With the running-cost weights: `positive` and `negative` the two
+        /// funding sums, `value` their sum path by path (the FVA, whose
+        /// error is that of the pair, not the two added).
+        ExposureDateStats funding;
+        /// With the running-cost weights: `positive` is the collateral sum.
+        ExposureDateStats collateral;
+        /// With `dynamic_margin`, per reporting date: `positive` holds the
+        /// statistics of D IM, the discounted margin.
+        std::vector<ExposureDateStats> margin_dates;
+        /// With `dynamic_margin`: `positive` is the margin sum (the MVA).
+        ExposureDateStats margin;
         int gpus = 0;
     };
 

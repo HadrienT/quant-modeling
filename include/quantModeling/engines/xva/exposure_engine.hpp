@@ -184,6 +184,41 @@ namespace quantModeling
          *        launch from each trade's values: no cube.
          */
         bool contributions = false;
+        /**
+         * @brief Optional weights of the running costs (#281 step 3,
+         *        blueprint/wp/23-xva.md §20): c_r, d_r and e_r of the
+         *        per-path sums
+         *
+         *   Σ_r c_r D max(U, 0),   Σ_r d_r D min(U, 0)   and   Σ_r e_r D C
+         *
+         * over the reporting dates, U the netting set's value after
+         * variation margin and before any initial margin (segregated margin
+         * funds nothing), C the collateral held (C(t - MPoR) plus the
+         * independent amount; zero without a CSA). With
+         * running_cost_weights() at the borrowing spread, the lending spread
+         * and r_c - r: xva_report()'s FCA, FBA and ColVA, with their errors.
+         * The function fills the three, one value per date (or leaves one
+         * empty for zeros). On a device they are more sums of the same
+         * launch.
+         */
+        std::function<void(const std::vector<Time> &times, std::vector<Real> &funding_positive,
+                           std::vector<Real> &funding_negative, std::vector<Real> &collateral)>
+            running_weights;
+        /**
+         * @brief Initial margin per path (#281 step 4, lot G8): a dynamic
+         *        initial margin, fitted by fit_initial_margin() (or on any
+         *        cube of the same grid and trades), received and posted
+         *        alike on every path, from the netting set's value at the
+         *        lagged date. Needs the CSA; replaces the margin profiles of
+         *        `collateral`; not with `contributions` (each subset would
+         *        need its own model). On a device it is evaluated in the
+         *        kernel: no cube.
+         */
+        std::optional<DynamicInitialMargin> margin_model;
+        /// With `margin_model`: weights m_r, one per reporting date, of the
+        /// per-path sum Σ_r m_r D IM -- with running_cost_weights() at
+        /// FS_B - s_IM, the MVA with its error.
+        std::function<void(const std::vector<Time> &times, std::vector<Real> &on_margin)> margin_weights;
     };
 
     /// The exposure of a netting set, reduced over the paths.
@@ -198,6 +233,19 @@ namespace quantModeling
         /// With NettingSetRequest::contributions: one row per netted trade,
         /// the CVA fields read off the positive sums.
         std::vector<TradeContribution> contributions;
+        /// The sums of NettingSetRequest::running_weights: the two funding
+        /// sums (FCA and FBA), their sum path by path (FVA: its error is the
+        /// pair's, smaller than the two added, cost and benefit coming from
+        /// opposite scenarios), and the collateral's (ColVA). Zero without
+        /// the weights.
+        Estimate funding_positive, funding_negative, funding, weighted_collateral;
+        /// With NettingSetRequest::margin_model: the margin today, E[D IM]
+        /// per reporting date with its error, E[IM], and the margin sum (the
+        /// MVA, with the margin weights).
+        Real initial_margin_today = 0.0;
+        std::vector<Real> discounted_expected_initial_margin, discounted_expected_initial_margin_error,
+            expected_initial_margin;
+        Estimate weighted_margin;
         std::size_t paths = 0;
         /// "cpu" or "gpu", how many cards, and why the CPU when the request
         /// left the choice.
@@ -277,6 +325,21 @@ namespace quantModeling
          */
         NettingSetExposure simulate_netting_set(ExposureSimulationSettings settings,
                                                 const NettingSetRequest &request,
+                                                ThreadPool *pool = nullptr);
+
+        /**
+         * @brief A dynamic initial margin for simulate_netting_set() (#281
+         *        step 4): DynamicInitialMargin::fit() on a pilot cube of
+         *        `pilot_paths` paths (0: the run's, between 10 000 and
+         *        20 000), drawn on a stream the run never draws (the seed's
+         *        complement) with the CSA's margin period on the grid and
+         *        the cash flows kept. On the settings' device.
+         *
+         * @throws InvalidInput as fit() and simulate() do.
+         */
+        DynamicInitialMargin fit_initial_margin(ExposureSimulationSettings settings, const Csa &csa,
+                                                const std::vector<std::size_t> &trades,
+                                                const DimSettings &margin = {}, std::size_t pilot_paths = 0,
                                                 ThreadPool *pool = nullptr);
 
         /**

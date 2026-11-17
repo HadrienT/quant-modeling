@@ -184,6 +184,16 @@ namespace quantModeling::gpu
             const Real *subset_held_today;
             Real *trade_values; // K date-major blocks of n dates x rows, or null
             Real *trade_flows;  // the same for the flows, or null
+            /// #281 step 3: the running costs' weights (each null for
+            /// zeros), and whether their four sums are written.
+            const Real *funding_positive_weights, *funding_negative_weights, *collateral_weights;
+            bool running;
+            /// #281 step 4: the dynamic initial margin, its per-date output
+            /// (D IM, date-major like `discounted`) and the MVA's weights.
+            bool dynamic_margin;
+            InitialMarginView margin;
+            Real *discounted_margin;
+            const Real *margin_weights;
         };
 
         /// Scratch: four date-major blocks of n dates x `rows` slots (state,
@@ -244,16 +254,42 @@ namespace quantModeling::gpu
             const int m = ns.plan.reporting_dates;
             const Strided<Real> out{discounted + local, rows}, sums{weighted + local, rows};
             Real positive = 0.0, negative = 0.0;
+            // The running costs: funding on U (after variation margin,
+            // before initial margin), collateral on C.
+            Real borrowed = 0.0, lent = 0.0, collateral = 0.0, margin_cost = 0.0;
+            const Strided<Real> margin_out{ns.discounted_margin + local, rows};
             for (int r = 0; r < m; ++r)
             {
                 const int i = ns.plan.reporting[r];
-                Real exposure = ns.collateralised
-                                    ? collateralised_value(ns.plan, r, value, flow, held, ns.plan.held_today)
-                                    : value[i];
-                if (ns.im_received != nullptr || ns.im_posted != nullptr)
+                const Real variation = ns.collateralised
+                                           ? collateralised_value(ns.plan, r, value, flow, held, ns.plan.held_today)
+                                           : value[i];
+                Real exposure = variation;
+                const Real w = d.weight_scale[i] * exp(d.weight_G[i] * x[i]);
+                if (ns.dynamic_margin)
+                {
+                    // Received and posted alike, from the value when the
+                    // last call was honoured.
+                    const int lagged = ns.margin.lagged[r];
+                    const Real im = initial_margin_at(ns.margin, r, lagged < 0 ? 0.0 : value[lagged]);
+                    exposure = net_of_initial_margin(exposure, im, im);
+                    margin_out[r] = w * im;
+                    if (ns.margin_weights != nullptr)
+                        margin_cost += ns.margin_weights[r] * (w * im);
+                }
+                else if (ns.im_received != nullptr || ns.im_posted != nullptr)
                     exposure = net_of_initial_margin(exposure, ns.im_received != nullptr ? ns.im_received[r] : 0.0,
                                                      ns.im_posted != nullptr ? ns.im_posted[r] : 0.0);
-                const Real w = d.weight_scale[i] * exp(d.weight_G[i] * x[i]);
+                if (ns.running)
+                {
+                    const Real u = w * variation;
+                    if (ns.funding_positive_weights != nullptr && u > 0.0)
+                        borrowed += ns.funding_positive_weights[r] * u;
+                    if (ns.funding_negative_weights != nullptr && u < 0.0)
+                        lent += ns.funding_negative_weights[r] * u;
+                    if (ns.collateral_weights != nullptr && ns.collateralised)
+                        collateral += ns.collateral_weights[r] * (w * collateral_held(ns.plan, r, held, ns.plan.held_today));
+                }
                 if (per_trade)
                     weight[r] = w;
                 const Real v = w * exposure;
@@ -271,6 +307,18 @@ namespace quantModeling::gpu
             }
             sums[0] = positive;
             sums[1] = negative;
+            if (ns.running)
+            {
+                // After the subsets' and the Euler shares' sums.
+                const int at = 2 + (ns.contributions ? 4 * ns.n_trades : 0) + (ns.euler ? ns.n_trades : 0);
+                sums[at] = borrowed;
+                sums[at + 1] = lent;
+                sums[at + 2] = borrowed + lent;
+                sums[at + 3] = collateral;
+            }
+            if (ns.dynamic_margin)
+                sums[2 + (ns.contributions ? 4 * ns.n_trades : 0) + (ns.euler ? ns.n_trades : 0) + (ns.running ? 4 : 0)] =
+                    margin_cost;
 
             if (ns.euler)
             {
@@ -351,14 +399,18 @@ namespace quantModeling::gpu
         /// What the reduction adds for path u of a launch: its value at
         /// reporting date `segment`; past the last date, the path's sums --
         /// two by two (the netting set's, then each subset's), then one by
-        /// one (Euler).
+        /// one (Euler), then the funding sums three at a time and the
+        /// collateral's alone.
         struct ReduceUnit
         {
             const Real *discounted; // date-major, `rows` slots a reporting date
             const Real *weighted;   // sum-major, `rows` slots a sum
             uint64_t m;
             uint64_t rows;
-            uint64_t pairs; // 1 + the subsets
+            uint64_t pairs;  // 1 + the subsets
+            uint64_t shares; // the Euler shares
+            bool running;    // the funding and collateral sums
+            const Real *margin; // D IM, date-major like `discounted`, or null
 
             __device__ ExposureSample operator()(uint64_t segment, uint64_t u) const
             {
@@ -367,10 +419,27 @@ namespace quantModeling::gpu
                     const Real v = discounted[segment * rows + u];
                     return {v > 0.0 ? v : 0.0, v < 0.0 ? v : 0.0, v};
                 }
-                const uint64_t q = segment - m;
+                uint64_t q = segment - m;
                 if (q < pairs)
                     return {weighted[2 * q * rows + u], weighted[(2 * q + 1) * rows + u], 0.0};
-                return {weighted[(2 * pairs + (q - pairs)) * rows + u], 0.0, 0.0};
+                q -= pairs;
+                if (q < shares)
+                    return {weighted[(2 * pairs + q) * rows + u], 0.0, 0.0};
+                q -= shares;
+                uint64_t at = 2 * pairs + shares;
+                if (running)
+                {
+                    if (q == 0)
+                        return {weighted[at * rows + u], weighted[(at + 1) * rows + u], weighted[(at + 2) * rows + u]};
+                    if (q == 1)
+                        return {weighted[(at + 3) * rows + u], 0.0, 0.0};
+                    q -= 2;
+                    at += 4;
+                }
+                // The margin: D IM per reporting date, then the MVA's sum.
+                if (q < m)
+                    return {margin[q * rows + u], 0.0, 0.0};
+                return {weighted[at * rows + u], 0.0, 0.0};
             }
         };
 
@@ -522,11 +591,28 @@ namespace quantModeling::gpu
         { return v.empty() || v.size() == m; };
         if (!per_reporting_date(netting.initial_margin_received) ||
             !per_reporting_date(netting.initial_margin_posted) || !per_reporting_date(netting.positive_weights) ||
-            !per_reporting_date(netting.negative_weights))
+            !per_reporting_date(netting.negative_weights) || !per_reporting_date(netting.funding_positive_weights) ||
+            !per_reporting_date(netting.funding_negative_weights) || !per_reporting_date(netting.collateral_weights))
             throw InvalidInput("exposure on GPU: margins and weights need one value per reporting date");
         const std::size_t K = netting.trades.size();
         const bool margined = !netting.initial_margin_received.empty() || !netting.initial_margin_posted.empty();
-        if ((netting.contributions || netting.euler) && margined)
+        const bool dynamic_margin = netting.dynamic_margin;
+        if (dynamic_margin)
+        {
+            const InitialMarginTable &t = netting.margin_model;
+            if (!netting.collateralised || margined)
+                throw InvalidInput("exposure on GPU: a dynamic initial margin needs the collateral and replaces "
+                                   "the margin profiles");
+            if (t.dates() != m)
+                throw InvalidInput("exposure on GPU: the margin model needs one date per reporting date");
+            for (std::size_t r = 0; r < m; ++r)
+                if (t.date[r] != plan.reporting[r] || t.lagged[r] >= t.date[r] ||
+                    static_cast<std::size_t>(t.date[r]) >= n)
+                    throw InvalidInput("exposure on GPU: the margin model is not on the reporting dates");
+            if (!per_reporting_date(netting.margin_weights))
+                throw InvalidInput("exposure on GPU: margin weights need one value per reporting date");
+        }
+        if ((netting.contributions || netting.euler) && (margined || dynamic_margin))
             throw InvalidInput("exposure on GPU: the trades' contributions under initial margin need each "
                                "subset's own margin model; use the cube");
         if (netting.euler && netting.collateralised)
@@ -538,13 +624,17 @@ namespace quantModeling::gpu
         const bool per_trade = netting.contributions || netting.euler;
         const bool trade_flows = netting.contributions && netting.collateralised && plan.needs_cashflows();
         const std::size_t subsets = netting.contributions ? 2 * K : 0, shares = netting.euler ? K : 0;
-        const std::size_t sums = 2 + 2 * subsets + shares;
+        const bool running = !netting.funding_positive_weights.empty() ||
+                             !netting.funding_negative_weights.empty() || !netting.collateral_weights.empty();
+        const std::size_t sums = 2 + 2 * subsets + shares + (running ? 4 : 0) + (dynamic_margin ? 1 : 0);
 
         const uint64_t N = req.paths;
         const uint64_t n_blocks = L::count(N);
         // Partials of (logical block, segment): the reporting dates, the
-        // netting set's weighted sums, each subset's, each trade's share.
-        const std::size_t segments = m + 1 + subsets + shares;
+        // netting set's weighted sums, each subset's, each trade's share,
+        // the funding sums and the collateral's.
+        // and, with the dynamic margin, D IM per date and the MVA's sum.
+        const std::size_t segments = m + 1 + subsets + shares + (running ? 2 : 0) + (dynamic_margin ? m + 1 : 0);
         std::vector<ExposureDateStats> partials(static_cast<std::size_t>(n_blocks) * segments);
 
         // The sorted distributions, one slot per device (in block order).
@@ -580,7 +670,16 @@ namespace quantModeling::gpu
             const DeviceArray<unsigned char> is_call_date(plan.is_call_date);
             const DeviceArray<Real> im_received(netting.initial_margin_received),
                 im_posted(netting.initial_margin_posted), positive_weights(netting.positive_weights),
-                negative_weights(netting.negative_weights), subset_held_today(netting.subset_held_today);
+                negative_weights(netting.negative_weights), subset_held_today(netting.subset_held_today),
+                funding_positive_weights(netting.funding_positive_weights),
+                funding_negative_weights(netting.funding_negative_weights),
+                collateral_weights(netting.collateral_weights), margin_weights(netting.margin_weights);
+            const InitialMarginTable &mt = netting.margin_model;
+            const DeviceArray<int> m_lagged(mt.lagged), m_mean_first(mt.mean_first), m_mean_buckets(mt.mean_buckets),
+                m_variance_first(mt.variance_first), m_variance_buckets(mt.variance_buckets), m_degree(mt.degree),
+                m_term_first(mt.term_first), m_terms(mt.terms), m_power(mt.power);
+            const DeviceArray<Real> m_average(mt.average_variance), m_edge(mt.edge), m_center(mt.center),
+                m_scale(mt.scale), m_beta(mt.beta);
 
             NettingView ns;
             ns.plan = view(plan);
@@ -599,22 +698,36 @@ namespace quantModeling::gpu
             ns.contributions = netting.contributions;
             ns.euler = netting.euler;
             ns.subset_held_today = subset_held_today.get();
+            ns.funding_positive_weights = funding_positive_weights.get();
+            ns.funding_negative_weights = funding_negative_weights.get();
+            ns.collateral_weights = collateral_weights.get();
+            ns.running = running;
+            ns.dynamic_margin = dynamic_margin;
+            ns.margin = {m_lagged.get(),   m_mean_first.get(), m_mean_buckets.get(), m_variance_first.get(),
+                         m_variance_buckets.get(), m_average.get(), m_edge.get(), m_center.get(),
+                         m_scale.get(),    m_degree.get(),     m_term_first.get(),   m_terms.get(),
+                         m_power.get(),    m_beta.get(),       mt.today,             mt.scaling,
+                         mt.quantile};
+            ns.margin_weights = margin_weights.get();
 
             // Per path: the four blocks of n dates, the discount weight of
             // each reporting date and each trade's values (and flows) with
             // lot G1, the discounted values, the sums.
             const std::size_t trade_cells = per_trade ? K * n * (trade_flows ? 2 : 1) : 0;
             const std::size_t scratch_cells = 4 * n + (per_trade ? m : 0) + trade_cells;
-            const std::size_t bytes_per_path = (scratch_cells + m + sums) * sizeof(Real);
+            const std::size_t bytes_per_path = (scratch_cells + m * (dynamic_margin ? 2 : 1) + sums) * sizeof(Real);
             const uint64_t per_launch =
                 blocks_per_launch(device, bytes_per_path, last - first, req.max_blocks_per_launch);
             const std::size_t rows = static_cast<std::size_t>(per_launch) * L::kUnitsPerBlock;
-            const DeviceArray<Real> scratch(rows * scratch_cells), discounted(rows * m), weighted(rows * sums);
+            const DeviceArray<Real> scratch(rows * scratch_cells), discounted(rows * m), weighted(rows * sums),
+                discounted_margin(dynamic_margin ? rows * m : 0);
+            ns.discounted_margin = discounted_margin.get();
             // The trades' blocks follow the five of the kernel's scratch.
             Real *const trades_base = scratch.get() + rows * (4 * n + (per_trade ? m : 0));
             ns.trade_values = per_trade ? trades_base : nullptr;
             ns.trade_flows = trade_flows ? trades_base + rows * K * n : nullptr;
-            const ReduceUnit unit{discounted.get(), weighted.get(), m, rows, 1 + subsets};
+            const ReduceUnit unit{discounted.get(), weighted.get(), m,       rows,
+                                  1 + subsets,     shares,         running, discounted_margin.get()};
             for (uint64_t b = first; b < last; b += per_launch)
             {
                 const uint64_t launch_blocks = std::min(per_launch, last - b);
@@ -680,6 +793,18 @@ namespace quantModeling::gpu
             out.subsets.push_back(fold(m + 1 + q));
         for (std::size_t j = 0; j < shares; ++j)
             out.euler.push_back(fold(m + 1 + subsets + j));
+        if (running)
+        {
+            out.funding = fold(m + 1 + subsets + shares);
+            out.collateral = fold(m + 1 + subsets + shares + 1);
+        }
+        if (dynamic_margin)
+        {
+            const std::size_t first = m + 1 + subsets + shares + (running ? 2 : 0);
+            for (std::size_t r = 0; r < m; ++r)
+                out.margin_dates.push_back(fold(first + r));
+            out.margin = fold(first + m);
+        }
         out.sorted = std::move(sorted);
         return out;
     }

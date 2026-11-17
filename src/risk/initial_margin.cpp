@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <string>
 
@@ -83,7 +84,7 @@ namespace quantModeling
 
     DynamicInitialMargin DynamicInitialMargin::fit(const ExposurePaths &paths, Time mpor,
                                                    const std::vector<std::size_t> &trades,
-                                                   const DimSettings &settings)
+                                                   const DimSettings &settings, ThreadPool *pool)
     {
         if (!(settings.confidence > 0.5 && settings.confidence < 1.0))
             throw InvalidInput("initial margin: the confidence level must be in (0.5, 1)");
@@ -99,44 +100,52 @@ namespace quantModeling
         const std::size_t N = paths.paths;
         const Real today = value_today(paths, model.trades_);
 
-        std::vector<Real> rows(N), moves(N), targets(N);
         const MarginPeriod *longest_from_today = nullptr;
+        model.dates_.reserve(pairs.size());
         for (const MarginPeriod &pair : pairs)
         {
-            Date date{pair.date, pair.lagged, {}, {}, 0.0};
+            model.dates_.push_back(Date{pair.date, pair.lagged, {}, {}, 0.0});
+            // Periods that start today: one state, nothing to regress. The
+            // longest of them is the closest to a full MPoR.
             if (pair.lagged == MarginPeriod::kToday)
-            {
-                // Periods that start today: one state, nothing to regress.
-                // The longest of them is the closest to a full MPoR.
                 longest_from_today = &pair;
-            }
-            else
-            {
-                for (std::size_t p = 0; p < N; ++p)
-                {
-                    moves[p] = move(paths, model.trades_, pair, today, p);
-                    rows[p] = value_at(paths, model.trades_, p, pair.lagged);
-                }
-                // The drift first, then the variance around it: once a
-                // swap's last coupon is fixed the move is all drift, and a
-                // variance of the raw move would size the margin on it.
-                date.mean = BucketedRegression::fit(rows, 1, moves, settings.regression);
-                for (std::size_t p = 0; p < N; ++p)
-                {
-                    const Real r = moves[p] - date.mean(&rows[p]);
-                    targets[p] = r * r;
-                }
-                date.variance = BucketedRegression::fit(rows, 1, targets, settings.regression);
-                // Where the quadratic dips to zero or below (it does at the
-                // edges, and on 13 % of the paths at a swap's last quarter),
-                // the date's average residual variance stands in for it.
-                Real mean_square = 0.0;
-                for (std::size_t p = 0; p < N; ++p)
-                    mean_square += targets[p] / static_cast<Real>(N);
-                date.average_variance = mean_square;
-            }
-            model.dates_.push_back(std::move(date));
         }
+        // The dates are independent: each task fits its own, with its own
+        // scratch -- the worker count changes the time, not the bits.
+        run_in_chunks(pool, pairs.size(), 1,
+                      [&](std::size_t begin, std::size_t end)
+                      {
+                          std::vector<Real> rows(N), moves(N), targets(N);
+                          for (std::size_t d = begin; d < end; ++d)
+                          {
+                              const MarginPeriod &pair = pairs[d];
+                              if (pair.lagged == MarginPeriod::kToday)
+                                  continue;
+                              Date &date = model.dates_[d];
+                              for (std::size_t p = 0; p < N; ++p)
+                              {
+                                  moves[p] = move(paths, model.trades_, pair, today, p);
+                                  rows[p] = value_at(paths, model.trades_, p, pair.lagged);
+                              }
+                              // The drift first, then the variance around it: once a
+                              // swap's last coupon is fixed the move is all drift, and a
+                              // variance of the raw move would size the margin on it.
+                              date.mean = BucketedRegression::fit(rows, 1, moves, settings.regression);
+                              for (std::size_t p = 0; p < N; ++p)
+                              {
+                                  const Real r = moves[p] - date.mean(&rows[p]);
+                                  targets[p] = r * r;
+                              }
+                              date.variance = BucketedRegression::fit(rows, 1, targets, settings.regression);
+                              // Where the quadratic dips to zero or below (it does at the
+                              // edges, and on 13 % of the paths at a swap's last quarter),
+                              // the date's average residual variance stands in for it.
+                              Real mean_square = 0.0;
+                              for (std::size_t p = 0; p < N; ++p)
+                                  mean_square += targets[p] / static_cast<Real>(N);
+                              date.average_variance = mean_square;
+                          }
+                      });
 
         // Today's margin: the standard deviation of the move over the longest
         // period that starts today, scaled to a full MPoR by the square root
@@ -213,6 +222,49 @@ namespace quantModeling
             out.expected[r] = out.discounted_expected[r] / paths.discount[date.index];
         }
         return out;
+    }
+
+    InitialMarginTable DynamicInitialMargin::table() const
+    {
+        InitialMarginTable t;
+        t.today = today();
+        t.scaling = scaling_;
+        t.quantile = quantile_;
+        const auto add = [&t](const BucketedRegression &regression, std::vector<int> &first,
+                              std::vector<int> &count)
+        {
+            first.push_back(static_cast<int>(t.edge.size()));
+            count.push_back(static_cast<int>(regression.buckets()));
+            for (std::size_t b = 0; b < regression.buckets(); ++b)
+            {
+                const scripting::ExerciseRegression &c = regression.bucket(b).coefficients();
+                if (!c.beta.empty() && c.mean.size() != 1)
+                    throw InvalidInput("initial margin: the device evaluates a regression on the value alone");
+                if (c.degree > 6)
+                    throw InvalidInput("initial margin: the device evaluates degrees up to 6");
+                t.edge.push_back(b < regression.edges().size() ? regression.edges()[b]
+                                                               : std::numeric_limits<Real>::infinity());
+                t.center.push_back(c.beta.empty() ? 0.0 : c.mean[0]);
+                t.scale.push_back(c.beta.empty() ? 1.0 : c.scale[0]);
+                t.degree.push_back(c.beta.empty() ? 0 : c.degree);
+                t.term_first.push_back(static_cast<int>(t.beta.size()));
+                t.terms.push_back(static_cast<int>(c.beta.size()));
+                for (std::size_t k = 0; k < c.beta.size(); ++k)
+                {
+                    t.power.push_back(c.terms[k][0]);
+                    t.beta.push_back(c.beta[k]);
+                }
+            }
+        };
+        for (const Date &date : dates_)
+        {
+            t.date.push_back(static_cast<int>(date.index));
+            t.lagged.push_back(date.lagged == MarginPeriod::kToday ? -1 : static_cast<int>(date.lagged));
+            add(date.mean, t.mean_first, t.mean_buckets);
+            add(date.variance, t.variance_first, t.variance_buckets);
+            t.average_variance.push_back(date.average_variance);
+        }
+        return t;
     }
 
     InitialMargin simm_initial_margin(const ExposurePaths &paths, Time mpor)

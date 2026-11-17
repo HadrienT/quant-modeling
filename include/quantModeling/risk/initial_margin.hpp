@@ -3,7 +3,9 @@
 
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
+#include "quantModeling/risk/initial_margin_path.hpp"
 #include "quantModeling/utils/bucketed_regression.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -102,12 +104,15 @@ namespace quantModeling
          *               the trades' cash flows kept, the move is the clean
          *               one: value change plus the flows of the period.
          * @param trades the netted trades; empty means all.
+         * @param pool   worker threads for the dates, each fitted on its own
+         *               (#281 step 4); nullptr fits them on the calling
+         *               thread. The same bits either way.
          * @throws InvalidInput on an empty cube, a grid without the lagged
          *         dates, a confidence outside (0.5, 1), or a negative anchor.
          */
         static DynamicInitialMargin fit(const ExposurePaths &paths, Time margin_period_of_risk,
                                         const std::vector<std::size_t> &trades = {},
-                                        const DimSettings &settings = {});
+                                        const DimSettings &settings = {}, ThreadPool *pool = nullptr);
 
         /// The margin on the paths of `paths`, which must have the grid the
         /// model was fitted on.
@@ -119,6 +124,17 @@ namespace quantModeling
         /// The same model with another scaling: the netting set's factor
         /// applied to one of its subsets.
         DynamicInitialMargin scaled(Real scaling) const;
+
+        /// The grid it was fitted on, and the netted trades.
+        const std::vector<Time> &grid() const { return grid_; }
+        const std::vector<std::size_t> &trades() const { return trades_; }
+
+        /**
+         * @brief The fitted model as plain arrays, for an evaluation on the
+         *        device (risk/initial_margin_path.hpp): initial_margin_at()
+         *        on the value at the lagged date gives what margin() gives.
+         */
+        InitialMarginTable table() const;
 
       private:
         std::vector<Time> grid_;
