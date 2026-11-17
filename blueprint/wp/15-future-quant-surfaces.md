@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Set aside: a perspective document. Each screen waits for its C++ subject; none is planned. |
 | **Dépend de** | [05](05-viz-3d.md), [09](09-portfolio-risk.md), et de la [roadmap quant](../../etc/roadmap.md) |
 | **Bloque** | rien |
 | **Branche** | une par écran, quand le sujet C++ correspondant existe |

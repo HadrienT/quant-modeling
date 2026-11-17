@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [01](01-design-system.md) |
 | **Bloque** | 08, 09, 10, 11 |
 | **Branche** | `web/06-viz-2d` |

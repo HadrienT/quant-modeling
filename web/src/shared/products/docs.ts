@@ -1,5 +1,5 @@
 /**
- * Product doc cards — blueprint WP 99, extended with a sourced bibliography
+ * Product doc cards, extended with a sourced bibliography
  * (`references`) for the dedicated Products page. The prose describes THIS
  * repo's engines (src/engines/, src/instruments/), not pricing theory in the
  * abstract, and ages like a docstring: re-check each "How it's priced here"
@@ -10,8 +10,8 @@
  * most canonical first. A `url` is added only when the DOI is certain; the
  * citation text is always complete enough to find the work without a link.
  *
- * The `option`, `barrier` and `autocall` entries are the recovered work
- * (blueprint WP 99); the rest are written from the request schemas and engine
+ * The `option`, `barrier` and `autocall` entries were recovered after the
+ * loss of a VM; the rest are written from the request schemas and engine
  * layout and are worth a maintainer pass against src/ before being treated as
  * authoritative.
  */

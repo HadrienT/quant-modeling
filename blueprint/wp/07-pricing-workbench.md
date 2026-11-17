@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| **Dépend de** | [03](03-app-shell.md), [02](02-api-layer.md), [06](06-viz-2d.md) ; [99](99-recovered-work.md) en douce |
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
+| **Dépend de** | [03](03-app-shell.md), [02](02-api-layer.md), [06](06-viz-2d.md) |
 | **Bloque** | [09](09-portfolio-risk.md), [10](10-strategy-visualizer.md) — les deux réutilisent son catalogue |
 | **Branche** | `web/07-pricing-workbench` |
 
@@ -48,7 +49,7 @@ type ProductDescriptor = {
 Quatre consommateurs, une définition : atelier de pricing, ajout de position au
 portefeuille ([09](09-portfolio-risk.md)), legs de stratégie
 ([10](10-strategy-visualizer.md)), fiches pédagogiques
-([99](99-recovered-work.md)). Voir
+(`web/src/shared/products/docs.ts`). Voir
 [interdépendances §3.4](../dependencies.md#34-le-descripteur-de-produit--featurespricingcatalog--wp-07).
 
 Le drapeau `enabled` est conservé : c'est une bonne idée du code actuel
@@ -126,8 +127,8 @@ Presets nommés, stockés localement, pour les configurations récurrentes.
 
 ## 7. Fiches produit
 
-Reprise et généralisation du travail récupéré
-([lot 99](99-recovered-work.md)) : `Formula` (KaTeX), `ProductInfo`,
+Reprise et généralisation du travail récupéré après la perte de la VM
+(`web/src/shared/products/`) : `Formula` (KaTeX), `ProductInfo`,
 `productDocs`. Trois évolutions :
 
 - Le popover positionné à la main devient un `Popover` Radix

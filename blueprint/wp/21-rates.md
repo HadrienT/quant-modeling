@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done. Set aside: monotone convex interpolation (Hagan-West); the curves stay log-linear on discount factors. |
 | **Dépend de** | chantier 0 de la [roadmap](../../etc/roadmap.md) (bootstrap, Levenberg-Marquardt), SABR (chantier 1b) |
 | **Débloque** | LSMC sur les bermudans (validation croisée avec le réseau d'ici), hybrides action-taux (issue #86), puis l'exposition (4c) |
 | **Branche** | `feat/rates-multi-curve` |

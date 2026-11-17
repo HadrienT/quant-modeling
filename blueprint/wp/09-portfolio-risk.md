@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [03](03-app-shell.md), [02](02-api-layer.md), [04](04-auth-session.md), [07](07-pricing-workbench.md), [06](06-viz-2d.md) |
 | **Bloque** | [15](15-future-quant-surfaces.md) (l'agrégation de risque y est réutilisée) |
 | **Branche** | `web/09-portfolio-risk` |

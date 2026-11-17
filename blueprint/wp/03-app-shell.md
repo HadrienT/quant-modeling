@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [01](01-design-system.md) (dure), [02](02-api-layer.md) (douce) |
 | **Bloque** | 04, 07, 08, 09, 10, 11 — toutes les pages |
 | **Branche** | `web/03-app-shell` |

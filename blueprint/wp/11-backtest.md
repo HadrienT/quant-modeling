@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Superseded by WP 24: the backtest engine moved to `~/quant-backtest`; only the reads, the router and the page remain here. |
 | **Dépend de** | [03](03-app-shell.md), [02](02-api-layer.md), [06](06-viz-2d.md) |
 | **Bloque** | rien |
 | **Branche** | `web/11-backtest` |

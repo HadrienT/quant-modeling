@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 /**
- * KaTeX renderer — blueprint WP 99. KaTeX (~270 kB of CSS + fonts) is loaded
+ * KaTeX renderer for the product doc cards. KaTeX (~270 kB of CSS + fonts) is loaded
  * LAZILY: most visitors never open a doc card. `throwOnError: false` degrades to
  * KaTeX's inline error rendering rather than crashing on a typo in the registry.
  */

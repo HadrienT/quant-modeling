@@ -78,7 +78,7 @@ export type ProductDescriptor = {
 	 * when this is undefined, so ResultsPanel never has to call it.
 	 */
 	endpoint?: PricingPath;
-	/** → productDocs (WP 99). */
+	/** → productDocs (shared/products/docs.ts). */
 	docKey?: string;
 	greeks: GreekName[];
 	/** labels / units / groups for fields zodFields cannot name itself. */

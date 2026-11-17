@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done. Continued by WP 26 (bytecode, batched interpreter) and WP 27 (the IR). |
 | **Dépend de** | l'architecture timeline / scénario et la couche dates, livrées sur `feature/dated-mc` — voir [§0](#0-lacquis-sur-lequel-on-branche) |
 | **Bloque** | l'AAD sur payoff quelconque, le moteur d'exposition xVA ([`etc/roadmap.md`](../../etc/roadmap.md) §4c) |
 | **Branche** | `core/scripting` |

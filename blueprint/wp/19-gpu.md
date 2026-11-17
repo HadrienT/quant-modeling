@@ -1,5 +1,7 @@
 # WP 19 — Monte-Carlo sur GPU (les deux V100)
 
+**Status:** Done (lots G0 to G4). The levers it noted for later (occupancy, a more compact interpreter) were taken up by WP 26 and WP 27.
+
 > Chantier 3 de la [roadmap](../../etc/roadmap.md). Conception, pas code : les
 > lots G0–G4 ([§11](#11-séquencement)) livrent chacun un critère vérifiable.
 > Dépend de : [WP 16](16-scripting.md) (scripts), [WP 17](17-aad.md) (AAD),

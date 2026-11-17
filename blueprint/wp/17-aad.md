@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done. Its CPU tape is the oracle every new derivative is checked against (WP 27). |
 | **Dépend de** | l'architecture timeline / scénario de `feature/dated-mc` — voir [§0](#0-lacquis--et-ce-qui-nest-templé-quen-apparence) |
 | **Bloque** | la surface « AAD vs bump » du [lot 15 §2](15-future-quant-surfaces.md#2-aad-vs-bump-and-reprice--chantier-2) ; les sensibilités des scripts ([lot 16](16-scripting.md)) ; les sensibilités xVA ([`etc/roadmap.md`](../../etc/roadmap.md) §4d) |
 | **Branche** | `core/aad` |

@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [12](12-quality-testing.md) — il faut mesurer avant de budgéter |
 | **Bloque** | [14](14-deploy-selfhost.md) |
 | **Branche** | `web/13-perf` |

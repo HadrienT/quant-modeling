@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [00](00-foundations.md) pour l'outillage ; **continu** sur tous les lots |
 | **Bloque** | [13](13-perf-budget.md) |
 | **Branche** | `web/12-quality` puis contributions dans chaque lot |
