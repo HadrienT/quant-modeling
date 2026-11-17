@@ -26,6 +26,7 @@ CATEGORIES = {
     "Structured notes",
     "Volatility",
     "Multi-asset",
+    "Choosers and compounds",
 }
 
 
@@ -167,6 +168,47 @@ def test_the_variance_swap_is_worth_the_variance_spread():
     # annualisation convention (about +1 %).
     expected = 10000 * (0.0625 - 0.04) * math.exp(-0.03)
     assert npv("variance-swap", paths=20_000) == pytest.approx(expected, rel=0.06)
+
+
+def test_a_second_barrier_is_worth_less():
+    kw = dict(seed=2, paths=20_000)
+    assert npv("double-barrier-call", **kw) < npv("up-and-out-call", **kw)
+
+
+def _put(**kw):
+    script = pt.render("european-call", {}, VALUATION).replace(
+        "max(spot() - strike * s0, 0)", "max(strike * s0 - spot(), 0)"
+    )
+    return price(script, 1, **kw)["npv"]
+
+
+def test_the_chooser_lies_between_the_dearer_option_and_both():
+    # Choosing is worth at least the dearer of the call and the put, never
+    # more than holding both (Rubinstein, 1991).
+    kw = dict(seed=2, paths=20_000)
+    call, put = npv("european-call", **kw), _put(**kw)
+    res = price(pt.render("chooser", {}, VALUATION), 1, **kw)
+    tol = 4 * res["mc_std_error"]
+    assert max(call, put) - tol <= res["npv"] <= call + put + tol
+
+
+def test_the_compound_lies_between_the_call_less_its_premium_and_the_call():
+    # Always buying the call is one decision rule, never buying it another
+    # bound: the right is worth less than the call and at least the call
+    # less its discounted premium (Geske, 1979).
+    kw = dict(seed=2, paths=20_000)
+    call = npv("european-call", **kw)
+    res = price(pt.render("compound", {}, VALUATION), 1, **kw)
+    tol = 4 * res["mc_std_error"]
+    premium = 0.05 * 100 * math.exp(-0.03 * 0.5)
+    assert call - premium - tol <= res["npv"] <= call + tol
+
+
+def test_the_dispersion_swap_pays_its_strike_when_the_stocks_move_as_one():
+    # Perfectly correlated stocks with one volatility: the basket's variance
+    # is each stock's, the spread is zero and only the strike is left.
+    res = npv("dispersion-swap", rho=0.9999, seed=2, paths=20_000)
+    assert res == pytest.approx(-10000 * 0.02 * math.exp(-0.03), rel=0.03)
 
 
 # ── the service ─────────────────────────────────────────────────────────────

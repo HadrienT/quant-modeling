@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG, CATALOG_BY_KEY, DEFAULT_PRODUCT_KEY } from "./catalog";
+import {
+	CATALOG,
+	CATALOG_BY_KEY,
+	DEFAULT_PRODUCT_KEY,
+	resolveProductKey,
+} from "./catalog";
 import { SCRIPTED_PRODUCTS, scriptedKey } from "./scripted";
 import { fieldsFromSchema } from "./zodFields";
 
@@ -41,18 +46,59 @@ describe("scripted catalog entries", () => {
 		});
 	});
 
-	it("lists the scripted families first, by family, before the rest", () => {
-		const cats = [...new Set(CATALOG.map((p) => p.category))];
-		expect(cats.slice(0, 7)).toEqual([
-			"script-vanilla",
-			"script-barrier",
-			"script-path",
-			"script-cliquet",
-			"script-note",
-			"script-volatility",
-			"script-multi",
+	it("lists every product by family, hand-written pricers and scripts mixed", () => {
+		const cats = CATALOG.map((p) => p.category);
+		// One run per family, in order: no family is split in two.
+		const runs = cats.filter((c, i) => c !== cats[i - 1]);
+		expect(runs).toEqual([...new Set(cats)]);
+		expect(runs.slice(0, 8)).toEqual([
+			"vanilla",
+			"barrier",
+			"path",
+			"choice",
+			"cliquet",
+			"note",
+			"volatility",
+			"multi",
 		]);
+		// Within a family the hand-written pricers come first.
+		for (const fam of runs) {
+			const kinds = CATALOG.filter((p) => p.category === fam).map(
+				(p) => !!p.scripted,
+			);
+			expect(kinds).toEqual([...kinds].sort((a, b) => +a - +b));
+		}
 		expect(CATALOG_BY_KEY.get(DEFAULT_PRODUCT_KEY)?.enabled).toBe(true);
+	});
+
+	it("opens the script of a product that used to be greyed out", () => {
+		for (const [former, script] of [
+			["autocall", "script-athena-autocall"],
+			["mountain", "script-himalaya"],
+			["variance-swap", "script-variance-swap"],
+			["volatility-swap", "script-volatility-swap"],
+			["dispersion-swap", "script-dispersion-swap"],
+			["double-barrier", "script-double-barrier-call"],
+			["chooser", "script-chooser"],
+			["compound", "script-compound"],
+		]) {
+			const key = resolveProductKey(former)!;
+			expect(key).toBe(script);
+			expect(CATALOG_BY_KEY.get(key)?.enabled, former).toBe(true);
+			// Its reference sheet followed it.
+			expect(CATALOG_BY_KEY.get(key)?.docKey, former).toBe(
+				former === "double-barrier" ? "double-barrier" : former,
+			);
+		}
+		expect(resolveProductKey("vanilla")).toBe("vanilla");
+	});
+
+	it("leaves only the asset classes without market data unpriced", () => {
+		expect(
+			CATALOG.filter((p) => !p.enabled)
+				.map((p) => p.category)
+				.every((c) => c === "fx" || c === "commodity"),
+		).toBe(true);
 	});
 
 	it("keys never collide with the hand-written catalog", () => {
