@@ -20,13 +20,14 @@ import type {
 export const SCRIPTED_PRODUCTS = LIBRARY as ScriptedProduct[];
 
 const FAMILY: Record<string, ProductCategory> = {
-	"Vanillas and digitals": "script-vanilla",
-	"Barriers and touch options": "script-barrier",
-	"Asians, lookbacks and ladders": "script-path",
-	Cliquets: "script-cliquet",
-	"Structured notes": "script-note",
-	Volatility: "script-volatility",
-	"Multi-asset": "script-multi",
+	"Vanillas and digitals": "vanilla",
+	"Barriers and touch options": "barrier",
+	"Asians, lookbacks and ladders": "path",
+	"Choosers and compounds": "choice",
+	Cliquets: "cliquet",
+	"Structured notes": "note",
+	Volatility: "volatility",
+	"Multi-asset": "multi",
 };
 
 /** Products whose reference sheet already exists (shared/products/docs.ts). */
@@ -35,6 +36,16 @@ const DOC_KEYS: Record<string, string> = {
 	cliquet: "cliquet",
 	napoleon: "napoleon",
 	"range-accrual": "corridor",
+	// Sheets of products that were greyed out until a script priced them.
+	"athena-autocall": "autocall",
+	"phoenix-autocall": "autocall",
+	himalaya: "mountain",
+	"variance-swap": "variance-swap",
+	"volatility-swap": "volatility-swap",
+	"double-barrier-call": "double-barrier",
+	chooser: "chooser",
+	compound: "compound",
+	"dispersion-swap": "dispersion-swap",
 };
 
 export const SINGLE_MODELS = [
@@ -97,7 +108,7 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 
 	return {
 		key: scriptedKey(p.slug),
-		category: FAMILY[p.category] ?? "script-note",
+		category: FAMILY[p.category] ?? "note",
 		label: p.title,
 		enabled: true,
 		schema: z.object(shape),

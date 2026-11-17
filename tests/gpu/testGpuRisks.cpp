@@ -12,8 +12,10 @@
 #include <string>
 #include <vector>
 
+#include "../library_exercise.hpp"
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/date.hpp"
+#include "quantModeling/engines/mc/lsm.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/gpu/device.hpp"
@@ -66,6 +68,8 @@ namespace quantModeling
                 std::ifstream in(entry.path());
                 std::stringstream text;
                 text << in.rdbuf();
+                if (library_script_has_exercise(text.str()))
+                    continue;
                 out.push_back({entry.path().stem().string(), text.str()});
             }
             std::sort(out.begin(), out.end(), [](const auto &a, const auto &b)
@@ -781,6 +785,123 @@ namespace quantModeling
         EXPECT_LT(so->gamma_std_error, 2e-4);
         std::printf("Vibrato second order, local vol 252 steps/yr, 200000 points: %.0f ms, gamma %.6f +- %.6f\n", ms,
                     so->gamma, so->gamma_std_error);
+    }
+
+    // WP 26 §16 (#282 step 3): exercise() / call() on the GPU, in the kernels
+    // compiled from the IR. The rule is fitted once on the CPU; under it the
+    // GPU's price is the CPU's on the same Philox paths, and its risks
+    // (tangent under Black-Scholes and Heston, adjoint under local vol) the
+    // tape's, the decision held fixed on both.
+    namespace
+    {
+        const std::vector<std::string> &exercise_scripts()
+        {
+            static const std::vector<std::string> s = {
+                "2026-07-01 2026-08-03 2026-09-01 2026-10-01 2026-11-02 2026-12-01 2027-01-04 2027-02-01\n"
+                "    if exercise(max(100 - spot(), 0), spot()) then\n        pays max(100 - spot(), 0)\n"
+                "    endIf\n",
+                "2026-12-01\n    if exercise(spot()) then\n        is_call = 1\n    endIf\n"
+                "2027-06-01\n    if is_call = 1 then\n        pays max(spot() - 100, 0)\n    else\n"
+                "        pays max(100 - spot(), 0)\n    endIf\n",
+                "2026-12-01 2027-06-01 2027-12-01\n    if done = 0 then\n        pays 2\n"
+                "        if call(spot()) then\n            pays 100\n            done = 1\n        endIf\n"
+                "    endIf\n2028-06-01\n    if done = 0 then\n        pays 104 * min(1, spot() / 90)\n    endIf\n",
+                "2026-09-01 2026-12-01 2027-03-01 2027-06-01\n    if spot() < 98 then\n"
+                "        if exercise(spot()) then\n            pays 100 - spot()\n        endIf\n    endIf\n"};
+            return s;
+        }
+
+        template <class T>
+        std::unique_ptr<ISimulationModel<T>> exercise_model(int which)
+        {
+            switch (which)
+            {
+                case 1:
+                    return local_vol<T>();
+                case 2:
+                    return std::make_unique<BatesSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.04), T(1.5), T(0.05),
+                                                              T(0.6), T(-0.7), T(0.0), T(0.0), T(0.0));
+                default:
+                    return std::make_unique<BlackScholesSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.25));
+            }
+        }
+        const char *const kExerciseModels[] = {"Black-Scholes", "local vol", "Heston"};
+    } // namespace
+
+    TEST_F(GpuRisksTest, EarlyExercisePricesAreTheCpus)
+    {
+        for (const std::string &source : exercise_scripts())
+            for (const bool fuzzy : {false, true})
+                for (int which = 0; which < 3; ++which)
+                {
+                    ScriptSettings ss;
+                    ss.fuzzy = fuzzy;
+                    ScriptedProduct<Real> product(source, kCtx, ss);
+                    auto fit_model = exercise_model<Real>(which);
+                    fit_exercise_policy(product, *fit_model, 16384, 5);
+                    ASSERT_FALSE(product.ir().empty()) << product.ir_refusal();
+                    const std::string what = std::string(kExerciseModels[which]) + (fuzzy ? ", fuzzy\n" : "\n") + source;
+                    PricingSettings set;
+                    set.mc_paths = 16384;
+                    set.mc_seed = 5;
+                    set.mc_rng = RngKind::Philox;
+                    set.mc_sampler = SamplerKind::PseudoRandom;
+                    auto cpu_model = exercise_model<Real>(which);
+                    auto gpu_model = exercise_model<Real>(which);
+                    set.mc_device = ComputeDevice::Cpu;
+                    const SimulationMCResult cpu = simulate_script(product, *cpu_model, set);
+                    set.mc_device = ComputeDevice::Gpu;
+                    const SimulationMCResult gpu = simulate_script(product, *gpu_model, set);
+                    ASSERT_EQ(gpu.device, "gpu") << what << gpu.diagnostics;
+                    EXPECT_NE(gpu.diagnostics.find("compiled script"), std::string::npos) << gpu.diagnostics;
+                    EXPECT_NE(cpu.npv(), 0.0) << what;
+                    EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * std::max(1.0, std::abs(cpu.npv()))) << what;
+                    EXPECT_NEAR(gpu.std_error(), cpu.std_error(), 1e-6 * std::max(1e-12, cpu.std_error())) << what;
+                }
+    }
+
+    TEST_F(GpuRisksTest, EarlyExerciseRisksMatchTheTape)
+    {
+        for (const std::string &source : exercise_scripts())
+            for (const bool fuzzy : {false, true})
+                for (int which = 0; which < 3; ++which)
+                {
+                    ScriptSettings ss;
+                    ss.fuzzy = fuzzy;
+                    ScriptedProduct<Real> product(source, kCtx, ss);
+                    auto fit_model = exercise_model<Real>(which);
+                    fit_exercise_policy(product, *fit_model, 16384, 5);
+                    const std::string what = std::string(kExerciseModels[which]) + (fuzzy ? ", fuzzy\n" : "\n") + source;
+                    auto model = exercise_model<Real>(which);
+                    std::string why;
+                    const auto gpu = simulate_script_aad_gpu(product, *model, kPaths, kSeed, why);
+                    ASSERT_TRUE(gpu.has_value()) << what << why;
+                    ScriptedProduct<aad::Number> tape_product(source, kCtx, ss);
+                    tape_product.set_exercise_policy(product.exercise_policy());
+                    auto tape_model = exercise_model<aad::Number>(which);
+                    const AADSimulResults cpu =
+                        simulate_aad(tape_product, *tape_model, kPaths, kSeed, first_aad_payoff, RngKind::Philox);
+                    EXPECT_NEAR(gpu->price, cpu.price, 1e-9 * std::max(1.0, std::abs(cpu.price))) << what;
+                    expect_same_risks(*gpu, cpu, 1e-8, what);
+                }
+    }
+
+    // Without compilation the interpreted kernels have no rule: the GPU
+    // refuses, the CPU prices and says why.
+    TEST_F(GpuRisksTest, WithoutCompilationEarlyExerciseStaysOnTheCpu)
+    {
+        const JitSwitch off(false);
+        ScriptedProduct<Real> product(exercise_scripts().front(), kCtx);
+        BlackScholesSimModel<Real> m(100.0, 0.03, 0.01, 0.25);
+        fit_exercise_policy(product, m, 4096, 5);
+        PricingSettings set;
+        set.mc_paths = 4096;
+        set.mc_device = ComputeDevice::Gpu;
+        EXPECT_THROW(simulate_script(product, m, set), InvalidInput);
+        set.mc_device = ComputeDevice::Auto;
+        const SimulationMCResult r = simulate_script(product, m, set);
+        EXPECT_EQ(r.device, "cpu");
+        EXPECT_NE(r.diagnostics.find("QM_SCRIPT_JIT=0"), std::string::npos) << r.diagnostics;
     }
 
 } // namespace quantModeling

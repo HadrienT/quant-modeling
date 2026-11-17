@@ -42,6 +42,13 @@ export { PnlHistoryChart, type PnlPoint } from "./charts/PnlHistoryChart";
 export { GrowthChart, type GrowthSeries } from "./charts/GrowthChart";
 export { WeightsChart } from "./charts/WeightsChart";
 export { IntervalChart, type IntervalRow } from "./charts/IntervalChart";
+export { FanChart, type FanBand, type FanLine } from "./charts/FanChart";
+export {
+	DensityChart,
+	type DensityCurve,
+	type DensityHistogram,
+} from "./charts/DensityChart";
+export { SmileFitChart, type SmileFitSeries } from "./charts/SmileFitChart";
 export {
 	SurfaceView,
 	makeGrid,

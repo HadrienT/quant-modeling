@@ -470,6 +470,9 @@ namespace quantModeling
             SimulationMCResult res = simulate_script(product, model, plain, pool);
             if (model.exact_between_dates())
                 res.discretisation_bias = 0.0;
+            else if (product.has_exercise())
+                res.diagnostics += " | discretisation bias not estimated (early exercise: the halved run would "
+                                   "need its own exercise rule)";
             else
                 res.diagnostics += " | discretisation bias not estimated (the model cannot refine its grid)";
             return res;
@@ -510,8 +513,8 @@ namespace quantModeling
         DeviceModel dm;
         std::vector<std::vector<Time>> mats;
         model.init(product.timeline(), product.defline());
-        if (product.has_exercise())
-            why = "early exercise (exercise() / call()) runs on the CPU only";
+        if (product.has_exercise() && product.ir().empty())
+            why = product.ir_refusal().empty() ? "early exercise without a fitted rule" : product.ir_refusal();
         else if (!model.describe_device(dm))
             why = "this model runs on the CPU only (the GPU simulates Black-Scholes with a flat rate, "
                   "local vol, Heston and SLV)";
@@ -810,7 +813,7 @@ namespace quantModeling
         model.init(product.timeline(), product.defline());
         DeviceModel dm;
         if (product.has_exercise() || product.ir().empty())
-            why = "early exercise runs on the tree evaluator, whose risks take the tape";
+            why = "early exercise: the IR's CPU adjoint does not cover it (the tape and the GPU do)";
         else if (!model.describe_device(dm))
             why = "this model's step is not in the IR";
         else if (dm.kind == DeviceModel::Kind::Heston && dm.jump_k != 0.0)
@@ -1019,7 +1022,7 @@ namespace quantModeling
         {
             const scripting::ir::Script &ir = product.ir();
             if (product.has_exercise() || ir.empty())
-                return "early exercise runs on the tree evaluator, which Vibrato does not cover";
+                return "early exercise is not covered by Vibrato";
             // Vibrato re-evaluates the final date at X, Z and -Z; the last
             // step's bridge factor is the step's, which it would not move.
             if (ir.has_bridge)

@@ -13,6 +13,7 @@
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/scripting/event.hpp"
+#include "quantModeling/scripting/exercise.hpp"
 #include "quantModeling/scripting/ir_grid.hpp"
 
 /**
@@ -348,6 +349,7 @@ namespace quantModeling::scripting::ir
         bool has_monitor = false;   ///< a Surv slot of any kind (what the CPU model fills)
         bool has_bridge = false;    ///< a bridge survival (survivalAbove / survivalBelow): one asset, BS or local vol
         bool has_last_step = false; ///< a last-step expectation: the paths compute it (WP 27 §14.9)
+        bool has_exercise = false;  ///< exercise() / call() under a fitted rule (WP 26 §16); n_vars counts its flag
 
         std::size_t n_events() const { return event_block.size(); }
         const Block &event(std::size_t e) const { return blocks[static_cast<std::size_t>(event_block[e])]; }
@@ -434,8 +436,8 @@ namespace quantModeling::scripting::ir
      *        what scripting::compile_script reads.
      *
      * `fuzzy` selects the smoothed semantics. Throws InvalidInput where the
-     * bytecode compiler does (exercise(), a comparison used as a number in
-     * fuzzy mode).
+     * bytecode compiler does (a comparison used as a number in fuzzy mode),
+     * and on exercise() without `exercise` below.
      *
      * `terms`: every number written in the script becomes a `Param` (lot
      * L1b), its value in Script::event_terms -- for the scripts the library
@@ -444,8 +446,28 @@ namespace quantModeling::scripting::ir
      * constants are left to run time.
      */
     /// `smooth_ramp`: the fuzzy comparisons' C1 ramp (ScriptSettings::smooth_ramp).
+    ///
+    /// `exercise`: a script with exercise() / call() lowers once its rule is
+    /// fitted (WP 26 §16). The decision is written with the IR's own
+    /// operations -- exercise_decide's, in its order -- the rule's numbers
+    /// (means, scales, the box, the coefficients) as each event's terms
+    /// after the script's own, so the code depends only on the rule's shape
+    /// (the regressors, the monomials, holder or issuer); whether the right
+    /// was exercised is one more variable (index n_vars). A comparison has
+    /// no derivative, so the tangent and the adjoint hold the decision
+    /// fixed, as the tape does. Throws where the IR cannot follow the
+    /// interpreter: two exercise() / call() in one event (the interpreter
+    /// checks one decision per date at run time), a rule whose events do
+    /// not share one set of monomials.
+    struct ExerciseLowering
+    {
+        const ExercisePolicy *policy = nullptr;
+        std::size_t n_regressors = 0; ///< each exercise() / call()'s
+        std::size_t n_spots = 0;      ///< the regressors of an exercise() without argument
+    };
+
     Script lower_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy, bool terms = false,
-                        bool smooth_ramp = false);
+                        bool smooth_ramp = false, const ExerciseLowering *exercise = nullptr);
 
     /// A block as text, one instruction per line (`%7 = add %3, %6`).
     std::string to_string(const Block &b);

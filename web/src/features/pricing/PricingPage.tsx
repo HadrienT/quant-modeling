@@ -1,12 +1,7 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { BookText, Copy, GitCompareArrows } from "lucide-react";
-import {
-	CATALOG_BY_KEY,
-	ParamForm,
-	ProductInfo,
-	ProductPicker,
-} from "@/shared/products";
+import { CATALOG_BY_KEY, ParamForm, ProductPicker } from "@/shared/products";
 import { Button, Disclaimer, cn, copyText, toast } from "@/shared/ui";
 import { useNavPages } from "@/shared/session";
 import { AddToPortfolio } from "./AddToPortfolio";
@@ -37,7 +32,6 @@ export default function PricingPage() {
 					<h1 className="text-lg font-semibold text-ink">
 						{wb.descriptor.label}
 					</h1>
-					<ProductInfo docKey={wb.descriptor.docKey} />
 					<span className="ml-auto flex items-center gap-3">
 						<AddToPortfolio productKey={wb.productKey} values={wb.values} />
 						{isShown("/products") && (

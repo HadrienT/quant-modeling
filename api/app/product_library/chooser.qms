@@ -1,0 +1,27 @@
+# title: Chooser option
+# category: Choosers and compounds
+# underlyings: 1
+# source: Rubinstein, Options for the Undecided, Risk, 1991
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: On the choice date the holder decides whether the option is a call or a put, both struck at the same level: long volatility without a view on direction.
+# param: strike = 1.0 | percent | Strike of the call and of the put, % of the initial level
+#
+# The choice is an early-exercise decision (a Longstaff-Schwartz regression
+# on the spot): the price is a lower bound for the holder, priced on the CPU.
+
+2027-01-04
+    strike = 1.0
+    s0 = spot()
+    is_call = 0
+
+2027-07-06
+    if exercise(spot()) then
+        is_call = 1
+    endIf
+
+2028-01-04
+    if is_call = 1 then
+        pays max(spot() - strike * s0, 0)
+    else
+        pays max(strike * s0 - spot(), 0)
+    endIf

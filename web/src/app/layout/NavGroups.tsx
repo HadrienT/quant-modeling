@@ -9,25 +9,68 @@ import {
 } from "@/shared/session";
 
 /**
- * The navigation as four spaces (WP 28): Market, Price, Risk, Learn. On wide
- * screens each space is a menu of its pages; in the folded menu the spaces
- * are sections, every page in sight. A page hidden from visitors shows to an
+ * The navigation as four spaces (WP 28): Market, Price, Risk, Learn, then the
+ * pages in no space (About) as plain links. On wide screens each space is a
+ * menu of its pages; in the folded menu the spaces are sections, every page
+ * in sight. A page hidden from visitors shows to an
  * administrator, faded and struck through.
  */
 export function NavGroups({ layout }: { layout: "bar" | "column" }) {
-	const { groups } = useNavPages();
+	const { groups, standalone } = useNavPages();
 	if (layout === "column")
-		return groups.map((g) => (
-			<section key={g.key} className="flex flex-col gap-0.5 py-1">
-				<h2 className="px-2.5 text-2xs font-semibold tracking-wide text-ink-muted uppercase">
-					{g.label}
-				</h2>
-				{g.pages.map((p) => (
-					<PageLink key={p.path} page={p} />
+		return (
+			<>
+				{groups.map((g) => (
+					<section key={g.key} className="flex flex-col gap-0.5 py-1">
+						<h2 className="px-2.5 text-2xs font-semibold tracking-wide text-ink-muted uppercase">
+							{g.label}
+						</h2>
+						{g.pages.map((p) => (
+							<PageLink key={p.path} page={p} />
+						))}
+					</section>
 				))}
-			</section>
-		));
-	return groups.map((g) => <GroupMenu key={g.key} group={g} />);
+				{standalone.length > 0 && (
+					<section className="flex flex-col gap-0.5 border-t border-hairline py-1">
+						{standalone.map((p) => (
+							<PageLink key={p.path} page={p} />
+						))}
+					</section>
+				)}
+			</>
+		);
+	return (
+		<>
+			{groups.map((g) => (
+				<GroupMenu key={g.key} group={g} />
+			))}
+			{standalone.map((p) => (
+				<BarLink key={p.path} page={p} />
+			))}
+		</>
+	);
+}
+
+/** A page in no space (About): a plain link of the bar, always in sight. */
+function BarLink({ page }: { page: VisiblePage }) {
+	return (
+		<Link
+			to={page.path}
+			preload="intent"
+			title={page.hidden ? "Hidden from visitors" : undefined}
+			className="rounded-sm px-2.5 py-1 text-sm text-ink-secondary transition-colors hover:bg-surface-raised hover:text-ink"
+			activeProps={{ className: "bg-surface-raised !text-ink" }}
+		>
+			{page.hidden ? (
+				<span className="line-through opacity-60">
+					<span className="sr-only">hidden from visitors: </span>
+					{page.label}
+				</span>
+			) : (
+				page.label
+			)}
+		</Link>
+	);
 }
 
 /**

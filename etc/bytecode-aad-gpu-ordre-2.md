@@ -284,8 +284,15 @@ regressors and reads the rule as flat arrays (`ExerciseView`); the machine
 keeps "exercised or not" per path, and per lane in the batched interpreter.
 The pilot's branches (never exercised; exercised at one date) run on the same
 machine. Same bits as the tree evaluator, prices and tape risks; a monthly
-Bermudan put's request goes from 1.82 s to 0.72 s on one thread. Not on the
-GPU yet: these scripts have no IR.
+Bermudan put's request goes from 1.82 s to 0.72 s on one thread.
+
+**Update (2026-11-17, WP 26 §16): and on the GPU.** Once fitted, the rule is
+lowered into the IR with the IR's own operations (the box, the standardised
+regressors, the polynomial, the comparison), its numbers as each date's
+terms, "exercised" as one more variable. A comparison has no derivative, so
+the generated tangent and adjoint hold the decision fixed, like the tape.
+Local-vol AAD risks of a monthly Bermudan put: 44.6 s on two CPUs, 2.0 s on
+a V100.
 
 ## I.9 Ce que cela garantit, et ce que cela rapporte
 

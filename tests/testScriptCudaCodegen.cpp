@@ -1,3 +1,4 @@
+#include "library_exercise.hpp"
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -54,6 +55,8 @@ namespace quantModeling
             std::ifstream in(entry.path());
             std::stringstream text;
             text << in.rdbuf();
+            if (library_script_has_exercise(text.str()))
+                continue;
             for (bool fuzzy : {false, true})
             {
                 ScriptSettings ss;

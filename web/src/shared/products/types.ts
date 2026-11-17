@@ -1,22 +1,23 @@
 import type { z } from "zod";
 import type { PricingPath } from "@/shared/api/pricing";
 
+/**
+ * Product families, shared by the hand-written pricers and the script
+ * library: the list groups products by what they are, not by how they are
+ * priced.
+ */
 export type ProductCategory =
 	| "vanilla"
-	| "exotic"
-	| "fixed-income"
-	| "structured"
+	| "barrier"
+	| "path"
+	| "choice"
+	| "cliquet"
+	| "note"
 	| "volatility"
+	| "multi"
 	| "fx"
 	| "commodity"
-	// Products of the script library (api/app/product_library), by family.
-	| "script-vanilla"
-	| "script-barrier"
-	| "script-path"
-	| "script-cliquet"
-	| "script-note"
-	| "script-volatility"
-	| "script-multi";
+	| "fixed-income";
 
 /** A product of the script library, as scripted.gen.json describes it. */
 export type ScriptedProduct = {

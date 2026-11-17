@@ -1,3 +1,4 @@
+#include "library_exercise.hpp"
 #include <gtest/gtest.h>
 
 #include <Eigen/Core>
@@ -50,6 +51,8 @@ namespace quantModeling
                 std::ifstream in(entry.path());
                 std::stringstream text;
                 text << in.rdbuf();
+                if (library_script_has_exercise(text.str()))
+                    continue;
                 out.push_back({entry.path().stem().string(), text.str()});
             }
             std::sort(out.begin(), out.end(), [](const Script &a, const Script &b)

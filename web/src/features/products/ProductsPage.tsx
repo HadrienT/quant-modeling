@@ -2,6 +2,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
 	CATALOG_BY_KEY,
 	DEFAULT_PRODUCT_KEY,
+	resolveProductKey,
 	ProductPicker,
 } from "@/shared/products";
 import { ProductReference } from "./ProductReference";
@@ -14,10 +15,10 @@ import { ProductReference } from "./ProductReference";
  */
 export default function ProductsPage() {
 	const { product } = useSearch({ from: "/products" });
+	const asked = resolveProductKey(product);
 	const navigate = useNavigate({ from: "/products" });
 
-	const key =
-		product && CATALOG_BY_KEY.has(product) ? product : DEFAULT_PRODUCT_KEY;
+	const key = asked && CATALOG_BY_KEY.has(asked) ? asked : DEFAULT_PRODUCT_KEY;
 	const descriptor = CATALOG_BY_KEY.get(key)!;
 
 	return (
@@ -27,7 +28,6 @@ export default function ProductsPage() {
 					selected={key}
 					onSelect={(k) => navigate({ search: { product: k } })}
 					allowDisabled
-					showInfo={false}
 				/>
 			</aside>
 			<ProductReference descriptor={descriptor} />

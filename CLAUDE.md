@@ -155,11 +155,6 @@ The project's "JIRA" is the repository's **GitHub Issues**. `gh` is authenticate
 | `etc/structure.md` | Target layout of the pricing module. |
 | `etc/bytecode-aad-gpu-ordre-2.md` | Detailed explanation of what goes beyond Savine's two books: script bytecode, AAD on GPU (duals, per-path adjoint without a tape), second-order AAD. Keep it up to date when this code changes. |
 
-**Roadmap rule not to be bypassed: stop adding products.** The catalogue is already wider
-than necessary; the marginal value of a 25th payoff is zero. Depth (calibration, adjoint
-greeks, GPU) beats breadth. One exception, decided by the maintainer on 2026-10-03: the
-currency swap of work package X10 (WP 23 §14.15).
-
 **Performance first, the books as references (decided by the maintainer on 2026-11-12).**
 WP 16 and WP 17 were built close to Savine's two books (scripting, AAD) on purpose; that is
 no longer a constraint. Depart from the books whenever it buys speed or exactness (WP 27

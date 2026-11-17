@@ -36,10 +36,7 @@ const PDE = {
 };
 
 const UNVETTED =
-	"Engine not yet vetted — the roadmap prioritises depth over new payoffs.";
-
-const NOT_IMPLEMENTED =
-	"Documented from Bouzoubaa & Osseiran (2010) — no pricing engine in this repo yet; the roadmap prioritises depth over new payoffs.";
+	"No market data for this asset class in the site's database yet: its reference sheet is here, its pricing is not.";
 
 const bump = <T extends object>(v: Record<string, unknown>, extra: T) => ({
 	...bsCoreDefaults,
@@ -181,7 +178,7 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 	},
 	{
 		key: "asian",
-		category: "exotic",
+		category: "path",
 		label: "Asian option",
 		enabled: true,
 		schema: z.object({
@@ -212,7 +209,7 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 	},
 	{
 		key: "barrier",
-		category: "exotic",
+		category: "barrier",
 		label: "Barrier option",
 		enabled: true,
 		schema: z
@@ -271,7 +268,7 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 	},
 	{
 		key: "digital",
-		category: "exotic",
+		category: "vanilla",
 		label: "Digital option",
 		enabled: true,
 		schema: z.object({
@@ -298,7 +295,7 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 	},
 	{
 		key: "lookback",
-		category: "exotic",
+		category: "path",
 		label: "Lookback option",
 		enabled: true,
 		schema: z.object({
@@ -329,7 +326,7 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 	},
 	{
 		key: "basket",
-		category: "exotic",
+		category: "multi",
 		label: "Basket option",
 		enabled: true,
 		schema: z.object({
@@ -382,7 +379,7 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 	},
 	{
 		key: "rainbow",
-		category: "exotic",
+		category: "multi",
 		label: "Rainbow (worst/best-of)",
 		enabled: true,
 		schema: z.object({
@@ -522,42 +519,7 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 	rates("swap", "Interest rate swap", "/price/rates/swap"),
 	rates("swaption", "Swaption", "/price/rates/swaption"),
 
-	// ── unvetted categories: visible, greyed, with a reason ─────────────
-	disabled(
-		"autocall",
-		"structured",
-		"Autocall",
-		"/price/structured/autocall",
-		"autocall",
-	),
-	disabled(
-		"mountain",
-		"structured",
-		"Mountain / Himalaya",
-		"/price/structured/mountain",
-		"mountain",
-	),
-	disabled(
-		"variance-swap",
-		"volatility",
-		"Variance swap",
-		"/price/volatility/variance-swap",
-		"variance-swap",
-	),
-	disabled(
-		"volatility-swap",
-		"volatility",
-		"Volatility swap",
-		"/price/volatility/volatility-swap",
-		"volatility-swap",
-	),
-	disabled(
-		"dispersion-swap",
-		"volatility",
-		"Dispersion swap",
-		"/price/volatility/dispersion-swap",
-		"dispersion-swap",
-	),
+	// ── no market data for these yet: in the Products reference only ────
 	disabled("fx-forward", "fx", "FX forward", "/price/fx/forward", "fx-forward"),
 	disabled("fx-option", "fx", "FX option", "/price/fx/option", "fx-option"),
 	disabled(
@@ -573,20 +535,6 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		"Commodity option",
 		"/price/commodity/option",
 		"commodity-option",
-	),
-
-	// Documented from Bouzoubaa & Osseiran (2010) at the maintainer's
-	// request; not expressible as a payoff script yet (a chooser and a
-	// compound need a conditional expectation), so no pricing engine.
-	// docOnly() (not disabled()) because there is no real endpoint to type
-	// -- see types.ts's ProductDescriptor.endpoint doc comment.
-	docOnly("compound", "exotic", "Compound option", "compound"),
-	docOnly("chooser", "exotic", "Chooser option", "chooser"),
-	docOnly(
-		"double-barrier",
-		"exotic",
-		"Double barrier option",
-		"double-barrier",
 	),
 ];
 
@@ -620,27 +568,6 @@ function rates(
 	};
 }
 
-function docOnly(
-	key: string,
-	category: ProductDescriptor["category"],
-	label: string,
-	docKey: string,
-): ProductDescriptor {
-	return {
-		key,
-		category,
-		label,
-		enabled: false,
-		disabledReason: NOT_IMPLEMENTED,
-		schema: z.object({}),
-		defaults: {},
-		engines: [],
-		docKey,
-		greeks: [],
-		toRequest: (v) => v,
-	};
-}
-
 function disabled(
 	key: string,
 	category: ProductDescriptor["category"],
@@ -664,37 +591,71 @@ function disabled(
 	};
 }
 
+/** The order of the families in every product list. */
+const FAMILY_ORDER: ProductDescriptor["category"][] = [
+	"vanilla",
+	"barrier",
+	"path",
+	"choice",
+	"cliquet",
+	"note",
+	"volatility",
+	"multi",
+	"fx",
+	"commodity",
+	"fixed-income",
+];
+
 /**
- * The script library's products come first: each is validated by the real
- * parser and priced by the generic engine under a calibrated model of the
- * user's choice. The four doc-only entries they made priceable (forward-
- * start, cliquet, Napoleon, corridor) are now scripted and keep their
- * reference sheets. The hand-written catalog follows.
+ * Every product by family, whether a hand-written pricer or a script of the
+ * library: the list says what a product is, not how it is priced. Within a
+ * family the hand-written pricers come first (their engines and the GPU),
+ * then the scripts by name. A product without a pricing (`enabled: false`)
+ * shows in the Products reference only.
  */
 export const CATALOG: ProductDescriptor[] = [
-	...SCRIPTED_CATALOG,
 	...HAND_WRITTEN,
-];
+	...SCRIPTED_CATALOG,
+].sort(
+	(a, b) => FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category),
+);
 
 /** Where the workbench and the products page open: the analytic vanilla,
  * instant and independent of the market database. */
 export const DEFAULT_PRODUCT_KEY = "vanilla";
 
+/**
+ * Products that were greyed out until a script of the library priced them:
+ * their old links open the script.
+ */
+const FORMER_KEYS: Record<string, string> = {
+	autocall: "script-athena-autocall",
+	mountain: "script-himalaya",
+	"variance-swap": "script-variance-swap",
+	"volatility-swap": "script-volatility-swap",
+	"dispersion-swap": "script-dispersion-swap",
+	"double-barrier": "script-double-barrier-call",
+	chooser: "script-chooser",
+	compound: "script-compound",
+};
+
+/** The catalog key a URL means: a former key opens its script. */
+export function resolveProductKey(key: string | undefined): string | undefined {
+	return key ? (FORMER_KEYS[key] ?? key) : undefined;
+}
+
 export const CATALOG_BY_KEY = new Map(CATALOG.map((p) => [p.key, p]));
 
 export const CATEGORY_LABELS: Record<ProductDescriptor["category"], string> = {
-	vanilla: "Vanilla",
-	exotic: "Exotics",
-	"fixed-income": "Fixed income",
-	structured: "Structured",
+	vanilla: "Vanillas & digitals",
+	barrier: "Barriers & touch",
+	path: "Asians, lookbacks & ladders",
+	choice: "Choosers & compounds",
+	cliquet: "Cliquets",
+	note: "Structured notes",
 	volatility: "Volatility",
+	multi: "Multi-asset",
 	fx: "FX",
-	commodity: "Commodity",
-	"script-vanilla": "Scripts · Vanillas & digitals",
-	"script-barrier": "Scripts · Barriers & touch",
-	"script-path": "Scripts · Asians, lookbacks, ladders",
-	"script-cliquet": "Scripts · Cliquets",
-	"script-note": "Scripts · Structured notes",
-	"script-volatility": "Scripts · Volatility",
-	"script-multi": "Scripts · Multi-asset",
+	commodity: "Commodities",
+	"fixed-income": "Fixed income",
 };

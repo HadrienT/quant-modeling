@@ -167,6 +167,8 @@ namespace quantModeling
 
                 Sample<T> &smp = path[i];
                 smp.spots.assign(1, S);
+                if (defline_[i].inst_vol)
+                    smp.inst_vol = sigma_;
                 // One step per event: the bridge over the whole interval,
                 // exact under Black-Scholes (a step without a draw has no
                 // variance: the spot only has to be on the safe side).

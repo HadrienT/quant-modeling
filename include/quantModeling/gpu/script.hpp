@@ -61,8 +61,11 @@ namespace quantModeling::gpu
         using L = ScriptLimits;
         if (p.code.empty())
             return "the script is not compiled to bytecode";
-        if (p.has_exercise)
-            return "early exercise (exercise() / call()) runs on the CPU only";
+        // the interpreted kernels have no exercise rule: only the kernels
+        // compiled from the IR decide (WP 26 §16)
+        if (p.has_exercise && !script_jit_enabled())
+            return "exercise() / call() run in the GPU kernels compiled from the IR, and compilation is off "
+                   "(QM_SCRIPT_JIT=0)";
         // the interpreted kernels compute neither lastStep*() nor the bridge
         // survivals, only the kernels compiled from the IR
         if (p.has_monitor && !script_jit_enabled())

@@ -21,7 +21,7 @@ export default function CommandPalette({
 }) {
 	const navigate = useNavigate();
 	const theme = useTheme();
-	const { groups } = useNavPages();
+	const { groups, standalone } = useNavPages();
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -78,6 +78,27 @@ export default function CommandPalette({
 									))}
 								</Command.Group>
 							))}
+
+							{standalone.length > 0 && (
+								<Command.Group
+									heading="More"
+									className="px-1.5 py-1 text-2xs tracking-wide text-ink-muted uppercase"
+								>
+									{standalone.map((r) => (
+										<Item
+											key={r.path}
+											value={`${r.label} ${r.hint}`}
+											onSelect={() => run(() => navigate({ to: r.path }))}
+										>
+											<ArrowRight className="size-3.5" />
+											{r.label}
+											<span className="ml-auto truncate text-xs text-ink-muted normal-case">
+												{r.hint}
+											</span>
+										</Item>
+									))}
+								</Command.Group>
+							)}
 
 							<Command.Group
 								heading="Actions"

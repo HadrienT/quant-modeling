@@ -160,6 +160,8 @@ namespace quantModeling
                 smp.numeraire = exp(r_ * t);
 
                 const SampleDef &def = defline_[static_cast<std::size_t>(event)];
+                if (def.inst_vol) // the vol slv_step would apply from here: L(S_t, t) sqrt(v_t+)
+                    smp.inst_vol = mc::leverage_staircase(leverage_grid(), S, t) * sqrt(max(v, mc::variance_floor()));
                 smp.discounts.resize(def.discount_mats.size());
                 for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
                     smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));

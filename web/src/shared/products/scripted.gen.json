@@ -333,6 +333,26 @@
 		"script": "# Two years, 100% capital protection.\n\n2027-01-04\n    notional = 1000\n    participation = 0.8\n    cap = 0.4\n    s0 = spot()\n\n2029-01-04\n    pays notional * (1 + participation * min(max(spot() / s0 - 1, 0), cap))\n"
 	},
 	{
+		"slug": "chooser",
+		"title": "Chooser option",
+		"category": "Choosers and compounds",
+		"underlyings": 1,
+		"sources": [
+			"Rubinstein, Options for the Undecided, Risk, 1991",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "On the choice date the holder decides whether the option is a call or a put, both struck at the same level: long volatility without a view on direction.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike of the call and of the put, % of the initial level"
+			}
+		],
+		"script": "# The choice is an early-exercise decision (a Longstaff-Schwartz regression\n# on the spot): the price is a lower bound for the holder, priced on the CPU.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    is_call = 0\n\n2027-07-06\n    if exercise(spot()) then\n        is_call = 1\n    endIf\n\n2028-01-04\n    if is_call = 1 then\n        pays max(spot() - strike * s0, 0)\n    else\n        pays max(strike * s0 - spot(), 0)\n    endIf\n"
+	},
+	{
 		"slug": "cliquet",
 		"title": "Locally capped cliquet",
 		"category": "Cliquets",
@@ -363,6 +383,32 @@
 			}
 		],
 		"script": "# Each quarter's return is measured from the previous quarter's close.\n\n2027-01-04\n    notional = 1000\n    local_floor = 0.0\n    local_cap = 0.03\n    ref = spot()\n    total = 0\n\n2027-04-05  2027-07-06  2027-10-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    ref = spot()\n\n2028-01-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    pays notional * total\n"
+	},
+	{
+		"slug": "compound",
+		"title": "Compound option (call on a call)",
+		"category": "Choosers and compounds",
+		"underlyings": 1,
+		"sources": [
+			"Geske, The Valuation of Compound Options, Journal of Financial Economics, 1979",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "The right, on the decision date, to buy a call by paying a premium: leverage on the call itself.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike of the underlying call, % of the initial level"
+			},
+			{
+				"name": "premium",
+				"default": 0.05,
+				"unit": "percent",
+				"label": "Premium paid on the decision date for the call, % of the initial level"
+			}
+		],
+		"script": "# The decision is an early-exercise right (a Longstaff-Schwartz regression on\n# the spot): the price is a lower bound for the holder, priced on the CPU.\n\n2027-01-04\n    strike = 1.0\n    premium = 0.05\n    s0 = spot()\n    held = 0\n\n2027-07-06\n    if exercise(spot()) then\n        pays -premium * s0\n        held = 1\n    endIf\n\n2028-01-04\n    if held = 1 then pays max(spot() - strike * s0, 0) endIf\n"
 	},
 	{
 		"slug": "corridor-variance-swap",
@@ -452,6 +498,64 @@
 			}
 		],
 		"script": "# The discount is the price of the call sold, visible in the present value.\n\n2027-01-04\n    notional = 1000\n    cap = 1.05\n    s0 = spot()\n\n2028-01-04\n    pays notional * min(spot() / s0, cap)\n"
+	},
+	{
+		"slug": "dispersion-swap",
+		"title": "Dispersion swap",
+		"category": "Volatility",
+		"underlyings": 3,
+		"sources": [
+			"Bossu, Strasser & Guichard, Just What You Need to Know About Variance Swaps, JPMorgan Equity Derivatives, 2005",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "Receives the average realised variance of three stocks and pays that of their equally weighted basket: a short position on their correlation.",
+		"params": [
+			{
+				"name": "variance_notional",
+				"default": 10000.0,
+				"unit": "amount",
+				"label": "Variance notional"
+			},
+			{
+				"name": "spread_strike",
+				"default": 0.02,
+				"unit": "percent",
+				"label": "Strike on the variance spread"
+			}
+		],
+		"script": "# Realised variance = 252 / n x sum of squared daily log returns (zero mean),\n# for each stock and for the basket of their performances, weights 1/3.\n\n2027-01-04\n    variance_notional = 10000\n    spread_strike = 0.02\n    b0 = spot(0)\n    b1 = spot(1)\n    b2 = spot(2)\n    p0 = spot(0)\n    p1 = spot(1)\n    p2 = spot(2)\n    pb = 1\n    q0 = 0\n    q1 = 0\n    q2 = 0\n    qb = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    basket = (spot(0) / b0 + spot(1) / b1 + spot(2) / b2) / 3\n    q0 = q0 + log(spot(0) / p0) ^ 2\n    q1 = q1 + log(spot(1) / p1) ^ 2\n    q2 = q2 + log(spot(2) / p2) ^ 2\n    qb = qb + log(basket / pb) ^ 2\n    p0 = spot(0)\n    p1 = spot(1)\n    p2 = spot(2)\n    pb = basket\n    n = n + 1\n\n2028-01-04\n    basket = (spot(0) / b0 + spot(1) / b1 + spot(2) / b2) / 3\n    q0 = q0 + log(spot(0) / p0) ^ 2\n    q1 = q1 + log(spot(1) / p1) ^ 2\n    q2 = q2 + log(spot(2) / p2) ^ 2\n    qb = qb + log(basket / pb) ^ 2\n    n = n + 1\n    pays variance_notional * (252 * ((q0 + q1 + q2) / 3 - qb) / n - spread_strike)\n"
+	},
+	{
+		"slug": "double-barrier-call",
+		"title": "Double knock-out call",
+		"category": "Barriers and touch options",
+		"underlyings": 1,
+		"sources": [
+			"Kunitomo & Ikeda, Pricing Options with Curved Boundaries, Mathematical Finance, 1992",
+			"Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010"
+		],
+		"summary": "A call that dies if the stock ever closes outside a range: cheaper than a single barrier, short volatility on both sides.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			},
+			{
+				"name": "low",
+				"default": 0.8,
+				"unit": "percent",
+				"label": "Lower knock-out barrier, % of the initial level"
+			},
+			{
+				"name": "high",
+				"default": 1.3,
+				"unit": "percent",
+				"label": "Upper knock-out barrier, % of the initial level"
+			}
+		],
+		"script": "# Both barriers checked at every close (a daily grid approximates continuous\n# monitoring). No rebate.\n\n2027-01-04\n    strike = 1.0\n    low = 0.8\n    high = 1.3\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - strike * s0, 0) endIf\n"
 	},
 	{
 		"slug": "double-no-touch",

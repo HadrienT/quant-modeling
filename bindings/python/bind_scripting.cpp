@@ -400,11 +400,16 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 {
                     auto m = scripting::make_script_model<Real>(spec);
                     check_underlyings(probe.n_underlyings(), m->n_underlyings());
-                    lsm_note = " | " + fit_exercise_policy(probe, *m, paths, seed_value).note();
+                    // the pilot on the request's threads (§17)
+                    ThreadPool pilot_pool;
+                    const std::size_t pilot_workers =
+                        threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
+                    if (pilot_workers > 0)
+                        pilot_pool.start(pilot_workers);
+                    lsm_note = " | " + fit_exercise_policy(probe, *m, paths, seed_value, {},
+                                                           pilot_workers > 0 ? &pilot_pool : nullptr)
+                                           .note();
                     policy = probe.exercise_policy();
-                    if (device == "gpu")
-                        throw InvalidInput("GPU: early exercise (exercise() / call()) runs on the CPU only");
-                    gpu_note = " (on the CPU: early exercise)";
                 }
             }
             // Multilevel (WP 26 §10.2): the price and its risks from the
@@ -434,9 +439,13 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 if (!aad_res)
                     multilevel_note = " | no multilevel risks (" + why + ") -- used the plain engine";
             }
-            if (!aad_res && !policy && (device == "gpu" || device == "auto"))
+            // Early exercise too (WP 26 §16): the kernels compiled from the
+            // IR decide under the rule fitted above.
+            if (!aad_res && (device == "gpu" || device == "auto"))
             {
                 ScriptedProduct<Real> product(script, ctx, ScriptSettings{fuzzy, default_eps}, fixings);
+                if (policy)
+                    product.set_exercise_policy(*policy);
                 auto sim_model = scripting::make_script_model<Real>(spec);
                 check_underlyings(product.n_underlyings(), sim_model->n_underlyings());
                 std::string why;
@@ -599,16 +608,19 @@ static py::dict price_script(const std::string &script, double spot, double rate
         // ... and the plain run's discretisation bias.
         settings.mc_bias_estimate = bias_estimate;
 
-        if (product.has_exercise())
-            lsm_note = " | " + fit_exercise_policy(product, *sim_model, paths, seed_value).note();
         // blueprint/wp/26-performance.md, P1e: the CPU run on several
         // threads, the same bits on any number of them (the default, as the
-        // xVA's: the available CPUs, at most 16).
+        // xVA's: the available CPUs, at most 16) -- the exercise rule's pilot
+        // too (§17).
         ThreadPool pool;
         const std::size_t workers =
             threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
         if (workers > 0)
             pool.start(workers);
+        if (product.has_exercise())
+            lsm_note = " | " + fit_exercise_policy(product, *sim_model, paths, seed_value, {},
+                                                   workers > 0 ? &pool : nullptr)
+                                   .note();
         mc = simulate_script(product, *sim_model, settings, workers > 0 ? &pool : nullptr);
         n_events = product.timeline().size();
         advice = scripting::advise(product.analysis(), kind, product.timeline().back(),

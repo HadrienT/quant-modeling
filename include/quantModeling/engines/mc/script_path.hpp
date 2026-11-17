@@ -85,6 +85,11 @@ namespace quantModeling::mc
         const Real *event_disc = nullptr;
 
         SpotControls controls;
+        /// The exercise rule of a script with exercise() / call() (host
+        /// memory: the host's paths, the IR's oracle in the tests); null
+        /// never exercises. The GPU kernels decide in the code compiled from
+        /// the IR instead.
+        const scripting::ExerciseView *exercise = nullptr;
     };
 
     /// The model inputs a path is a function of, as T. For T = Dual<N> the
@@ -156,6 +161,7 @@ namespace quantModeling::mc
         for (int i = 0; i < v.n_vars; ++i)
             vars[i] = v.baseline ? T(v.baseline[i]) : T(0.0);
         scripting::Machine<T> m{vars, stack, degrees, slots, modes, T(0.0)};
+        m.exercise = v.exercise;
         for (int k = 0; k < v.n_assets; ++k)
             S[k] = in.s0[k];
         T var = in.heston.v0;
