@@ -2938,7 +2938,7 @@ sont tous faits (tableau du §14) ; ce qui reste est dans cette liste.
 | M7 | Corrélations implicites | aucune source libre connue (options quanto, swaptions en devise croisée non publiées) |
 | M8 | Scripts actions et quanto dans le moteur d'exposition (issue #86) | le modèle joint taux-change existe ; il reste le facteur actions |
 | M9 | Autres paires que EUR/USD | le fichier porte JPY, MXN, CAD, AUD ; il faut la courbe et les swaptions de la devise |
-| M10 | `qm.discount_factors` plat avant le premier pilier : l'aligner sur la courbe du moteur, ou revoir ses appelants (`fx.py`) | **Done (2026-11-17), callers reviewed**: aligning it would break its consistency with the government bootstrap it reads, which solves under the same flat-left rule (a JGB's 6M coupon at the 1Y factor: the 1Y par quote moved by 0.6 bp of price when tried). Every caller (`fx.py`, `rates.py`, `credit.py`, `portfolio_valuation.py`) queries inside the pillars; the docstring now names `rate_curve_discount_factors` for the engines' curves, and `test_the_two_curve_queries_differ_only_outside_the_pillars` pins both. Moving the bootstrap itself to flat forwards is a separate decision (it moves the curves of `xva_market_risks`) |
+| M10 | `qm.discount_factors` plat avant le premier pilier : l'aligner sur la courbe du moteur, ou revoir ses appelants (`fx.py`) | piège rencontré dans ce lot |
 
 ### Transverse
 
