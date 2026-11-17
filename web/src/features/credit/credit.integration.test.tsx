@@ -1,4 +1,11 @@
 import { QueryClientProvider } from "@tanstack/react-query";
+import {
+	RouterProvider,
+	createMemoryHistory,
+	createRootRoute,
+	createRoute,
+	createRouter,
+} from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -136,11 +143,24 @@ function structural(unavailable: string | null): StructuralResponse {
 	};
 }
 
+/** In a router: the ratings table links each rating to the xVA page. */
 function renderSpreads() {
+	const root = createRootRoute();
+	const routes = ["/", "/xva"].map((path) =>
+		createRoute({
+			getParentRoute: () => root,
+			path,
+			component: () => <SpreadsTab recovery={0.4} onRecovery={() => {}} />,
+		}),
+	);
+	const router = createRouter({
+		routeTree: root.addChildren(routes),
+		history: createMemoryHistory({ initialEntries: ["/"] }),
+	});
 	return render(
 		<QueryClientProvider client={makeQueryClient()}>
 			<TooltipProvider>
-				<SpreadsTab recovery={0.4} onRecovery={() => {}} />
+				<RouterProvider router={router as never} />
 			</TooltipProvider>
 		</QueryClientProvider>,
 	);
@@ -182,6 +202,11 @@ describe("credit curves", () => {
 		).toBeInTheDocument();
 		expect(screen.getByText(/1\.6e-11 bp/)).toBeInTheDocument();
 		expect(screen.getByText("102 bp")).toBeInTheDocument(); // BBB OAS
+		// WP 28, lot U2: a rating opens the xVA page with it as counterparty.
+		const toXva = screen.getByRole("link", {
+			name: "Use BBB as the xVA counterparty",
+		});
+		expect(toXva.getAttribute("href")).toBe("/xva?cpty=BBB");
 		expect(
 			screen.getByRole("heading", { name: "Methodology" }),
 		).toBeInTheDocument();

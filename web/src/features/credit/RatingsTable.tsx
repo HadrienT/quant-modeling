@@ -1,4 +1,6 @@
+import { Link } from "@tanstack/react-router";
 import type { CreditSpreadsResponse } from "@/shared/api";
+import { useNavPages } from "@/shared/session";
 import { Badge } from "@/shared/ui";
 import { bp, pct } from "./format";
 
@@ -7,7 +9,19 @@ import { bp, pct } from "./format";
  * bootstrap) and the default probabilities it implies — plus the aggregate
  * indices and Moody's yields for reference.
  */
+/** The ratings the xVA page takes as a counterparty, by spread label. */
+const XVA_RATING = {
+	AAA: "AAA",
+	AA: "AA",
+	A: "A",
+	BBB: "BBB",
+	BB: "BB",
+	B: "B",
+	"CCC and lower": "CCC",
+} as const;
+
 export function RatingsTable({ data }: { data: CreditSpreadsResponse }) {
+	const toXva = useNavPages().isShown("/xva");
 	const horizons = data.ratings[0]?.pd_horizons ?? [];
 	return (
 		<section className="flex flex-col gap-3">
@@ -30,6 +44,9 @@ export function RatingsTable({ data }: { data: CreditSpreadsResponse }) {
 									PD {h}Y
 								</th>
 							))}
+							{toXva && (
+								<th className="px-3 py-2 text-right font-medium">xVA</th>
+							)}
 						</tr>
 					</thead>
 					<tbody>
@@ -54,6 +71,22 @@ export function RatingsTable({ data }: { data: CreditSpreadsResponse }) {
 										{pct(p)}
 									</td>
 								))}
+								{toXva && (
+									<td className="px-3 py-2 text-right">
+										{r.label in XVA_RATING && (
+											<Link
+												to="/xva"
+												search={{
+													cpty: XVA_RATING[r.label as keyof typeof XVA_RATING],
+												}}
+												className="text-accent hover:underline"
+												aria-label={`Use ${r.label} as the xVA counterparty`}
+											>
+												As counterparty
+											</Link>
+										)}
+									</td>
+								)}
 							</tr>
 						))}
 					</tbody>

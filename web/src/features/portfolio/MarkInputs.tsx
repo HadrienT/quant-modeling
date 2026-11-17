@@ -1,11 +1,24 @@
-import type { PositionMark } from "@/shared/api";
+import { Link } from "@tanstack/react-router";
+import type { Instrument, PositionMark } from "@/shared/api";
+import { useNavPages } from "@/shared/session";
 import { Badge, NumberCell } from "@/shared/ui";
 import { MEANING, STATUS_TONE } from "./markStatus";
+import { workbenchFromPosition } from "./workbenchFromPosition";
 
 const RATE_LIKE = /rate|dividend|vol/;
 
 /** Every input of a position's mark: value, date observed, and status. */
-export function MarkInputs({ position: p }: { position: PositionMark }) {
+export function MarkInputs({
+	position: p,
+	instrument,
+}: {
+	position: PositionMark;
+	instrument?: Instrument;
+}) {
+	const { isShown } = useNavPages();
+	const toWorkbench = isShown("/price")
+		? workbenchFromPosition(p, instrument)
+		: null;
 	return (
 		<div className="flex flex-col gap-2">
 			{p.note && <p className="text-xs text-warning">{p.note}</p>}
@@ -41,6 +54,15 @@ export function MarkInputs({ position: p }: { position: PositionMark }) {
 						.map(([k, v]) => ` · ${k} ${Number(v).toPrecision(4)}`)
 						.join("")}
 				</p>
+			)}
+			{toWorkbench && (
+				<Link
+					to="/price"
+					search={toWorkbench}
+					className="self-start text-xs text-accent hover:underline"
+				>
+					Open in the pricing workbench with these inputs
+				</Link>
 			)}
 		</div>
 	);

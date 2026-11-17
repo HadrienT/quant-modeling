@@ -6,6 +6,7 @@ import { useNavPages } from "@/shared/session";
 import { Disclaimer, buttonVariants } from "@/shared/ui";
 import { ChartSkeleton } from "@/shared/ui/states";
 import { FeatureGrid } from "./FeatureGrid";
+import { StartingPoints } from "./StartingPoints";
 
 const HeroSurface = lazy(() => import("./HeroSurface"));
 
@@ -78,6 +79,8 @@ export default function HomePage() {
 					<HeroSurface />
 				</Suspense>
 			</section>
+
+			<StartingPoints />
 
 			<FeatureGrid />
 

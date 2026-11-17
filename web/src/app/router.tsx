@@ -139,6 +139,8 @@ const priceRoute = createRoute({
 		p: z.string().optional(), // encoded params
 		compare: z.string().optional(),
 		device: z.enum(["cpu", "gpu", "auto"]).optional(),
+		// the Diagnostics section open (WP 28, lot U3)
+		diag: z.boolean().optional(),
 	}).parse,
 	component: PricingPage,
 });
@@ -193,6 +195,8 @@ const portfolioRoute = createRoute({
 	validateSearch: z.object({
 		id: z.string().optional(),
 		demo: z.string().optional(),
+		// a derivative's terms from the workbench, encoded like `?p=` (WP 28)
+		trade: z.string().optional(),
 	}).parse,
 	component: PortfolioPage,
 });

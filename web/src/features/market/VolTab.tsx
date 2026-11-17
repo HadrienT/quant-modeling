@@ -1,3 +1,4 @@
+import { useNavPages } from "@/shared/session";
 import { useDeltaSurface } from "@/shared/api";
 import { ErrorState } from "@/shared/ui/states";
 import {
@@ -31,6 +32,7 @@ export function VolTab({
 }) {
 	// Not asked for at all when the market has no option chains: a request
 	// that can only fail would show an error for what is a known absence.
+	const { isShown } = useNavPages();
 	const delta = useDeltaSurface(unavailable ? null : ticker || null);
 
 	if (unavailable)
@@ -69,7 +71,18 @@ export function VolTab({
 				<h2 className="text-sm font-medium text-ink">
 					{ticker} — delta-bucketed vol matrix
 				</h2>
-				<DeltaMatrix rows={rows} />
+				<DeltaMatrix
+					rows={rows}
+					spot={isShown("/price") ? delta.data?.spot : undefined}
+				/>
+				{isShown("/price") && delta.data && (
+					<p className="text-xs text-ink-muted">
+						“Price” opens the pricing workbench on a European option struck at
+						the spot ({delta.data.spot.toFixed(2)}), with the tenor and its
+						at-the-money vol filled in. Rate and dividend are not part of the
+						surface: set them there.
+					</p>
+				)}
 			</section>
 
 			<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

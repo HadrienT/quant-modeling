@@ -1,18 +1,19 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Command, Menu, Moon, Sun, X } from "lucide-react";
-import { Button, cn } from "@/shared/ui";
+import { Button } from "@/shared/ui";
 import { setTheme, useTheme } from "@/app/theme";
-import { useNavPages } from "@/shared/session";
 import { SessionMenu } from "@/features/auth";
+import { ContextChip } from "./ContextChip";
+import { NavGroups } from "./NavGroups";
 
 const CommandPalette = lazy(() => import("@/app/command/CommandPalette"));
 
 export function Nav() {
 	const theme = useTheme();
 	const [paletteOpen, setPaletteOpen] = useState(false);
-	// Below lg the links do not fit on one line (~970 px with the actions):
-	// they fold into a menu, closed on navigation and on Escape.
+	// Four spaces fit from md up (WP 28); below, they fold into a menu of
+	// sections, closed on navigation and on Escape.
 	const [menuOpen, setMenuOpen] = useState(false);
 	const pathname = useRouterState({ select: (s) => s.location.pathname });
 	useEffect(() => setMenuOpen(false), [pathname]);
@@ -41,7 +42,7 @@ export function Nav() {
 				<Button
 					variant="ghost"
 					size="icon"
-					className="lg:hidden"
+					className="md:hidden"
 					aria-label={menuOpen ? "Close menu" : "Open menu"}
 					aria-expanded={menuOpen}
 					aria-controls="mobile-nav"
@@ -59,11 +60,15 @@ export function Nav() {
 					<span className="hidden sm:inline">Quant Modeling</span>
 				</Link>
 
-				<nav className="hidden items-center gap-0.5 lg:flex">
-					<NavLinks />
+				<nav
+					aria-label="Spaces"
+					className="hidden items-center gap-0.5 md:flex"
+				>
+					<NavGroups layout="bar" />
 				</nav>
 
 				<div className="ml-auto flex items-center gap-1">
+					<ContextChip />
 					<Button
 						variant="ghost"
 						size="sm"
@@ -96,9 +101,9 @@ export function Nav() {
 				<nav
 					id="mobile-nav"
 					aria-label="Pages"
-					className="flex flex-col gap-0.5 border-t border-hairline px-4 py-2 lg:hidden"
+					className="flex flex-col gap-0.5 border-t border-hairline px-4 py-2 md:hidden"
 				>
-					<NavLinks />
+					<NavGroups layout="column" />
 				</nav>
 			)}
 
@@ -109,33 +114,4 @@ export function Nav() {
 			)}
 		</header>
 	);
-}
-
-/**
- * The pages, as links: one line on wide screens, a column in the menu. A page
- * hidden from visitors shows to an administrator, faded and struck through.
- */
-function NavLinks() {
-	const { pages } = useNavPages();
-	return pages.map((r) => (
-		<Link
-			key={r.path}
-			to={r.path}
-			preload="intent"
-			className={cn(
-				"rounded-sm px-2.5 py-1 text-sm text-ink-secondary transition-colors hover:bg-surface-raised hover:text-ink",
-			)}
-			activeProps={{ className: "bg-surface-raised !text-ink" }}
-			title={r.hidden ? "Hidden from visitors" : undefined}
-		>
-			{r.hidden ? (
-				<span className="line-through opacity-60">
-					<span className="sr-only">hidden from visitors: </span>
-					{r.label}
-				</span>
-			) : (
-				r.label
-			)}
-		</Link>
-	));
 }

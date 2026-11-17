@@ -9,13 +9,14 @@ import {
 } from "@/shared/products";
 import { Button, Disclaimer, cn, copyText, toast } from "@/shared/ui";
 import { useNavPages } from "@/shared/session";
+import { AddToPortfolio } from "./AddToPortfolio";
 import { ComputeDevicePicker } from "./ComputeDevicePicker";
-import { DeviceRace } from "./DeviceRace";
 import { RatesForm } from "./rates/RatesForm";
 import { RatesResults } from "./rates/RatesResults";
 import { ResultsPanel } from "./ResultsPanel";
 import { ScriptedPanel } from "./ScriptedPanel";
 import { useWorkbench } from "./useWorkbench";
+import { WorkbenchDiagnostics } from "./WorkbenchDiagnostics";
 
 /** The pricing workbench (WP 07). Files in this feature stay under ~200 lines. */
 export default function PricingPage() {
@@ -37,17 +38,20 @@ export default function PricingPage() {
 						{wb.descriptor.label}
 					</h1>
 					<ProductInfo docKey={wb.descriptor.docKey} />
-					{isShown("/products") && (
-						<Link
-							to="/products"
-							search={{ product: wb.productKey }}
-							title="Full reference: payoff, assumptions, sources"
-							className="ml-auto inline-flex items-center gap-1 text-2xs text-ink-muted transition-colors hover:text-accent"
-						>
-							<BookText className="size-3.5" />
-							Reference
-						</Link>
-					)}
+					<span className="ml-auto flex items-center gap-3">
+						<AddToPortfolio productKey={wb.productKey} values={wb.values} />
+						{isShown("/products") && (
+							<Link
+								to="/products"
+								search={{ product: wb.productKey }}
+								title="Full reference: payoff, assumptions, sources"
+								className="inline-flex items-center gap-1 text-2xs text-ink-muted transition-colors hover:text-accent"
+							>
+								<BookText className="size-3.5" />
+								Reference
+							</Link>
+						)}
+					</span>
 				</header>
 
 				{wb.descriptor.engines.length > 1 && (
@@ -76,19 +80,6 @@ export default function PricingPage() {
 						onChange={wb.setDevice}
 					/>
 				)}
-				{wb.descriptor.gpu && wb.descriptor.endpoint && (
-					<DeviceRace
-						endpoint={wb.descriptor.endpoint}
-						body={
-							wb.descriptor.toRequest(wb.values, "mc") as Record<
-								string,
-								unknown
-							>
-						}
-						paths={Number((wb.values as Record<string, unknown>).n_paths) || 0}
-					/>
-				)}
-
 				{rates ? (
 					<RatesForm kind={rates} values={wb.values} onChange={wb.setValues} />
 				) : (
@@ -176,6 +167,18 @@ export default function PricingPage() {
 									values={wb.values}
 									engine={wb.engine}
 									device={wb.device}
+								/>
+							</div>
+						)}
+						{!rates && (
+							<div className="mt-4">
+								<WorkbenchDiagnostics
+									descriptor={wb.descriptor}
+									values={wb.values}
+									engine={wb.engine}
+									device={wb.device}
+									open={wb.diagnostics}
+									onOpenChange={wb.setDiagnostics}
 								/>
 							</div>
 						)}

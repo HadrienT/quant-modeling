@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { ChevronRight, Trash2 } from "lucide-react";
-import type { PositionMark } from "@/shared/api";
+import type { Instrument, PositionMark } from "@/shared/api";
 import { Badge, Button, DeltaBadge, NumberCell } from "@/shared/ui";
 import { MarkInputs } from "./MarkInputs";
 import { ModelTooltip } from "./ModelTooltip";
@@ -27,12 +27,15 @@ const HEAD = [
  */
 export function HoldingsTable({
 	positions,
+	instruments = [],
 	base,
 	onTrade,
 	onDelete,
 	readOnly = false,
 }: {
 	positions: PositionMark[];
+	/** the ledger's instruments: a derivative's terms open the workbench */
+	instruments?: Instrument[];
 	base: string;
 	readOnly?: boolean;
 	onTrade: (p: PositionMark, side: "buy" | "sell") => void;
@@ -160,7 +163,12 @@ export function HoldingsTable({
 								{open === p.instrument_id && (
 									<tr className="bg-surface-raised">
 										<td colSpan={HEAD.length} className="p-3">
-											<MarkInputs position={p} />
+											<MarkInputs
+												position={p}
+												instrument={instruments.find(
+													(i) => i.id === p.instrument_id,
+												)}
+											/>
 										</td>
 									</tr>
 								)}

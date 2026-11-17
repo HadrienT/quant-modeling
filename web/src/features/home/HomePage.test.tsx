@@ -55,7 +55,7 @@ describe("home page links to hidden pages", () => {
 		renderHome();
 		await screen.findByRole("link", { name: /Backtest/ });
 		await waitFor(() =>
-			expect(screen.queryByRole("link", { name: /xVA/ })).toBeNull(),
+			expect(screen.queryByRole("link", { name: /^xVA/ })).toBeNull(),
 		);
 		expect(screen.queryByRole("link", { name: /Price an option/ })).toBeNull();
 		expect(screen.queryByRole("link", { name: /how it is built/ })).toBeNull();
@@ -68,6 +68,7 @@ describe("home page links to hidden pages", () => {
 			"/price",
 			"/scripting",
 			"/market",
+			"/credit",
 			"/xva",
 			"/simulation",
 			"/portfolio",

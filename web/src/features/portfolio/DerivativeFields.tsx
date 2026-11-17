@@ -1,25 +1,22 @@
 import { useEffect, useState } from "react";
 import type { DerivativeSpec, PortfolioCurrency } from "@/shared/api";
 import { useTickerClose } from "@/shared/api";
-import { CATALOG_BY_KEY, type EngineKey, ParamForm } from "@/shared/products";
+import {
+	CATALOG_BY_KEY,
+	type EngineKey,
+	PORTFOLIO_PRODUCTS,
+	ParamForm,
+} from "@/shared/products";
 import { CURRENCIES } from "@/shared/portfolio";
 import { Input, Label } from "@/shared/ui";
 import { TickerPicker } from "./TickerPicker";
 
-/**
- * Catalog key → the pricing registry's product id (api/app/valuation.py).
- * Single-underlying products only: each day's mark takes the underlying's
- * close as spot, so a product needs exactly one listed underlying.
- */
-const PRODUCTS: Record<string, string> = {
-	vanilla: "vanilla",
-	american: "american_vanilla",
-	quanto: "quanto",
-	asian: "asian",
-	barrier: "barrier",
-	digital: "digital",
-	lookback: "lookback",
-	future: "future",
+const PRODUCTS = PORTFOLIO_PRODUCTS;
+
+/** Terms carried in from the pricing workbench (`/portfolio?trade=`). */
+export type InitialDerivative = {
+	product: string;
+	values: Record<string, unknown>;
 };
 
 export type DerivativeDraft = {
@@ -39,16 +36,20 @@ const DERIVED = ["spot", "maturity", "engine", "n_paths", "seed", "tree_steps"];
  */
 export function DerivativeFields({
 	tradeDate,
+	initial,
 	onChange,
 }: {
 	tradeDate: string;
+	initial?: InitialDerivative;
 	onChange: (draft: DerivativeDraft | null) => void;
 }) {
-	const [key, setKey] = useState("vanilla");
+	const start = initial && initial.product in PRODUCTS ? initial : undefined;
+	const [key, setKey] = useState(start?.product ?? "vanilla");
 	const descriptor = CATALOG_BY_KEY.get(key)!;
-	const [values, setValues] = useState<Record<string, unknown>>(
-		descriptor.defaults,
-	);
+	const [values, setValues] = useState<Record<string, unknown>>(() => ({
+		...descriptor.defaults,
+		...start?.values,
+	}));
 	const [underlying, setUnderlying] = useState("");
 	const [expiry, setExpiry] = useState("");
 	const [currency, setCurrency] = useState<PortfolioCurrency | null>(null);

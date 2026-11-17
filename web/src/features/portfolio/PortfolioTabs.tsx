@@ -77,6 +77,7 @@ export function PortfolioTabs({
 			<TabsContent value="positions">
 				<HoldingsTable
 					positions={positions}
+					instruments={pf.instruments ?? []}
 					base={pf.base_currency}
 					readOnly={readOnly}
 					onDelete={setDeleting}

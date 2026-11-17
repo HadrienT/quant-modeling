@@ -1,9 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { type ComputeDevice, usePricing } from "@/shared/api";
 import type { ProductDescriptor } from "@/shared/products";
-import { Button } from "@/shared/ui";
-import { MarketVegaPanel } from "./MarketVegaPanel";
-import { ModelComparison } from "./ModelComparison";
 import { ModelDecision } from "./scripting/ModelDecision";
 import { ModelWarnings } from "./scripting/ModelWarnings";
 import { pricingBody } from "./requestBody";
@@ -11,8 +8,9 @@ import { pricingBody } from "./requestBody";
 /**
  * What the pricing workbench adds for a product of the script library: the
  * model it was priced under (and why), what the model cannot capture, the
- * script actually priced, and — on request — the same terms under every
- * dynamics. Reads the same query as ResultsPanel (same key, one request).
+ * script actually priced. The same terms under every dynamics, and the vega
+ * to market quotes, are in the Diagnostics section (WP 28, lot U3). Reads the
+ * same query as ResultsPanel (same key, one request).
  */
 export function ScriptedPanel({
 	descriptor,
@@ -25,13 +23,11 @@ export function ScriptedPanel({
 	engine: string;
 	device?: ComputeDevice;
 }) {
-	const [compare, setCompare] = useState(false);
 	const body = useMemo(
 		() => pricingBody(descriptor, values, engine, device),
 		[descriptor, values, engine, device],
 	);
 	const q = usePricing({ endpoint: descriptor.endpoint ?? null, body });
-	const p = descriptor.scripted!;
 	const r = q.data;
 
 	return (
@@ -47,26 +43,6 @@ export function ScriptedPanel({
 						{r.script}
 					</pre>
 				</details>
-			)}
-			{p.underlyings === 1 ? (
-				<div className="flex flex-col gap-2">
-					<Button
-						size="sm"
-						variant="secondary"
-						className="w-fit"
-						aria-pressed={compare}
-						onClick={() => setCompare((c) => !c)}
-					>
-						{compare ? "Hide the model comparison" : "Compare the dynamics"}
-					</Button>
-					{compare && <ModelComparison product={p} values={values} />}
-					<MarketVegaPanel body={body} />
-				</div>
-			) : (
-				<p className="text-2xs text-ink-muted">
-					Several underlyings: correlated Black-Scholes is the only multi-asset
-					model for scripts, so there is nothing to compare yet.
-				</p>
 			)}
 		</div>
 	);

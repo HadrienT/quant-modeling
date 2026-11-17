@@ -1,11 +1,15 @@
+import { useEffect } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { type MarketId, useMarkets, useTickers } from "@/shared/api";
+import { rememberTicker, useMarketContext } from "@/shared/session";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
 import { FxTab } from "./FxTab";
 import { MarketTickerPicker } from "./MarketTickerPicker";
 import { PricesTab } from "./PricesTab";
 import { RatesTab } from "./RatesTab";
 import { VolTab } from "./VolTab";
+
+const MARKETS = new Set(["SP500", "CAC40", "DAX", "FTSE100", "NIKKEI225"]);
 
 /**
  * Market data — the showcase page (WP 08). Surfaces are the README
@@ -19,14 +23,25 @@ export default function MarketPage() {
 	const search = useSearch({ from: "/market" });
 	const navigate = useNavigate({ from: "/market" });
 	const tab = search.tab ?? "prices";
-	const market: MarketId = search.market ?? "SP500";
+	// The URL first, then the underlying last chosen elsewhere (WP 28, U4).
+	const context = useMarketContext();
+	const remembered = context && MARKETS.has(context.market) ? context : null;
+	const market: MarketId =
+		search.market ?? (remembered?.market as MarketId | undefined) ?? "SP500";
 	const markets = useMarkets();
 	const tickers = useTickers(market);
 	const members = tickers.data?.members ?? [];
 	// Default: AAPL on the S&P 500 (as before markets existed), the index
 	// itself elsewhere — the first member, which the API lists first.
 	const ticker =
-		search.ticker ?? (market === "SP500" ? "AAPL" : (members[0]?.ticker ?? ""));
+		search.ticker ??
+		(remembered?.market === market ? remembered.ticker : undefined) ??
+		(market === "SP500" ? "AAPL" : (members[0]?.ticker ?? ""));
+	// A ticker named in the URL, picked here or followed from a link, becomes
+	// the context the other pages start on.
+	useEffect(() => {
+		if (search.ticker) rememberTicker(search.ticker, market);
+	}, [search.ticker, market]);
 	const info = markets.data?.markets.find((m) => m.id === market);
 
 	const set = (patch: Partial<typeof search>) =>

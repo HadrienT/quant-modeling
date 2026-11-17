@@ -1,12 +1,23 @@
 import "@testing-library/jest-dom/vitest";
 import { toHaveNoViolations } from "jest-axe";
 import { afterAll, afterEach, beforeAll, expect } from "vitest";
+import { __resetMarketContext } from "@/shared/session/marketContext";
 import { server } from "@/shared/test/msw-server";
 
 expect.extend(toHaveNoViolations);
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+	server.resetHandlers();
+	// The underlying shared by the pages (WP 28, U4) must not leak between
+	// tests: one that visits ?ticker= would change the next one's default.
+	try {
+		localStorage.removeItem("qm_market_context");
+	} catch {
+		/* no storage */
+	}
+	__resetMarketContext();
+});
 afterAll(() => server.close());
 
 // jsdom lacks these; several UI primitives (Radix) and charts need them.

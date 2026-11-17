@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { makeQueryClient } from "@/shared/api";
 import { TooltipProvider } from "@/shared/ui";
 import type * as Viz from "@/shared/viz";
+import { rememberTicker } from "@/shared/session";
 import MarketPage from "./MarketPage";
 
 // lightweight-charts draws on a <canvas>, which jsdom cannot provide: the
@@ -67,6 +68,25 @@ describe("market page — markets", () => {
 	it("shows the price currency", async () => {
 		renderMarket("?market=CAC40&ticker=MC.PA");
 		expect(await screen.findByText("MC.PA — 1Y · EUR")).toBeInTheDocument();
+	});
+
+	it("opens on the underlying last chosen, when the URL names none (WP 28, U4)", async () => {
+		const { unmount } = renderMarket("?market=CAC40&ticker=MC.PA");
+		await screen.findByText("MC.PA — 1Y · EUR");
+		unmount();
+		renderMarket("");
+		expect(await screen.findByText("MC.PA — 1Y · EUR")).toBeInTheDocument();
+		expect(
+			await screen.findByRole("button", { name: "CAC 40" }),
+		).toHaveAttribute("aria-pressed", "true");
+	});
+
+	it("lets an explicit URL win over the remembered underlying", async () => {
+		rememberTicker("MC.PA", "CAC40");
+		renderMarket("?market=CAC40&ticker=^FCHI");
+		expect(
+			await screen.findByText("^FCHI — CAC 40 (index)"),
+		).toBeInTheDocument();
 	});
 
 	it("gives an index level in points, not in a currency", async () => {

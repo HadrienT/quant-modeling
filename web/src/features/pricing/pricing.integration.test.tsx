@@ -40,6 +40,11 @@ function renderWorkbench(search = "?product=vanilla&engine=mc") {
 	);
 }
 
+/** The Diagnostics section is closed by default (WP 28, lot U3). */
+async function openDiagnostics() {
+	fireEvent.click(await screen.findByRole("button", { name: /^Diagnostics/ }));
+}
+
 describe("pricing workbench", () => {
 	it("shows a Monte-Carlo price with its standard error (± …)", async () => {
 		renderWorkbench();
@@ -54,9 +59,30 @@ describe("pricing workbench", () => {
 		// The fixture's five halvings and the pricing's own 128 000 paths lie
 		// on one 1/√N line: the slope is fitted with the pricing as last point.
 		renderWorkbench();
+		await openDiagnostics();
 		expect(
 			await screen.findByText(/slope −0\.500 ± 0\.000 · consistent with 1\/√N/),
 		).toBeInTheDocument();
+	});
+
+	it("keeps the diagnostics closed until asked, and a link reopens them", async () => {
+		const { unmount } = renderWorkbench();
+		await screen.findByText(/computed in 3\.42 ms/);
+		const toggle = screen.getByRole("button", { name: /^Diagnostics/ });
+		expect(toggle).toHaveAttribute("aria-expanded", "false");
+		expect(screen.queryByText(/consistent with 1\/√N/)).toBeNull();
+		unmount();
+		renderWorkbench("?product=vanilla&engine=mc&diag=true");
+		expect(
+			await screen.findByText(/consistent with 1\/√N/),
+		).toBeInTheDocument();
+	});
+
+	it("offers no diagnostics to a closed form on a CPU-only server", async () => {
+		renderWorkbench("?product=vanilla&engine=analytic");
+		await screen.findByText(/no GPU on this server/);
+		await screen.findByText("delta");
+		expect(screen.queryByRole("button", { name: /^Diagnostics/ })).toBeNull();
 	});
 
 	it("says how long the pricing took on the server", async () => {
@@ -69,7 +95,7 @@ describe("pricing workbench", () => {
 		expect(
 			await screen.findByText(/no GPU on this server/),
 		).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: /GPU/ })).toBeDisabled();
+		expect(screen.getByRole("button", { name: /^GPU/ })).toBeDisabled();
 		expect(screen.queryByText("CPU vs GPU")).not.toBeInTheDocument();
 	});
 
@@ -90,7 +116,8 @@ describe("pricing workbench", () => {
 			}),
 		);
 		renderWorkbench("?product=vanilla&engine=mc&p=eyJuX3BhdGhzIjoyMDAwMDAwMH0");
-		fireEvent.click(await screen.findByRole("button", { name: /race/i }));
+		await openDiagnostics();
+		fireEvent.click(await screen.findByRole("button", { name: /^Race/i }));
 		expect(await screen.findByText("300×")).toBeInTheDocument();
 		expect(screen.getByText(/price gap/)).toBeInTheDocument();
 	});

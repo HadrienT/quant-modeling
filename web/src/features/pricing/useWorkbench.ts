@@ -40,11 +40,17 @@ export function useWorkbench() {
 	);
 	const compare = decode<Record<string, unknown> | null>(search.compare, null);
 	const device: ComputeDevice = search.device ?? "cpu";
+	const diagnostics = search.diag === true;
 
 	const setProduct = useCallback(
 		(key: string) => {
 			navigate({
-				search: () => ({ product: key, engine: undefined, p: undefined }),
+				search: (prev) => ({
+					product: key,
+					engine: undefined,
+					p: undefined,
+					diag: prev.diag,
+				}),
 			});
 		},
 		[navigate],
@@ -90,6 +96,16 @@ export function useWorkbench() {
 		[navigate],
 	);
 
+	const setDiagnostics = useCallback(
+		(open: boolean) => {
+			navigate({
+				search: (prev) => ({ ...prev, diag: open || undefined }),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
+
 	return {
 		descriptor,
 		productKey,
@@ -102,5 +118,7 @@ export function useWorkbench() {
 		setEngine,
 		setValues,
 		setCompare,
+		diagnostics,
+		setDiagnostics,
 	};
 }

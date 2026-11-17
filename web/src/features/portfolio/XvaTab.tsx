@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useNavPages } from "@/shared/session";
 import type {
 	Portfolio,
 	PortfolioXvaRequest,
@@ -29,6 +31,7 @@ const PATHS = [2000, 10000, 30000];
  * seconds and is started by the reader.
  */
 export function XvaTab({ pf }: { pf: Portfolio }) {
+	const { isShown } = useNavPages();
 	const held = netQuantities(pf.transactions ?? []);
 	const sets = (pf.counterparties ?? []).flatMap((c) =>
 		(c.netting_sets ?? []).map((n) => ({
@@ -69,6 +72,16 @@ export function XvaTab({ pf }: { pf: Portfolio }) {
 				No open trade is under a netting set yet. Create a counterparty in the
 				Counterparties tab, then book a rate or FX trade under one of its
 				netting sets — or attach an existing derivative to one.
+				{isShown("/xva") && (
+					<>
+						{" "}
+						To see the adjustments first on preset netting sets, open the{" "}
+						<Link to="/xva" className="text-accent hover:underline">
+							xVA page
+						</Link>
+						.
+					</>
+				)}
 			</p>
 		);
 

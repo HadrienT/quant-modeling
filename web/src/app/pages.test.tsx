@@ -6,7 +6,13 @@ import {
 	createRouter,
 } from "@tanstack/react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeQueryClient } from "@/shared/api";
@@ -64,8 +70,45 @@ describe("pages hidden by an administrator", () => {
 		renderAt("/xva");
 		expect(await screen.findByText("Page not available")).toBeInTheDocument();
 		expect(screen.queryByText("content of /xva")).toBeNull();
-		expect(screen.getByRole("link", { name: "Credit" })).toBeInTheDocument();
+		// The pages sit in the menu of their space (WP 28).
+		fireEvent.click(screen.getByRole("button", { name: "Market" }));
+		expect(screen.getByRole("link", { name: /^Credit/ })).toBeInTheDocument();
+		// close the first menu before opening the next, as a pointer would
+		fireEvent.click(screen.getByRole("button", { name: "Market" }));
+		fireEvent.click(screen.getByRole("button", { name: "Risk" }));
+		expect(
+			screen.getByRole("link", { name: /^Portfolio/ }),
+		).toBeInTheDocument();
 		expect(screen.queryByRole("link", { name: /xVA/ })).toBeNull();
+	});
+
+	it("drop out of the tab strip of their space (WP 28, U5)", async () => {
+		hide("/backtest");
+		renderAt("/xva");
+		const strip = await screen.findByRole("navigation", {
+			name: "Risk pages",
+		});
+		await waitFor(() =>
+			expect(
+				within(strip).queryByRole("link", { name: "Backtest" }),
+			).toBeNull(),
+		);
+		expect(within(strip).getByRole("link", { name: "xVA" })).toHaveAttribute(
+			"aria-current",
+			"page",
+		);
+		expect(
+			within(strip).getByRole("link", { name: "Portfolio" }),
+		).toBeInTheDocument();
+	});
+
+	it("leave no tab strip to a space reduced to one page", async () => {
+		hide("/scripting", "/visualize");
+		renderAt("/price");
+		expect(await screen.findByText("content of /price")).toBeInTheDocument();
+		expect(
+			screen.queryByRole("navigation", { name: "Price pages" }),
+		).toBeNull();
 	});
 
 	it("leave the other pages alone", async () => {
@@ -87,6 +130,7 @@ describe("pages hidden by an administrator", () => {
 		expect(
 			await screen.findByText(/only administrators see this page/),
 		).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Risk" }));
 		expect(
 			screen.getByRole("link", { name: /hidden from visitors: xVA/ }),
 		).toBeInTheDocument();
