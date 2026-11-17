@@ -42,6 +42,7 @@ export function ExposureSurface({ exposure }: { exposure: XvaExposure }) {
 			mode="divergent"
 			title="Value of the netting set: scenario × time"
 			height={380}
+			viewLabels={{ front: "Over time", profile: "Across scenarios" }}
 		/>
 	);
 }

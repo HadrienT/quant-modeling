@@ -113,6 +113,7 @@ const xvaRoute = createRoute({
 				"fx_forward",
 				"cross_currency",
 				"two_currencies",
+				"custom",
 			])
 			.optional(),
 		cpty: XVA_RATING.optional(),
@@ -121,6 +122,11 @@ const xvaRoute = createRoute({
 		wwr: z.number().min(-30).max(30).optional(),
 		funding: z.number().min(0).max(1000).optional(),
 		paths: z.number().int().min(1000).max(50000).optional(),
+		threshold: z.number().min(0).max(1e9).optional(),
+		mta: z.number().min(0).max(1e9).optional(),
+		mpor: z.number().int().min(1).max(60).optional(),
+		flows: z.enum(["withheld", "paid", "only_bank_pays"]).optional(),
+		script: z.string().max(8000).optional(),
 		tab: z
 			.enum(["exposure", "adjustments", "capital", "sensitivities"])
 			.optional(),

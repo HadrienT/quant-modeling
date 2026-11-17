@@ -39,9 +39,7 @@ import {
  * product catalog. Its product library (scripting/library/*.qms) writes the
  * structured products of Bouzoubaa & Osseiran as scripts.
  *
- * Endpoints: POST /price/scripted, POST /price/scripted/validate. Regenerate
- * schema.gen.ts after an API change: `python scripts/gen_openapi.py
- * web/openapi.json && cd web && npm run api:types:local`.
+ * Endpoints: POST /price/scripted, POST /price/scripted/validate.
  */
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -207,7 +205,9 @@ export default function ScriptingPreview() {
 						<Button type="submit">Price</Button>
 					</div>
 
-					{validate.data && <ValidationSummary result={validate.data} />}
+					{validate.data && (
+						<ValidationSummary result={validate.data} script={script} />
+					)}
 				</form>
 
 				<AssistantSidebar

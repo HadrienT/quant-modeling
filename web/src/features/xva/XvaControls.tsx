@@ -5,6 +5,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/shared/ui";
+import { CsaTerms } from "./CsaTerms";
 import { FUNDING_BP, PATHS, type XvaView, isOffered } from "./state";
 
 /**
@@ -52,7 +53,7 @@ export function XvaControls({
 				<Segmented
 					label="Portfolio"
 					options={options.portfolios
-						.filter((p) => isOffered(p.id))
+						.filter((p) => isOffered(p.id, view.script))
 						.map((p) => ({ value: p.id, label: p.label, title: p.lesson }))}
 					value={view.portfolio}
 					onChange={(portfolio) => onChange({ portfolio })}
@@ -73,7 +74,7 @@ export function XvaControls({
 								value: "vm",
 								label: "Variation margin",
 								title:
-									"Zero threshold, daily calls, 10-day margin period of risk",
+									"Daily calls; zero threshold and a 10-day margin period of risk by default, both adjustable below",
 							},
 							{
 								value: "im",
@@ -107,6 +108,7 @@ export function XvaControls({
 					/>
 				</div>
 			</div>
+			{view.csa !== "none" && <CsaTerms view={view} onChange={onChange} />}
 			<div className="flex flex-wrap items-center gap-2 text-xs text-ink-secondary">
 				<span>Wrong-way risk</span>
 				<div

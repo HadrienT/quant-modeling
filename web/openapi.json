@@ -13775,6 +13775,9 @@
             "title": "Requested",
             "type": "string"
           },
+          "risk": {
+            "$ref": "#/components/schemas/SwaptionRisk"
+          },
           "strike": {
             "title": "Strike",
             "type": "number"
@@ -13803,9 +13806,43 @@
           "bermudan_price",
           "bermudan_exercises",
           "switch_premium",
-          "hull_white"
+          "hull_white",
+          "risk"
         ],
         "title": "SwaptionResult",
+        "type": "object"
+      },
+      "SwaptionRisk": {
+        "description": "The value's sensitivities, by revaluing the whole chain (bootstrap,\nthen the pricer) on bumped inputs, the strike held: central differences,\nno closed form, the same for every model and for the Bermudan.",
+        "properties": {
+          "dv01": {
+            "description": "Value change for +1bp on every quoted rate (deposits, OIS, FRAs, swaps), vols and Hull-White parameters held",
+            "title": "Dv01",
+            "type": "number"
+          },
+          "gamma_bp": {
+            "description": "Change of the DV01 for a further +1bp",
+            "title": "Gamma Bp",
+            "type": "number"
+          },
+          "vega": {
+            "description": "Value change for the bump in vega_unit",
+            "title": "Vega",
+            "type": "number"
+          },
+          "vega_unit": {
+            "description": "Which vol is bumped, and by how much",
+            "title": "Vega Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dv01",
+          "gamma_bp",
+          "vega",
+          "vega_unit"
+        ],
+        "title": "SwaptionRisk",
         "type": "object"
       },
       "SwaptionVolInput": {
