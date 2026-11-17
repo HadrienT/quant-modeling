@@ -32,6 +32,8 @@
 #include "quantModeling/models/equity/slv_sim_model.hpp"
 #include "quantModeling/scripting/ir_ad.hpp"
 #include "quantModeling/utils/accumulators.hpp"
+
+#include "../ir_fixtures.hpp"
 #include <chrono>
 #include <cstdio>
 
@@ -635,6 +637,65 @@ namespace quantModeling
             LocalVolSimModel<Real> m(S, r, q, kK, kT, flat, 1.0 / 24.0);
             check(hard, m, "flat local vol, hard call");
         }
+    }
+
+    // WP 27 §14.16: on a smile curved in the strike, the bump on the GPU's
+    // adjoint against the exact route through the C¹ grid (the host's tangent
+    // over adjoint, path by path) -- two computations with nothing in common
+    // but the model: gamma, and the vanna against a parallel shift (the sum
+    // of the spot's row over the grid's nodes).
+    TEST_F(GpuRisksTest, SecondOrderBumpUnderACurvedLocalVolIsTheExactRoute)
+    {
+        namespace ir = scripting::ir;
+        const std::string source = "2026-12-01\n    a = spot()\n2027-06-01\n    pays lastStepCall(100)\n";
+        std::vector<Real> curved;
+        for (Real k : kK)
+            for (Real t : kT)
+            {
+                const double m = (k - 100.0) / 100.0;
+                curved.push_back(0.22 - 0.3 * m + 0.6 * m * m + 0.005 * t);
+            }
+        LocalVolSimModel<Real> model(100.0, 0.03, 0.01, kK, kT, curved, 1.0 / 24.0);
+        const ScriptedProduct<Real> product(source, kCtx);
+        std::string why;
+        const auto so = simulate_script_second_order_gpu(product, model, 1 << 18, kSeed, why);
+        ASSERT_TRUE(so.has_value()) << why;
+        ASSERT_TRUE(so->vanna.has_value());
+
+        const ir_test::SecondOrderCase sc(source, ir_test::Dyn::LocalVol);
+        const auto K = static_cast<std::size_t>(sc.K);
+        const auto grid0 = static_cast<std::size_t>(sc.primal.layout.th_grid);
+        const auto spot = static_cast<std::size_t>(sc.primal.layout.th_spot);
+        std::vector<double> theta = ir::path_data(sc.primal.layout, sc.c.dm, sc.c.product.ir(), sc.c.mats, sc.c.base).theta;
+        ASSERT_EQ(theta.size(), grid0 + curved.size());
+        std::copy(curved.begin(), curved.end(), theta.begin() + static_cast<std::ptrdiff_t>(grid0));
+        const int n = 100000;
+        double g1 = 0.0, g2 = 0.0, v1 = 0.0, v2 = 0.0;
+        for (int p = 0; p < n; ++p)
+        {
+            const ir_test::SecondOrder x = sc.at(theta, p);
+            const double g = x.hessian[spot * K + spot];
+            double v = 0.0;
+            for (std::size_t node = grid0; node < theta.size(); ++node)
+                v += x.hessian[node * K + spot];
+            g1 += g, g2 += g * g, v1 += v, v2 += v * v;
+        }
+        const auto mean_error = [&](double sum, double squares, double &mean, double &error)
+        {
+            mean = sum / n;
+            error = std::sqrt(std::max(squares / n - mean * mean, 0.0) / n);
+        };
+        double gamma, gamma_error, vanna, vanna_error;
+        mean_error(g1, g2, gamma, gamma_error);
+        mean_error(v1, v2, vanna, vanna_error);
+        std::printf("curved local vol, lastStepCall: gamma exact %.6f +- %.6f, bump %.6f +- %.6f; vanna exact %.5f "
+                    "+- %.5f, bump %.5f +- %.5f\n",
+                    gamma, gamma_error, so->gamma, so->gamma_std_error, vanna, vanna_error, *so->vanna,
+                    *so->vanna_std_error);
+        EXPECT_GT(gamma, 0.0);
+        // the bump's bias is O(h^2): 1 % on top of the two errors
+        EXPECT_NEAR(so->gamma, gamma, 4.0 * (so->gamma_std_error + gamma_error) + 0.01 * gamma);
+        EXPECT_NEAR(*so->vanna, vanna, 4.0 * (*so->vanna_std_error + vanna_error) + 0.01 * std::abs(vanna));
     }
 
     // Heston has no single vol: gamma and the spot's row only.

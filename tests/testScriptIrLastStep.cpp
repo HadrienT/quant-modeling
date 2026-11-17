@@ -86,11 +86,11 @@ namespace quantModeling
     }
 
     // Path by path, no noise: every entry of the Hessian against the central
-    // difference of the gradient, and its symmetry. (Local vol and SLV refuse
-    // second order through their grid, WP 27 §14.5.)
+    // difference of the gradient, and its symmetry -- local vol included,
+    // through its C¹ grid (WP 27 §14.16); SLV's leverage refuses.
     TEST(ScriptIrLastStep, TheHessianIsTheGradientsDerivative)
     {
-        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::Heston})
+        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::Heston, Dyn::LocalVol})
             for (const std::string &source : kScripts)
             {
                 const SecondOrderCase sc(source, dyn, {}, kSeed);

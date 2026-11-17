@@ -81,8 +81,27 @@ namespace quantModeling::scripting::ir
         {
             const Inst &in = src.code[static_cast<std::size_t>(k)];
             const std::int32_t id = r.copy(k);
-            if (in.op == Op::GridAccum || in.op == Op::GridLevAccum)
-                throw InvalidInput("script IR: the second order through the local-vol grid is not built yet");
+            if (in.op == Op::GridLevAccum || in.op == Op::GridLevSlope)
+                throw InvalidInput("script IR: no exact second order through the SLV leverage (linear by pieces in "
+                                   "the spot: its slope jumps at every strike)");
+            if (in.op == Op::GridAccumDir || in.op == Op::GridSlopeAccumDir)
+                throw InvalidInput("script IR: a tangent is taken of a second-order block");
+            if (in.op == Op::GridAccum)
+            {
+                // The statement adds a w_n(S) to node n's adjoint, the
+                // weights being functions of the spot (C¹, §14.15): its
+                // tangent adds a' w_n + a w_n'(S) S' to the node's entry in
+                // each direction's row.
+                for (int d = 0; d < K; ++d)
+                {
+                    const std::int32_t ta = T(in.a, d), ts = T(in.b, d);
+                    if (ta >= 0)
+                        b.raw(Op::GridAccumDir, ta, r[in.b], r[in.c], static_cast<double>(d));
+                    if (ts >= 0)
+                        b.raw(Op::GridSlopeAccumDir, b.mul(r[in.a], ts), r[in.b], r[in.c], static_cast<double>(d));
+                }
+                continue;
+            }
             if (!defines_value(in.op))
                 continue;
             const unsigned operands = value_operands(in.op);
@@ -192,6 +211,10 @@ namespace quantModeling::scripting::ir
                         if (ta >= 0)
                             t = b.mul(b.value(in.op == Op::GridVol ? Op::GridSlope : Op::GridLevSlope, A, B), ta);
                         break;
+                    case Op::GridSlope: // of an adjoint block: the curvature (C¹ grid, §14.16)
+                        if (ta >= 0)
+                            t = b.mul(b.value(Op::GridCurv, A, B), ta);
+                        break;
                     case Op::Phi:
                         if (ta >= 0 || tb >= 0)
                             t = b.raw(Op::Phi, zero_or(ta), zero_or(tb), r[in.c]);
@@ -209,7 +232,7 @@ namespace quantModeling::scripting::ir
                             t = sum(t, b.select(interior(r[degree]), b.mul(td, b.sub(A, B)), zero()));
                         break;
                     }
-                    default: // constants, terms, draws, data, logic, GridSlope: no derivative
+                    default: // constants, terms, draws, data, logic: no derivative
                         break;
                 }
                 T(k, d) = t;

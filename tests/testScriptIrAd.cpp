@@ -296,6 +296,95 @@ namespace quantModeling
         second_order_against_differences(Dyn::Heston, 1e-7, 2e-5);
     }
 
+    // Local vol (WP 27 §14.16): the grid is C¹ in the strike, so the exact
+    // route goes through it. On a smile that is curved in the strike (the
+    // fixture's is linear, where the Hermite interpolation has no curvature),
+    // each scalar direction's row -- the grid's nodes included, d² / d node
+    // d theta -- is the central difference of the gradient; the Hessian is
+    // symmetric on the scalars; and a node's entries are also the difference
+    // of the scalars' gradient when the node itself is bumped.
+    TEST(ScriptIrSecondOrder, LocalVolHessianThroughTheGridIsTheGradientsDerivative)
+    {
+        for (const char *source : kSmooth)
+        {
+            const SecondOrderCase sc(source, Dyn::LocalVol);
+            const auto K = static_cast<std::size_t>(sc.K);
+            const auto grid0 = static_cast<std::size_t>(sc.primal.layout.th_grid);
+            std::vector<double> theta =
+                scripting::ir::path_data(sc.primal.layout, sc.c.dm, sc.c.product.ir(), sc.c.mats, sc.c.base).theta;
+            const std::size_t n = theta.size();
+            ASSERT_EQ(n, grid0 + kK.size() * kT.size());
+            for (std::size_t i = 0; i < kK.size(); ++i)
+                for (std::size_t j = 0; j < kT.size(); ++j)
+                {
+                    const double m = (kK[i] - 100.0) / 100.0;
+                    theta[grid0 + i * kT.size() + j] += 0.6 * m * m;
+                }
+            long long node_entries = 0;
+            for (int path = 0; path < 6; ++path)
+            {
+                const SecondOrder base = sc.at(theta, path);
+                double scale = 1e-9;
+                for (double h : base.hessian)
+                    scale = std::max(scale, std::abs(h));
+                for (std::size_t d = 0; d < K; ++d)
+                {
+                    const double h = 1e-6 * std::max(1.0, std::abs(theta[d]));
+                    std::vector<double> up = theta, down = theta;
+                    up[d] += h;
+                    down[d] -= h;
+                    const SecondOrder a = sc.at(up, path), b = sc.at(down, path);
+                    for (std::size_t p = 0; p < n; ++p)
+                    {
+                        const double fd = (a.gradient[p] - b.gradient[p]) / (2.0 * h);
+                        ASSERT_NEAR(base.hessian[p * K + d], fd, 2e-5 * scale)
+                            << "path " << path << ", d2 / d theta_" << p << " d theta_" << d << "\n"
+                            << source;
+                        if (p < K)
+                            ASSERT_NEAR(base.hessian[p * K + d], base.hessian[d * K + p], 1e-10 * scale)
+                                << "path " << path << ", " << p << " and " << d;
+                    }
+                }
+                // Gamma without any derivative code: the second difference
+                // of the path's payoff in the spot (parameter 0).
+                {
+                    const auto spot = static_cast<std::size_t>(sc.primal.layout.th_spot);
+                    const double h = 2e-4 * theta[spot];
+                    std::vector<double> up = theta, down = theta;
+                    up[spot] += h;
+                    down[spot] -= h;
+                    const double fd = (sc.at(up, path).payoff - 2.0 * base.payoff + sc.at(down, path).payoff) / (h * h);
+                    ASSERT_NEAR(base.hessian[spot * K + spot], fd, 1e-4 * std::max(std::abs(fd), 1e-6))
+                        << "path " << path << ", gamma\n"
+                        << source;
+                }
+                // The nodes the path went through, bumped themselves.
+                for (std::size_t p = grid0; p < n; ++p)
+                {
+                    if (base.gradient[p] == 0.0)
+                        continue;
+                    ++node_entries;
+                    const double h = 1e-7;
+                    std::vector<double> up = theta, down = theta;
+                    up[p] += h;
+                    down[p] -= h;
+                    const SecondOrder a = sc.at(up, path), b = sc.at(down, path);
+                    for (std::size_t d = 0; d < K; ++d)
+                        ASSERT_NEAR(base.hessian[p * K + d], (a.gradient[d] - b.gradient[d]) / (2.0 * h), 2e-5 * scale)
+                            << "path " << path << ", node " << p - grid0 << ", direction " << d << "\n"
+                            << source;
+                }
+            }
+            EXPECT_GT(node_entries, 20);
+        }
+    }
+
+    // The SLV leverage is linear by pieces in the strike: no exact route.
+    TEST(ScriptIrSecondOrder, TheSlvLeverageIsRefused)
+    {
+        EXPECT_THROW(SecondOrderCase(kSmooth[0], Dyn::SLV), InvalidInput);
+    }
+
     // Against a closed form: under Black-Scholes the power contract
     // S_T^2 / 100 is worth S0^2 exp((r - 2 q + sigma^2) T) / 100, whose gamma,
     // vanna and volga are known. The Monte-Carlo second-order risks agree
