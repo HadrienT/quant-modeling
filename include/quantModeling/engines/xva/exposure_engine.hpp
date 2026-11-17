@@ -10,6 +10,7 @@
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/risk/collateral.hpp"
 #include "quantModeling/risk/exposure_paths.hpp"
+#include "quantModeling/risk/xva_report.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
 
 #include <cstdint>
@@ -172,6 +173,17 @@ namespace quantModeling
          *        profiles alone).
          */
         bool distribution = true;
+        /**
+         * @brief The share of each trade (lot G1, blueprint/wp/23-xva.md
+         *        §20): its stand-alone and incremental sums and, without a
+         *        CSA, its Euler share of the positive one -- with the CVA
+         *        weights, the stand-alone, incremental and marginal CVA of
+         *        xva_report(), with their errors. Needs `weights`, and no
+         *        initial margin (each subset would need a margin model of
+         *        its own). On a device the 2K subsets are netted in the same
+         *        launch from each trade's values: no cube.
+         */
+        bool contributions = false;
     };
 
     /// The exposure of a netting set, reduced over the paths.
@@ -183,6 +195,9 @@ namespace quantModeling
         ExposureStatistics statistics;
         /// The two weighted sums of NettingSetRequest::weights.
         Estimate weighted_positive, weighted_negative;
+        /// With NettingSetRequest::contributions: one row per netted trade,
+        /// the CVA fields read off the positive sums.
+        std::vector<TradeContribution> contributions;
         std::size_t paths = 0;
         /// "cpu" or "gpu", how many cards, and why the CPU when the request
         /// left the choice.

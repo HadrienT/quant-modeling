@@ -245,6 +245,91 @@ namespace quantModeling
         EXPECT_NEAR(direct.statistics.eepe, expected.eepe, 1e-9 * expected.eepe);
     }
 
+    // Lot G1 (blueprint/wp/23-xva.md §20): the trades' stand-alone,
+    // incremental and marginal CVA of the netting set are xva_report()'s on
+    // the same paths -- the reference the device's reduction is held to.
+    TEST(ExposureProgram, TheTradesContributionsAreThoseOfTheReport)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        fill(engine, m);
+        Csa csa;
+        csa.threshold_counterparty = 1e5;
+        csa.threshold_bank = 2e5;
+        csa.minimum_transfer_amount = 2.5e4;
+        csa.rounding = 1e3;
+        csa.independent_amount = 1e4;
+        const CreditCurve counterparty(0.02), own(0.01);
+        const std::size_t paths = 3000;
+
+        for (const bool collateralised : {false, true})
+        {
+            NettingSetRequest request;
+            request.trades = {0, 2, 3, 1};
+            if (collateralised)
+            {
+                request.csa = csa;
+                request.collateral.cashflows = MarginPeriodCashflows::OnlyBankPays;
+            }
+            request.weights = [&](const std::vector<Time> &times, std::vector<Real> &on_positive,
+                                  std::vector<Real> &on_negative)
+            {
+                on_positive = first_to_default_weights(times, counterparty, own);
+                on_negative = first_to_default_weights(times, own, counterparty);
+                for (Real &w : on_positive)
+                    w *= -0.6;
+                for (Real &w : on_negative)
+                    w *= -0.6;
+            };
+            request.contributions = true;
+            const NettingSetExposure direct = engine.simulate_netting_set(settings(paths), request);
+            ASSERT_EQ(direct.contributions.size(), request.trades.size());
+
+            ExposureSimulationSettings s = settings(paths);
+            if (collateralised)
+                s.grid.margin_period_of_risk = csa.margin_period_of_risk;
+            const ExposurePaths cube = engine.simulate(s);
+            XvaInputs in;
+            in.trades = request.trades;
+            if (collateralised)
+            {
+                in.csa = csa;
+                in.collateral.cashflows = MarginPeriodCashflows::OnlyBankPays;
+            }
+            in.counterparty = counterparty;
+            in.own = own;
+            const XvaReport report = xva_report(cube, in);
+            EXPECT_NEAR(direct.weighted_positive.value, report.cva.value, 1e-9 * std::abs(report.cva.value));
+
+            Real marginal_sum = 0.0;
+            for (std::size_t j = 0; j < request.trades.size(); ++j)
+            {
+                const TradeContribution &got = direct.contributions[j], &want = report.contributions[j];
+                const Real scale = std::abs(report.cva.value);
+                EXPECT_EQ(got.trade, want.trade);
+                EXPECT_NEAR(got.standalone_cva, want.standalone_cva, 1e-9 * scale) << "trade " << j;
+                EXPECT_NEAR(got.incremental_cva, want.incremental_cva, 1e-9 * scale) << "trade " << j;
+                EXPECT_GT(got.standalone_cva_error, 0.0);
+                EXPECT_GE(got.incremental_cva_error, 0.0);
+                if (collateralised)
+                {
+                    EXPECT_TRUE(std::isnan(got.marginal_cva));
+                    EXPECT_TRUE(std::isnan(want.marginal_cva));
+                }
+                else
+                {
+                    EXPECT_NEAR(got.marginal_cva, want.marginal_cva, 1e-9 * scale) << "trade " << j;
+                    EXPECT_GT(got.marginal_cva_error, 0.0);
+                    marginal_sum += got.marginal_cva;
+                }
+            }
+            // Euler: the shares add up to the netting set's CVA.
+            if (!collateralised)
+                EXPECT_NEAR(marginal_sum, direct.weighted_positive.value,
+                            1e-12 * std::abs(direct.weighted_positive.value));
+        }
+    }
+
     TEST(ExposureProgram, WhatTheNettingSetCannotDoWithoutTheCubeIsRefused)
     {
         const HullWhiteCurveModel m = model();
@@ -263,6 +348,21 @@ namespace quantModeling
         NettingSetRequest out_of_range;
         out_of_range.trades = {4};
         EXPECT_THROW(engine.simulate_netting_set(settings(100), out_of_range), InvalidInput);
+        // The contributions are read off the weighted sums, and a subset's
+        // initial margin is a model of its own.
+        NettingSetRequest no_weights;
+        no_weights.contributions = true;
+        EXPECT_THROW(engine.simulate_netting_set(settings(100), no_weights), InvalidInput);
+        NettingSetRequest margined;
+        margined.csa = Csa{};
+        margined.collateral.initial_margin_received = {1.0};
+        margined.contributions = true;
+        margined.weights = [](const std::vector<Time> &t, std::vector<Real> &a, std::vector<Real> &b)
+        {
+            a.assign(t.size(), 1.0);
+            b.assign(t.size(), 1.0);
+        };
+        EXPECT_THROW(engine.simulate_netting_set(settings(100), margined), InvalidInput);
     }
 
     TEST(ExposureProgram, WithoutADeviceAutoRunsOnTheCpuAndSaysWhy)

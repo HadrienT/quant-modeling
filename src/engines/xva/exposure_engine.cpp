@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <limits>
 #include <numeric>
 #include <string>
 
@@ -21,6 +22,105 @@ namespace quantModeling
         /// number of threads (the results would not either way: every path
         /// writes its own row).
         constexpr std::size_t kChunk = 256;
+
+        /// The trades of `trades` netted without collateral: their values
+        /// summed in that order, path by path.
+        ExposurePaths summed(const ExposurePaths &cube, const std::vector<std::size_t> &trades)
+        {
+            ExposurePaths out;
+            out.paths = cube.paths;
+            out.measure = cube.measure;
+            out.times = cube.times;
+            out.discount = cube.discount;
+            out.discount_weight = cube.discount_weight;
+            out.trade_values.assign(1, std::vector<Real>(cube.paths * cube.dates(), 0.0));
+            Real value_today = 0.0;
+            for (const std::size_t k : trades)
+            {
+                value_today += cube.trade_values_today[k];
+                const std::vector<Real> &values = cube.trade_values[k];
+                for (std::size_t j = 0; j < values.size(); ++j)
+                    out.trade_values[0][j] += values[j];
+            }
+            out.trade_values_today = {value_today};
+            return out;
+        }
+
+        /// Per path: Σ_r a_r D max(V, 0) over the reporting dates of `netted`.
+        std::vector<Real> positive_sums(const ExposurePaths &netted, const std::vector<Real> &a)
+        {
+            const std::size_t m = netted.dates();
+            std::vector<Real> out(netted.paths, 0.0);
+            for (std::size_t p = 0; p < netted.paths; ++p)
+                for (std::size_t r = 0; r < m; ++r)
+                {
+                    const Real v = netted.discount_weight[p * m + r] * netted.trade_values[0][p * m + r];
+                    if (v > 0.0)
+                        out[p] += a[r] * v;
+                }
+            return out;
+        }
+
+        Estimate mean_of(const std::vector<Real> &x)
+        {
+            WelfordAccumulator acc;
+            for (const Real v : x)
+                acc.add(v);
+            return {acc.mean, acc.std_error()};
+        }
+
+        /// The trades' contributions on the CPU, from the cube: the
+        /// reference the device's reduction is tested against (lot G1).
+        /// `netted` is the netting set, `a` the positive weights.
+        std::vector<TradeContribution> cpu_contributions(const ExposurePaths &cube, const NettingSetRequest &request,
+                                                         const std::vector<std::size_t> &set,
+                                                         const ExposurePaths &netted, const std::vector<Real> &a)
+        {
+            const auto net = [&](const std::vector<std::size_t> &trades)
+            {
+                return request.csa ? collateralise(cube, *request.csa, trades, request.collateral)
+                                   : summed(cube, trades);
+            };
+            const std::vector<Real> all = positive_sums(netted, a);
+            std::vector<TradeContribution> out;
+            for (std::size_t j = 0; j < set.size(); ++j)
+            {
+                TradeContribution c;
+                c.trade = set[j];
+                const Estimate alone = mean_of(positive_sums(net({set[j]}), a));
+                c.standalone_cva = alone.value;
+                c.standalone_cva_error = alone.error;
+                std::vector<std::size_t> others = set;
+                others.erase(others.begin() + static_cast<std::ptrdiff_t>(j));
+                std::vector<Real> increment = all;
+                if (!others.empty())
+                {
+                    const std::vector<Real> without = positive_sums(net(others), a);
+                    for (std::size_t p = 0; p < increment.size(); ++p)
+                        increment[p] -= without[p];
+                }
+                const Estimate incremental = mean_of(increment);
+                c.incremental_cva = incremental.value;
+                c.incremental_cva_error = incremental.error;
+                c.marginal_cva = std::numeric_limits<Real>::quiet_NaN();
+                if (!request.csa)
+                {
+                    // Euler: D v_j where the netting set's value is positive.
+                    const std::size_t n = netted.dates();
+                    const std::vector<Real> &values = cube.trade_values[set[j]];
+                    std::vector<Real> share(netted.paths, 0.0);
+                    for (std::size_t p = 0; p < netted.paths; ++p)
+                        for (std::size_t i = 0; i < n; ++i)
+                            if (netted.trade_values[0][p * n + i] > 0.0)
+                                share[p] += a[i] * (netted.discount_weight[p * n + i] * values[p * n + i]);
+                    const Estimate marginal = mean_of(share);
+                    c.marginal_cva = marginal.value;
+                    c.marginal_cva_error = marginal.error;
+                }
+                out.push_back(c);
+            }
+            return out;
+        }
     } // namespace
 
     std::vector<Time> exposure_grid(Time horizon, const std::vector<Time> &event_times,
@@ -545,6 +645,12 @@ namespace quantModeling
             throw InvalidInput("exposure engine: initial margin needs a CSA");
         if (settings.simm)
             throw InvalidInput("exposure engine: SIMM on every path needs the cube; use simulate()");
+        if (request.contributions && !request.weights)
+            throw InvalidInput("exposure engine: the trades' contributions are read off the weighted sums; "
+                               "give the weights");
+        if (request.contributions && margined)
+            throw InvalidInput("exposure engine: the trades' contributions under initial margin need each "
+                               "subset's own margin model; use xva_report() on the cube");
         if (request.csa)
         {
             request.csa->validate();
@@ -600,6 +706,25 @@ namespace quantModeling
                 }
                 netting.initial_margin_received = collateral.initial_margin_received;
                 netting.initial_margin_posted = collateral.initial_margin_posted;
+                if (request.contributions)
+                {
+                    // Lot G1: the 2K subsets in the same launch. Each one's
+                    // balance today is the call on its own value today,
+                    // summed in the netting set's order as the host does.
+                    netting.contributions = true;
+                    netting.euler = !request.csa;
+                    if (request.csa)
+                        for (std::size_t j = 0; j < set.size(); ++j)
+                            for (const bool alone : {true, false})
+                            {
+                                Real today = 0.0;
+                                for (std::size_t k = 0; k < set.size(); ++k)
+                                    if ((k == j) == alone)
+                                        today += trades_[set[k]].quantity * trades_[set[k]].value->value_today();
+                                netting.subset_held_today.push_back(balance_after_call(
+                                    0.0, variation_margin_required(today, netting.plan.terms), netting.plan.terms));
+                            }
+                }
 
                 ExposureStatistics &s = result.statistics;
                 s.measure = head.measure;
@@ -722,6 +847,22 @@ namespace quantModeling
                                                 profile.weighted.positive.std_error()};
                     result.weighted_negative = {profile.weighted.negative.mean,
                                                 profile.weighted.negative.std_error()};
+                    for (std::size_t j = 0; j < profile.subsets.size() / 2; ++j)
+                    {
+                        TradeContribution c;
+                        c.trade = set[j];
+                        c.standalone_cva = profile.subsets[2 * j].positive.mean;
+                        c.standalone_cva_error = profile.subsets[2 * j].positive.std_error();
+                        c.incremental_cva = profile.subsets[2 * j + 1].positive.mean;
+                        c.incremental_cva_error = profile.subsets[2 * j + 1].positive.std_error();
+                        c.marginal_cva = std::numeric_limits<Real>::quiet_NaN();
+                        if (j < profile.euler.size())
+                        {
+                            c.marginal_cva = profile.euler[j].positive.mean;
+                            c.marginal_cva_error = profile.euler[j].positive.std_error();
+                        }
+                        result.contributions.push_back(c);
+                    }
                     result.device = "gpu";
                     result.gpus = profile.gpus;
                     return result;
@@ -779,6 +920,8 @@ namespace quantModeling
             result.weighted_positive = {positive.mean, positive.std_error()};
             result.weighted_negative = {negative.mean, negative.std_error()};
         }
+        if (request.contributions)
+            result.contributions = cpu_contributions(cube, request, set, netted, on_positive);
         return result;
     }
 

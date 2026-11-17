@@ -3,12 +3,16 @@
 // CPU against GPU, on the same Philox scenarios.
 //
 //   build-cuda/qm_gpu_exposure_bench [target_rel_se=0.01] [cpu_threads=16] [large_paths=1000000]
+//                                    [contribution_paths=50000]
 //
 // A pilot run estimates the dispersion of the per-path CVA, which fixes the
 // number of paths; every row then runs those paths and prints the error it
 // actually reached -- a speed-up quoted without its standard error means
 // nothing. A second table runs a number of paths whose cube no host would
-// hold, which only the reduction on the device can do.
+// hold, which only the reduction on the device can do. A third (lot G1,
+// #281 step 2) times the trades' stand-alone and incremental CVA: the host's
+// xva_report() on the cube the card sends back, against the 2K subsets
+// reduced in the card's own launch.
 
 #include <algorithm>
 #include <chrono>
@@ -165,6 +169,7 @@ int main(int argc, char **argv)
     const double target = argc > 1 ? std::atof(argv[1]) : 0.01;
     const int cpu_threads = argc > 2 ? std::atoi(argv[2]) : 16;
     const std::size_t large = argc > 3 ? static_cast<std::size_t>(std::atof(argv[3])) : 1000000;
+    const std::size_t contribution_paths = argc > 4 ? static_cast<std::size_t>(std::atof(argv[4])) : 50000;
 
     const qm::HullWhiteCurveModel model(0.03, 0.01, curve(0.035, 0.004), curve(0.038, 0.005));
     qm::HullWhiteExposureEngine engine(model);
@@ -263,6 +268,59 @@ int main(int argc, char **argv)
                     out.weighted_positive.value, out.weighted_positive.error,
                     out.weighted_positive.error / std::abs(out.weighted_positive.value),
                     static_cast<double>(large) / secs);
+    }
+
+    // Lot G1: the trades' contributions.
+    std::printf("\nThe %zu trades' stand-alone and incremental CVA, %zu paths:\n", engine.trades(),
+                contribution_paths);
+    qm::XvaReport report;
+    {
+        qm::ThreadPool pool;
+        pool.start(static_cast<std::size_t>(cpu_threads - 1));
+        qm::ExposureSimulationSettings s = settings(contribution_paths, qm::ComputeDevice::Gpu);
+        s.grid.margin_period_of_risk = csa().margin_period_of_risk;
+        qm::XvaInputs in;
+        in.csa = csa();
+        in.counterparty = kCounterparty;
+        in.own = kOwn;
+        in.lgd_counterparty = kLgd;
+        in.lgd_own = kLgd;
+        double cube_secs = 0.0;
+        const double secs = seconds(
+            [&]
+            {
+                qm::ExposurePaths cube;
+                cube_secs = seconds([&]
+                                    { cube = engine.simulate(s); });
+                report = qm::xva_report(cube, in, &pool);
+            });
+        pool.stop();
+        std::printf("  %-44s %8.3f s   (cube %.3f s, xva_report on %d threads %.3f s)\n",
+                    "1 V100 cube + host xva_report", secs, cube_secs, cpu_threads, secs - cube_secs);
+    }
+    qm::NettingSetRequest contributions = netting;
+    contributions.contributions = true;
+    contributions.distribution = false;
+    for (int g = 1; g <= std::min(gpus, 2); ++g)
+    {
+        qm::NettingSetExposure out;
+        const double secs = seconds(
+            [&]
+            { out = engine.simulate_netting_set(settings(contribution_paths, qm::ComputeDevice::Gpu, g),
+                                                contributions); });
+        double worst = 0.0;
+        for (std::size_t j = 0; j < out.contributions.size(); ++j)
+            worst = std::max({worst, std::abs(out.contributions[j].standalone_cva - report.contributions[j].standalone_cva),
+                              std::abs(out.contributions[j].incremental_cva - report.contributions[j].incremental_cva)});
+        std::printf("  %d V100, %-35s %8.3f s   worst |card - host| / |CVA| = %.1e\n", g, "reduced on the card(s)",
+                    secs, worst / std::abs(report.cva.value));
+        if (g == 1)
+        {
+            std::printf("    trade  stand-alone CVA (err)        incremental CVA (err)\n");
+            for (const qm::TradeContribution &c : out.contributions)
+                std::printf("    %5zu  %12.2f (%8.2f)   %12.2f (%8.2f)\n", c.trade, c.standalone_cva,
+                            c.standalone_cva_error, c.incremental_cva, c.incremental_cva_error);
+        }
     }
     return 0;
 }

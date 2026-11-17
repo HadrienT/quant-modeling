@@ -10,6 +10,7 @@
 #include "quantModeling/risk/exposure_paths.hpp"
 #include "quantModeling/utils/thread_pool.hpp"
 
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -127,6 +128,17 @@ namespace quantModeling
          *        too: the hazard depends on the value of the whole set.
          */
         Real marginal_cva = 0.0;
+        /**
+         * @brief Monte-Carlo standard errors of the three, where they are
+         *        computed path by path (HullWhiteExposureEngine::
+         *        simulate_netting_set with `contributions`): the incremental
+         *        one is the error of the paired difference, path by path,
+         *        not of two independent estimates. NaN where they were not
+         *        computed (xva_report, for now: item P1 of §20).
+         */
+        Real standalone_cva_error = std::numeric_limits<Real>::quiet_NaN();
+        Real incremental_cva_error = std::numeric_limits<Real>::quiet_NaN();
+        Real marginal_cva_error = std::numeric_limits<Real>::quiet_NaN();
     };
 
     struct XvaReport

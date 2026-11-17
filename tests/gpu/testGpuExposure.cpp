@@ -10,6 +10,8 @@
 #include "quantModeling/risk/collateral.hpp"
 #include "quantModeling/risk/xva_report.hpp"
 
+#include "../support/cpu_gpu_tolerance.hpp"
+
 // Lot X7 of blueprint/wp/23-xva.md §14.11: the exposure engine and the
 // collateral on the device. The CPU engine is the oracle -- same Philox
 // draws, same sums, so the two agree to the last bits of exp and erfc, far
@@ -357,6 +359,92 @@ namespace quantModeling
         const NettingSetExposure two = engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu, 2), r);
         EXPECT_EQ(two.gpus, 2);
         expect_same_bits(two);
+    }
+
+    // Lot G1 (#281 step 2): the trades' stand-alone and incremental CVA, and
+    // the Euler shares without a CSA, as 2K more netting sets of the same
+    // launch. The CPU engine, itself held to xva_report()
+    // (ExposureProgram.TheTradesContributionsAreThoseOfTheReport), is the
+    // oracle.
+    TEST_F(GpuExposureTest, TheTradesContributionsOnTheDeviceAreTheCpus)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        fill(engine, m);
+        const std::size_t paths = 2 * 2048 + 999;
+        struct Case
+        {
+            bool collateralised;
+            MarginPeriodCashflows cashflows;
+        };
+        for (const Case c : {Case{false, MarginPeriodCashflows::Paid}, Case{true, MarginPeriodCashflows::Paid},
+                             Case{true, MarginPeriodCashflows::Withheld},
+                             Case{true, MarginPeriodCashflows::OnlyBankPays}})
+        {
+            NettingSetRequest r = request(c.collateralised, c.cashflows);
+            r.trades = {0, 2, 3, 1};
+            r.contributions = true;
+            const NettingSetExposure cpu = engine.simulate_netting_set(settings(paths, ComputeDevice::Cpu), r);
+            ExposureSimulationSettings launches = settings(paths, ComputeDevice::Gpu);
+            launches.gpu_blocks_per_launch = 1; // several launches
+            const NettingSetExposure gpu = engine.simulate_netting_set(launches, r);
+            ASSERT_EQ(gpu.device, "gpu") << gpu.device_note;
+            ASSERT_EQ(gpu.contributions.size(), r.trades.size());
+            expect_same_profiles(gpu, cpu);
+            // The CPU/GPU price tolerance, on the netting set's CVA.
+            const Real scale = std::abs(cpu.weighted_positive.value);
+            constexpr Real rel = test_support::kCpuGpuPriceRel;
+            for (std::size_t j = 0; j < r.trades.size(); ++j)
+            {
+                const TradeContribution &g = gpu.contributions[j], &e = cpu.contributions[j];
+                EXPECT_EQ(g.trade, e.trade);
+                EXPECT_NEAR(g.standalone_cva, e.standalone_cva, rel * scale) << "trade " << j;
+                EXPECT_NEAR(g.incremental_cva, e.incremental_cva, rel * scale) << "trade " << j;
+                EXPECT_NEAR(g.standalone_cva_error, e.standalone_cva_error, rel * scale) << "trade " << j;
+                EXPECT_NEAR(g.incremental_cva_error, e.incremental_cva_error, rel * scale) << "trade " << j;
+                if (c.collateralised)
+                    EXPECT_TRUE(std::isnan(g.marginal_cva));
+                else
+                {
+                    EXPECT_NEAR(g.marginal_cva, e.marginal_cva, rel * scale) << "trade " << j;
+                    EXPECT_NEAR(g.marginal_cva_error, e.marginal_cva_error, rel * scale) << "trade " << j;
+                }
+            }
+
+            // Asking for them leaves the netting set's own figures alone, to
+            // the bit.
+            NettingSetRequest alone = r;
+            alone.contributions = false;
+            const NettingSetExposure plain = engine.simulate_netting_set(launches, alone);
+            EXPECT_TRUE(plain.contributions.empty());
+            EXPECT_EQ(plain.statistics.discounted_ee, gpu.statistics.discounted_ee);
+            EXPECT_EQ(plain.weighted_positive.value, gpu.weighted_positive.value);
+            EXPECT_EQ(plain.weighted_positive.error, gpu.weighted_positive.error);
+
+            // The same bits on one launch or several, one card or two.
+            const auto same_bits = [&gpu](const NettingSetExposure &other)
+            {
+                ASSERT_EQ(other.contributions.size(), gpu.contributions.size());
+                for (std::size_t j = 0; j < gpu.contributions.size(); ++j)
+                {
+                    EXPECT_EQ(other.contributions[j].standalone_cva, gpu.contributions[j].standalone_cva);
+                    EXPECT_EQ(other.contributions[j].incremental_cva, gpu.contributions[j].incremental_cva);
+                    EXPECT_EQ(other.contributions[j].incremental_cva_error,
+                              gpu.contributions[j].incremental_cva_error);
+                    if (!std::isnan(gpu.contributions[j].marginal_cva))
+                    {
+                        EXPECT_EQ(other.contributions[j].marginal_cva, gpu.contributions[j].marginal_cva);
+                    }
+                }
+            };
+            same_bits(engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu), r));
+            if (gpu::device_count() >= 2)
+            {
+                const NettingSetExposure two = engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu, 2), r);
+                EXPECT_EQ(two.gpus, 2);
+                same_bits(two);
+            }
+        }
     }
 
     TEST_F(GpuExposureTest, WhatTheDeviceCannotValueStaysOnTheCpuAndSaysSo)
