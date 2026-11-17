@@ -434,6 +434,7 @@ def distribution(req: DistributionRequest) -> DistributionResponse:
     forward_smile = _smile_out(fs, tg[fs["date"]], None) if fs else None
 
     market_density = None
+    arbitrage: List[float] = []
     if m:
         market_density = []
         for i, (lo, hi) in enumerate(zip(r["hist_lo"], r["hist_hi"])):
@@ -444,6 +445,10 @@ def distribution(req: DistributionRequest) -> DistributionResponse:
             nb = len(r["hist_counts"][i])
             centres = [lo + (b + 0.5) * (hi - lo) / nb for b in range(nb)]
             forward = m.spot * math.exp((req.rate - m.dividend) * t)
+            if not simulation_market.is_density(slices, t, forward, centres):
+                arbitrage.append(t)
+                market_density.append(None)
+                continue
             d = simulation_market.density(slices, t, forward, centres)
             market_density.append(None if all(x is None for x in d) else d)
 

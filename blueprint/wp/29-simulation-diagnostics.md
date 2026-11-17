@@ -1,6 +1,6 @@
 # WP 29 — The simulation page as a model diagnostic
 
-Status: in progress. Depends on WP 08 (market data, stored option chains), WP 16
+Status: lots S1 to S4 done. Depends on WP 08 (market data, stored option chains), WP 16
 (the script models: local vol, Heston, SLV) and WP 28 (the page sits in the
 Learn space, and takes the shared underlying).
 
@@ -70,6 +70,11 @@ barrier on the same paths.
   surface's implied vols at the same dates and strikes, and the risk-neutral
   density of S_t by Breeden–Litzenberger, q(K) = e^(rT) d²C/dK², computed from
   the SVI total variance (analytic in k, no finite differences on noisy quotes).
+- The density is drawn only where the stored smile is one: g >= 0 (no
+  butterfly) and the digital P(S_T > K) in [0, 1] (no call spread), checked
+  at the histogram's bins; the dates that fail are listed in
+  `market.arbitrage_dates`. The SPY snapshot of 2026-11-16 has one: its
+  1.085y slice (rho = -0.999) implies P(S_T > K) = 1.09 at its lowest quote.
 - No comparison endpoint: the comparison tab sends two distribution requests
   with the same ticker, grid and seed. One route to test and to cache.
 - SABR simulates the forward to `ttm`: only its last date is an option on the

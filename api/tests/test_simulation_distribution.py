@@ -126,3 +126,18 @@ def test_inputs_are_checked():
         )
     with pytest.raises(ValidationError):
         DistributionRequest(model="black_scholes", spot=100.0, vol=0.2, n_paths=50_000)
+
+
+def test_a_smile_with_a_call_spread_arbitrage_is_not_a_density():
+    # rho at -1 and a steep left wing: P(S_T > K) above 1 at low strikes
+    bad = [
+        dict(ttm=t, a=0.0077 * t, b=1.42 * t, rho=-0.999, m=-0.468, sigma=0.1275)
+        for t in (1.0, 1.2)
+    ]
+    F = 100.0
+    strikes = [F * math.exp(-0.39 + 0.69 * i / 50) for i in range(51)]
+    assert not simulation_market.is_density(bad, 1.0, F, strikes)
+    flat = [
+        dict(ttm=t, a=0.04 * t, b=0.0, rho=0.0, m=0.0, sigma=0.1) for t in (1.0, 1.2)
+    ]
+    assert simulation_market.is_density(flat, 1.0, F, strikes)

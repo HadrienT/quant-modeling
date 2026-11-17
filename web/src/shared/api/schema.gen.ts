@@ -3377,6 +3377,11 @@ export interface components {
         };
         /** DistributionMarket */
         DistributionMarket: {
+            /**
+             * Arbitrage Dates
+             * @description Dates whose stored smile is not a density (butterfly or call-spread arbitrage): no market density is drawn there.
+             */
+            arbitrage_dates?: number[];
             /** Dividend */
             dividend: number;
             /**

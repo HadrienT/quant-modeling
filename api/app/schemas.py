@@ -1590,6 +1590,11 @@ class DistributionMarket(BaseModel):
         ..., description="Maturity of the first surface slice, in years."
     )
     last_slice: float
+    arbitrage_dates: List[float] = Field(
+        default_factory=list,
+        description="Dates whose stored smile is not a density (butterfly or "
+        "call-spread arbitrage): no market density is drawn there.",
+    )
 
 
 class DistributionResponse(BaseModel):

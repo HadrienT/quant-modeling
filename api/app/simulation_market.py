@@ -15,8 +15,12 @@ measured on, to draw the model against it.
       g(k) = (1 - k w' / (2w))^2 - (w'^2 / 4)(1/w + 1/4) + w'' / 2.
 
   The SVI derivatives are analytic, so there is no finite difference on noisy
-  quotes; g < 0 would be a butterfly arbitrage and is returned as such (a
-  negative density), not hidden.
+  quotes.
+- Whether that density is one: g >= 0 (no butterfly arbitrage) and the
+  digital P(S_T > K) = N(d_-) - phi(d_-) w' / (2 sqrt(w)) inside [0, 1] (no
+  call-spread arbitrage). A fit that fails either does not price a law, and
+  the page does not draw it (a degenerate slice, rho at -1, was seen to imply
+  P(S_T > K) = 1.09 at its lowest quote).
 
 Only where the market is quoted: T between the first and last surface slices
 (no extrapolation in time), k inside both bracketing slices' quoted bands
@@ -107,3 +111,30 @@ def density(
             g * math.exp(-0.5 * d_minus * d_minus) / (K * math.sqrt(2.0 * math.pi * w))
         )
     return out
+
+
+def is_density(
+    slices: Sequence[Slice], T: float, forward: float, strikes: Sequence[float]
+) -> bool:
+    """No butterfly and no call-spread arbitrage at these strikes (where
+    quoted): the density above is the law of S_T there."""
+    for K in strikes:
+        if K <= 0:
+            continue
+        k = math.log(K / forward)
+        ww = total_variance(slices, k, T)
+        if ww is None or ww[0] <= 0:
+            continue
+        w, dw, d2w = ww
+        sw = math.sqrt(w)
+        g = (
+            (1.0 - k * dw / (2.0 * w)) ** 2
+            - 0.25 * dw * dw * (1.0 / w + 0.25)
+            + 0.5 * d2w
+        )
+        d_minus = -k / sw - 0.5 * sw
+        phi = math.exp(-0.5 * d_minus * d_minus) / math.sqrt(2.0 * math.pi)
+        digital = 0.5 * math.erfc(-d_minus / math.sqrt(2.0)) - phi * dw / (2.0 * sw)
+        if g < -1e-9 or not -1e-6 <= digital <= 1.0 + 1e-6:
+            return False
+    return True

@@ -2915,6 +2915,14 @@
       },
       "DistributionMarket": {
         "properties": {
+          "arbitrage_dates": {
+            "description": "Dates whose stored smile is not a density (butterfly or call-spread arbitrage): no market density is drawn there.",
+            "items": {
+              "type": "number"
+            },
+            "title": "Arbitrage Dates",
+            "type": "array"
+          },
           "dividend": {
             "title": "Dividend",
             "type": "number"
