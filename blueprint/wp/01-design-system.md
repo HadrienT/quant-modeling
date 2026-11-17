@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [00](00-foundations.md) |
 | **Bloque** | 03 (dure), 05 et 06 (les moteurs de rendu lisent ces tokens) |
 | **Branche** | `web/01-design-system` |

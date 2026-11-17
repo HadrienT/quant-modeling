@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done. |
 | **Dépend de** | le schéma hybride existant (`engines/mc/rough_bergomi_hybrid.hpp`), la surface SVI du marché (`market_snapshot`), Levenberg-Marquardt |
 | **Débloque** | le chantier 5 option A (calibration neuronale du rough Bergomi) ; rough Bergomi comme modèle de script |
 | **Branche** | `feat/rough-bergomi-calibration` |

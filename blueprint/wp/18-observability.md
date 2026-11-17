@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done (lots 18a, 18b, 18d, 18e; production sends to `quant-platform`). Set aside: Avro encoding of the events (18g, optional: the sink accepts JSON). |
 | **Dépend de** | le réseau `dataplatform` et le déploiement auto-hébergé ([lot 14](14-deploy-selfhost.md)) ; pour le [lot 18e](#lot-18e--reproductibilité-et-replay), l'API de pricing telle qu'elle est (la graine MC est déjà dans les schémas) |
 | **Bloque** | l'auditabilité des valorisations du capstone xVA ([`etc/roadmap.md`](../../etc/roadmap.md) §4d) ; la fin des replis en direct de `vol_surface.py` (on ne peut pas prouver qu'ils ont disparu sans les mesurer) |
 | **Branches** | `core/observability` dans ce dépôt ; un dépôt séparé `quant-platform` pour l'infrastructure (voir [§1](#1-où-ça-vit--deux-dépôts-un-contrat)) |

@@ -44,7 +44,7 @@ describe("product docs", () => {
 		}
 	});
 
-	it("every KaTeX formula renders without throwing (WP 99 acceptance)", () => {
+	it("every KaTeX formula renders without throwing (doc cards acceptance)", () => {
 		for (const [key, doc] of Object.entries(PRODUCT_DOCS)) {
 			const payoffs = Array.isArray(doc!.payoff) ? doc!.payoff : [doc!.payoff];
 			for (const tex of payoffs) {

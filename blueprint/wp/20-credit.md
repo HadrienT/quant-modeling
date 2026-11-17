@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done. |
 | **Dépend de** | chantier 0 de la [roadmap](../../etc/roadmap.md) (bootstrap de courbe), [08](08-market-data.md) (page market, onglet rates) |
 | **Débloque** | chantier 4c–4d (exposition, CVA) : la courbe de survie de la contrepartie |
 | **Branches** | `feat/credit-curves` (ici), `feat/credit-and-sec-fundamentals` (`~/data-ingest`) |

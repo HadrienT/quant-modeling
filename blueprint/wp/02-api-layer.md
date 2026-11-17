@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [00](00-foundations.md), et côté serveur des décisions listées au §6 |
 | **Bloque** | 03 (douce), 04, 07, 08, 09, 11, 14 |
 | **Branche** | `web/02-api-layer` |

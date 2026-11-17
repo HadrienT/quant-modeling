@@ -144,6 +144,12 @@ The project's "JIRA" is the repository's **GitHub Issues**. `gh` is authenticate
   an issue.
 - Large pieces of **design** live in `blueprint/wp/*.md`; the issue points to them, it does
   not replace them.
+- **Every work package carries a status**, as the first row of its header table
+  (`| **Status** | ... |`) or a `**Status:**` line under its title: *Done*, *In progress*
+  or *Set aside*, then what was delivered, what was set aside or became obsolete and why,
+  and the issue that holds what remains. Update it in the same PR as the lot that changes
+  it, so that the work packages alone say what is done and what was dropped. A work package
+  that no longer serves anything is deleted, not left stale.
 - `blueprint/README.md` holds the dependency graph between work packages: consult it before
   starting a work package, to check that its prerequisites are done.
 

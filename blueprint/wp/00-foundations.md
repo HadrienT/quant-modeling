@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | rien |
 | **Bloque** | 01, 02, 12 — donc tout |
 | **Branche** | `web/00-foundations` |

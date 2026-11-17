@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [03](03-app-shell.md), [06](06-viz-2d.md), [07](07-pricing-workbench.md) |
 | **Bloque** | rien |
 | **Branche** | `web/10-strategies` |

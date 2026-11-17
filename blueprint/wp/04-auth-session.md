@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [03](03-app-shell.md), [02](02-api-layer.md) |
 | **Bloque** | 09 (un portefeuille serveur exige une session) |
 | **Branche** | `web/04-auth-session` |

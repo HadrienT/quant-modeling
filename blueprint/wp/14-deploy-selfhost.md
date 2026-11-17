@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [13](13-perf-budget.md), [02](02-api-layer.md) |
 | **Bloque** | rien |
 | **Branche** | `web/14-deploy` |

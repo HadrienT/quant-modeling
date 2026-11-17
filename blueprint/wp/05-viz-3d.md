@@ -2,6 +2,7 @@
 
 | | |
 |---|---|
+| **Status** | Done: merged into `main` with the front-end rewrite (WP 00 to 14). |
 | **Dépend de** | [01](01-design-system.md) (douce : seulement les tokens de couleur) |
 | **Bloque** | [08](08-market-data.md), [15](15-future-quant-surfaces.md) |
 | **Branche** | `web/05-viz-3d` |
