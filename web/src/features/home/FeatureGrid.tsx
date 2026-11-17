@@ -3,6 +3,7 @@ import {
 	BookOpen,
 	Braces,
 	Briefcase,
+	Building2,
 	Calculator,
 	ChartCandlestick,
 	EyeOff,
@@ -21,6 +22,7 @@ type Feature = {
 		| "/price"
 		| "/scripting"
 		| "/market"
+		| "/credit"
 		| "/xva"
 		| "/simulation"
 		| "/portfolio"
@@ -49,6 +51,12 @@ const FEATURES: Feature[] = [
 		title: "Market",
 		icon: ChartCandlestick,
 		text: "Prices, rate curves, FX, and implied and local volatility surfaces built from option chains in the site's own database.",
+	},
+	{
+		to: "/credit",
+		title: "Credit",
+		icon: Building2,
+		text: "Credit spreads by rating, the hazard rates they imply, and company statements with a structural default model.",
 	},
 	{
 		to: "/xva",
@@ -89,22 +97,39 @@ const FEATURES: Feature[] = [
 ];
 
 /**
- * The tiles follow the admin panel like the navigation does: a page hidden
- * from visitors has no tile for them, and an administrator sees its tile
- * faded and labelled. Nothing renders when every page is hidden.
+ * The tiles, by space (WP 28), follow the admin panel like the navigation
+ * does: a page hidden from visitors has no tile for them, and an
+ * administrator sees its tile faded and labelled. A space with no page left
+ * does not render.
  */
 export function FeatureGrid() {
-	const { isShown, isHidden } = useNavPages();
-	const features = FEATURES.filter((f) => isShown(f.to));
-	if (features.length === 0) return null;
+	const { groups, isHidden } = useNavPages();
+	const spaces = groups
+		.map((g) => ({
+			...g,
+			features: g.pages.flatMap((p) => FEATURES.filter((f) => f.to === p.path)),
+		}))
+		.filter((g) => g.features.length > 0);
+	if (spaces.length === 0) return null;
 	return (
-		<section className="flex flex-col gap-4">
+		<section className="flex flex-col gap-6">
 			<h2 className="text-lg font-semibold text-ink">What you can do</h2>
-			<ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-				{features.map((f) => (
-					<FeatureTile key={f.to} feature={f} hidden={isHidden(f.to)} />
-				))}
-			</ul>
+			{spaces.map((g) => (
+				<div
+					key={g.key}
+					className="grid grid-cols-1 gap-3 lg:grid-cols-[160px_1fr]"
+				>
+					<div className="flex flex-col gap-0.5">
+						<h3 className="text-sm font-semibold text-ink">{g.label}</h3>
+						<p className="text-xs text-ink-muted">{g.question}</p>
+					</div>
+					<ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+						{g.features.map((f) => (
+							<FeatureTile key={f.to} feature={f} hidden={isHidden(f.to)} />
+						))}
+					</ul>
+				</div>
+			))}
 		</section>
 	);
 }

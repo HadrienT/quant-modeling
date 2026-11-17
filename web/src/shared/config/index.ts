@@ -54,4 +54,4 @@ export function getConfig(): AppConfig {
 	return cache ?? FALLBACK;
 }
 export { SITE } from "./site";
-export { NAV_PAGES, type NavPage } from "./pages";
+export { NAV_GROUPS, NAV_PAGES, PAGE_HINTS, type NavPage } from "./pages";

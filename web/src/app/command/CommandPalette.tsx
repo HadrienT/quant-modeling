@@ -8,7 +8,7 @@ import { useNavPages } from "@/shared/session";
 import { copyText, toast } from "@/shared/ui";
 
 /**
- * ⌘K palette (WP 03 §3) — the way to move fast in a seven-screen tool.
+ * ⌘K palette (WP 03 §3) — the way to move fast across the four spaces (WP 28).
  * Lazy-loaded (it carries a search index). Ticker / product entries are
  * registered by their features later.
  */
@@ -21,7 +21,7 @@ export default function CommandPalette({
 }) {
 	const navigate = useNavigate();
 	const theme = useTheme();
-	const { pages } = useNavPages();
+	const { groups } = useNavPages();
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -57,20 +57,27 @@ export default function CommandPalette({
 								Nothing matches.
 							</Command.Empty>
 
-							<Command.Group
-								heading="Navigate"
-								className="px-1.5 py-1 text-2xs tracking-wide text-ink-muted uppercase"
-							>
-								{pages.map((r) => (
-									<Item
-										key={r.path}
-										onSelect={() => run(() => navigate({ to: r.path }))}
-									>
-										<ArrowRight className="size-3.5" />
-										{r.label}
-									</Item>
-								))}
-							</Command.Group>
+							{groups.map((g) => (
+								<Command.Group
+									key={g.key}
+									heading={g.label}
+									className="px-1.5 py-1 text-2xs tracking-wide text-ink-muted uppercase"
+								>
+									{g.pages.map((r) => (
+										<Item
+											key={r.path}
+											value={`${g.label} ${r.label} ${r.hint}`}
+											onSelect={() => run(() => navigate({ to: r.path }))}
+										>
+											<ArrowRight className="size-3.5" />
+											{r.label}
+											<span className="ml-auto truncate text-xs text-ink-muted normal-case">
+												{r.hint}
+											</span>
+										</Item>
+									))}
+								</Command.Group>
+							))}
 
 							<Command.Group
 								heading="Actions"
@@ -112,14 +119,17 @@ export default function CommandPalette({
 function Item({
 	children,
 	onSelect,
+	value,
 }: {
 	children: React.ReactNode;
 	onSelect: () => void;
+	value?: string;
 }) {
 	return (
 		<Command.Item
+			value={value}
 			onSelect={onSelect}
-			className="flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm text-ink-secondary data-[selected=true]:bg-surface-raised data-[selected=true]:text-ink"
+			className="flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-1.5 text-sm tracking-normal text-ink-secondary normal-case data-[selected=true]:bg-surface-raised data-[selected=true]:text-ink"
 		>
 			{children}
 		</Command.Item>

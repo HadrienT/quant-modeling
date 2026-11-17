@@ -1,8 +1,19 @@
 import { useHiddenPages } from "@/shared/api";
-import { NAV_PAGES, type NavPage } from "@/shared/config";
+import {
+	NAV_GROUPS,
+	NAV_PAGES,
+	PAGE_HINTS,
+	type NavPage,
+} from "@/shared/config";
 import { useMe } from "./session";
 
-export type VisiblePage = NavPage & { hidden: boolean };
+export type VisiblePage = NavPage & { hidden: boolean; hint: string };
+export type VisibleGroup = {
+	key: string;
+	label: string;
+	question: string;
+	pages: VisiblePage[];
+};
 
 /**
  * The navigation as this visitor sees it. A visitor never sees a page an
@@ -17,10 +28,19 @@ export function useNavPages() {
 	const isAdmin = me.data?.is_admin === true;
 	const pages: VisiblePage[] = NAV_PAGES.map((p) => ({
 		...p,
+		hint: PAGE_HINTS[p.path],
 		hidden: hidden.has(p.path),
 	})).filter((p) => isAdmin || !p.hidden);
+	// A space with no page left for this visitor does not show.
+	const groups: VisibleGroup[] = NAV_GROUPS.map((g) => ({
+		key: g.key,
+		label: g.label,
+		question: g.question,
+		pages: g.pages.flatMap((path) => pages.filter((p) => p.path === path)),
+	})).filter((g) => g.pages.length > 0);
 	return {
 		pages,
+		groups,
 		isAdmin,
 		isHidden: (path: string) => hidden.has(path),
 		/** whether a link to this page should show to this visitor */

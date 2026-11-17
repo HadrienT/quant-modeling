@@ -68,6 +68,7 @@ describe("home page links to hidden pages", () => {
 			"/price",
 			"/scripting",
 			"/market",
+			"/credit",
 			"/xva",
 			"/simulation",
 			"/portfolio",
