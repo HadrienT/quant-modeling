@@ -114,8 +114,10 @@ minutes, pytest 2.5, and each run rebuilds), and the CI runs everything anyway.
 
 1. **While developing**: `scripts/test_affected.py`. From the files changed
    against `origin/main` it runs the C++ tests whose sources depend on them
-   (Ninja's recorded dependencies, plus the header named like a changed `.cpp`),
-   the GPU tests that depend on them (all of them when the change reaches
+   (Ninja's recorded dependencies, plus the header named like a changed `.cpp`)
+   or read them at run time (the script library and `tests/data`, found by the
+   `QM_*_DIR` definitions `CMakeLists.txt` hands the tests), the GPU tests that
+   depend on them (all of them when the change reaches
    `src/gpu/` or the compiled-script kernel), the API tests that import a changed
    module (all of them when none does, as for a router), and the front end's
    typecheck, lint and vitest when `web/` changed. A build file change runs the
