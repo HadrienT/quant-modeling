@@ -1910,4 +1910,46 @@ the same prices and deltas on both):
 The local-vol risks were over the API's 20 s. What the GPU requests spend
 now is mostly the pilot: 50 000 paths simulated and run on one CPU thread.
 
-**Left.** The pilot (and the regression) on a pool or on the device.
+**Left.** The pilot (and the regression) on a pool or on the device: §17.
+
+## 17. The LSM pilot on the request's threads (2026-11-17)
+
+With the pricing on the GPU (§16), the exercise rule's fit became most of a
+request, and it ran on one thread. Measured on one core (a monthly Bermudan
+put, 50 000 pilot paths): under Black-Scholes the draws and steps take
+0.03 s, the script's runs 0.17 s, the regression stage 0.2 s; under local
+vol at 252 steps a year the draws and steps take 1.7 s of a 2.0 s fit.
+
+**The pilot's paths on a pool.** `fit_exercise_policy(..., pool)`: chunks of
+paths, each worker with its own model clone, scenario, Philox source and
+pilot state (`ScriptedProduct::make_pilot_state`: the machine's buffers and
+scratch, or its own copy of the tree evaluator); path p keeps its draws (the
+seed's complement, at path p) and writes slot p, so the rule is the same
+bits on any number of threads (`Lsm.ThePilotOnAPoolFitsTheSameRule`:
+compiled and tree, hard and fuzzy, a pilot of 10 007 paths in unequal
+chunks). The binding gives it the request's threads, for prices and risks.
+
+**The regression stage without copies.** The QRs themselves cost 0.06 s
+for 12 dates of 25 000 rows; the rest was copying every member's regressors
+into vectors of vectors, twice a date. The rows are now read where the pilot
+left them and the fitted ones packed once, row-major
+(`fit_exercise_regression(const double *rows, m, n, ...)`, the same
+standardisation and operations in the same order), and the monomials are
+evaluated without allocating: the rule's bits do not move.
+
+Fit of the monthly Bermudan put (best of three; the rule identical to the
+bit on every line):
+
+| threads | Black-Scholes | local vol 252 steps/yr |
+|---|---|---|
+| 1 (before) | 0.39 s | 1.73 s |
+| 1 | 0.38 s | 1.73 s |
+| 2 (production) | 0.30 s | 0.99 s |
+| 4 | 0.25 s | 0.60 s |
+| 16 | 0.18 s | 0.26 s |
+
+What does not scale under Black-Scholes is the pilot's bookkeeping (a path
+of 12 steps allocates its decisions' vectors) and the regression, now
+0.12 s. Under local vol on two CPUs the rest is the steps themselves: the
+next lever is to simulate the pilot's paths on the GPU and run only the
+script's branches on the host (0.17 s).

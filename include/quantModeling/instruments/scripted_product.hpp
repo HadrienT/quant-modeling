@@ -489,36 +489,8 @@ namespace quantModeling
         ExercisePilotPath exercise_pilot(const Scenario<T> &path) const
         {
             if (compiled_)
-                return exercise_pilot_compiled(path);
-            using Eval = scripting::Evaluator<T>;
-            ExercisePilotPath out;
-            std::vector<typename Eval::ExerciseObservation> seen;
-            // The never-exercised run, keeping the state at the start of
-            // every event: a branch exercised at event e is the same path up
-            // to e, so it restarts there instead of from the first event.
-            std::vector<typename Eval::State> at_start;
-            at_start.reserve(events_.size());
-            evaluator_->set_exercise_never();
-            evaluator_->record_exercises(&seen);
-            evaluator_->initialize();
-            for (std::size_t i = 0; i < events_.size(); ++i)
-            {
-                at_start.push_back(evaluator_->state());
-                run_event(path, i);
-            }
-            out.never = static_cast<double>(evaluator_->payoff());
-            evaluator_->record_exercises(nullptr);
-            for (auto &obs : seen)
-            {
-                evaluator_->set_exercise_at(obs.event);
-                evaluator_->restore(at_start[obs.event]);
-                for (std::size_t i = obs.event; i < events_.size(); ++i)
-                    run_event(path, i);
-                out.opportunities.push_back(
-                    {obs.event, std::move(obs.regressors), static_cast<double>(evaluator_->payoff())});
-            }
-            evaluator_->set_exercise_policy(policy_.empty() ? nullptr : &policy_);
-            return out;
+                return exercise_pilot_compiled(path, buffers_, pilot_);
+            return exercise_pilot_tree(path, *evaluator_);
         }
 
         /// The compiled script (empty when ScriptSettings::bytecode is off).
@@ -579,6 +551,46 @@ namespace quantModeling
             std::vector<T> vars, stack, degrees, if_slots;
             std::vector<int> if_mode;
         };
+
+        /// The compiled pilot's scratch: the variables and the payoff at the
+        /// start of each event, and the decisions the never-exercised run
+        /// reached.
+        struct PilotScratch
+        {
+            std::vector<T> vars, payoffs;
+            std::vector<std::int32_t> log_events;
+            std::vector<double> log_regressors;
+        };
+
+        /// What one thread of the pilot needs (fit_exercise_policy on a
+        /// pool): the machine's buffers and scratch, or its own copy of the
+        /// tree evaluator.
+        struct PilotState
+        {
+            MachineBuffers buffers;
+            PilotScratch scratch;
+            std::unique_ptr<scripting::Evaluator<T>> evaluator;
+        };
+
+        std::unique_ptr<PilotState> make_pilot_state() const
+        {
+            auto state = std::make_unique<PilotState>();
+            if (compiled_)
+                state->buffers = buffers_;
+            else if (const auto *fuzzy = dynamic_cast<const scripting::FuzzyEvaluator<T> *>(evaluator_.get()))
+                state->evaluator = std::make_unique<scripting::FuzzyEvaluator<T>>(*fuzzy);
+            else
+                state->evaluator = std::make_unique<scripting::Evaluator<T>>(*evaluator_);
+            return state;
+        }
+
+        /// exercise_pilot on a thread's own state: the same values.
+        ExercisePilotPath exercise_pilot(const Scenario<T> &path, PilotState &state) const
+        {
+            if (compiled_)
+                return exercise_pilot_compiled(path, state.buffers, state.scratch);
+            return exercise_pilot_tree(path, *state.evaluator);
+        }
 
         /// The tree evaluator's per-thread state (bytecode off, or an early
         /// exercise the bytecode does not take): a copy of the product's evaluator -- its variables,
@@ -760,16 +772,14 @@ namespace quantModeling
         /// the payoff at the start of every event, then one run per decision
         /// restarted there with the right exercised. The same values, to the
         /// bit.
-        ExercisePilotPath exercise_pilot_compiled(const Scenario<T> &path) const
+        ExercisePilotPath exercise_pilot_compiled(const Scenario<T> &path, MachineBuffers &b, PilotScratch &w) const
         {
             ExercisePilotPath out;
             const std::size_t n_events = events_.size(), n_vars = static_cast<std::size_t>(program_.n_vars);
-            PilotScratch &w = pilot_;
             w.vars.resize(n_events * n_vars);
             w.payoffs.resize(n_events);
             w.log_events.resize(n_events + 1);
             w.log_regressors.resize((n_events + 1) * static_cast<std::size_t>(scripting::kMaxExerciseRegressors));
-            MachineBuffers &b = buffers_;
             if (baseline_.empty())
                 std::fill(b.vars.begin(), b.vars.end(), T(0));
             else
@@ -814,6 +824,41 @@ namespace quantModeling
                 out.opportunities.push_back(
                     {event, std::vector<double>(r, r + exercise_regressors_), static_cast<double>(m.payoff)});
             }
+            return out;
+        }
+
+        /// The pilot on the tree evaluator `ev`: the script run once without
+        /// exercising, keeping the state at the start of every event (a
+        /// branch exercised at event e is the same path up to e, so it
+        /// restarts there), then once per decision reached. Leaves `ev`
+        /// under the product's rule.
+        ExercisePilotPath exercise_pilot_tree(const Scenario<T> &path, scripting::Evaluator<T> &ev) const
+        {
+            using Eval = scripting::Evaluator<T>;
+            ExercisePilotPath out;
+            std::vector<typename Eval::ExerciseObservation> seen;
+            std::vector<typename Eval::State> at_start;
+            at_start.reserve(events_.size());
+            ev.set_exercise_never();
+            ev.record_exercises(&seen);
+            ev.initialize();
+            for (std::size_t i = 0; i < events_.size(); ++i)
+            {
+                at_start.push_back(ev.state());
+                run_event(path, i, ev);
+            }
+            out.never = static_cast<double>(ev.payoff());
+            ev.record_exercises(nullptr);
+            for (auto &obs : seen)
+            {
+                ev.set_exercise_at(obs.event);
+                ev.restore(at_start[obs.event]);
+                for (std::size_t i = obs.event; i < events_.size(); ++i)
+                    run_event(path, i, ev);
+                out.opportunities.push_back(
+                    {obs.event, std::move(obs.regressors), static_cast<double>(ev.payoff())});
+            }
+            ev.set_exercise_policy(policy_.empty() ? nullptr : &policy_);
             return out;
         }
 
@@ -1014,14 +1059,6 @@ namespace quantModeling
         // The machine's per-path buffers for payoffs(); payoffs_with_state()
         // runs on a thread's own copy (make_payoff_state()).
         mutable MachineBuffers buffers_;
-        // The compiled pilot's: the variables and the payoff at the start of
-        // each event, and the decisions the never-exercised run reached.
-        struct PilotScratch
-        {
-            std::vector<T> vars, payoffs;
-            std::vector<std::int32_t> log_events;
-            std::vector<double> log_regressors;
-        };
         mutable PilotScratch pilot_;
         bool has_exercise_ = false;
         scripting::ExercisePolicy policy_;

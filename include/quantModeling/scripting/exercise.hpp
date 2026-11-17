@@ -33,6 +33,7 @@ namespace quantModeling::scripting
         /// β · φ(z): the estimated gain of exercising now over continuing,
         /// in deflated currency, from the holder's side.
         double gain(const std::vector<double> &regressors) const;
+        double gain(const double *regressors, std::size_t n) const;
     };
 
     /// Monomials of total degree ≤ d in n variables, as exponent vectors, in
@@ -69,6 +70,10 @@ namespace quantModeling::scripting
      */
     ExerciseRegression fit_exercise_regression(const std::vector<std::vector<double>> &rows,
                                                const std::vector<double> &targets, int degree);
+    /// The same on m rows of n regressors, row-major, one after the other
+    /// (no row copied): the same coefficients, to the bit.
+    ExerciseRegression fit_exercise_regression(const double *rows, std::size_t m, std::size_t n,
+                                               const double *targets, int degree);
 
     /**
      * @brief The differential regression (Huge & Savine, Differential
