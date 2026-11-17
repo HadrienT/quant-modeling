@@ -4,7 +4,9 @@
 Three levels (CLAUDE.md, "Tests: three levels"):
 
   level 1, while developing (default): the C++ tests whose sources depend on a
-      changed file (Ninja's recorded dependencies), the GPU tests only when the
+      changed file (Ninja's recorded dependencies) or that read a changed data
+      file at run time (a directory CMakeLists.txt hands them in a *_DIR
+      definition: the script library, tests/data), the GPU tests only when the
       change reaches them (all of them when it reaches the CUDA code), the API
       tests that import a changed module (all of them when none does), and the
       front end's typecheck, lint and vitest when web/ changed;
@@ -36,6 +38,37 @@ TEST_RE = re.compile(r"^\s*TEST(?:_F|_P)?\(\s*(\w+)\s*,", re.MULTILINE)
 
 # A change to these files can affect any C++ test: run them all.
 CPP_GLOBAL = ("CMakeLists.txt", "CMakePresets.json", "vcpkg.json", "cmake/")
+DATA_DIR_RE = re.compile(r'(QM_\w+_DIR)="\$\{PROJECT_SOURCE_DIR\}/([^"]+)"')
+
+
+def data_dirs() -> dict[str, str]:
+    """The directories the C++ tests read at run time, by the definition
+    CMakeLists.txt passes them in (QM_PRODUCT_LIBRARY_DIR -> the script
+    library): no compiler dependency records them, so a change there is
+    found by the macro's name instead."""
+    text = (ROOT / "CMakeLists.txt").read_text()
+    return {
+        m.group(1): m.group(2).rstrip("/") + "/" for m in DATA_DIR_RE.finditer(text)
+    }
+
+
+def data_readers(changed: list[str]) -> set[str]:
+    """The files under tests/ (sources and their helper headers) that name
+    the definition of a directory holding a changed file."""
+    macros = [
+        macro
+        for macro, folder in data_dirs().items()
+        if any(c.startswith(folder) for c in changed)
+    ]
+    if not macros:
+        return set()
+    readers = set()
+    for f in (ROOT / "tests").rglob("*"):
+        if f.suffix in (".cpp", ".hpp", ".h", ".cu") and f.is_file():
+            text = f.read_text(errors="replace")
+            if any(m in text for m in macros):
+                readers.add(str(f))
+    return readers
 
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
@@ -96,9 +129,15 @@ def affected_tests(
     for c in changed:
         if c.startswith("src/") and c.endswith((".cpp", ".cu")):
             absolute |= paired_headers(c)
+    # A test that reads a changed data file, itself or through a header.
+    absolute |= data_readers(changed)
     picked = []
     for src, obj in sorted(test_objects(build, target_dir).items()):
-        if src in changed or ninja_deps(build, obj) & absolute:
+        if (
+            src in changed
+            or str(ROOT / src) in absolute
+            or ninja_deps(build, obj) & absolute
+        ):
             picked.append(src)
     return picked, False
 
@@ -189,10 +228,11 @@ def main() -> int:
 
     build = ROOT / args.build_dir
     changed = sorted(args.files) if args.files else changed_files(args.base, args.rng)
+    data = tuple(data_dirs().values())
     cpp_changed = [
         c
         for c in changed
-        if c.startswith(("include/", "src/", "tests/", "cmake/"))
+        if c.startswith(("include/", "src/", "tests/", "cmake/") + data)
         or c in ("CMakeLists.txt", "CMakePresets.json", "vcpkg.json")
     ]
     print(
