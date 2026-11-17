@@ -359,5 +359,71 @@ int main(int argc, char **argv)
                         report.fba, report.fba_error, report.fca + report.fba, report.fva_error, report.colva,
                         report.colva_error);
     }
+
+    // #281 step 4: initial margin per path, the same netting set. The host
+    // fits the margin on the cube it reads; the card on a pilot of its own.
+    constexpr double kMarginSpread = 0.009;
+    std::printf("\nUnder a dynamic initial margin (FCA, FBA, ColVA and MVA too), %zu paths:\n", contribution_paths);
+    qm::XvaReport margined_report;
+    {
+        qm::ThreadPool pool;
+        pool.start(static_cast<std::size_t>(cpu_threads - 1));
+        qm::ExposureSimulationSettings s = settings(contribution_paths, qm::ComputeDevice::Gpu);
+        s.grid.margin_period_of_risk = csa().margin_period_of_risk;
+        s.keep_cashflows = true;
+        qm::XvaInputs in;
+        in.csa = csa();
+        in.counterparty = kCounterparty;
+        in.own = kOwn;
+        in.lgd_counterparty = kLgd;
+        in.lgd_own = kLgd;
+        in.borrowing_spread = kBorrowing;
+        in.lending_spread = kLending;
+        in.collateral_spread = kCollateralSpread;
+        in.initial_margin = qm::DimSettings{};
+        in.initial_margin_spread = kMarginSpread;
+        double cube_secs = 0.0;
+        const double secs = seconds(
+            [&]
+            {
+                qm::ExposurePaths cube;
+                cube_secs = seconds([&]
+                                    { cube = engine.simulate(s); });
+                margined_report = qm::xva_report(cube, in, &pool);
+            });
+        pool.stop();
+        std::printf("  %-44s %8.3f s   (cube %.3f s, xva_report on %d threads %.3f s)\n",
+                    "1 V100 cube + host xva_report", secs, cube_secs, cpu_threads, secs - cube_secs);
+        std::printf("    host: CVA %.2f (%.2f)  MVA %.2f (%.2f)  IM today %.0f\n", margined_report.cva.value,
+                    margined_report.cva.error, margined_report.mva, margined_report.mva_error,
+                    margined_report.initial_margin_today);
+    }
+    qm::NettingSetRequest margined = running;
+    margined.contributions = false;
+    margined.margin_weights = [](const std::vector<qm::Time> &times, std::vector<qm::Real> &on_margin)
+    { on_margin = qm::running_cost_weights(times, kCounterparty, kOwn, kMarginSpread); };
+    qm::ThreadPool fit_pool;
+    fit_pool.start(static_cast<std::size_t>(cpu_threads - 1));
+    for (int g = 1; g <= std::min(gpus, 2); ++g)
+    {
+        qm::NettingSetExposure out;
+        double fit_secs = 0.0;
+        const double secs = seconds(
+            [&]
+            {
+                const qm::ExposureSimulationSettings s = settings(contribution_paths, qm::ComputeDevice::Gpu, g);
+                fit_secs = seconds([&]
+                                   { margined.margin_model = engine.fit_initial_margin(s, csa(), {}, {}, 0, &fit_pool); });
+                out = engine.simulate_netting_set(s, margined);
+            });
+        std::printf("  %d V100, %-35s %8.3f s   (pilot fit %.3f s, %d threads)\n", g, "pilot fit + reduced on the card(s)",
+                    secs, fit_secs, cpu_threads);
+        if (g == 1)
+            std::printf("    card: CVA %.2f (%.2f)  MVA %.2f (%.2f)  IM today %.0f  (another fit of the margin: "
+                        "a gap of a few errors is expected)\n",
+                        out.weighted_positive.value, out.weighted_positive.error, out.weighted_margin.value,
+                        out.weighted_margin.error, out.initial_margin_today);
+    }
+    fit_pool.stop();
     return 0;
 }

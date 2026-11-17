@@ -9,6 +9,7 @@
 #include "quantModeling/engines/xva/exposure_program.hpp"
 #include "quantModeling/gpu/device.hpp"
 #include "quantModeling/risk/collateral_path.hpp"
+#include "quantModeling/risk/initial_margin_path.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 
 /**
@@ -166,6 +167,20 @@ namespace quantModeling::gpu
          * skip them.
          */
         std::vector<Real> funding_positive_weights, funding_negative_weights, collateral_weights;
+        /**
+         * @brief Initial margin per path (#281 step 4, lot G8): a dynamic
+         *        initial margin fitted on the host, evaluated on each path
+         *        from the netting set's value at the lagged date
+         *        (initial_margin_at()), received and posted alike. One date
+         *        per reporting date, on the same grid dates. Needs the
+         *        collateral, and excludes the margin profiles above.
+         */
+        bool dynamic_margin = false;
+        InitialMarginTable margin_model;
+        /// With `dynamic_margin`: weights m_r of the per-path sum
+        /// Σ_r m_r D IM -- with running_cost_weights() at FS_B - s_IM, the
+        /// path's MVA. Empty for zeros.
+        std::vector<Real> margin_weights;
     };
 
     /// One device's paths at one date, sorted by value.
@@ -197,6 +212,11 @@ namespace quantModeling::gpu
         ExposureDateStats funding;
         /// With the running-cost weights: `positive` is the collateral sum.
         ExposureDateStats collateral;
+        /// With `dynamic_margin`, per reporting date: `positive` holds the
+        /// statistics of D IM, the discounted margin.
+        std::vector<ExposureDateStats> margin_dates;
+        /// With `dynamic_margin`: `positive` is the margin sum (the MVA).
+        ExposureDateStats margin;
         int gpus = 0;
     };
 

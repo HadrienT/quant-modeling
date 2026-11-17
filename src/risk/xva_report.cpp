@@ -371,7 +371,7 @@ namespace quantModeling
                 settings.im_today = paths.simm_today.total();
             }
             const DynamicInitialMargin model =
-                DynamicInitialMargin::fit(paths, in.csa->margin_period_of_risk, trades, settings);
+                DynamicInitialMargin::fit(paths, in.csa->margin_period_of_risk, trades, settings, pool);
             // The factor the shares of each trade are computed with.
             margin_scaling = model.scaling();
             margin = in.margin_model == XvaInputs::MarginModel::SimmPerPath

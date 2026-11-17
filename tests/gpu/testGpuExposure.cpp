@@ -548,6 +548,94 @@ namespace quantModeling
         }
     }
 
+    // #281 step 4 (lot G8): the dynamic initial margin evaluated on every
+    // path in the kernel, held to the CPU's DynamicInitialMargin::margin()
+    // on the cube, the same model on both sides.
+    TEST_F(GpuExposureTest, TheInitialMarginOfEveryPathIsTheCpusModel)
+    {
+        const HullWhiteCurveModel m = model();
+        HullWhiteExposureEngine engine(m);
+        fill(engine, m);
+        const std::size_t paths = 2 * 2048 + 999;
+        const CreditCurve counterparty(0.02), own(0.01);
+        for (const MarginPeriodCashflows cashflows : {MarginPeriodCashflows::Paid, MarginPeriodCashflows::OnlyBankPays})
+        {
+            NettingSetRequest r = request(true, cashflows);
+            r.trades = {0, 2, 3, 1};
+            DimSettings dim;
+            dim.im_today = 4e5;
+            r.margin_model =
+                engine.fit_initial_margin(settings(paths, ComputeDevice::Cpu), *r.csa, r.trades, dim, 3000);
+            r.margin_weights = [&](const std::vector<Time> &times, std::vector<Real> &on_margin)
+            { on_margin = running_cost_weights(times, counterparty, own, 0.009); };
+            r.running_weights = [&](const std::vector<Time> &times, std::vector<Real> &funding_positive,
+                                    std::vector<Real> &funding_negative, std::vector<Real> &collateral)
+            {
+                funding_positive = running_cost_weights(times, counterparty, own, 0.012);
+                funding_negative = running_cost_weights(times, counterparty, own, 0.007);
+                collateral = running_cost_weights(times, counterparty, own, 0.003);
+            };
+
+            const NettingSetExposure cpu = engine.simulate_netting_set(settings(paths, ComputeDevice::Cpu), r);
+            ExposureSimulationSettings launches = settings(paths, ComputeDevice::Gpu);
+            launches.gpu_blocks_per_launch = 1; // several launches
+            const NettingSetExposure gpu = engine.simulate_netting_set(launches, r);
+            ASSERT_EQ(gpu.device, "gpu") << gpu.device_note;
+            expect_same_profiles(gpu, cpu);
+
+            constexpr Real rel = test_support::kCpuGpuPriceRel;
+            ASSERT_EQ(gpu.discounted_expected_initial_margin.size(), cpu.discounted_expected_initial_margin.size());
+            for (std::size_t i = 0; i < cpu.discounted_expected_initial_margin.size(); ++i)
+            {
+                const Real scale = cpu.discounted_expected_initial_margin[i];
+                EXPECT_NEAR(gpu.discounted_expected_initial_margin[i], scale, rel * scale) << "date " << i;
+                EXPECT_NEAR(gpu.discounted_expected_initial_margin_error[i],
+                            cpu.discounted_expected_initial_margin_error[i], rel * scale)
+                    << "date " << i;
+                EXPECT_NEAR(gpu.expected_initial_margin[i], cpu.expected_initial_margin[i],
+                            rel * cpu.expected_initial_margin[i])
+                    << "date " << i;
+            }
+            EXPECT_EQ(gpu.initial_margin_today, cpu.initial_margin_today);
+            const Real mva = std::abs(cpu.weighted_margin.value);
+            EXPECT_NEAR(gpu.weighted_margin.value, cpu.weighted_margin.value, rel * mva);
+            EXPECT_NEAR(gpu.weighted_margin.error, cpu.weighted_margin.error, rel * mva);
+            EXPECT_LT(gpu.weighted_margin.value, 0.0);
+            // Segregated margin funds nothing: the funding is the CPU's,
+            // margin or not.
+            const Real fva = std::abs(cpu.funding.value) + cpu.funding.error;
+            EXPECT_NEAR(gpu.funding.value, cpu.funding.value, rel * fva);
+            EXPECT_NEAR(gpu.weighted_positive.value, cpu.weighted_positive.value,
+                        rel * std::abs(cpu.weighted_positive.value));
+
+            // The same bits on one launch or several, one card or two.
+            const auto same_bits = [&gpu](const NettingSetExposure &other)
+            {
+                EXPECT_EQ(other.discounted_expected_initial_margin, gpu.discounted_expected_initial_margin);
+                EXPECT_EQ(other.weighted_margin.value, gpu.weighted_margin.value);
+                EXPECT_EQ(other.weighted_margin.error, gpu.weighted_margin.error);
+                EXPECT_EQ(other.statistics.discounted_ee, gpu.statistics.discounted_ee);
+                EXPECT_EQ(other.weighted_positive.value, gpu.weighted_positive.value);
+            };
+            same_bits(engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu), r));
+            if (gpu::device_count() >= 2)
+            {
+                const NettingSetExposure two = engine.simulate_netting_set(settings(paths, ComputeDevice::Gpu, 2), r);
+                EXPECT_EQ(two.gpus, 2);
+                same_bits(two);
+            }
+        }
+
+        // The pilot fitted on the device: the CPU's pilot, to the last bits
+        // of the values (another device, the same draws).
+        NettingSetRequest r = request(true);
+        const DynamicInitialMargin on_cpu =
+            engine.fit_initial_margin(settings(paths, ComputeDevice::Cpu), *r.csa, r.trades, {}, 3000);
+        const DynamicInitialMargin on_gpu =
+            engine.fit_initial_margin(settings(paths, ComputeDevice::Gpu), *r.csa, r.trades, {}, 3000);
+        EXPECT_NEAR(on_gpu.today(), on_cpu.today(), 1e-9 * on_cpu.today());
+    }
+
     TEST_F(GpuExposureTest, WhatTheDeviceCannotValueStaysOnTheCpuAndSaysSo)
     {
         const HullWhiteCurveModel m = model();

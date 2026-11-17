@@ -651,6 +651,18 @@ namespace quantModeling
         if (request.contributions && margined)
             throw InvalidInput("exposure engine: the trades' contributions under initial margin need each "
                                "subset's own margin model; use xva_report() on the cube");
+        if (request.margin_model)
+        {
+            if (!request.csa)
+                throw InvalidInput("exposure engine: initial margin needs a CSA");
+            if (margined)
+                throw InvalidInput("exposure engine: give the initial margin as a model or as profiles, not both");
+            if (request.contributions)
+                throw InvalidInput("exposure engine: the trades' contributions under initial margin need each "
+                                   "subset's own margin model; use xva_report() on the cube");
+            if (request.margin_model->trades() != set)
+                throw InvalidInput("exposure engine: the margin model was fitted on other trades");
+        }
         if (request.csa)
         {
             request.csa->validate();
@@ -660,9 +672,16 @@ namespace quantModeling
         NettingSetExposure result;
         result.paths = settings.paths;
         std::vector<Real> on_positive, on_negative;
-        std::vector<Real> on_borrowed, on_lent, on_collateral;
+        std::vector<Real> on_borrowed, on_lent, on_collateral, on_margin;
         const auto ask_weights = [&](const std::vector<Time> &times)
         {
+            if (request.margin_model && request.margin_weights)
+            {
+                request.margin_weights(times, on_margin);
+                if (!on_margin.empty() && on_margin.size() != times.size())
+                    throw InvalidInput("exposure engine: the margin weights need one value per reporting date, "
+                                       "or none");
+            }
             if (request.weights)
             {
                 request.weights(times, on_positive, on_negative);
@@ -753,6 +772,14 @@ namespace quantModeling
                 netting.funding_positive_weights = on_borrowed;
                 netting.funding_negative_weights = on_lent;
                 netting.collateral_weights = on_collateral;
+                if (request.margin_model)
+                {
+                    if (request.margin_model->grid() != head.times)
+                        throw InvalidInput("exposure engine: the margin model was fitted on another grid");
+                    netting.dynamic_margin = true;
+                    netting.margin_model = request.margin_model->table();
+                    netting.margin_weights = on_margin;
+                }
 
                 gpu::ExposureGpuRequest run;
                 run.program = &program;
@@ -789,8 +816,10 @@ namespace quantModeling
                 if (ran)
                 {
                     const gpu::NettingSetGpuProfile &profile = *ran;
-                    const auto margin = [](const std::vector<Real> &im)
-                    { return im.empty() ? 0.0 : im.front(); };
+                    const Real dynamic_today = request.margin_model ? request.margin_model->today() : 0.0;
+                    const auto margin = [&](const std::vector<Real> &im)
+                    { return request.margin_model ? dynamic_today : im.empty() ? 0.0
+                                                                               : im.front(); };
                     s.value_today =
                         request.csa ? net_of_initial_margin(value_today - netting.plan.held_today -
                                                                 request.csa->independent_amount,
@@ -878,6 +907,18 @@ namespace quantModeling
                         }
                         result.contributions.push_back(c);
                     }
+                    if (request.margin_model)
+                    {
+                        result.initial_margin_today = dynamic_today;
+                        for (std::size_t r = 0; r < m; ++r)
+                        {
+                            const WelfordAccumulator &d = profile.margin_dates[r].positive;
+                            result.discounted_expected_initial_margin.push_back(d.mean);
+                            result.discounted_expected_initial_margin_error.push_back(d.std_error());
+                            result.expected_initial_margin.push_back(d.mean / discount[r]);
+                        }
+                        result.weighted_margin = to_estimate(profile.margin.positive);
+                    }
                     if (request.running_weights)
                     {
                         result.funding_positive = to_estimate(profile.funding.positive);
@@ -898,7 +939,18 @@ namespace quantModeling
         settings.keep_cashflows = request.csa && collateral.cashflows != MarginPeriodCashflows::Paid;
         const ExposurePaths cube = simulate(settings, pool);
         ExposurePaths netted;
-        if (request.csa)
+        std::optional<InitialMargin> dynamic;
+        if (request.margin_model)
+        {
+            // The margin of every path, received and posted alike.
+            dynamic = request.margin_model->margin(cube);
+            CollateralSettings with_margin;
+            with_margin.cashflows = collateral.cashflows;
+            with_margin.initial_margin_received_paths = dynamic->margin;
+            with_margin.initial_margin_posted_paths = dynamic->margin;
+            netted = collateralise(cube, *request.csa, set, with_margin);
+        }
+        else if (request.csa)
             netted = collateralise(cube, *request.csa, set, collateral);
         else
         {
@@ -946,8 +998,7 @@ namespace quantModeling
         {
             // U: the value after variation margin, without the initial
             // margin; C: the collateral held, as xva_report() reads them.
-            const bool margined_here = !collateral.initial_margin_received.empty() ||
-                                       !collateral.initial_margin_posted.empty();
+            const bool margined_here = margined || request.margin_model.has_value();
             ExposurePaths variation;
             if (margined_here)
             {
@@ -983,9 +1034,57 @@ namespace quantModeling
             result.funding = to_estimate(both);
             result.weighted_collateral = to_estimate(collateral_sum);
         }
+        if (dynamic)
+        {
+            result.initial_margin_today = dynamic->today;
+            result.expected_initial_margin = dynamic->expected;
+            const std::size_t m = netted.dates();
+            std::vector<WelfordAccumulator> by_date(m);
+            WelfordAccumulator cost;
+            for (std::size_t p = 0; p < netted.paths; ++p)
+            {
+                Real sum = 0.0;
+                for (std::size_t r = 0; r < m; ++r)
+                {
+                    const Real v = netted.discount_weight[p * m + r] * dynamic->margin[p * m + r];
+                    by_date[r].add(v);
+                    if (!on_margin.empty())
+                        sum += on_margin[r] * v;
+                }
+                cost.add(sum);
+            }
+            for (const WelfordAccumulator &d : by_date)
+            {
+                result.discounted_expected_initial_margin.push_back(d.mean);
+                result.discounted_expected_initial_margin_error.push_back(d.std_error());
+            }
+            result.weighted_margin = to_estimate(cost);
+        }
         if (request.contributions)
             result.contributions = cpu_contributions(cube, request, set, netted, on_positive);
         return result;
+    }
+
+    DynamicInitialMargin HullWhiteExposureEngine::fit_initial_margin(ExposureSimulationSettings settings,
+                                                                     const Csa &csa,
+                                                                     const std::vector<std::size_t> &trades,
+                                                                     const DimSettings &margin,
+                                                                     std::size_t pilot_paths, ThreadPool *pool)
+    {
+        csa.validate();
+        settings.grid.margin_period_of_risk = csa.margin_period_of_risk;
+        settings.paths = pilot_paths > 0 ? pilot_paths : std::clamp<std::size_t>(settings.paths, 10000, 20000);
+        // A stream the run never draws, as the regression pilot's.
+        settings.seed = ~settings.seed;
+        settings.keep_cashflows = true;
+        settings.simm = false;
+        std::vector<std::size_t> set = trades;
+        if (set.empty())
+        {
+            set.resize(trades_.size());
+            std::iota(set.begin(), set.end(), std::size_t{0});
+        }
+        return DynamicInitialMargin::fit(simulate(settings, pool), csa.margin_period_of_risk, set, margin, pool);
     }
 
 } // namespace quantModeling

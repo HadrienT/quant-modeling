@@ -67,6 +67,9 @@ namespace quantModeling
         Real operator()(const Real *regressors) const;
         bool empty() const { return fit_.beta.empty(); }
         int degree() const { return fit_.degree; }
+        /// The fitted coefficients, for an evaluation elsewhere (the
+        /// device's, risk/initial_margin_path.hpp).
+        const scripting::ExerciseRegression &coefficients() const { return fit_; }
 
       private:
         scripting::ExerciseRegression fit_;
@@ -101,6 +104,10 @@ namespace quantModeling
         Real operator()(const Real *regressors) const;
         bool empty() const { return buckets_.empty(); }
         std::size_t buckets() const { return buckets_.size(); }
+        /// Upper edges of every bucket but the last, on the first regressor:
+        /// a value goes to the first bucket whose edge is above it.
+        const std::vector<Real> &edges() const { return edges_; }
+        const PolynomialRegression &bucket(std::size_t b) const { return buckets_[b]; }
 
       private:
         /// Upper edges of every bucket but the last, on the first regressor.
