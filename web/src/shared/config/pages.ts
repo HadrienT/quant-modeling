@@ -24,7 +24,8 @@ type PagePath = NavPage["path"];
 /**
  * The four spaces of the navigation (WP 28), in the order a desk works: read
  * the market, price a product, risk a book, learn how it works. `NAV_PAGES`
- * stays the flat list the API mirrors; a group only references its pages.
+ * stays the flat list the API mirrors; a group only references its pages. A
+ * page in no group (About) is a link of its own, always in the bar.
  */
 export const NAV_GROUPS: readonly {
 	key: string;
@@ -54,7 +55,7 @@ export const NAV_GROUPS: readonly {
 		key: "learn",
 		label: "Learn",
 		question: "How does it work?",
-		pages: ["/products", "/simulation", "/about"],
+		pages: ["/products", "/simulation"],
 	},
 ];
 

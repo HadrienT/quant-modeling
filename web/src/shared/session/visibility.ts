@@ -38,9 +38,15 @@ export function useNavPages() {
 		question: g.question,
 		pages: g.pages.flatMap((path) => pages.filter((p) => p.path === path)),
 	})).filter((g) => g.pages.length > 0);
+	// Pages in no space (About): links of their own in the bar.
+	const grouped = new Set(
+		NAV_GROUPS.flatMap((g) => g.pages as readonly string[]),
+	);
+	const standalone = pages.filter((p) => !grouped.has(p.path));
 	return {
 		pages,
 		groups,
+		standalone,
 		isAdmin,
 		isHidden: (path: string) => hidden.has(path),
 		/** whether a link to this page should show to this visitor */

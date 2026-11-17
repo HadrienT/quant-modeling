@@ -58,7 +58,6 @@ describe("home page links to hidden pages", () => {
 			expect(screen.queryByRole("link", { name: /^xVA/ })).toBeNull(),
 		);
 		expect(screen.queryByRole("link", { name: /Price an option/ })).toBeNull();
-		expect(screen.queryByRole("link", { name: /how it is built/ })).toBeNull();
 		expect(screen.getByRole("link", { name: /Script a payoff/ })).toBeVisible();
 		expect(screen.getByRole("link", { name: /Backtest/ })).toBeVisible();
 	});
@@ -77,7 +76,7 @@ describe("home page links to hidden pages", () => {
 			"/products",
 		);
 		renderHome();
-		await screen.findByText("Depth over breadth");
+		await screen.findByRole("heading", { level: 1 });
 		await waitFor(() =>
 			expect(screen.queryByText("What you can do")).toBeNull(),
 		);

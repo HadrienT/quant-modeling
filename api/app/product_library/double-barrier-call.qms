@@ -1,0 +1,26 @@
+# title: Double knock-out call
+# category: Barriers and touch options
+# underlyings: 1
+# source: Kunitomo & Ikeda, Pricing Options with Curved Boundaries, Mathematical Finance, 1992
+# source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
+# summary: A call that dies if the stock ever closes outside a range: cheaper than a single barrier, short volatility on both sides.
+# param: strike = 1.0 | percent | Strike, % of the initial level
+# param: low = 0.8 | percent | Lower knock-out barrier, % of the initial level
+# param: high = 1.3 | percent | Upper knock-out barrier, % of the initial level
+#
+# Both barriers checked at every close (a daily grid approximates continuous
+# monitoring). No rebate.
+
+2027-01-04
+    strike = 1.0
+    low = 0.8
+    high = 1.3
+    s0 = spot()
+    alive = 1
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf
+
+2028-01-04
+    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf
+    if alive = 1 then pays max(spot() - strike * s0, 0) endIf

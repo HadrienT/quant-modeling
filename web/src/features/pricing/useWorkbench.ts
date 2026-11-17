@@ -5,6 +5,7 @@ import type { ComputeDevice } from "@/shared/api";
 import {
 	CATALOG_BY_KEY,
 	DEFAULT_PRODUCT_KEY,
+	resolveProductKey,
 	type EngineKey,
 } from "@/shared/products";
 
@@ -27,10 +28,10 @@ export function useWorkbench() {
 	const search = useSearch({ from: "/price" });
 	const navigate = useNavigate({ from: "/price" });
 
+	// A former key (a product a script now prices) opens that script.
+	const asked = resolveProductKey(search.product);
 	const productKey =
-		search.product && CATALOG_BY_KEY.has(search.product)
-			? search.product
-			: DEFAULT_PRODUCT_KEY;
+		asked && CATALOG_BY_KEY.has(asked) ? asked : DEFAULT_PRODUCT_KEY;
 	const descriptor = CATALOG_BY_KEY.get(productKey)!;
 
 	const engine = (search.engine ?? descriptor.engines[0]!.key) as EngineKey;

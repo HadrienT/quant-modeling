@@ -13,6 +13,7 @@ export const CATEGORY_ORDER = [
 	"Vanillas and digitals",
 	"Barriers and touch options",
 	"Asians, lookbacks and ladders",
+	"Choosers and compounds",
 	"Cliquets",
 	"Structured notes",
 	"Volatility",

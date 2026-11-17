@@ -111,6 +111,22 @@ describe("pages hidden by an administrator", () => {
 		).toBeNull();
 	});
 
+	it("keep About a link of its own in the bar, unless hidden", async () => {
+		const { unmount } = renderAt("/credit");
+		await screen.findByText("content of /credit");
+		// In sight without opening any menu.
+		expect(
+			await screen.findByRole("link", { name: "About" }),
+		).toBeInTheDocument();
+		unmount();
+		hide("/about");
+		renderAt("/credit");
+		await screen.findByText("content of /credit");
+		await waitFor(() =>
+			expect(screen.queryByRole("link", { name: "About" })).toBeNull(),
+		);
+	});
+
 	it("leave the other pages alone", async () => {
 		hide("/xva");
 		renderAt("/credit");
