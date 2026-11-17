@@ -53,6 +53,10 @@ export default defineConfig({
 		sourcemap: process.env.VITE_BUILD_SOURCEMAP === "1",
 		rollupOptions: {
 			output: {
+				// The entry under a name of its own: the bundle budget
+				// (.size-limit.json) measures what the first page loads, not
+				// the lazy chunks Rollup also names index-* after an index.ts.
+				entryFileNames: "assets/entry-[hash].js",
 				manualChunks: {
 					"react-vendor": ["react", "react-dom"],
 					"router-vendor": ["@tanstack/react-router", "@tanstack/react-query"],

@@ -2,6 +2,9 @@
 	"name": "quant-modeling-web",
 	"private": true,
 	"version": "0.1.0",
+	"sideEffects": [
+		"*.css"
+	],
 	"type": "module",
 	"engines": {
 		"node": ">=20.19"
