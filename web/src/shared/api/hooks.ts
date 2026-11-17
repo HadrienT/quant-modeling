@@ -24,6 +24,8 @@ import type {
 	RateCurrency,
 	RatesHistoryResponse,
 	RatesOverviewResponse,
+	DistributionRequest,
+	DistributionResponse,
 	ModelPathRequest,
 	SABRPathRequest,
 	SimulationCalibrateRequest,
@@ -423,6 +425,23 @@ export function useSimulateModelPaths() {
 				return (await unwrap(
 					api.POST("/api/simulation/paths/model", { body: req, signal: s }),
 				)) as SimulationPathsResponse;
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/** The law of a model's paths and the prices they imply, with the stored
+ * surface beside them (POST /api/simulation/distribution, WP 29). */
+export function useSimulationDistribution() {
+	return useMutation<DistributionResponse, ApiError, DistributionRequest>({
+		mutationFn: async (req) => {
+			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
+			try {
+				return (await unwrap(
+					api.POST("/api/simulation/distribution", { body: req, signal: s }),
+				)) as DistributionResponse;
 			} finally {
 				s.cleanup();
 			}

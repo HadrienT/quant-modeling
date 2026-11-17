@@ -102,6 +102,9 @@ export type ModelPathRequest = Schemas["ModelPathRequest"];
 export type HestonParams = Schemas["HestonParams"];
 export type SimulationPathsResponse = Schemas["SimulationPathsResponse"];
 export type SimulationCalibrateRequest = Schemas["SimulationCalibrateRequest"];
+export type DistributionRequest = Schemas["DistributionRequest"];
+export type DistributionResponse = Schemas["DistributionResponse"];
+export type SmileOut = Schemas["SmileOut"];
 export type SimulationCalibrateResponse =
 	Schemas["SimulationCalibrateResponse"];
 export type FxCurrency = Schemas["FxOverviewResponse"]["base"];
