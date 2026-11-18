@@ -56,12 +56,14 @@ export type FieldOverride = {
 	step?: number;
 	/** a ticker chosen from the database's markets (one, or one per
 	 * underlying: `count`, kept as a comma-separated list) */
-	widget?: "ticker" | "tickers";
+	widget?: "ticker" | "tickers" | "assets";
 	count?: number;
 	/** an enum's options as the page names them */
 	optionLabels?: Record<string, string>;
 	/** a short explanation under the field */
 	hint?: string;
+	/** shown only when this holds of the form's values (still validated) */
+	when?: (values: Record<string, unknown>) => boolean;
 };
 
 export type EngineKey = "analytic" | "mc" | "binomial" | "trinomial" | "pde";

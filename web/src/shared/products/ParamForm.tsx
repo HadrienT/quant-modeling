@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { TickerList, TickerSelect } from "@/shared/market";
 import { Input, Label } from "@/shared/ui";
+import { TypedAssets } from "./TypedAssets";
 import type { ProductDescriptor } from "./types";
 import { fieldsFromSchema } from "./zodFields";
 
@@ -44,11 +45,14 @@ export function ParamForm({
 	}, [watch, onChange]);
 
 	const groups = ["contract", "market", "engine"] as const;
+	// a field shown only in one mode (the market inputs typed or read)
+	const current = watch() as Record<string, unknown>;
+	const shown = fields.filter((f) => !f.when || f.when(current));
 
 	return (
 		<form className="flex flex-col gap-4">
 			{groups.map((g) => {
-				const fs = fields.filter((f) => f.group === g);
+				const fs = shown.filter((f) => f.group === g);
 				if (!fs.length) return null;
 				return (
 					<fieldset key={g} className="flex flex-col gap-2">
@@ -76,6 +80,17 @@ export function ParamForm({
 										{f.widget === "ticker" ? (
 											<TickerSelect
 												value={String(watch(f.name as never) ?? "")}
+												onChange={(t) =>
+													setValue(f.name as never, t as never, {
+														shouldValidate: true,
+														shouldDirty: true,
+													})
+												}
+											/>
+										) : f.widget === "assets" ? (
+											<TypedAssets
+												value={String(watch(f.name as never) ?? "")}
+												count={f.count ?? 1}
 												onChange={(t) =>
 													setValue(f.name as never, t as never, {
 														shouldValidate: true,

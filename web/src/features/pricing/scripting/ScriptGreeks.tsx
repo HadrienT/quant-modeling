@@ -47,7 +47,7 @@ function describe(label: string, names: string[] = []): [string, string] {
 	const [name, unit] = NAMES[indexed ? indexed[1]! : label] ?? [label, ""];
 	const i = indexed ? Number(indexed[2]) : -1;
 	return indexed
-		? [`${name} · ${names[i] ?? `underlying ${i + 1}`}`, unit]
+		? [`${name} · ${names[i] ?? `spot(${i})`}`, unit]
 		: [name, unit];
 }
 
@@ -66,7 +66,7 @@ function surfaces(grid: Risk[], names: string[]) {
 	return [...by.entries()].map(([k, v]) => ({
 		name: `${v.kind === "lvol" ? "Local-vol surface" : "Leverage"}${
 			by.size > 1 || names.length > 1
-				? ` · ${names[Number(k)] ?? `underlying ${Number(k) + 1}`}`
+				? ` · ${names[Number(k)] ?? `spot(${Number(k)})`}`
 				: ""
 		}`,
 		...v,

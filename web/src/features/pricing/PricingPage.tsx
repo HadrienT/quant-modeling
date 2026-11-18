@@ -29,7 +29,10 @@ export default function PricingPage() {
 						{wb.descriptor.label}
 					</h1>
 					<span className="ml-auto flex items-center gap-3">
-						<AddToPortfolio productKey={wb.productKey} values={wb.values} />
+						{/* a portfolio marks a real underlying: not a typed one */}
+						{(wb.values as Record<string, unknown>).source !== "typed" && (
+							<AddToPortfolio productKey={wb.productKey} values={wb.values} />
+						)}
 						{isShown("/products") && (
 							<Link
 								to="/products"

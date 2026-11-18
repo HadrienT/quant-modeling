@@ -636,10 +636,18 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
             f"'{req.product}' has no closed form: engine='analytic' prices "
             f"{', '.join(ANALYTIC_SCRIPTED)}"
         )
-    if not req.ticker:
-        raise ValueError("engine='analytic' reads its market from a `ticker`")
-    market = market_snapshot.local_vol_market(req.ticker, req.rate, req.valuation_date)
-    val = market.valuation_date
+    typed = not req.ticker
+    if typed and (req.spot is None or req.vol is None):
+        raise ValueError(
+            "engine='analytic' reads its market from a `ticker`, or takes `spot` "
+            "and `vol` (and `dividend`) typed"
+        )
+    market = (
+        None
+        if typed
+        else market_snapshot.local_vol_market(req.ticker, req.rate, req.valuation_date)
+    )
+    val = req.valuation_date if typed else market.valuation_date
     script = product_templates.render(
         req.product, req.terms, val, maturity=req.maturity, start=val
     )
@@ -648,19 +656,24 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
     # the probe is the script a day later (its first date not yet past): T is
     # its last date from its first
     T = max(events[-1]["t"] - events[0]["t"], 1e-6)
-    sigma = _atm_implied_vol(
-        SimpleNamespace(script=script, day_count=req.day_count), market, val, True
-    )
+    if typed:
+        S, q, sigma = req.spot, req.dividend, req.vol
+        source = "typed"
+    else:
+        S, q = market.spot, market.dividend
+        sigma = _atm_implied_vol(
+            SimpleNamespace(script=script, day_count=req.day_count), market, val, True
+        )
+        source = (
+            f"the at-the-money implied vol of the {market.ticker} smile of "
+            f"{val.isoformat()}"
+        )
     defaults = {p.name: p.default for p in product_templates.get(req.product).params}
     terms = {**defaults, **req.terms}
-    npv, greeks, what = _black_scholes(
-        req.product, terms, market.spot, req.rate, market.dividend, sigma, T
-    )
+    npv, greeks, what = _black_scholes(req.product, terms, S, req.rate, q, sigma, T)
     diagnostics = (
-        f"Analytic {what}, Black-Scholes at the at-the-money implied vol "
-        f"{sigma:.4f} of the {market.ticker} smile of {val.isoformat()} "
-        f"(strike {float(terms['strike']):.4g} x spot {market.spot:.4f}, expiry "
-        f"T = {T:.4f} y)"
+        f"Analytic {what}, Black-Scholes at vol {sigma:.4f} ({source}; strike "
+        f"{float(terms['strike']):.4g} x spot {S:.4f}, expiry T = {T:.4f} y)"
     )
     response = _pricing_response_from_dict(
         {"npv": npv, "greeks": greeks, "diagnostics": diagnostics}
@@ -668,7 +681,7 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
     return response.model_copy(
         update={
             "script": script,
-            "warnings": list(market.warnings),
+            "warnings": [] if typed else list(market.warnings),
         }
     )
 
@@ -696,8 +709,13 @@ def _price_rates_on_the_curve(req: ScriptedProductRequest) -> PricingResponse:
             "mc_std_error": 0.0,
             "risks": None,
             "diagnostics": (
-                f"Analytic: the cash flows discounted on the {hw.currency} government "
-                "curve (the script valued with no short-rate volatility: its flows "
+                "Analytic: the cash flows discounted on the "
+                + (
+                    f"flat curve at {req.rate:.4%} (typed)"
+                    if hw.curve == "flat"
+                    else f"{hw.currency} government curve"
+                )
+                + " (the script valued with no short-rate volatility: its flows "
                 "are deterministic) | " + response.diagnostics
             ),
         }
@@ -745,7 +763,13 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
 
     start = time.perf_counter()
     template = product_templates.get(req.product)
-    script = product_templates.render(req.product, req.terms, req.valuation_date)
+    script = product_templates.render(
+        req.product,
+        req.terms,
+        req.valuation_date,
+        maturity=req.maturity,
+        expiry=req.expiry,
+    )
     terms = {p.name: float(req.terms.get(p.name, p.default)) for p in template.params}
     rate_name = "fixed_rate" if "fixed_rate" in terms else "strike"
     strike, side = terms[rate_name], terms["side"]
@@ -754,9 +778,21 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
     swaption = req.product == "european-swaption"
 
     hw = req.hull_white or HullWhiteInputs(curve="sofr")
-    _, times, dfs, label, fit = _sofr_inputs(hw)
-    m = _sofr_market()
-    a, sigma = fit.mean_reversion, fit.sigma
+    flat = hw.curve == "flat"
+    if flat:
+        # every input typed: a flat curve at `rate`, a and sigma as given
+        grid = [0.25 * i for i in range(1, 241)]
+
+        def flat_curve(r: float):
+            return grid, [math.exp(-r * t) for t in grid]
+
+        times, dfs = flat_curve(req.rate)
+        label, fit, m = f"flat curve at {req.rate:.4%} (typed)", None, None
+        a, sigma = hw.mean_reversion, hw.sigma
+    else:
+        _, times, dfs, label, fit = _sofr_inputs(hw)
+        m = _sofr_market()
+        a, sigma = fit.mean_reversion, fit.sigma
 
     def value(curve_times, curve_dfs, s: float) -> dict:
         return qm.hull_white_swap_on_dates(
@@ -776,7 +812,10 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
     npv = base[key]
     bumped = {}
     for h in (_BP, -_BP):
-        t, d = rates_derivatives.sofr_curve([(x, r + h) for x, r in m.swap_quotes])
+        if flat:
+            t, d = flat_curve(req.rate + h)
+        else:
+            t, d = rates_derivatives.sofr_curve([(x, r + h) for x, r in m.swap_quotes])
         bumped[h] = value(t, d, sigma)[key]
     dv01 = (bumped[_BP] - bumped[-_BP]) / 2
     gamma_bp = bumped[_BP] - 2 * npv + bumped[-_BP]
@@ -793,23 +832,31 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
     )
     diagnostics = (
         f"Analytic: {what} on the {label} | forward swap rate "
-        f"{base['forward']:.4%}, annuity {base['annuity']:.4f} | DV01 {dv01:,.2f} "
-        f"per bp (every SOFR par quote +1bp, the curve rebuilt)"
+        f"{base['forward']:.4%}, annuity {base['annuity']:.4f} | DV01 {dv01:,.2f}"
+        + (
+            " per bp (the flat rate +1bp)"
+            if flat
+            else " per bp (every SOFR par quote +1bp, the curve rebuilt)"
+        )
         + (f", vega {vega:,.2f} per bp of sigma" if swaption else "")
     )
     choice = ModelChoice(
         requested="hull_white",
         model="hull_white",
-        code="swaption_calibrated" if fit.calibrated else "user",
+        code="swaption_calibrated" if fit is not None and fit.calibrated else "user",
         reason=(
-            f"Hull-White on the {label}: a = {a:.4f}, sigma = {sigma * 1e4:.1f}bp, "
-            f"fitting the vols to {fit.rmse_bp:.1f}bp on average "
-            f"({fit.worst_bp:.1f}bp at worst)."
+            f"Hull-White on the {label}: a = {a:.4f}, sigma = {sigma * 1e4:.1f}bp"
+            + (
+                f", fitting the vols to {fit.rmse_bp:.1f}bp on average "
+                f"({fit.worst_bp:.1f}bp at worst)."
+                if fit is not None
+                else ", typed."
+            )
         ),
         rates_calibration=fit,
     )
     warnings = []
-    if not fit.converged:
+    if fit is not None and not fit.converged:
         warnings.append(
             ModelWarning(
                 code="hull_white_fit",
@@ -1188,6 +1235,11 @@ def _hull_white_inputs(req) -> tuple:
     hw = req.hull_white or HullWhiteInputs()
     if hw.curve == "sofr":
         return _sofr_inputs(hw)
+    if hw.curve == "flat":
+        # every input typed: a flat curve at `rate` (the C++ model's own flat
+        # curve when no pillar is given), a and sigma as the request says
+        params = {"mean_reversion": hw.mean_reversion, "sigma": hw.sigma, "rho": hw.rho}
+        return params, [], [], f"flat curve at {req.rate:.4%} (typed)", None
     try:
         curve = rates.currency_discount_curve(hw.currency)
     except rates.RatesUnavailable as exc:

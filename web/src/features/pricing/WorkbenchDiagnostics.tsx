@@ -40,7 +40,9 @@ export function WorkbenchDiagnostics({
 	const isMc = engine === "mc";
 	// Model comparison and market vega reprice the script by Monte-Carlo: not
 	// offered next to its closed form.
-	const script = isMc ? descriptor.scripted : undefined;
+	// Typed inputs have no market to compare models on or take a vega to.
+	const typed = values.source === "typed";
+	const script = isMc && !typed ? descriptor.scripted : undefined;
 	// The race needs a GPU on the server, not only a product that runs on one.
 	const race =
 		descriptor.gpu &&
@@ -48,7 +50,7 @@ export function WorkbenchDiagnostics({
 		(devices.data?.gpus ?? []).length > 0;
 	// A swap or swaption script: the rates engines on the same trade, under
 	// either engine.
-	const sofr = descriptor.scripted?.curve === "sofr";
+	const sofr = descriptor.scripted?.curve === "sofr" && !typed;
 	const offered = isMc || race || script || sofr;
 	if (!offered) return null;
 	const what = [
@@ -112,7 +114,7 @@ function Panels({
 	);
 	// The same query as the results above: read from the cache, not priced again.
 	const q = usePricing({ endpoint: descriptor.endpoint ?? null, body });
-	const script = descriptor.scripted;
+	const script = values.source === "typed" ? undefined : descriptor.scripted;
 	return (
 		<>
 			{script?.curve === "sofr" && (

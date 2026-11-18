@@ -25,6 +25,14 @@ const GREEK_UNITS: Record<(typeof GREEKS)[number], [string, string]> = {
 	rho: ["Rho", "per 1.00 of rate (÷10,000 for one bp)"],
 };
 
+/** A rates product's: the rate is the underlying, sigma the short rate's. */
+const RATES_GREEK_UNITS: Record<(typeof GREEKS)[number], [string, string]> = {
+	...GREEK_UNITS,
+	gamma: ["Gamma", "per 1.00 of rate, squared (÷10⁸ per bp²)"],
+	vega: ["Vega", "per 1.00 of the short rate's σ (÷10,000 for one bp)"],
+	rho: ["Rho (DV01 × 10,000)", "per 1.00 of rate (÷10,000 for one bp)"],
+};
+
 type Result = NonNullable<ReturnType<typeof usePricing>["data"]> & {
 	model_choice?: {
 		calibration?: unknown;
@@ -48,6 +56,8 @@ function fromMarket(r: Result): boolean {
 function underlyingNames(r: Result, values: Record<string, unknown>): string[] {
 	const used = r.model_choice?.underlyings?.map((u) => u.ticker ?? "");
 	if (used?.some(Boolean)) return used as string[];
+	// typed underlyings have no name: spot(i)
+	if (values.source === "typed") return [];
 	return String(values.tickers ?? "")
 		.split(/[\s,;]+/)
 		.filter(Boolean)
@@ -86,6 +96,8 @@ export function ResultsPanel({
 
 	const r = q.data;
 	const g = r.greeks;
+	const units =
+		descriptor.scripted?.market === "rates" ? RATES_GREEK_UNITS : GREEK_UNITS;
 	const se = (name: string) =>
 		(g as Record<string, number | null | undefined>)[`${name}_std_error`];
 
@@ -111,7 +123,10 @@ export function ResultsPanel({
 						)}
 						<Provenance
 							source={
-								descriptor.scripted || fromMarket(r) ? "market" : "manual"
+								values.source !== "typed" &&
+								(descriptor.scripted || fromMarket(r))
+									? "market"
+									: "manual"
 							}
 						/>
 						<Freshness at={Date.now()} />
@@ -159,7 +174,7 @@ export function ResultsPanel({
 								return (
 									<tr key={name} className="border-t border-hairline">
 										<td className="p-2 text-left font-sans text-ink">
-											{GREEK_UNITS[name][0]}
+											{units[name][0]}
 										</td>
 										<td className="p-2 text-right">
 											<NumberCell value={v} magnitude="greek" />
@@ -172,7 +187,7 @@ export function ResultsPanel({
 											)}
 										</td>
 										<td className="p-2 text-left font-sans text-2xs text-ink-secondary">
-											{GREEK_UNITS[name][1]}
+											{units[name][1]}
 										</td>
 									</tr>
 								);

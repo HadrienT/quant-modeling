@@ -176,3 +176,66 @@ describe("scripted catalog entries", () => {
 		expect(new Set(CATALOG.map((p) => p.key)).size).toBe(CATALOG.length);
 	});
 });
+
+describe("typed market inputs (a fictitious underlying)", () => {
+	const req = (key: string, extra: Record<string, unknown>) => {
+		const d = CATALOG_BY_KEY.get(key)!;
+		return d.toRequest(
+			{ ...d.defaults, source: "typed", ...extra },
+			"mc",
+		) as Record<string, unknown>;
+	};
+
+	it("prices one underlying on its typed spot, vol and dividend", () => {
+		const r = req("script-european-call", {
+			spot: 80,
+			vol: 30,
+			dividend: 2,
+			rate: 5,
+		});
+		expect(r).toMatchObject({
+			model: "black_scholes",
+			spot: 80,
+			vol: 0.3,
+			dividend: 0.02,
+			rate: 0.05,
+		});
+		expect(r.ticker).toBeUndefined();
+		// the market fields are not shown, the typed ones are
+		const d = CATALOG_BY_KEY.get("script-european-call")!;
+		const shown = fieldsFromSchema(d.schema, d.fields)
+			.filter((f) => !f.when || f.when({ source: "typed" }))
+			.map((f) => f.name);
+		expect(shown).toEqual(expect.arrayContaining(["spot", "vol", "dividend"]));
+		expect(shown).not.toContain("tickers");
+	});
+
+	it("prices several underlyings on typed rows and one correlation", () => {
+		const r = req("script-basket-call", {
+			assets: "50,20,0;120,35,1;10,50,0",
+			correlation: 0.3,
+		});
+		expect(r.underlyings).toEqual([
+			{ spot: 50, vol: 0.2, dividend: 0 },
+			{ spot: 120, vol: 0.35, dividend: 0.01 },
+			{ spot: 10, vol: 0.5, dividend: 0 },
+		]);
+		expect(r.correlation).toEqual([
+			[1, 0.3, 0.3],
+			[0.3, 1, 0.3],
+			[0.3, 0.3, 1],
+		]);
+	});
+
+	it("prices a rates product on a flat typed curve with a and sigma", () => {
+		const r = req("script-european-swaption", {
+			flat_rate: 3.5,
+			hw_a: 0.05,
+			hw_sigma: 80,
+		});
+		expect(r).toMatchObject({
+			rate: 0.035,
+			hull_white: { curve: "flat", mean_reversion: 0.05, sigma: 0.008 },
+		});
+	});
+});

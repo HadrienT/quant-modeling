@@ -1083,6 +1083,17 @@ maintainer:
   from a menu of the database's markets (`shared/market/TickerSelect`).
   The device is Auto by default. Multi-asset products default to 20,000
   paths: their local-vol adjoint runs on the CPU.
+- **Typed inputs** (2026-11-19). Every product can be priced on inputs
+  typed by hand, with nothing read from the database: a fictitious
+  underlying or market. The Price page's "Market inputs" switch offers it.
+  - One underlying: spot, vol, dividend and rate under flat Black-Scholes,
+    the closed forms included.
+  - Several underlyings: per-underlying spot, vol and dividend, plus one
+    correlation for every pair.
+  - Rates: a flat curve at `rate`, with Hull-White's a and sigma
+    (`hull_white.curve = "flat"`), the closed forms included.
+  - In typed mode the page hides the model comparison, the market vega and
+    "Add to portfolio", and labels the result's provenance "manual".
 
 ## 8. P4 — Multilevel Monte-Carlo
 
