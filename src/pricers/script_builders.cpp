@@ -89,6 +89,38 @@ namespace quantModeling::script_builders
         return iso(days) + "\n    pays " + (is_call ? "lastStepCall(" : "lastStepPut(") + number(strike) + ")\n";
     }
 
+    std::string american(bool is_call, Real strike, const std::vector<int> &exercise_days, Real dividend,
+                         Time maturity)
+    {
+        if (exercise_days.empty())
+            throw InvalidInput("american: no exercise date");
+        const std::string pay = vanilla(is_call, strike);
+        const std::string k = number(strike);
+        const int expiry = exercise_days.back();
+        const std::string strike_pv = k + " * df(" + iso(expiry) + ")";
+        std::string s;
+        for (std::size_t i = 0; i + 1 < exercise_days.size(); ++i)
+        {
+            const Time tau = maturity * static_cast<double>(expiry - exercise_days[i]) / static_cast<double>(expiry);
+            const std::string carry = number(std::exp(-dividend * tau));
+            // The forward held to the expiry, per unit: what holding is worth at least.
+            const std::string held = is_call ? "spot() * " + carry + " - " + strike_pv
+                                             : strike_pv + " - spot() * " + carry;
+            const std::string itm = is_call ? "spot() > " + k : "spot() < " + k;
+            s += iso(exercise_days[i]) + "\n";
+            if (i == 0)
+                s += "    done = 0\n";
+            s += "    if " + itm + " and " + pay + " > " + held + " and exercise(spot()) then\n        pays " + pay +
+                 "\n        done = 1\n    endIf\n\n";
+        }
+        if (exercise_days.size() == 1)
+            s += iso(expiry) + "\n    done = 0\n";
+        else
+            s += iso(expiry) + "\n";
+        // At the expiry a live option pays (exercising there is the same).
+        return s + "    if done = 0 then\n        pays " + pay + "\n    endIf\n";
+    }
+
     std::string barrier(const BarrierTerms &t, int days, int observations)
     {
         const bool up = t.type == BarrierType::UpAndOut || t.type == BarrierType::UpAndIn;

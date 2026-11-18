@@ -90,6 +90,11 @@ namespace quantModeling
         GreeksMethod greeks = GreeksMethod::Bump;
         RngKind mc_rng = RngKind::Pcg32;
         ComputeDevice mc_device = ComputeDevice::Cpu;
+        /// Script routes (pricers/script_route.hpp): CPU threads for the
+        /// early-exercise pilot and the CPU runs. 1 by default (the C++
+        /// stays on one thread unless the caller chooses); 0: the available
+        /// CPUs, at most 16, as price_script.
+        int mc_threads = 1;
         /// Sobol only: build each factor's Brownian path by bisection
         /// (terminal value from the first coordinate, then midpoints) for
         /// models that describe their increments (BrownianLayout) --

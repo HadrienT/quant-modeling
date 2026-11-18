@@ -396,6 +396,7 @@ async def price_rainbow_endpoint(req: RainbowRequest) -> PricingResponse:
 #: every product with a path count.
 MC_ROUTES = {
     "/price/option/vanilla": "vanilla",
+    "/price/option/american-vanilla": "american_vanilla",
     "/price/option/asian": "asian",
     "/price/option/dated-asian": "dated_asian",
     "/price/scripted": "script",

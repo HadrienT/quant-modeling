@@ -38,7 +38,7 @@ const FEATURES: Feature[] = [
 		to: "/price",
 		title: "Pricing",
 		icon: Calculator,
-		text: "The product catalogue under analytic, tree, PDE and Monte Carlo engines, on CPU or GPU, with greeks, convergence diagnostics and model comparison.",
+		text: "The product catalogue under analytic and Monte Carlo engines, on CPU or GPU, with greeks, convergence diagnostics and model comparison.",
 	},
 	{
 		to: "/scripting",

@@ -772,6 +772,85 @@ process; WP 27's lot L1b removes it. Left in `src/engines/mc/` outside the
 generic engine: the plain vanilla's `BSEuroVanillaMCEngine`, the GPU's
 reference kernel.
 
+**The American option by Longstaff-Schwartz (follow-up, 2026-11-18, #313).**
+The maintainer's decision: the site offers Analytic and Monte-Carlo only, so
+the American, priced by the binomial and trinomial trees until then, becomes
+a script route (`pricers/adapters/equity_vanilla_american.cpp`, builder
+`script_builders::american`, `EngineKind::MonteCarlo`). The trees stay in the
+registry, for the portfolio's daily marks and as the oracle
+(`tests/testAmericanLsm.cpp`).
+
+- A Bermudan on `exercise_per_year` dates a year (50 by default) stands for
+  continuous exercise; the rule is Longstaff & Schwartz's
+  (`engines/mc/lsm.hpp`), fitted once at the route's model and held fixed in
+  every run, the bumped ones and the adjoint included (`price_by_script`,
+  which had no early exercise before).
+- The script gates `exercise()` with a condition every optimal exercise
+  meets: the payoff in the money and above the forward held to the expiry,
+  S e^(-q tau) - K df(T) for a call. The generic rule otherwise fits every
+  path whose value exercising would change -- an out-of-the-money put that
+  ends in the money among them -- and was 0.7 % low on an at-the-money put;
+  on a call with r = 5 %, q = 4 %, whose premium is 0.015, it exercised below
+  rK/q and priced under the European (8.081 against 8.103).
+- A call with no dividend and r >= 0 is the European, priced as such
+  (Merton 1973): exact, where any estimated rule loses value.
+- The pilot is quadratic in the number of dates (each path re-run on every
+  date it reaches): 2.4 s on one thread at 50 dates, 0.4 s on the API's
+  threads (`PricingSettings::mc_threads`, 0 = the available CPUs, at most 16;
+  the C++ default stays 1), the same bits.
+
+S = K = 100, T = 1, r = 5 %, sigma = 20 %, 100,000 Sobol paths, against a
+4,000-step binomial tree:
+
+| | European | Tree | LSM | Gap |
+|---|---|---|---|---|
+| Put, q = 0 | 5.5735 | 6.0902 | 6.0763 ± 0.0053 | -0.23 % |
+| Put, q = 4 % | 7.1466 | 7.3055 | 7.2946 ± 0.0054 | -0.15 % |
+| Call, q = 4 % | 8.1026 | 8.1178 | 8.1009 ± 0.0058 | -0.21 % |
+| Call, q = 8 % | 6.1430 | 6.5419 | 6.5157 ± 0.0061 | -0.40 % |
+| Call, q = 0 | 10.4506 | 10.4501 | 10.4506 (European) | 0 |
+
+The gap is the Bermudan's and the estimated rule's, both lower bounds for the
+holder. The tree's gamma is no oracle: on the European call it gives 0.0206
+where the closed form gives 0.01876 (the script route: 0.0188).
+
+**One catalog of scripts, Analytic and Monte-Carlo only (follow-up, 2026-11-18, #313).**
+P3 moved every Monte-Carlo route onto scripts but left the site's catalog in
+two halves: the twelve hand-written pricers next to the 46 scripts of the
+library, nothing deduplicating them, so the Price page listed the same
+product twice (European option and European call, Barrier option and
+Up-and-out call, ...). The maintainer's decision: the scripts are the
+catalog; the hand-written pricers leave the site and stay in the library,
+the API and the tests as oracles. Three lots:
+
+- **b1 (this pull request).** The Price page lists the library's scripts
+  (`web/src/shared/products/catalog.ts`: the hand-written equity entries are
+  `PORTFOLIO_ONLY`, an old link to one opens the script that replaced it).
+  The library gains an **American put** (`american-put.qms`: weekly
+  `exercise()`, Longstaff & Schwartz on the moneyness spot / s0, considered
+  only in the money; 0.38 % under a 4,000-step tree under Black-Scholes --
+  on the spot alone, which ignores that the strike moves with s0, it was
+  1.5 % under) and a **quanto call** (`quanto-call.qms`, header `# quanto:
+  USD`: one underlying in its listing currency on `underlyings`, paid in
+  dollars; greyed out on the page until data-ingest stores the dividend
+  yields of non-US listings, which only ten US tickers have today). No
+  American call: on a dividend payer the bound that keeps the estimated rule
+  above the European needs the dividend, which a script does not see; on a
+  non-payer it is the European call. **Analytic** is offered where a closed
+  form exists (`engine: "analytic"` on `/price/scripted-product`,
+  `ANALYTIC_SCRIPTED`): the European and the digital call, whose strike the
+  library fixes on the start date t1, so forward starts --
+  S0 e^(-q t1) C(1, k, T - t1) and P e^(-rT) N(d2) -- at the at-the-money
+  implied vol of the ticker's smile, equal to the script's Monte-Carlo under
+  that flat vol within its error (`api/tests/test_scripted_analytic.py`).
+  The site's engines are Analytic and Monte-Carlo only.
+- **b2.** The future, the bonds, the swap and the swaption as scripts under
+  the short-rate script models; their hand-written entries leave the page.
+- **b3.** The portfolio books scripts (existing positions migrated); the
+  hand-written descriptors are deleted from the front end. Until then a
+  portfolio books and marks the hand-written forms (an American on the tree,
+  `markEngine`), and "Add to portfolio" is not offered from a script.
+
 ## 8. P4 — Multilevel Monte-Carlo
 
 ### 8.1 The method

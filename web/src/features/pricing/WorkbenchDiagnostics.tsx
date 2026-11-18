@@ -37,7 +37,9 @@ export function WorkbenchDiagnostics({
 }) {
 	const devices = useComputeDevices();
 	const isMc = engine === "mc";
-	const script = descriptor.scripted;
+	// Model comparison and market vega reprice the script by Monte-Carlo: not
+	// offered next to its closed form.
+	const script = isMc ? descriptor.scripted : undefined;
 	// The race needs a GPU on the server, not only a product that runs on one.
 	const race =
 		descriptor.gpu &&

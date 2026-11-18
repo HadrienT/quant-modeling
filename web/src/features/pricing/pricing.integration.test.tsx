@@ -19,7 +19,7 @@ import PricingPage from "./PricingPage";
  * Feature integration (WP 12 §1): the workbench prices against the MSW fixtures
  * and shows the standard error next to a Monte-Carlo price.
  */
-function renderWorkbench(search = "?product=vanilla&engine=mc") {
+function renderWorkbench(search = "?product=script-european-call&engine=mc") {
 	const root = createRootRoute();
 	const price = createRoute({
 		getParentRoute: () => root,
@@ -49,7 +49,7 @@ describe("pricing workbench", () => {
 	it("shows a Monte-Carlo price with its standard error (± …)", async () => {
 		renderWorkbench();
 		expect(
-			await screen.findByRole("heading", { name: /european option/i }),
+			await screen.findByRole("heading", { name: /european call/i }),
 		).toBeInTheDocument();
 		// the price's own "± <std error>", not the convergence chart's slope
 		expect(await screen.findByText(/^± \d/)).toBeInTheDocument();
@@ -72,14 +72,14 @@ describe("pricing workbench", () => {
 		expect(toggle).toHaveAttribute("aria-expanded", "false");
 		expect(screen.queryByText(/consistent with 1\/√N/)).toBeNull();
 		unmount();
-		renderWorkbench("?product=vanilla&engine=mc&diag=true");
+		renderWorkbench("?product=script-european-call&engine=mc&diag=true");
 		expect(
 			await screen.findByText(/consistent with 1\/√N/),
 		).toBeInTheDocument();
 	});
 
 	it("offers no diagnostics to a closed form on a CPU-only server", async () => {
-		renderWorkbench("?product=vanilla&engine=analytic");
+		renderWorkbench("?product=script-european-call&engine=analytic");
 		await screen.findByText(/no GPU on this server/);
 		await screen.findByText("delta");
 		expect(screen.queryByRole("button", { name: /^Diagnostics/ })).toBeNull();
@@ -104,7 +104,7 @@ describe("pricing workbench", () => {
 			http.get("*/price/devices", () =>
 				HttpResponse.json({ cpu: "Xeon", gpus: ["V100"], gpu_compiled: true }),
 			),
-			http.post("*/price/option/vanilla", async ({ request }) => {
+			http.post("*/price/scripted-product", async ({ request }) => {
 				const body = (await request.json()) as { device?: string };
 				const gpu = body.device === "gpu";
 				return HttpResponse.json(
@@ -115,7 +115,9 @@ describe("pricing workbench", () => {
 				);
 			}),
 		);
-		renderWorkbench("?product=vanilla&engine=mc&p=eyJuX3BhdGhzIjoyMDAwMDAwMH0");
+		renderWorkbench(
+			"?product=script-european-call&engine=mc&p=eyJuX3BhdGhzIjoyMDAwMDAwMH0",
+		);
 		await openDiagnostics();
 		fireEvent.click(await screen.findByRole("button", { name: /^Race/i }));
 		expect(await screen.findByText("300×")).toBeInTheDocument();

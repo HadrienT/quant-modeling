@@ -152,7 +152,7 @@ PRODUCTS: dict[str, Product] = {
         s.AmericanVanillaRequest,
         ps.price_american_vanilla,
         _const("black_scholes"),
-        _tree,
+        lambda req: "mc" if req.engine.value == "mc" else _tree(req),
     ),
     "asian": Product(
         s.AsianRequest, ps.price_asian, _const("black_scholes"), _mc_or_analytic
@@ -175,9 +175,9 @@ PRODUCTS: dict[str, Product] = {
     "scripted_product": Product(
         s.ScriptedProductRequest,
         ps.price_scripted_product,
-        lambda r: r.model,
-        _const("mc"),
-        scheme=lambda r: r.sampler,
+        lambda r: "black_scholes" if r.engine == "analytic" else r.model,
+        lambda r: r.engine,
+        scheme=lambda r: None if r.engine == "analytic" else r.sampler,
         own_spans=True,
     ),
     "barrier": Product(

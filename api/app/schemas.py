@@ -37,6 +37,10 @@ class McRng(str, Enum):
 class AmericanEngineType(str, Enum):
     binomial = "binomial"
     trinomial = "trinomial"
+    #: Longstaff-Schwartz on a script, a Bermudan on 50 dates a year (#313):
+    #: the engine the site offers; the trees stay for the portfolio's marks
+    #: and as its oracle.
+    mc = "mc"
 
 
 class AsianAverageType(str, Enum):
@@ -106,6 +110,19 @@ class AmericanVanillaRequest(BaseModel):
     tree_steps: int = Field(100, ge=10)
     pde_space_steps: int = Field(100, ge=10)
     pde_time_steps: int = Field(100, ge=10)
+    n_paths: int = Field(
+        100_000,
+        ge=1_000,
+        le=2_000_000,
+        description="engine='mc': pricing paths (the exercise rule's pilot is a quarter of them, 20,000 to 200,000).",
+    )
+    seed: int = Field(1, ge=1)
+    exercise_per_year: int = Field(
+        50,
+        ge=1,
+        le=252,
+        description="engine='mc': Bermudan exercise dates a year standing for continuous exercise.",
+    )
 
 
 class AsianRequest(BaseModel):
@@ -503,6 +520,16 @@ class ScriptedProductRequest(ScriptPricingInputs):
         description="Term name -> value (percent terms as fractions: 0.6 = 60 %). Missing terms take the product's defaults.",
     )
     n_paths: int = Field(50_000, ge=1_000, le=5_000_000)
+    engine: Literal["mc", "analytic"] = Field(
+        "mc",
+        description=(
+            "'mc': the script under `model` (Monte-Carlo). 'analytic': the "
+            "closed form, for the products that have one (european-call, "
+            "digital-call): Black-Scholes at the at-the-money implied vol of "
+            "the ticker's stored smile, the strike fixed on the start date "
+            "(a forward start)."
+        ),
+    )
 
 
 class ScriptValidateRequest(BaseModel):

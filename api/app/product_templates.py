@@ -7,6 +7,8 @@ header the site reads:
     # title: Worst-of Phoenix autocall
     # category: Multi-asset
     # underlyings: 3
+    # quanto: USD                      (optional: one underlying listed in
+                                       another currency, paid in this one)
     # source: ...                      (one line per source, at least one)
     # summary: ...
     # param: coupon = 0.025 | percent | Quarterly coupon, % of notional
@@ -39,7 +41,7 @@ LIBRARY = Path(__file__).with_name("product_library")
 LEAD_DAYS = 7
 UNITS = ("percent", "amount", "number")
 
-_META = re.compile(r"^# (title|category|underlyings|source|summary): (.+)$")
+_META = re.compile(r"^# (title|category|underlyings|quanto|source|summary): (.+)$")
 _PARAM = re.compile(r"^# param: (\w+) = (\S+) \| (\w+) \| (.+)$")
 _ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
@@ -65,6 +67,9 @@ class Template:
     text: str
     #: The file without its metadata lines: what an editor shows.
     script: str = field(repr=False)
+    #: Payment currency of a quanto (one underlying listed in another
+    #: currency, priced on `underlyings` with `currency`); None otherwise.
+    quanto: str | None = None
 
 
 def parse(slug: str, text: str) -> Template:
@@ -97,6 +102,7 @@ def parse(slug: str, text: str) -> Template:
         params=tuple(params),
         text=text,
         script="\n".join(body) + "\n",
+        quanto=meta.get("quanto"),
     )
     for prm in t.params:
         if not _assignment(prm.name).search(t.script):
@@ -177,6 +183,7 @@ def catalog() -> List[dict]:
                 for p in t.params
             ],
             "script": t.script,
+            **({"quanto": t.quanto} if t.quanto else {}),
         }
         for t in templates().values()
     ]

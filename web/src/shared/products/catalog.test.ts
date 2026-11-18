@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { paths } from "@/shared/api/schema.gen";
-import { CATALOG } from "./catalog";
+import { CATALOG, CATALOG_BY_KEY } from "./catalog";
 
 /**
  * Catalog exhaustiveness — blueprint WP 12 §3. Every enabled product has a
@@ -36,7 +36,8 @@ describe("product catalog", () => {
 	});
 
 	it("toRequest produces decimals for vol/rate (converted at the edge)", () => {
-		const vanilla = CATALOG.find((p) => p.key === "vanilla")!;
+		// the portfolio's form of a vanilla (no longer on the site)
+		const vanilla = CATALOG_BY_KEY.get("vanilla")!;
 		const req = vanilla.toRequest(
 			{ ...vanilla.defaults, vol: 20, rate: 5 },
 			"analytic",

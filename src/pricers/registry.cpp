@@ -139,6 +139,14 @@ namespace quantModeling
                 });
 
             r.register_pricer(
+                {InstrumentKind::EquityAmericanVanillaOption, ModelKind::BlackScholes, EngineKind::MonteCarlo},
+                [](const PricingRequest &request)
+                {
+                    const auto &in = std::get<AmericanVanillaBSInput>(request.input);
+                    return price_equity_vanilla_american_bs(in, EngineKind::MonteCarlo);
+                });
+
+            r.register_pricer(
                 {InstrumentKind::EquityAmericanVanillaOption, ModelKind::BlackScholes, EngineKind::PDEFiniteDifference},
                 [](const PricingRequest &request)
                 {

@@ -1,0 +1,21 @@
+# title: Quanto call
+# category: Vanillas and digitals
+# underlyings: 1
+# quanto: USD
+# source: Reiner, Quanto Mechanics, Risk 5(3), 1992
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 30 (quantos)
+# summary: A call on a stock listed in another currency, its gain paid in dollars at an exchange rate fixed today: the investor takes the stock's risk, not the currency's.
+# param: strike = 1.0 | percent | Strike, % of the initial level
+# param: fixed_rate = 1.0 | number | Dollars paid per unit of the stock's currency
+#
+# Simulated in dollars: the stock drifts at its own currency's rate, less its
+# dividend, less rho sigma_S sigma_X (the quanto adjustment), X its currency
+# in dollars.
+
+2027-01-04
+    strike = 1.0
+    fixed_rate = 1.0
+    s0 = spot()
+
+2028-01-04
+    pays fixed_rate * max(spot() - strike * s0, 0)

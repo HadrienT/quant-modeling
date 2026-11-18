@@ -1,3 +1,4 @@
+import math
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -175,7 +176,15 @@ def price_american_vanilla(req: AmericanVanillaRequest) -> PricingResponse:
     input_data.pde_space_steps = req.pde_space_steps
     input_data.pde_time_steps = req.pde_time_steps
 
-    if req.engine == AmericanEngineType.trinomial:
+    if req.engine == AmericanEngineType.mc:
+        input_data.n_paths = req.n_paths
+        input_data.seed = req.seed
+        input_data.exercise_per_year = req.exercise_per_year
+        input_data.threads = (
+            0  # the available CPUs, at most 16: the exercise rule's pilot
+        )
+        result = qm.price_american_vanilla_bs_mc(input_data)
+    elif req.engine == AmericanEngineType.trinomial:
         result = qm.price_american_vanilla_bs_trinomial(input_data)
     else:  # default to binomial
         result = qm.price_american_vanilla_bs_binomial(input_data)
@@ -487,13 +496,108 @@ def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResp
     )
 
 
+#: Library products with a closed form under Black-Scholes (engine='analytic').
+ANALYTIC_SCRIPTED = ("european-call", "digital-call")
+
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * math.erfc(-x / math.sqrt(2.0))
+
+
+def _norm_pdf(x: float) -> float:
+    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+
+def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
+    """The closed form of a library product (ANALYTIC_SCRIPTED) under
+    Black-Scholes on the ticker's stored market: spot and dividend of the
+    snapshot, the at-the-money implied vol of its smile at the expiry.
+
+    The library fixes the strike on its first date, t1, a week or so ahead
+    (product_templates.render): a forward start. With k the strike in
+    fractions of S(t1) and tau = T - t1, the call is
+    S0 e^(-q t1) C(1, k, tau) and the digital P e^(-r T) N(d2(1, k, tau))
+    (Hull, ch. 26, forward-start options). The greeks are the formulas'
+    derivatives: per unit of spot, of volatility and of rate, theta per
+    year with t1 and T drawing nearer."""
+    from types import SimpleNamespace
+
+    from . import market_snapshot, product_templates
+
+    if req.product not in ANALYTIC_SCRIPTED:
+        raise ValueError(
+            f"'{req.product}' has no closed form: engine='analytic' prices "
+            f"{', '.join(ANALYTIC_SCRIPTED)}"
+        )
+    if not req.ticker:
+        raise ValueError("engine='analytic' reads its market from a `ticker`")
+    market = market_snapshot.local_vol_market(req.ticker, req.rate, req.valuation_date)
+    val = market.valuation_date
+    script = product_templates.render(req.product, req.terms, val)
+    events = qm.validate_script(script, val.isoformat(), req.day_count)["events"]
+    t1, T = events[0]["t"], events[-1]["t"]
+    tau = T - t1
+    sigma = _atm_implied_vol(
+        SimpleNamespace(script=script, day_count=req.day_count), market, val
+    )
+    defaults = {p.name: p.default for p in product_templates.get(req.product).params}
+    terms = {**defaults, **req.terms}
+    S0, r, q, k = market.spot, req.rate, market.dividend, float(terms["strike"])
+    sd = sigma * math.sqrt(tau)
+    d1 = (math.log(1.0 / k) + (r - q + 0.5 * sigma * sigma) * tau) / sd
+    d2 = d1 - sd
+    if req.product == "european-call":
+        unit = math.exp(-q * tau) * _norm_cdf(d1) - k * math.exp(-r * tau) * _norm_cdf(
+            d2
+        )
+        carry = S0 * math.exp(-q * t1)
+        npv = carry * unit
+        greeks = dict(
+            delta=math.exp(-q * t1) * unit,
+            gamma=0.0,
+            vega=carry * math.exp(-q * tau) * _norm_pdf(d1) * math.sqrt(tau),
+            rho=carry * k * tau * math.exp(-r * tau) * _norm_cdf(d2),
+            theta=q * npv,
+        )
+        what = "forward-start call"
+    else:
+        payout = float(terms["payout"])
+        disc = payout * math.exp(-r * T)
+        npv = disc * _norm_cdf(d2)
+        greeks = dict(
+            delta=0.0,
+            gamma=0.0,
+            vega=-disc * _norm_pdf(d2) * d1 / sigma,
+            rho=disc * (-T * _norm_cdf(d2) + _norm_pdf(d2) * math.sqrt(tau) / sigma),
+            theta=r * npv,
+        )
+        what = "forward-start cash-or-nothing digital"
+    diagnostics = (
+        f"Analytic {what}, Black-Scholes at the at-the-money implied vol "
+        f"{sigma:.4f} of the {market.ticker} smile of {val.isoformat()} "
+        f"(strike fixed at t1 = {t1:.4f}, expiry T = {T:.4f})"
+    )
+    response = _pricing_response_from_dict(
+        {"npv": npv, "greeks": greeks, "diagnostics": diagnostics}
+    )
+    return response.model_copy(
+        update={
+            "script": script,
+            "warnings": list(market.warnings),
+        }
+    )
+
+
 def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     """A library product from its term sheet (product_templates.py): the
-    script is rendered with the terms, then priced like any script."""
+    script is rendered with the terms, then priced like any script (or by
+    its closed form, engine='analytic')."""
     from . import product_templates
 
+    if req.engine == "analytic":
+        return _price_scripted_analytic(req)
     script = product_templates.render(req.product, req.terms, req.valuation_date)
-    fields = req.model_dump(exclude={"product", "terms"})
+    fields = req.model_dump(exclude={"product", "terms", "engine"})
     response = price_script(ScriptRequest(script=script, **fields), library=True)
     return response.model_copy(update={"script": script})
 

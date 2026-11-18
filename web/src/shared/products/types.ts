@@ -34,6 +34,9 @@ export type ScriptedProduct = {
 		label: string;
 	}[];
 	script: string;
+	/** Payment currency of a quanto: one underlying listed in another
+	 * currency, priced on `underlyings` with `currency`. */
+	quanto?: string;
 };
 
 /** Per-field overrides of what zodFields derives from a schema. */
@@ -70,6 +73,12 @@ export type ProductDescriptor = {
 	/** default values, in UI units (vol/rate as %). */
 	defaults: Record<string, unknown>;
 	engines: EngineCapability[];
+	/**
+	 * The engine a portfolio's daily mark uses when it is none of the site's
+	 * (the American's binomial tree, kept in the API for that): the mark is
+	 * recomputed for every day of a history. Never offered on the site.
+	 */
+	markEngine?: EngineKey;
 	/**
 	 * Pricing route, typed from the OpenAPI paths — undefined for a
 	 * doc-only catalog entry with no backend at all yet (a product that

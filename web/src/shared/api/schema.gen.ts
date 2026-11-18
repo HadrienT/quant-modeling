@@ -1389,6 +1389,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/american-vanilla/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence American Vanilla
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_american_vanilla"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/asian": {
         parameters: {
             query?: never;
@@ -2213,17 +2235,29 @@ export interface components {
          * AmericanEngineType
          * @enum {string}
          */
-        AmericanEngineType: "binomial" | "trinomial";
+        AmericanEngineType: "binomial" | "trinomial" | "mc";
         /** AmericanVanillaRequest */
         AmericanVanillaRequest: {
             /** Dividend */
             dividend: number;
             /** @default binomial */
             engine: components["schemas"]["AmericanEngineType"];
+            /**
+             * Exercise Per Year
+             * @description engine='mc': Bermudan exercise dates a year standing for continuous exercise.
+             * @default 50
+             */
+            exercise_per_year: number;
             /** Is Call */
             is_call: boolean;
             /** Maturity */
             maturity: number;
+            /**
+             * N Paths
+             * @description engine='mc': pricing paths (the exercise rule's pilot is a quarter of them, 20,000 to 200,000).
+             * @default 100000
+             */
+            n_paths: number;
             /**
              * Pde Space Steps
              * @default 100
@@ -2236,6 +2270,11 @@ export interface components {
             pde_time_steps: number;
             /** Rate */
             rate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
             /** Spot */
             spot: number;
             /** Strike */
@@ -7129,6 +7168,13 @@ export interface components {
              */
             dividend: number;
             /**
+             * Engine
+             * @description 'mc': the script under `model` (Monte-Carlo). 'analytic': the closed form, for the products that have one (european-call, digital-call): Black-Scholes at the at-the-money implied vol of the ticker's stored smile, the strike fixed on the start date (a forward start).
+             * @default mc
+             * @enum {string}
+             */
+            engine: "mc" | "analytic";
+            /**
              * Fuzzy
              * @default false
              */
@@ -11850,6 +11896,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_american_vanilla: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AmericanVanillaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */

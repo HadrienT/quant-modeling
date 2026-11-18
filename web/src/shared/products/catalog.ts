@@ -24,16 +24,6 @@ const MC_PATH = {
 	label: "Monte-Carlo",
 	options: ["paths", "seed", "steps", "bridge", "antithetic"] as const,
 };
-const TREE = {
-	key: "binomial" as EngineKey,
-	label: "Binomial tree",
-	options: ["steps"] as const,
-};
-const PDE = {
-	key: "pde" as EngineKey,
-	label: "PDE (Crank-Nicolson)",
-	options: ["steps"] as const,
-};
 
 const UNVETTED =
 	"No market data for this asset class in the site's database yet: its reference sheet is here, its pricing is not.";
@@ -53,22 +43,17 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		enabled: true,
 		schema: z.object({
 			...bsCore,
-			engine: z.enum(["analytic", "mc", "binomial", "trinomial", "pde"]),
+			engine: z.enum(["analytic", "mc"]),
 			// Up to the API's cap: CPU and GPU only separate at tens of
 			// millions of paths, below that launch overhead dominates.
 			n_paths: z.coerce.number().int().min(1_000).max(100_000_000),
 			seed: f.seed(),
-			tree_steps: z.coerce.number().int().min(10).max(5000),
 		}),
-		defaults: bump({}, { engine: "analytic", tree_steps: 200 }),
+		defaults: bump({}, { engine: "analytic" }),
 		gpu: true,
-		engines: [
-			ANALYTIC,
-			MC,
-			TREE,
-			{ key: "trinomial", label: "Trinomial tree", options: ["steps"] },
-			PDE,
-		],
+		// The site offers Analytic and Monte-Carlo only (issue 313): the trees and
+		// the PDE stay in the library and its tests, as oracles.
+		engines: [ANALYTIC, MC],
 		endpoint: "/price/option/vanilla",
 		docKey: "option",
 		greeks: ["delta", "gamma", "vega", "theta", "rho"],
@@ -83,7 +68,6 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 			engine,
 			n_paths: +v.n_paths!,
 			seed: +v.seed!,
-			tree_steps: +v.tree_steps!,
 		}),
 	},
 	{
@@ -152,15 +136,22 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		enabled: true,
 		schema: z.object({
 			...bsCore,
-			engine: z.enum(["binomial", "trinomial"]),
-			tree_steps: z.coerce.number().int().min(10).max(5000),
+			engine: z.enum(["mc", "binomial"]),
+			n_paths: f.paths(),
+			seed: f.seed(),
 		}),
-		defaults: bump({}, { engine: "binomial", tree_steps: 300 }),
+		defaults: bump({ n_paths: 100_000 }, { engine: "mc" }),
+		// Longstaff-Schwartz on a script, a Bermudan on 50 dates a year (issue 313).
 		engines: [
-			TREE,
-			{ key: "trinomial", label: "Trinomial tree", options: ["steps"] },
-			PDE,
+			{
+				...MC,
+				label: "Monte-Carlo (Longstaff-Schwartz)",
+				options: ["paths", "seed"],
+			},
 		],
+		// A portfolio marks every day of its history: the tree, still in the
+		// API, keeps that history fast.
+		markEngine: "binomial",
 		endpoint: "/price/option/american-vanilla",
 		docKey: "american",
 		greeks: ["delta", "gamma", "vega", "theta", "rho"],
@@ -173,7 +164,9 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 			vol: pct(v.vol),
 			is_call: !!v.is_call,
 			engine,
-			tree_steps: +v.tree_steps!,
+			...(engine === "mc"
+				? { n_paths: +v.n_paths!, seed: +v.seed! }
+				: { tree_steps: 300 }),
 		}),
 	},
 	{
@@ -613,22 +606,55 @@ const FAMILY_ORDER: ProductDescriptor["category"][] = [
  * then the scripts by name. A product without a pricing (`enabled: false`)
  * shows in the Products reference only.
  */
+/**
+ * The hand-written equity pricers: no longer on the site (issue 313, the
+ * scripts of the library are the catalog), still the forms a portfolio books
+ * and marks until it books scripts (lot b3). The library's trees, closed
+ * forms and engines behind them stay as oracles.
+ */
+const PORTFOLIO_ONLY = new Set([
+	"vanilla",
+	"quanto",
+	"american",
+	"asian",
+	"barrier",
+	"digital",
+	"lookback",
+	"basket",
+	"rainbow",
+]);
+
+/**
+ * Every product by family: the scripts of the library, and the rates
+ * products the language does not write yet (lot b2). A product without a
+ * pricing (`enabled: false`) shows in the Products reference only.
+ */
 export const CATALOG: ProductDescriptor[] = [
-	...HAND_WRITTEN,
+	...HAND_WRITTEN.filter((p) => !PORTFOLIO_ONLY.has(p.key)),
 	...SCRIPTED_CATALOG,
 ].sort(
 	(a, b) => FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category),
 );
 
-/** Where the workbench and the products page open: the analytic vanilla,
- * instant and independent of the market database. */
-export const DEFAULT_PRODUCT_KEY = "vanilla";
+/** Where the workbench and the products page open: the European call, by its
+ * closed form, instant. */
+export const DEFAULT_PRODUCT_KEY = "script-european-call";
 
 /**
  * Products that were greyed out until a script of the library priced them:
  * their old links open the script.
  */
 const FORMER_KEYS: Record<string, string> = {
+	// The hand-written pricers the scripts replaced on the site (issue 313).
+	vanilla: "script-european-call",
+	american: "script-american-put",
+	quanto: "script-quanto-call",
+	asian: "script-asian-call",
+	barrier: "script-up-and-out-call",
+	digital: "script-digital-call",
+	lookback: "script-fixed-lookback-call",
+	basket: "script-basket-call",
+	rainbow: "script-worst-of-call",
 	autocall: "script-athena-autocall",
 	mountain: "script-himalaya",
 	"variance-swap": "script-variance-swap",
@@ -644,7 +670,12 @@ export function resolveProductKey(key: string | undefined): string | undefined {
 	return key ? (FORMER_KEYS[key] ?? key) : undefined;
 }
 
-export const CATALOG_BY_KEY = new Map(CATALOG.map((p) => [p.key, p]));
+/** Every descriptor by key: the catalog, and the portfolio's own forms. */
+export const CATALOG_BY_KEY = new Map(
+	[...CATALOG, ...HAND_WRITTEN.filter((p) => PORTFOLIO_ONLY.has(p.key))].map(
+		(p) => [p.key, p],
+	),
+);
 
 export const CATEGORY_LABELS: Record<ProductDescriptor["category"], string> = {
 	vanilla: "Vanillas & digitals",
