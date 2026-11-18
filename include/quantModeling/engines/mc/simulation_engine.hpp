@@ -482,7 +482,8 @@ namespace quantModeling
                           const uint64_t batch_seed =
                               (static_cast<uint64_t>(static_cast<uint32_t>(seed)) << 32) |
                               static_cast<uint64_t>(b);
-                          SobolSequence sobol(static_cast<int>(dim), batch_seed, settings.mc_sobol_owen);
+                          SobolSequence sobol(static_cast<int>(dim), batch_seed, settings.mc_sobol_owen,
+                                              settings.mc_sobol_owen_nested);
                           std::vector<WelfordAccumulator> inner(n_labels);
                           std::vector<MultiControlAccumulator> inner_cv(cv ? n_labels : 0);
                           w.batch_fill = 0;
@@ -530,7 +531,7 @@ namespace quantModeling
             res.diagnostics = "SimulationMCEngine + Sobol RQMC (" +
                               std::to_string(B) + " batches of " + std::to_string(per_batch) + " points, dim=" +
                               std::to_string(dim) + ")" +
-                              (bridged ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? " + Owen scrambling" : "") +
+                              (bridged ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? (settings.mc_sobol_owen_nested ? " + Owen scrambling (a coin per node)" : " + Owen scrambling") : "") +
                               (cv ? cv_label() : "") + cv_off + threads_note();
             return res;
         }

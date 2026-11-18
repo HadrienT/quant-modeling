@@ -38,7 +38,8 @@ namespace quantModeling::mc
         const uint32_t *V = nullptr;     ///< dim x 32 direction integers, dimension-major
         const uint32_t *shift = nullptr; ///< replicates x dim digital shifts (Owen: the seeds)
         int dim = 0;
-        bool owen = false; ///< Owen's scrambling instead of the digital shift
+        bool owen = false;        ///< Owen's scrambling instead of the digital shift
+        bool owen_nested = false; ///< with owen: a coin per node (owen_scramble_nested)
         /// The sequence's point a run's unit 0 is: a run prices points
         /// first_point .. first_point + n_units - 1 of every replicate
         /// (a multilevel level adding points, WP 26 §10.3).
@@ -60,7 +61,7 @@ namespace quantModeling::mc
         const uint32_t *sh = v.shift + rep * static_cast<uint64_t>(v.dim);
         auto coord = [&](int j)
         {
-            const uint32_t bits = sobol_randomise(sobol_point_bits(v.V + 32L * j, p), sh[j], v.owen);
+            const uint32_t bits = sobol_randomise(sobol_point_bits(v.V + 32L * j, p), sh[j], v.owen, v.owen_nested);
             return inverse_normal_cdf(sobol_to_uniform(bits, 0u));
         };
         if (v.n == 0)
@@ -111,6 +112,7 @@ namespace quantModeling::mc
         int dim = 0, n = 0, factors = 0, stride = 0;
         int replicates = 0;
         bool owen = false;
+        bool owen_nested = false;
         uint32_t first_point = 0; ///< see SobolBridgeView
 
         bool bridged() const { return n > 0; }
@@ -123,6 +125,7 @@ namespace quantModeling::mc
             v.shift = shift.data();
             v.dim = dim;
             v.owen = owen;
+            v.owen_nested = owen_nested;
             v.first_point = first_point;
             v.n = n;
             v.factors = factors;

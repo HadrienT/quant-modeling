@@ -569,9 +569,31 @@ P0, since a displayed figure must be defensible.
 - path construction: Brownian bridge (today) against PCA of the Brownian
   increments (`etc/ROADMAP.md` §1.1 lists it), and, for several factors, which
   factor's coarse coordinates take the first Sobol dimensions;
-- randomisation: digital shift (today's decision, WP 19 §12) against a true
+- ~~randomisation: digital shift (today's decision, WP 19 §12) against a true
   Owen scrambling, random bits per node of the tree, which the hash of
-  Burley only approximates;
+  Burley only approximates~~ **measured 2026-11-18 (#226): no change, the
+  digital shift stays.** `owen_scramble_nested` (utils/sobol.hpp) flips each
+  bit with a coin of its own node, (1 << k) | prefix, from a full-avalanche
+  hash (internal setting `mc_sobol_owen_nested`, the plain engine CPU and
+  GPU, the same bits; tested nested, a net, fair coins independent between
+  siblings). Two findings:
+  - Burley's hash passes the same sibling test (fair, 50 % agreement at
+    levels 1 to 20), so its approximation is not visible pairwise.
+  - Protocol of WP 19 §12 (`qm_gpu_owen_bench 200 nested shift|hash`), 49
+    library scripts, hard and fuzzy, 2^16 and 2^19 points. The five with an
+    exercise() are left out, since the GPU needs a fitted rule.
+    - Against the hash, it is indistinguishable: 92 of 98 comparisons, 2
+      better, 4 worse, chance at a 95 % interval; geometric mean of the
+      variance ratio 0.99.
+    - Against the shift, it has the hash's profile: 24 better, 69
+      indistinguishable, 5 worse (reverse cliquet ×2.5, capital-protected
+      note ×1.9, phoenix ×2.0); geometric mean 1.12. The verdict still
+      flips with the point count for one product (capital-protected note,
+      phoenix).
+
+    So a true Owen scrambling is not what was missing. There is no rule
+    a priori, and the decision of WP 19 §12 stands. The setting stays
+    internal, for a later protocol;
 - discontinuous payoffs lose most of QMC's edge: P2's smoothed indicators and
   bridge survival probabilities are what gives it back (barriers, digitals,
   autocalls).

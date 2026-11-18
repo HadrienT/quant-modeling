@@ -1,7 +1,12 @@
 // Owen's scrambling against the digital shift, on every library script
 // (blueprint/wp/19-gpu.md §12): does Owen pay, and where?
 //
-//   build-cuda/qm_gpu_owen_bench [seeds=200]
+//   build-cuda/qm_gpu_owen_bench [seeds=200] [owen=hash|nested] [against=shift|hash]
+//
+// `owen`: Burley's hash (owen_scramble) or a coin per node of the tree
+// (owen_scramble_nested, WP 26 #226); `against`: the randomisation it is
+// compared with. A first column of a script name filter can be given in
+// QM_OWEN_ONLY (a substring).
 //
 // Sobol RQMC + Brownian bridge, 16 replicates, priced on the GPU: local vol
 // (a skewed surface, 52 steps a year) for one underlying, correlated
@@ -54,6 +59,9 @@ namespace
 int main(int argc, char **argv)
 {
     const int seeds = argc > 1 ? std::atoi(argv[1]) : 200;
+    const bool nested = argc > 2 && std::string(argv[2]) == "nested";
+    const bool against_hash = argc > 3 && std::string(argv[3]) == "hash";
+    const char *only = std::getenv("QM_OWEN_ONLY");
     if (qm::gpu::device_count() == 0)
     {
         std::fprintf(stderr, "no CUDA device\n");
@@ -76,13 +84,16 @@ int main(int argc, char **argv)
     std::sort(files.begin(), files.end());
 
     const double ci = std::exp(1.96 * std::sqrt(4.0 / (seeds - 1)));
-    std::printf("Owen vs digital shift, Sobol + bridge, 16 replicates, %d seeds; ratio = var(shift) / var(owen),\n"
+    std::printf("Owen (%s) vs %s, Sobol + bridge, 16 replicates, %d seeds; ratio = var(%s) / var(owen),\n"
                 "95 %% interval ratio x/ %.2f. threshold: the script tests a spot against a level.\n\n",
-                seeds, ci);
+                nested ? "a coin per node" : "Burley's hash", against_hash ? "Burley's hash" : "digital shift",
+                seeds, against_hash ? "hash" : "shift", ci);
     std::printf("%-30s %-5s %-9s %9s %8s %8s  %s\n", "script", "mode", "threshold", "points", "ratio", "95% low",
                 "verdict");
     for (const auto &path : files)
     {
+        if (only && path.stem().string().find(only) == std::string::npos)
+            continue;
         std::ifstream in(path);
         std::stringstream text;
         text << in.rdbuf();
@@ -91,6 +102,14 @@ int main(int argc, char **argv)
             qm::ScriptSettings ss;
             ss.fuzzy = fuzzy;
             const qm::ScriptedProduct<Real> product(text.str(), ctx, ss);
+            // early exercise needs a fitted rule, which this protocol does not
+            // fit (the GPU refuses the script without one): left out, said
+            if (product.has_exercise())
+            {
+                if (!fuzzy)
+                    std::printf("%-30s skipped: early exercise\n", path.stem().string().c_str());
+                continue;
+            }
             const std::size_t n = product.n_underlyings();
             auto make = [&]() -> std::unique_ptr<qm::ISimulationModel<Real>>
             {
@@ -114,7 +133,9 @@ int main(int argc, char **argv)
                         set.mc_paths = points;
                         set.mc_seed = s;
                         set.mc_sampler = qm::SamplerKind::Sobol;
-                        set.mc_sobol_owen = owen == 1;
+                        // 0: the reference (the shift, or the hash); 1: the Owen under test
+                        set.mc_sobol_owen = owen == 1 || against_hash;
+                        set.mc_sobol_owen_nested = owen == 1 && nested;
                         set.mc_device = qm::ComputeDevice::Gpu;
                         auto m = make();
                         est[owen].push_back(qm::simulate_script(product, *m, set).npv());

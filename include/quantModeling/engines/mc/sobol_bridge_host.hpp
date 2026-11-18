@@ -21,11 +21,13 @@ namespace quantModeling::mc
      *        (BridgedGaussians' own tables).
      */
     inline SobolTables sobol_tables(std::size_t dimension, const std::vector<uint64_t> &keys,
-                                    const BrownianLayout &layout, bool bridge, bool owen = false)
+                                    const BrownianLayout &layout, bool bridge, bool owen = false,
+                                    bool owen_nested = false)
     {
         SobolTables t;
         t.dim = static_cast<int>(dimension);
         t.owen = owen;
+        t.owen_nested = owen && owen_nested;
         t.replicates = static_cast<int>(keys.size());
         // The directions are the same for every replicate: built once.
         {
@@ -58,12 +60,13 @@ namespace quantModeling::mc
     /// The generic engine's scheme: replicate b is
     /// SobolSequence(dim, (seed << 32) | b).
     inline SobolTables sobol_tables(std::size_t dimension, uint64_t seed, int replicates,
-                                    const BrownianLayout &layout, bool bridge, bool owen = false)
+                                    const BrownianLayout &layout, bool bridge, bool owen = false,
+                                    bool owen_nested = false)
     {
         std::vector<uint64_t> keys;
         for (int b = 0; b < replicates; ++b)
             keys.push_back((static_cast<uint64_t>(static_cast<uint32_t>(seed)) << 32) | static_cast<uint64_t>(b));
-        return sobol_tables(dimension, keys, layout, bridge, owen);
+        return sobol_tables(dimension, keys, layout, bridge, owen, owen_nested);
     }
 
     /// The Sobol tables of one multilevel QMC level: its fine grid, and the
