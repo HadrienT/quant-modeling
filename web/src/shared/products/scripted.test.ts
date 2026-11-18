@@ -5,7 +5,7 @@ import {
 	DEFAULT_PRODUCT_KEY,
 	resolveProductKey,
 } from "./catalog";
-import { SCRIPTED_PRODUCTS, scriptedKey } from "./scripted";
+import { ANALYTIC_SCRIPTED, SCRIPTED_PRODUCTS, scriptedKey } from "./scripted";
 import { fieldsFromSchema } from "./zodFields";
 
 describe("scripted catalog entries", () => {
@@ -13,9 +13,54 @@ describe("scripted catalog entries", () => {
 		expect(SCRIPTED_PRODUCTS.length).toBeGreaterThanOrEqual(40);
 		for (const p of SCRIPTED_PRODUCTS) {
 			const d = CATALOG_BY_KEY.get(scriptedKey(p.slug))!;
-			expect(d.enabled && d.endpoint).toBe("/price/scripted-product");
+			expect(CATALOG).toContain(d);
+			expect(d.endpoint).toBe("/price/scripted-product");
+			expect(d.enabled || !!d.disabledReason, p.slug).toBe(true);
 			expect(d.schema.safeParse(d.defaults).success, p.slug).toBe(true);
 		}
+	});
+
+	it("lists scripts, not the hand-written pricers, once each, Analytic and Monte-Carlo only", () => {
+		const labels = CATALOG.map((p) => p.label.toLowerCase());
+		expect(new Set(labels).size).toBe(labels.length);
+		for (const key of [
+			"vanilla",
+			"american",
+			"asian",
+			"barrier",
+			"digital",
+			"lookback",
+			"basket",
+			"rainbow",
+			"quanto",
+		]) {
+			expect(
+				CATALOG.some((p) => p.key === key),
+				key,
+			).toBe(false);
+			// an old link opens the script that replaced it
+			expect(resolveProductKey(key)?.startsWith("script-"), key).toBe(true);
+			expect(CATALOG_BY_KEY.has(resolveProductKey(key)!), key).toBe(true);
+		}
+		for (const p of CATALOG.filter((d) => d.enabled))
+			for (const e of p.engines)
+				expect(["analytic", "mc"], `${p.key}: ${e.key}`).toContain(e.key);
+		for (const slug of ANALYTIC_SCRIPTED) {
+			const d = CATALOG_BY_KEY.get(scriptedKey(slug))!;
+			expect(d.engines[0]!.key).toBe("analytic");
+			expect(d.toRequest(d.defaults, "analytic")).toMatchObject({
+				engine: "analytic",
+			});
+			expect(d.toRequest(d.defaults, "mc")).not.toHaveProperty("engine");
+		}
+	});
+
+	it("prices a quanto on one underlying in its own currency, paid in the declared one", () => {
+		const d = CATALOG_BY_KEY.get("script-quanto-call")!;
+		expect(d.toRequest(d.defaults, "mc")).toMatchObject({
+			underlyings: [{ ticker: "SAP.DE" }],
+			currency: "USD",
+		});
 	});
 
 	it("sends terms as fractions and one ticker per underlying", () => {
@@ -90,14 +135,19 @@ describe("scripted catalog entries", () => {
 				former === "double-barrier" ? "double-barrier" : former,
 			);
 		}
-		expect(resolveProductKey("vanilla")).toBe("vanilla");
+		expect(resolveProductKey("script-chooser")).toBe("script-chooser");
 	});
 
-	it("leaves only the asset classes without market data unpriced", () => {
+	it("leaves only what the database cannot price unpriced", () => {
+		// FX and commodities, and the quanto, whose foreign underlying has no
+		// stored dividend yield yet
 		expect(
-			CATALOG.filter((p) => !p.enabled)
-				.map((p) => p.category)
-				.every((c) => c === "fx" || c === "commodity"),
+			CATALOG.filter((p) => !p.enabled).every(
+				(p) =>
+					p.category === "fx" ||
+					p.category === "commodity" ||
+					p.key === "script-quanto-call",
+			),
 		).toBe(true);
 	});
 

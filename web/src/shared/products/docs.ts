@@ -101,33 +101,23 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			"\\max(S_T-K,\\,0)\\ \\text{(call)} \\qquad \\max(K-S_T,\\,0)\\ \\text{(put)}",
 		assumptions: [
 			bsDynamics,
-			"European exercise only. Selecting a tree or PDE engine still prices this European payoff; American exercise is a separate catalog entry, not a flag here.",
+			"European exercise only; American exercise is a separate catalog entry, not a flag here.",
 			"No transaction costs, continuous trading, no borrow constraints.",
 		],
 		pricingMethods: [
 			{
-				engine: "Analytic",
+				engine: "Analytic (Black-Scholes)",
 				detail:
-					"Closed-form Black-Scholes-Merton. Exact under the model, fastest engine, and the reference the others are checked against.",
+					"Closed-form Black-Scholes-Merton at the at-the-money implied vol of the ticker's stored smile. The strike is fixed on the start date $t_1$, a week ahead, as a percentage of the spot then (a forward start): the price is $S_0e^{-qt_1}\\,C(1,k,T-t_1)$, exact under the model, and its greeks are the formula's derivatives.",
 			},
 			{
-				engine: "Monte-Carlo",
+				engine: "Monte-Carlo (payoff script)",
 				detail:
-					"The payoff depends only on $S_T$, so the terminal spot is drawn directly from its exact log-normal law — no path is stepped. Antithetic variates are always on; you control path count, seed and the MC-epsilon payoff smoothing bump.",
-			},
-			{
-				engine: "Binomial / trinomial tree",
-				detail:
-					"Backward induction on a recombining lattice over the chosen number of steps; converges to the analytic price. Mainly the building block reused for American exercise.",
-			},
-			{
-				engine: "PDE (Crank-Nicolson)",
-				detail:
-					"Solves the Black-Scholes PDE backward in time on a finite-difference grid sized by the space/time step counts.",
+					"The payoff script under the model the site chooses on the market (local vol for a payoff on one date) or the one you pick; greeks by adjoint differentiation on the same paths.",
 			},
 		],
 		notes: [
-			"Greeks are central finite differences on the pricing function for every engine — bump an input, reprice, divide by twice the bump. Engine-agnostic but costs an extra repricing per greek; no adjoint (AAD) yet.",
+			"The library also prices it on binomial and trinomial trees and on a Crank-Nicolson grid; these stay in its tests, as oracles, and are not offered here.",
 			"Put-call parity $C-P=S_0e^{-qT}-Ke^{-rT}$ is a free correctness check across engines.",
 		],
 		references: [
@@ -154,23 +144,18 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			"\\sup_{\\tau\\le T}\\ \\mathbb{E}\\big[e^{-r\\tau}\\max(\\phi(S_\\tau-K),0)\\big],\\quad \\phi=\\pm1",
 		assumptions: [
 			bsDynamics,
-			"Early exercise permitted at every lattice / grid time step (a discrete approximation to continuous exercise).",
+			"Early exercise every week (a Bermudan standing for continuous exercise).",
 		],
 		pricingMethods: [
 			{
-				engine: "Binomial / trinomial tree",
+				engine: "Monte-Carlo (payoff script, Longstaff-Schwartz)",
 				detail:
-					"Backward induction: at each node the value is $\\max(\\text{continuation},\\ \\text{intrinsic})$. The exercise boundary emerges from where intrinsic first wins. Step count trades accuracy for latency.",
-			},
-			{
-				engine: "PDE (Crank-Nicolson)",
-				detail:
-					"The free-boundary problem is handled by projecting the solution onto the payoff at each time step (an explicit obstacle constraint on the finite-difference grid).",
+					"The exercise rule is a least-squares regression of the continuation value on the moneyness $S/S_0$, date by date, fitted on independent pilot paths; the price is the payoff under that rule on fresh paths, under the model the site chooses on the market. Exercise is considered only in the money, the only place it can be optimal. Greeks hold the rule fixed (at the optimal boundary its own sensitivity vanishes).",
 			},
 		],
 		notes: [
-			"A non-dividend American call equals its European counterpart — a free sanity check (set $q=0$, compare to the vanilla analytic price).",
-			"American value is monotone in every step count refinement; oscillation as steps grow signals a lattice parameterisation issue.",
+			"The price is a lower bound: an estimated rule can only lose value against the optimal one, and weekly exercise is worth a little less than continuous. Under Black-Scholes at S = K = 100, one year, 20 % vol, 5 % rate, it is 0.4 % under a 4,000-step binomial tree.",
+			"The library has the American put only. A call on a stock without dividend is never exercised early (Merton 1973): it is the European call. On a dividend payer, exercising is worth it only above the forward held to the expiry, which needs the dividend the script does not see; without that bound an estimated rule can price under the European.",
 		],
 		references: [
 			{
@@ -187,9 +172,10 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			{
 				kind: "paper",
 				label: "Longstaff & Schwartz (2001)",
-				cite: "Valuing American Options by Simulation: A Simple Least-Squares Approach. The Review of Financial Studies 14(1), 113–147. (The repo prices American exercise on lattices / the PDE grid, not by LSM regression.)",
+				cite: "Valuing American Options by Simulation: A Simple Least-Squares Approach. The Review of Financial Studies 14(1), 113–147.",
 				url: "https://doi.org/10.1093/rfs/14.1.113",
 			},
+			MERTON_1973,
 			{
 				...HULL,
 				cite: "Options, Futures, and Other Derivatives, 11th ed., Pearson — ch. 21 (trees), ch. 27 (finite differences).",

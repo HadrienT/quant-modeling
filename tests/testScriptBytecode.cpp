@@ -85,9 +85,9 @@ namespace quantModeling
         }
     } // namespace
 
-    TEST(ScriptBytecode, TheLibraryHasItsFortyFourScriptsWithoutExercise)
+    TEST(ScriptBytecode, TheLibraryHasItsFortyFiveScriptsWithoutExercise)
     {
-        EXPECT_EQ(library().size(), 44u);
+        EXPECT_EQ(library().size(), 45u);
     }
 
     TEST(ScriptBytecode, HardPricesAreBitIdenticalToTheTree)

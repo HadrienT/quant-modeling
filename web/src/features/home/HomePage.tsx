@@ -27,10 +27,10 @@ export default function HomePage() {
 						From a C++ pricing library to your browser.
 					</h1>
 					<p className="text-base leading-relaxed text-ink-secondary">
-						Analytic, tree, PDE and Monte Carlo engines, calibrated local and
-						stochastic volatility, a payoff scripting language and GPU Monte
-						Carlo — each one usable here, with the model and its inputs shown
-						next to every number.
+						Closed forms and Monte Carlo, calibrated local and stochastic
+						volatility, a payoff scripting language and GPU Monte Carlo — each
+						one usable here, with the model and its inputs shown next to every
+						number.
 					</p>
 					{(isShown("/price") || isShown("/scripting")) && (
 						<div className="flex flex-wrap gap-2">

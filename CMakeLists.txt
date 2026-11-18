@@ -452,6 +452,7 @@ if(QM_BUILD_TESTS)
     tests/testLocalVol.cpp
     tests/testUtils.cpp
     tests/testRegistry.cpp
+    tests/testAmericanLsm.cpp
     tests/testModels.cpp
     tests/testShortRateModels.cpp
     tests/testStructuredProducts.cpp

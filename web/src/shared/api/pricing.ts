@@ -134,6 +134,7 @@ export function convergencePath(endpoint: PricingPath | null) {
  *  removed on the API side fails the typecheck until it is listed here. */
 const CONVERGENCE_PATHS = [
 	"/price/option/vanilla/convergence",
+	"/price/option/american-vanilla/convergence",
 	"/price/option/asian/convergence",
 	"/price/option/dated-asian/convergence",
 	"/price/scripted/convergence",

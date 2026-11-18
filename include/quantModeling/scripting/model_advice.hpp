@@ -1,9 +1,14 @@
 #ifndef QM_SCRIPTING_MODEL_ADVICE_HPP
 #define QM_SCRIPTING_MODEL_ADVICE_HPP
 
+#include "quantModeling/core/results.hpp"
+#include "quantModeling/models/equity/heston.hpp"
 #include "quantModeling/scripting/visitors/script_analyzer.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -274,6 +279,58 @@ namespace quantModeling::scripting
                 "forwards, and every model calibrated to them agrees. Local "
                 "vol on the market surface is used for its spot and "
                 "dividend."};
+    }
+
+    /**
+     * @brief Removes the pathwise risks to the variance parameters (v0,
+     *        kappa, theta, xi, rho) when they do not exist, and says why.
+     *
+     * The pathwise derivative of the variance path carries the adjoint of
+     * sqrt(v), 1 / (2 sqrt(v)), on every step. Near zero the law of v_t has
+     * a density in v^(2 kappa theta / xi^2 - 1), so E[1/v] -- the variance of
+     * that adjoint -- is infinite once the Feller ratio 2 kappa theta / xi^2
+     * falls below 1: in the continuous limit dv_t/dv0 contains the integral
+     * of dW / sqrt(v), which then diverges. The variance floor of the scheme
+     * keeps the numbers finite, not meaningful: on a fit with ratio 0.18 the
+     * estimate of dP/dv0 came out at -5e8 +- 6e8 for a price of 39. The price
+     * itself depends smoothly on these parameters; only the pathwise
+     * estimator fails. The spot, rate, dividend and leverage risks do not
+     * pass through 1 / sqrt(v) and are kept.
+     *
+     * Heston and SLV only (rough Bergomi's rho is another parameter).
+     */
+    inline std::optional<Advice> withhold_variance_parameter_risks(RiskReport &risks, const HestonParams &h,
+                                                                   ModelKind model)
+    {
+        if (model != ModelKind::Heston && model != ModelKind::StochasticLocalVol)
+            return std::nullopt;
+        const double feller = h.xi > 0.0 ? 2.0 * h.kappa * h.theta / (h.xi * h.xi) : 1e300;
+        if (feller >= 1.0)
+            return std::nullopt;
+        static constexpr std::array<const char *, 5> names{"v0", "kappa", "theta", "xi", "rho"};
+        RiskReport kept;
+        for (std::size_t i = 0; i < risks.labels.size(); ++i)
+        {
+            const bool variance = std::find_if(names.begin(), names.end(), [&](const char *n)
+                                               { return risks.labels[i] == n; }) != names.end();
+            if (variance)
+                continue;
+            kept.labels.push_back(risks.labels[i]);
+            kept.values.push_back(risks.values[i]);
+            kept.std_errors.push_back(risks.std_errors[i]);
+        }
+        if (kept.labels.size() == risks.labels.size())
+            return std::nullopt;
+        risks = std::move(kept);
+        char buf[512];
+        std::snprintf(buf, sizeof buf,
+                      "No risk to the variance parameters (v0, kappa, theta, xi, rho): "
+                      "the calibrated variance breaks the Feller condition (2 kappa theta "
+                      "/ xi^2 = %.2f, below 1), so it spends time near zero, where the "
+                      "pathwise derivative of its square root has infinite variance. "
+                      "The spot, rate, dividend%s risks are unaffected.",
+                      feller, model == ModelKind::StochasticLocalVol ? " and leverage" : "");
+        return Advice{"variance_parameter_risks_withheld", "info", buf};
     }
 
 } // namespace quantModeling::scripting

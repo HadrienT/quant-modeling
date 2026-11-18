@@ -36,6 +36,25 @@ namespace quantModeling::script_builders
     /// max(spot() - K, 0): lastStepCall(K) (lastStepPut(K)).
     std::string european(bool is_call, Real strike, int days);
 
+    /**
+     * American call (put) as a Bermudan on `exercise_days` (days from the
+     * valuation date, the last one the expiry, `maturity` years away), the
+     * rule by Longstaff & Schwartz (engines/mc/lsm.hpp), the spot its
+     * regressor. exercise() is gated by a condition every optimal exercise
+     * meets, so that the estimated rule cannot exercise where exercising is
+     * certainly worse than holding: the payoff must exceed the forward held
+     * to the expiry, S e^(-q tau) - K df(T) for a call (K df(T) - S e^(-q tau)
+     * for a put), and be positive -- the continuation is worth at least the
+     * European, which is worth at least both. The paths the gate leaves out
+     * are neither regressed nor exercised, as Longstaff & Schwartz fit only
+     * the in-the-money paths. Without it the rule was 0.7 % low on an
+     * at-the-money put and, on a call with a 4 % dividend whose premium is
+     * 0.015, below the European. Each date is its own event: e^(-q tau) is a
+     * number per date (`dividend` the continuous yield).
+     */
+    std::string american(bool is_call, Real strike, const std::vector<int> &exercise_days, Real dividend,
+                         Time maturity);
+
     struct BarrierTerms
     {
         bool is_call = true;

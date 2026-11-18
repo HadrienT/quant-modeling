@@ -52,6 +52,51 @@ namespace quantModeling
             const std::size_t lo = hi - 1;
             return (S - K_grid[lo] <= K_grid[hi] - S) ? lo : hi;
         }
+
+        /// E[v | S = K_i] at every strike: a quartic-kernel average of the
+        /// particles' floored variance, bandwidth h (Guyon & Henry-Labordere
+        /// 2012). The particles are sorted by spot, so each strike reads only
+        /// those within h of it. A strike no particle reaches takes the
+        /// nearest estimate; all NaN when no particle reaches any strike.
+        void kernel_conditional_variance(const std::vector<Real> &K_grid, const std::vector<Real> &S,
+                                         const std::vector<Real> &v, Real variance_floor, Real h,
+                                         std::vector<std::size_t> &order, std::vector<Real> &out)
+        {
+            const std::size_t N = S.size();
+            const std::size_t nK = K_grid.size();
+            order.resize(N);
+            for (std::size_t p = 0; p < N; ++p)
+                order[p] = p;
+            std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b)
+                      { return S[a] < S[b]; });
+            std::size_t lo = 0;
+            for (std::size_t i = 0; i < nK; ++i)
+            {
+                const Real K = K_grid[i];
+                while (lo < N && S[order[lo]] < K - h)
+                    ++lo;
+                Real w_sum = 0.0, wv_sum = 0.0;
+                for (std::size_t k = lo; k < N && S[order[k]] <= K + h; ++k)
+                {
+                    const std::size_t p = order[k];
+                    const Real x = (S[p] - K) / h;
+                    const Real w = (1.0 - x * x) * (1.0 - x * x);
+                    w_sum += w;
+                    wv_sum += w * std::max(v[p], variance_floor);
+                }
+                out[i] = w_sum > 0.0 ? wv_sum / w_sum : std::numeric_limits<Real>::quiet_NaN();
+            }
+            std::size_t first = 0;
+            while (first < nK && std::isnan(out[first]))
+                ++first;
+            if (first == nK)
+                return;
+            for (std::size_t i = 0; i < first; ++i)
+                out[i] = out[first];
+            for (std::size_t i = first + 1; i < nK; ++i)
+                if (std::isnan(out[i]))
+                    out[i] = out[i - 1];
+        }
     } // namespace
 
     SLVLeverageGrid calibrate_slv_leverage(
@@ -112,6 +157,8 @@ namespace quantModeling
         Pcg32 rng = RngFactory(settings.seed).make(0);
         NormalBoxMuller bm_spot, bm_vol;
 
+        std::vector<std::size_t> order;      // particles sorted by spot, for the kernel
+        std::vector<Real> kernel_v(nK, 0.0); // E[v | S = K_i] by kernel regression
         std::size_t clamped_particles = 0;
         Time t_prev = 0.0;
         for (std::size_t j = 0; j < nT; ++j)
@@ -158,14 +205,26 @@ namespace quantModeling
                     v_sum[b] += std::max(v[p], settings.variance_floor);
                     ++count[b];
                 }
+                const bool kernel = settings.kernel_scale > 0.0;
+                if (kernel)
+                {
+                    const Real sigma_atm = sigma_at(nearest_bucket(K_grid, s0), t_now);
+                    const Real h = settings.kernel_scale * sigma_atm * s0 *
+                                   std::sqrt(std::max(t_now, settings.kernel_min_time)) *
+                                   std::pow(static_cast<Real>(N), -0.2);
+                    kernel_conditional_variance(K_grid, S, v, settings.variance_floor, h, order, kernel_v);
+                }
 
                 std::vector<Real> column(nK);
                 for (std::size_t i = 0; i < nK; ++i)
                 {
                     // An empty bucket (the grid's far tails): the long-run
                     // variance, a defensible order of magnitude where no
-                    // particle carries weight.
-                    const Real mean_v = count[i] > 0 ? v_sum[i] / static_cast<Real>(count[i]) : heston.theta;
+                    // particle carries weight. The kernel estimate, when
+                    // asked for, replaces the bucket's average.
+                    Real mean_v = count[i] > 0 ? v_sum[i] / static_cast<Real>(count[i]) : heston.theta;
+                    if (kernel && !std::isnan(kernel_v[i]))
+                        mean_v = kernel_v[i];
                     Real L = sigma_at(i, t_now) / std::sqrt(std::max(mean_v, settings.variance_floor));
                     if (L <= settings.leverage_floor || L >= settings.leverage_cap)
                         clamped_particles += count[i];

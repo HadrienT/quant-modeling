@@ -362,6 +362,16 @@ static py::dict price_american_vanilla_bs_binomial(const quantModeling::American
     return pricing_result_to_dict(res);
 }
 
+static py::dict price_american_vanilla_bs_mc(const quantModeling::AmericanVanillaBSInput &in)
+{
+    quantModeling::PricingResult res;
+    {
+        py::gil_scoped_release release;
+        res = quantModeling::price_american_vanilla_impl(in, quantModeling::EngineKind::MonteCarlo);
+    }
+    return pricing_result_to_dict(res);
+}
+
 static py::dict price_american_vanilla_bs_trinomial(const quantModeling::AmericanVanillaBSInput &in)
 {
     auto res = quantModeling::price_american_vanilla_impl(in, quantModeling::EngineKind::TrinomialTree);
@@ -447,6 +457,8 @@ void register_pricing(py::module_ &m)
           "Price European vanilla option under Black-Scholes (Trinomial tree).");
     m.def("price_american_vanilla_bs_binomial", &price_american_vanilla_bs_binomial,
           "Price American vanilla option under Black-Scholes (Binomial tree).");
+    m.def("price_american_vanilla_bs_mc", &price_american_vanilla_bs_mc,
+          "Price American vanilla option under Black-Scholes (Monte-Carlo, Longstaff-Schwartz on a script).");
     m.def("price_american_vanilla_bs_trinomial", &price_american_vanilla_bs_trinomial,
           "Price American vanilla option under Black-Scholes (Trinomial tree).");
     m.def("price_asian_bs_analytic", &price_asian_bs_analytic,

@@ -63,9 +63,10 @@ export function DerivativeFields({
 		// recomputed for every day of the history, so a closed form or a tree.
 		const chosen = values.engine as EngineKey | undefined;
 		const engine =
-			chosen && chosen !== "mc"
+			descriptor.markEngine ??
+			(chosen && chosen !== "mc"
 				? chosen
-				: (descriptor.engines.find((e) => e.key !== "mc")?.key ?? "mc");
+				: (descriptor.engines.find((e) => e.key !== "mc")?.key ?? "mc"));
 		const params = descriptor.toRequest(values, engine) as Record<
 			string,
 			unknown
