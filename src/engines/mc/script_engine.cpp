@@ -107,7 +107,7 @@ namespace quantModeling
                     sobol_points_per_replicate(static_cast<std::size_t>(requested), static_cast<std::size_t>(B)));
                 tables = mc::sobol_tables(model.sim_dim(), req.seed, B, model.brownian_layout(),
                                           settings.mc_brownian_bridge, settings.mc_sobol_owen,
-                                          settings.mc_sobol_owen_nested);
+                                          settings.mc_sobol_owen_nested, settings.mc_brownian_pca);
                 req.sobol = &*tables;
             }
             const gpu::ScriptGpuStats st = gpu::simulate_script(req);

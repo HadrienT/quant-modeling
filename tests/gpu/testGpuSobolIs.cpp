@@ -117,7 +117,7 @@ namespace quantModeling
                 << what << " " << gpu.diagnostics;
         }
 
-        void expect_sobol_gpu_equals_cpu(Dyn dyn, bool owen = false, bool nested = false)
+        void expect_sobol_gpu_equals_cpu(Dyn dyn, bool owen = false, bool nested = false, bool pca = false)
         {
             for (const auto &s : library())
             {
@@ -130,6 +130,7 @@ namespace quantModeling
                 set.mc_sampler = SamplerKind::Sobol;
                 set.mc_sobol_owen = owen;
                 set.mc_sobol_owen_nested = nested;
+                set.mc_brownian_pca = pca;
                 auto cpu_model = model(dyn);
                 auto gpu_model = model(dyn);
                 set.mc_device = ComputeDevice::Cpu;
@@ -172,6 +173,16 @@ namespace quantModeling
     TEST_F(GpuSobolIsTest, NestedOwenSobolLibraryUnderLocalVol)
     {
         expect_sobol_gpu_equals_cpu(Dyn::LocalVol, true, true);
+    }
+    // The principal-component construction (#226): the same matrix-vector
+    // products, in the same order, on both sides.
+    TEST_F(GpuSobolIsTest, PcaSobolLibraryUnderLocalVol)
+    {
+        expect_sobol_gpu_equals_cpu(Dyn::LocalVol, false, false, true);
+    }
+    TEST_F(GpuSobolIsTest, PcaSobolLibraryUnderHeston)
+    {
+        expect_sobol_gpu_equals_cpu(Dyn::Heston, false, false, true);
     }
 
     TEST_F(GpuSobolIsTest, ImportanceSamplingTakesTheCpusDecisionAndNumbers)

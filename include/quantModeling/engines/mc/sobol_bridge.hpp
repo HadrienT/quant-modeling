@@ -49,6 +49,9 @@ namespace quantModeling::mc
         int n = 0, factors = 0, stride = 0;
         const int *bridge_index = nullptr, *left_index = nullptr, *right_index = nullptr;
         const double *left_weight = nullptr, *right_weight = nullptr, *std_dev = nullptr, *inv_sqrt_dt = nullptr;
+        /// The principal-component construction instead of the bridge
+        /// (row-major n x n, brownian_pca_matrix); null for the bridge.
+        const double *pca = nullptr;
     };
 
     /**
@@ -82,13 +85,24 @@ namespace quantModeling::mc
             { return out[(static_cast<long>(s) * v.stride + f) * os]; };
             auto z = [&](int i)
             { return pt[(static_cast<long>(i) * v.factors + f) * ps]; };
-            w(v.n - 1) = v.std_dev[0] * z(0);
-            for (int i = 1; i < v.n; ++i)
+            if (v.pca != nullptr)
+                for (int s = 0; s < v.n; ++s)
+                {
+                    double acc = 0.0;
+                    for (int i = 0; i < v.n; ++i)
+                        acc += v.pca[static_cast<long>(s) * v.n + i] * z(i);
+                    w(s) = acc;
+                }
+            else
             {
-                const int j = v.left_index[i];
-                const int k = v.right_index[i];
-                const double wj = (j != 0) ? w(j - 1) : 0.0;
-                w(v.bridge_index[i]) = v.left_weight[i] * wj + v.right_weight[i] * w(k) + v.std_dev[i] * z(i);
+                w(v.n - 1) = v.std_dev[0] * z(0);
+                for (int i = 1; i < v.n; ++i)
+                {
+                    const int j = v.left_index[i];
+                    const int k = v.right_index[i];
+                    const double wj = (j != 0) ? w(j - 1) : 0.0;
+                    w(v.bridge_index[i]) = v.left_weight[i] * wj + v.right_weight[i] * w(k) + v.std_dev[i] * z(i);
+                }
             }
             for (int s = v.n - 1; s >= 0; --s)
             {
@@ -109,6 +123,7 @@ namespace quantModeling::mc
         std::vector<uint32_t> V, shift;
         std::vector<int> bridge_index, left_index, right_index;
         std::vector<double> left_weight, right_weight, std_dev, inv_sqrt_dt;
+        std::vector<double> pca; ///< the principal components; empty for the bridge
         int dim = 0, n = 0, factors = 0, stride = 0;
         int replicates = 0;
         bool owen = false;
@@ -126,6 +141,7 @@ namespace quantModeling::mc
             v.dim = dim;
             v.owen = owen;
             v.owen_nested = owen_nested;
+            v.pca = pca.empty() ? nullptr : pca.data();
             v.first_point = first_point;
             v.n = n;
             v.factors = factors;

@@ -467,7 +467,7 @@ namespace quantModeling
                     bridged = true;
                     for (Worker &w : workers)
                     {
-                        w.bridge.emplace(layout.times, layout.factors, layout.stride);
+                        w.bridge.emplace(layout.times, layout.factors, layout.stride, settings.mc_brownian_pca);
                         w.point.assign(dim, 0.0);
                     }
                 }
@@ -531,7 +531,7 @@ namespace quantModeling
             res.diagnostics = "SimulationMCEngine + Sobol RQMC (" +
                               std::to_string(B) + " batches of " + std::to_string(per_batch) + " points, dim=" +
                               std::to_string(dim) + ")" +
-                              (bridged ? " + Brownian bridge" : "") + (settings.mc_sobol_owen ? (settings.mc_sobol_owen_nested ? " + Owen scrambling (a coin per node)" : " + Owen scrambling") : "") +
+                              (bridged ? (settings.mc_brownian_pca ? " + principal components" : " + Brownian bridge") : "") + (settings.mc_sobol_owen ? (settings.mc_sobol_owen_nested ? " + Owen scrambling (a coin per node)" : " + Owen scrambling") : "") +
                               (cv ? cv_label() : "") + cv_off + threads_note();
             return res;
         }

@@ -566,9 +566,30 @@ P0, since a displayed figure must be defensible.
 - point counts: a Sobol net is balanced at N = 2^m points per replicate;
   check what the engine does with other path counts, round to a power of two
   if it does not;
-- path construction: Brownian bridge (today) against PCA of the Brownian
+- ~~path construction: Brownian bridge (today) against PCA of the Brownian
   increments (`etc/ROADMAP.md` §1.1 lists it), and, for several factors, which
-  factor's coarse coordinates take the first Sobol dimensions;
+  factor's coarse coordinates take the first Sobol dimensions~~ **measured
+  2026-11-18 (#226): the bridge stays.** `brownian_pca_matrix`
+  (src/utils/brownian_pca.cpp) builds A = V Λ^{1/2} of the covariance
+  min(t_i, t_j), its components by decreasing variance and its signs fixed.
+  It sits behind the internal setting `mc_brownian_pca`, on the plain engine
+  CPU and GPU, with the same bits. Tested: A Aᵀ = C to 1e-12, the components
+  sorted, the GPU's flat path equal to the generic engine's, the prices
+  unbiased.
+  - Protocol `qm_gpu_paths_bench 200` (49 scripts, hard, 2^16 and 2^19
+    points): PCA is worse in 27 of 98 comparisons, better in 7, and never
+    better at both point counts. The geometric mean of the variance ratio
+    is 0.82.
+  - It loses most on the payoffs that depend on the terminal value, which
+    the bridge's first coordinate fixes exactly and PCA spreads over its
+    components: European, quanto, discount certificate and reverse
+    convertible ×2.5, call spread ×2 to ×2.4.
+  - The Asian flips with the point count: ×1.9 worse, then ×1.85 better.
+  - Cost: 1.6x to 3.4x the bridge's time per run in the median, up to 18x
+    on long daily grids (O(n²) a path).
+  - The factor order was not measured separately: the bridge's and PCA's
+    both interleave the factors, so that the first coordinates fix every
+    factor's terminal value (or first component).
 - ~~randomisation: digital shift (today's decision, WP 19 §12) against a true
   Owen scrambling, random bits per node of the tree, which the hash of
   Burley only approximates~~ **measured 2026-11-18 (#226): no change, the
@@ -594,9 +615,28 @@ P0, since a displayed figure must be defensible.
     So a true Owen scrambling is not what was missing. There is no rule
     a priori, and the decision of WP 19 §12 stands. The setting stays
     internal, for a later protocol;
-- discontinuous payoffs lose most of QMC's edge: P2's smoothed indicators and
+- ~~discontinuous payoffs lose most of QMC's edge: P2's smoothed indicators and
   bridge survival probabilities are what gives it back (barriers, digitals,
-  autocalls).
+  autocalls)~~ **measured 2026-11-18 (#226): no default changes.** The
+  library's barriers are monitored at the closes, so the bridge survivals,
+  which price a continuous barrier, would make them another product. The
+  lever for the products as written is the smoothed indicator (`fuzzy`).
+  Protocol `qm_gpu_discontinuous_bench 200`: pseudo-random and Sobol, hard
+  and fuzzy, 49 scripts, 2^16 and 2^19 points, local vol / correlated
+  Black-Scholes.
+  - Sobol keeps its edge on the scripts with a hard spot threshold: the
+    variance is 11x below pseudo-random's (geometric mean, 42
+    comparisons), against 78x on the others. The threshold costs a factor
+    7, not most of the edge; the worst case is the double no-touch at 1.4x.
+  - Smoothing never helps a Sobol run (0 of 42 significantly better), and
+    makes some worse (himalaya ×2, worst-of autocall ×5).
+  - Its bias at the default eps is large on several multi-asset and
+    autocall scripts, in standard errors of one hard run at 2^19 points:
+    worst-of autocall −537, worst-of reverse convertible +60, himalaya
+    −72, phoenix −6.
+  - So `fuzzy` stays what it is for: a usable pathwise delta, off by
+    default. Its eps on multi-asset scripts is worth a look if their fuzzy
+    greeks are used.
 
 **Decided and done (2026-11-11, measurements in #214).** R stays 16: at
 equal total paths, R = 32 costs 1.4-2.3x in variance on smooth payoffs, and

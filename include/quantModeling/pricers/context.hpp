@@ -128,6 +128,11 @@ namespace quantModeling
         /// one another (WP 26 #226). The plain engine, CPU and GPU; the
         /// multilevel one keeps the hash. Internal, measured before any use.
         bool mc_sobol_owen_nested = false;
+        /// With mc_brownian_bridge: the principal-component construction of
+        /// the Brownian paths (brownian_pca_matrix) instead of the bridge
+        /// (WP 26 #226). The plain engine, CPU and GPU, Sobol; internal,
+        /// measured before any use.
+        bool mc_brownian_pca = false;
         /// Multilevel Monte Carlo over the time step (blueprint/wp/26-
         /// performance.md §8, WP 26 P4c), opt-in: the target root-mean-square
         /// error, absolute (0: off). A script runs through it when it suits

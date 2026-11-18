@@ -45,6 +45,7 @@ target_sources(quantModeling
         src/aad/number.cpp
         src/utils/stats.cpp
         src/utils/sobol_directions.cpp
+        src/utils/brownian_pca.cpp
         src/core/date.cpp
         src/core/period.cpp
         src/core/timegrid.cpp
@@ -480,6 +481,7 @@ if(QM_BUILD_TESTS)
     tests/testVarianceReduction.cpp
     tests/testSobolAndImportance.cpp
     tests/testSobolOwen.cpp
+    tests/testBrownianPca.cpp
     tests/testSimulationThreads.cpp
   )
 
@@ -585,6 +587,14 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   add_executable(qm_gpu_owen_bench benchmarks/sobol_owen.cpp)
   target_link_libraries(qm_gpu_owen_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_owen_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
+  add_executable(qm_gpu_paths_bench benchmarks/sobol_paths.cpp)
+  target_link_libraries(qm_gpu_paths_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_gpu_paths_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
+  add_executable(qm_gpu_discontinuous_bench benchmarks/sobol_discontinuous.cpp)
+  target_link_libraries(qm_gpu_discontinuous_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_gpu_discontinuous_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
   # Our Sobol and Philox against cuRAND's (.claude/skills/hpc-finance/libraries.md).
   add_executable(qm_gpu_rng_bench benchmarks/gpu_rng_vs_curand.cu)

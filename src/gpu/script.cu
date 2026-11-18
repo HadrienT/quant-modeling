@@ -225,6 +225,7 @@ namespace quantModeling::gpu
                 sv.right_weight = mem.put(t.right_weight);
                 sv.std_dev = mem.put(t.std_dev);
                 sv.inv_sqrt_dt = mem.put(t.inv_sqrt_dt);
+                sv.pca = t.pca.empty() ? nullptr : mem.put(t.pca);
                 s.replicates = static_cast<uint64_t>(std::max(1, t.replicates));
                 per_block += threads_per_block * 2u * static_cast<std::size_t>(t.dim) * sizeof(double);
             }
