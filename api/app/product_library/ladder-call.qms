@@ -4,6 +4,8 @@
 # source: Bouzoubaa & Osseiran, Exotic Options and Hybrids: A Guide to Structuring, Pricing and Trading, Wiley, 2010
 # summary: An at-the-money call that locks in gains: once the stock closes above a rung, at least that rung is paid.
 # param: step = 0.1 | percent | Gap between rungs, % of the initial level
+# eps: 0.3
+# greeks: joint
 #
 # Three rungs above the initial level, daily closes. Pays the larger of the
 # final call and the highest rung reached.

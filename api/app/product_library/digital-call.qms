@@ -6,6 +6,8 @@
 # summary: Pays a fixed amount if the stock ends above the strike, nothing otherwise.
 # param: strike = 1.0 | percent | Strike, % of the initial level
 # param: payout = 100 | amount | Cash paid if above the strike
+# eps: 3
+# greeks: joint
 #
 # A hard threshold makes the Monte-Carlo delta noisy: tick Fuzzy to smooth it.
 

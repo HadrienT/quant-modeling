@@ -8,6 +8,8 @@
 # param: autocall = 1.0 | percent | Autocall level, % of the initial level
 # param: coupon_barrier = 0.7 | percent | Coupon barrier, % of the initial level
 # param: protection = 0.6 | percent | Protection barrier at maturity, % of the initial level
+# eps: 1
+# greeks: separate
 #
 # Below the protection barrier at maturity the capital is repaid in
 # proportion to the fall (European knock-in).

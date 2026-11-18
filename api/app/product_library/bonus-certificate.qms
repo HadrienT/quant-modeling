@@ -6,6 +6,8 @@
 # param: notional = 1000 | amount | Notional
 # param: bonus = 1.2 | percent | Bonus level, % of the initial level
 # param: barrier = 0.7 | percent | Barrier, % of the initial level
+# eps: 1
+# greeks: separate
 #
 # Once the barrier is touched the certificate is plain stock.
 

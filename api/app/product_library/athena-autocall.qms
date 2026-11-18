@@ -7,6 +7,8 @@
 # param: coupon = 0.08 | percent | Coupon per year, % of notional
 # param: autocall = 1.0 | percent | Autocall level, % of the initial level
 # param: protection = 0.6 | percent | Protection barrier at maturity, % of the initial level
+# eps: 1
+# greeks: separate
 #
 # Snowball coupon: the coupon times the number of years at redemption.
 

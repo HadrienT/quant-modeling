@@ -566,15 +566,116 @@ P0, since a displayed figure must be defensible.
 - point counts: a Sobol net is balanced at N = 2^m points per replicate;
   check what the engine does with other path counts, round to a power of two
   if it does not;
-- path construction: Brownian bridge (today) against PCA of the Brownian
+- ~~path construction: Brownian bridge (today) against PCA of the Brownian
   increments (`etc/ROADMAP.md` §1.1 lists it), and, for several factors, which
-  factor's coarse coordinates take the first Sobol dimensions;
-- randomisation: digital shift (today's decision, WP 19 §12) against a true
+  factor's coarse coordinates take the first Sobol dimensions~~ **measured
+  2026-11-18 (#226): the bridge stays.** `brownian_pca_matrix`
+  (src/utils/brownian_pca.cpp) builds A = V Λ^{1/2} of the covariance
+  min(t_i, t_j), its components by decreasing variance and its signs fixed.
+  It sits behind the internal setting `mc_brownian_pca`, on the plain engine
+  CPU and GPU, with the same bits. Tested: A Aᵀ = C to 1e-12, the components
+  sorted, the GPU's flat path equal to the generic engine's, the prices
+  unbiased.
+  - Protocol `qm_gpu_paths_bench 200` (49 scripts, hard, 2^16 and 2^19
+    points): PCA is worse in 27 of 98 comparisons, better in 7, and never
+    better at both point counts. The geometric mean of the variance ratio
+    is 0.82.
+  - It loses most on the payoffs that depend on the terminal value, which
+    the bridge's first coordinate fixes exactly and PCA spreads over its
+    components: European, quanto, discount certificate and reverse
+    convertible ×2.5, call spread ×2 to ×2.4.
+  - The Asian flips with the point count: ×1.9 worse, then ×1.85 better.
+  - Cost: 1.6x to 3.4x the bridge's time per run in the median, up to 18x
+    on long daily grids (O(n²) a path).
+  - The factor order was not measured separately: the bridge's and PCA's
+    both interleave the factors, so that the first coordinates fix every
+    factor's terminal value (or first component).
+- ~~randomisation: digital shift (today's decision, WP 19 §12) against a true
   Owen scrambling, random bits per node of the tree, which the hash of
-  Burley only approximates;
-- discontinuous payoffs lose most of QMC's edge: P2's smoothed indicators and
+  Burley only approximates~~ **measured 2026-11-18 (#226): no change, the
+  digital shift stays.** `owen_scramble_nested` (utils/sobol.hpp) flips each
+  bit with a coin of its own node, (1 << k) | prefix, from a full-avalanche
+  hash (internal setting `mc_sobol_owen_nested`, the plain engine CPU and
+  GPU, the same bits; tested nested, a net, fair coins independent between
+  siblings). Two findings:
+  - Burley's hash passes the same sibling test (fair, 50 % agreement at
+    levels 1 to 20), so its approximation is not visible pairwise.
+  - Protocol of WP 19 §12 (`qm_gpu_owen_bench 200 nested shift|hash`), 49
+    library scripts, hard and fuzzy, 2^16 and 2^19 points. The five with an
+    exercise() are left out, since the GPU needs a fitted rule.
+    - Against the hash, it is indistinguishable: 92 of 98 comparisons, 2
+      better, 4 worse, chance at a 95 % interval; geometric mean of the
+      variance ratio 0.99.
+    - Against the shift, it has the hash's profile: 24 better, 69
+      indistinguishable, 5 worse (reverse cliquet ×2.5, capital-protected
+      note ×1.9, phoenix ×2.0); geometric mean 1.12. The verdict still
+      flips with the point count for one product (capital-protected note,
+      phoenix).
+
+    So a true Owen scrambling is not what was missing. There is no rule
+    a priori, and the decision of WP 19 §12 stands. The setting stays
+    internal, for a later protocol;
+- ~~discontinuous payoffs lose most of QMC's edge: P2's smoothed indicators and
   bridge survival probabilities are what gives it back (barriers, digitals,
-  autocalls).
+  autocalls)~~ **measured 2026-11-18 (#226): no default changes.** The
+  library's barriers are monitored at the closes, so the bridge survivals,
+  which price a continuous barrier, would make them another product. The
+  lever for the products as written is the smoothed indicator (`fuzzy`).
+  Protocol `qm_gpu_discontinuous_bench 200`: pseudo-random and Sobol, hard
+  and fuzzy, 49 scripts, 2^16 and 2^19 points, local vol / correlated
+  Black-Scholes.
+  - Sobol keeps its edge on the scripts with a hard spot threshold: the
+    variance is 11x below pseudo-random's (geometric mean, 42
+    comparisons), against 78x on the others. The threshold costs a factor
+    7, not most of the edge; the worst case is the double no-touch at 1.4x.
+  - Smoothing never helps a Sobol run (0 of 42 significantly better), and
+    makes some worse (himalaya ×2, worst-of autocall ×5).
+  - Its bias at the default eps is large on several multi-asset and
+    autocall scripts, in standard errors of one hard run at 2^19 points:
+    worst-of autocall −537, worst-of reverse convertible +60, himalaya
+    −72, phoenix −6.
+  - So `fuzzy` stays what it is for: a usable pathwise delta, off by
+    default.
+
+  **Follow-up, the same day: the smoothing width measured, and a bug
+  fixed.**
+  - **Bench.** `qm_gpu_fuzzy_eps_bench`: the 17 single-underlying scripts
+    with a spot threshold, local vol, 2^16 points, 16 seeds, eps from 0.001
+    to 3. eps is the ramp's half-width in the units of the compared
+    expression: about 1 for a performance, about 100 for a spot.
+  - **What it measures:** the price bias in errors of one hard run, and the
+    adjoint delta's bias and noise against a central difference of the hard
+    price on common draws.
+  - **The bug.** It showed adjoint deltas at zero on the barriers, even
+    smoothed. The cause is the flag pattern: the fuzzy `if` blends `alive`
+    to 0.97, and the discrete test `alive = 1` stayed hard. Discrete
+    conditions now interpolate between their domain's values (WP 16 §4.2,
+    a departure from the book). Hard prices are unchanged, and the tree,
+    bytecode and IR agree to the bit.
+  - **After the fix**, a well-chosen eps brings the delta's error from
+    50-100 % (nearly hard) down to 1-6 % on almost every product.
+  - **Rule per product.** eps minimises the delta's error. One run
+    (`# greeks: joint`) when the price moves by less than half an error at
+    that eps, or at a smaller eps whose delta error stays within 1.5x (or
+    +2 points). Otherwise two runs (`separate`): the price unsmoothed, the
+    greeks from a second, smoothed run.
+    - eps 0.3, joint: accumulator, corridor variance swap, range accrual,
+      barrier reverse convertible, ladder call.
+    - eps 3, joint: digital call. eps 0.001, joint: reverse convertible.
+    - eps 1, separate: athena and phoenix autocalls, bonus certificate,
+      double no-touch, one-touch, down-and-in put, shark-fin, twin-win.
+    - eps 3, separate: up-and-out call, double barrier call.
+  - **Not covered.** The four multi-asset performance scripts (altiplano,
+    himalaya, worst-of autocall, worst-of reverse convertible) have no
+    delta to calibrate: their payoff does not depend on today's spot under
+    correlated Black-Scholes.
+  - **Plumbing.** The API applies the width to a library product's adjoint
+    greeks unless the request sets `fuzzy` or `default_eps` itself
+    (`pricing_service._price_library_script`). The response's diagnostics
+    say which mode ran.
+  - **Limit.** Measured under one local-vol surface at the default terms,
+    on the delta: the vega keeps a smoothing bias of a few percent
+    (up-and-out, 11 %).
 
 **Decided and done (2026-11-11, measurements in #214).** R stays 16: at
 equal total paths, R = 32 costs 1.4-2.3x in variance on smooth payoffs, and

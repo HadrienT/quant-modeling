@@ -653,14 +653,23 @@ namespace quantModeling::scripting::ir
                 n.arguments[1]->accept(*this);
                 const std::int32_t rhs = pop();
                 const std::int32_t lhs = pop();
-                const std::int32_t x = b_.value(Op::Sub, lhs, rhs); // the condition is x ⋈ 0
-                if (n.discrete || n.eps <= 0.0)
+                // a discrete condition interpolates between its domain's
+                // values (NodeComparison::discrete_eps): the ramp on
+                // lhs - (rhs + shift), as the tree and the bytecode
+                const bool interpolated = n.discrete && n.discrete_eps > 0.0;
+                const std::int32_t shifted =
+                    interpolated && n.discrete_shift != 0.0
+                        ? b_.value(Op::Add, rhs, b_.constant(n.discrete_shift))
+                        : rhs;
+                const std::int32_t x = b_.value(Op::Sub, lhs, shifted); // the condition is x ⋈ 0
+                if (!interpolated && (n.discrete || n.eps <= 0.0))
                     return push_degree(b_.value(op, x, b_.constant(0.0)));
+                const double eps = interpolated ? n.discrete_eps : n.eps;
                 // The ramp, linear or C1 (u^2 (3 - 2 u), the interpreter's
                 // operations in its order).
                 const auto ramp = [&](Op which)
                 {
-                    const std::int32_t u = b_.value(which, x, -1, n.eps);
+                    const std::int32_t u = b_.value(which, x, -1, eps);
                     if (!smooth_)
                         return u;
                     return b_.mul(b_.mul(u, u), b_.sub(b_.constant(3.0), b_.mul(b_.constant(2.0), u)));

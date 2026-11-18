@@ -7,6 +7,8 @@
 # param: notional = 1000 | amount | Notional
 # param: coupon = 0.025 | percent | Quarterly coupon, % of notional
 # param: barrier = 0.6 | percent | Knock-in barrier, % of the initial level
+# eps: 0.3
+# greeks: joint
 #
 # Coupons are paid whatever happens; daily closes for the barrier.
 

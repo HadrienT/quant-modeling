@@ -7,6 +7,8 @@
 #include "quantModeling/scripting/visitor.hpp"
 
 #include <cstddef>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 namespace quantModeling::scripting
@@ -200,9 +202,58 @@ namespace quantModeling::scripting
             if (diff.is_discrete())
             {
                 n.discrete = true; // isolated values straddling the boundary
+                discrete_band(n, op, diff);
                 return;
             }
             n.eps = default_eps_;
+        }
+
+        /// The fuzzy mode's interpolation of a discrete condition (WP 26,
+        /// #226 follow-up; a departure from the book, which keeps it hard):
+        /// a fuzzy `if` blends the variables it assigns, so a 0 / 1 flag can
+        /// hold 0.97, which a hard `flag = 1` reads as false -- the payoff of
+        /// every path near a barrier then vanishes. The ramp interpolates
+        /// between the domain's neighbours of the boundary: for x > 0 (and
+        /// its negation x <= 0), a = the largest value <= 0, b = the smallest
+        /// > 0; for x >= 0 (and x < 0), a = the largest < 0, b = the smallest
+        /// >= 0; for x = 0 (and x != 0), a tent of the half-width of the
+        /// nearest non-zero value. On the domain's own values the degree is
+        /// the hard result, so hard and fuzzy agree wherever a flag is
+        /// crisp.
+        static void discrete_band(NodeComparison &n, Op op, const Domain &diff)
+        {
+            std::vector<double> pts;
+            for (const Domain::Interval &p : diff.parts())
+                pts.push_back(p.lo);
+            const double inf = std::numeric_limits<double>::infinity();
+            if (op == Op::Eq || op == Op::Ne)
+            {
+                double g = inf;
+                for (double d : pts)
+                    if (d != 0.0)
+                        g = std::min(g, std::fabs(d));
+                if (g < inf)
+                {
+                    n.discrete_eps = g;
+                    n.discrete_shift = 0.0;
+                }
+                return;
+            }
+            const bool positive_side_strict = op == Op::Gt || op == Op::Le; // x > 0 is the "true" side
+            double a = -inf, b = inf;
+            for (double d : pts)
+            {
+                const bool upper = positive_side_strict ? d > 0.0 : d >= 0.0;
+                if (upper)
+                    b = std::min(b, d);
+                else
+                    a = std::max(a, d);
+            }
+            if (a > -inf && b < inf)
+            {
+                n.discrete_eps = 0.5 * (b - a);
+                n.discrete_shift = 0.5 * (a + b);
+            }
         }
 
         static bool is_exactly_zero(const Domain &d)

@@ -792,10 +792,53 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
         # only what the request set: an unset sigma on the SOFR curve is the
         # calibrated one (_sofr_inputs)
         fields["hull_white"] = req.hull_white.model_dump(exclude_unset=True)
-    response = price_script(ScriptRequest(script=script, **fields), library=True)
+    response = _price_library_script(req, template, script, fields)
     if template.market == "rates" and response.risks:
         response = _rates_risks(response)
     return response.model_copy(update={"script": script})
+
+
+def _price_library_script(req, template, script: str, fields: dict) -> PricingResponse:
+    """A library product by Monte-Carlo. One whose conditions jump at a level
+    carries a measured smoothing width for its adjoint greeks (`# eps:`,
+    WP 26 §5): without it, the derivative of a step is zero path by path
+    and the greeks miss what the jump contributes. `# greeks: joint` prices
+    and differentiates one smoothed run (its price bias measured below half
+    an error); `separate` takes the price from an unsmoothed run and the
+    greeks from a second, smoothed one. A request that sets `fuzzy` or
+    `default_eps` itself is priced as it asks."""
+    eps = template.eps
+    asked = {"fuzzy", "default_eps"} & req.model_fields_set
+    if eps is None or req.greeks_method != "aad" or asked:
+        return price_script(ScriptRequest(script=script, **fields), library=True)
+    smoothed = {**fields, "fuzzy": True, "default_eps": eps}
+    if template.greeks == "joint":
+        r = price_script(ScriptRequest(script=script, **smoothed), library=True)
+        return r.model_copy(
+            update={
+                "diagnostics": r.diagnostics
+                + f" | price and greeks smoothed at eps {eps:g}, the width measured "
+                "for this product (its price moves by less than half an error)"
+            }
+        )
+    plain = {**fields, "greeks_method": "none", "second_order": False}
+    priced = price_script(ScriptRequest(script=script, **plain), library=True)
+    risks = price_script(ScriptRequest(script=script, **smoothed), library=True)
+    return priced.model_copy(
+        update={
+            "greeks": risks.greeks,
+            "risks": risks.risks,
+            "bumped_greeks": risks.bumped_greeks,
+            "second_order_method": risks.second_order_method,
+            "compute_ms": (priced.compute_ms or 0.0) + (risks.compute_ms or 0.0),
+            "warnings": priced.warnings
+            + [w for w in risks.warnings if w not in priced.warnings],
+            "diagnostics": priced.diagnostics
+            + f" | greeks from a second run smoothed at eps {eps:g}, the width "
+            "measured for this product: smoothing would move its price by more "
+            "than half an error, so the price is the unsmoothed run's",
+        }
+    )
 
 
 #: The hybrid's stock, which a rates product never reads.

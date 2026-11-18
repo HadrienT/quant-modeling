@@ -7,6 +7,8 @@
 # param: coupon = 0.08 | percent | Coupon per year if every day is in range
 # param: low = 0.9 | percent | Lower bound, % of the initial level
 # param: high = 1.1 | percent | Upper bound, % of the initial level
+# eps: 0.3
+# greeks: joint
 #
 # Coupon at maturity = coupon x (days in range / days observed).
 

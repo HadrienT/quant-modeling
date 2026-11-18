@@ -8,6 +8,8 @@
 # param: participation = 1.0 | percent | Participation in the rise
 # param: barrier = 1.25 | percent | Knock-out barrier, % of the initial level
 # param: rebate = 0.05 | percent | Rebate if knocked out, % of notional
+# eps: 1
+# greeks: separate
 #
 # Capital protected at maturity; daily closes. Its payoff chart looks like a
 # shark's fin: rising, then a cliff.
