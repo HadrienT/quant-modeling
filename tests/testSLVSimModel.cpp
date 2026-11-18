@@ -295,4 +295,77 @@ namespace quantModeling
         }
     }
 
+    // ── the kernel regression of E[v|S] (Guyon & Henry-Labordere): with the
+    // Feller condition broken, a nearest-strike average of a few hundred
+    // particles leaves the leverage noisy from one strike to the next, and
+    // the pathwise delta, which reads the leverage's slope on every step,
+    // inherits that noise (AAPL 2026-11-17: delta 0.82 +- 0.21, rate risk
+    // 43 +- 390). The kernel must leave the leverage smooth in the strike and
+    // the delta's error several times smaller, the price unmoved. ──────────
+
+    TEST(SLVSimModel, KernelCalibrationSmoothsTheLeverageAndTheDelta)
+    {
+        const Real s0 = 100.0, r = 0.03, q = 0.01, flat_vol = 0.25, Tm = 1.0;
+        const HestonParams heston{/*v0=*/0.06, /*kappa=*/2.0, /*theta=*/0.06,
+                                  /*xi=*/1.2, /*rho=*/-0.5}; // Feller ratio 0.17
+        std::vector<Real> K_grid, T_grid;
+        for (int i = 0; i <= 100; ++i)
+            K_grid.push_back(40.0 + 1.6 * static_cast<Real>(i));
+        for (int j = 1; j <= 20; ++j)
+            T_grid.push_back(0.05 * static_cast<Real>(j));
+        const std::vector<Real> sigma_loc(K_grid.size() * T_grid.size(), flat_vol);
+
+        struct Outcome
+        {
+            Real roughness, price, delta, delta_se;
+        };
+        const auto run = [&](Real kernel_scale)
+        {
+            SLVCalibrationSettings settings;
+            settings.n_particles = 50000;
+            settings.seed = 3;
+            settings.kernel_scale = kernel_scale;
+            const SLVLeverageGrid g = calibrate_slv_leverage(s0, r, q, heston, K_grid, T_grid, sigma_loc, settings);
+            const std::size_t nT = g.T_grid.size();
+            // Mean squared second difference across strikes, 80 to 125, after
+            // the first quarter year.
+            Real rough = 0.0;
+            int n = 0;
+            for (std::size_t j = 0; j < nT; ++j)
+            {
+                if (g.T_grid[j] < 0.25)
+                    continue;
+                for (std::size_t i = 1; i + 1 < g.K_grid.size(); ++i)
+                {
+                    if (g.K_grid[i] < 80.0 || g.K_grid[i] > 125.0)
+                        continue;
+                    const Real d2 = g.leverage[(i - 1) * nT + j] - 2.0 * g.leverage[i * nT + j] +
+                                    g.leverage[(i + 1) * nT + j];
+                    rough += d2 * d2;
+                    ++n;
+                }
+            }
+            Tape tape;
+            TapeSwitch guard(tape);
+            std::vector<Number> lev;
+            for (Real l : g.leverage)
+                lev.emplace_back(l);
+            EuroCallT<Number> product(100.0, Tm);
+            SLVSimModel<Number> model{Number(s0), Number(r), Number(q), Number(heston.v0),
+                                      Number(heston.kappa), Number(heston.theta), Number(heston.xi),
+                                      Number(heston.rho), g.K_grid, g.T_grid, lev, settings.max_dt};
+            const AADSimulResults res = simulate_aad(product, model, 20000, 9);
+            return Outcome{rough / n, res.price, res.risks[0], res.risk_std_errors[0]};
+        };
+        const Outcome bucket = run(0.0), kernel = run(1.5);
+
+        EXPECT_LT(kernel.roughness, 0.1 * bucket.roughness);
+        EXPECT_LT(kernel.delta_se, 0.5 * bucket.delta_se);
+        // Same marginals targeted: the price stays the flat-vol call's.
+        const Real expected = bs_call(s0, 100.0, r, q, flat_vol, Tm);
+        EXPECT_NEAR(kernel.price, expected, 0.02 * expected);
+        EXPECT_GT(kernel.delta, 0.3);
+        EXPECT_LT(kernel.delta, 0.9);
+    }
+
 } // namespace quantModeling
