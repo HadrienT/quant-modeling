@@ -56,6 +56,50 @@ namespace quantModeling
         return std::exp(log_df);
     }
 
+    void DiscountCurve::log_discount_weights(Time t, std::vector<std::pair<std::size_t, Real>> &weights) const
+    {
+        weights.clear();
+        if (t <= 0.0 || use_flat_rate_ || times_.empty())
+            return;
+        const std::size_t n = times_.size();
+        if (extrapolation_ == CurveExtrapolation::FlatForward)
+        {
+            if (t <= times_.front())
+            {
+                weights.emplace_back(0, t / times_.front());
+                return;
+            }
+            if (t >= times_.back())
+            {
+                if (n == 1)
+                {
+                    weights.emplace_back(0, t / times_[0]);
+                    return;
+                }
+                // log DF_n + (t − t_n) (log DF_n − log DF_{n−1}) / (t_n − t_{n−1})
+                const Real k = (t - times_[n - 1]) / (times_[n - 1] - times_[n - 2]);
+                weights.emplace_back(n - 1, 1.0 + k);
+                weights.emplace_back(n - 2, -k);
+                return;
+            }
+        }
+        if (t <= times_.front())
+        {
+            weights.emplace_back(0, 1.0);
+            return;
+        }
+        if (t >= times_.back())
+        {
+            weights.emplace_back(n - 1, 1.0);
+            return;
+        }
+        const auto it = std::upper_bound(times_.begin(), times_.end(), t);
+        const std::size_t idx = static_cast<std::size_t>(std::distance(times_.begin(), it));
+        const Real w = (t - times_[idx - 1]) / (times_[idx] - times_[idx - 1]);
+        weights.emplace_back(idx - 1, 1.0 - w);
+        weights.emplace_back(idx, w);
+    }
+
     void DiscountCurve::validate_curve() const
     {
         if (times_.empty() || dfs_.empty() || times_.size() != dfs_.size())

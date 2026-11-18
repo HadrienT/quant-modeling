@@ -78,3 +78,19 @@ def test_a_rates_product_takes_no_ticker_nor_another_model():
         _req("zero-coupon-bond", model="local_vol")
     req = _req("zero-coupon-bond")  # no spot, vol nor rate asked for
     assert req.model == "hull_white"
+
+
+def test_a_zero_coupons_adjoint_risk_is_its_duration(curve):
+    import quantmodeling as qm
+
+    r = ps.price_scripted_product(
+        _req("zero-coupon-bond", n_paths=20_000, seed=2, greeks_method="aad")
+    )
+    T = qm.validate_script(r.script, SNAP.isoformat())["events"][-1]["t"]
+    by = {x.label: x.value for x in r.risks}
+    # every path pays P(0, T) e^{-I}: d/dz = -T times it, path by path
+    assert by["curve_parallel"] == pytest.approx(-T * r.npv, rel=1e-9)
+    pillars = [v for k, v in by.items() if k.startswith("zero[")]
+    assert len(pillars) == len(TIMES)
+    assert sum(pillars) == pytest.approx(by["curve_parallel"], rel=1e-9)
+    assert r.greeks.rho == by["curve_parallel"]

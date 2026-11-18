@@ -6975,7 +6975,7 @@ export interface components {
             fuzzy: boolean;
             /**
              * Greeks Method
-             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol; under hull_white also the short rate's sigma and the curve, per quote or pillar) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
              * @default none
              * @enum {string}
              */
@@ -7237,7 +7237,7 @@ export interface components {
             fuzzy: boolean;
             /**
              * Greeks Method
-             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
+             * @description 'aad': every model parameter's sensitivity (spot, rate, div, vol; under hull_white also the short rate's sigma and the curve, per quote or pillar) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 §6).
              * @default none
              * @enum {string}
              */

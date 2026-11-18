@@ -538,7 +538,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			{
 				engine: "Monte-Carlo (the script)",
 				detail:
-					"The swap is a script of the library. Each year the floating leg pays $\\text{fwdRate}(T_{j-1},T_j)\\,\\tau_j$, compounded SOFR worth $1/P(T_{j-1},T_j)-1$ at the period's start, against the fixed rate, both discounted by $\\text{df}(T_j)$. It is simulated under Hull-White on the SOFR curve (exact transitions, no time-step bias), with $(a,\\sigma)$ calibrated to the traded swaptions; its value does not depend on them.",
+					"The swap is a script of the library. Each year the floating leg pays $\\text{fwdRate}(T_{j-1},T_j)\\,\\tau_j$, compounded SOFR worth $1/P(T_{j-1},T_j)-1$ at the period's start, against the fixed rate, both discounted by $\\text{df}(T_j)$. It is simulated under Hull-White on the SOFR curve (exact transitions, no time-step bias), with $(a,\\sigma)$ calibrated to the traded swaptions; its value does not depend on them. The tape gives its risk to each par swap rate the curve was built from, and to all of them together (the DV01), each with its Monte-Carlo error.",
 			},
 			{
 				engine: "Analytic (the curve)",
@@ -593,7 +593,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			{
 				engine: "Monte-Carlo (the scripts)",
 				detail:
-					"The European and the Bermudan are scripts of the library. At expiry the swap is worth $1-\\text{df}(T_n)-K\\sum_i \\tau_i\\,\\text{df}(T_i)$ per unit of notional, with $\\text{df}$ the bond prices that the simulated short rate gives that day. Hull-White runs on the SOFR curve with $(a,\\sigma)$ calibrated to the traded ATM normal vols. The Bermudan decides by Longstaff-Schwartz, regressing on the swap's value, and is considered only in the money: a lower bound.",
+					"The European and the Bermudan are scripts of the library. At expiry the swap is worth $1-\\text{df}(T_n)-K\\sum_i \\tau_i\\,\\text{df}(T_i)$ per unit of notional, with $\\text{df}$ the bond prices that the simulated short rate gives that day. Hull-White runs on the SOFR curve with $(a,\\sigma)$ calibrated to the traded ATM normal vols. The Bermudan decides by Longstaff-Schwartz, regressing on the swap's value, and is considered only in the money: a lower bound. The tape gives the risks to each par swap rate, to all of them together (the DV01) and to $\\sigma$, each with its Monte-Carlo error, the Bermudan's included.",
 			},
 			{
 				engine: "Hull-White, European (closed form)",

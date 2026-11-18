@@ -896,6 +896,30 @@ def sofr_curve(swap_quotes) -> Tuple[List[float], List[float]]:
     return list(ois["times"]), list(ois["discount_factors"])
 
 
+@lru_cache(maxsize=8)
+def sofr_curve_jacobian(swap_quotes) -> Tuple[List[List[float]], List[float]]:
+    """dz_j / dq_k: how each pillar's zero rate of the SOFR curve moves per
+    unit of each par swap quote (central differences of the bootstrap, a
+    smooth deterministic function: error of order 1e-10), and the quotes'
+    tenors. Rows: the curve's pillars; columns: the quotes."""
+    h = 1e-5
+    quotes = [tuple(q) for q in swap_quotes]
+
+    def zeros(k: int, d: float) -> List[float]:
+        moved = [(t, r + (d if i == k else 0.0)) for i, (t, r) in enumerate(quotes)]
+        times, dfs = sofr_curve(moved)
+        return [-math.log(p) / t for t, p in zip(times, dfs)]
+
+    cols = []
+    for k in range(len(quotes)):
+        up, down = zeros(k, h), zeros(k, -h)
+        cols.append([(u - d) / (2 * h) for u, d in zip(up, down)])
+    n = len(cols[0])
+    return [[cols[k][j] for k in range(len(quotes))] for j in range(n)], [
+        t for t, _ in quotes
+    ]
+
+
 #: The market is rebuilt from the store at most this often (seconds): a
 #: pricing reads it, and DTCC publishes once a day.
 _SOFR_TTL = 300.0
@@ -1003,5 +1027,6 @@ __all__ = [
     "RatesMarketUnavailable",
     "SofrHullWhite",
     "sofr_curve",
+    "sofr_curve_jacobian",
     "sofr_hull_white",
 ]

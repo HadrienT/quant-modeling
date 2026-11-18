@@ -242,6 +242,8 @@ export function scriptedRequest(
 				p.curve === "sofr"
 					? { curve: "sofr" }
 					: { currency: v.currency ?? "USD" },
+			// the risks to the curve and to the short rate's vol, by the tape
+			greeks_method: "aad",
 			n_paths: Number(v.n_paths),
 			seed: Number(v.seed),
 		};

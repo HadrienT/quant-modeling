@@ -428,6 +428,7 @@ if(QM_BUILD_TESTS)
     tests/testRates.cpp
     tests/testLsm.cpp
     tests/testHybrid.cpp
+    tests/testHybridCurveAdjoints.cpp
     tests/testCurveAwareBSSimModel.cpp
     tests/testRawVolSurface.cpp
     tests/testSVI.cpp

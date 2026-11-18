@@ -882,9 +882,31 @@ the API and the tests as oracles. Three lots:
   two-curve set. Their results become the Diagnostics of the scripts: the
   same trade on the rates engines on a regular grid, with the curve, the
   calibration point by point, the cash flows, the swaption under Bachelier,
-  Black and SABR, and the Bermudan on the lattice. Not done: rates risks under
-  Monte-Carlo. The script's adjoint does not differentiate the curve or
-  `(a, sigma)`, so Monte-Carlo gives no DV01 or vega.
+  Black and SABR, and the Bermudan on the lattice. 
+- **b2c. Curve adjoints.** The Hull-White hybrid
+  (`models/hybrid/hull_white_equity_sim_model.hpp`) differentiates the short
+  rate's sigma (`rate_vol`, a held) and its curve on the tape. With a fixed,
+  the step's moments scale exactly: the drifts and y(t) as sigma², the rates
+  rows of the Cholesky factor as sigma. So they are computed once at
+  sigma = 1 and scaled on the path, and the simulation stays exact. The
+  curve enters only through log P(0, ·) at known dates, which is linear in
+  the pillars' log discount factors (`DiscountCurve::log_discount_weights`).
+  The model takes `CurveFactors`, a basis of zero-rate moves, one parameter
+  per column. The API passes the bootstrap's Jacobian dz/dq for the SOFR
+  curve, so each risk is to a par swap rate (a bucketed DV01). For a
+  government curve it passes the identity, so each risk is to a pillar's
+  zero rate. Both get a parallel column, and every risk comes with its own
+  Monte-Carlo error. That is why the map is built into the model, unlike
+  xVA lot X8, which applies its Jacobians batch by batch: the script engine
+  reports no per-batch risks. 2026-11-17, 100,000 paths, against the closed
+  form's bumps: swap DV01 4,369.42 ± 0.02 vs 4,369.43; European swaption
+  DV01 2,075.07 ± 0.44 vs 2,074.96, vega 1,542.76 ± 0.12 vs 1,542.75 per bp
+  of sigma. The Bermudan gets them too, by Longstaff-Schwartz. Rates scripts
+  request `greeks_method = "aad"`. The response drops the hybrid's unread
+  stock; rho and vega are the parallel and sigma risks. Not differentiated:
+  the mean reversion, nor the recalibration of (a, sigma) when the curve or
+  the vols move (xVA does both). DV01 holds (a, sigma) fixed, as the closed
+  form's bump does.
 - **b3.** The portfolio books scripts (existing positions migrated); the
   hand-written descriptors are deleted from the front end. Until then a
   portfolio books and marks the hand-written forms (an American on the tree,

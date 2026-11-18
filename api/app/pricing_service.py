@@ -779,8 +779,8 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     its closed form, engine='analytic')."""
     from . import product_templates
 
+    template = product_templates.get(req.product)
     if req.engine == "analytic":
-        template = product_templates.get(req.product)
         if req.product in SOFR_CLOSED_FORM:
             return _price_sofr_closed_form(req)
         if template.market == "rates":
@@ -793,7 +793,33 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
         # calibrated one (_sofr_inputs)
         fields["hull_white"] = req.hull_white.model_dump(exclude_unset=True)
     response = price_script(ScriptRequest(script=script, **fields), library=True)
+    if template.market == "rates" and response.risks:
+        response = _rates_risks(response)
     return response.model_copy(update={"script": script})
+
+
+#: The hybrid's stock, which a rates product never reads.
+_EQUITY_RISKS = ("spot", "div", "vol")
+
+
+def _rates_risks(response: PricingResponse) -> PricingResponse:
+    """A rates product's adjoint risks: the curve's factors and the short
+    rate's sigma, without the hybrid's unread stock; rho and vega their
+    parallel and sigma risks, with their errors."""
+    risks = [r for r in response.risks if r.label not in _EQUITY_RISKS]
+    by = {r.label: r for r in risks}
+    par, vol = by.get("curve_parallel"), by.get("rate_vol")
+    greeks = response.greeks.model_copy(
+        update={
+            "delta": None,
+            "delta_std_error": None,
+            "rho": par.value if par else None,
+            "rho_std_error": par.std_error if par else None,
+            "vega": vol.value if vol else None,
+            "vega_std_error": vol.std_error if vol else None,
+        }
+    )
+    return response.model_copy(update={"risks": risks, "greeks": greeks})
 
 
 def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
@@ -895,8 +921,11 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
     sigma = market.sigma_loc_flat if model == "local_vol" else []
     heston = sv.heston if sv is not None else {}
     hw_params, curve_times, curve_dfs = {}, [], []
+    factor_basis, factor_labels = [], []
     if model == "hull_white":
         hw_params, curve_times, curve_dfs, label, rates_fit = _hull_white_inputs(req)
+        if req.greeks_method == "aad":
+            factor_basis, factor_labels = _curve_factors(req, curve_times, curve_dfs)
         if rates_fit is not None and rates_fit.calibrated:
             choice["code"] = "swaption_calibrated"
             choice["reason"] = (
@@ -961,6 +990,8 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
             hull_white=hw_params,
             curve_times=curve_times,
             curve_dfs=curve_dfs,
+            curve_factor_basis=factor_basis,
+            curve_factor_labels=factor_labels,
             milstein=req.milstein,
             second_order=req.second_order and req.greeks_method == "aad",
             terms_as_parameters=library,
@@ -973,6 +1004,30 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
     )
     response = _pricing_response_from_dict(result)
     return response.model_copy(update={"model_choice": ModelChoice(**choice)})
+
+
+def _curve_factors(req, times, dfs) -> tuple:
+    """The directions the tape differentiates a Hull-White curve in (the
+    model's CurveFactors: pillar zero-rate moves per unit of each factor,
+    row-major). On the SOFR curve, one factor per par swap rate it was
+    bootstrapped from -- the bootstrap's Jacobian dz/dq, so each risk is to a
+    quote (a bucketed DV01) -- and `curve_parallel`, every quote together.
+    On a government curve, one per pillar's zero rate and `curve_parallel`,
+    every zero rate together. Each comes with its own Monte-Carlo error."""
+    hw = req.hull_white or HullWhiteInputs()
+    if hw.curve == "sofr":
+        from . import rates_derivatives
+
+        jac, tenors = rates_derivatives.sofr_curve_jacobian(_sofr_market().swap_quotes)
+        labels = [f"swap_rate[{t:g}]" for t in tenors]
+        rows = [row + [sum(row)] for row in jac]
+    else:
+        labels = [f"zero[{t:g}]" for t in times]
+        rows = [
+            [1.0 if k == j else 0.0 for k in range(len(times))] + [1.0]
+            for j in range(len(times))
+        ]
+    return [x for row in rows for x in row], labels + ["curve_parallel"]
 
 
 def _hull_white_inputs(req) -> tuple:

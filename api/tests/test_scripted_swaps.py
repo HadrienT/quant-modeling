@@ -239,3 +239,38 @@ def test_calibration_recovers_the_parameters_behind_the_vols(monkeypatch):
     assert m.mean_reversion == pytest.approx(A, abs=2e-3)
     assert m.sigma == pytest.approx(SIGMA, rel=2e-2)
     assert m.rmse_bp < 0.5
+
+
+# ── adjoint risks to the curve and to sigma (Monte-Carlo) ────────────────────
+
+
+@pytest.mark.parametrize("product", ["interest-rate-swap", "european-swaption"])
+def test_the_adjoint_dv01_and_vega_are_the_closed_forms(market, product):
+    exact = ps.price_scripted_product(_req(product, engine="analytic"))
+    mc = ps.price_scripted_product(
+        _req(product, n_paths=100_000, seed=3, greeks_method="aad")
+    )
+    g = mc.greeks
+    # the closed form's DV01 is a central difference: allow its O(h^2) too
+    assert abs(g.rho - exact.greeks.rho) < 4 * g.rho_std_error + 1e-4 * abs(
+        exact.greeks.rho
+    )
+    if product == "european-swaption":
+        assert abs(g.vega - exact.greeks.vega) < 4 * g.vega_std_error + 1e-4 * abs(
+            exact.greeks.vega
+        )
+    labels = [r.label for r in mc.risks]
+    assert "spot" not in labels and "vol" not in labels  # the unread stock
+    assert labels[0] == "rate_vol" and labels[-1] == "curve_parallel"
+
+
+def test_the_quote_risks_add_up_to_the_parallel_one(market):
+    mc = ps.price_scripted_product(
+        _req("bermudan-swaption", n_paths=20_000, seed=1, greeks_method="aad")
+    )
+    by = {r.label: r.value for r in mc.risks}
+    buckets = [v for k, v in by.items() if k.startswith("swap_rate[")]
+    assert len(buckets) == len(QUOTES)
+    assert sum(buckets) == pytest.approx(by["curve_parallel"], rel=1e-9)
+    assert by["swap_rate[30]"] == 0.0  # beyond the swap: nothing moves it
+    assert by["rate_vol"] > 0  # a Bermudan gains with the rate's vol

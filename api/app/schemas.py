@@ -432,8 +432,10 @@ class ScriptPricingInputs(BaseModel):
     greeks_method: Literal["none", "aad"] = Field(
         "none",
         description=(
-            "'aad': every model parameter's sensitivity (spot, rate, div, vol) "
-            "from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at "
+            "'aad': every model parameter's sensitivity (spot, rate, div, vol; "
+            "under hull_white also the short rate's sigma and the curve, per "
+            "quote or pillar) from one adjoint Monte-Carlo run "
+            "(blueprint/wp/17-aad.md), at "
             "roughly 3-5x the cost of the price alone rather than a bumped "
             "reprice per parameter. 'bump' is not offered for scripted "
             "payoffs -- only 'none' or 'aad'. With sampler='sobol' the "
