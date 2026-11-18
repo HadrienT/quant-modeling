@@ -1,0 +1,29 @@
+# title: European swaption
+# category: Fixed income
+# underlyings: 1
+# market: rates
+# curve: sofr
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 29 (swaptions)
+# source: Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 3.3 (Hull-White: Jamshidian's swaption formula)
+# summary: The right, in one year, to enter a five-year SOFR swap at the strike: worth the swap at expiry when that is positive, under Hull-White calibrated to the swaptions traded on the market.
+# param: strike = 0.046 | percent | Strike (fixed rate of the swap entered)
+# param: notional = 10000000 | amount | Notional
+# param: side = 1 | number | 1 payer (the right to pay the strike), -1 receiver
+#
+# At expiry the swap starting then is worth, per unit of notional,
+# 1 - P(T0, Tn) - strike * annuity (one curve: SOFR discounts and projects),
+# its annuity the sum of yf * df over the annual fixed dates. The holder
+# enters it if it is worth more than nothing. df() on the expiry date reads
+# the bond prices the simulated short rate gives that day: Hull-White on the
+# USD SOFR curve, (a, sigma) calibrated to the at-the-money swaption vols
+# implied from the trades DTCC published.
+
+2027-01-04
+    strike = 0.046
+    notional = 10000000
+    side = 1
+
+2028-01-04
+    annuity = yf(2028-01-04, 2029-01-04) * df(2029-01-04) + yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)
+    swap = 1 - df(2033-01-04) - strike * annuity
+    pays notional * max(side * swap, 0)

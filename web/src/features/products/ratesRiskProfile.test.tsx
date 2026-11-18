@@ -40,7 +40,13 @@ function mount(product: "swap" | "swaption") {
 	);
 	render(
 		<QueryClientProvider client={makeQueryClient()}>
-			<RiskProfileTable descriptor={CATALOG_BY_KEY.get(product)!} />
+			<RiskProfileTable
+				descriptor={CATALOG_BY_KEY.get(
+					product === "swap"
+						? "script-interest-rate-swap"
+						: "script-european-swaption",
+				)!}
+			/>
 		</QueryClientProvider>,
 	);
 	return bodies;

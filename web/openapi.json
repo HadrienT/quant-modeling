@@ -6127,6 +6127,16 @@
             "title": "Currency",
             "type": "string"
           },
+          "curve": {
+            "default": "government",
+            "description": "'government': the currency's government curve, with the mean reversion and sigma given here. 'sofr' (USD only): the SOFR curve bootstrapped from the swaps DTCC published, and Hull-White calibrated to the ATM swaption vols of the trades -- mean_reversion and sigma are then the calibrated ones unless given explicitly.",
+            "enum": [
+              "government",
+              "sofr"
+            ],
+            "title": "Curve",
+            "type": "string"
+          },
           "mean_reversion": {
             "default": 0.03,
             "maximum": 1.0,
@@ -6152,6 +6162,84 @@
           }
         },
         "title": "HullWhiteInputs",
+        "type": "object"
+      },
+      "HullWhiteRatesFit": {
+        "description": "Hull-White calibrated to the traded swaptions (hull_white.curve =\n'sofr'): the curve, the parameters and how well they fit.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "calibrated": {
+            "description": "False when the request gave mean_reversion and sigma itself.",
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "converged": {
+            "title": "Converged",
+            "type": "boolean"
+          },
+          "curve": {
+            "description": "The curve, its date and its source.",
+            "title": "Curve",
+            "type": "string"
+          },
+          "mean_reversion": {
+            "title": "Mean Reversion",
+            "type": "number"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/SwaptionVolFit"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "rmse_bp": {
+            "description": "Root-mean-square fit error, bp of normal vol.",
+            "title": "Rmse Bp",
+            "type": "number"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "number"
+          },
+          "sigma": {
+            "title": "Sigma",
+            "type": "number"
+          },
+          "trades_used": {
+            "title": "Trades Used",
+            "type": "integer"
+          },
+          "window_start": {
+            "description": "First day of the swaption trades used.",
+            "format": "date",
+            "title": "Window Start",
+            "type": "string"
+          },
+          "worst_bp": {
+            "title": "Worst Bp",
+            "type": "number"
+          }
+        },
+        "required": [
+          "curve",
+          "as_of",
+          "window_start",
+          "mean_reversion",
+          "sigma",
+          "calibrated",
+          "rmse_bp",
+          "worst_bp",
+          "converged",
+          "points",
+          "trades_used",
+          "seconds"
+        ],
+        "title": "HullWhiteRatesFit",
         "type": "object"
       },
       "InitialMarginOut": {
@@ -7210,6 +7298,17 @@
             ],
             "title": "Model",
             "type": "string"
+          },
+          "rates_calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HullWhiteRatesFit"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "hull_white.curve = 'sofr': the SOFR curve and Hull-White calibrated to the traded swaptions."
           },
           "reason": {
             "title": "Reason",
@@ -13876,6 +13975,36 @@
           "vega_unit"
         ],
         "title": "SwaptionRisk",
+        "type": "object"
+      },
+      "SwaptionVolFit": {
+        "description": "One ATM swaption vol Hull-White was calibrated to.",
+        "properties": {
+          "expiry": {
+            "title": "Expiry",
+            "type": "number"
+          },
+          "market_vol": {
+            "description": "Median implied normal vol, rate units.",
+            "title": "Market Vol",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expiry",
+          "tenor",
+          "market_vol",
+          "trades"
+        ],
+        "title": "SwaptionVolFit",
         "type": "object"
       },
       "SwaptionVolInput": {

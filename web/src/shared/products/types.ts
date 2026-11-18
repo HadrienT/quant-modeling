@@ -40,6 +40,10 @@ export type ScriptedProduct = {
 	/** "rates": no stock -- priced on the chosen currency's government curve
 	 * (Hull-White fitted to it). */
 	market?: "rates";
+	/** "sofr" (rates only): the USD SOFR curve of the traded swaps, Hull-White
+	 * calibrated to the traded swaptions -- swaps and swaptions. Absent: the
+	 * chosen currency's government curve. */
+	curve?: "sofr";
 };
 
 /** Per-field overrides of what zodFields derives from a schema. */
@@ -102,13 +106,6 @@ export type ProductDescriptor = {
 	 * takes `device` and `rng`. Grows lot by lot as engines are ported.
 	 */
 	gpu?: boolean;
-	/**
-	 * A rates product: priced on a quote set (curve quotes and swaption vols)
-	 * rather than on scalar market fields, so the workbench gives it its own
-	 * form and results (features/pricing/rates). Its form values are the quote
-	 * set's id plus whatever the user changed from that set's defaults.
-	 */
-	rates?: "swap" | "swaption";
 	/** map UI-unit form values to the API request body (units converted at the edge). */
 	toRequest: (values: Record<string, unknown>, engine: EngineKey) => unknown;
 };

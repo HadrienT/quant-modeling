@@ -1,0 +1,37 @@
+# title: Interest rate swap
+# category: Fixed income
+# underlyings: 1
+# market: rates
+# curve: sofr
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 7 (swaps)
+# source: Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 1 (interest-rate swaps)
+# summary: Exchanges a fixed rate for compounded SOFR once a year for five years: worth the floating leg minus the fixed one, both on the SOFR curve built from the swaps traded that day.
+# param: fixed_rate = 0.046 | percent | Fixed rate
+# param: notional = 10000000 | amount | Notional
+# param: side = 1 | number | 1 pays the fixed rate (payer), -1 receives it
+#
+# Each year the floating leg pays SOFR compounded over the period, worth
+# 1 / P(start, end) - 1 at its start: fwdRate(start, end) * yf(start, end),
+# paid at the end, hence the df(end). A payer swap pays the fixed rate and
+# receives the floating one. Priced on the USD SOFR curve bootstrapped from
+# the swaps DTCC published (one curve discounts and projects: SOFR is the
+# overnight rate), the short rate's Hull-White calibrated to the swaptions
+# traded with them; a swap does not depend on the rate's volatility.
+
+2027-01-04
+    fixed_rate = 0.046
+    notional = 10000000
+    side = 1
+    pays side * notional * (fwdRate(2027-01-04, 2028-01-04) - fixed_rate) * yf(2027-01-04, 2028-01-04) * df(2028-01-04)
+
+2028-01-04
+    pays side * notional * (fwdRate(2028-01-04, 2029-01-04) - fixed_rate) * yf(2028-01-04, 2029-01-04) * df(2029-01-04)
+
+2029-01-04
+    pays side * notional * (fwdRate(2029-01-04, 2030-01-04) - fixed_rate) * yf(2029-01-04, 2030-01-04) * df(2030-01-04)
+
+2030-01-04
+    pays side * notional * (fwdRate(2030-01-04, 2031-01-06) - fixed_rate) * yf(2030-01-04, 2031-01-06) * df(2031-01-06)
+
+2031-01-06
+    pays side * notional * (fwdRate(2031-01-06, 2032-01-05) - fixed_rate) * yf(2031-01-06, 2032-01-05) * df(2032-01-05)

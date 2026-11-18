@@ -11,6 +11,7 @@ import { ConvergencePanel } from "./ConvergencePanel";
 import { DeviceRace } from "./DeviceRace";
 import { MarketVegaPanel } from "./MarketVegaPanel";
 import { ModelComparison } from "./ModelComparison";
+import { RatesScriptDiagnostics } from "./rates/RatesScriptDiagnostics";
 import { pricingBody } from "./requestBody";
 
 /**
@@ -45,9 +46,13 @@ export function WorkbenchDiagnostics({
 		descriptor.gpu &&
 		descriptor.endpoint &&
 		(devices.data?.gpus ?? []).length > 0;
-	const offered = isMc || race || script;
+	// A swap or swaption script: the rates engines on the same trade, under
+	// either engine.
+	const sofr = descriptor.scripted?.curve === "sofr";
+	const offered = isMc || race || script || sofr;
 	if (!offered) return null;
 	const what = [
+		sofr && "curve, Hull-White calibration, cash flows, market models",
 		isMc && "convergence",
 		race && "CPU / GPU race",
 		script &&
@@ -110,6 +115,9 @@ function Panels({
 	const script = descriptor.scripted;
 	return (
 		<>
+			{script?.curve === "sofr" && (
+				<RatesScriptDiagnostics product={script} values={values} />
+			)}
 			{engine === "mc" && q.data && (
 				<ConvergencePanel
 					endpoint={descriptor.endpoint ?? null}

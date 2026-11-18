@@ -4811,6 +4811,13 @@ export interface components {
              */
             currency: "USD" | "EUR" | "GBP" | "CHF" | "JPY";
             /**
+             * Curve
+             * @description 'government': the currency's government curve, with the mean reversion and sigma given here. 'sofr' (USD only): the SOFR curve bootstrapped from the swaps DTCC published, and Hull-White calibrated to the ATM swaption vols of the trades -- mean_reversion and sigma are then the calibrated ones unless given explicitly.
+             * @default government
+             * @enum {string}
+             */
+            curve: "government" | "sofr";
+            /**
              * Mean Reversion
              * @default 0.03
              */
@@ -4827,6 +4834,53 @@ export interface components {
              * @default 0.01
              */
             sigma: number;
+        };
+        /**
+         * HullWhiteRatesFit
+         * @description Hull-White calibrated to the traded swaptions (hull_white.curve =
+         *     'sofr'): the curve, the parameters and how well they fit.
+         */
+        HullWhiteRatesFit: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Calibrated
+             * @description False when the request gave mean_reversion and sigma itself.
+             */
+            calibrated: boolean;
+            /** Converged */
+            converged: boolean;
+            /**
+             * Curve
+             * @description The curve, its date and its source.
+             */
+            curve: string;
+            /** Mean Reversion */
+            mean_reversion: number;
+            /** Points */
+            points: components["schemas"]["SwaptionVolFit"][];
+            /**
+             * Rmse Bp
+             * @description Root-mean-square fit error, bp of normal vol.
+             */
+            rmse_bp: number;
+            /** Seconds */
+            seconds: number;
+            /** Sigma */
+            sigma: number;
+            /** Trades Used */
+            trades_used: number;
+            /**
+             * Window Start
+             * Format: date
+             * @description First day of the swaption trades used.
+             */
+            window_start: string;
+            /** Worst Bp */
+            worst_bp: number;
         };
         /**
          * InitialMarginOut
@@ -5256,6 +5310,8 @@ export interface components {
              * @enum {string}
              */
             model: "black_scholes" | "local_vol" | "heston" | "slv" | "rough_bergomi" | "hull_white";
+            /** @description hull_white.curve = 'sofr': the SOFR curve and Hull-White calibrated to the traded swaptions. */
+            rates_calibration?: components["schemas"]["HullWhiteRatesFit"] | null;
             /** Reason */
             reason: string;
             /**
@@ -8190,6 +8246,23 @@ export interface components {
              * @description Which vol is bumped, and by how much
              */
             vega_unit: string;
+        };
+        /**
+         * SwaptionVolFit
+         * @description One ATM swaption vol Hull-White was calibrated to.
+         */
+        SwaptionVolFit: {
+            /** Expiry */
+            expiry: number;
+            /**
+             * Market Vol
+             * @description Median implied normal vol, rate units.
+             */
+            market_vol: number;
+            /** Tenor */
+            tenor: number;
+            /** Trades */
+            trades: number;
         };
         /** SwaptionVolInput */
         SwaptionVolInput: {

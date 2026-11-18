@@ -24,6 +24,8 @@ and carries the methodology served with the quotes and the curves.
 from __future__ import annotations
 
 import math
+import time
+from dataclasses import dataclass
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
@@ -851,6 +853,99 @@ def market_request(today: Optional[date] = None) -> Dict:
     }
 
 
+# ── The SOFR market of the library's swaps and swaptions ─────────────────────
+
+
+@dataclass(frozen=True)
+class SofrHullWhite:
+    """What a swap or a swaption of the script library is priced on (issue
+    313, lot b2b): the USD SOFR curve bootstrapped from the swaps traded on
+    `as_of` (one curve: SOFR discounts and projects), and Hull-White (a,
+    sigma) calibrated on it to the ATM swaption normal vols of the trades
+    since `window_start` -- the same market and the same calibration as the
+    rates workbench's `usd-sofr` set."""
+
+    as_of: date
+    window_start: date
+    #: Par swap rates (tenor in years, rate): what a DV01 bumps.
+    swap_quotes: Tuple[Tuple[float, float], ...]
+    times: Tuple[float, ...]
+    dfs: Tuple[float, ...]
+    #: (expiry, tenor, normal vol, trades) of each calibration point.
+    vols: Tuple[Tuple[float, float, float, int], ...]
+    trades_used: int
+    mean_reversion: float
+    sigma: float
+    rmse_bp: float
+    worst_bp: float
+    converged: bool
+    seconds: float
+
+    @property
+    def label(self) -> str:
+        return (
+            f"USD SOFR curve of {self.as_of.isoformat()} (swaps published by DTCC), "
+            f"Hull-White calibrated to {len(self.vols)} ATM swaption vols from "
+            f"{self.trades_used} trades since {self.window_start.isoformat()}"
+        )
+
+
+def sofr_curve(swap_quotes) -> Tuple[List[float], List[float]]:
+    """The SOFR discount curve of par swap quotes [(tenor, rate)]."""
+    ois = qm.bootstrap_ois_curve([], [(t, r) for t, r in swap_quotes])
+    return list(ois["times"]), list(ois["discount_factors"])
+
+
+#: The market is rebuilt from the store at most this often (seconds): a
+#: pricing reads it, and DTCC publishes once a day.
+_SOFR_TTL = 300.0
+_sofr_cache: Dict[date, Tuple[float, SofrHullWhite]] = {}
+
+
+def sofr_hull_white(today: Optional[date] = None) -> SofrHullWhite:
+    """The SOFR curve and Hull-White calibrated to the traded swaptions.
+    RatesMarketUnavailable when the store cannot back them (no fallback)."""
+    today = today or date.today()
+    hit = _sofr_cache.get(today)
+    if hit is not None and time.monotonic() - hit[0] < _SOFR_TTL:
+        return hit[1]
+    m = market_request(today)
+    quotes = tuple((q["tenor"], q["rate"]) for q in m["ois"])
+    times, dfs = sofr_curve(quotes)
+    vols = tuple(
+        (v["expiry"], v["tenor"], v["normal_vol"], v["trades"])
+        for v in m["market_vols"]
+    )
+    c = _calibrate(
+        tuple(times),
+        tuple(dfs),
+        tuple(times),
+        tuple(dfs),
+        tuple((x, t, v) for x, t, v, _ in vols),
+        1,
+        1,
+        None,
+    )
+    out = SofrHullWhite(
+        as_of=m["as_of"],
+        window_start=m["window_start"],
+        swap_quotes=quotes,
+        times=tuple(times),
+        dfs=tuple(dfs),
+        vols=vols,
+        trades_used=m["trades_used"],
+        mean_reversion=c["mean_reversion"],
+        sigma=c["sigma"],
+        rmse_bp=c["rmse_bp"],
+        worst_bp=c["worst_bp"],
+        converged=c["converged"],
+        seconds=c["seconds"],
+    )
+    _sofr_cache.clear()
+    _sofr_cache[today] = (time.monotonic(), out)
+    return out
+
+
 # ── Quote sets ───────────────────────────────────────────────────────────────
 
 
@@ -906,4 +1001,7 @@ __all__ = [
     "swaption_model",
     "EXAMPLE",
     "RatesMarketUnavailable",
+    "SofrHullWhite",
+    "sofr_curve",
+    "sofr_hull_white",
 ]

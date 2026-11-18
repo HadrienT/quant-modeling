@@ -11,6 +11,9 @@ header the site reads:
                                        another currency, paid in this one)
     # market: rates                    (optional: no stock -- priced on the
                                        government curve, by Hull-White)
+    # curve: sofr                      (optional, rates only: the USD SOFR
+                                       curve of the traded swaps, Hull-White
+                                       calibrated to the traded swaptions)
     # source: ...                      (one line per source, at least one)
     # summary: ...
     # param: coupon = 0.025 | percent | Quarterly coupon, % of notional
@@ -44,7 +47,7 @@ LEAD_DAYS = 7
 UNITS = ("percent", "amount", "number")
 
 _META = re.compile(
-    r"^# (title|category|underlyings|quanto|market|source|summary): (.+)$"
+    r"^# (title|category|underlyings|quanto|market|curve|source|summary): (.+)$"
 )
 _PARAM = re.compile(r"^# param: (\w+) = (\S+) \| (\w+) \| (.+)$")
 _ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
@@ -77,6 +80,11 @@ class Template:
     #: "rates": the script reads no stock, only the curve (df(), fwdRate());
     #: priced by Hull-White fitted to the currency's government curve.
     market: str = "equity"
+    #: The curve of a rates product: "government" (the currency's, chosen
+    #: on the request) or "sofr" (USD SOFR from the swaps DTCC published,
+    #: Hull-White calibrated to the swaptions traded with them: swaps and
+    #: swaptions, rates_derivatives.sofr_hull_white).
+    curve: str = "government"
 
 
 def parse(slug: str, text: str) -> Template:
@@ -111,9 +119,14 @@ def parse(slug: str, text: str) -> Template:
         script="\n".join(body) + "\n",
         quanto=meta.get("quanto"),
         market=meta.get("market", "equity"),
+        curve=meta.get("curve", "government"),
     )
     if t.market not in ("equity", "rates"):
         raise ValueError(f"{slug}: unknown market '{t.market}'")
+    if t.curve not in ("government", "sofr"):
+        raise ValueError(f"{slug}: unknown curve '{t.curve}'")
+    if t.curve != "government" and t.market != "rates":
+        raise ValueError(f"{slug}: a curve is for a rates product (# market: rates)")
     for prm in t.params:
         if not _assignment(prm.name).search(t.script):
             raise ValueError(f"{slug}: param {prm.name} is never assigned")
@@ -195,6 +208,7 @@ def catalog() -> List[dict]:
             "script": t.script,
             **({"quanto": t.quanto} if t.quanto else {}),
             **({"market": t.market} if t.market != "equity" else {}),
+            **({"curve": t.curve} if t.curve != "government" else {}),
         }
         for t in templates().values()
     ]

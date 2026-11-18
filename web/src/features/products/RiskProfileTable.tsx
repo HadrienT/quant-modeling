@@ -26,8 +26,19 @@ export function RiskProfileTable({
 }: {
 	descriptor: ProductDescriptor;
 }) {
+	// A swap or swaption script: its quotes bumped on the rates engines (the
+	// reference market of the other scripts has no rate volatility).
+	if (descriptor.scripted?.curve === "sofr")
+		return (
+			<Rates
+				kind={
+					descriptor.scripted.slug === "interest-rate-swap"
+						? "swap"
+						: "swaption"
+				}
+			/>
+		);
 	if (descriptor.scripted) return <Scripted slug={descriptor.scripted.slug} />;
-	if (descriptor.rates) return <Rates kind={descriptor.rates} />;
 	if (!descriptor.enabled || !descriptor.endpoint)
 		return (
 			<p className="text-sm text-ink-muted">

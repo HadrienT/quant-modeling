@@ -8,6 +8,7 @@ export const DEFAULT_HULL_WHITE: HullWhiteInputs = {
 	sigma: 0.01,
 	rho: 0,
 	currency: "USD",
+	curve: "government",
 };
 
 const CURRENCIES: HullWhiteInputs["currency"][] = ["USD", "EUR", "GBP", "JPY"];

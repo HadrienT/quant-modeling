@@ -193,6 +193,20 @@ class HullWhiteInputs(BaseModel):
     )
     rho: float = Field(0.0, ge=-1.0, le=1.0, description="Equity-rates correlation.")
     currency: Literal["USD", "EUR", "GBP", "CHF", "JPY"] = "USD"
+    curve: Literal["government", "sofr"] = Field(
+        "government",
+        description="'government': the currency's government curve, with the "
+        "mean reversion and sigma given here. 'sofr' (USD only): the SOFR curve "
+        "bootstrapped from the swaps DTCC published, and Hull-White calibrated "
+        "to the ATM swaption vols of the trades -- mean_reversion and sigma are "
+        "then the calibrated ones unless given explicitly.",
+    )
+
+    @model_validator(mode="after")
+    def _sofr_is_usd(self):
+        if self.curve == "sofr" and self.currency != "USD":
+            raise ValueError("curve='sofr' is the USD SOFR curve: currency must be USD")
+        return self
 
 
 class ScriptPricingInputs(BaseModel):
@@ -559,9 +573,24 @@ class ScriptedProductRequest(ScriptPricingInputs):
                 f"'{template.slug}' is a rates product, priced by Hull-White on "
                 "the currency's curve (model='hull_white')"
             )
+        hull_white = data.get("hull_white")
+        if template.curve == "sofr":
+            # the SOFR market of the traded swaps and swaptions, USD only
+            hw = (
+                hull_white.model_dump(exclude_unset=True)
+                if isinstance(hull_white, BaseModel)
+                else dict(hull_white or {})
+            )
+            if hw.get("currency", "USD") != "USD" or hw.get("curve", "sofr") != "sofr":
+                raise ValueError(
+                    f"'{template.slug}' is priced on the USD SOFR curve of the traded "
+                    "swaps (hull_white.curve='sofr', currency USD)"
+                )
+            hull_white = {**hw, "currency": "USD", "curve": "sofr"}
         # `rate` is unread too: the curve discounts
         return {
             **data,
+            "hull_white": hull_white,
             "model": "hull_white",
             "spot": 1.0,
             "vol": 1e-12,
@@ -866,6 +895,39 @@ class UnderlyingUsed(BaseModel):
     drift_source: Optional[str] = None
 
 
+class SwaptionVolFit(BaseModel):
+    """One ATM swaption vol Hull-White was calibrated to."""
+
+    expiry: float
+    tenor: float
+    market_vol: float = Field(..., description="Median implied normal vol, rate units.")
+    trades: int
+
+
+class HullWhiteRatesFit(BaseModel):
+    """Hull-White calibrated to the traded swaptions (hull_white.curve =
+    'sofr'): the curve, the parameters and how well they fit."""
+
+    curve: str = Field(..., description="The curve, its date and its source.")
+    as_of: date
+    window_start: date = Field(
+        ..., description="First day of the swaption trades used."
+    )
+    mean_reversion: float
+    sigma: float
+    calibrated: bool = Field(
+        ..., description="False when the request gave mean_reversion and sigma itself."
+    )
+    rmse_bp: float = Field(
+        ..., description="Root-mean-square fit error, bp of normal vol."
+    )
+    worst_bp: float
+    converged: bool
+    points: List[SwaptionVolFit]
+    trades_used: int
+    seconds: float
+
+
 class ModelChoice(BaseModel):
     """The model a scripted payoff was priced under: requested, chosen, why,
     and what was calibrated for it."""
@@ -892,6 +954,11 @@ class ModelChoice(BaseModel):
     )
     correlation: Optional[List[List[float]]] = None
     correlation_source: Optional[str] = None
+    rates_calibration: Optional[HullWhiteRatesFit] = Field(
+        None,
+        description="hull_white.curve = 'sofr': the SOFR curve and Hull-White "
+        "calibrated to the traded swaptions.",
+    )
 
 
 class PricingResponse(BaseModel):

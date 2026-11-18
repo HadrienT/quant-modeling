@@ -1,4 +1,6 @@
 import math
+import re
+import time
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -13,7 +15,9 @@ from .schemas import (
     BarrierRequest,
     BasketRequest,
     ComputeDevice,
+    Greeks,
     HullWhiteInputs,
+    HullWhiteRatesFit,
     CommodityForwardRequest,
     CommodityOptionRequest,
     DatedAsianRequest,
@@ -30,6 +34,7 @@ from .schemas import (
     LookbackStyle,
     McRng,
     ModelChoice,
+    ModelWarning,
     MountainRequest,
     PricingResponse,
     QuantoRequest,
@@ -39,6 +44,7 @@ from .schemas import (
     ScriptValidateRequest,
     ScriptValidateResponse,
     ScriptedProductRequest,
+    SwaptionVolFit,
     UnderlyingUsed,
     VanillaRequest,
     VarianceSwapRequest,
@@ -633,6 +639,140 @@ def _price_rates_on_the_curve(req: ScriptedProductRequest) -> PricingResponse:
     )
 
 
+#: Library products on the SOFR curve with a closed form under the model
+#: their Monte-Carlo simulates (single-curve Hull-White): the swap, its
+#: value on the curve; the European swaption, Jamshidian's formula
+#: generalised (engines/analytic/hull_white_swaption.hpp).
+SOFR_CLOSED_FORM = ("interest-rate-swap", "european-swaption")
+
+_DF_DATE = re.compile(r"df\((\d{4}-\d{2}-\d{2})\)")
+
+
+def _swap_periods(script: str, valuation_date, day_count: str):
+    """The fixed periods of a library swap or swaption, read off its script:
+    the dates its df() reads, chained from the event that starts the swap
+    (the last event before the first of them), on the script's own time
+    axis (validate_script). Accruals are differences of those times: the
+    script's yf() under an additive day count (ACT/365F, ACT/360)."""
+    events = qm.validate_script(script, valuation_date.isoformat(), day_count)["events"]
+    paid = sorted(set(_DF_DATE.findall(script)))
+    if not paid:
+        raise ValueError("the script reads no df(): not a swap")
+    start = max((e for e in events if e["date"] < paid[0]), key=lambda e: e["t"])
+    probe = "".join(f"{d}\n    x = 0\n" for d in paid)
+    ends = [
+        e["t"]
+        for e in qm.validate_script(probe, valuation_date.isoformat(), day_count)[
+            "events"
+        ]
+    ]
+    starts = [start["t"]] + ends[:-1]
+    return [(s0, e0, e0 - s0) for s0, e0 in zip(starts, ends)]
+
+
+def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
+    """engine='analytic' for the swap and the European swaption of the
+    library: the same model as their Monte-Carlo (Hull-White on the SOFR
+    curve, calibrated to the traded swaptions), in closed form on the
+    script's own dates. DV01 by moving every SOFR par quote 1bp and
+    rebuilding the curve, (a, sigma) held; vega by moving sigma 1bp."""
+    from . import product_templates, rates_derivatives
+
+    start = time.perf_counter()
+    template = product_templates.get(req.product)
+    script = product_templates.render(req.product, req.terms, req.valuation_date)
+    terms = {p.name: float(req.terms.get(p.name, p.default)) for p in template.params}
+    rate_name = "fixed_rate" if "fixed_rate" in terms else "strike"
+    strike, side = terms[rate_name], terms["side"]
+    notional = terms["notional"] * abs(side)
+    periods = _swap_periods(script, req.valuation_date, req.day_count)
+    swaption = req.product == "european-swaption"
+
+    hw = req.hull_white or HullWhiteInputs(curve="sofr")
+    _, times, dfs, label, fit = _sofr_inputs(hw)
+    m = _sofr_market()
+    a, sigma = fit.mean_reversion, fit.sigma
+
+    def value(curve_times, curve_dfs, s: float) -> dict:
+        return qm.hull_white_swap_on_dates(
+            curve_times,
+            curve_dfs,
+            a,
+            s,
+            periods,
+            strike,
+            side > 0,
+            notional,
+            [periods[0][0]] if swaption else [],
+        )
+
+    key = "european" if swaption else "swap"
+    base = value(times, dfs, sigma)
+    npv = base[key]
+    bumped = {}
+    for h in (_BP, -_BP):
+        t, d = rates_derivatives.sofr_curve([(x, r + h) for x, r in m.swap_quotes])
+        bumped[h] = value(t, d, sigma)[key]
+    dv01 = (bumped[_BP] - bumped[-_BP]) / 2
+    gamma_bp = bumped[_BP] - 2 * npv + bumped[-_BP]
+    vega = (
+        (value(times, dfs, sigma + _BP)[key] - value(times, dfs, sigma - _BP)[key]) / 2
+        if swaption
+        else 0.0
+    )
+    what = (
+        f"European {'payer' if side > 0 else 'receiver'} swaption under Hull-White in "
+        f"closed form (a = {a:.4f}, sigma = {sigma * 1e4:.1f}bp)"
+        if swaption
+        else f"{'Payer' if side > 0 else 'Receiver'} swap on the curve"
+    )
+    diagnostics = (
+        f"Analytic: {what} on the {label} | forward swap rate "
+        f"{base['forward']:.4%}, annuity {base['annuity']:.4f} | DV01 {dv01:,.2f} "
+        f"per bp (every SOFR par quote +1bp, the curve rebuilt)"
+        + (f", vega {vega:,.2f} per bp of sigma" if swaption else "")
+    )
+    choice = ModelChoice(
+        requested="hull_white",
+        model="hull_white",
+        code="swaption_calibrated" if fit.calibrated else "user",
+        reason=(
+            f"Hull-White on the {label}: a = {a:.4f}, sigma = {sigma * 1e4:.1f}bp, "
+            f"fitting the vols to {fit.rmse_bp:.1f}bp on average "
+            f"({fit.worst_bp:.1f}bp at worst)."
+        ),
+        rates_calibration=fit,
+    )
+    warnings = []
+    if not fit.converged:
+        warnings.append(
+            ModelWarning(
+                code="hull_white_fit",
+                severity="warning",
+                message="The Hull-White calibration to the swaption vols did not converge.",
+            )
+        )
+    return PricingResponse(
+        npv=npv,
+        greeks=Greeks(
+            rho=dv01 / _BP,
+            gamma=gamma_bp / _BP**2,
+            vega=vega / _BP if swaption else None,
+        ),
+        bumped_greeks=["gamma", "rho", "vega"] if swaption else ["gamma", "rho"],
+        diagnostics=diagnostics,
+        mc_std_error=0.0,
+        warnings=warnings,
+        model_choice=choice,
+        script=script,
+        compute_ms=(time.perf_counter() - start) * 1e3,
+        discretisation_bias=None,
+    )
+
+
+_BP = 1e-4
+
+
 def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     """A library product from its term sheet (product_templates.py): the
     script is rendered with the terms, then priced like any script (or by
@@ -640,11 +780,18 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     from . import product_templates
 
     if req.engine == "analytic":
-        if product_templates.get(req.product).market == "rates":
+        template = product_templates.get(req.product)
+        if req.product in SOFR_CLOSED_FORM:
+            return _price_sofr_closed_form(req)
+        if template.market == "rates":
             return _price_rates_on_the_curve(req)
         return _price_scripted_analytic(req)
     script = product_templates.render(req.product, req.terms, req.valuation_date)
     fields = req.model_dump(exclude={"product", "terms", "engine"})
+    if req.hull_white is not None:
+        # only what the request set: an unset sigma on the SOFR curve is the
+        # calibrated one (_sofr_inputs)
+        fields["hull_white"] = req.hull_white.model_dump(exclude_unset=True)
     response = price_script(ScriptRequest(script=script, **fields), library=True)
     return response.model_copy(update={"script": script})
 
@@ -749,12 +896,23 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
     heston = sv.heston if sv is not None else {}
     hw_params, curve_times, curve_dfs = {}, [], []
     if model == "hull_white":
-        hw_params, curve_times, curve_dfs, label = _hull_white_inputs(req)
-        choice["reason"] = (
-            f"Chosen by hand. Short rate: Hull-White (a = {hw_params['mean_reversion']:g}, "
-            f"sigma = {hw_params['sigma']:g}, equity correlation {hw_params['rho']:g}) "
-            f"fitted to the {label}."
-        )
+        hw_params, curve_times, curve_dfs, label, rates_fit = _hull_white_inputs(req)
+        if rates_fit is not None and rates_fit.calibrated:
+            choice["code"] = "swaption_calibrated"
+            choice["reason"] = (
+                f"Hull-White on the {label}: a = {hw_params['mean_reversion']:.4f}, "
+                f"sigma = {hw_params['sigma'] * 1e4:.1f}bp, fitting the vols to "
+                f"{rates_fit.rmse_bp:.1f}bp on average ({rates_fit.worst_bp:.1f}bp "
+                "at worst)."
+            )
+        else:
+            choice["reason"] = (
+                f"Chosen by hand. Short rate: Hull-White (a = {hw_params['mean_reversion']:g}, "
+                f"sigma = {hw_params['sigma']:g}, equity correlation {hw_params['rho']:g}) "
+                f"fitted to the {label}."
+            )
+        if rates_fit is not None:
+            choice["rates_calibration"] = rates_fit
         if market is None:
             choice["calibration"] = None
         else:
@@ -827,6 +985,8 @@ def _hull_white_inputs(req) -> tuple:
     from .valuation import record_market_input
 
     hw = req.hull_white or HullWhiteInputs()
+    if hw.curve == "sofr":
+        return _sofr_inputs(hw)
     try:
         curve = rates.currency_discount_curve(hw.currency)
     except rates.RatesUnavailable as exc:
@@ -842,7 +1002,66 @@ def _hull_white_inputs(req) -> tuple:
     )
     params = {"mean_reversion": hw.mean_reversion, "sigma": hw.sigma, "rho": hw.rho}
     label = f"{hw.currency} government curve of {curve.as_of.isoformat()}"
-    return params, list(curve.times), list(curve.dfs), label
+    return params, list(curve.times), list(curve.dfs), label, None
+
+
+def _sofr_market():
+    from . import rates_derivatives
+
+    try:
+        return rates_derivatives.sofr_hull_white()
+    except rates_derivatives.RatesMarketUnavailable as exc:
+        raise ValueError(f"hull_white.curve='sofr' cannot be built: {exc}") from exc
+
+
+def _sofr_inputs(hw: HullWhiteInputs) -> tuple:
+    """hull_white.curve='sofr': the USD SOFR curve of the traded swaps, and
+    Hull-White calibrated to the traded swaptions (rates_derivatives.
+    sofr_hull_white) -- mean reversion and sigma the calibrated ones, unless
+    the request set them (the Analytic engine of a swap sets sigma ~ 0)."""
+    from .audit.payloads import MarketInputStatus
+    from .valuation import record_market_input
+
+    m = _sofr_market()
+    record_market_input(
+        "curve:USD-SOFR",
+        "db:rates.dtcc_swap_rates",
+        m.as_of.isoformat(),
+        MarketInputStatus.OBSERVED,
+        list(m.swap_quotes),
+    )
+    record_market_input(
+        "swaption-vols:USD-SOFR",
+        "db:rates.dtcc_swaptions",
+        m.as_of.isoformat(),
+        MarketInputStatus.OBSERVED,
+        [list(v) for v in m.vols],
+    )
+    given = hw.model_fields_set
+    a = hw.mean_reversion if "mean_reversion" in given else m.mean_reversion
+    sigma = hw.sigma if "sigma" in given else m.sigma
+    params = {"mean_reversion": a, "sigma": sigma, "rho": hw.rho}
+    return params, list(m.times), list(m.dfs), m.label, _rates_fit(m, a, sigma, given)
+
+
+def _rates_fit(m, a: float, sigma: float, given=frozenset()) -> HullWhiteRatesFit:
+    return HullWhiteRatesFit(
+        curve=m.label,
+        as_of=m.as_of,
+        window_start=m.window_start,
+        mean_reversion=a,
+        sigma=sigma,
+        calibrated=not ({"mean_reversion", "sigma"} & set(given)),
+        rmse_bp=m.rmse_bp,
+        worst_bp=m.worst_bp,
+        converged=m.converged,
+        points=[
+            SwaptionVolFit(expiry=x, tenor=t, market_vol=v, trades=n)
+            for x, t, v, n in m.vols
+        ],
+        trades_used=m.trades_used,
+        seconds=m.seconds,
+    )
 
 
 def _atm_implied_vol(req, market, valuation_date) -> float:

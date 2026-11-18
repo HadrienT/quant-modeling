@@ -63,6 +63,9 @@ const DOC_KEYS: Record<string, string> = {
 	"zero-coupon-bond": "bond",
 	"fixed-rate-bond": "bond",
 	"equity-forward": "future",
+	"interest-rate-swap": "swap",
+	"european-swaption": "swaption",
+	"bermudan-swaption": "swaption",
 };
 
 /** The government curves a rates product can be priced on: those the
@@ -82,6 +85,9 @@ export const ANALYTIC_SCRIPTED = new Set([
 	// rates products: the cash flows discounted on the curve
 	"zero-coupon-bond",
 	"fixed-rate-bond",
+	"interest-rate-swap",
+	// Hull-White in closed form, the model its Monte-Carlo simulates
+	"european-swaption",
 ]);
 
 /**
@@ -128,12 +134,13 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 		};
 	}
 	const rates = p.market === "rates";
-	if (rates) {
+	const sofr = p.curve === "sofr";
+	if (rates && !sofr) {
 		// no stock: the currency's government curve, Hull-White fitted to it
 		shape.currency = z.enum(RATES_CURRENCIES);
 		defaults.currency = "USD";
 		fields.currency = { label: "Government curve", group: "market" };
-	} else {
+	} else if (!rates) {
 		// A quanto prices on `underlyings` (one, in its listing currency),
 		// which only correlated Black-Scholes simulates.
 		const joint = multi || !!p.quanto;
@@ -181,17 +188,21 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 				? [
 						{
 							key: "analytic" as EngineKey,
-							label: rates
-								? "Analytic (the curve)"
-								: "Analytic (Black-Scholes)",
+							label: !rates
+								? "Analytic (Black-Scholes)"
+								: p.slug === "european-swaption"
+									? "Analytic (Hull-White closed form)"
+									: "Analytic (the curve)",
 						},
 					]
 				: []),
 			{
 				key: "mc" as EngineKey,
-				label: rates
-					? "Monte-Carlo (Hull-White on the curve)"
-					: "Monte-Carlo (payoff script)",
+				label: sofr
+					? "Monte-Carlo (Hull-White on SOFR)"
+					: rates
+						? "Monte-Carlo (Hull-White on the curve)"
+						: "Monte-Carlo (payoff script)",
 				options: ["paths", "seed"],
 			},
 		],
@@ -222,11 +233,15 @@ export function scriptedRequest(
 		]),
 	);
 	if (p.market === "rates")
-		// the curve of the currency: no ticker, no model to choose
+		// the curve of the currency, or the SOFR market of the traded swaps
+		// and swaptions: no ticker, no model to choose
 		return {
 			product: p.slug,
 			terms,
-			hull_white: { currency: v.currency ?? "USD" },
+			hull_white:
+				p.curve === "sofr"
+					? { curve: "sofr" }
+					: { currency: v.currency ?? "USD" },
 			n_paths: Number(v.n_paths),
 			seed: Number(v.seed),
 		};

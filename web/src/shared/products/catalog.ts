@@ -509,8 +509,6 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 			notional: +v.notional!,
 		}),
 	},
-	rates("swap", "Interest rate swap", "/price/rates/swap"),
-	rates("swaption", "Swaption", "/price/rates/swaption"),
 
 	// ── no market data for these yet: in the Products reference only ────
 	disabled("fx-forward", "fx", "FX forward", "/price/fx/forward", "fx-forward"),
@@ -530,36 +528,6 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		"commodity-option",
 	),
 ];
-
-/**
- * A rates product (see ProductDescriptor.rates). The form values only say
- * which quote set and what was edited; the request is built from them and the
- * set by features/pricing/rates, not by `toRequest`.
- */
-function rates(
-	key: "swap" | "swaption",
-	label: string,
-	endpoint: ProductDescriptor["endpoint"],
-): ProductDescriptor {
-	return {
-		key,
-		category: "fixed-income",
-		label,
-		enabled: true,
-		schema: z.object({
-			quote_set: z.enum(["usd-sofr", "eur-illustrative"]),
-			quotes: z.unknown().optional(),
-			contract: z.unknown().optional(),
-		}),
-		defaults: { quote_set: "usd-sofr" },
-		engines: [ANALYTIC],
-		endpoint,
-		docKey: key,
-		greeks: [],
-		rates: key,
-		toRequest: (v) => v,
-	};
-}
 
 function disabled(
 	key: string,
@@ -626,12 +594,13 @@ const PORTFOLIO_ONLY = new Set([
 ]);
 
 /** Hand-written pricers a script replaced and nothing else uses (issue 313,
- * lot b2a): gone from the catalog, their old links open the script. */
+ * lot b2a): gone from the catalog, their old links open the script. The swap
+ * and the swaption (lot b2b) have no hand-written entry left: their quote-set
+ * pricers are the Diagnostics of the scripts (features/pricing/rates). */
 const RETIRED = new Set(["fixed-rate-bond", "zero-coupon-bond"]);
 
 /**
- * Every product by family: the scripts of the library, and the rates
- * products the language does not write yet (lot b2). A product without a
+ * Every product by family: the scripts of the library. A product without a
  * pricing (`enabled: false`) shows in the Products reference only.
  */
 export const CATALOG: ProductDescriptor[] = [
@@ -665,6 +634,8 @@ const FORMER_KEYS: Record<string, string> = {
 	future: "script-equity-forward",
 	"fixed-rate-bond": "script-fixed-rate-bond",
 	"zero-coupon-bond": "script-zero-coupon-bond",
+	swap: "script-interest-rate-swap",
+	swaption: "script-european-swaption",
 	autocall: "script-athena-autocall",
 	mountain: "script-himalaya",
 	"variance-swap": "script-variance-swap",

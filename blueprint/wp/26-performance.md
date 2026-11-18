@@ -857,8 +857,34 @@ the API and the tests as oracles. Three lots:
   closed form (AAPL: 12.7414 against Monte-Carlo 12.7408 ± 0.0042). Their
   hand-written entries leave the catalog (the future stays a portfolio form),
   old links open the scripts.
-- **b2b.** The swap and the swaption as scripts, the rates panels (curves,
-  calibration, cash flows) kept as their diagnostics.
+- **b2b.** The swap and the swaptions as scripts on the market the rates
+  workbench already priced on: a header `# curve: sofr` puts a rates product
+  on the USD SOFR curve bootstrapped from the swaps DTCC published (one
+  curve: SOFR discounts and projects), with Hull-White `(a, sigma)`
+  calibrated to the ATM normal vols implied from the swaptions traded over
+  the last ten days (`rates_derivatives.sofr_hull_white`, the same quotes and
+  the same calibration as the `usd-sofr` set; 2026-11-17: a = 0.048,
+  sigma = 120bp, 5bp RMSE on 20 points). `hull_white.curve = "sofr"` on the
+  request; mean reversion and sigma are the calibrated ones unless given.
+  Three scripts: a five-year payer swap (annual `fwdRate()` against the
+  fixed rate), a one-year-into-five European swaption (the swap's value at
+  expiry from `df()`, which reads the simulated bond prices) and the
+  co-terminal Bermudan (yearly `exercise()`, Longstaff-Schwartz on the
+  swap's value, in the money only). Their oracles price the same model on
+  the script's own dates (`qm.hull_white_swap_on_dates`): Analytic for the
+  swap is the curve's value of its legs; for the European it is the
+  Hull-White closed form (191,794.5 against Monte-Carlo 191,815.6 ± 33.1 on
+  2026-11-17); the Bermudan's lattice is a test oracle, Longstaff-Schwartz
+  within 1.5 % under it. Analytic gives DV01 (every SOFR par quote +1bp, the
+  curve rebuilt, `(a, sigma)` held), its gamma and the vega to sigma. The
+  hand-written swap and swaption entries leave the catalog (old links open
+  the scripts), along with their quote editor and the illustrative EUR
+  two-curve set. Their results become the Diagnostics of the scripts: the
+  same trade on the rates engines on a regular grid, with the curve, the
+  calibration point by point, the cash flows, the swaption under Bachelier,
+  Black and SABR, and the Bermudan on the lattice. Not done: rates risks under
+  Monte-Carlo. The script's adjoint does not differentiate the curve or
+  `(a, sigma)`, so Monte-Carlo gives no DV01 or vega.
 - **b3.** The portfolio books scripts (existing positions migrated); the
   hand-written descriptors are deleted from the front end. Until then a
   portfolio books and marks the hand-written forms (an American on the tree,

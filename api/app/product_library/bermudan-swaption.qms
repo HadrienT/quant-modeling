@@ -1,0 +1,54 @@
+# title: Bermudan swaption
+# category: Fixed income
+# underlyings: 1
+# market: rates
+# curve: sofr
+# source: Longstaff & Schwartz, Valuing American Options by Simulation: A Simple Least-Squares Approach, Review of Financial Studies 14(1), 2001
+# source: Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 3.3 (Hull-White)
+# summary: The right to enter, on any of the next five yearly dates from one year out, the SOFR swap at the strike that ends in six years: worth more than each European it contains.
+# param: strike = 0.046 | percent | Strike (fixed rate of the swap entered)
+# param: notional = 10000000 | amount | Notional
+# param: side = 1 | number | 1 payer (the right to pay the strike), -1 receiver
+#
+# A co-terminal Bermudan: exercising on a fixed date enters the swap's
+# remaining periods, worth 1 - P(t, Tn) - strike * annuity(t) per unit of
+# notional. The decision is a least-squares regression of the continuation
+# value on that exercise value (Hull-White has one factor: the swap's value
+# says where the curve is), considered only where exercising pays. The price
+# is a lower bound, the rule estimated; the Hull-White lattice prices the
+# same trade by backward induction (the test).
+
+2027-01-04
+    strike = 0.046
+    notional = 10000000
+    side = 1
+
+2028-01-04
+    value = side * (1 - df(2033-01-04) - strike * (yf(2028-01-04, 2029-01-04) * df(2029-01-04) + yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))
+    if value > 0 and exercise(value) then
+        pays notional * value
+    endIf
+
+2029-01-04
+    value = side * (1 - df(2033-01-04) - strike * (yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))
+    if value > 0 and exercise(value) then
+        pays notional * value
+    endIf
+
+2030-01-04
+    value = side * (1 - df(2033-01-04) - strike * (yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))
+    if value > 0 and exercise(value) then
+        pays notional * value
+    endIf
+
+2031-01-06
+    value = side * (1 - df(2033-01-04) - strike * (yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))
+    if value > 0 and exercise(value) then
+        pays notional * value
+    endIf
+
+2032-01-05
+    value = side * (1 - df(2033-01-04) - strike * (yf(2032-01-05, 2033-01-04) * df(2033-01-04)))
+    if value > 0 and exercise(value) then
+        pays notional * value
+    endIf

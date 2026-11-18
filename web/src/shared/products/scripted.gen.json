@@ -260,6 +260,40 @@
 		"script": "# Performance of each stock = final / strike-date level.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    pays notional * max(basket - strike, 0)\n"
 	},
 	{
+		"slug": "bermudan-swaption",
+		"title": "Bermudan swaption",
+		"category": "Fixed income",
+		"underlyings": 1,
+		"sources": [
+			"Longstaff & Schwartz, Valuing American Options by Simulation: A Simple Least-Squares Approach, Review of Financial Studies 14(1), 2001",
+			"Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 3.3 (Hull-White)"
+		],
+		"summary": "The right to enter, on any of the next five yearly dates from one year out, the SOFR swap at the strike that ends in six years: worth more than each European it contains.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 0.046,
+				"unit": "percent",
+				"label": "Strike (fixed rate of the swap entered)"
+			},
+			{
+				"name": "notional",
+				"default": 10000000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "side",
+				"default": 1.0,
+				"unit": "number",
+				"label": "1 payer (the right to pay the strike), -1 receiver"
+			}
+		],
+		"script": "# A co-terminal Bermudan: exercising on a fixed date enters the swap's\n# remaining periods, worth 1 - P(t, Tn) - strike * annuity(t) per unit of\n# notional. The decision is a least-squares regression of the continuation\n# value on that exercise value (Hull-White has one factor: the swap's value\n# says where the curve is), considered only where exercising pays. The price\n# is a lower bound, the rule estimated; the Hull-White lattice prices the\n# same trade by backward induction (the test).\n\n2027-01-04\n    strike = 0.046\n    notional = 10000000\n    side = 1\n\n2028-01-04\n    value = side * (1 - df(2033-01-04) - strike * (yf(2028-01-04, 2029-01-04) * df(2029-01-04) + yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2029-01-04\n    value = side * (1 - df(2033-01-04) - strike * (yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2030-01-04\n    value = side * (1 - df(2033-01-04) - strike * (yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2031-01-06\n    value = side * (1 - df(2033-01-04) - strike * (yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2032-01-05\n    value = side * (1 - df(2033-01-04) - strike * (yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n",
+		"market": "rates",
+		"curve": "sofr"
+	},
+	{
 		"slug": "best-of-call",
 		"title": "Best-of call",
 		"category": "Multi-asset",
@@ -701,6 +735,40 @@
 		"script": "# Paid in the stock's currency, per share.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays max(spot() - strike * s0, 0)\n"
 	},
 	{
+		"slug": "european-swaption",
+		"title": "European swaption",
+		"category": "Fixed income",
+		"underlyings": 1,
+		"sources": [
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 29 (swaptions)",
+			"Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 3.3 (Hull-White: Jamshidian's swaption formula)"
+		],
+		"summary": "The right, in one year, to enter a five-year SOFR swap at the strike: worth the swap at expiry when that is positive, under Hull-White calibrated to the swaptions traded on the market.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 0.046,
+				"unit": "percent",
+				"label": "Strike (fixed rate of the swap entered)"
+			},
+			{
+				"name": "notional",
+				"default": 10000000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "side",
+				"default": 1.0,
+				"unit": "number",
+				"label": "1 payer (the right to pay the strike), -1 receiver"
+			}
+		],
+		"script": "# At expiry the swap starting then is worth, per unit of notional,\n# 1 - P(T0, Tn) - strike * annuity (one curve: SOFR discounts and projects),\n# its annuity the sum of yf * df over the annual fixed dates. The holder\n# enters it if it is worth more than nothing. df() on the expiry date reads\n# the bond prices the simulated short rate gives that day: Hull-White on the\n# USD SOFR curve, (a, sigma) calibrated to the at-the-money swaption vols\n# implied from the trades DTCC published.\n\n2027-01-04\n    strike = 0.046\n    notional = 10000000\n    side = 1\n\n2028-01-04\n    annuity = yf(2028-01-04, 2029-01-04) * df(2029-01-04) + yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)\n    swap = 1 - df(2033-01-04) - strike * annuity\n    pays notional * max(side * swap, 0)\n",
+		"market": "rates",
+		"curve": "sofr"
+	},
+	{
 		"slug": "everest",
 		"title": "Everest",
 		"category": "Multi-asset",
@@ -866,6 +934,40 @@
 			}
 		],
 		"script": "# Three stocks, three yearly observations. A removed stock gets a\n# performance of -1000 so it can never be the best again.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    in0 = 1\n    in1 = 1\n    in2 = 1\n    total = 0\n\n2028-01-04  2029-01-04  2030-01-04\n    q0 = in0 * spot(0) / s0 - (1 - in0) * 1000\n    q1 = in1 * spot(1) / s1 - (1 - in1) * 1000\n    q2 = in2 * spot(2) / s2 - (1 - in2) * 1000\n    best = max(q0, max(q1, q2))\n    total = total + best\n    if q0 = best then\n        in0 = 0\n    else\n        if q1 = best then in1 = 0 else in2 = 0 endIf\n    endIf\n\n2030-01-07\n    pays notional * max(total / 3 - strike, 0)\n"
+	},
+	{
+		"slug": "interest-rate-swap",
+		"title": "Interest rate swap",
+		"category": "Fixed income",
+		"underlyings": 1,
+		"sources": [
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 7 (swaps)",
+			"Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 1 (interest-rate swaps)"
+		],
+		"summary": "Exchanges a fixed rate for compounded SOFR once a year for five years: worth the floating leg minus the fixed one, both on the SOFR curve built from the swaps traded that day.",
+		"params": [
+			{
+				"name": "fixed_rate",
+				"default": 0.046,
+				"unit": "percent",
+				"label": "Fixed rate"
+			},
+			{
+				"name": "notional",
+				"default": 10000000.0,
+				"unit": "amount",
+				"label": "Notional"
+			},
+			{
+				"name": "side",
+				"default": 1.0,
+				"unit": "number",
+				"label": "1 pays the fixed rate (payer), -1 receives it"
+			}
+		],
+		"script": "# Each year the floating leg pays SOFR compounded over the period, worth\n# 1 / P(start, end) - 1 at its start: fwdRate(start, end) * yf(start, end),\n# paid at the end, hence the df(end). A payer swap pays the fixed rate and\n# receives the floating one. Priced on the USD SOFR curve bootstrapped from\n# the swaps DTCC published (one curve discounts and projects: SOFR is the\n# overnight rate), the short rate's Hull-White calibrated to the swaptions\n# traded with them; a swap does not depend on the rate's volatility.\n\n2027-01-04\n    fixed_rate = 0.046\n    notional = 10000000\n    side = 1\n    pays side * notional * (fwdRate(2027-01-04, 2028-01-04) - fixed_rate) * yf(2027-01-04, 2028-01-04) * df(2028-01-04)\n\n2028-01-04\n    pays side * notional * (fwdRate(2028-01-04, 2029-01-04) - fixed_rate) * yf(2028-01-04, 2029-01-04) * df(2029-01-04)\n\n2029-01-04\n    pays side * notional * (fwdRate(2029-01-04, 2030-01-04) - fixed_rate) * yf(2029-01-04, 2030-01-04) * df(2030-01-04)\n\n2030-01-04\n    pays side * notional * (fwdRate(2030-01-04, 2031-01-06) - fixed_rate) * yf(2030-01-04, 2031-01-06) * df(2031-01-06)\n\n2031-01-06\n    pays side * notional * (fwdRate(2031-01-06, 2032-01-05) - fixed_rate) * yf(2031-01-06, 2032-01-05) * df(2032-01-05)\n",
+		"market": "rates",
+		"curve": "sofr"
 	},
 	{
 		"slug": "ladder-call",
