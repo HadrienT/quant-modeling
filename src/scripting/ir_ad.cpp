@@ -117,6 +117,7 @@ namespace quantModeling::scripting::ir
                     case Op::PayIn:
                     case Op::Spot:
                     case Op::Df:
+                    case Op::Fwd:
                     case Op::Surv:
                     case Op::Num:
                         script_level();
@@ -287,7 +288,7 @@ namespace quantModeling::scripting::ir
                     }
                     else if (in.op == Op::Theta && in.a < n_risks_ && !theta_.count(in.a))
                         theta_[in.a] = next_++;
-                    else if (in.op == Op::VarIn || in.op == Op::PayIn || in.op == Op::Spot || in.op == Op::Df ||
+                    else if (in.op == Op::VarIn || in.op == Op::PayIn || in.op == Op::Spot || in.op == Op::Df || in.op == Op::Fwd ||
                              in.op == Op::Num || in.op == Op::Surv)
                         script_level();
                 }

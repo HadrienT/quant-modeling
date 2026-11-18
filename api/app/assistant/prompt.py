@@ -155,6 +155,25 @@ EXAMPLES: dict[str, str] = {
         "        endIf\n"
         "    endIf\n"
     ),
+    "American call on a dividend payer, strike 100, weekly exercise": (
+        "2026-11-26\n"
+        "    done = 0\n"
+        "\n"
+        "schedule(2026-12-03, 2027-11-25, 1W, US, F)\n"
+        "    if spot() > 100 and spot() - 100 > (fwd(2027-12-02) - 100) * df(2027-12-02) and exercise(spot()) then\n"
+        "        pays spot() - 100\n"
+        "        done = 1\n"
+        "    endIf\n"
+        "\n"
+        "2027-12-02\n"
+        "    if done = 0 then\n"
+        "        pays max(spot() - 100, 0)\n"
+        "    endIf\n"
+    ),
+    "Forward-rate agreement, 1M notional, 3.5% on 2027-06-17 to 2027-12-17": (
+        "2027-06-17\n"
+        "    pays 1000000 * (fwdRate(2027-06-17, 2027-12-17) - 0.035) * yf(2027-06-17, 2027-12-17) * df(2027-12-17)\n"
+    ),
     "Chooser: at 2027-04-19 choose a call or a put, strike 100, expiry 2027-10-19": (
         "2027-04-19\n"
         "    is_call = 0\n"
@@ -191,7 +210,8 @@ Statements (nothing else exists):
   if cond then ... [else ...] endIf conditional; blocks are delimited by
                                     the keywords, not by indentation
 
-Expressions: numbers, variables, spot(), df(DATE), survivalAbove(L),
+Expressions: numbers, variables, spot(), df(DATE), fwd(DATE), yf(DATE, DATE),
+fwdRate(DATE, DATE), survivalAbove(L),
 survivalBelow(L), lastStepCall(K), lastStepPut(K), lastStepDigital(K), parentheses, + - * / and ^ (right-associative), and the
 functions min(a,b) max(a,b) log exp sqrt abs smooth(x, half_width).
 Conditions: = != < <= > >= combined with and / or / not. Comments start
@@ -262,6 +282,18 @@ df(DATE) is the discount factor from the CURRENT event date to DATE (a literal
 ISO date on or after the event date). It is how a payoff refers to a later
 payment date's discounting.
 
+Dividends and rates, all with literal ISO dates on or after the event date:
+- fwd(DATE): the forward of the underlying for delivery on DATE, seen at the
+  current event -- what the model's rate and dividend yield make it (spot()
+  grown at the rate, less the dividend). fwd(DATE) * df(DATE) is what holding
+  the stock to DATE is worth now, dividends forgone. In a script on several
+  underlyings it is the forward of spot(0).
+- yf(START, END): the year fraction between two dates by the script's day
+  count: the accrual of a coupon (rate * yf(start, end) * notional).
+- fwdRate(START, END): the simple forward rate over [START, END] implied by
+  the discount curve at the current event, (df(START) / df(END) - 1) /
+  yf(START, END): the fixing of a floating leg, written on its reset date.
+
 Semantics you must respect:
 - Variables persist from one event to the next: this is how path-dependency
   (barrier flags, running sums, coupon counters, reference levels) is written.
@@ -289,9 +321,8 @@ Semantics you must respect:
   standard error. Under other models, or with any other expression, it is
   ignored and the diagnostics say so. Write it only when the user asks for
   variance reduction.
-- No rates or forward accessors (no libor, no fwd), no loops, no `elseif`, no
-  functions beyond the list above and exercise() / call() (no pow, no
-  normcdf: use ^). Nest an if
+- No loops, no `elseif`, no functions beyond the list above and exercise() /
+  call() (no pow, no normcdf: use ^). Nest an if
   inside an else instead of `elseif`.
 - Division by zero and log/sqrt of a negative number silently produce NaN: guard
   divisors that can be zero.

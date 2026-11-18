@@ -133,6 +133,36 @@ namespace quantModeling::scripting
         std::size_t slot = unindexed;
     };
 
+    /// The forward of the underlying for a later date: `fwd(2027-06-15)` --
+    /// what the model's law of the spot makes the price, agreed at the
+    /// current event date, of the underlying delivered on that date:
+    /// S e^((r - q)(T - t)) under a flat rate, S e^(-q (T - t)) / P(t, T)
+    /// under stochastic rates. It is how a script sees the dividend yield
+    /// (and the rate) without reading them: holding the stock to T is worth
+    /// fwd(T) * df(T) today. The forward of spot(0), as spot() is spot(0). `maturity` and `slot` are filled by the
+    /// forward-lookup resolution pass (discount_lookup_resolver.hpp): `slot`
+    /// indexes this event's own SampleDef::forward_mats / Sample::forwards.
+    struct NodeFwd final : NodeT<NodeFwd>
+    {
+        static constexpr std::size_t unindexed = NodeVar::unindexed;
+
+        Date date;
+        Time maturity = 0.0;
+        std::size_t slot = unindexed;
+    };
+
+    /// The year fraction between two dates, `yf(2027-01-15, 2027-07-15)`, by
+    /// the script's day count (the ValuationContext's): a constant once
+    /// resolved, filled into `value` by the discount-lookup resolution pass.
+    /// The accrual of a coupon, and the denominator of fwdRate().
+    struct NodeYf final : NodeT<NodeYf>
+    {
+        Date from;
+        Date to;
+        double value = 0.0;
+        bool resolved = false;
+    };
+
     /// `survivalAbove(L)` / `survivalBelow(L)`, optionally `(L, i)` for asset
     /// i: the probability that the spot stayed above (below) the level L
     /// between the previous event date (the valuation date for the first

@@ -160,6 +160,22 @@ namespace quantModeling::scripting
                     "product is priced");
             push(discounts[n.slot]);
         }
+        void visit(const NodeFwd &n) override
+        {
+            const std::vector<T> &forwards = (*scenario_)[event_index_].forwards;
+            if (n.slot >= forwards.size())
+                throw InvalidInput("fwd(" + n.date.to_iso() +
+                                   "): the model did not fill this event's forwards -- ForwardLookupResolver must "
+                                   "run, and the model must fill forwards");
+            push(forwards[n.slot]);
+        }
+        void visit(const NodeYf &n) override
+        {
+            if (!n.resolved)
+                throw InvalidInput("yf(" + n.from.to_iso() + ", " + n.to.to_iso() +
+                                   "): not resolved -- DiscountLookupResolver must run first");
+            push(T(n.value));
+        }
         void visit(const NodeStepQuantity &n) override
         {
             const std::vector<T> &survivals = (*scenario_)[event_index_].monitored;

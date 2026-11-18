@@ -64,7 +64,8 @@ namespace quantModeling::scripting
     {
         inline bool is_spot_derived(const Node &n, const std::vector<char> &tainted)
         {
-            if (dynamic_cast<const NodeSpot *>(&n) || dynamic_cast<const NodeStepQuantity *>(&n))
+            if (dynamic_cast<const NodeSpot *>(&n) || dynamic_cast<const NodeStepQuantity *>(&n) ||
+                dynamic_cast<const NodeFwd *>(&n))
                 return true;
             if (const auto *v = dynamic_cast<const NodeVar *>(&n))
                 return v->index < tainted.size() && tainted[v->index];

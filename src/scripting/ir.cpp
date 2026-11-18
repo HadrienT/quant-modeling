@@ -312,6 +312,7 @@ namespace quantModeling::scripting::ir
                 has_monitor_ = false;
                 has_bridge_ = has_last_step_ = false;
                 quantities_.clear();
+                fwd_mats_.clear();
                 term_values_.clear();
                 for (const ExprTree &statement : event.statements)
                     if (statement)
@@ -330,6 +331,8 @@ namespace quantModeling::scripting::ir
             bool has_monitor() const { return has_monitor_; }
             bool has_bridge() const { return has_bridge_; }
             bool has_last_step() const { return has_last_step_; }
+            /// The maturities of the event just lowered's fwd() slots.
+            const std::vector<Time> &fwd_mats() const { return fwd_mats_; }
             /// The numbers of the event just lowered, in the order its
             /// `Param` instructions name them.
             const std::vector<double> &term_values() const { return term_values_; }
@@ -359,6 +362,27 @@ namespace quantModeling::scripting::ir
                 const auto i = static_cast<std::int32_t>(n.slot);
                 b_.block().max_df = std::max(b_.block().max_df, i);
                 push(b_.value(Op::Df, i));
+            }
+            // Bound to the path as spot(0) e^((r - q) tau) (ir_path.cpp), tau
+            // in the date's data; the maturity is kept per event.
+            void visit(const NodeFwd &n) override
+            {
+                if (n.slot == NodeFwd::unindexed)
+                    throw InvalidInput("fwd(" + n.date.to_iso() +
+                                       "): not resolved -- ForwardLookupResolver must run before lowering");
+                const auto i = static_cast<std::int32_t>(n.slot);
+                b_.block().max_fwd = std::max(b_.block().max_fwd, i);
+                if (fwd_mats_.size() <= n.slot)
+                    fwd_mats_.resize(n.slot + 1, 0.0);
+                fwd_mats_[n.slot] = n.maturity;
+                push(b_.value(Op::Fwd, i));
+            }
+            // a number once resolved, not one of the product's terms
+            void visit(const NodeYf &n) override
+            {
+                if (!n.resolved)
+                    throw InvalidInput("yf(): not resolved -- DiscountLookupResolver must run before lowering");
+                push(b_.constant(n.value));
             }
             void visit(const NodeStepQuantity &n) override
             {
@@ -691,6 +715,7 @@ namespace quantModeling::scripting::ir
             bool has_monitor_ = false;
             bool has_bridge_ = false, has_last_step_ = false;
             std::vector<StepMonitor> quantities_;
+            std::vector<Time> fwd_mats_;
         };
     } // namespace
 
@@ -710,6 +735,8 @@ namespace quantModeling::scripting::ir
             s.has_monitor = s.has_monitor || lowering.has_monitor();
             s.has_bridge = s.has_bridge || lowering.has_bridge();
             s.has_last_step = s.has_last_step || lowering.has_last_step();
+            s.event_fwd_mats.push_back(lowering.fwd_mats());
+            s.has_forward = s.has_forward || !lowering.fwd_mats().empty();
             auto it = std::find(s.blocks.begin(), s.blocks.end(), b);
             if (it == s.blocks.end())
             {
@@ -741,6 +768,8 @@ namespace quantModeling::scripting::ir
                     return "load_spot";
                 case Op::Df:
                     return "load_df";
+                case Op::Fwd:
+                    return "load_fwd";
                 case Op::Surv:
                     return "load_survival";
                 case Op::Num:

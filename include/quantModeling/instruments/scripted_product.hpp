@@ -231,7 +231,9 @@ namespace quantModeling
                 scripting::DiscountLookupResolver(ctx).resolve(events_);
             const std::vector<std::vector<StepMonitor>> barriers =
                 scripting::StepMonitorResolver().resolve(events_);
-            defline_ = scripting::build_defline(events_, discount_mats, barriers);
+            const std::vector<std::vector<Time>> forward_mats =
+                scripting::ForwardLookupResolver(ctx).resolve(events_);
+            defline_ = scripting::build_defline(events_, discount_mats, barriers, forward_mats);
 
             const std::vector<std::vector<Time>> historical_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(historical_events_);
@@ -241,6 +243,13 @@ namespace quantModeling
                         "ScriptedProduct: df() is not supported in a "
                         "historical (pre-valuation) event (" +
                         historical_events_[i].date.to_iso() + ")");
+            const std::vector<std::vector<Time>> historical_forwards =
+                scripting::ForwardLookupResolver(ctx).resolve(historical_events_);
+            for (std::size_t i = 0; i < historical_forwards.size(); ++i)
+                if (!historical_forwards[i].empty())
+                    throw InvalidInput("ScriptedProduct: fwd() is not supported in a historical (pre-valuation) "
+                                       "event (" +
+                                       historical_events_[i].date.to_iso() + ")");
             const std::vector<std::vector<StepMonitor>> historical_barriers =
                 scripting::StepMonitorResolver().resolve(historical_events_);
             for (std::size_t i = 0; i < historical_barriers.size(); ++i)
@@ -280,8 +289,20 @@ namespace quantModeling
                 program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy, settings.smooth_ramp,
                                                      n_underlyings_);
                 if (!has_exercise_)
-                    ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy,
-                                                      settings.terms_as_parameters, settings.smooth_ramp);
+                {
+                    // What the IR cannot follow (fwd()) leaves it empty, the
+                    // reason kept: the CPU prices it.
+                    try
+                    {
+                        ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy,
+                                                          settings.terms_as_parameters, settings.smooth_ramp);
+                    }
+                    catch (const InvalidInput &e)
+                    {
+                        ir_ = {};
+                        ir_refusal_ = e.what();
+                    }
+                }
                 else
                     ir_refusal_ = "early exercise: the IR is lowered once the exercise rule is fitted";
                 ir_settings_ = settings;
@@ -686,6 +707,7 @@ namespace quantModeling
                 const double *spots[W];
                 const double *discounts[W];
                 const double *survivals[W];
+                const double *forwards[W];
                 double numeraire[W];
                 for (std::size_t i = 0; i < events_.size(); ++i)
                 {
@@ -695,11 +717,12 @@ namespace quantModeling
                         spots[l] = smp.spots.data();
                         discounts[l] = smp.discounts.data();
                         survivals[l] = smp.monitored.data();
+                        forwards[l] = smp.forwards.data();
                         numeraire[l] = smp.numeraire;
                     }
                     check_event_sizes((*paths[0])[i], i);
                     scripting::run_event_batch(view, program_.event_begin[i], program_.event_begin[i + 1], m, spots,
-                                               discounts, numeraire, lanes, survivals);
+                                               discounts, numeraire, lanes, survivals, forwards);
                 }
                 if (m.exercise_twice)
                     throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
@@ -792,7 +815,8 @@ namespace quantModeling
                 const Sample<T> &smp = path[i];
                 check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
-                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data());
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data(),
+                                     smp.forwards.data());
                 if (m.exercise_twice)
                     throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
             };
@@ -948,6 +972,9 @@ namespace quantModeling
             if (max_df >= 0 && static_cast<std::size_t>(max_df) >= smp.discounts.size())
                 throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
                                    "DiscountLookupResolver must run before this product is priced");
+            const std::int32_t max_fwd = program_.event_max_fwd[i];
+            if (max_fwd >= 0 && static_cast<std::size_t>(max_fwd) >= smp.forwards.size())
+                throw InvalidInput("fwd(): the model did not fill this event's forwards");
             const std::int32_t max_surv = program_.event_max_surv[i];
             if (max_surv >= 0 && static_cast<std::size_t>(max_surv) >= smp.monitored.size())
                 throw InvalidInput("survivalAbove/Below(): the model did not fill this event's survival "
@@ -971,7 +998,8 @@ namespace quantModeling
                 const Sample<T> &smp = path[i];
                 check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
-                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data());
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data(),
+                                     smp.forwards.data());
             }
             if (m.exercise_twice)
                 throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");

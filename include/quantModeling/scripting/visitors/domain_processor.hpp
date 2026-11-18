@@ -105,7 +105,8 @@ namespace quantModeling::scripting
                 return var_domain_[v->index];
             if (dynamic_cast<const NodeSpot *>(&n))
                 return Domain::greater_than(0.0);
-            if (dynamic_cast<const NodeDf *>(&n))
+            if (dynamic_cast<const NodeDf *>(&n) || dynamic_cast<const NodeFwd *>(&n) ||
+                dynamic_cast<const NodeYf *>(&n))
                 return Domain::greater_than(0.0);
             if (const auto *s = dynamic_cast<const NodeStepQuantity *>(&n))
                 switch (s->kind)

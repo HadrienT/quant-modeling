@@ -129,7 +129,7 @@ opérations (`enum class Op`) se rangent en cinq familles :
 
 | Famille | Instructions | Effet |
 |---|---|---|
-| Feuilles | `Const x`, `Var a`, `Spot a`, `Df a`, `Surv a` | posent une valeur : une constante, la variable n° a, le spot de l'actif n° a, le facteur d'actualisation n° a; `Surv a` (added in WP 26 P2): the event's survival probability n° a, the Brownian-bridge probability that the spot stayed on the safe side of a barrier since the previous event, computed by the model (`survivalAbove` / `survivalBelow`); `Num` (WP 26 P2): the event's numeraire, which `controlPays` divides by |
+| Feuilles | `Const x`, `Var a`, `Spot a`, `Df a`, `Surv a` | posent une valeur : une constante, la variable n° a, le spot de l'actif n° a, le facteur d'actualisation n° a; `Surv a` (added in WP 26 P2): the event's survival probability n° a, the Brownian-bridge probability that the spot stayed on the safe side of a barrier since the previous event, computed by the model (`survivalAbove` / `survivalBelow`); `Num` (WP 26 P2): the event's numeraire, which `controlPays` divides by; `Fwd a` (2026-11-18, WP 16 §15): the event's forward n° a, `fwd(DATE)`, read from the model's sample by the CPU interpreters; on the GPU the kernels compiled from the IR compute it as spot(0) e^((r - q) tau), and the program's `has_forward` makes the interpreted kernels refuse it. `yf()` compiles to a `Const`, `fwdRate()` to `Df`, `Div` and a `Const` |
 | Arithmétique | `Add Sub Mul Div Pow Neg Min Max Log Exp Sqrt Abs Smooth` | retirent un ou deux opérandes, posent le résultat |
 | Logique dure | `Eq Ne Gt Ge Lt Le And Or Not` | posent 1 ou 0 |
 | Logique floue | `FCmpGt`… `FAnd FOr FNot FConst` | posent un **degré de vérité** dans [0, 1], sur une seconde pile |

@@ -987,3 +987,53 @@ O(chemins × dates²) évaluations d'événements.
   extension propre au dépôt, qui ne touche ni l'AST existant ni les visiteurs
   hors du nouveau nœud `NodeExercise`.
 
+
+## 15. Dividends and rates: `fwd()`, `yf()`, `fwdRate()` (2026-11-18)
+
+The maintainer's request: the language must see dividends and rates, so that
+products whose value depends on them -- an American call on a dividend payer,
+a floating leg, a coupon's accrual -- are written as scripts (issue #313, the
+catalog made of scripts). Three functions, each with literal dates on or
+after the event date, as `df()`:
+
+| Function | Value at the current event t | How |
+|---|---|---|
+| `fwd(DATE)` | the forward of the underlying for delivery on T: S e^((r - q)(T - t)) under a flat rate, S e^(-q (T - t)) / P(t, T) under stochastic rates | `NodeFwd`, a slot in the event's `SampleDef::forward_mats` / `Sample::forwards`, resolved by `ForwardLookupResolver` (`discount_lookup_resolver.hpp`); every single-asset model already filled the forwards |
+| `yf(START, END)` | the year fraction by the script's day count | `NodeYf`, a constant once `DiscountLookupResolver` has set it; the bytecode and the IR see a number |
+| `fwdRate(START, END)` | (df(START) / df(END) - 1) / yf(START, END) | rewritten by the parser into `df()` and `yf()`: every evaluator, the bytecode, the IR, the GPU and the adjoints already had it |
+
+`fwd()` is how a script reads the dividend yield without a new market input:
+holding the stock to T is worth fwd(T) df(T) now. The American call of the
+library (`american-call.qms`) uses it for the bound that keeps an estimated
+exercise rule above the European: exercising is optimal only where the payoff
+beats (fwd(T) - K) df(T). Under Black-Scholes, against a 4,000-step tree: equal
+to the European without dividend, 8.0935 ± 0.0054 against a European of 8.0920
+at q = 4 % (the rule without the bound priced under it), 0.35 % under the tree
+at q = 8 %.
+
+Where it runs: everywhere a script runs. The tree evaluator and the bytecode
+(`Op::Fwd`) read the model's forwards; the IR (`ir::Op::Fwd`, each event's
+maturities in `Script::event_fwd_mats`) is bound to the path as
+spot(0) e^((r - q) tau) (`ir_path.cpp`), tau in the date's data columns after
+`df()`'s: the price kernels tabulate e^((r - q) tau) with the device's exp, the
+risk kernels read tau and take the rate and the dividend from the thetas, so
+the adjoint and the tangent differentiate them (issue #315). The interpreted
+GPU kernels do not read forwards: with compilation off (`QM_SCRIPT_JIT=0`)
+the GPU refuses the script and device `auto` prices it on the CPU, saying
+why. In a script on several underlyings `fwd()` is the forward of spot(0),
+as `spot()` is spot(0); the multi-asset models fill it, and now fill `df()`
+at their flat rate too -- before this change they resized the slots without
+filling them, so a multi-asset script reading `df()` read 0 on the CPU while
+the GPU computed the factor. The American call of the library: 8.0935171484
+on the CPU and on the GPU, the same digits.
+
+Tests: `tests/testScriptForward.cpp` -- the forward against S0 e^(-qT), the
+bytecode against the tree bit for bit, the tape's dividend and spot risks
+through the forward, yf against the day count, fwdRate against
+(e^(r tau) - 1) / tau, a forward-rate agreement under curve-fitted Hull-White
+against P(0, S) - P(0, E)(1 + K yf) (the curve alone prices it), the American
+call above the European, the refusals; `tests/gpu/testGpuForward.cpp` -- price on the GPU against the CPU
+under Black-Scholes, local vol, Heston, SLV and three assets, the adjoint's
+risks against the tape (the dividend risk among them), the interpreter's
+refusal. The assistant's prompt documents the
+three functions with two examples its tests validate against the parser.

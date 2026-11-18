@@ -43,6 +43,9 @@ namespace quantModeling::scripting
         Smooth,
         Spot,
         Df,              ///< df(DATE) -- future discount factor lookup (WP 16e)
+        Fwd,             ///< fwd(DATE) -- forward of the underlying for DATE, seen at the event (dividends)
+        Yf,              ///< yf(DATE, DATE) -- year fraction between two dates, the script's day count
+        FwdRate,         ///< fwdRate(DATE, DATE) -- simple forward rate, (df(S) / df(E) - 1) / yf(S, E)
         SurvivalAbove,   ///< survivalAbove(L[, i]) -- bridge survival above L since the last event (WP 26 P2)
         SurvivalBelow,   ///< survivalBelow(L[, i]) -- bridge survival below L since the last event (WP 26 P2)
         LastStepCall,    ///< lastStepCall(K[, i]) -- E[max(S - K, 0)] over the model's last step (WP 27 §8 rung 1)

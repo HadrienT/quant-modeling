@@ -96,6 +96,7 @@ namespace quantModeling::scripting::ir
         PayIn, ///< the payoff as the event starts
         Spot,  ///< spot a of the date
         Df,    ///< discount slot a of the date
+        Fwd,   ///< forward slot a of the date (fwd(DATE)): spot(0) grown at the rate less the dividend
         Surv,  ///< survival slot a of the date
         Num,   ///< the date's numeraire
         // ── inputs, path level ──────────────────────────────────────────────
@@ -221,6 +222,7 @@ namespace quantModeling::scripting::ir
             case Op::PayIn:
             case Op::Spot:
             case Op::Df:
+            case Op::Fwd:
             case Op::Surv:
             case Op::Num:
             case Op::State:
@@ -301,7 +303,7 @@ namespace quantModeling::scripting::ir
         std::vector<Inst> code;
         std::vector<Out> outs;
         /// Highest spot index / discount slot / survival slot read (-1: none).
-        std::int32_t max_spot = -1, max_df = -1, max_surv = -1;
+        std::int32_t max_spot = -1, max_df = -1, max_surv = -1, max_fwd = -1;
         /// Script level: what each `Surv` slot is (a bridge survival or a
         /// last-step expectation, with its level and asset), so that binding
         /// to a path knows what to compute for it. Part of the block's
@@ -350,6 +352,11 @@ namespace quantModeling::scripting::ir
         bool has_bridge = false;    ///< a bridge survival (survivalAbove / survivalBelow): one asset, BS or local vol
         bool has_last_step = false; ///< a last-step expectation: the paths compute it (WP 27 §14.9)
         bool has_exercise = false;  ///< exercise() / call() under a fitted rule (WP 26 §16); n_vars counts its flag
+        bool has_forward = false;   ///< fwd(): the forward of spot(0), from the rate and the dividend
+        /// Per event: the maturity of each of its fwd() slots, in slot order
+        /// -- what the path's data rows tabulate (ir_path.cpp path_data), as
+        /// the engine's discount lists do for df().
+        std::vector<std::vector<Time>> event_fwd_mats;
 
         std::size_t n_events() const { return event_block.size(); }
         const Block &event(std::size_t e) const { return blocks[static_cast<std::size_t>(event_block[e])]; }
@@ -512,6 +519,7 @@ namespace quantModeling::scripting::ir
         const double *spots = nullptr;
         const double *discounts = nullptr;
         const double *monitored = nullptr;
+        const double *forwards = nullptr;
         double numeraire = 1.0;
         const double *terms = nullptr;
         // path level
@@ -580,6 +588,9 @@ namespace quantModeling::scripting::ir
                     break;
                 case Op::Df:
                     r = f.discounts[in.a];
+                    break;
+                case Op::Fwd:
+                    r = f.forwards[in.a];
                     break;
                 case Op::Surv:
                     r = f.monitored[in.a];
@@ -815,7 +826,7 @@ namespace quantModeling::scripting::ir
     /// event leaves them.
     inline void run_block(const Block &b, double *vars, const double *spots, const double *discounts,
                           double numeraire, double &payoff, const double *survivals, double *val,
-                          const double *terms = nullptr)
+                          const double *terms = nullptr, const double *forwards = nullptr)
     {
         Frame f;
         f.vars = vars;
@@ -823,6 +834,7 @@ namespace quantModeling::scripting::ir
         f.spots = spots;
         f.discounts = discounts;
         f.monitored = survivals;
+        f.forwards = forwards;
         f.numeraire = numeraire;
         f.terms = terms;
         run_block(b, f, val);
