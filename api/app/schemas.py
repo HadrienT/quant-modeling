@@ -520,6 +520,16 @@ class ScriptedProductRequest(ScriptPricingInputs):
         description="Term name -> value (percent terms as fractions: 0.6 = 60 %). Missing terms take the product's defaults.",
     )
     n_paths: int = Field(50_000, ge=1_000, le=5_000_000)
+    engine: Literal["mc", "analytic"] = Field(
+        "mc",
+        description=(
+            "'mc': the script under `model` (Monte-Carlo). 'analytic': the "
+            "closed form, for the products that have one (european-call, "
+            "digital-call): Black-Scholes at the at-the-money implied vol of "
+            "the ticker's stored smile, the strike fixed on the start date "
+            "(a forward start)."
+        ),
+    )
 
 
 class ScriptValidateRequest(BaseModel):

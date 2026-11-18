@@ -1,0 +1,31 @@
+# title: American put
+# category: Vanillas and digitals
+# underlyings: 1
+# source: Longstaff & Schwartz, Valuing American Options by Simulation: A Simple Least-Squares Approach, Review of Financial Studies 14(1), 2001
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 21 and 27
+# summary: The right to sell the stock at the strike on any week until expiry: worth more than the European put, since exercising early collects the strike sooner.
+# param: strike = 1.0 | percent | Strike, % of the initial level
+#
+# Exercise every week (a Bermudan standing for continuous exercise), decided
+# by a least-squares regression of the continuation value on the moneyness
+# spot / s0 (the strike moves with s0, the spot alone would not say how deep
+# in the money a path is). Only in the money is exercising ever worth it, so
+# only there is it considered: fitting the out-of-the-money paths too bends
+# the rule where it matters and prices too low. The price is a lower bound:
+# the rule is estimated.
+
+2027-01-04
+    strike = 1.0
+    s0 = spot()
+    done = 0
+
+schedule(2027-01-11, 2027-12-27, 1W, US, F)
+    if spot() < strike * s0 and exercise(spot() / s0) then
+        pays strike * s0 - spot()
+        done = 1
+    endIf
+
+2028-01-04
+    if done = 0 then
+        pays max(strike * s0 - spot(), 0)
+    endIf

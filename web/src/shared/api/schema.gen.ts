@@ -7168,6 +7168,13 @@ export interface components {
              */
             dividend: number;
             /**
+             * Engine
+             * @description 'mc': the script under `model` (Monte-Carlo). 'analytic': the closed form, for the products that have one (european-call, digital-call): Black-Scholes at the at-the-money implied vol of the ticker's stored smile, the strike fixed on the start date (a forward start).
+             * @default mc
+             * @enum {string}
+             */
+            engine: "mc" | "analytic";
+            /**
              * Fuzzy
              * @default false
              */

@@ -106,19 +106,18 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		],
 		pricingMethods: [
 			{
-				engine: "Analytic",
+				engine: "Analytic (Black-Scholes)",
 				detail:
-					"Closed-form Black-Scholes-Merton. Exact under the model, fastest engine, and the reference the others are checked against.",
+					"Closed-form Black-Scholes-Merton at the at-the-money implied vol of the ticker's stored smile. The strike is fixed on the start date $t_1$, a week ahead, as a percentage of the spot then (a forward start): the price is $S_0e^{-qt_1}\\,C(1,k,T-t_1)$, exact under the model, and its greeks are the formula's derivatives.",
 			},
 			{
-				engine: "Monte-Carlo",
+				engine: "Monte-Carlo (payoff script)",
 				detail:
-					"The payoff depends only on $S_T$, so the terminal spot is drawn directly from its exact log-normal law — no path is stepped. Antithetic variates are always on; you control path count, seed and the MC-epsilon payoff smoothing bump.",
+					"The payoff script under the model the site chooses on the market (local vol for a payoff on one date) or the one you pick; greeks by adjoint differentiation on the same paths.",
 			},
 		],
 		notes: [
 			"The library also prices it on binomial and trinomial trees and on a Crank-Nicolson grid; these stay in its tests, as oracles, and are not offered here.",
-			"Greeks are central finite differences on the pricing function for every engine — bump an input, reprice, divide by twice the bump. Engine-agnostic but costs an extra repricing per greek; no adjoint (AAD) yet.",
 			"Put-call parity $C-P=S_0e^{-qT}-Ke^{-rT}$ is a free correctness check across engines.",
 		],
 		references: [
@@ -145,18 +144,18 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			"\\sup_{\\tau\\le T}\\ \\mathbb{E}\\big[e^{-r\\tau}\\max(\\phi(S_\\tau-K),0)\\big],\\quad \\phi=\\pm1",
 		assumptions: [
 			bsDynamics,
-			"Early exercise on 50 dates a year (a Bermudan standing for continuous exercise).",
+			"Early exercise every week (a Bermudan standing for continuous exercise).",
 		],
 		pricingMethods: [
 			{
-				engine: "Monte-Carlo (Longstaff-Schwartz)",
+				engine: "Monte-Carlo (payoff script, Longstaff-Schwartz)",
 				detail:
-					"The exercise rule is a least-squares regression of the continuation value on the spot, date by date, fitted on independent pilot paths; the price is the payoff under that rule on fresh paths. Exercise is considered only where it can be optimal: in the money, and above the forward held to the expiry ($S e^{-q\\tau} - K e^{-r\\tau}$ for a call). Greeks hold the rule fixed (at the optimal boundary its own sensitivity vanishes).",
+					"The exercise rule is a least-squares regression of the continuation value on the moneyness $S/S_0$, date by date, fitted on independent pilot paths; the price is the payoff under that rule on fresh paths, under the model the site chooses on the market. Exercise is considered only in the money, the only place it can be optimal. Greeks hold the rule fixed (at the optimal boundary its own sensitivity vanishes).",
 			},
 		],
 		notes: [
-			"The price is a lower bound: an estimated rule can only lose value against the optimal one, and 50 dates a year are worth a little less than continuous exercise. Against a 4,000-step binomial tree at S = K = 100, one year, 20 % vol, the gap is 0.15 % to 0.4 %.",
-			"A call with no dividend is never exercised early (Merton 1973): it is priced as the European, exactly.",
+			"The price is a lower bound: an estimated rule can only lose value against the optimal one, and weekly exercise is worth a little less than continuous. Under Black-Scholes at S = K = 100, one year, 20 % vol, 5 % rate, it is 0.4 % under a 4,000-step binomial tree.",
+			"The library has the American put only. A call on a stock without dividend is never exercised early (Merton 1973): it is the European call. On a dividend payer, exercising is worth it only above the forward held to the expiry, which needs the dividend the script does not see; without that bound an estimated rule can price under the European.",
 		],
 		references: [
 			{

@@ -814,26 +814,42 @@ The gap is the Bermudan's and the estimated rule's, both lower bounds for the
 holder. The tree's gamma is no oracle: on the European call it gives 0.0206
 where the closed form gives 0.01876 (the script route: 0.0188).
 
-**One catalog, Analytic and Monte-Carlo only (follow-up, 2026-11-18, #313).**
+**One catalog of scripts, Analytic and Monte-Carlo only (follow-up, 2026-11-18, #313).**
 P3 moved every Monte-Carlo route onto scripts but left the site's catalog in
-two halves: the twelve pricers next to the 46 scripts of the library, nothing
-deduplicating them, so the Price page listed the same product twice
-(European option and European call, Barrier option and Up-and-out call, ...).
+two halves: the twelve hand-written pricers next to the 46 scripts of the
+library, nothing deduplicating them, so the Price page listed the same
+product twice (European option and European call, Barrier option and
+Up-and-out call, ...). The maintainer's decision: the scripts are the
+catalog; the hand-written pricers leave the site and stay in the library,
+the API and the tests as oracles. Three lots:
 
-- One entry per product. Where a pricer and a script are the same product,
-  the pricer's entry stays (its analytic engine, its terms: call or put, the
-  barrier's kind, the averaging; the portfolio books it) and the script
-  leaves the Price page (`COVERED_BY_PRICERS`, `web/src/shared/products/
-  scripted.ts`): european-call, digital-call, asian-call, up-and-out-call,
-  down-and-in-put, both lookbacks, basket-call, best-of-call, worst-of-call.
-  They stay in the scripting page's library, and an old link to one opens
-  the pricer. The rainbow call (weights by rank) is another product and
-  stays.
-- The site's engines are Analytic and Monte-Carlo. The European option loses
-  its binomial, trinomial and PDE tabs, the American its trees for
-  Longstaff-Schwartz (above). The trees and the PDE stay in the library, the
-  API and the tests as oracles; a portfolio still marks an American on the
-  tree (`markEngine`), every day of a history.
+- **b1 (this pull request).** The Price page lists the library's scripts
+  (`web/src/shared/products/catalog.ts`: the hand-written equity entries are
+  `PORTFOLIO_ONLY`, an old link to one opens the script that replaced it).
+  The library gains an **American put** (`american-put.qms`: weekly
+  `exercise()`, Longstaff & Schwartz on the moneyness spot / s0, considered
+  only in the money; 0.38 % under a 4,000-step tree under Black-Scholes --
+  on the spot alone, which ignores that the strike moves with s0, it was
+  1.5 % under) and a **quanto call** (`quanto-call.qms`, header `# quanto:
+  USD`: one underlying in its listing currency on `underlyings`, paid in
+  dollars; greyed out on the page until data-ingest stores the dividend
+  yields of non-US listings, which only ten US tickers have today). No
+  American call: on a dividend payer the bound that keeps the estimated rule
+  above the European needs the dividend, which a script does not see; on a
+  non-payer it is the European call. **Analytic** is offered where a closed
+  form exists (`engine: "analytic"` on `/price/scripted-product`,
+  `ANALYTIC_SCRIPTED`): the European and the digital call, whose strike the
+  library fixes on the start date t1, so forward starts --
+  S0 e^(-q t1) C(1, k, T - t1) and P e^(-rT) N(d2) -- at the at-the-money
+  implied vol of the ticker's smile, equal to the script's Monte-Carlo under
+  that flat vol within its error (`api/tests/test_scripted_analytic.py`).
+  The site's engines are Analytic and Monte-Carlo only.
+- **b2.** The future, the bonds, the swap and the swaption as scripts under
+  the short-rate script models; their hand-written entries leave the page.
+- **b3.** The portfolio books scripts (existing positions migrated); the
+  hand-written descriptors are deleted from the front end. Until then a
+  portfolio books and marks the hand-written forms (an American on the tree,
+  `markEngine`), and "Add to portfolio" is not offered from a script.
 
 ## 8. P4 — Multilevel Monte-Carlo
 

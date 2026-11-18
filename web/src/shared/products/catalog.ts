@@ -606,33 +606,55 @@ const FAMILY_ORDER: ProductDescriptor["category"][] = [
  * then the scripts by name. A product without a pricing (`enabled: false`)
  * shows in the Products reference only.
  */
+/**
+ * The hand-written equity pricers: no longer on the site (issue 313, the
+ * scripts of the library are the catalog), still the forms a portfolio books
+ * and marks until it books scripts (lot b3). The library's trees, closed
+ * forms and engines behind them stay as oracles.
+ */
+const PORTFOLIO_ONLY = new Set([
+	"vanilla",
+	"quanto",
+	"american",
+	"asian",
+	"barrier",
+	"digital",
+	"lookback",
+	"basket",
+	"rainbow",
+]);
+
+/**
+ * Every product by family: the scripts of the library, and the rates
+ * products the language does not write yet (lot b2). A product without a
+ * pricing (`enabled: false`) shows in the Products reference only.
+ */
 export const CATALOG: ProductDescriptor[] = [
-	...HAND_WRITTEN,
+	...HAND_WRITTEN.filter((p) => !PORTFOLIO_ONLY.has(p.key)),
 	...SCRIPTED_CATALOG,
 ].sort(
 	(a, b) => FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category),
 );
 
-/** Where the workbench and the products page open: the analytic vanilla,
- * instant and independent of the market database. */
-export const DEFAULT_PRODUCT_KEY = "vanilla";
+/** Where the workbench and the products page open: the European call, by its
+ * closed form, instant. */
+export const DEFAULT_PRODUCT_KEY = "script-european-call";
 
 /**
  * Products that were greyed out until a script of the library priced them:
  * their old links open the script.
  */
 const FORMER_KEYS: Record<string, string> = {
-	// Scripts of the library that duplicated a pricer (issue 313).
-	"script-digital-call": "digital",
-	"script-asian-call": "asian",
-	"script-up-and-out-call": "barrier",
-	"script-down-and-in-put": "barrier",
-	"script-fixed-lookback-call": "lookback",
-	"script-floating-lookback-call": "lookback",
-	"script-basket-call": "basket",
-	"script-best-of-call": "rainbow",
-	"script-worst-of-call": "rainbow",
-	"script-european-call": "vanilla",
+	// The hand-written pricers the scripts replaced on the site (issue 313).
+	vanilla: "script-european-call",
+	american: "script-american-put",
+	quanto: "script-quanto-call",
+	asian: "script-asian-call",
+	barrier: "script-up-and-out-call",
+	digital: "script-digital-call",
+	lookback: "script-fixed-lookback-call",
+	basket: "script-basket-call",
+	rainbow: "script-worst-of-call",
 	autocall: "script-athena-autocall",
 	mountain: "script-himalaya",
 	"variance-swap": "script-variance-swap",
@@ -648,7 +670,12 @@ export function resolveProductKey(key: string | undefined): string | undefined {
 	return key ? (FORMER_KEYS[key] ?? key) : undefined;
 }
 
-export const CATALOG_BY_KEY = new Map(CATALOG.map((p) => [p.key, p]));
+/** Every descriptor by key: the catalog, and the portfolio's own forms. */
+export const CATALOG_BY_KEY = new Map(
+	[...CATALOG, ...HAND_WRITTEN.filter((p) => PORTFOLIO_ONLY.has(p.key))].map(
+		(p) => [p.key, p],
+	),
+);
 
 export const CATEGORY_LABELS: Record<ProductDescriptor["category"], string> = {
 	vanilla: "Vanillas & digitals",

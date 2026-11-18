@@ -11262,6 +11262,16 @@
             "title": "Dividend",
             "type": "number"
           },
+          "engine": {
+            "default": "mc",
+            "description": "'mc': the script under `model` (Monte-Carlo). 'analytic': the closed form, for the products that have one (european-call, digital-call): Black-Scholes at the at-the-money implied vol of the ticker's stored smile, the strike fixed on the start date (a forward start).",
+            "enum": [
+              "mc",
+              "analytic"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
           "fuzzy": {
             "default": false,
             "title": "Fuzzy",

@@ -46,6 +46,36 @@ const DOC_KEYS: Record<string, string> = {
 	chooser: "chooser",
 	compound: "compound",
 	"dispersion-swap": "dispersion-swap",
+	// The sheets of the hand-written pricers these scripts replaced (issue 313).
+	"european-call": "option",
+	"american-put": "american",
+	"quanto-call": "quanto",
+	"digital-call": "digital",
+	"asian-call": "asian",
+	"up-and-out-call": "barrier",
+	"down-and-in-put": "barrier",
+	"fixed-lookback-call": "lookback",
+	"floating-lookback-call": "lookback",
+	"basket-call": "basket",
+	"best-of-call": "rainbow",
+	"worst-of-call": "rainbow",
+};
+
+/**
+ * Products with a closed form (engine 'analytic', api/app/pricing_service.py
+ * ANALYTIC_SCRIPTED): Black-Scholes at the ticker's at-the-money implied vol,
+ * the strike fixed on the start date (a forward start).
+ */
+export const ANALYTIC_SCRIPTED = new Set(["european-call", "digital-call"]);
+
+/**
+ * Library products the database cannot price yet, with the reason the page
+ * gives: a quanto needs the foreign stock's dividend yield, stored for US
+ * listings only (the fix belongs to data-ingest).
+ */
+const UNAVAILABLE: Record<string, string> = {
+	"quanto-call":
+		"No dividend yield is stored yet for stocks listed outside the US: the quanto's foreign underlying cannot be priced from the site's database.",
 };
 
 export const SINGLE_MODELS = [
@@ -81,7 +111,10 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 			step: prm.unit === "percent" ? 0.5 : undefined,
 		};
 	}
-	shape.model = z.enum(multi ? MULTI_MODELS : SINGLE_MODELS);
+	// A quanto prices on `underlyings` (one, in its listing currency), which
+	// only correlated Black-Scholes simulates.
+	const joint = multi || !!p.quanto;
+	shape.model = z.enum(joint ? MULTI_MODELS : SINGLE_MODELS);
 	shape.tickers = z
 		.string()
 		.min(1, "A ticker per underlying")
@@ -91,7 +124,11 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 	shape.seed = f.seed();
 	Object.assign(defaults, {
 		model: "auto",
-		tickers: multi ? DEFAULT_TICKERS.slice(0, p.underlyings).join(", ") : "SPY",
+		tickers: multi
+			? DEFAULT_TICKERS.slice(0, p.underlyings).join(", ")
+			: p.quanto
+				? "SAP.DE"
+				: "SPY",
 		rate: 4,
 		n_paths: 50_000,
 		seed: 1,
@@ -110,10 +147,19 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 		key: scriptedKey(p.slug),
 		category: FAMILY[p.category] ?? "note",
 		label: p.title,
-		enabled: true,
+		enabled: !(p.slug in UNAVAILABLE),
+		disabledReason: UNAVAILABLE[p.slug],
 		schema: z.object(shape),
 		defaults,
 		engines: [
+			...(ANALYTIC_SCRIPTED.has(p.slug)
+				? [
+						{
+							key: "analytic" as EngineKey,
+							label: "Analytic (Black-Scholes)",
+						},
+					]
+				: []),
 			{
 				key: "mc" as EngineKey,
 				label: "Monte-Carlo (payoff script)",
@@ -127,7 +173,10 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 		greeks: [],
 		fields,
 		scripted: p,
-		toRequest: (v) => scriptedRequest(p, v),
+		toRequest: (v, engine) => ({
+			...scriptedRequest(p, v),
+			...(engine === "analytic" ? { engine: "analytic" } : {}),
+		}),
 	};
 }
 
@@ -150,7 +199,9 @@ export function scriptedRequest(
 	const market =
 		p.underlyings > 1
 			? { underlyings: tickers.map((ticker) => ({ ticker })) }
-			: { ticker: tickers[0] ?? "" };
+			: p.quanto
+				? { underlyings: [{ ticker: tickers[0] ?? "" }], currency: p.quanto }
+				: { ticker: tickers[0] ?? "" };
 	return {
 		product: p.slug,
 		terms,
@@ -164,32 +215,11 @@ export function scriptedRequest(
 
 const FAMILY_ORDER = Object.values(FAMILY);
 
-/**
- * Scripts of the library that a pricer of the catalog already is (issue 313): one
- * entry per product on the site, the pricer's (its analytic engine, its
- * terms: call or put, the barrier's kind, the averaging). They stay in the
- * scripting page's library.
- */
-export const COVERED_BY_PRICERS = new Set([
-	"european-call",
-	"digital-call",
-	"asian-call",
-	"up-and-out-call",
-	"down-and-in-put",
-	"fixed-lookback-call",
-	"floating-lookback-call",
-	"basket-call",
-	"best-of-call",
-	"worst-of-call",
-]);
-
 /** By family (the library's order), then by name. */
-export const SCRIPTED_CATALOG: ProductDescriptor[] = SCRIPTED_PRODUCTS.filter(
-	(p) => !COVERED_BY_PRICERS.has(p.slug),
-)
-	.map(descriptor)
-	.sort(
-		(a, b) =>
-			FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category) ||
-			a.label.localeCompare(b.label),
-	);
+export const SCRIPTED_CATALOG: ProductDescriptor[] = SCRIPTED_PRODUCTS.map(
+	descriptor,
+).sort(
+	(a, b) =>
+		FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category) ||
+		a.label.localeCompare(b.label),
+);

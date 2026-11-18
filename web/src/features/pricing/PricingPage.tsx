@@ -208,6 +208,8 @@ export default function PricingPage() {
 const ENGINE_ONLY: Record<string, readonly string[]> = {
 	n_paths: ["mc"],
 	seed: ["mc"],
+	// a closed form has no dynamics to choose
+	model: ["mc"],
 };
 
 function hiddenEngineFields(engine: string): string[] {

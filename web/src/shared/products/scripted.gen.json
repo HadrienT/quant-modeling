@@ -62,6 +62,26 @@
 		"script": "# Monthly monitoring of each stock against its own strike-date level.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.2\n    barrier = 0.8\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    breached = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n\n2028-01-04\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    if breached = 0 then\n        pays notional * (1 + coupon)\n    else\n        pays notional * (1 + max(basket - 1, 0))\n    endIf\n"
 	},
 	{
+		"slug": "american-put",
+		"title": "American put",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Longstaff & Schwartz, Valuing American Options by Simulation: A Simple Least-Squares Approach, Review of Financial Studies 14(1), 2001",
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 21 and 27"
+		],
+		"summary": "The right to sell the stock at the strike on any week until expiry: worth more than the European put, since exercising early collects the strike sooner.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			}
+		],
+		"script": "# Exercise every week (a Bermudan standing for continuous exercise), decided\n# by a least-squares regression of the continuation value on the moneyness\n# spot / s0 (the strike moves with s0, the spot alone would not say how deep\n# in the money a path is). Only in the money is exercising ever worth it, so\n# only there is it considered: fitting the out-of-the-money paths too bends\n# the rule where it matters and prices too low. The price is a lower bound:\n# the rule is estimated.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    done = 0\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    if spot() < strike * s0 and exercise(spot() / s0) then\n        pays strike * s0 - spot()\n        done = 1\n    endIf\n\n2028-01-04\n    if done = 0 then\n        pays max(strike * s0 - spot(), 0)\n    endIf\n"
+	},
+	{
 		"slug": "asian-call",
 		"title": "Arithmetic Asian call",
 		"category": "Asians, lookbacks and ladders",
@@ -913,6 +933,33 @@
 			}
 		],
 		"script": "# Below the protection barrier at maturity the capital is repaid in\n# proportion to the fall (European knock-in).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.05\n    autocall = 1.0\n    coupon_barrier = 0.7\n    protection = 0.6\n    s0 = spot()\n    miss = 0\n    alive = 1\n\n2027-07-06  2028-01-04  2028-07-06\n    if alive = 1 then\n        if spot() >= autocall * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n            alive = 0\n        else\n            if spot() >= coupon_barrier * s0 then\n                pays notional * coupon * (miss + 1)\n                miss = 0\n            else\n                miss = miss + 1\n            endIf\n        endIf\n    endIf\n\n2029-01-04\n    if alive = 1 then\n        if spot() >= coupon_barrier * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n        else\n            if spot() < protection * s0 then\n                pays notional * spot() / s0\n            else\n                pays notional\n            endIf\n        endIf\n    endIf\n"
+	},
+	{
+		"slug": "quanto-call",
+		"title": "Quanto call",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Reiner, Quanto Mechanics, Risk 5(3), 1992",
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 30 (quantos)"
+		],
+		"summary": "A call on a stock listed in another currency, its gain paid in dollars at an exchange rate fixed today: the investor takes the stock's risk, not the currency's.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			},
+			{
+				"name": "fixed_rate",
+				"default": 1.0,
+				"unit": "number",
+				"label": "Dollars paid per unit of the stock's currency"
+			}
+		],
+		"script": "# Simulated in dollars: the stock drifts at its own currency's rate, less its\n# dividend, less rho sigma_S sigma_X (the quanto adjustment), X its currency\n# in dollars.\n\n2027-01-04\n    strike = 1.0\n    fixed_rate = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays fixed_rate * max(spot() - strike * s0, 0)\n",
+		"quanto": "USD"
 	},
 	{
 		"slug": "rainbow-call",

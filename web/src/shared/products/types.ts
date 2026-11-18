@@ -34,6 +34,9 @@ export type ScriptedProduct = {
 		label: string;
 	}[];
 	script: string;
+	/** Payment currency of a quanto: one underlying listed in another
+	 * currency, priced on `underlyings` with `currency`. */
+	quanto?: string;
 };
 
 /** Per-field overrides of what zodFields derives from a schema. */
