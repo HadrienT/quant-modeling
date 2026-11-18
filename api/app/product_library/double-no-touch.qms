@@ -7,6 +7,8 @@
 # param: low = 0.85 | percent | Lower barrier, % of the initial level
 # param: high = 1.15 | percent | Upper barrier, % of the initial level
 # param: payout = 100 | amount | Cash paid if never touched
+# eps: 1
+# greeks: separate
 #
 # Daily closes, six months.
 

@@ -115,6 +115,31 @@ namespace quantModeling::scripting
         EXPECT_EQ(c.eps, 0.0);
         EXPECT_FALSE(c.alwaysTrue);
         EXPECT_FALSE(c.alwaysFalse);
+        // fuzzy mode: a tent of half-width 1 around ki - 1 = 0, so that a
+        // blended ki holds to its own degree
+        EXPECT_EQ(c.discrete_eps, 1.0);
+        EXPECT_EQ(c.discrete_shift, 0.0);
+    }
+
+    TEST(DomainProcessor, ADiscreteOrderTestInterpolatesBetweenItsNeighbours)
+    {
+        // n in {0, 1, 2, 3}: n > 2 is the ramp from 2 (degree 0) to 3 (1),
+        // n >= 2 from 1 to 2, n < 2 the negation of n >= 2's -- in units of
+        // the compared expression x = n - 2
+        const std::string setup = "2025-01-01\n    n = 0\n"
+                                  "2025-03-01\n    if spot() < 90 then n = 1 endIf\n"
+                                  "2025-06-01\n    if spot() < 80 then n = 2 endIf\n"
+                                  "2025-09-01\n    if spot() < 70 then n = 3 endIf\n";
+        const NodeComparison &gt = condition_of(analysed(setup + "2025-12-01\n    if n > 2 then x = 1 endIf\n"));
+        EXPECT_TRUE(gt.discrete);
+        EXPECT_EQ(gt.discrete_shift, 0.5); // x from 0 to 1
+        EXPECT_EQ(gt.discrete_eps, 0.5);
+        const NodeComparison &ge = condition_of(analysed(setup + "2025-12-01\n    if n >= 2 then x = 1 endIf\n"));
+        EXPECT_EQ(ge.discrete_shift, -0.5); // x from -1 to 0
+        EXPECT_EQ(ge.discrete_eps, 0.5);
+        const NodeComparison &lt = condition_of(analysed(setup + "2025-12-01\n    if n < 2 then x = 1 endIf\n"));
+        EXPECT_EQ(lt.discrete_shift, -0.5);
+        EXPECT_EQ(lt.discrete_eps, 0.5);
     }
 
     TEST(DomainProcessor, MarketTestGetsAnEps)

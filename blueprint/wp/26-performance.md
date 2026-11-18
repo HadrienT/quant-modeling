@@ -635,8 +635,47 @@ P0, since a displayed figure must be defensible.
     worst-of autocall −537, worst-of reverse convertible +60, himalaya
     −72, phoenix −6.
   - So `fuzzy` stays what it is for: a usable pathwise delta, off by
-    default. Its eps on multi-asset scripts is worth a look if their fuzzy
-    greeks are used.
+    default.
+
+  **Follow-up, the same day: the smoothing width measured, and a bug
+  fixed.**
+  - **Bench.** `qm_gpu_fuzzy_eps_bench`: the 17 single-underlying scripts
+    with a spot threshold, local vol, 2^16 points, 16 seeds, eps from 0.001
+    to 3. eps is the ramp's half-width in the units of the compared
+    expression: about 1 for a performance, about 100 for a spot.
+  - **What it measures:** the price bias in errors of one hard run, and the
+    adjoint delta's bias and noise against a central difference of the hard
+    price on common draws.
+  - **The bug.** It showed adjoint deltas at zero on the barriers, even
+    smoothed. The cause is the flag pattern: the fuzzy `if` blends `alive`
+    to 0.97, and the discrete test `alive = 1` stayed hard. Discrete
+    conditions now interpolate between their domain's values (WP 16 §4.2,
+    a departure from the book). Hard prices are unchanged, and the tree,
+    bytecode and IR agree to the bit.
+  - **After the fix**, a well-chosen eps brings the delta's error from
+    50-100 % (nearly hard) down to 1-6 % on almost every product.
+  - **Rule per product.** eps minimises the delta's error. One run
+    (`# greeks: joint`) when the price moves by less than half an error at
+    that eps, or at a smaller eps whose delta error stays within 1.5x (or
+    +2 points). Otherwise two runs (`separate`): the price unsmoothed, the
+    greeks from a second, smoothed run.
+    - eps 0.3, joint: accumulator, corridor variance swap, range accrual,
+      barrier reverse convertible, ladder call.
+    - eps 3, joint: digital call. eps 0.001, joint: reverse convertible.
+    - eps 1, separate: athena and phoenix autocalls, bonus certificate,
+      double no-touch, one-touch, down-and-in put, shark-fin, twin-win.
+    - eps 3, separate: up-and-out call, double barrier call.
+  - **Not covered.** The four multi-asset performance scripts (altiplano,
+    himalaya, worst-of autocall, worst-of reverse convertible) have no
+    delta to calibrate: their payoff does not depend on today's spot under
+    correlated Black-Scholes.
+  - **Plumbing.** The API applies the width to a library product's adjoint
+    greeks unless the request sets `fuzzy` or `default_eps` itself
+    (`pricing_service._price_library_script`). The response's diagnostics
+    say which mode ran.
+  - **Limit.** Measured under one local-vol surface at the default terms,
+    on the delta: the vega keeps a smoothing bias of a few percent
+    (up-and-out, 11 %).
 
 **Decided and done (2026-11-11, measurements in #214).** R stays 16: at
 equal total paths, R = 32 costs 1.4-2.3x in variance on smooth payoffs, and

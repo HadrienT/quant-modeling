@@ -7,6 +7,8 @@
 # param: strike = 1.0 | percent | Strike, % of the initial level
 # param: low = 0.8 | percent | Lower knock-out barrier, % of the initial level
 # param: high = 1.3 | percent | Upper knock-out barrier, % of the initial level
+# eps: 3
+# greeks: separate
 #
 # Both barriers checked at every close (a daily grid approximates continuous
 # monitoring). No rebate.

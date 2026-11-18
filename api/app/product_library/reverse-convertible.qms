@@ -6,6 +6,8 @@
 # param: notional = 1000 | amount | Notional
 # param: coupon = 0.1 | percent | Coupon, % of notional
 # param: strike = 1.0 | percent | Strike, % of the initial level
+# eps: 0.001
+# greeks: joint
 #
 # The investor is short a put: that premium pays for the coupon.
 

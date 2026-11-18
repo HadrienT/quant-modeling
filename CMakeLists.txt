@@ -588,6 +588,10 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   target_link_libraries(qm_gpu_owen_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_owen_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
+  add_executable(qm_gpu_fuzzy_eps_bench benchmarks/fuzzy_eps.cpp)
+  target_link_libraries(qm_gpu_fuzzy_eps_bench PRIVATE quantModeling)
+  target_compile_definitions(qm_gpu_fuzzy_eps_bench PRIVATE
+    QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
   add_executable(qm_gpu_paths_bench benchmarks/sobol_paths.cpp)
   target_link_libraries(qm_gpu_paths_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_paths_bench PRIVATE

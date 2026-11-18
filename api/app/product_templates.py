@@ -11,6 +11,13 @@ header the site reads:
                                        another currency, paid in this one)
     # market: rates                    (optional: no stock -- priced on the
                                        government curve, by Hull-White)
+    # eps: 1                           (optional: the smoothing half-width of
+                                       its adjoint greeks, measured -- WP 26,
+                                       qm_gpu_fuzzy_eps_bench)
+    # greeks: separate                 (with eps: "joint", one smoothed run
+                                       for the price and the greeks; or
+                                       "separate", the price unsmoothed and the
+                                       greeks from a second, smoothed run)
     # curve: sofr                      (optional, rates only: the USD SOFR
                                        curve of the traded swaps, Hull-White
                                        calibrated to the traded swaptions)
@@ -47,7 +54,7 @@ LEAD_DAYS = 7
 UNITS = ("percent", "amount", "number")
 
 _META = re.compile(
-    r"^# (title|category|underlyings|quanto|market|curve|source|summary): (.+)$"
+    r"^# (title|category|underlyings|quanto|market|curve|eps|greeks|source|summary): (.+)$"
 )
 _PARAM = re.compile(r"^# param: (\w+) = (\S+) \| (\w+) \| (.+)$")
 _ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
@@ -85,6 +92,13 @@ class Template:
     #: Hull-White calibrated to the swaptions traded with them: swaps and
     #: swaptions, rates_derivatives.sofr_hull_white).
     curve: str = "government"
+    #: The smoothing half-width of its adjoint greeks (None: none), in the
+    #: units of the expressions its conditions compare, and how the price is
+    #: taken: "joint" from the smoothed run (its bias measured below half an
+    #: error), "separate" from a second, unsmoothed run (WP 26 §5, #226
+    #: follow-up).
+    eps: float | None = None
+    greeks: str = "joint"
 
 
 def parse(slug: str, text: str) -> Template:
@@ -120,7 +134,13 @@ def parse(slug: str, text: str) -> Template:
         quanto=meta.get("quanto"),
         market=meta.get("market", "equity"),
         curve=meta.get("curve", "government"),
+        eps=float(meta["eps"]) if "eps" in meta else None,
+        greeks=meta.get("greeks", "joint"),
     )
+    if t.greeks not in ("joint", "separate"):
+        raise ValueError(f"{slug}: greeks must be 'joint' or 'separate'")
+    if t.eps is not None and not t.eps > 0:
+        raise ValueError(f"{slug}: eps must be positive")
     if t.market not in ("equity", "rates"):
         raise ValueError(f"{slug}: unknown market '{t.market}'")
     if t.curve not in ("government", "sofr"):

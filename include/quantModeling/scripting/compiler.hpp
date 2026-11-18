@@ -297,8 +297,17 @@ namespace quantModeling::scripting
             }
             n.arguments[0]->accept(*this);
             n.arguments[1]->accept(*this);
-            const bool crisp = n.discrete || n.eps <= 0.0;
-            emit(fuzzy_op, crisp ? 1 : 0, smooth_ && !crisp ? 1 : 0, n.eps), pop(), pop(), push_degree();
+            // a discrete condition interpolates between its domain's values
+            // (NodeComparison::discrete_eps): the ramp on lhs - (rhs + shift)
+            const bool interpolated = n.discrete && n.discrete_eps > 0.0;
+            if (interpolated && n.discrete_shift != 0.0)
+            {
+                emit(Op::Const, 0, 0, n.discrete_shift), push();
+                emit(Op::Add), pop(), pop(), push();
+            }
+            const bool crisp = !interpolated && (n.discrete || n.eps <= 0.0);
+            const double eps = interpolated ? n.discrete_eps : n.eps;
+            emit(fuzzy_op, crisp ? 1 : 0, smooth_ && !crisp ? 1 : 0, eps), pop(), pop(), push_degree();
         }
         void connective(const Node &n, Op hard_op, Op fuzzy_op)
         {

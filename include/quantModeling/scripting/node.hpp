@@ -261,8 +261,16 @@ namespace quantModeling::scripting
     /// DomainProcessor / ConstCondProcessor passes (WP 16c) and unused in 16a.
     struct NodeComparison : Node
     {
-        double eps = 0.0;         ///< smoothing half-width (DomainProcessor)
-        bool discrete = false;    ///< operand takes only isolated values
+        double eps = 0.0;      ///< smoothing half-width (DomainProcessor)
+        bool discrete = false; ///< operand takes only isolated values
+        /// A discrete condition in fuzzy mode (DomainProcessor): the linear
+        /// interpolation between the two values of its domain on either side
+        /// of the boundary -- a ramp of half-width discrete_eps centred on
+        /// discrete_shift (x - discrete_shift against 0), exactly 0 and 1 on
+        /// those values. A flag a fuzzy `if` blended to 0.97 then holds to
+        /// degree 0.97 instead of not at all. 0: hard.
+        double discrete_eps = 0.0;
+        double discrete_shift = 0.0;
         bool alwaysTrue = false;  ///< condition folds to true
         bool alwaysFalse = false; ///< condition folds to false
     };
