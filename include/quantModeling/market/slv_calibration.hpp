@@ -45,6 +45,15 @@ namespace quantModeling
         Real variance_floor = 1e-8;
         Real leverage_floor = 1e-3; ///< guards a near-empty bucket's estimate
         Real leverage_cap = 5.0;    ///< guards a near-empty bucket's estimate
+        /// E[v_t | S_t = K] is a kernel regression on the particles (quartic
+        /// kernel), with Guyon & Henry-Labordere's bandwidth
+        /// h = kernel_scale * sigma_ATM(t) * s0 * sqrt(max(t, kernel_min_time)) * N^(-1/5).
+        /// A nearest-strike average is noisy from one strike to the next (a
+        /// few hundred particles each), and the pathwise greeks of SLV read
+        /// the leverage's slope in the spot: that noise made them
+        /// meaningless. 0 restores the nearest-strike average.
+        Real kernel_scale = 1.5;
+        Time kernel_min_time = 0.25;
     };
 
     /**
@@ -65,18 +74,17 @@ namespace quantModeling
      *
      * E[v_t | S_t = S] has no closed form, so this is calibrated by the
      * particle method (Guyon & Henry-Labordere 2012's "smile calibration
-     * problem solved", simplified here to nearest-strike bucketing rather
-     * than a Gaussian kernel -- a common, well-understood simplification,
-     * not a shortcut specific to this codebase): simulate n_particles
+     * problem solved", with their kernel regression of E[v|S] and their
+     * bandwidth, SLVCalibrationSettings::kernel_scale): simulate n_particles
      * forward through the T_grid one column at a time, using the leverage
      * already calibrated at the *previous* column held constant over the
      * step (the standard resolution of the method's chicken-and-egg
      * problem -- L at column j needs the particle distribution at column
      * j, which needs L over the step *into* column j; using column j-1's
      * already-known L is exact in the limit T_grid -> 0 and is what makes
-     * the forward sweep well-defined at all), then bucket the resulting
-     * particles by S into K_grid's cells and read off the local mean of v
-     * per bucket as the E[v|S] estimate.
+     * the forward sweep well-defined at all), then estimate E[v|S] at every
+     * strike of K_grid by a quartic-kernel average of the particles' v
+     * (strikes no particle's kernel reaches take the nearest estimate).
      *
      * `sigma_loc` must be on the *same* (K_grid, T_grid) as the leverage
      * grid this returns -- typically market::build_local_vol_grid's own

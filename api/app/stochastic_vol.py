@@ -236,8 +236,10 @@ def store_key(market: LocalVolMarket) -> str:
         {
             "method": METHOD,
             # 2: the leverage on its own time grid (issue #227); the fits
-            # stored before it held a column over a surface interval
-            "leverage": 2,
+            # stored before it held a column over a surface interval.
+            # 3: E[v|S] by kernel regression, smooth in the spot; the
+            # nearest-strike average before it was noisy strike to strike.
+            "leverage": 3,
             "particles": SLV_PARTICLES,
             "seed": SLV_SEED,
             "ticker": market.ticker,

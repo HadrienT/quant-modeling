@@ -496,6 +496,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
         }
 
         PricingResult res = to_pricing_result(*aad_res);
+        if (res.risks)
+            if (auto withheld = scripting::withhold_variance_parameter_risks(*res.risks, spec.heston, kind))
+                aad_advice.push_back(*withheld);
         res.diagnostics += gpu_note + " | scripted, " + std::to_string(aad_events) + " events" +
                            (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
         res.device = aad_device;

@@ -167,4 +167,43 @@ namespace quantModeling
         EXPECT_FALSE(has(local, "flat_vol_smile"));
     }
 
+    // The pathwise risks to the variance parameters exist only while the
+    // Feller ratio is at least 1 (model_advice.hpp): below it they are
+    // removed with a reason, the spot, rate, dividend and leverage risks kept.
+    TEST(ModelAdvice, VarianceParameterRisksAreWithheldBelowFeller)
+    {
+        const auto report = []
+        {
+            return RiskReport{{"spot", "rate", "div", "v0", "kappa", "theta", "xi", "rho", "leverage[0,0]"},
+                              {0.6, 200.0, -240.0, -5e8, -1e6, -1e8, 6e7, -1e8, 3.0},
+                              {0.01, 2.0, 2.0, 6e8, 4e6, 2e8, 7e7, 1e8, 0.1}};
+        };
+        const HestonParams below{0.0755, 3.09, 0.0886, 1.755, -0.36}; // ratio 0.18 (AAPL, 2026-11-17)
+        const HestonParams above{0.04, 1.5, 0.04, 0.3, -0.6};         // ratio 1.33
+
+        RiskReport slv = report();
+        const auto why = scripting::withhold_variance_parameter_risks(slv, below, ModelKind::StochasticLocalVol);
+        ASSERT_TRUE(why.has_value());
+        EXPECT_EQ(why->code, "variance_parameter_risks_withheld");
+        EXPECT_NE(why->message.find("0.18"), std::string::npos);
+        const std::vector<std::string> kept{"spot", "rate", "div", "leverage[0,0]"};
+        EXPECT_EQ(slv.labels, kept);
+        EXPECT_EQ(slv.values.size(), kept.size());
+        EXPECT_DOUBLE_EQ(slv.values[3], 3.0);
+        EXPECT_DOUBLE_EQ(slv.std_errors[3], 0.1);
+
+        RiskReport heston = report();
+        EXPECT_TRUE(scripting::withhold_variance_parameter_risks(heston, below, ModelKind::Heston));
+        EXPECT_EQ(heston.labels.size(), 4u);
+
+        RiskReport healthy = report();
+        EXPECT_FALSE(scripting::withhold_variance_parameter_risks(healthy, above, ModelKind::StochasticLocalVol));
+        EXPECT_EQ(healthy.labels.size(), 9u);
+
+        // Rough Bergomi's rho is its own parameter, not Heston's.
+        RiskReport other = report();
+        EXPECT_FALSE(scripting::withhold_variance_parameter_risks(other, below, ModelKind::LocalVolSurface));
+        EXPECT_EQ(other.labels.size(), 9u);
+    }
+
 } // namespace quantModeling
