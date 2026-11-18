@@ -6921,9 +6921,19 @@
             "type": "number"
           },
           "normal_vol": {
-            "description": "Median over the window, rate units",
+            "description": "Median over the window, every trade, rate units",
             "title": "Normal Vol",
             "type": "number"
+          },
+          "quartile_trades": {
+            "description": "The trades the quartiles rest on: those whose premium convention is known (not bilateral), or every trade when fewer than three are (issue 193)",
+            "title": "Quartile Trades",
+            "type": "integer"
+          },
+          "quartiles_known": {
+            "description": "False when the quartiles fall back on every trade",
+            "title": "Quartiles Known",
+            "type": "boolean"
           },
           "tenor": {
             "title": "Tenor",
@@ -6940,7 +6950,9 @@
           "normal_vol",
           "low",
           "high",
-          "trades"
+          "trades",
+          "quartile_trades",
+          "quartiles_known"
         ],
         "title": "MarketSwaptionVol",
         "type": "object"

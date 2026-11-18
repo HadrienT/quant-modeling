@@ -5176,9 +5176,19 @@ export interface components {
             low: number;
             /**
              * Normal Vol
-             * @description Median over the window, rate units
+             * @description Median over the window, every trade, rate units
              */
             normal_vol: number;
+            /**
+             * Quartile Trades
+             * @description The trades the quartiles rest on: those whose premium convention is known (not bilateral), or every trade when fewer than three are (issue 193)
+             */
+            quartile_trades: number;
+            /**
+             * Quartiles Known
+             * @description False when the quartiles fall back on every trade
+             */
+            quartiles_known: boolean;
             /** Tenor */
             tenor: number;
             /** Trades */

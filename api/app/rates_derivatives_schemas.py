@@ -266,10 +266,20 @@ class MarketSwapRate(BaseModel):
 class MarketSwaptionVol(BaseModel):
     expiry: float
     tenor: float
-    normal_vol: float = Field(description="Median over the window, rate units")
+    normal_vol: float = Field(
+        description="Median over the window, every trade, rate units"
+    )
     low: float = Field(description="Lower quartile")
     high: float = Field(description="Upper quartile")
     trades: int
+    quartile_trades: int = Field(
+        description="The trades the quartiles rest on: those whose premium "
+        "convention is known (not bilateral), or every trade when fewer than "
+        "three are (issue 193)"
+    )
+    quartiles_known: bool = Field(
+        description="False when the quartiles fall back on every trade"
+    )
 
 
 class RejectedTrades(BaseModel):

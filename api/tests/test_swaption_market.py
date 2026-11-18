@@ -413,3 +413,27 @@ def test_an_unreachable_store_is_a_503(monkeypatch):
     assert (
         r.status_code == 503 and r.json()["message"] == "Market data store unavailable"
     )
+
+
+def test_the_quartiles_rest_on_the_trades_whose_convention_is_known():
+    # Issue #193: a bilateral trade may report both legs' premium. Platform
+    # singles at 100 to 110 bp, bilateral trades at twice that: the median
+    # is every trade's, the quartiles the platform trades' only.
+    platform = [
+        trade(1.0, 10, vol=v, platform="ISWV", notional=n)
+        for v, n in ((0.0100, 25e6), (0.0105, 50e6), (0.0110, 75e6))
+    ]
+    doubled = [trade(1.0, 10, vol=0.0210, notional=n) for n in (30e6, 40e6)]
+    (point,) = grid(platform + doubled).points
+    assert point.trades == 5 and point.quartile_trades == 3
+    assert point.quartiles_known
+    assert point.normal_vol == pytest.approx(0.0110, rel=1e-6)  # median of all five
+    assert point.low == pytest.approx(0.01025, rel=1e-6)
+    assert point.high == pytest.approx(0.01075, rel=1e-6)  # not pulled to 210 bp
+
+
+def test_with_too_few_known_trades_the_quartiles_fall_back_on_all():
+    trades = [trade(1.0, 10, vol=v) for v in (0.0100, 0.0105, 0.0110)]  # bilateral
+    trades.append(trade(1.0, 10, vol=0.0105, platform="ISWV"))
+    (point,) = grid(trades).points
+    assert not point.quartiles_known and point.quartile_trades == 4

@@ -26,6 +26,15 @@ The rules, found on the real files (blueprint/wp/23-xva.md §13.7, issue #137):
   chooses at expiry) carry the premium of a payer and a receiver, and count
   for half of it. Left alone they come out at twice the vol too: 186 bp
   against 94 on the EUR trades of early October 2026, 210 against 107 in USD;
+- **a bilateral trade's premium may be one leg's or both legs'**: a call
+  and a put with the same terms reported bilaterally mostly carry their own
+  premium each (385 such pairs at the median's level against 155 at twice
+  it, USD trades of August to November 2026, issue #193), and no field
+  tells the two apart. Halving them would spoil more than it fixes, so they
+  enter the median, which a minority does not move, but not the quartiles:
+  the spread shown rests on the trades whose convention is known (platform
+  trades, straddles reported as one product), unless a bucket has fewer
+  than MIN_TRADES of them;
 - **at the money, whatever "call" means**: the files do not say whether a
   call is a payer or a receiver swaption. A trade is kept only if the two
   readings give the same vol within `READING_TOLERANCE` — which is the case
@@ -86,10 +95,15 @@ _DAYS_PER_YEAR = 365.25
 class VolPoint:
     expiry: float
     tenor: int
-    normal_vol: float  # median
+    normal_vol: float  # median, over every trade
     low: float  # lower quartile
     high: float  # upper quartile
     trades: int
+    #: The trades the quartiles rest on: those whose premium convention is
+    #: known (not bilateral), or every trade when a bucket has fewer than
+    #: MIN_TRADES of them (`quartiles_known` False).
+    quartile_trades: int = 0
+    quartiles_known: bool = True
 
 
 @dataclass(frozen=True)
@@ -179,6 +193,9 @@ def atm_normal_vols(
     straddle = _straddle_legs(trades)
     built: Dict[date, Optional[_Curve]] = {}
     vols: Dict[Tuple[float, int], List[float]] = defaultdict(list)
+    # the same, without the bilateral trades (issue #193: their premium may
+    # be one leg's or both legs')
+    known: Dict[Tuple[float, int], List[float]] = defaultdict(list)
 
     for i, trade in enumerate(trades):
         expiry = (trade.expiry - trade.trade_date).days / _DAYS_PER_YEAR
@@ -229,6 +246,8 @@ def atm_normal_vols(
             rejected["implausible premium"] += 1
             continue
         vols[(expiry_bucket, int(tenor_bucket))].append(vol)
+        if trade.platform not in BILATERAL:
+            known[(expiry_bucket, int(tenor_bucket))].append(vol)
 
     points: List[VolPoint] = []
     used = 0
@@ -236,9 +255,21 @@ def atm_normal_vols(
         if len(values) < MIN_TRADES:
             rejected["bucket with too few trades"] += len(values)
             continue
-        low, median, high = statistics.quantiles(values, n=4, method="inclusive")
+        median = statistics.median(values)
+        clean = known[(expiry_bucket, tenor_bucket)]
+        spread = clean if len(clean) >= MIN_TRADES else values
+        low, _, high = statistics.quantiles(spread, n=4, method="inclusive")
         points.append(
-            VolPoint(expiry_bucket, tenor_bucket, median, low, high, len(values))
+            VolPoint(
+                expiry_bucket,
+                tenor_bucket,
+                median,
+                low,
+                high,
+                len(values),
+                quartile_trades=len(spread),
+                quartiles_known=spread is clean,
+            )
         )
         used += len(values)
     return VolGrid(points=points, rejected=dict(rejected), trades_used=used)

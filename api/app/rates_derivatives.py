@@ -678,8 +678,12 @@ def quotes_methodology(set_id: str) -> List[MethodologySection]:
                     "which the files do not say: on the trades with long expiries "
                     "most premiums sit at that level, a few at the level of a "
                     "premium paid up front. A straddle traded on a platform carries "
-                    "the premium of both legs on each leg and counts for half. These are "
-                    "medians of a handful of trades, not a dealer's surface: read the "
+                    "the premium of both legs on each leg and counts for half. A bilateral "
+                    "trade's premium may be one leg's or both legs', and nothing in the "
+                    "files says which: those trades enter the median, which a minority "
+                    "does not move, but not the quartiles, which rest on the trades whose "
+                    "convention is known (marked when a point has too few of them). These "
+                    "are medians of a handful of trades, not a dealer's surface: read the "
                     "trade counts.",
                 ],
             )
@@ -841,6 +845,8 @@ def market_request(today: Optional[date] = None) -> Dict:
                 "normal_vol": p.normal_vol,
                 "low": p.low,
                 "high": p.high,
+                "quartile_trades": p.quartile_trades,
+                "quartiles_known": p.quartiles_known,
                 "trades": p.trades,
             }
             for p in grid.points
