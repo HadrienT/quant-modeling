@@ -193,13 +193,15 @@ class HullWhiteInputs(BaseModel):
     )
     rho: float = Field(0.0, ge=-1.0, le=1.0, description="Equity-rates correlation.")
     currency: Literal["USD", "EUR", "GBP", "CHF", "JPY"] = "USD"
-    curve: Literal["government", "sofr"] = Field(
+    curve: Literal["government", "sofr", "flat"] = Field(
         "government",
         description="'government': the currency's government curve, with the "
         "mean reversion and sigma given here. 'sofr' (USD only): the SOFR curve "
         "bootstrapped from the swaps DTCC published, and Hull-White calibrated "
         "to the ATM swaption vols of the trades -- mean_reversion and sigma are "
-        "then the calibrated ones unless given explicitly.",
+        "then the calibrated ones unless given explicitly. 'flat': a flat curve "
+        "at the request's `rate`, mean reversion and sigma as given -- every "
+        "input typed, nothing read from the database.",
     )
 
     @model_validator(mode="after")
@@ -591,7 +593,15 @@ class ScriptedProductRequest(ScriptPricingInputs):
                 "the currency's curve (model='hull_white')"
             )
         hull_white = data.get("hull_white")
-        if template.curve == "sofr":
+        hw_asked = (
+            hull_white.model_dump(exclude_unset=True)
+            if isinstance(hull_white, BaseModel)
+            else dict(hull_white or {})
+        )
+        if hw_asked.get("curve") == "flat":
+            # every input typed: a flat curve at `rate`, the request's a and sigma
+            pass
+        elif template.curve == "sofr":
             # the SOFR market of the traded swaps and swaptions, USD only
             hw = (
                 hull_white.model_dump(exclude_unset=True)
@@ -601,7 +611,8 @@ class ScriptedProductRequest(ScriptPricingInputs):
             if hw.get("currency", "USD") != "USD" or hw.get("curve", "sofr") != "sofr":
                 raise ValueError(
                     f"'{template.slug}' is priced on the USD SOFR curve of the traded "
-                    "swaps (hull_white.curve='sofr', currency USD)"
+                    "swaps (hull_white.curve='sofr', currency USD), or on a flat "
+                    "typed curve (hull_white.curve='flat')"
                 )
             hull_white = {**hw, "currency": "USD", "curve": "sofr"}
         # `rate` is unread too: the curve discounts

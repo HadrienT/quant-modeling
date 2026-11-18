@@ -4835,11 +4835,11 @@ export interface components {
             currency: "USD" | "EUR" | "GBP" | "CHF" | "JPY";
             /**
              * Curve
-             * @description 'government': the currency's government curve, with the mean reversion and sigma given here. 'sofr' (USD only): the SOFR curve bootstrapped from the swaps DTCC published, and Hull-White calibrated to the ATM swaption vols of the trades -- mean_reversion and sigma are then the calibrated ones unless given explicitly.
+             * @description 'government': the currency's government curve, with the mean reversion and sigma given here. 'sofr' (USD only): the SOFR curve bootstrapped from the swaps DTCC published, and Hull-White calibrated to the ATM swaption vols of the trades -- mean_reversion and sigma are then the calibrated ones unless given explicitly. 'flat': a flat curve at the request's `rate`, mean reversion and sigma as given -- every input typed, nothing read from the database.
              * @default government
              * @enum {string}
              */
-            curve: "government" | "sofr";
+            curve: "government" | "sofr" | "flat";
             /**
              * Mean Reversion
              * @default 0.03

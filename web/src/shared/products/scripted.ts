@@ -150,6 +150,103 @@ const term = (unit: string) =>
 		? z.coerce.number().min(-100).max(1000)
 		: z.coerce.number();
 
+const isTyped = (v: Record<string, unknown>) => v.source === "typed";
+const fromMarket = (v: Record<string, unknown>) => v.source !== "typed";
+
+/** One typed underlying of several: spot, vol %, dividend %. */
+const TYPED_ASSET = "100,20,0";
+
+/**
+ * The market inputs of a product: the database's (a ticker's close, smile
+ * and dividend; the government or SOFR curve) or typed by hand -- a
+ * fictitious underlying or market, nothing read from the database. Typed,
+ * an equity product runs under Black-Scholes at the typed vol (Analytic too
+ * where it has a closed form), a rates product under Hull-White on a flat
+ * curve with its typed a and sigma.
+ */
+function typedInputs(
+	p: ScriptedProduct,
+	shape: Record<string, z.ZodType>,
+	defaults: Record<string, unknown>,
+	fields: Record<string, FieldOverride>,
+) {
+	if (p.quanto) return; // its foreign listing and the FX: database only
+	const rates = p.market === "rates";
+	shape.source = z.enum(["market", "typed"]);
+	defaults.source = "market";
+	fields.source = {
+		label: "Market inputs",
+		group: "market",
+		optionLabels: rates
+			? {
+					market:
+						p.curve === "sofr"
+							? "The SOFR market of the traded swaps"
+							: "The government curve",
+					typed: "Typed: a flat curve and Hull-White's a, σ",
+				}
+			: {
+					market: "From the database (a ticker)",
+					typed: "Typed by hand (a fictitious underlying)",
+				},
+	};
+	const typed = (o: FieldOverride): FieldOverride => ({
+		group: "market",
+		when: isTyped,
+		...o,
+	});
+	if (rates) {
+		shape.flat_rate = f.ratePct();
+		defaults.flat_rate = 4;
+		fields.flat_rate = typed({ label: "Flat rate", unit: "%", step: 0.25 });
+		shape.hw_a = z.coerce.number().min(0.0001).max(1);
+		defaults.hw_a = 0.03;
+		fields.hw_a = typed({ label: "Mean reversion a", step: 0.01 });
+		shape.hw_sigma = z.coerce.number().gt(0).max(1000);
+		defaults.hw_sigma = 100;
+		fields.hw_sigma = typed({ label: "Short-rate vol σ", unit: "bp", step: 5 });
+		if (fields.currency) fields.currency.when = fromMarket;
+		return;
+	}
+	for (const k of ["model", "tickers"])
+		if (fields[k]) fields[k] = { ...fields[k], when: fromMarket };
+	if (p.underlyings > 1) {
+		shape.assets = z.string().regex(/^[\d.\-,;\s]+$/, "Numbers only");
+		defaults.assets = Array(p.underlyings).fill(TYPED_ASSET).join(";");
+		fields.assets = typed({
+			label: "Underlyings, typed",
+			widget: "assets",
+			count: p.underlyings,
+		});
+		shape.correlation = z.coerce.number().min(-0.99).max(0.99);
+		defaults.correlation = 0.5;
+		fields.correlation = typed({
+			label: "Correlation, every pair",
+			step: 0.05,
+		});
+		return;
+	}
+	shape.spot = z.coerce.number().gt(0);
+	defaults.spot = 100;
+	fields.spot = typed({ label: "Spot", step: 1 });
+	shape.vol = z.coerce.number().min(0.01).max(500);
+	defaults.vol = 20;
+	fields.vol = typed({ label: "Volatility", unit: "%", step: 1 });
+	shape.dividend = z.coerce.number().min(-50).max(50);
+	defaults.dividend = 0;
+	fields.dividend = typed({ label: "Dividend yield", unit: "%", step: 0.25 });
+}
+
+/** Typed underlyings "spot,vol%,div%;..." as the API takes them. */
+export function typedAssets(s: string, n: number) {
+	return Array.from({ length: n }, (_, i) => {
+		const [spot, vol, div] = (s.split(";")[i] ?? TYPED_ASSET)
+			.split(",")
+			.map((x) => Number(x));
+		return { spot, vol: pct(vol), dividend: pct(div ?? 0) };
+	});
+}
+
 function descriptor(p: ScriptedProduct): ProductDescriptor {
 	const multi = p.underlyings > 1;
 	const shape: Record<string, z.ZodType> = {};
@@ -263,6 +360,8 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 		} satisfies Record<string, FieldOverride>);
 	}
 
+	typedInputs(p, shape, defaults, fields);
+
 	return {
 		key: scriptedKey(p.slug),
 		category: FAMILY[p.category] ?? "note",
@@ -328,15 +427,22 @@ export function scriptedRequest(
 			? { expiry: Number(v.expiry) }
 			: {}),
 	};
+	const typed = v.source === "typed";
 	if (p.market === "rates")
 		// the curve of the currency, or the SOFR market of the traded swaps
-		// and swaptions: no ticker, no model to choose
+		// and swaptions, or a flat typed curve: no ticker, no model to choose
 		return {
 			product: p.slug,
 			terms,
 			...length,
-			hull_white:
-				p.curve === "sofr"
+			...(typed ? { rate: pct(v.flat_rate) } : {}),
+			hull_white: typed
+				? {
+						curve: "flat",
+						mean_reversion: Number(v.hw_a),
+						sigma: Number(v.hw_sigma) / 1e4,
+					}
+				: p.curve === "sofr"
 					? { curve: "sofr" }
 					: { currency: v.currency ?? "USD" },
 			// the risks to the curve and to the short rate's vol, by the tape
@@ -344,6 +450,30 @@ export function scriptedRequest(
 			n_paths: Number(v.n_paths),
 			seed: Number(v.seed),
 		};
+	if (typed) {
+		// a fictitious underlying: flat Black-Scholes on the typed inputs
+		const n = p.underlyings;
+		const rho = Number(v.correlation ?? 0);
+		const market =
+			n > 1
+				? {
+						underlyings: typedAssets(String(v.assets ?? ""), n),
+						correlation: Array.from({ length: n }, (_, i) =>
+							Array.from({ length: n }, (_, j) => (i === j ? 1 : rho)),
+						),
+					}
+				: { spot: Number(v.spot), vol: pct(v.vol), dividend: pct(v.dividend) };
+		return {
+			product: p.slug,
+			terms,
+			...length,
+			model: "black_scholes",
+			...market,
+			rate: pct(v.rate),
+			n_paths: Number(v.n_paths),
+			seed: Number(v.seed),
+		};
+	}
 	const tickers = String(v.tickers ?? "")
 		.split(/[\s,;]+/)
 		.map((t) => t.trim().toUpperCase())
