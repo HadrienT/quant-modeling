@@ -33,6 +33,9 @@ describe("scripted catalog entries", () => {
 			"basket",
 			"rainbow",
 			"quanto",
+			"future",
+			"fixed-rate-bond",
+			"zero-coupon-bond",
 		]) {
 			expect(
 				CATALOG.some((p) => p.key === key),
@@ -53,6 +56,24 @@ describe("scripted catalog entries", () => {
 			});
 			expect(d.toRequest(d.defaults, "mc")).not.toHaveProperty("engine");
 		}
+	});
+
+	it("prices a rates product on a government curve, with no ticker and no model", () => {
+		const d = CATALOG_BY_KEY.get("script-fixed-rate-bond")!;
+		expect(d.category).toBe("fixed-income");
+		expect(d.engines.map((e) => e.key)).toEqual(["analytic", "mc"]);
+		const body = d.toRequest(
+			{ ...d.defaults, currency: "EUR" },
+			"analytic",
+		) as Record<string, unknown>;
+		expect(body).toMatchObject({
+			product: "fixed-rate-bond",
+			hull_white: { currency: "EUR" },
+			engine: "analytic",
+		});
+		expect(body).not.toHaveProperty("ticker");
+		expect(body).not.toHaveProperty("model");
+		expect((body.terms as Record<string, number>).coupon).toBeCloseTo(0.04);
 	});
 
 	it("prices a quanto on one underlying in its own currency, paid in the declared one", () => {

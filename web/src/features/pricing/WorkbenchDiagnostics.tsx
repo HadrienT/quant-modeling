@@ -50,7 +50,10 @@ export function WorkbenchDiagnostics({
 	const what = [
 		isMc && "convergence",
 		race && "CPU / GPU race",
-		script && script.underlyings === 1 && "model comparison, market vega",
+		script &&
+			script.underlyings === 1 &&
+			!script.market &&
+			"model comparison, market vega",
 	]
 		.filter(Boolean)
 		.join(" · ");
@@ -122,6 +125,7 @@ function Panels({
 				/>
 			)}
 			{script &&
+				!script.market &&
 				(script.underlyings === 1 ? (
 					<div className="flex flex-col gap-2">
 						<Button

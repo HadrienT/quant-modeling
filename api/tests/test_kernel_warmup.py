@@ -41,8 +41,8 @@ def test_warm_once_reports(monkeypatch, tmp_path):
 
 
 def test_every_library_product_is_seeded_with_its_terms_as_data(monkeypatch):
-    # Each product of the script library, under each model the GPU runs it
-    # with, as the pricing page asks for it; never a CPU-only run (nothing
+    # Each product of the script library (but the rates products, on the
+    # CPU), under each model the GPU runs it with, as the pricing page asks for it; never a CPU-only run (nothing
     # to compile), always with its numbers as terms (one kernel for every
     # term sheet).
     from app import product_templates
@@ -52,6 +52,10 @@ def test_every_library_product_is_seeded_with_its_terms_as_data(monkeypatch):
     assert len(set(labels)) == len(labels)
     for slug, t in product_templates.templates().items():
         mine = [label for label in labels if label.split()[1] == slug]
+        if t.market == "rates":
+            # Hull-White on the curve runs on the CPU: no kernel to build
+            assert not mine, slug
+            continue
         assert mine, slug
         if t.underlyings == 1:
             # Heston and SLV always run on the GPU

@@ -1,0 +1,19 @@
+# title: Zero-coupon bond
+# category: Fixed income
+# underlyings: 1
+# market: rates
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 4 (zero rates and bond pricing)
+# source: Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 1
+# summary: Pays its face value once, at maturity, and nothing before: its price is the discount factor to that date.
+# param: notional = 100 | amount | Face value paid at maturity
+#
+# Priced on the government curve of the chosen currency, by Hull-White fitted
+# to it (Monte-Carlo) or by the curve itself (Analytic): the same price, the
+# short rate's volatility only adds noise to a payment that does not depend
+# on it.
+
+2027-01-04
+    notional = 100
+
+2032-01-05
+    pays notional

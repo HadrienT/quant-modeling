@@ -622,7 +622,12 @@ const PORTFOLIO_ONLY = new Set([
 	"lookback",
 	"basket",
 	"rainbow",
+	"future",
 ]);
+
+/** Hand-written pricers a script replaced and nothing else uses (issue 313,
+ * lot b2a): gone from the catalog, their old links open the script. */
+const RETIRED = new Set(["fixed-rate-bond", "zero-coupon-bond"]);
 
 /**
  * Every product by family: the scripts of the library, and the rates
@@ -630,7 +635,9 @@ const PORTFOLIO_ONLY = new Set([
  * pricing (`enabled: false`) shows in the Products reference only.
  */
 export const CATALOG: ProductDescriptor[] = [
-	...HAND_WRITTEN.filter((p) => !PORTFOLIO_ONLY.has(p.key)),
+	...HAND_WRITTEN.filter(
+		(p) => !PORTFOLIO_ONLY.has(p.key) && !RETIRED.has(p.key),
+	),
 	...SCRIPTED_CATALOG,
 ].sort(
 	(a, b) => FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category),
@@ -655,6 +662,9 @@ const FORMER_KEYS: Record<string, string> = {
 	lookback: "script-fixed-lookback-call",
 	basket: "script-basket-call",
 	rainbow: "script-worst-of-call",
+	future: "script-equity-forward",
+	"fixed-rate-bond": "script-fixed-rate-bond",
+	"zero-coupon-bond": "script-zero-coupon-bond",
 	autocall: "script-athena-autocall",
 	mountain: "script-himalaya",
 	"variance-swap": "script-variance-swap",

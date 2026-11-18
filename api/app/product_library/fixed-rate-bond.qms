@@ -1,0 +1,22 @@
+# title: Fixed-rate bond
+# category: Fixed income
+# underlyings: 1
+# market: rates
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 4 (bond pricing)
+# source: Fabozzi, Bond Markets, Analysis, and Strategies, 9th ed., Pearson, 2015
+# summary: Pays a fixed coupon every six months and its face value at maturity: a sum of zero-coupon bonds, one per payment.
+# param: coupon = 0.04 | percent | Annual coupon rate, % of the face value
+# param: notional = 100 | amount | Face value
+#
+# Semiannual coupons of coupon / 2 of the face value, the last with the face
+# value. Priced on the government curve of the chosen currency.
+
+2027-01-04
+    coupon = 0.04
+    notional = 100
+
+schedule(2027-07-05, 2031-07-04, 6M, US, MF)
+    pays notional * coupon / 2
+
+2032-01-05
+    pays notional * (1 + coupon / 2)

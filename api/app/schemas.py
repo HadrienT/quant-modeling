@@ -531,6 +531,44 @@ class ScriptedProductRequest(ScriptPricingInputs):
         ),
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _rates_market(cls, data):
+        """A rates product of the library (`# market: rates`: bonds, swaps)
+        reads no stock, only the curve: it is priced by Hull-White fitted to
+        `hull_white.currency`'s government curve. The hybrid model also
+        carries a stock, which the script never reads: it is given a unit
+        spot and no volatility here, so that no stock input is asked for."""
+        if not isinstance(data, dict):
+            return data
+        from . import product_templates
+
+        try:
+            template = product_templates.get(str(data.get("product", "")))
+        except ValueError:
+            return data
+        if template.market != "rates":
+            return data
+        if data.get("ticker") or data.get("underlyings"):
+            raise ValueError(
+                f"'{template.slug}' is a rates product: it reads the curve of "
+                "`hull_white.currency`, not a ticker"
+            )
+        if data.get("model", "auto") not in ("auto", "hull_white"):
+            raise ValueError(
+                f"'{template.slug}' is a rates product, priced by Hull-White on "
+                "the currency's curve (model='hull_white')"
+            )
+        # `rate` is unread too: the curve discounts
+        return {
+            **data,
+            "model": "hull_white",
+            "spot": 1.0,
+            "vol": 1e-12,
+            "dividend": 0.0,
+            "rate": data.get("rate", 0.0),
+        }
+
 
 class ScriptValidateRequest(BaseModel):
     """Parse a script and resolve its timeline, without pricing it — no

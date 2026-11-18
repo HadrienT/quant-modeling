@@ -497,7 +497,7 @@ def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResp
 
 
 #: Library products with a closed form under Black-Scholes (engine='analytic').
-ANALYTIC_SCRIPTED = ("european-call", "digital-call")
+ANALYTIC_SCRIPTED = ("european-call", "digital-call", "equity-forward")
 
 
 def _norm_cdf(x: float) -> float:
@@ -560,6 +560,20 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
             theta=q * npv,
         )
         what = "forward-start call"
+    elif req.product == "equity-forward":
+        # notional (S(T) - k S(t1)): S0 e^(-q t1) (e^(-q tau) - k e^(-r tau))
+        n = float(terms["notional"])
+        unit = math.exp(-q * tau) - k * math.exp(-r * tau)
+        carry = n * S0 * math.exp(-q * t1)
+        npv = carry * unit
+        greeks = dict(
+            delta=n * math.exp(-q * t1) * unit,
+            gamma=0.0,
+            vega=0.0,
+            rho=carry * k * tau * math.exp(-r * tau),
+            theta=q * npv,
+        )
+        what = "forward-start forward"
     else:
         payout = float(terms["payout"])
         disc = payout * math.exp(-r * T)
@@ -588,6 +602,37 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
     )
 
 
+def _price_rates_on_the_curve(req: ScriptedProductRequest) -> PricingResponse:
+    """engine='analytic' for a rates product of the library: the script
+    valued on the curve alone, the short rate's volatility set to (almost)
+    zero -- its cash flows are then deterministic, each discounted by the
+    curve, exactly the sum of the flows' present values. Only for payoffs
+    linear in the curve (bonds, a swap's legs): an option on rates has no
+    such value and keeps Monte-Carlo."""
+    hw = (req.hull_white or HullWhiteInputs()).model_copy(update={"sigma": 1e-12})
+    flat = req.model_copy(
+        update={
+            "engine": "mc",
+            "hull_white": hw,
+            "n_paths": 1_000,
+            "greeks_method": "none",
+            "second_order": False,
+        }
+    )
+    response = price_scripted_product(flat)
+    return response.model_copy(
+        update={
+            "mc_std_error": 0.0,
+            "risks": None,
+            "diagnostics": (
+                f"Analytic: the cash flows discounted on the {hw.currency} government "
+                "curve (the script valued with no short-rate volatility: its flows "
+                "are deterministic) | " + response.diagnostics
+            ),
+        }
+    )
+
+
 def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     """A library product from its term sheet (product_templates.py): the
     script is rendered with the terms, then priced like any script (or by
@@ -595,6 +640,8 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     from . import product_templates
 
     if req.engine == "analytic":
+        if product_templates.get(req.product).market == "rates":
+            return _price_rates_on_the_curve(req)
         return _price_scripted_analytic(req)
     script = product_templates.render(req.product, req.terms, req.valuation_date)
     fields = req.model_dump(exclude={"product", "terms", "engine"})

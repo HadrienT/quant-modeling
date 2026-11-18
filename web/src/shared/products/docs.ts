@@ -482,9 +482,14 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		],
 		pricingMethods: [
 			{
-				engine: "Analytic (only engine)",
+				engine: "Analytic (Black-Scholes)",
 				detail:
-					"Present value $=N(S_0e^{-qT}-Ke^{-rT})$. Delta is $Ne^{-qT}$, rho is linear in $T$; gamma, vega, theta (ex-carry) are zero.",
+					"The library fixes the delivery price on the start date $t_1$, as a percentage $k$ of the spot then: present value $=N S_0e^{-qt_1}(e^{-q\\tau}-k\\,e^{-r\\tau})$, $\\tau=T-t_1$, the spot and dividend yield read from the database. Delta is $Ne^{-qt_1}(e^{-q\\tau}-ke^{-r\\tau})$; gamma and vega are zero.",
+			},
+			{
+				engine: "Monte-Carlo (payoff script)",
+				detail:
+					"The script under any model: the same price within its error, since no volatility enters a linear payoff.",
 			},
 		],
 		notes: [
@@ -635,23 +640,28 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 	bond: {
 		title: "Fixed-rate / zero-coupon bond",
 		summary:
-			"A stream of fixed coupons plus principal at maturity (fixed-rate), or a single discounted principal (zero-coupon). Priced by discounting cash flows on a flat or supplied curve.",
+			"A stream of fixed coupons plus principal at maturity (fixed-rate), or a single discounted principal (zero-coupon). Priced by discounting its cash flows on the chosen currency's government curve.",
 		payoff:
-			"P=\\sum_i c\\,N\\,e^{-r t_i}+N e^{-r T}\\quad(\\text{zero-coupon: }c=0)",
+			"P=\\sum_i \\tfrac{c}{2}\\,N\\,P(0,t_i)+N\\,P(0,T)\\quad(\\text{zero-coupon: }c=0)",
 		assumptions: [
-			"Flat continuously-compounded rate $r$ unless explicit discount times/factors are supplied.",
-			"No credit spread, no optionality (not callable/putable).",
+			"The government curve of the currency (USD, EUR or JPY) stored in the database, interpolated log-linearly in the discount factors.",
+			"Semiannual coupons; no credit spread, no optionality (not callable/putable).",
 		],
 		pricingMethods: [
 			{
-				engine: "Analytic (only engine)",
+				engine: "Analytic (the curve)",
 				detail:
-					"Discounts each coupon date and the redemption. The bond-analytics block returns Macaulay & modified duration, convexity and DV01 from the same cash-flow schedule.",
+					"Each payment times its discount factor on the curve: the script valued with no short-rate volatility, so that its flows are deterministic.",
+			},
+			{
+				engine: "Monte-Carlo (Hull-White on the curve)",
+				detail:
+					"The script under Hull-White fitted to the same curve: the same price within its error, since fixed flows do not depend on how the short rate moves.",
 			},
 		],
 		notes: [
 			"At a coupon rate equal to the discount rate a fixed-rate bond prices at par ($P=N$) — a free check.",
-			"DV01 ≈ modified duration × price × 0.0001 — the two analytics fields should be mutually consistent.",
+			"The zero-coupon's price is the curve's discount factor to its maturity: the page's price, divided by the face value, reads the curve.",
 		],
 		references: [
 			{

@@ -9,6 +9,8 @@ header the site reads:
     # underlyings: 3
     # quanto: USD                      (optional: one underlying listed in
                                        another currency, paid in this one)
+    # market: rates                    (optional: no stock -- priced on the
+                                       government curve, by Hull-White)
     # source: ...                      (one line per source, at least one)
     # summary: ...
     # param: coupon = 0.025 | percent | Quarterly coupon, % of notional
@@ -41,7 +43,9 @@ LIBRARY = Path(__file__).with_name("product_library")
 LEAD_DAYS = 7
 UNITS = ("percent", "amount", "number")
 
-_META = re.compile(r"^# (title|category|underlyings|quanto|source|summary): (.+)$")
+_META = re.compile(
+    r"^# (title|category|underlyings|quanto|market|source|summary): (.+)$"
+)
 _PARAM = re.compile(r"^# param: (\w+) = (\S+) \| (\w+) \| (.+)$")
 _ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
@@ -70,6 +74,9 @@ class Template:
     #: Payment currency of a quanto (one underlying listed in another
     #: currency, priced on `underlyings` with `currency`); None otherwise.
     quanto: str | None = None
+    #: "rates": the script reads no stock, only the curve (df(), fwdRate());
+    #: priced by Hull-White fitted to the currency's government curve.
+    market: str = "equity"
 
 
 def parse(slug: str, text: str) -> Template:
@@ -103,7 +110,10 @@ def parse(slug: str, text: str) -> Template:
         text=text,
         script="\n".join(body) + "\n",
         quanto=meta.get("quanto"),
+        market=meta.get("market", "equity"),
     )
+    if t.market not in ("equity", "rates"):
+        raise ValueError(f"{slug}: unknown market '{t.market}'")
     for prm in t.params:
         if not _assignment(prm.name).search(t.script):
             raise ValueError(f"{slug}: param {prm.name} is never assigned")
@@ -184,6 +194,7 @@ def catalog() -> List[dict]:
             ],
             "script": t.script,
             **({"quanto": t.quanto} if t.quanto else {}),
+            **({"market": t.market} if t.market != "equity" else {}),
         }
         for t in templates().values()
     ]

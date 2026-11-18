@@ -37,6 +37,9 @@ export type ScriptedProduct = {
 	/** Payment currency of a quanto: one underlying listed in another
 	 * currency, priced on `underlyings` with `currency`. */
 	quanto?: string;
+	/** "rates": no stock -- priced on the chosen currency's government curve
+	 * (Hull-White fitted to it). */
+	market?: "rates";
 };
 
 /** Per-field overrides of what zodFields derives from a schema. */

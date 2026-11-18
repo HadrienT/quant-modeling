@@ -656,6 +656,31 @@
 		"script": "# Daily closes. The building block of every barrier reverse convertible.\n\n2027-01-04\n    strike = 1.0\n    barrier = 0.7\n    s0 = spot()\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then ki = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then ki = 1 endIf\n    if ki = 1 then pays max(strike * s0 - spot(), 0) endIf\n"
 	},
 	{
+		"slug": "equity-forward",
+		"title": "Equity forward",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 5 (forward and futures prices)"
+		],
+		"summary": "The obligation to buy the stock at the strike one year later: worth the forward minus the strike, discounted -- linear in the stock, so no volatility enters its price.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Delivery price, % of the initial level"
+			},
+			{
+				"name": "notional",
+				"default": 1.0,
+				"unit": "number",
+				"label": "Shares delivered"
+			}
+		],
+		"script": "# The holder pays the strike and receives the stock at expiry. A futures\n# contract settled daily has the same price under a deterministic rate.\n\n2027-01-04\n    strike = 1.0\n    notional = 1\n    s0 = spot()\n\n2028-01-04\n    pays notional * (spot() - strike * s0)\n"
+	},
+	{
 		"slug": "european-call",
 		"title": "European call",
 		"category": "Vanillas and digitals",
@@ -719,6 +744,33 @@
 			}
 		],
 		"script": "2027-01-04\n    strike = 1.0\n    s0 = spot()\n    hi = spot()\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    hi = max(hi, spot())\n\n2028-01-04\n    hi = max(hi, spot())\n    pays max(hi - strike * s0, 0)\n"
+	},
+	{
+		"slug": "fixed-rate-bond",
+		"title": "Fixed-rate bond",
+		"category": "Fixed income",
+		"underlyings": 1,
+		"sources": [
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 4 (bond pricing)",
+			"Fabozzi, Bond Markets, Analysis, and Strategies, 9th ed., Pearson, 2015"
+		],
+		"summary": "Pays a fixed coupon every six months and its face value at maturity: a sum of zero-coupon bonds, one per payment.",
+		"params": [
+			{
+				"name": "coupon",
+				"default": 0.04,
+				"unit": "percent",
+				"label": "Annual coupon rate, % of the face value"
+			},
+			{
+				"name": "notional",
+				"default": 100.0,
+				"unit": "amount",
+				"label": "Face value"
+			}
+		],
+		"script": "# Semiannual coupons of coupon / 2 of the face value, the last with the face\n# value. Priced on the government curve of the chosen currency.\n\n2027-01-04\n    coupon = 0.04\n    notional = 100\n\nschedule(2027-07-05, 2031-07-04, 6M, US, MF)\n    pays notional * coupon / 2\n\n2032-01-05\n    pays notional * (1 + coupon / 2)\n",
+		"market": "rates"
 	},
 	{
 		"slug": "floating-lookback-call",
@@ -1351,5 +1403,26 @@
 			}
 		],
 		"script": "# Knock-in on the worst performer, daily closes. The higher coupon than a\n# single-stock version pays for the short correlation.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.03\n    barrier = 0.6\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n\n2027-04-05  2027-07-06  2027-10-04\n    pays notional * coupon\n\n2028-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n    pays notional * coupon\n    if ki = 1 and worst < 1 then pays notional * worst else pays notional endIf\n"
+	},
+	{
+		"slug": "zero-coupon-bond",
+		"title": "Zero-coupon bond",
+		"category": "Fixed income",
+		"underlyings": 1,
+		"sources": [
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 4 (zero rates and bond pricing)",
+			"Brigo & Mercurio, Interest Rate Models - Theory and Practice, 2nd ed., Springer, 2006, ch. 1"
+		],
+		"summary": "Pays its face value once, at maturity, and nothing before: its price is the discount factor to that date.",
+		"params": [
+			{
+				"name": "notional",
+				"default": 100.0,
+				"unit": "amount",
+				"label": "Face value paid at maturity"
+			}
+		],
+		"script": "# Priced on the government curve of the chosen currency, by Hull-White fitted\n# to it (Monte-Carlo) or by the curve itself (Analytic): the same price, the\n# short rate's volatility only adds noise to a payment that does not depend\n# on it.\n\n2027-01-04\n    notional = 100\n\n2032-01-05\n    pays notional\n",
+		"market": "rates"
 	}
 ]

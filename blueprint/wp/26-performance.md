@@ -844,8 +844,21 @@ the API and the tests as oracles. Three lots:
   implied vol of the ticker's smile, equal to the script's Monte-Carlo under
   that flat vol within its error (`api/tests/test_scripted_analytic.py`).
   The site's engines are Analytic and Monte-Carlo only.
-- **b2.** The future, the bonds, the swap and the swaption as scripts under
-  the short-rate script models; their hand-written entries leave the page.
+- **b2a.** The bonds and the future as scripts. A library header
+  `# market: rates` marks a product with no stock: it is priced by Hull-White
+  fitted to the chosen currency's government curve (USD, EUR or JPY, those the
+  database derives), the hybrid model's stock unread -- the request asks for
+  no ticker and refuses one. The zero-coupon and the semiannual fixed-rate
+  bond: Analytic is the script valued with no short-rate volatility (its
+  flows deterministic, each discounted by the curve -- the curve's PV exactly,
+  for any payoff linear in it), Monte-Carlo agrees within its error (USD
+  2026-11-16: 95.7196 against 95.7201 ± 0.0004 for the 4 % five-year bond).
+  The future becomes the library's equity forward, with a forward-start
+  closed form (AAPL: 12.7414 against Monte-Carlo 12.7408 ± 0.0042). Their
+  hand-written entries leave the catalog (the future stays a portfolio form),
+  old links open the scripts.
+- **b2b.** The swap and the swaption as scripts, the rates panels (curves,
+  calibration, cash flows) kept as their diagnostics.
 - **b3.** The portfolio books scripts (existing positions migrated); the
   hand-written descriptors are deleted from the front end. Until then a
   portfolio books and marks the hand-written forms (an American on the tree,

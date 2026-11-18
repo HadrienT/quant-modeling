@@ -286,6 +286,8 @@ def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
     heston = dict(v0=0.04, kappa=2.0, theta=0.04, xi=0.5, rho=-0.7)
     out: List[Tuple[str, Callable[[], object]]] = []
     for slug, t in sorted(product_templates.templates().items()):
+        if t.market == "rates":
+            continue  # Hull-White on the curve: the CPU prices it, no kernel
         script = product_templates.render(slug, {}, today)
         n = t.underlyings
         for model in LIBRARY_MODELS.get(n, LIBRARY_MODELS_MULTI):
