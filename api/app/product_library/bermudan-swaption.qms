@@ -8,7 +8,7 @@
 # summary: The right to enter, on any of the next five yearly dates from one year out, the SOFR swap at the strike that ends in six years: worth more than each European it contains.
 # param: strike = 0.046 | percent | Strike (fixed rate of the swap entered)
 # param: notional = 10000000 | amount | Notional
-# param: side = 1 | number | 1 payer (the right to pay the strike), -1 receiver
+# param: side = 1 | side | 1 payer (the right to pay the strike), -1 receiver
 #
 # A co-terminal Bermudan: exercising on a fixed date enters the swap's
 # remaining periods, worth 1 - P(t, Tn) - strike * annuity(t) per unit of

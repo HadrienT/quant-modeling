@@ -8,7 +8,7 @@
 # summary: Exchanges a fixed rate for compounded SOFR once a year for five years: worth the floating leg minus the fixed one, both on the SOFR curve built from the swaps traded that day.
 # param: fixed_rate = 0.046 | percent | Fixed rate
 # param: notional = 10000000 | amount | Notional
-# param: side = 1 | number | 1 pays the fixed rate (payer), -1 receives it
+# param: side = 1 | side | 1 pays the fixed rate (payer), -1 receives it
 #
 # Each year the floating leg pays SOFR compounded over the period, worth
 # 1 / P(start, end) - 1 at its start: fwdRate(start, end) * yf(start, end),

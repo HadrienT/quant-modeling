@@ -11516,7 +11516,7 @@
         "type": "object"
       },
       "ScriptedProductRequest": {
-        "description": "Price a product of the script library (api/app/product_library) from\nits term sheet: the terms replace the defaults the script declares, and\nthe dates start a week after the valuation date. The response carries the\nscript actually priced.",
+        "description": "Price a product of the script library (api/app/product_library) from\nits term sheet: the terms replace the defaults the script declares. An\nequity product starts on the valuation date, its first fixing today's\nspot (levels in % of the initial level are % of today's spot); a rates\nproduct a few days later. The response carries the script actually\npriced.",
         "properties": {
           "antithetic": {
             "default": true,
@@ -11602,13 +11602,27 @@
           },
           "engine": {
             "default": "mc",
-            "description": "'mc': the script under `model` (Monte-Carlo). 'analytic': the closed form, for the products that have one (european-call, digital-call): Black-Scholes at the at-the-money implied vol of the ticker's stored smile, the strike fixed on the start date (a forward start).",
+            "description": "'mc': the script under `model` (Monte-Carlo). 'analytic': the closed form, for the products that have one (the European and digital calls and puts, the forward): Black-Scholes at the at-the-money implied vol of the ticker's stored smile.",
             "enum": [
               "mc",
               "analytic"
             ],
             "title": "Engine",
             "type": "string"
+          },
+          "expiry": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 30.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A swaption's (first) exercise, in years. None: one year.",
+            "title": "Expiry"
           },
           "fuzzy": {
             "default": false,
@@ -11641,6 +11655,20 @@
             "description": "Shift every Brownian factor by the drift at the mode of payoff x density (Glasserman, Heidelberger & Shahabuddin) and weight each path by its likelihood ratio; kept only when a pilot shows the variance falls, which the diagnostics report. For rare events (a deep out-of-the-money digital). Price only.",
             "title": "Importance Sampling",
             "type": "boolean"
+          },
+          "maturity": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 30.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Years from the start to the last date: the script's dates stretched in proportion, a schedule keeping its frequency. For a swap or a swaption, the swap's length in whole years. None: the product's own.",
+            "title": "Maturity"
           },
           "milstein": {
             "default": false,

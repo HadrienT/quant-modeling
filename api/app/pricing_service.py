@@ -1,6 +1,7 @@
 import math
 import re
 import time
+from datetime import timedelta
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -336,7 +337,20 @@ def _local_vol_markets(req: ScriptRequest, m) -> Tuple[Optional[list], str]:
     return markets, ""
 
 
-def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResponse:
+def _start_today(script: str, valuation_date, spots: List[float]) -> Tuple[str, Dict]:
+    """A library product's script started on the valuation date: its first
+    date moved there (product_templates.start_on), fixed on today's spot(s)
+    -- the levels in % of the initial level are then % of today's spot, a
+    true European rather than a forward start."""
+    from . import product_templates
+
+    script = product_templates.start_on(script, valuation_date)
+    return script, {valuation_date.isoformat(): [float(s) for s in spots]}
+
+
+def _price_multi_asset(
+    req: ScriptRequest, library: bool = False, start_today: bool = False
+) -> PricingResponse:
     """A script reading spot(0), spot(1)...: each asset on the Dupire surface
     of its stored chain when every one has one (local vol, drivers
     correlated), else correlated Black-Scholes; inputs from the database
@@ -442,6 +456,9 @@ def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResp
             T_grids=[lv.T_grid for lv in surfaces],
             sigma_loc_flats=[lv.sigma_loc_flat for lv in surfaces],
         )
+    script, fixings = req.script, {}
+    if start_today:
+        script, fixings = _start_today(script, valuation_date, [u.spot for u in used])
     with tracer.start_as_current_span(
         "engine.price",
         attributes={
@@ -451,7 +468,7 @@ def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResp
         },
     ):
         result = qm.price_script(
-            req.script,
+            script,
             used[0].spot,
             req.rate,
             used[0].dividend + used[0].drift_adjustment,
@@ -481,6 +498,7 @@ def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResp
             milstein=req.milstein,
             second_order=req.second_order and req.greeks_method == "aad",
             terms_as_parameters=library,
+            historical_fixings=fixings,
             **_multilevel(req, model if n > 1 else "black_scholes"),
             **grids,
         )
@@ -497,13 +515,20 @@ def _price_multi_asset(req: ScriptRequest, library: bool = False) -> PricingResp
                 underlyings=used,
                 correlation=corr,
                 correlation_source=corr_source,
-            )
+            ),
+            **({"script": script} if start_today else {}),
         }
     )
 
 
 #: Library products with a closed form under Black-Scholes (engine='analytic').
-ANALYTIC_SCRIPTED = ("european-call", "digital-call", "equity-forward")
+ANALYTIC_SCRIPTED = (
+    "european-call",
+    "european-put",
+    "digital-call",
+    "digital-put",
+    "equity-forward",
+)
 
 
 def _norm_cdf(x: float) -> float:
@@ -514,18 +539,94 @@ def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
 
 
+def _black_scholes(
+    product: str, terms: dict, S: float, r: float, q: float, sigma: float, T: float
+):
+    """Price and greeks of the library's vanilla products, the strike k of
+    today's spot (they start today): Black-Scholes (Hull, ch. 15 and 26).
+    Greeks per unit of spot, of volatility and of rate; theta per year."""
+    k = float(terms["strike"])
+    K = k * S
+    sd = sigma * math.sqrt(T)
+    d1 = (math.log(S / K) + (r - q + 0.5 * sigma * sigma) * T) / sd
+    d2 = d1 - sd
+    dq, dr = math.exp(-q * T), math.exp(-r * T)
+    if product == "equity-forward":
+        n = float(terms["notional"])
+        npv = n * (S * dq - K * dr)
+        return (
+            npv,
+            dict(
+                delta=n * dq,  # the strike K fixed in money
+                gamma=0.0,
+                vega=0.0,
+                rho=n * K * T * dr,
+                theta=n * (q * S * dq - r * K * dr),
+            ),
+            "forward",
+        )
+    if product.startswith("european"):
+        call = product == "european-call"
+        w = 1.0 if call else -1.0
+        npv = w * (S * dq * _norm_cdf(w * d1) - K * dr * _norm_cdf(w * d2))
+        theta = (
+            -S * dq * _norm_pdf(d1) * sigma / (2 * math.sqrt(T))
+            + w * q * S * dq * _norm_cdf(w * d1)
+            - w * r * K * dr * _norm_cdf(w * d2)
+        )
+        return (
+            npv,
+            dict(
+                delta=w * dq * _norm_cdf(w * d1),
+                gamma=dq * _norm_pdf(d1) / (S * sd),
+                vega=S * dq * _norm_pdf(d1) * math.sqrt(T),
+                rho=w * K * T * dr * _norm_cdf(w * d2),
+                theta=theta,
+            ),
+            ("European call" if call else "European put"),
+        )
+    call = product == "digital-call"
+    w = 1.0 if call else -1.0
+    P = float(terms["payout"])
+    npv = P * dr * _norm_cdf(w * d2)
+    dd2_dS = 1.0 / (S * sd)
+    dd2_dsig = -d1 / sigma
+    return (
+        npv,
+        dict(
+            delta=w * P * dr * _norm_pdf(d2) * dd2_dS,
+            gamma=-w * P * dr * _norm_pdf(d2) * (d2 + sd) / (S * S * sd * sd),
+            vega=w * P * dr * _norm_pdf(d2) * dd2_dsig,
+            rho=P
+            * dr
+            * (-T * _norm_cdf(w * d2) + w * _norm_pdf(d2) * math.sqrt(T) / sigma),
+            theta=_digital_theta(w, P, S, K, r, q, sigma, T),
+        ),
+        ("cash-or-nothing digital call" if call else "cash-or-nothing digital put"),
+    )
+
+
+def _digital_theta(
+    w: float, P: float, S: float, K: float, r, q, sigma, T: float
+) -> float:
+    """-dV/dT of the cash-or-nothing digital, by a central difference of its
+    closed form in the maturity (an exact function: no Monte-Carlo noise)."""
+
+    def v(t: float) -> float:
+        sd = sigma * math.sqrt(t)
+        d2 = (math.log(S / K) + (r - q - 0.5 * sigma * sigma) * t) / sd
+        return P * math.exp(-r * t) * _norm_cdf(w * d2)
+
+    h = min(1e-4, 0.5 * T)
+    return -(v(T + h) - v(T - h)) / (2 * h)
+
+
 def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
     """The closed form of a library product (ANALYTIC_SCRIPTED) under
     Black-Scholes on the ticker's stored market: spot and dividend of the
-    snapshot, the at-the-money implied vol of its smile at the expiry.
-
-    The library fixes the strike on its first date, t1, a week or so ahead
-    (product_templates.render): a forward start. With k the strike in
-    fractions of S(t1) and tau = T - t1, the call is
-    S0 e^(-q t1) C(1, k, tau) and the digital P e^(-r T) N(d2(1, k, tau))
-    (Hull, ch. 26, forward-start options). The greeks are the formulas'
-    derivatives: per unit of spot, of volatility and of rate, theta per
-    year with t1 and T drawing nearer."""
+    snapshot, the at-the-money implied vol of its smile at the expiry. The
+    product starts today (its strike k of today's spot), so these are the
+    plain Black-Scholes formulas -- the oracle of its Monte-Carlo."""
     from types import SimpleNamespace
 
     from . import market_snapshot, product_templates
@@ -539,63 +640,27 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
         raise ValueError("engine='analytic' reads its market from a `ticker`")
     market = market_snapshot.local_vol_market(req.ticker, req.rate, req.valuation_date)
     val = market.valuation_date
-    script = product_templates.render(req.product, req.terms, val)
-    events = qm.validate_script(script, val.isoformat(), req.day_count)["events"]
-    t1, T = events[0]["t"], events[-1]["t"]
-    tau = T - t1
+    script = product_templates.render(
+        req.product, req.terms, val, maturity=req.maturity, start=val
+    )
+    probe = product_templates.start_on(script, val + timedelta(days=1))
+    events = qm.validate_script(probe, val.isoformat(), req.day_count)["events"]
+    # the probe is the script a day later (its first date not yet past): T is
+    # its last date from its first
+    T = max(events[-1]["t"] - events[0]["t"], 1e-6)
     sigma = _atm_implied_vol(
-        SimpleNamespace(script=script, day_count=req.day_count), market, val
+        SimpleNamespace(script=script, day_count=req.day_count), market, val, True
     )
     defaults = {p.name: p.default for p in product_templates.get(req.product).params}
     terms = {**defaults, **req.terms}
-    S0, r, q, k = market.spot, req.rate, market.dividend, float(terms["strike"])
-    sd = sigma * math.sqrt(tau)
-    d1 = (math.log(1.0 / k) + (r - q + 0.5 * sigma * sigma) * tau) / sd
-    d2 = d1 - sd
-    if req.product == "european-call":
-        unit = math.exp(-q * tau) * _norm_cdf(d1) - k * math.exp(-r * tau) * _norm_cdf(
-            d2
-        )
-        carry = S0 * math.exp(-q * t1)
-        npv = carry * unit
-        greeks = dict(
-            delta=math.exp(-q * t1) * unit,
-            gamma=0.0,
-            vega=carry * math.exp(-q * tau) * _norm_pdf(d1) * math.sqrt(tau),
-            rho=carry * k * tau * math.exp(-r * tau) * _norm_cdf(d2),
-            theta=q * npv,
-        )
-        what = "forward-start call"
-    elif req.product == "equity-forward":
-        # notional (S(T) - k S(t1)): S0 e^(-q t1) (e^(-q tau) - k e^(-r tau))
-        n = float(terms["notional"])
-        unit = math.exp(-q * tau) - k * math.exp(-r * tau)
-        carry = n * S0 * math.exp(-q * t1)
-        npv = carry * unit
-        greeks = dict(
-            delta=n * math.exp(-q * t1) * unit,
-            gamma=0.0,
-            vega=0.0,
-            rho=carry * k * tau * math.exp(-r * tau),
-            theta=q * npv,
-        )
-        what = "forward-start forward"
-    else:
-        payout = float(terms["payout"])
-        disc = payout * math.exp(-r * T)
-        npv = disc * _norm_cdf(d2)
-        greeks = dict(
-            delta=0.0,
-            gamma=0.0,
-            vega=-disc * _norm_pdf(d2) * d1 / sigma,
-            rho=disc * (-T * _norm_cdf(d2) + _norm_pdf(d2) * math.sqrt(tau) / sigma),
-            theta=r * npv,
-        )
-        what = "forward-start cash-or-nothing digital"
+    npv, greeks, what = _black_scholes(
+        req.product, terms, market.spot, req.rate, market.dividend, sigma, T
+    )
     diagnostics = (
         f"Analytic {what}, Black-Scholes at the at-the-money implied vol "
         f"{sigma:.4f} of the {market.ticker} smile of {val.isoformat()} "
-        f"(strike fixed at t1 = {t1:.4f}, expiry T = {T:.4f})"
+        f"(strike {float(terms['strike']):.4g} x spot {market.spot:.4f}, expiry "
+        f"T = {T:.4f} y)"
     )
     response = _pricing_response_from_dict(
         {"npv": npv, "greeks": greeks, "diagnostics": diagnostics}
@@ -786,16 +851,31 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
         if template.market == "rates":
             return _price_rates_on_the_curve(req)
         return _price_scripted_analytic(req)
-    script = product_templates.render(req.product, req.terms, req.valuation_date)
-    fields = req.model_dump(exclude={"product", "terms", "engine"})
+    script = product_templates.render(
+        req.product,
+        req.terms,
+        req.valuation_date,
+        maturity=req.maturity,
+        expiry=req.expiry,
+    )
+    fields = req.model_dump(
+        exclude={"product", "terms", "engine", "maturity", "expiry"}
+    )
     if req.hull_white is not None:
         # only what the request set: an unset sigma on the SOFR curve is the
         # calibrated one (_sofr_inputs)
         fields["hull_white"] = req.hull_white.model_dump(exclude_unset=True)
-    response = price_script(ScriptRequest(script=script, **fields), library=True)
+    # An equity product starts today, fixed on today's spot; a rates product
+    # a few days ahead (its first coupon reads the curve, which a past date
+    # cannot).
+    response = price_script(
+        ScriptRequest(script=script, **fields),
+        library=True,
+        start_today=template.market != "rates",
+    )
     if template.market == "rates" and response.risks:
         response = _rates_risks(response)
-    return response.model_copy(update={"script": script})
+    return response.model_copy(update={"script": response.script or script})
 
 
 #: The hybrid's stock, which a rates product never reads.
@@ -822,7 +902,9 @@ def _rates_risks(response: PricingResponse) -> PricingResponse:
     return response.model_copy(update={"risks": risks, "greeks": greeks})
 
 
-def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
+def price_script(
+    req: ScriptRequest, library: bool = False, start_today: bool = False
+) -> PricingResponse:
     """Choose the model (req.model, or the one the script needs for 'auto'),
     calibrate what it needs from the database, then price.
 
@@ -835,7 +917,7 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
     from . import market_snapshot, stochastic_vol
 
     if req.underlyings is not None:
-        return _price_multi_asset(req, library)
+        return _price_multi_asset(req, library, start_today)
 
     market_warnings: List[Dict] = []
     valuation_date = req.valuation_date
@@ -913,7 +995,7 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
         spot, dividend, vol = market.spot, market.dividend, 0.0
         k_grid, t_grid = market.K_grid, market.T_grid
         if model in ("black_scholes", "hull_white"):
-            vol = _atm_implied_vol(req, market, valuation_date)
+            vol = _atm_implied_vol(req, market, valuation_date, start_today)
             choice["calibration"]["flat_vol"] = vol
     else:
         spot, dividend, vol = req.spot, req.dividend, req.vol
@@ -948,12 +1030,15 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
             choice["calibration"]["rates_curve"] = label
     leverage = list(sv.leverage_flat) if (sv is not None and model == "slv") else []
 
+    script, fixings = req.script, {}
+    if start_today:
+        script, fixings = _start_today(script, valuation_date, [spot])
     with tracer.start_as_current_span(
         "engine.price",
         attributes={"qm.product": "script", "qm.model": model, "qm.engine": "mc"},
     ):
         result = qm.price_script(
-            req.script,
+            script,
             spot,
             req.rate,
             dividend,
@@ -995,6 +1080,7 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
             milstein=req.milstein,
             second_order=req.second_order and req.greeks_method == "aad",
             terms_as_parameters=library,
+            historical_fixings=fixings,
             **_multilevel(req, model),
         )
     result["warnings"] = (
@@ -1003,7 +1089,12 @@ def price_script(req: ScriptRequest, library: bool = False) -> PricingResponse:
         + list(result.get("warnings", []))
     )
     response = _pricing_response_from_dict(result)
-    return response.model_copy(update={"model_choice": ModelChoice(**choice)})
+    return response.model_copy(
+        update={
+            "model_choice": ModelChoice(**choice),
+            **({"script": script} if start_today else {}),
+        }
+    )
 
 
 def _curve_factors(req, times, dfs) -> tuple:
@@ -1119,15 +1210,22 @@ def _rates_fit(m, a: float, sigma: float, given=frozenset()) -> HullWhiteRatesFi
     )
 
 
-def _atm_implied_vol(req, market, valuation_date) -> float:
+def _atm_implied_vol(req, market, valuation_date, start_today: bool = False) -> float:
     """Flat Black-Scholes on a ticker: the at-the-money implied vol of the
-    stored SVI smile at the script's last event (sticky strike, K = spot)."""
-    from . import vol_smile
+    stored SVI smile at the script's last event (sticky strike, K = spot).
+    `start_today`: the script is a library product started on the valuation
+    date -- its expiry is the last date's distance from the first."""
+    from . import product_templates, vol_smile
     from .audit.payloads import MarketInputStatus
     from .valuation import record_market_input
 
-    parsed = qm.validate_script(req.script, valuation_date.isoformat(), req.day_count)
+    script = req.script
+    if start_today:  # a day later, so that no date is past yet
+        script = product_templates.start_on(script, valuation_date + timedelta(days=1))
+    parsed = qm.validate_script(script, valuation_date.isoformat(), req.day_count)
     horizon = parsed["events"][-1]["t"] if parsed["events"] else 0.0
+    if start_today and parsed["events"]:
+        horizon -= parsed["events"][0]["t"]
     smile = vol_smile.Smile(
         ticker=market.ticker,
         snapshot=market.valuation_date,

@@ -28,7 +28,8 @@
 				"label": "Shares bought below the strike, per share above"
 			}
 		],
-		"script": "# Weekly for six months. Each purchase is marked at the close: its value is\n# (spot - strike) per share, paid on the purchase date. The knock-out is\n# checked first: no purchase on the day it knocks out.\n\n2027-01-04\n    strike = 0.9\n    knock_out = 1.05\n    gearing = 2\n    s0 = spot()\n    k = strike * s0\n    alive = 1\n\nschedule(2027-01-11, 2027-06-28, 1W, US, F)\n    if spot() >= knock_out * s0 then alive = 0 endIf\n    if alive = 1 then\n        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf\n    endIf\n\n2027-07-06\n    if spot() >= knock_out * s0 then alive = 0 endIf\n    if alive = 1 then\n        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf\n    endIf\n"
+		"script": "# Weekly for six months. Each purchase is marked at the close: its value is\n# (spot - strike) per share, paid on the purchase date. The knock-out is\n# checked first: no purchase on the day it knocks out.\n\n2027-01-04\n    strike = 0.9\n    knock_out = 1.05\n    gearing = 2\n    s0 = spot()\n    k = strike * s0\n    alive = 1\n\nschedule(2027-01-11, 2027-06-28, 1W, US, F)\n    if spot() >= knock_out * s0 then alive = 0 endIf\n    if alive = 1 then\n        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf\n    endIf\n\n2027-07-06\n    if spot() >= knock_out * s0 then alive = 0 endIf\n    if alive = 1 then\n        if spot() >= k then pays spot() - k else pays gearing * (spot() - k) endIf\n    endIf\n",
+		"maturity": 0.501
 	},
 	{
 		"slug": "altiplano",
@@ -59,7 +60,8 @@
 				"label": "Barrier on each stock, % of its initial level"
 			}
 		],
-		"script": "# Monthly monitoring of each stock against its own strike-date level.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.2\n    barrier = 0.8\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    breached = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n\n2028-01-04\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    if breached = 0 then\n        pays notional * (1 + coupon)\n    else\n        pays notional * (1 + max(basket - 1, 0))\n    endIf\n"
+		"script": "# Monthly monitoring of each stock against its own strike-date level.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.2\n    barrier = 0.8\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    breached = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n\n2028-01-04\n    if spot(0) < barrier * s0 or spot(1) < barrier * s1 or spot(2) < barrier * s2 then breached = 1 endIf\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    if breached = 0 then\n        pays notional * (1 + coupon)\n    else\n        pays notional * (1 + max(basket - 1, 0))\n    endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "american-call",
@@ -79,7 +81,8 @@
 				"label": "Strike, % of the initial level"
 			}
 		],
-		"script": "# Exercise every week, decided by a least-squares regression of the\n# continuation value on the moneyness spot / s0. Exercising is ever worth it\n# only in the money and above the forward held to the expiry: the option is\n# worth at least (fwd(T) - K) df(T), what holding the stock to expiry and\n# paying the strike then is worth now, dividends forgone. Only there is it\n# considered, so that the estimated rule never exercises where holding is\n# certainly better -- without that bound, on a small dividend, it priced\n# under the European. Without dividends it never exercises (Merton 1973).\n# The price is a lower bound: the rule is estimated.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    done = 0\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    if spot() > strike * s0 and spot() - strike * s0 > (fwd(2028-01-04) - strike * s0) * df(2028-01-04) and exercise(spot() / s0) then\n        pays spot() - strike * s0\n        done = 1\n    endIf\n\n2028-01-04\n    if done = 0 then\n        pays max(spot() - strike * s0, 0)\n    endIf\n"
+		"script": "# Exercise every week, decided by a least-squares regression of the\n# continuation value on the moneyness spot / s0. Exercising is ever worth it\n# only in the money and above the forward held to the expiry: the option is\n# worth at least (fwd(T) - K) df(T), what holding the stock to expiry and\n# paying the strike then is worth now, dividends forgone. Only there is it\n# considered, so that the estimated rule never exercises where holding is\n# certainly better -- without that bound, on a small dividend, it priced\n# under the European. Without dividends it never exercises (Merton 1973).\n# The price is a lower bound: the rule is estimated.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    done = 0\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    if spot() > strike * s0 and spot() - strike * s0 > (fwd(2028-01-04) - strike * s0) * df(2028-01-04) and exercise(spot() / s0) then\n        pays spot() - strike * s0\n        done = 1\n    endIf\n\n2028-01-04\n    if done = 0 then\n        pays max(spot() - strike * s0, 0)\n    endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "american-put",
@@ -99,7 +102,8 @@
 				"label": "Strike, % of the initial level"
 			}
 		],
-		"script": "# Exercise every week (a Bermudan standing for continuous exercise), decided\n# by a least-squares regression of the continuation value on the moneyness\n# spot / s0 (the strike moves with s0, the spot alone would not say how deep\n# in the money a path is). Only in the money is exercising ever worth it, so\n# only there is it considered: fitting the out-of-the-money paths too bends\n# the rule where it matters and prices too low. The price is a lower bound:\n# the rule is estimated.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    done = 0\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    if spot() < strike * s0 and exercise(spot() / s0) then\n        pays strike * s0 - spot()\n        done = 1\n    endIf\n\n2028-01-04\n    if done = 0 then\n        pays max(strike * s0 - spot(), 0)\n    endIf\n"
+		"script": "# Exercise every week (a Bermudan standing for continuous exercise), decided\n# by a least-squares regression of the continuation value on the moneyness\n# spot / s0 (the strike moves with s0, the spot alone would not say how deep\n# in the money a path is). Only in the money is exercising ever worth it, so\n# only there is it considered: fitting the out-of-the-money paths too bends\n# the rule where it matters and prices too low. The price is a lower bound:\n# the rule is estimated.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    done = 0\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    if spot() < strike * s0 and exercise(spot() / s0) then\n        pays strike * s0 - spot()\n        done = 1\n    endIf\n\n2028-01-04\n    if done = 0 then\n        pays max(strike * s0 - spot(), 0)\n    endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "asian-call",
@@ -119,7 +123,8 @@
 				"label": "Strike, % of the initial level"
 			}
 		],
-		"script": "# Twelve monthly fixings, the last one on the maturity date.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    acc = 0\n    n = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    acc = acc + spot()\n    n = n + 1\n\n2028-01-04\n    acc = acc + spot()\n    n = n + 1\n    pays max(acc / n - strike * s0, 0)\n"
+		"script": "# Twelve monthly fixings, the last one on the maturity date.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    acc = 0\n    n = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    acc = acc + spot()\n    n = n + 1\n\n2028-01-04\n    acc = acc + spot()\n    n = n + 1\n    pays max(acc / n - strike * s0, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "asian-in-call",
@@ -138,7 +143,8 @@
 				"label": "Strike, % of the average of the first three fixings"
 			}
 		],
-		"script": "2027-01-04\n    strike = 1.0\n    acc = spot()\n\n2027-02-04  2027-03-04\n    acc = acc + spot()\n\n2028-01-04\n    pays max(spot() - strike * acc / 3, 0)\n"
+		"script": "2027-01-04\n    strike = 1.0\n    acc = spot()\n\n2027-02-04  2027-03-04\n    acc = acc + spot()\n\n2028-01-04\n    pays max(spot() - strike * acc / 3, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "athena-autocall",
@@ -175,7 +181,8 @@
 				"label": "Protection barrier at maturity, % of the initial level"
 			}
 		],
-		"script": "# Snowball coupon: the coupon times the number of years at redemption.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    autocall = 1.0\n    protection = 0.6\n    s0 = spot()\n    alive = 1\n\n2028-01-04\n    if spot() >= autocall * s0 then\n        pays notional * (1 + coupon)\n        alive = 0\n    endIf\n\n2029-01-04\n    if alive = 1 and spot() >= autocall * s0 then\n        pays notional * (1 + 2 * coupon)\n        alive = 0\n    endIf\n\n2030-01-04\n    if alive = 1 then\n        if spot() >= autocall * s0 then\n            pays notional * (1 + 3 * coupon)\n        else\n            if spot() < protection * s0 then pays notional * spot() / s0 else pays notional endIf\n        endIf\n    endIf\n"
+		"script": "# Snowball coupon: the coupon times the number of years at redemption.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    autocall = 1.0\n    protection = 0.6\n    s0 = spot()\n    alive = 1\n\n2028-01-04\n    if spot() >= autocall * s0 then\n        pays notional * (1 + coupon)\n        alive = 0\n    endIf\n\n2029-01-04\n    if alive = 1 and spot() >= autocall * s0 then\n        pays notional * (1 + 2 * coupon)\n        alive = 0\n    endIf\n\n2030-01-04\n    if alive = 1 then\n        if spot() >= autocall * s0 then\n            pays notional * (1 + 3 * coupon)\n        else\n            if spot() < protection * s0 then pays notional * spot() / s0 else pays notional endIf\n        endIf\n    endIf\n",
+		"maturity": 3.0007
 	},
 	{
 		"slug": "atlas",
@@ -200,7 +207,8 @@
 				"label": "Strike on the middle basket"
 			}
 		],
-		"script": "# The basket is the average of the two middle performers.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    s3 = spot(3)\n\n2028-01-04\n    p0 = spot(0) / s0\n    p1 = spot(1) / s1\n    p2 = spot(2) / s2\n    p3 = spot(3) / s3\n    best = max(max(p0, p1), max(p2, p3))\n    worst = min(min(p0, p1), min(p2, p3))\n    middle = (p0 + p1 + p2 + p3 - best - worst) / 2\n    pays notional * max(middle - strike, 0)\n"
+		"script": "# The basket is the average of the two middle performers.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    s3 = spot(3)\n\n2028-01-04\n    p0 = spot(0) / s0\n    p1 = spot(1) / s1\n    p2 = spot(2) / s2\n    p3 = spot(3) / s3\n    best = max(max(p0, p1), max(p2, p3))\n    worst = min(min(p0, p1), min(p2, p3))\n    middle = (p0 + p1 + p2 + p3 - best - worst) / 2\n    pays notional * max(middle - strike, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "barrier-reverse-convertible",
@@ -232,7 +240,8 @@
 				"label": "Knock-in barrier, % of the initial level"
 			}
 		],
-		"script": "# Coupons are paid whatever happens; daily closes for the barrier.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.025\n    barrier = 0.6\n    s0 = spot()\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then ki = 1 endIf\n\n2027-04-05  2027-07-06  2027-10-04\n    pays notional * coupon\n\n2028-01-04\n    if spot() <= barrier * s0 then ki = 1 endIf\n    pays notional * coupon\n    if ki = 1 and spot() < s0 then pays notional * spot() / s0 else pays notional endIf\n"
+		"script": "# Coupons are paid whatever happens; daily closes for the barrier.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.025\n    barrier = 0.6\n    s0 = spot()\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then ki = 1 endIf\n\n2027-04-05  2027-07-06  2027-10-04\n    pays notional * coupon\n\n2028-01-04\n    if spot() <= barrier * s0 then ki = 1 endIf\n    pays notional * coupon\n    if ki = 1 and spot() < s0 then pays notional * spot() / s0 else pays notional endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "basket-call",
@@ -257,7 +266,8 @@
 				"label": "Strike on the basket performance"
 			}
 		],
-		"script": "# Performance of each stock = final / strike-date level.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    pays notional * max(basket - strike, 0)\n"
+		"script": "# Performance of each stock = final / strike-date level.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    basket = (spot(0) / s0 + spot(1) / s1 + spot(2) / s2) / 3\n    pays notional * max(basket - strike, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "bermudan-swaption",
@@ -285,11 +295,12 @@
 			{
 				"name": "side",
 				"default": 1.0,
-				"unit": "number",
+				"unit": "side",
 				"label": "1 payer (the right to pay the strike), -1 receiver"
 			}
 		],
 		"script": "# A co-terminal Bermudan: exercising on a fixed date enters the swap's\n# remaining periods, worth 1 - P(t, Tn) - strike * annuity(t) per unit of\n# notional. The decision is a least-squares regression of the continuation\n# value on that exercise value (Hull-White has one factor: the swap's value\n# says where the curve is), considered only where exercising pays. The price\n# is a lower bound, the rule estimated; the Hull-White lattice prices the\n# same trade by backward induction (the test).\n\n2027-01-04\n    strike = 0.046\n    notional = 10000000\n    side = 1\n\n2028-01-04\n    value = side * (1 - df(2033-01-04) - strike * (yf(2028-01-04, 2029-01-04) * df(2029-01-04) + yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2029-01-04\n    value = side * (1 - df(2033-01-04) - strike * (yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2030-01-04\n    value = side * (1 - df(2033-01-04) - strike * (yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2031-01-06\n    value = side * (1 - df(2033-01-04) - strike * (yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n\n2032-01-05\n    value = side * (1 - df(2033-01-04) - strike * (yf(2032-01-05, 2033-01-04) * df(2033-01-04)))\n    if value > 0 and exercise(value) then\n        pays notional * value\n    endIf\n",
+		"maturity": 6.0014,
 		"market": "rates",
 		"curve": "sofr"
 	},
@@ -317,7 +328,8 @@
 				"label": "Strike on the best performance"
 			}
 		],
-		"script": "2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    best = max(spot(0) / s0, max(spot(1) / s1, spot(2) / s2))\n    pays notional * max(best - strike, 0)\n"
+		"script": "2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    best = max(spot(0) / s0, max(spot(1) / s1, spot(2) / s2))\n    pays notional * max(best - strike, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "bonus-certificate",
@@ -348,7 +360,8 @@
 				"label": "Barrier, % of the initial level"
 			}
 		],
-		"script": "# Once the barrier is touched the certificate is plain stock.\n\n2027-01-04\n    notional = 1000\n    bonus = 1.2\n    barrier = 0.7\n    s0 = spot()\n    hit = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then hit = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then hit = 1 endIf\n    if hit = 0 then\n        pays notional * max(spot() / s0, bonus)\n    else\n        pays notional * spot() / s0\n    endIf\n"
+		"script": "# Once the barrier is touched the certificate is plain stock.\n\n2027-01-04\n    notional = 1000\n    bonus = 1.2\n    barrier = 0.7\n    s0 = spot()\n    hit = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then hit = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then hit = 1 endIf\n    if hit = 0 then\n        pays notional * max(spot() / s0, bonus)\n    else\n        pays notional * spot() / s0\n    endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "call-spread",
@@ -373,7 +386,8 @@
 				"label": "Cap, % of the initial level"
 			}
 		],
-		"script": "2027-01-04\n    strike = 1.0\n    cap = 1.2\n    s0 = spot()\n\n2028-01-04\n    pays min(max(spot() - strike * s0, 0), (cap - strike) * s0)\n"
+		"script": "2027-01-04\n    strike = 1.0\n    cap = 1.2\n    s0 = spot()\n\n2028-01-04\n    pays min(max(spot() - strike * s0, 0), (cap - strike) * s0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "capital-protected-note",
@@ -404,7 +418,8 @@
 				"label": "Cap on the performance"
 			}
 		],
-		"script": "# Two years, 100% capital protection.\n\n2027-01-04\n    notional = 1000\n    participation = 0.8\n    cap = 0.4\n    s0 = spot()\n\n2029-01-04\n    pays notional * (1 + participation * min(max(spot() / s0 - 1, 0), cap))\n"
+		"script": "# Two years, 100% capital protection.\n\n2027-01-04\n    notional = 1000\n    participation = 0.8\n    cap = 0.4\n    s0 = spot()\n\n2029-01-04\n    pays notional * (1 + participation * min(max(spot() / s0 - 1, 0), cap))\n",
+		"maturity": 2.0014
 	},
 	{
 		"slug": "chooser",
@@ -424,7 +439,8 @@
 				"label": "Strike of the call and of the put, % of the initial level"
 			}
 		],
-		"script": "# The choice is an early-exercise decision (a Longstaff-Schwartz regression\n# on the spot): the price is a lower bound for the holder, priced on the CPU.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    is_call = 0\n\n2027-07-06\n    if exercise(spot()) then\n        is_call = 1\n    endIf\n\n2028-01-04\n    if is_call = 1 then\n        pays max(spot() - strike * s0, 0)\n    else\n        pays max(strike * s0 - spot(), 0)\n    endIf\n"
+		"script": "# The choice is an early-exercise decision (a Longstaff-Schwartz regression\n# on the spot): the price is a lower bound for the holder, priced on the CPU.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n    is_call = 0\n\n2027-07-06\n    if exercise(spot()) then\n        is_call = 1\n    endIf\n\n2028-01-04\n    if is_call = 1 then\n        pays max(spot() - strike * s0, 0)\n    else\n        pays max(strike * s0 - spot(), 0)\n    endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "cliquet",
@@ -456,7 +472,8 @@
 				"label": "Cap on each quarterly return"
 			}
 		],
-		"script": "# Each quarter's return is measured from the previous quarter's close.\n\n2027-01-04\n    notional = 1000\n    local_floor = 0.0\n    local_cap = 0.03\n    ref = spot()\n    total = 0\n\n2027-04-05  2027-07-06  2027-10-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    ref = spot()\n\n2028-01-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    pays notional * total\n"
+		"script": "# Each quarter's return is measured from the previous quarter's close.\n\n2027-01-04\n    notional = 1000\n    local_floor = 0.0\n    local_cap = 0.03\n    ref = spot()\n    total = 0\n\n2027-04-05  2027-07-06  2027-10-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    ref = spot()\n\n2028-01-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    pays notional * total\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "compound",
@@ -482,7 +499,8 @@
 				"label": "Premium paid on the decision date for the call, % of the initial level"
 			}
 		],
-		"script": "# The decision is an early-exercise right (a Longstaff-Schwartz regression on\n# the spot): the price is a lower bound for the holder, priced on the CPU.\n\n2027-01-04\n    strike = 1.0\n    premium = 0.05\n    s0 = spot()\n    held = 0\n\n2027-07-06\n    if exercise(spot()) then\n        pays -premium * s0\n        held = 1\n    endIf\n\n2028-01-04\n    if held = 1 then pays max(spot() - strike * s0, 0) endIf\n"
+		"script": "# The decision is an early-exercise right (a Longstaff-Schwartz regression on\n# the spot): the price is a lower bound for the holder, priced on the CPU.\n\n2027-01-04\n    strike = 1.0\n    premium = 0.05\n    s0 = spot()\n    held = 0\n\n2027-07-06\n    if exercise(spot()) then\n        pays -premium * s0\n        held = 1\n    endIf\n\n2028-01-04\n    if held = 1 then pays max(spot() - strike * s0, 0) endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "corridor-variance-swap",
@@ -520,7 +538,8 @@
 				"label": "Corridor high, % of the initial level"
 			}
 		],
-		"script": "# A return enters the sum only if the previous close was inside the\n# corridor; the annualisation still divides by every day observed.\n\n2027-01-04\n    variance_notional = 10000\n    vol_strike = 0.2\n    low = 0.8\n    high = 1.2\n    s0 = spot()\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf\n    n = n + 1\n    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)\n"
+		"script": "# A return enters the sum only if the previous close was inside the\n# corridor; the annualisation still divides by every day observed.\n\n2027-01-04\n    variance_notional = 10000\n    vol_strike = 0.2\n    low = 0.8\n    high = 1.2\n    s0 = spot()\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    if prev >= low * s0 and prev <= high * s0 then sumsq = sumsq + log(spot() / prev) ^ 2 endIf\n    n = n + 1\n    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "digital-call",
@@ -546,7 +565,35 @@
 				"label": "Cash paid if above the strike"
 			}
 		],
-		"script": "# A hard threshold makes the Monte-Carlo delta noisy: tick Fuzzy to smooth it.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    if spot() > strike * s0 then pays payout endIf\n"
+		"script": "# A hard threshold makes the Monte-Carlo delta noisy: tick Fuzzy to smooth it.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    if spot() > strike * s0 then pays payout endIf\n",
+		"maturity": 0.9993
+	},
+	{
+		"slug": "digital-put",
+		"title": "Digital put (cash-or-nothing)",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Reiner & Rubinstein, Unscrambling the Binary Code, Risk, 1991",
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 26 (binary options)"
+		],
+		"summary": "Pays a fixed amount if the stock ends below the strike, nothing otherwise.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			},
+			{
+				"name": "payout",
+				"default": 100.0,
+				"unit": "amount",
+				"label": "Cash paid if below the strike"
+			}
+		],
+		"script": "# The mirror of the digital call: together they pay the payout for sure.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    if spot() < strike * s0 then pays payout endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "discount-certificate",
@@ -571,7 +618,8 @@
 				"label": "Cap, % of the initial level"
 			}
 		],
-		"script": "# The discount is the price of the call sold, visible in the present value.\n\n2027-01-04\n    notional = 1000\n    cap = 1.05\n    s0 = spot()\n\n2028-01-04\n    pays notional * min(spot() / s0, cap)\n"
+		"script": "# The discount is the price of the call sold, visible in the present value.\n\n2027-01-04\n    notional = 1000\n    cap = 1.05\n    s0 = spot()\n\n2028-01-04\n    pays notional * min(spot() / s0, cap)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "dispersion-swap",
@@ -597,7 +645,8 @@
 				"label": "Strike on the variance spread"
 			}
 		],
-		"script": "# Realised variance = 252 / n x sum of squared daily log returns (zero mean),\n# for each stock and for the basket of their performances, weights 1/3.\n\n2027-01-04\n    variance_notional = 10000\n    spread_strike = 0.02\n    b0 = spot(0)\n    b1 = spot(1)\n    b2 = spot(2)\n    p0 = spot(0)\n    p1 = spot(1)\n    p2 = spot(2)\n    pb = 1\n    q0 = 0\n    q1 = 0\n    q2 = 0\n    qb = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    basket = (spot(0) / b0 + spot(1) / b1 + spot(2) / b2) / 3\n    q0 = q0 + log(spot(0) / p0) ^ 2\n    q1 = q1 + log(spot(1) / p1) ^ 2\n    q2 = q2 + log(spot(2) / p2) ^ 2\n    qb = qb + log(basket / pb) ^ 2\n    p0 = spot(0)\n    p1 = spot(1)\n    p2 = spot(2)\n    pb = basket\n    n = n + 1\n\n2028-01-04\n    basket = (spot(0) / b0 + spot(1) / b1 + spot(2) / b2) / 3\n    q0 = q0 + log(spot(0) / p0) ^ 2\n    q1 = q1 + log(spot(1) / p1) ^ 2\n    q2 = q2 + log(spot(2) / p2) ^ 2\n    qb = qb + log(basket / pb) ^ 2\n    n = n + 1\n    pays variance_notional * (252 * ((q0 + q1 + q2) / 3 - qb) / n - spread_strike)\n"
+		"script": "# Realised variance = 252 / n x sum of squared daily log returns (zero mean),\n# for each stock and for the basket of their performances, weights 1/3.\n\n2027-01-04\n    variance_notional = 10000\n    spread_strike = 0.02\n    b0 = spot(0)\n    b1 = spot(1)\n    b2 = spot(2)\n    p0 = spot(0)\n    p1 = spot(1)\n    p2 = spot(2)\n    pb = 1\n    q0 = 0\n    q1 = 0\n    q2 = 0\n    qb = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    basket = (spot(0) / b0 + spot(1) / b1 + spot(2) / b2) / 3\n    q0 = q0 + log(spot(0) / p0) ^ 2\n    q1 = q1 + log(spot(1) / p1) ^ 2\n    q2 = q2 + log(spot(2) / p2) ^ 2\n    qb = qb + log(basket / pb) ^ 2\n    p0 = spot(0)\n    p1 = spot(1)\n    p2 = spot(2)\n    pb = basket\n    n = n + 1\n\n2028-01-04\n    basket = (spot(0) / b0 + spot(1) / b1 + spot(2) / b2) / 3\n    q0 = q0 + log(spot(0) / p0) ^ 2\n    q1 = q1 + log(spot(1) / p1) ^ 2\n    q2 = q2 + log(spot(2) / p2) ^ 2\n    qb = qb + log(basket / pb) ^ 2\n    n = n + 1\n    pays variance_notional * (252 * ((q0 + q1 + q2) / 3 - qb) / n - spread_strike)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "double-barrier-call",
@@ -629,7 +678,8 @@
 				"label": "Upper knock-out barrier, % of the initial level"
 			}
 		],
-		"script": "# Both barriers checked at every close (a daily grid approximates continuous\n# monitoring). No rebate.\n\n2027-01-04\n    strike = 1.0\n    low = 0.8\n    high = 1.3\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - strike * s0, 0) endIf\n"
+		"script": "# Both barriers checked at every close (a daily grid approximates continuous\n# monitoring). No rebate.\n\n2027-01-04\n    strike = 1.0\n    low = 0.8\n    high = 1.3\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() <= low * s0 or spot() >= high * s0 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - strike * s0, 0) endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "double-no-touch",
@@ -661,7 +711,8 @@
 				"label": "Cash paid if never touched"
 			}
 		],
-		"script": "# Daily closes, six months.\n\n2027-01-04\n    low = 0.85\n    high = 1.15\n    payout = 100\n    s0 = spot()\n    inside = 1\n\nschedule(2027-01-05, 2027-06-30, 1D, US, F)\n    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf\n\n2027-07-06\n    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf\n    if inside = 1 then pays payout endIf\n"
+		"script": "# Daily closes, six months.\n\n2027-01-04\n    low = 0.85\n    high = 1.15\n    payout = 100\n    s0 = spot()\n    inside = 1\n\nschedule(2027-01-05, 2027-06-30, 1D, US, F)\n    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf\n\n2027-07-06\n    if spot() <= low * s0 or spot() >= high * s0 then inside = 0 endIf\n    if inside = 1 then pays payout endIf\n",
+		"maturity": 0.501
 	},
 	{
 		"slug": "down-and-in-put",
@@ -687,7 +738,8 @@
 				"label": "Knock-in barrier, % of the initial level"
 			}
 		],
-		"script": "# Daily closes. The building block of every barrier reverse convertible.\n\n2027-01-04\n    strike = 1.0\n    barrier = 0.7\n    s0 = spot()\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then ki = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then ki = 1 endIf\n    if ki = 1 then pays max(strike * s0 - spot(), 0) endIf\n"
+		"script": "# Daily closes. The building block of every barrier reverse convertible.\n\n2027-01-04\n    strike = 1.0\n    barrier = 0.7\n    s0 = spot()\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then ki = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then ki = 1 endIf\n    if ki = 1 then pays max(strike * s0 - spot(), 0) endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "equity-forward",
@@ -712,7 +764,8 @@
 				"label": "Shares delivered"
 			}
 		],
-		"script": "# The holder pays the strike and receives the stock at expiry. A futures\n# contract settled daily has the same price under a deterministic rate.\n\n2027-01-04\n    strike = 1.0\n    notional = 1\n    s0 = spot()\n\n2028-01-04\n    pays notional * (spot() - strike * s0)\n"
+		"script": "# The holder pays the strike and receives the stock at expiry. A futures\n# contract settled daily has the same price under a deterministic rate.\n\n2027-01-04\n    strike = 1.0\n    notional = 1\n    s0 = spot()\n\n2028-01-04\n    pays notional * (spot() - strike * s0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "european-call",
@@ -732,7 +785,29 @@
 				"label": "Strike, % of the initial level"
 			}
 		],
-		"script": "# Paid in the stock's currency, per share.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays max(spot() - strike * s0, 0)\n"
+		"script": "# Paid in the stock's currency, per share.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays max(spot() - strike * s0, 0)\n",
+		"maturity": 0.9993
+	},
+	{
+		"slug": "european-put",
+		"title": "European put",
+		"category": "Vanillas and digitals",
+		"underlyings": 1,
+		"sources": [
+			"Black & Scholes, The Pricing of Options and Corporate Liabilities, Journal of Political Economy, 1973",
+			"Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 15 (the Black-Scholes-Merton model)"
+		],
+		"summary": "The right to sell the stock at its strike level one year later: pays the fall of the stock below the strike, nothing if it ends above.",
+		"params": [
+			{
+				"name": "strike",
+				"default": 1.0,
+				"unit": "percent",
+				"label": "Strike, % of the initial level"
+			}
+		],
+		"script": "# Paid in the stock's currency, per share.\n\n2027-01-04\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays max(strike * s0 - spot(), 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "european-swaption",
@@ -760,11 +835,12 @@
 			{
 				"name": "side",
 				"default": 1.0,
-				"unit": "number",
+				"unit": "side",
 				"label": "1 payer (the right to pay the strike), -1 receiver"
 			}
 		],
 		"script": "# At expiry the swap starting then is worth, per unit of notional,\n# 1 - P(T0, Tn) - strike * annuity (one curve: SOFR discounts and projects),\n# its annuity the sum of yf * df over the annual fixed dates. The holder\n# enters it if it is worth more than nothing. df() on the expiry date reads\n# the bond prices the simulated short rate gives that day: Hull-White on the\n# USD SOFR curve, (a, sigma) calibrated to the at-the-money swaption vols\n# implied from the trades DTCC published.\n\n2027-01-04\n    strike = 0.046\n    notional = 10000000\n    side = 1\n\n2028-01-04\n    annuity = yf(2028-01-04, 2029-01-04) * df(2029-01-04) + yf(2029-01-04, 2030-01-04) * df(2030-01-04) + yf(2030-01-04, 2031-01-06) * df(2031-01-06) + yf(2031-01-06, 2032-01-05) * df(2032-01-05) + yf(2032-01-05, 2033-01-04) * df(2033-01-04)\n    swap = 1 - df(2033-01-04) - strike * annuity\n    pays notional * max(side * swap, 0)\n",
+		"maturity": 6.0014,
 		"market": "rates",
 		"curve": "sofr"
 	},
@@ -791,7 +867,8 @@
 				"label": "Guaranteed yearly coupon"
 			}
 		],
-		"script": "# Three years. Coupons are guaranteed; the capital is protected, and the\n# worst performance is paid if positive.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.02\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04  2029-01-04\n    pays notional * coupon\n\n2030-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    pays notional * (1 + coupon + max(worst - 1, 0))\n"
+		"script": "# Three years. Coupons are guaranteed; the capital is protected, and the\n# worst performance is paid if positive.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.02\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04  2029-01-04\n    pays notional * coupon\n\n2030-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    pays notional * (1 + coupon + max(worst - 1, 0))\n",
+		"maturity": 3.0007
 	},
 	{
 		"slug": "fixed-lookback-call",
@@ -811,7 +888,8 @@
 				"label": "Strike, % of the initial level"
 			}
 		],
-		"script": "2027-01-04\n    strike = 1.0\n    s0 = spot()\n    hi = spot()\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    hi = max(hi, spot())\n\n2028-01-04\n    hi = max(hi, spot())\n    pays max(hi - strike * s0, 0)\n"
+		"script": "2027-01-04\n    strike = 1.0\n    s0 = spot()\n    hi = spot()\n\nschedule(2027-01-11, 2027-12-27, 1W, US, F)\n    hi = max(hi, spot())\n\n2028-01-04\n    hi = max(hi, spot())\n    pays max(hi - strike * s0, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "fixed-rate-bond",
@@ -838,6 +916,7 @@
 			}
 		],
 		"script": "# Semiannual coupons of coupon / 2 of the face value, the last with the face\n# value. Priced on the government curve of the chosen currency.\n\n2027-01-04\n    coupon = 0.04\n    notional = 100\n\nschedule(2027-07-05, 2031-07-04, 6M, US, MF)\n    pays notional * coupon / 2\n\n2032-01-05\n    pays notional * (1 + coupon / 2)\n",
+		"maturity": 5.0021,
 		"market": "rates"
 	},
 	{
@@ -851,7 +930,8 @@
 		],
 		"summary": "Buy at the lowest close of the year: pays the final price minus the minimum close.",
 		"params": [],
-		"script": "# The minimum is taken over every daily close from the strike date on.\n\n2027-01-04\n    lo = spot()\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    lo = min(lo, spot())\n\n2028-01-04\n    lo = min(lo, spot())\n    pays spot() - lo\n"
+		"script": "# The minimum is taken over every daily close from the strike date on.\n\n2027-01-04\n    lo = spot()\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    lo = min(lo, spot())\n\n2028-01-04\n    lo = min(lo, spot())\n    pays spot() - lo\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "forward-start-call",
@@ -870,7 +950,8 @@
 				"label": "Strike, % of the spot on the strike date"
 			}
 		],
-		"script": "# The strike is fixed on 2027-04-05; the option matures on 2028-01-04.\n# Its value depends on the forward smile.\n\n2027-04-05\n    strike = 1.0\n    k = strike * spot()\n\n2028-01-04\n    pays max(spot() - k, 0)\n"
+		"script": "# The strike is fixed on 2027-04-05; the option matures on 2028-01-04.\n# Its value depends on the forward smile.\n\n2027-04-05\n    strike = 1.0\n    k = strike * spot()\n\n2028-01-04\n    pays max(spot() - k, 0)\n",
+		"maturity": 0.7502
 	},
 	{
 		"slug": "globally-floored-cliquet",
@@ -908,7 +989,8 @@
 				"label": "Guaranteed minimum of the sum"
 			}
 		],
-		"script": "# The global floor is what makes it sensitive to the forward smile.\n\n2027-01-04\n    notional = 1000\n    local_floor = -0.03\n    local_cap = 0.03\n    global_floor = 0.02\n    ref = spot()\n    total = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    ref = spot()\n\n2028-01-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    pays notional * max(total, global_floor)\n"
+		"script": "# The global floor is what makes it sensitive to the forward smile.\n\n2027-01-04\n    notional = 1000\n    local_floor = -0.03\n    local_cap = 0.03\n    global_floor = 0.02\n    ref = spot()\n    total = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    ref = spot()\n\n2028-01-04\n    total = total + min(max(spot() / ref - 1, local_floor), local_cap)\n    pays notional * max(total, global_floor)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "himalaya",
@@ -933,7 +1015,8 @@
 				"label": "Strike on the average locked performance"
 			}
 		],
-		"script": "# Three stocks, three yearly observations. A removed stock gets a\n# performance of -1000 so it can never be the best again.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    in0 = 1\n    in1 = 1\n    in2 = 1\n    total = 0\n\n2028-01-04  2029-01-04  2030-01-04\n    q0 = in0 * spot(0) / s0 - (1 - in0) * 1000\n    q1 = in1 * spot(1) / s1 - (1 - in1) * 1000\n    q2 = in2 * spot(2) / s2 - (1 - in2) * 1000\n    best = max(q0, max(q1, q2))\n    total = total + best\n    if q0 = best then\n        in0 = 0\n    else\n        if q1 = best then in1 = 0 else in2 = 0 endIf\n    endIf\n\n2030-01-07\n    pays notional * max(total / 3 - strike, 0)\n"
+		"script": "# Three stocks, three yearly observations. A removed stock gets a\n# performance of -1000 so it can never be the best again.\n\n2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    in0 = 1\n    in1 = 1\n    in2 = 1\n    total = 0\n\n2028-01-04  2029-01-04  2030-01-04\n    q0 = in0 * spot(0) / s0 - (1 - in0) * 1000\n    q1 = in1 * spot(1) / s1 - (1 - in1) * 1000\n    q2 = in2 * spot(2) / s2 - (1 - in2) * 1000\n    best = max(q0, max(q1, q2))\n    total = total + best\n    if q0 = best then\n        in0 = 0\n    else\n        if q1 = best then in1 = 0 else in2 = 0 endIf\n    endIf\n\n2030-01-07\n    pays notional * max(total / 3 - strike, 0)\n",
+		"maturity": 3.0089
 	},
 	{
 		"slug": "interest-rate-swap",
@@ -961,11 +1044,12 @@
 			{
 				"name": "side",
 				"default": 1.0,
-				"unit": "number",
+				"unit": "side",
 				"label": "1 pays the fixed rate (payer), -1 receives it"
 			}
 		],
 		"script": "# Each year the floating leg pays SOFR compounded over the period, worth\n# 1 / P(start, end) - 1 at its start: fwdRate(start, end) * yf(start, end),\n# paid at the end, hence the df(end). A payer swap pays the fixed rate and\n# receives the floating one. Priced on the USD SOFR curve bootstrapped from\n# the swaps DTCC published (one curve discounts and projects: SOFR is the\n# overnight rate), the short rate's Hull-White calibrated to the swaptions\n# traded with them; a swap does not depend on the rate's volatility.\n\n2027-01-04\n    fixed_rate = 0.046\n    notional = 10000000\n    side = 1\n    pays side * notional * (fwdRate(2027-01-04, 2028-01-04) - fixed_rate) * yf(2027-01-04, 2028-01-04) * df(2028-01-04)\n\n2028-01-04\n    pays side * notional * (fwdRate(2028-01-04, 2029-01-04) - fixed_rate) * yf(2028-01-04, 2029-01-04) * df(2029-01-04)\n\n2029-01-04\n    pays side * notional * (fwdRate(2029-01-04, 2030-01-04) - fixed_rate) * yf(2029-01-04, 2030-01-04) * df(2030-01-04)\n\n2030-01-04\n    pays side * notional * (fwdRate(2030-01-04, 2031-01-06) - fixed_rate) * yf(2030-01-04, 2031-01-06) * df(2031-01-06)\n\n2031-01-06\n    pays side * notional * (fwdRate(2031-01-06, 2032-01-05) - fixed_rate) * yf(2031-01-06, 2032-01-05) * df(2032-01-05)\n",
+		"maturity": 5.0021,
 		"market": "rates",
 		"curve": "sofr"
 	},
@@ -986,7 +1070,8 @@
 				"label": "Gap between rungs, % of the initial level"
 			}
 		],
-		"script": "# Three rungs above the initial level, daily closes. Pays the larger of the\n# final call and the highest rung reached.\n\n2027-01-04\n    step = 0.1\n    s0 = spot()\n    rung = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= (1 + step) * s0 then rung = max(rung, 1 + step) endIf\n    if spot() >= (1 + 2 * step) * s0 then rung = max(rung, 1 + 2 * step) endIf\n    if spot() >= (1 + 3 * step) * s0 then rung = max(rung, 1 + 3 * step) endIf\n\n2028-01-04\n    pays max(max(spot() - s0, 0), (rung - 1) * s0)\n"
+		"script": "# Three rungs above the initial level, daily closes. Pays the larger of the\n# final call and the highest rung reached.\n\n2027-01-04\n    step = 0.1\n    s0 = spot()\n    rung = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= (1 + step) * s0 then rung = max(rung, 1 + step) endIf\n    if spot() >= (1 + 2 * step) * s0 then rung = max(rung, 1 + 2 * step) endIf\n    if spot() >= (1 + 3 * step) * s0 then rung = max(rung, 1 + 3 * step) endIf\n\n2028-01-04\n    pays max(max(spot() - s0, 0), (rung - 1) * s0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "napoleon",
@@ -1011,7 +1096,8 @@
 				"label": "Fixed part of the yearly coupon"
 			}
 		],
-		"script": "# Each year's coupon is paid on its anniversary; the capital is repaid with\n# the last one.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    ref = spot()\n    worst = 1\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n\n2028-01-04\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n    pays notional * max(coupon + worst, 0)\n    worst = 1\n\nschedule(2028-02-04, 2028-12-04, 1M, US, F)\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n\n2029-01-04\n    worst = min(worst, spot() / ref - 1)\n    pays notional * (1 + max(coupon + worst, 0))\n"
+		"script": "# Each year's coupon is paid on its anniversary; the capital is repaid with\n# the last one.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    ref = spot()\n    worst = 1\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n\n2028-01-04\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n    pays notional * max(coupon + worst, 0)\n    worst = 1\n\nschedule(2028-02-04, 2028-12-04, 1M, US, F)\n    worst = min(worst, spot() / ref - 1)\n    ref = spot()\n\n2029-01-04\n    worst = min(worst, spot() / ref - 1)\n    pays notional * (1 + max(coupon + worst, 0))\n",
+		"maturity": 2.0014
 	},
 	{
 		"slug": "one-touch",
@@ -1037,7 +1123,8 @@
 				"label": "Cash paid if touched"
 			}
 		],
-		"script": "# Daily closes; paid at maturity, not when touched.\n\n2027-01-04\n    level = 0.8\n    payout = 100\n    s0 = spot()\n    touched = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= level * s0 then touched = 1 endIf\n\n2028-01-04\n    if spot() <= level * s0 then touched = 1 endIf\n    if touched = 1 then pays payout endIf\n"
+		"script": "# Daily closes; paid at maturity, not when touched.\n\n2027-01-04\n    level = 0.8\n    payout = 100\n    s0 = spot()\n    touched = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= level * s0 then touched = 1 endIf\n\n2028-01-04\n    if spot() <= level * s0 then touched = 1 endIf\n    if touched = 1 then pays payout endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "outperformance-option",
@@ -1063,7 +1150,8 @@
 				"label": "Outperformance strike"
 			}
 		],
-		"script": "# spot(0) is the stock expected to outperform, spot(1) the benchmark. Its\n# value rises as their correlation falls.\n\n2027-01-04\n    notional = 1000\n    spread = 0.0\n    s0 = spot(0)\n    s1 = spot(1)\n\n2028-01-04\n    pays notional * max(spot(0) / s0 - spot(1) / s1 - spread, 0)\n"
+		"script": "# spot(0) is the stock expected to outperform, spot(1) the benchmark. Its\n# value rises as their correlation falls.\n\n2027-01-04\n    notional = 1000\n    spread = 0.0\n    s0 = spot(0)\n    s1 = spot(1)\n\n2028-01-04\n    pays notional * max(spot(0) / s0 - spot(1) / s1 - spread, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "phoenix-autocall",
@@ -1106,7 +1194,8 @@
 				"label": "Protection barrier at maturity, % of the initial level"
 			}
 		],
-		"script": "# Below the protection barrier at maturity the capital is repaid in\n# proportion to the fall (European knock-in).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.05\n    autocall = 1.0\n    coupon_barrier = 0.7\n    protection = 0.6\n    s0 = spot()\n    miss = 0\n    alive = 1\n\n2027-07-06  2028-01-04  2028-07-06\n    if alive = 1 then\n        if spot() >= autocall * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n            alive = 0\n        else\n            if spot() >= coupon_barrier * s0 then\n                pays notional * coupon * (miss + 1)\n                miss = 0\n            else\n                miss = miss + 1\n            endIf\n        endIf\n    endIf\n\n2029-01-04\n    if alive = 1 then\n        if spot() >= coupon_barrier * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n        else\n            if spot() < protection * s0 then\n                pays notional * spot() / s0\n            else\n                pays notional\n            endIf\n        endIf\n    endIf\n"
+		"script": "# Below the protection barrier at maturity the capital is repaid in\n# proportion to the fall (European knock-in).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.05\n    autocall = 1.0\n    coupon_barrier = 0.7\n    protection = 0.6\n    s0 = spot()\n    miss = 0\n    alive = 1\n\n2027-07-06  2028-01-04  2028-07-06\n    if alive = 1 then\n        if spot() >= autocall * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n            alive = 0\n        else\n            if spot() >= coupon_barrier * s0 then\n                pays notional * coupon * (miss + 1)\n                miss = 0\n            else\n                miss = miss + 1\n            endIf\n        endIf\n    endIf\n\n2029-01-04\n    if alive = 1 then\n        if spot() >= coupon_barrier * s0 then\n            pays notional * (1 + coupon * (miss + 1))\n        else\n            if spot() < protection * s0 then\n                pays notional * spot() / s0\n            else\n                pays notional\n            endIf\n        endIf\n    endIf\n",
+		"maturity": 2.0014
 	},
 	{
 		"slug": "quanto-call",
@@ -1133,6 +1222,7 @@
 			}
 		],
 		"script": "# Simulated in dollars: the stock drifts at its own currency's rate, less its\n# dividend, less rho sigma_S sigma_X (the quanto adjustment), X its currency\n# in dollars.\n\n2027-01-04\n    strike = 1.0\n    fixed_rate = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays fixed_rate * max(spot() - strike * s0, 0)\n",
+		"maturity": 0.9993,
 		"quanto": "USD"
 	},
 	{
@@ -1170,7 +1260,8 @@
 				"label": "Weight of the worst"
 			}
 		],
-		"script": "# With three stocks the middle performer is the sum minus the best and the\n# worst.\n\n2027-01-04\n    notional = 1000\n    w_best = 0.5\n    w_middle = 0.3\n    w_worst = 0.2\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    p0 = spot(0) / s0\n    p1 = spot(1) / s1\n    p2 = spot(2) / s2\n    best = max(p0, max(p1, p2))\n    worst = min(p0, min(p1, p2))\n    middle = p0 + p1 + p2 - best - worst\n    pays notional * max(w_best * best + w_middle * middle + w_worst * worst - 1, 0)\n"
+		"script": "# With three stocks the middle performer is the sum minus the best and the\n# worst.\n\n2027-01-04\n    notional = 1000\n    w_best = 0.5\n    w_middle = 0.3\n    w_worst = 0.2\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    p0 = spot(0) / s0\n    p1 = spot(1) / s1\n    p2 = spot(2) / s2\n    best = max(p0, max(p1, p2))\n    worst = min(p0, min(p1, p2))\n    middle = p0 + p1 + p2 - best - worst\n    pays notional * max(w_best * best + w_middle * middle + w_worst * worst - 1, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "range-accrual",
@@ -1207,7 +1298,8 @@
 				"label": "Upper bound, % of the initial level"
 			}
 		],
-		"script": "# Coupon at maturity = coupon x (days in range / days observed).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    low = 0.9\n    high = 1.1\n    s0 = spot()\n    inside = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    n = n + 1\n    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf\n\n2028-01-04\n    n = n + 1\n    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf\n    pays notional * (1 + coupon * inside / n)\n"
+		"script": "# Coupon at maturity = coupon x (days in range / days observed).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.08\n    low = 0.9\n    high = 1.1\n    s0 = spot()\n    inside = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    n = n + 1\n    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf\n\n2028-01-04\n    n = n + 1\n    if spot() >= low * s0 and spot() <= high * s0 then inside = inside + 1 endIf\n    pays notional * (1 + coupon * inside / n)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "reverse-cliquet",
@@ -1232,7 +1324,8 @@
 				"label": "Maximum coupon"
 			}
 		],
-		"script": "# Capital protected. Coupon at maturity: max(coupon + sum of the negative\n# monthly returns, 0).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.4\n    ref = spot()\n    losses = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    losses = losses + min(spot() / ref - 1, 0)\n    ref = spot()\n\n2028-01-04\n    losses = losses + min(spot() / ref - 1, 0)\n    pays notional * (1 + max(coupon + losses, 0))\n"
+		"script": "# Capital protected. Coupon at maturity: max(coupon + sum of the negative\n# monthly returns, 0).\n\n2027-01-04\n    notional = 1000\n    coupon = 0.4\n    ref = spot()\n    losses = 0\n\nschedule(2027-02-04, 2027-12-04, 1M, US, F)\n    losses = losses + min(spot() / ref - 1, 0)\n    ref = spot()\n\n2028-01-04\n    losses = losses + min(spot() / ref - 1, 0)\n    pays notional * (1 + max(coupon + losses, 0))\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "reverse-convertible",
@@ -1263,7 +1356,8 @@
 				"label": "Strike, % of the initial level"
 			}
 		],
-		"script": "# The investor is short a put: that premium pays for the coupon.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.1\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays notional * coupon\n    if spot() >= strike * s0 then pays notional else pays notional * spot() / (strike * s0) endIf\n"
+		"script": "# The investor is short a put: that premium pays for the coupon.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.1\n    strike = 1.0\n    s0 = spot()\n\n2028-01-04\n    pays notional * coupon\n    if spot() >= strike * s0 then pays notional else pays notional * spot() / (strike * s0) endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "shark-fin",
@@ -1301,7 +1395,8 @@
 				"label": "Rebate if knocked out, % of notional"
 			}
 		],
-		"script": "# Capital protected at maturity; daily closes. Its payoff chart looks like a\n# shark's fin: rising, then a cliff.\n\n2027-01-04\n    notional = 1000\n    participation = 1.0\n    barrier = 1.25\n    rebate = 0.05\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then\n        pays notional * (1 + participation * max(spot() / s0 - 1, 0))\n    else\n        pays notional * (1 + rebate)\n    endIf\n"
+		"script": "# Capital protected at maturity; daily closes. Its payoff chart looks like a\n# shark's fin: rising, then a cliff.\n\n2027-01-04\n    notional = 1000\n    participation = 1.0\n    barrier = 1.25\n    rebate = 0.05\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then\n        pays notional * (1 + participation * max(spot() / s0 - 1, 0))\n    else\n        pays notional * (1 + rebate)\n    endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "twin-win",
@@ -1326,7 +1421,8 @@
 				"label": "Barrier, % of the initial level"
 			}
 		],
-		"script": "# Above the barrier the investor earns the absolute performance; once\n# touched, plain stock.\n\n2027-01-04\n    notional = 1000\n    barrier = 0.7\n    s0 = spot()\n    hit = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then hit = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then hit = 1 endIf\n    if hit = 0 then\n        pays notional * (1 + abs(spot() / s0 - 1))\n    else\n        pays notional * spot() / s0\n    endIf\n"
+		"script": "# Above the barrier the investor earns the absolute performance; once\n# touched, plain stock.\n\n2027-01-04\n    notional = 1000\n    barrier = 0.7\n    s0 = spot()\n    hit = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() <= barrier * s0 then hit = 1 endIf\n\n2028-01-04\n    if spot() <= barrier * s0 then hit = 1 endIf\n    if hit = 0 then\n        pays notional * (1 + abs(spot() / s0 - 1))\n    else\n        pays notional * spot() / s0\n    endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "up-and-out-call",
@@ -1352,7 +1448,8 @@
 				"label": "Knock-out barrier, % of the initial level"
 			}
 		],
-		"script": "# Barrier checked at every close (a daily grid approximates continuous\n# monitoring). No rebate.\n\n2027-01-04\n    strike = 1.0\n    barrier = 1.3\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - strike * s0, 0) endIf\n"
+		"script": "# Barrier checked at every close (a daily grid approximates continuous\n# monitoring). No rebate.\n\n2027-01-04\n    strike = 1.0\n    barrier = 1.3\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - strike * s0, 0) endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "variance-swap",
@@ -1378,7 +1475,8 @@
 				"label": "Volatility strike"
 			}
 		],
-		"script": "# Realised variance = 252 / n x sum of squared daily log returns (zero mean).\n\n2027-01-04\n    variance_notional = 10000\n    vol_strike = 0.2\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)\n"
+		"script": "# Realised variance = 252 / n x sum of squared daily log returns (zero mean).\n\n2027-01-04\n    variance_notional = 10000\n    vol_strike = 0.2\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    pays variance_notional * (252 * sumsq / n - vol_strike ^ 2)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "volatility-swap",
@@ -1404,7 +1502,8 @@
 				"label": "Volatility strike"
 			}
 		],
-		"script": "# Realised volatility = sqrt(252 / n x sum of squared daily log returns).\n\n2027-01-04\n    vega_notional = 1000\n    vol_strike = 0.2\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    pays 100 * vega_notional * (sqrt(252 * sumsq / n) - vol_strike)\n"
+		"script": "# Realised volatility = sqrt(252 / n x sum of squared daily log returns).\n\n2027-01-04\n    vega_notional = 1000\n    vol_strike = 0.2\n    prev = spot()\n    sumsq = 0\n    n = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    prev = spot()\n\n2028-01-04\n    sumsq = sumsq + log(spot() / prev) ^ 2\n    n = n + 1\n    pays 100 * vega_notional * (sqrt(252 * sumsq / n) - vol_strike)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "worst-of-autocall",
@@ -1447,7 +1546,8 @@
 				"label": "Protection barrier at maturity"
 			}
 		],
-		"script": "# Two years, quarterly observations on the worst performer, no coupon\n# memory.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.025\n    autocall = 1.0\n    coupon_barrier = 0.7\n    protection = 0.6\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    alive = 1\n\nschedule(2027-04-05, 2028-10-04, 3M, US, F)\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if alive = 1 then\n        if worst >= autocall then\n            pays notional * (1 + coupon)\n            alive = 0\n        else\n            if worst >= coupon_barrier then pays notional * coupon endIf\n        endIf\n    endIf\n\n2029-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if alive = 1 then\n        if worst >= coupon_barrier then\n            pays notional * (1 + coupon)\n        else\n            if worst < protection then pays notional * worst else pays notional endIf\n        endIf\n    endIf\n"
+		"script": "# Two years, quarterly observations on the worst performer, no coupon\n# memory.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.025\n    autocall = 1.0\n    coupon_barrier = 0.7\n    protection = 0.6\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    alive = 1\n\nschedule(2027-04-05, 2028-10-04, 3M, US, F)\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if alive = 1 then\n        if worst >= autocall then\n            pays notional * (1 + coupon)\n            alive = 0\n        else\n            if worst >= coupon_barrier then pays notional * coupon endIf\n        endIf\n    endIf\n\n2029-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if alive = 1 then\n        if worst >= coupon_barrier then\n            pays notional * (1 + coupon)\n        else\n            if worst < protection then pays notional * worst else pays notional endIf\n        endIf\n    endIf\n",
+		"maturity": 2.0014
 	},
 	{
 		"slug": "worst-of-call",
@@ -1473,7 +1573,8 @@
 				"label": "Strike on the worst performance"
 			}
 		],
-		"script": "2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    pays notional * max(worst - strike, 0)\n"
+		"script": "2027-01-04\n    notional = 1000\n    strike = 1.0\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n\n2028-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    pays notional * max(worst - strike, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "worst-of-reverse-convertible",
@@ -1504,7 +1605,8 @@
 				"label": "Knock-in barrier on the worst, % of initial"
 			}
 		],
-		"script": "# Knock-in on the worst performer, daily closes. The higher coupon than a\n# single-stock version pays for the short correlation.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.03\n    barrier = 0.6\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n\n2027-04-05  2027-07-06  2027-10-04\n    pays notional * coupon\n\n2028-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n    pays notional * coupon\n    if ki = 1 and worst < 1 then pays notional * worst else pays notional endIf\n"
+		"script": "# Knock-in on the worst performer, daily closes. The higher coupon than a\n# single-stock version pays for the short correlation.\n\n2027-01-04\n    notional = 1000\n    coupon = 0.03\n    barrier = 0.6\n    s0 = spot(0)\n    s1 = spot(1)\n    s2 = spot(2)\n    ki = 0\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n\n2027-04-05  2027-07-06  2027-10-04\n    pays notional * coupon\n\n2028-01-04\n    worst = min(spot(0) / s0, min(spot(1) / s1, spot(2) / s2))\n    if worst <= barrier then ki = 1 endIf\n    pays notional * coupon\n    if ki = 1 and worst < 1 then pays notional * worst else pays notional endIf\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "zero-coupon-bond",
@@ -1525,6 +1627,7 @@
 			}
 		],
 		"script": "# Priced on the government curve of the chosen currency, by Hull-White fitted\n# to it (Monte-Carlo) or by the curve itself (Analytic): the same price, the\n# short rate's volatility only adds noise to a payment that does not depend\n# on it.\n\n2027-01-04\n    notional = 100\n\n2032-01-05\n    pays notional\n",
+		"maturity": 5.0021,
 		"market": "rates"
 	}
 ]

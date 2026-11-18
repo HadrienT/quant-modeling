@@ -30,10 +30,11 @@ const NAMES: Record<string, [name: string, unit: string]> = {
  * zero rate, by its tenor in years. */
 const CURVE = /^(swap_rate|zero)\[([\d.]+)\]$/;
 
-/** A local-vol or leverage grid node: one sensitivity per (strike, date). */
-const GRID = /^(lvol|leverage)\[\d+,\d+\]$/;
+/** A local-vol or leverage grid node: one sensitivity per (strike, date),
+ * `lvol[a:i,j]` for underlying a of several. */
+const GRID = /^(lvol|leverage)\[(?:(\d+):)?\d+,\d+\]$/;
 
-function describe(label: string): [string, string] {
+function describe(label: string, names: string[] = []): [string, string] {
 	const curve = CURVE.exec(label);
 	if (curve)
 		return [
@@ -44,9 +45,32 @@ function describe(label: string): [string, string] {
 		];
 	const indexed = /^(\w+)\[(\d+)\]$/.exec(label);
 	const [name, unit] = NAMES[indexed ? indexed[1]! : label] ?? [label, ""];
+	const i = indexed ? Number(indexed[2]) : -1;
 	return indexed
-		? [`${name} · underlying ${Number(indexed[2]) + 1}`, unit]
+		? [`${name} · ${names[i] ?? `underlying ${i + 1}`}`, unit]
 		: [name, unit];
+}
+
+/** The grid nodes' risks summed per surface (per underlying): the price's
+ * move per unit of vol when the whole surface shifts in parallel. */
+function surfaces(grid: Risk[], names: string[]) {
+	const by = new Map<string, { value: number; nodes: number; kind: string }>();
+	for (const r of grid) {
+		const m = GRID.exec(r.label)!;
+		const key = m[2] ?? "0";
+		const cur = by.get(key) ?? { value: 0, nodes: 0, kind: m[1]! };
+		cur.value += r.value;
+		cur.nodes += 1;
+		by.set(key, cur);
+	}
+	return [...by.entries()].map(([k, v]) => ({
+		name: `${v.kind === "lvol" ? "Local-vol surface" : "Leverage"}${
+			by.size > 1 || names.length > 1
+				? ` · ${names[Number(k)] ?? `underlying ${Number(k) + 1}`}`
+				: ""
+		}`,
+		...v,
+	}));
 }
 
 /**
@@ -60,8 +84,11 @@ export function ScriptGreeks({
 	risks,
 	zeroDeltaNote,
 	secondOrder,
+	names = [],
 }: {
 	risks: Risk[];
+	/** the underlyings' tickers, spot(0) first, to name their greeks */
+	names?: string[];
 	/** why a delta can be exactly zero here, said when it is */
 	zeroDeltaNote?: string;
 	/** gamma, vanna and volga when the request asked for them, and how */
@@ -91,7 +118,7 @@ export function ScriptGreeks({
 				</thead>
 				<tbody>
 					{rows.map((r) => {
-						const [name, unit] = describe(r.label);
+						const [name, unit] = describe(r.label, names);
 						const noise = Math.abs(r.value) <= 2 * r.std_error;
 						return (
 							<tr key={r.label} className="border-t border-hairline">
@@ -116,6 +143,27 @@ export function ScriptGreeks({
 							</tr>
 						);
 					})}
+					{surfaces(grid, names).map((s) => (
+						<tr key={s.name} className="border-t border-hairline">
+							<td className="py-1 pr-2 text-ink">
+								{s.name}, parallel shift
+								<Badge tone="neutral" className="ml-2">
+									{s.nodes} nodes
+								</Badge>
+							</td>
+							<td className="px-2 py-1 text-right">
+								<Uncertainty
+									value={s.value}
+									stdError={null}
+									magnitude="greek"
+								/>
+							</td>
+							<td className="py-1 pl-2 text-2xs text-ink-secondary">
+								per 1.00 of vol on every node (÷100 for one vol point); the sum
+								of the nodes&apos; adjoint risks
+							</td>
+						</tr>
+					))}
 				</tbody>
 				{secondOrder && <SecondOrderRows greeks={secondOrder.greeks} />}
 			</table>
@@ -123,7 +171,7 @@ export function ScriptGreeks({
 			{zero.length > 0 && (
 				<p className="text-2xs text-ink-muted">
 					Exactly zero, so not tabulated:{" "}
-					{zero.map((r) => describe(r.label)[0]).join(", ")}. Either the
+					{zero.map((r) => describe(r.label, names)[0]).join(", ")}. Either the
 					parameter does not enter this price, or the payoff jumps and nothing
 					smooths it (see the warning, if any).
 					{zeroDeltaNote &&
@@ -133,9 +181,10 @@ export function ScriptGreeks({
 			)}
 			{grid.length > 0 && (
 				<p className="text-2xs text-ink-muted">
-					Plus {grid.length} sensitivities to the nodes of the model&apos;s
-					volatility grid, not listed here: the model has no single vol to take
-					a vega to.
+					The model has no single vol to take a vega to: its {grid.length} grid
+					nodes each have a risk, summed above as the vega to a parallel shift
+					of the surface (its error is not shown: the nodes&apos; errors are
+					correlated).
 				</p>
 			)}
 		</section>

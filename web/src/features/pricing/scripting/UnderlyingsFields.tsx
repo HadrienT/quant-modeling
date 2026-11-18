@@ -1,3 +1,4 @@
+import { TickerList } from "@/shared/market";
 import { Field } from "@/shared/ui";
 import {
 	PAYMENT_CURRENCIES,
@@ -18,10 +19,14 @@ export function UnderlyingsFields(props: {
 		const list = tickerList(u.tickers);
 		return (
 			<div className="flex flex-col gap-1">
-				<Field
-					label={`Tickers or FX:EUR — one per underlying, spot(0) to spot(${n - 1})`}
+				<span className="text-2xs text-ink-muted uppercase">
+					Underlyings: a ticker or an exchange rate each
+				</span>
+				<TickerList
 					value={u.tickers}
-					onChange={(e) => u.setTickers(e.target.value)}
+					count={n}
+					onChange={u.setTickers}
+					allowFx
 				/>
 				<label className="flex flex-col gap-1 text-sm">
 					<span className="text-2xs text-ink-muted uppercase">Pays in</span>

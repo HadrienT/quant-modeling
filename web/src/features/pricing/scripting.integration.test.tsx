@@ -113,8 +113,11 @@ describe("scripting page — greeks", () => {
 		expect(within(greeks).getByText(/Exactly zero/)).toHaveTextContent(
 			"jump_vol",
 		);
+		// the grid's nodes summed as the vega to a parallel shift of the surface
 		expect(
-			within(greeks).getByText(/Plus 2 sensitivities to the nodes/),
+			within(greeks).getByRole("row", {
+				name: /surface, parallel shift.*2 nodes/,
+			}),
 		).toBeInTheDocument();
 	});
 

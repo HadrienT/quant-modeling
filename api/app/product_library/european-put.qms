@@ -1,0 +1,16 @@
+# title: European put
+# category: Vanillas and digitals
+# underlyings: 1
+# source: Black & Scholes, The Pricing of Options and Corporate Liabilities, Journal of Political Economy, 1973
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 15 (the Black-Scholes-Merton model)
+# summary: The right to sell the stock at its strike level one year later: pays the fall of the stock below the strike, nothing if it ends above.
+# param: strike = 1.0 | percent | Strike, % of the initial level
+#
+# Paid in the stock's currency, per share.
+
+2027-01-04
+    strike = 1.0
+    s0 = spot()
+
+2028-01-04
+    pays max(strike * s0 - spot(), 0)

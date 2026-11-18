@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TickerSelect } from "@/shared/market";
 import { Button, Field } from "@/shared/ui";
 import { Metric, MetricRow } from "@/shared/ui/density";
 import { ErrorState } from "@/shared/ui/states";
@@ -41,11 +42,10 @@ export function CalibratePanel(sim: UseSimulation) {
 	return (
 		<div className="flex flex-col gap-3 rounded-md border border-hairline bg-canvas p-3">
 			<div className="flex flex-wrap items-end gap-3">
-				<Field
-					label="Ticker"
-					value={ticker}
-					onChange={(e) => setTicker(e.target.value.toUpperCase())}
-				/>
+				<div className="flex min-w-72 flex-col gap-1 text-sm">
+					<span className="text-2xs text-ink-muted uppercase">Ticker</span>
+					<TickerSelect value={ticker} onChange={setTicker} />
+				</div>
 				<Field
 					label="Target maturity (years)"
 					inputMode="decimal"

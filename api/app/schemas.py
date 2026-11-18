@@ -524,9 +524,11 @@ class ScriptRequest(ScriptPricingInputs):
 
 class ScriptedProductRequest(ScriptPricingInputs):
     """Price a product of the script library (api/app/product_library) from
-    its term sheet: the terms replace the defaults the script declares, and
-    the dates start a week after the valuation date. The response carries the
-    script actually priced."""
+    its term sheet: the terms replace the defaults the script declares. An
+    equity product starts on the valuation date, its first fixing today's
+    spot (levels in % of the initial level are % of today's spot); a rates
+    product a few days later. The response carries the script actually
+    priced."""
 
     product: str = Field(
         ..., min_length=1, description="Library slug, e.g. 'worst-of-autocall'."
@@ -536,14 +538,27 @@ class ScriptedProductRequest(ScriptPricingInputs):
         description="Term name -> value (percent terms as fractions: 0.6 = 60 %). Missing terms take the product's defaults.",
     )
     n_paths: int = Field(50_000, ge=1_000, le=5_000_000)
+    maturity: Optional[float] = Field(
+        None,
+        gt=0.0,
+        le=30.0,
+        description="Years from the start to the last date: the script's dates "
+        "stretched in proportion, a schedule keeping its frequency. For a swap "
+        "or a swaption, the swap's length in whole years. None: the product's own.",
+    )
+    expiry: Optional[float] = Field(
+        None,
+        gt=0.0,
+        le=30.0,
+        description="A swaption's (first) exercise, in years. None: one year.",
+    )
     engine: Literal["mc", "analytic"] = Field(
         "mc",
         description=(
             "'mc': the script under `model` (Monte-Carlo). 'analytic': the "
-            "closed form, for the products that have one (european-call, "
-            "digital-call): Black-Scholes at the at-the-money implied vol of "
-            "the ticker's stored smile, the strike fixed on the start date "
-            "(a forward start)."
+            "closed form, for the products that have one (the European and "
+            "digital calls and puts, the forward): Black-Scholes at the "
+            "at-the-money implied vol of the ticker's stored smile."
         ),
     )
 

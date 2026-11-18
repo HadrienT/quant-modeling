@@ -1,5 +1,5 @@
 import type { ModelRecommendation, ScriptModel } from "@/shared/api";
-import { Field } from "@/shared/ui";
+import { TickerSelect } from "@/shared/market";
 import { MODEL_LABELS } from "./modelLabels";
 
 export type { ScriptModel };
@@ -40,11 +40,10 @@ export function ModelChoice(props: {
 				{props.model !== "black_scholes" &&
 					props.model !== "hull_white" &&
 					!props.multi && (
-						<Field
-							label="Ticker"
-							value={props.ticker}
-							onChange={(e) => props.onTicker(e.target.value.toUpperCase())}
-						/>
+						<div className="flex min-w-72 flex-col gap-1 text-sm">
+							<span className="text-2xs text-ink-muted uppercase">Ticker</span>
+							<TickerSelect value={props.ticker} onChange={props.onTicker} />
+						</div>
 					)}
 			</div>
 			{rec && (
