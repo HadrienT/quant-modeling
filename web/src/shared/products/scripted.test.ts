@@ -5,17 +5,38 @@ import {
 	DEFAULT_PRODUCT_KEY,
 	resolveProductKey,
 } from "./catalog";
-import { SCRIPTED_PRODUCTS, scriptedKey } from "./scripted";
+import { COVERED_BY_PRICERS, SCRIPTED_PRODUCTS, scriptedKey } from "./scripted";
 import { fieldsFromSchema } from "./zodFields";
 
 describe("scripted catalog entries", () => {
-	it("offers every product of the script library on the pricing page", () => {
+	it("offers every product of the script library on the pricing page, once", () => {
 		expect(SCRIPTED_PRODUCTS.length).toBeGreaterThanOrEqual(40);
 		for (const p of SCRIPTED_PRODUCTS) {
+			if (COVERED_BY_PRICERS.has(p.slug)) {
+				// A pricer of the catalog is this product: no second entry, and
+				// an old link to the script opens the pricer.
+				expect(CATALOG_BY_KEY.has(scriptedKey(p.slug)), p.slug).toBe(false);
+				const opened = resolveProductKey(scriptedKey(p.slug));
+				expect(CATALOG_BY_KEY.get(opened!)?.scripted, p.slug).toBeUndefined();
+				continue;
+			}
 			const d = CATALOG_BY_KEY.get(scriptedKey(p.slug))!;
 			expect(d.enabled && d.endpoint).toBe("/price/scripted-product");
 			expect(d.schema.safeParse(d.defaults).success, p.slug).toBe(true);
 		}
+		for (const slug of COVERED_BY_PRICERS)
+			expect(
+				SCRIPTED_PRODUCTS.some((p) => p.slug === slug),
+				slug,
+			).toBe(true);
+	});
+
+	it("lists no product twice and offers only Analytic and Monte-Carlo", () => {
+		const labels = CATALOG.map((p) => p.label.toLowerCase());
+		expect(new Set(labels).size).toBe(labels.length);
+		for (const p of CATALOG.filter((d) => d.enabled))
+			for (const e of p.engines)
+				expect(["analytic", "mc"], `${p.key}: ${e.key}`).toContain(e.key);
 	});
 
 	it("sends terms as fractions and one ticker per underlying", () => {

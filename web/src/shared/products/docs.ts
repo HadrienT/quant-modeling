@@ -101,7 +101,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			"\\max(S_T-K,\\,0)\\ \\text{(call)} \\qquad \\max(K-S_T,\\,0)\\ \\text{(put)}",
 		assumptions: [
 			bsDynamics,
-			"European exercise only. Selecting a tree or PDE engine still prices this European payoff; American exercise is a separate catalog entry, not a flag here.",
+			"European exercise only; American exercise is a separate catalog entry, not a flag here.",
 			"No transaction costs, continuous trading, no borrow constraints.",
 		],
 		pricingMethods: [
@@ -115,18 +115,9 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 				detail:
 					"The payoff depends only on $S_T$, so the terminal spot is drawn directly from its exact log-normal law — no path is stepped. Antithetic variates are always on; you control path count, seed and the MC-epsilon payoff smoothing bump.",
 			},
-			{
-				engine: "Binomial / trinomial tree",
-				detail:
-					"Backward induction on a recombining lattice over the chosen number of steps; converges to the analytic price. Mainly the building block reused for American exercise.",
-			},
-			{
-				engine: "PDE (Crank-Nicolson)",
-				detail:
-					"Solves the Black-Scholes PDE backward in time on a finite-difference grid sized by the space/time step counts.",
-			},
 		],
 		notes: [
+			"The library also prices it on binomial and trinomial trees and on a Crank-Nicolson grid; these stay in its tests, as oracles, and are not offered here.",
 			"Greeks are central finite differences on the pricing function for every engine — bump an input, reprice, divide by twice the bump. Engine-agnostic but costs an extra repricing per greek; no adjoint (AAD) yet.",
 			"Put-call parity $C-P=S_0e^{-qT}-Ke^{-rT}$ is a free correctness check across engines.",
 		],
@@ -154,23 +145,18 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			"\\sup_{\\tau\\le T}\\ \\mathbb{E}\\big[e^{-r\\tau}\\max(\\phi(S_\\tau-K),0)\\big],\\quad \\phi=\\pm1",
 		assumptions: [
 			bsDynamics,
-			"Early exercise permitted at every lattice / grid time step (a discrete approximation to continuous exercise).",
+			"Early exercise on 50 dates a year (a Bermudan standing for continuous exercise).",
 		],
 		pricingMethods: [
 			{
-				engine: "Binomial / trinomial tree",
+				engine: "Monte-Carlo (Longstaff-Schwartz)",
 				detail:
-					"Backward induction: at each node the value is $\\max(\\text{continuation},\\ \\text{intrinsic})$. The exercise boundary emerges from where intrinsic first wins. Step count trades accuracy for latency.",
-			},
-			{
-				engine: "PDE (Crank-Nicolson)",
-				detail:
-					"The free-boundary problem is handled by projecting the solution onto the payoff at each time step (an explicit obstacle constraint on the finite-difference grid).",
+					"The exercise rule is a least-squares regression of the continuation value on the spot, date by date, fitted on independent pilot paths; the price is the payoff under that rule on fresh paths. Exercise is considered only where it can be optimal: in the money, and above the forward held to the expiry ($S e^{-q\\tau} - K e^{-r\\tau}$ for a call). Greeks hold the rule fixed (at the optimal boundary its own sensitivity vanishes).",
 			},
 		],
 		notes: [
-			"A non-dividend American call equals its European counterpart — a free sanity check (set $q=0$, compare to the vanilla analytic price).",
-			"American value is monotone in every step count refinement; oscillation as steps grow signals a lattice parameterisation issue.",
+			"The price is a lower bound: an estimated rule can only lose value against the optimal one, and 50 dates a year are worth a little less than continuous exercise. Against a 4,000-step binomial tree at S = K = 100, one year, 20 % vol, the gap is 0.15 % to 0.4 %.",
+			"A call with no dividend is never exercised early (Merton 1973): it is priced as the European, exactly.",
 		],
 		references: [
 			{
@@ -187,9 +173,10 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			{
 				kind: "paper",
 				label: "Longstaff & Schwartz (2001)",
-				cite: "Valuing American Options by Simulation: A Simple Least-Squares Approach. The Review of Financial Studies 14(1), 113–147. (The repo prices American exercise on lattices / the PDE grid, not by LSM regression.)",
+				cite: "Valuing American Options by Simulation: A Simple Least-Squares Approach. The Review of Financial Studies 14(1), 113–147.",
 				url: "https://doi.org/10.1093/rfs/14.1.113",
 			},
+			MERTON_1973,
 			{
 				...HULL,
 				cite: "Options, Futures, and Other Derivatives, 11th ed., Pearson — ch. 21 (trees), ch. 27 (finite differences).",

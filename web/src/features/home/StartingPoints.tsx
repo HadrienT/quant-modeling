@@ -19,7 +19,7 @@ const STARTS = [
 		key: "barrier",
 		step: "Price",
 		title: "Price a barrier option",
-		text: "One product under analytic, PDE and Monte Carlo engines, with greeks and the convergence of each.",
+		text: "One product under analytic and Monte Carlo engines, with greeks and the convergence of each.",
 		link: { to: "/price", search: { product: "barrier" } },
 	},
 	{

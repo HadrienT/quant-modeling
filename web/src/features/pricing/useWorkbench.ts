@@ -34,7 +34,13 @@ export function useWorkbench() {
 		asked && CATALOG_BY_KEY.has(asked) ? asked : DEFAULT_PRODUCT_KEY;
 	const descriptor = CATALOG_BY_KEY.get(productKey)!;
 
-	const engine = (search.engine ?? descriptor.engines[0]!.key) as EngineKey;
+	// An engine the product does not offer (an old link to a tree or the PDE,
+	// gone from the site in issue 313) opens its first one.
+	const engine = (
+		descriptor.engines.some((e) => e.key === search.engine)
+			? search.engine
+			: descriptor.engines[0]!.key
+	) as EngineKey;
 	const values = useMemo(
 		() => ({ ...descriptor.defaults, ...decode(search.p, {}) }),
 		[descriptor, search.p],

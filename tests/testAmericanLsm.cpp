@@ -121,7 +121,7 @@ namespace quantModeling
         const std::string s = script_builders::american(false, 100.0, {24, 48, 72}, 0.02, 72.0 / 8760.0);
         EXPECT_NE(s.find("spot() < 100 and max(100 - spot(), 0) > 100 * df("), std::string::npos) << s;
         EXPECT_NE(s.find("and exercise(spot())"), std::string::npos) << s;
-        const std::size_t expiry = s.find((script_builders::valuation() + 72).to_iso());
+        const std::size_t expiry = s.rfind((script_builders::valuation() + 72).to_iso());
         ASSERT_NE(expiry, std::string::npos) << s;
         const std::string last_event = s.substr(expiry);
         EXPECT_EQ(last_event.find("exercise"), std::string::npos) << s;

@@ -71,6 +71,12 @@ export type ProductDescriptor = {
 	defaults: Record<string, unknown>;
 	engines: EngineCapability[];
 	/**
+	 * The engine a portfolio's daily mark uses when it is none of the site's
+	 * (the American's binomial tree, kept in the API for that): the mark is
+	 * recomputed for every day of a history. Never offered on the site.
+	 */
+	markEngine?: EngineKey;
+	/**
 	 * Pricing route, typed from the OpenAPI paths — undefined for a
 	 * doc-only catalog entry with no backend at all yet (a product that
 	 * exists on the Products reference page but was never wired past the

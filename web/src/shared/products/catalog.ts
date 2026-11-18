@@ -24,16 +24,6 @@ const MC_PATH = {
 	label: "Monte-Carlo",
 	options: ["paths", "seed", "steps", "bridge", "antithetic"] as const,
 };
-const TREE = {
-	key: "binomial" as EngineKey,
-	label: "Binomial tree",
-	options: ["steps"] as const,
-};
-const PDE = {
-	key: "pde" as EngineKey,
-	label: "PDE (Crank-Nicolson)",
-	options: ["steps"] as const,
-};
 
 const UNVETTED =
 	"No market data for this asset class in the site's database yet: its reference sheet is here, its pricing is not.";
@@ -53,22 +43,17 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		enabled: true,
 		schema: z.object({
 			...bsCore,
-			engine: z.enum(["analytic", "mc", "binomial", "trinomial", "pde"]),
+			engine: z.enum(["analytic", "mc"]),
 			// Up to the API's cap: CPU and GPU only separate at tens of
 			// millions of paths, below that launch overhead dominates.
 			n_paths: z.coerce.number().int().min(1_000).max(100_000_000),
 			seed: f.seed(),
-			tree_steps: z.coerce.number().int().min(10).max(5000),
 		}),
-		defaults: bump({}, { engine: "analytic", tree_steps: 200 }),
+		defaults: bump({}, { engine: "analytic" }),
 		gpu: true,
-		engines: [
-			ANALYTIC,
-			MC,
-			TREE,
-			{ key: "trinomial", label: "Trinomial tree", options: ["steps"] },
-			PDE,
-		],
+		// The site offers Analytic and Monte-Carlo only (issue 313): the trees and
+		// the PDE stay in the library and its tests, as oracles.
+		engines: [ANALYTIC, MC],
 		endpoint: "/price/option/vanilla",
 		docKey: "option",
 		greeks: ["delta", "gamma", "vega", "theta", "rho"],
@@ -83,7 +68,6 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 			engine,
 			n_paths: +v.n_paths!,
 			seed: +v.seed!,
-			tree_steps: +v.tree_steps!,
 		}),
 	},
 	{
@@ -152,15 +136,22 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 		enabled: true,
 		schema: z.object({
 			...bsCore,
-			engine: z.enum(["binomial", "trinomial"]),
-			tree_steps: z.coerce.number().int().min(10).max(5000),
+			engine: z.enum(["mc", "binomial"]),
+			n_paths: f.paths(),
+			seed: f.seed(),
 		}),
-		defaults: bump({}, { engine: "binomial", tree_steps: 300 }),
+		defaults: bump({ n_paths: 100_000 }, { engine: "mc" }),
+		// Longstaff-Schwartz on a script, a Bermudan on 50 dates a year (issue 313).
 		engines: [
-			TREE,
-			{ key: "trinomial", label: "Trinomial tree", options: ["steps"] },
-			PDE,
+			{
+				...MC,
+				label: "Monte-Carlo (Longstaff-Schwartz)",
+				options: ["paths", "seed"],
+			},
 		],
+		// A portfolio marks every day of its history: the tree, still in the
+		// API, keeps that history fast.
+		markEngine: "binomial",
 		endpoint: "/price/option/american-vanilla",
 		docKey: "american",
 		greeks: ["delta", "gamma", "vega", "theta", "rho"],
@@ -173,7 +164,9 @@ const HAND_WRITTEN: ProductDescriptor[] = [
 			vol: pct(v.vol),
 			is_call: !!v.is_call,
 			engine,
-			tree_steps: +v.tree_steps!,
+			...(engine === "mc"
+				? { n_paths: +v.n_paths!, seed: +v.seed! }
+				: { tree_steps: 300 }),
 		}),
 	},
 	{
@@ -629,6 +622,17 @@ export const DEFAULT_PRODUCT_KEY = "vanilla";
  * their old links open the script.
  */
 const FORMER_KEYS: Record<string, string> = {
+	// Scripts of the library that duplicated a pricer (issue 313).
+	"script-digital-call": "digital",
+	"script-asian-call": "asian",
+	"script-up-and-out-call": "barrier",
+	"script-down-and-in-put": "barrier",
+	"script-fixed-lookback-call": "lookback",
+	"script-floating-lookback-call": "lookback",
+	"script-basket-call": "basket",
+	"script-best-of-call": "rainbow",
+	"script-worst-of-call": "rainbow",
+	"script-european-call": "vanilla",
 	autocall: "script-athena-autocall",
 	mountain: "script-himalaya",
 	"variance-swap": "script-variance-swap",

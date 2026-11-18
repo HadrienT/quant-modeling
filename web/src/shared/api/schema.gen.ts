@@ -1389,6 +1389,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/price/option/american-vanilla/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convergence American Vanilla
+         * @description The engine's standard error measured at N/32 ... N/2 paths, each
+         *     point its own pricing: about the cost of the pricing itself. The
+         *     point at N is the pricing route's own answer.
+         */
+        post: operations["convergence_american_vanilla"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/price/option/asian": {
         parameters: {
             query?: never;
@@ -11867,6 +11889,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PricingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convergence_american_vanilla: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AmericanVanillaRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConvergenceResponse"];
                 };
             };
             /** @description Validation Error */

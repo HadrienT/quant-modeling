@@ -814,6 +814,27 @@ The gap is the Bermudan's and the estimated rule's, both lower bounds for the
 holder. The tree's gamma is no oracle: on the European call it gives 0.0206
 where the closed form gives 0.01876 (the script route: 0.0188).
 
+**One catalog, Analytic and Monte-Carlo only (follow-up, 2026-11-18, #313).**
+P3 moved every Monte-Carlo route onto scripts but left the site's catalog in
+two halves: the twelve pricers next to the 46 scripts of the library, nothing
+deduplicating them, so the Price page listed the same product twice
+(European option and European call, Barrier option and Up-and-out call, ...).
+
+- One entry per product. Where a pricer and a script are the same product,
+  the pricer's entry stays (its analytic engine, its terms: call or put, the
+  barrier's kind, the averaging; the portfolio books it) and the script
+  leaves the Price page (`COVERED_BY_PRICERS`, `web/src/shared/products/
+  scripted.ts`): european-call, digital-call, asian-call, up-and-out-call,
+  down-and-in-put, both lookbacks, basket-call, best-of-call, worst-of-call.
+  They stay in the scripting page's library, and an old link to one opens
+  the pricer. The rainbow call (weights by rank) is another product and
+  stays.
+- The site's engines are Analytic and Monte-Carlo. The European option loses
+  its binomial, trinomial and PDE tabs, the American its trees for
+  Longstaff-Schwartz (above). The trees and the PDE stay in the library, the
+  API and the tests as oracles; a portfolio still marks an American on the
+  tree (`markEngine`), every day of a history.
+
 ## 8. P4 — Multilevel Monte-Carlo
 
 ### 8.1 The method

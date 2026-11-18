@@ -208,7 +208,6 @@ export default function PricingPage() {
 const ENGINE_ONLY: Record<string, readonly string[]> = {
 	n_paths: ["mc"],
 	seed: ["mc"],
-	tree_steps: ["binomial", "trinomial", "pde"],
 };
 
 function hiddenEngineFields(engine: string): string[] {

@@ -164,11 +164,32 @@ export function scriptedRequest(
 
 const FAMILY_ORDER = Object.values(FAMILY);
 
+/**
+ * Scripts of the library that a pricer of the catalog already is (issue 313): one
+ * entry per product on the site, the pricer's (its analytic engine, its
+ * terms: call or put, the barrier's kind, the averaging). They stay in the
+ * scripting page's library.
+ */
+export const COVERED_BY_PRICERS = new Set([
+	"european-call",
+	"digital-call",
+	"asian-call",
+	"up-and-out-call",
+	"down-and-in-put",
+	"fixed-lookback-call",
+	"floating-lookback-call",
+	"basket-call",
+	"best-of-call",
+	"worst-of-call",
+]);
+
 /** By family (the library's order), then by name. */
-export const SCRIPTED_CATALOG: ProductDescriptor[] = SCRIPTED_PRODUCTS.map(
-	descriptor,
-).sort(
-	(a, b) =>
-		FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category) ||
-		a.label.localeCompare(b.label),
-);
+export const SCRIPTED_CATALOG: ProductDescriptor[] = SCRIPTED_PRODUCTS.filter(
+	(p) => !COVERED_BY_PRICERS.has(p.slug),
+)
+	.map(descriptor)
+	.sort(
+		(a, b) =>
+			FAMILY_ORDER.indexOf(a.category) - FAMILY_ORDER.indexOf(b.category) ||
+			a.label.localeCompare(b.label),
+	);
