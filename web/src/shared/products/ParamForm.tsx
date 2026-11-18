@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { TickerList, TickerSelect } from "@/shared/market";
 import { Input, Label } from "@/shared/ui";
 import type { ProductDescriptor } from "./types";
 import { fieldsFromSchema } from "./zodFields";
@@ -60,12 +61,40 @@ export function ParamForm({
 									f.name
 								]?.message;
 								return (
-									<div key={f.name} className="flex flex-col gap-1">
+									<div
+										key={f.name}
+										className={
+											f.widget
+												? "col-span-2 flex flex-col gap-1"
+												: "flex flex-col gap-1"
+										}
+									>
 										<Label htmlFor={`f-${f.name}`}>
 											{f.name === "is_call" ? "Option type" : f.label}
 											{f.unit ? ` (${f.unit})` : ""}
 										</Label>
-										{f.name === "is_call" ? (
+										{f.widget === "ticker" ? (
+											<TickerSelect
+												value={String(watch(f.name as never) ?? "")}
+												onChange={(t) =>
+													setValue(f.name as never, t as never, {
+														shouldValidate: true,
+														shouldDirty: true,
+													})
+												}
+											/>
+										) : f.widget === "tickers" ? (
+											<TickerList
+												value={String(watch(f.name as never) ?? "")}
+												count={f.count ?? 1}
+												onChange={(t) =>
+													setValue(f.name as never, t as never, {
+														shouldValidate: true,
+														shouldDirty: true,
+													})
+												}
+											/>
+										) : f.name === "is_call" ? (
 											<button
 												type="button"
 												id={`f-${f.name}`}
@@ -98,7 +127,7 @@ export function ParamForm({
 											>
 												{f.options!.map((o) => (
 													<option key={o} value={o}>
-														{o}
+														{f.optionLabels?.[o] ?? o}
 													</option>
 												))}
 											</select>
@@ -109,6 +138,9 @@ export function ParamForm({
 												step={f.step}
 												{...register(f.name as never)}
 											/>
+										)}
+										{f.hint && !err && (
+											<span className="text-2xs text-ink-muted">{f.hint}</span>
 										)}
 										{err && (
 											<span className="text-2xs text-critical">{err}</span>

@@ -64,11 +64,9 @@ export default function PricingPage() {
 					</div>
 				)}
 
-				{wb.descriptor.gpu && (
-					<ComputeDevicePicker
-						device={wb.engine === "mc" ? wb.device : "cpu"}
-						onChange={wb.setDevice}
-					/>
+				{/* a closed form runs on no device: only Monte-Carlo chooses one */}
+				{wb.descriptor.gpu && wb.engine === "mc" && (
+					<ComputeDevicePicker device={wb.device} onChange={wb.setDevice} />
 				)}
 				<ParamForm
 					key={`${wb.productKey}-${wb.engine}`}

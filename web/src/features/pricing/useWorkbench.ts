@@ -46,7 +46,9 @@ export function useWorkbench() {
 		[descriptor, search.p],
 	);
 	const compare = decode<Record<string, unknown> | null>(search.compare, null);
-	const device: ComputeDevice = search.device ?? "cpu";
+	// Auto by default: the GPU when the server has one and the run suits it,
+	// the CPU otherwise -- the response says where it ran.
+	const device: ComputeDevice = search.device ?? "auto";
 	const diagnostics = search.diag === true;
 
 	const setProduct = useCallback(
@@ -77,14 +79,15 @@ export function useWorkbench() {
 		[navigate],
 	);
 
-	// Only Monte-Carlo runs on the GPU: asking for it switches the engine.
+	// Only Monte-Carlo runs on the GPU: asking for it outright switches the
+	// engine; Auto leaves a closed form alone.
 	const setDevice = useCallback(
 		(d: ComputeDevice) => {
 			navigate({
 				search: (prev) => ({
 					...prev,
-					device: d === "cpu" ? undefined : d,
-					engine: d === "cpu" ? prev.engine : "mc",
+					device: d === "auto" ? undefined : d,
+					engine: d === "gpu" ? "mc" : prev.engine,
 				}),
 			});
 		},

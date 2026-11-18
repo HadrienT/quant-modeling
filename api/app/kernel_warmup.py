@@ -288,8 +288,10 @@ def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
     for slug, t in sorted(product_templates.templates().items()):
         if t.market == "rates":
             continue  # Hull-White on the curve: the CPU prices it, no kernel
-        script = product_templates.render(slug, {}, today)
+        # as the Price page prices it: started today, fixed on today's spot
+        script = product_templates.render(slug, {}, today, start=today)
         n = t.underlyings
+        fixings = {today.isoformat(): [spot] * n}
         for model in LIBRARY_MODELS.get(n, LIBRARY_MODELS_MULTI):
             for greeks, second in LIBRARY_VARIANTS:
                 # Only for pricing_service's choices (device, multilevel):
@@ -325,6 +327,7 @@ def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
                     importance_sampling=req.importance_sampling,
                     second_order=second and greeks == "aad",
                     terms_as_parameters=True,
+                    historical_fixings=fixings,
                     **ps._multilevel(req, model),
                 )
                 if n > 1:

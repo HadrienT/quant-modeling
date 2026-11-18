@@ -30,7 +30,7 @@ export type ScriptedProduct = {
 	params: {
 		name: string;
 		default: number;
-		unit: "percent" | "amount" | "number";
+		unit: "percent" | "amount" | "number" | "side";
 		label: string;
 	}[];
 	script: string;
@@ -44,6 +44,8 @@ export type ScriptedProduct = {
 	 * calibrated to the traded swaptions -- swaps and swaptions. Absent: the
 	 * chosen currency's government curve. */
 	curve?: "sofr";
+	/** the script's length, in years: the default of its maturity field */
+	maturity?: number;
 };
 
 /** Per-field overrides of what zodFields derives from a schema. */
@@ -52,6 +54,14 @@ export type FieldOverride = {
 	unit?: string;
 	group?: "contract" | "market" | "engine";
 	step?: number;
+	/** a ticker chosen from the database's markets (one, or one per
+	 * underlying: `count`, kept as a comma-separated list) */
+	widget?: "ticker" | "tickers";
+	count?: number;
+	/** an enum's options as the page names them */
+	optionLabels?: Record<string, string>;
+	/** a short explanation under the field */
+	hint?: string;
 };
 
 export type EngineKey = "analytic" | "mc" | "binomial" | "trinomial" | "pde";

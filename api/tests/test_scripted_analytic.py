@@ -1,11 +1,13 @@
 """The closed form of a library product (engine='analytic', issue 313): the
-European call and the digital call under Black-Scholes at the stored
-smile's at-the-money implied vol, the strike fixed on the start date.
+European and digital calls and puts and the forward under Black-Scholes at
+the stored smile's at-the-money implied vol. The products start today: the
+strike is k times today's spot.
 
 Properties: the closed form is the script's own Monte-Carlo price under the
 same flat vol, within its error; its greeks are the formula's derivatives
-(checked against central differences of the closed form itself); a product
-without a closed form is refused.
+at a fixed strike (checked against central differences of the closed form
+itself, the strike held in money); call-put parity, and a digital call plus
+its put pays the payout; a product without a closed form is refused.
 """
 
 import math
@@ -38,7 +40,7 @@ def test_the_closed_form_is_the_scripts_flat_vol_price(chain, product):
     )
     assert exact.mc_std_error == 0.0
     assert abs(exact.npv - mc.npv) < 4 * mc.mc_std_error
-    assert "Analytic forward-start" in exact.diagnostics
+    assert exact.diagnostics.startswith("Analytic ")
     assert exact.script == mc.script
 
 
@@ -46,15 +48,17 @@ def test_the_closed_form_is_the_scripts_flat_vol_price(chain, product):
 def test_the_greeks_are_the_formulas_derivatives(chain, product, monkeypatch):
     base = ps.price_scripted_product(_req(product, engine="analytic"))
     vol = ps._atm_implied_vol(
-        SimpleNamespace(script=base.script, day_count="ACT/365F"), chain, SNAP
+        SimpleNamespace(script=base.script, day_count="ACT/365F"), chain, SNAP, True
     )
+    S0 = chain.spot
 
-    def npv(spot=chain.spot, sigma=vol, rate=RATE):
+    def npv(spot=S0, sigma=vol, rate=RATE):
+        # the strike held in money: k' S' = k S0
         m = SimpleNamespace(**{**chain.__dict__, "spot": spot})
         monkeypatch.setattr(market_snapshot, "local_vol_market", lambda *a: m)
         monkeypatch.setattr(ps, "_atm_implied_vol", lambda *a: sigma)
         return ps.price_scripted_product(
-            _req(product, engine="analytic", rate=rate)
+            _req(product, engine="analytic", rate=rate, terms={"strike": S0 / spot})
         ).npv
 
     g = base.greeks
@@ -77,9 +81,25 @@ def test_a_product_without_a_closed_form_is_refused(chain):
         ps.price_scripted_product(_req("asian-call", engine="analytic"))
 
 
-def test_the_call_is_s0_times_the_unit_forward_start(chain):
-    # S0 e^(-q t1) C(1, k, tau): homogeneous of degree one in the spot.
-    r = ps.price_scripted_product(_req("european-call", engine="analytic"))
-    assert r.greeks.delta == pytest.approx(r.npv / chain.spot, rel=1e-12)
-    assert r.greeks.gamma == 0.0
-    assert math.isfinite(r.greeks.theta)
+def test_call_put_parity_and_the_digitals_add_up(chain):
+    def price(product, **terms):
+        return ps.price_scripted_product(_req(product, engine="analytic", terms=terms))
+
+    k = 1.05
+    call, put = price("european-call", strike=k), price("european-put", strike=k)
+    fwd = price("equity-forward", strike=k, notional=1)
+    # C - P = S e^(-qT) - K e^(-rT), the forward struck at K
+    assert call.npv - put.npv == pytest.approx(fwd.npv, rel=1e-10)
+    assert call.greeks.delta - put.greeks.delta == pytest.approx(
+        fwd.greeks.delta, rel=1e-10
+    )
+    assert (
+        call.greeks.gamma == pytest.approx(put.greeks.gamma, rel=1e-12)
+        and call.greeks.gamma > 0
+    )
+    dc, dp = price("digital-call", strike=k, payout=100), price(
+        "digital-put", strike=k, payout=100
+    )
+    T = float(dc.diagnostics.split("T = ")[1].split(" ")[0])
+    assert dc.npv + dp.npv == pytest.approx(100 * math.exp(-RATE * T), rel=1e-3)
+    assert math.isfinite(dc.greeks.theta) and math.isfinite(call.greeks.theta)

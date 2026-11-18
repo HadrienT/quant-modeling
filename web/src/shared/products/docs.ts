@@ -108,7 +108,7 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 			{
 				engine: "Analytic (Black-Scholes)",
 				detail:
-					"Closed-form Black-Scholes-Merton at the at-the-money implied vol of the ticker's stored smile. The strike is fixed on the start date $t_1$, a week ahead, as a percentage of the spot then (a forward start): the price is $S_0e^{-qt_1}\\,C(1,k,T-t_1)$, exact under the model, and its greeks are the formula's derivatives.",
+					"Closed-form Black-Scholes-Merton at the at-the-money implied vol of the ticker's stored smile. The option starts today, its strike a percentage of today's spot, $K=kS_0$: the price is the Black-Scholes formula, exact under the model, and its greeks are the formula's derivatives at that fixed strike.",
 			},
 			{
 				engine: "Monte-Carlo (payoff script)",

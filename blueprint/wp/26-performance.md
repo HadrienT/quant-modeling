@@ -1056,6 +1056,30 @@ the API and the tests as oracles. Three lots:
   - Tests: `tests/testScriptSeasoned.cpp`, `api/tests/test_portfolio_scripts.py`,
     `script-booking.integration.test.tsx`.
 
+**Follow-up (2026-11-18, the Price page's products).** Decided by the
+maintainer:
+- **Products start today.** A library product on a stock now starts on
+  the valuation date, its first fixing today's spot
+  (`product_templates.start_on`, the `historical_fixings` of
+  `price_script`). Its levels in % of the initial level are therefore % of
+  today's spot: a true European, not a forward start a week ahead. Its
+  delta is the one a desk quotes (the European call's moved from 0.08 to
+  about 0.55).
+  - The closed forms are plain Black-Scholes at a fixed strike: European
+    and digital calls and puts, and the forward.
+  - The library gains the European put and the digital put.
+  - A rates product keeps its start a few days ahead, because its first
+    coupon reads the curve, which a past date cannot.
+- **A maturity on every product.** Equity scripts get one `maturity`
+  field: their dates stretch from the start (`product_templates.stretch`),
+  and a schedule keeps its frequency. A swap or a swaption is written for
+  the asked length in whole years, with an `expiry` for the swaptions
+  (`RATES_GENERATED`).
+- **Page.** Payer or receiver is a menu (param unit `side`). Tickers come
+  from a menu of the database's markets (`shared/market/TickerSelect`).
+  The device is Auto by default. Multi-asset products default to 20,000
+  paths: their local-vol adjoint runs on the CPU.
+
 ## 8. P4 — Multilevel Monte-Carlo
 
 ### 8.1 The method

@@ -51,7 +51,7 @@ from typing import Dict, List, Mapping
 
 LIBRARY = Path(__file__).with_name("product_library")
 LEAD_DAYS = 7
-UNITS = ("percent", "amount", "number")
+UNITS = ("percent", "amount", "number", "side")
 
 _META = re.compile(
     r"^# (title|category|underlyings|quanto|market|curve|eps|greeks|source|summary): (.+)$"
@@ -190,16 +190,132 @@ def align_dates(script: str, valuation_date: date, lead_days: int = LEAD_DAYS) -
     return _ISO.sub(lambda m: (date.fromisoformat(m[0]) + shift).isoformat(), script)
 
 
+def start_on(script: str, start: date) -> str:
+    """Moves every date by the same number of days so that the first is
+    `start` (the Price page's library products start on the valuation date,
+    their first fixing today's spot). Dates may then fall on a weekend: the
+    simulation runs on calendar time, and a schedule() still adjusts its own
+    dates."""
+    dates = [date.fromisoformat(d) for d in _ISO.findall(script)]
+    if not dates:
+        return script
+    shift = start - min(dates)
+    return _ISO.sub(lambda m: (date.fromisoformat(m[0]) + shift).isoformat(), script)
+
+
+def _weekday(d: date) -> date:
+    """A Saturday or a Sunday rolled to the Monday after."""
+    return d + timedelta(days=(7 - d.weekday()) % 7) if d.weekday() >= 5 else d
+
+
+def span_years(slug: str) -> float:
+    """The template's length: its last date from its first, in years."""
+    dates = [date.fromisoformat(d) for d in _ISO.findall(get(slug).script)]
+    return (max(dates) - min(dates)).days / 365.25
+
+
+def stretch(script: str, years: float) -> str:
+    """Every date moved away from the first in proportion, so that the last
+    falls `years` after it; a weekend date rolls to the Monday after. A
+    schedule() keeps its frequency (a two-year quarterly autocall gets eight
+    observations), a written date keeps its place in the product's life."""
+    dates = sorted({date.fromisoformat(d) for d in _ISO.findall(script)})
+    if len(dates) < 2 or not years > 0:
+        return script
+    first, span = dates[0], (dates[-1] - dates[0]).days
+    target = round(years * 365.25)
+    moved: Dict[date, date] = {}
+    last = first
+    for d in dates:
+        n = _weekday(first + timedelta(days=round((d - first).days * target / span)))
+        if d != first and n <= last:  # shrunk onto its predecessor: keep the order
+            n = _weekday(last + timedelta(days=1))
+        moved[d] = n
+        last = n
+    return _ISO.sub(lambda m: moved[date.fromisoformat(m[0])].isoformat(), script)
+
+
+#: Rates products whose dates are their coupons': the script is written for
+#: the asked length (and expiry) rather than stretched, every period a year.
+RATES_GENERATED = ("interest-rate-swap", "european-swaption", "bermudan-swaption")
+
+
+def _add_years(d: date, years: float) -> date:
+    whole = int(years)
+    if abs(years - whole) < 1e-9:
+        try:
+            return d.replace(year=d.year + whole)
+        except ValueError:  # 29 February
+            return d.replace(year=d.year + whole, day=28)
+    return d + timedelta(days=round(years * 365.25))
+
+
+def _rates_body(slug: str, first: date, tenor: int, expiry: float) -> str:
+    """The script of a swap or a swaption on annual periods, its terms the
+    template's assignments (filled by render)."""
+    t = get(slug)
+    head = [first.isoformat()] + [f"    {p.name} = {_fmt(p.default)}" for p in t.params]
+    if slug == "interest-rate-swap":
+        d = [_weekday(_add_years(first, i)) for i in range(tenor + 1)]
+        out, lines = head, []
+        for i in range(tenor):
+            s, e = d[i].isoformat(), d[i + 1].isoformat()
+            pay = f"    pays side * notional * (fwdRate({s}, {e}) - fixed_rate) * yf({s}, {e}) * df({e})"
+            if i == 0:
+                out.append(pay)
+            else:
+                lines += ["", s, pay]
+        return "\n".join(out + lines) + "\n"
+    x = _weekday(_add_years(first, expiry))
+    e = [_weekday(_add_years(x, j)) for j in range(tenor + 1)]
+    end = e[-1].isoformat()
+
+    def annuity(k: int) -> str:
+        return " + ".join(
+            f"yf({e[j - 1].isoformat()}, {e[j].isoformat()}) * df({e[j].isoformat()})"
+            for j in range(k + 1, tenor + 1)
+        )
+
+    out = head
+    if slug == "european-swaption":
+        out += [
+            "",
+            e[0].isoformat(),
+            f"    annuity = {annuity(0)}",
+            f"    swap = 1 - df({end}) - strike * annuity",
+            "    pays notional * max(side * swap, 0)",
+        ]
+    else:
+        for k in range(tenor):
+            out += [
+                "",
+                e[k].isoformat(),
+                f"    value = side * (1 - df({end}) - strike * ({annuity(k)}))",
+                "    if value > 0 and exercise(value) then",
+                "        pays notional * value",
+                "    endIf",
+            ]
+    return "\n".join(out) + "\n"
+
+
 def render(
     slug: str,
     terms: Mapping[str, float],
     valuation_date: date,
     lead_days: int = LEAD_DAYS,
+    maturity: float | None = None,
+    expiry: float | None = None,
+    start: date | None = None,
 ) -> str:
     """The product's script with the given terms (the others at their
     defaults), dated to start a week after `valuation_date` -- or, booked in
     a portfolio (lead_days = 0), within the week that starts on the trade
-    date."""
+    date; or exactly on `start`.
+
+    `maturity` (years): the product's length -- its dates stretched from the
+    first (stretch); for a swap or a swaption, the swap's length in whole
+    years, written period by period, and `expiry` the years to the
+    swaption's (first) exercise."""
     t = get(slug)
     names = {p.name for p in t.params}
     unknown = set(terms) - names
@@ -209,6 +325,20 @@ def render(
             f"(its terms: {', '.join(sorted(names)) or 'none'})"
         )
     script = t.script
+    if slug in RATES_GENERATED and (maturity is not None or expiry is not None):
+        tenor = int(round(maturity)) if maturity is not None else 5
+        if not 1 <= tenor <= 30 or (
+            maturity is not None and abs(maturity - tenor) > 1e-9
+        ):
+            raise ValueError("the swap's length is a whole number of years, 1 to 30")
+        if expiry is not None and not 0 < expiry <= 30:
+            raise ValueError("the expiry is between 0 and 30 years")
+        first = min(date.fromisoformat(d) for d in _ISO.findall(t.script))
+        script = _rates_body(slug, first, tenor, 1.0 if expiry is None else expiry)
+    elif maturity is not None:
+        if not 0 < maturity <= 30:
+            raise ValueError("the maturity is between 0 and 30 years")
+        script = stretch(script, maturity)
     for p in t.params:
         value = float(terms.get(p.name, p.default))
         if not math.isfinite(value):
@@ -216,7 +346,11 @@ def render(
         script = _assignment(p.name).sub(
             lambda m, v=value: m.group(1) + _fmt(v), script, count=1
         )
-    return align_dates(script, valuation_date, lead_days)
+    return (
+        start_on(script, start)
+        if start
+        else align_dates(script, valuation_date, lead_days)
+    )
 
 
 def catalog() -> List[dict]:
@@ -234,6 +368,7 @@ def catalog() -> List[dict]:
                 for p in t.params
             ],
             "script": t.script,
+            "maturity": round(span_years(t.slug), 4),
             **({"quanto": t.quanto} if t.quanto else {}),
             **({"market": t.market} if t.market != "equity" else {}),
             **({"curve": t.curve} if t.curve != "government" else {}),
@@ -242,4 +377,15 @@ def catalog() -> List[dict]:
     ]
 
 
-__all__ = ["Param", "Template", "align_dates", "catalog", "get", "parse", "render"]
+__all__ = [
+    "Param",
+    "Template",
+    "align_dates",
+    "catalog",
+    "get",
+    "parse",
+    "render",
+    "span_years",
+    "start_on",
+    "stretch",
+]

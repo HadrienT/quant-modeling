@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { TickerSelect } from "@/shared/market";
 import { Button, Field } from "@/shared/ui";
 import {
 	DEFAULT_FORM,
@@ -68,7 +69,15 @@ export function HedgingControls({
 						))}
 					</select>
 				</label>
-				{f.world === "ticker" && field("ticker", "Ticker")}
+				{f.world === "ticker" && (
+					<div className="flex min-w-72 flex-col gap-1 text-sm">
+						<span className="text-2xs text-ink-muted uppercase">Ticker</span>
+						<TickerSelect
+							value={String(f.ticker)}
+							onChange={(t) => setF((prev) => ({ ...prev, ticker: t }))}
+						/>
+					</div>
+				)}
 				{f.world !== "ticker" && field("spot", "Spot")}
 				{field("ratePct", "Rate %", "Continuous, per year")}
 				{f.world !== "ticker" && field("dividendPct", "Dividend %")}
