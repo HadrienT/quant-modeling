@@ -47,6 +47,7 @@ from .portfolio_ledger import QTY_EPS
 from .portfolio_marks import Mark
 from .portfolio_schemas import (
     DerivativeSpec,
+    ScriptSpec,
     EquitySpec,
     Instrument,
     Portfolio,
@@ -189,6 +190,12 @@ def _shocked_mark(inst: Instrument, d: date, md: pv.MarketData, sc: Scenario) ->
             for ccy in ("USD", "EUR"):
                 moved = portfolio_rates._Moved(moved, d, ccy, curve=sc.rate)
         return portfolio_rates.mark(spec, d, moved) if sc.rate else pv.mark(inst, d, md)
+    if isinstance(spec, ScriptSpec) and spec.curve == "sofr":
+        if not sc.rate:
+            return pv.mark(inst, d, md)
+        return pv._mark_derivative(
+            spec, d, portfolio_rates._Moved(md, d, "USD", curve=sc.rate), d
+        )
     return pv._mark_derivative(spec, d, _Shocked(md, d, sc), d)
 
 
@@ -198,6 +205,8 @@ def _underlying(inst: Instrument) -> str:
         return spec.ticker
     if isinstance(spec, DerivativeSpec):
         return spec.underlying or spec.product
+    if isinstance(spec, ScriptSpec):
+        return spec.underlying or f"{spec.title or spec.product} ({spec.currency})"
     return f"{spec.product} ({spec.currency})"
 
 
@@ -351,14 +360,15 @@ def unit_values(
         (i, d)
         for d in days
         for i in insts
-        if isinstance(i.spec, (DerivativeSpec, RateFxSpec))
+        if isinstance(i.spec, (DerivativeSpec, RateFxSpec, ScriptSpec))
     ]
     for inst, _ in jobs:  # load the series once, as prefetch_marks does
         spec = inst.spec
-        if spec.underlying:
-            md.closes(spec.underlying)
-            md.currency(spec.underlying)
-            md.dividends(spec.underlying)
+        underlying = getattr(spec, "underlying", None)  # a rate trade has none
+        if underlying:
+            md.closes(underlying)
+            md.currency(underlying)
+            md.dividends(underlying)
         md.curve(spec.currency)
     done = {"n": 0}
     lock = threading.Lock()

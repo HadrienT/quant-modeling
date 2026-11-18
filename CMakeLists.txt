@@ -383,6 +383,7 @@ if(QM_BUILD_TESTS)
     tests/testScriptFuzzy.cpp
     tests/testScriptParity.cpp
     tests/testScriptForward.cpp
+    tests/testScriptSeasoned.cpp
     tests/testSimulationEngine.cpp
     tests/testBSAna.cpp
     tests/testQuanto.cpp

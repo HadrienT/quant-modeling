@@ -907,10 +907,53 @@ the API and the tests as oracles. Three lots:
   the mean reversion, nor the recalibration of (a, sigma) when the curve or
   the vols move (xVA does both). DV01 holds (a, sigma) fixed, as the closed
   form's bump does.
-- **b3.** The portfolio books scripts (existing positions migrated); the
-  hand-written descriptors are deleted from the front end. Until then a
-  portfolio books and marks the hand-written forms (an American on the tree,
-  `markEngine`), and "Add to portfolio" is not offered from a script.
+- **b3. The portfolio books scripts** (decided by the maintainer on
+  2026-11-18: positions converted, closed form where there is one, rates
+  scripts included).
+  - **Booking.** A position (`ScriptSpec`) holds the product's script,
+    rendered with its terms on the trade date (`lead_days = 0`: the first
+    date falls in the week of the trade), so its dates are the contract's
+    from then on. `POST /api/portfolio-valuation/script/quote` books it and
+    values it that day, which is the default price. "Add to portfolio" is
+    offered from every single-underlying script and every rates script.
+    Products on several underlyings and quantos are refused, because no
+    correlated history is stored for them.
+  - **Marks** (`portfolio_scripts.py`, one per day, stored once).
+    - Past fixings are replayed on the stored closes.
+    - A past exercise date is a right not used, a new engine setting
+      `ScriptSettings::past_rights_unexercised`: the event is skipped, where
+      it used to be refused.
+    - The flows already paid stay in the mark, not compounded. The engine
+      now reports them (`ScriptedProduct::historical_payments`), because
+      the ledger has no cash account; this is the convention of the rate
+      trades.
+    - A rates script's past events that read the curve are taken out (its
+      terms kept), and what they paid is valued on the curve of their own
+      date (`season`).
+    - Closed form where there is one. Converted positions use their
+      hand-written pricer (`closed_form`). The European, the digital and the
+      forward use the vanilla on the smile, the digital and cost of carry
+      once their strike is fixed. Bonds and the swap use the day's curve.
+      The European swaption uses Hull-White's closed form on the day's SOFR
+      curve and calibration.
+    - Monte-Carlo otherwise, on the desk policy's model (stochastic-local
+      vol, local vol, Black-Scholes at the realised-vol proxy; Hull-White
+      calibrated to the day's swaptions), with the same draws every day.
+  - **Conversion.** Portfolio version 3: on read (`migrate`), each
+    hand-written derivative becomes the script of its payoff, its terms kept
+    as its closed form, so it marks as before. In production that is 3
+    European vanillas, plus the demo portfolios.
+  - **xVA.** A converted European stays the netting set's equity option. A
+    SOFR script is a scripted trade of the exposure engine, seen from the
+    day: its past events taken out, their terms carried (`for_exposure`).
+    The rest is left out, and the response says so.
+  - **Front end.** The hand-written equity and bond descriptors are deleted
+    (`catalog.ts`, `portfolioProducts.ts`, `DerivativeFields`), and so is
+    the payoff profile that served them. The trade form books library
+    products (`ScriptFields`), and a position links back to its product on
+    the Price page.
+  - Tests: `tests/testScriptSeasoned.cpp`, `api/tests/test_portfolio_scripts.py`,
+    `script-booking.integration.test.tsx`.
 
 ## 8. P4 — Multilevel Monte-Carlo
 

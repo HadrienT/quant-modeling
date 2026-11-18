@@ -179,12 +179,55 @@ def _legacy_params(position: Position) -> dict:
 
 
 def migrate(portfolio: Portfolio) -> Portfolio:
+    """Brings a stored portfolio to the current form. Idempotent.
+
+    - version 1 → 2: a portfolio of positions becomes a ledger (each position
+      an instrument plus one trade: `_to_ledger`);
+    - version 2 → 3: its hand-written derivatives become scripts of the same
+      payoff, the hand-written terms kept as their closed form so that each
+      marks as before (issue 313, lot b3: `_to_scripts`)."""
+    if portfolio.version < 2:
+        portfolio = _to_ledger(portfolio)
+    if portfolio.version < 3:
+        portfolio = _to_scripts(portfolio)
+    return portfolio
+
+
+def _to_scripts(portfolio: Portfolio) -> Portfolio:
+    """Each hand-written derivative (DerivativeSpec) as a script position
+    (portfolio_scripts.from_hand_written); one with no script writer is kept
+    as it is, and still marked by its pricer."""
+    from . import portfolio_scripts
+
+    first: Dict[str, date] = {}
+    for t in portfolio.transactions:
+        first[t.instrument_id] = min(
+            first.get(t.instrument_id, t.trade_date), t.trade_date
+        )
+    out: List[Instrument] = []
+    for inst in portfolio.instruments:
+        spec = inst.spec
+        if isinstance(spec, DerivativeSpec):
+            opened = first.get(inst.id, spec.expiry)
+            if "start_date" not in spec.params and spec.product in (
+                "asian",
+                "barrier",
+                "lookback",
+            ):
+                spec = spec.model_copy(
+                    update={"params": {**spec.params, "start_date": opened.isoformat()}}
+                )
+            converted = portfolio_scripts.from_hand_written(spec, opened)
+            if converted is not None:
+                inst = inst.model_copy(update={"spec": converted})
+        out.append(inst)
+    return portfolio.model_copy(update={"instruments": out, "version": 3})
+
+
+def _to_ledger(portfolio: Portfolio) -> Portfolio:
     """A portfolio of positions becomes a ledger: each position is an
     instrument plus one trade (quantity signed by its direction, at its
-    entry price, dated the portfolio's creation). Idempotent; a portfolio
-    that already has a ledger is returned unchanged."""
-    if portfolio.version >= 2:
-        return portfolio
+    entry price, dated the portfolio's creation)."""
     try:
         opened = datetime.fromisoformat(portfolio.created_at).date()
     except ValueError:

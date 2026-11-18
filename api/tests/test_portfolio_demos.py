@@ -49,7 +49,8 @@ def test_an_option_strike_is_the_moneyness_rounded_to_the_listed_grid():
     [call] = [i for i in pf.instruments if i.id == "c"]
     spot = CLOSES["AAA"][DAY]
     step = demos._strike_step(spot)
-    strike = call.spec.params["strike"]
+    assert call.spec.kind == "script"  # converted, its closed form kept
+    strike = call.spec.closed_form.params["strike"]
     assert strike / step == pytest.approx(round(strike / step))
     assert abs(strike - 1.10 * spot) <= step / 2 + 1e-9
 
@@ -97,4 +98,4 @@ def test_the_endpoint_serves_the_demos_that_could_be_built(monkeypatch):
     assert r.status_code == 200
     [only] = r.json()
     assert only["portfolio"]["id"] == "demo-test"
-    assert only["portfolio"]["version"] == 2
+    assert only["portfolio"]["version"] == 3  # its options as scripts

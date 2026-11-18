@@ -113,6 +113,20 @@ const DEFAULT_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN"];
 
 export const scriptedKey = (slug: string) => `script-${slug}`;
 
+/**
+ * The library products a portfolio holds (api/app/portfolio_scripts.book,
+ * issue 313 lot b3): one underlying and no quanto -- or a rates product,
+ * which reads only its curve. By name.
+ */
+export const BOOKABLE_SCRIPTS: ScriptedProduct[] = SCRIPTED_PRODUCTS.filter(
+	(p) => p.underlyings === 1 && !p.quanto,
+).sort((a, b) => a.title.localeCompare(b.title));
+
+/** The bookable product a catalog key names, if any. */
+export function bookableScript(key: string): ScriptedProduct | undefined {
+	return BOOKABLE_SCRIPTS.find((p) => scriptedKey(p.slug) === key);
+}
+
 const term = (unit: string) =>
 	unit === "percent"
 		? z.coerce.number().min(-100).max(1000)

@@ -90,12 +90,13 @@ namespace quantModeling
     {
         using aad::Number;
         aad::Tape tape;
+        aad::Tape *const saved = Number::tape;
         Number::tape = &tape;
         const double S0 = 100, r = 0.03, q = 0.04, v = 0.25;
         ScriptedProduct<Number> prod("2025-06-03\n    pays fwd(2026-06-03) * df(2026-06-03)\n", ctx());
         BlackScholesSimModel<Number> model{Number(S0), Number(r), Number(q), Number(v)};
         const AADSimulResults res = simulate_aad(prod, model, 100000, 3);
-        Number::tape = nullptr;
+        Number::tape = saved;
         const double T = t("2026-06-03");
         for (std::size_t i = 0; i < res.risk_labels.size(); ++i)
         {

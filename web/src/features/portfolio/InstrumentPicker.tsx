@@ -1,21 +1,21 @@
 import { useEffect, useState } from "react";
 import type { Counterparty, Instrument } from "@/shared/api";
 import {
-	derivativeInstrument,
 	equityInstrument,
 	rateFxInstrument,
+	scriptInstrument,
 } from "@/shared/portfolio";
 import { Label } from "@/shared/ui";
-import {
-	type DerivativeDraft,
-	DerivativeFields,
-	type InitialDerivative,
-} from "./DerivativeFields";
 import { NettingSetSelect } from "./NettingSetSelect";
 import { RateFxFields, type RateFxTerms } from "./RateFxFields";
+import {
+	type InitialScript,
+	ScriptFields,
+	type ScriptTerms,
+} from "./ScriptFields";
 import { TickerPicker } from "./TickerPicker";
 
-type Kind = "equity" | "derivative" | "rate_fx";
+type Kind = "equity" | "script" | "rate_fx";
 
 /** The instrument of a new trade, and what its form needs to know of it. */
 export type Picked = {
@@ -29,10 +29,10 @@ export type Picked = {
 };
 
 /**
- * Defines the instrument of a new trade: a stock (market → ticker), an
- * equity derivative (catalog product on a listed underlying), or a rate or
- * FX trade — the last two with the netting set they are traded under, if
- * they face a counterparty.
+ * Defines the instrument of a new trade: a stock (market → ticker), a
+ * product of the script library (on a listed underlying, or on a curve), or
+ * a rate or FX trade — the last two with the netting set they are traded
+ * under, if they face a counterparty.
  */
 export function InstrumentPicker({
 	tradeDate,
@@ -42,14 +42,14 @@ export function InstrumentPicker({
 }: {
 	tradeDate: string;
 	counterparties: Counterparty[];
-	initialDerivative?: InitialDerivative;
+	initialDerivative?: InitialScript;
 	onChange: (picked: Picked) => void;
 }) {
 	const [kind, setKind] = useState<Kind>(
-		initialDerivative ? "derivative" : "equity",
+		initialDerivative ? "script" : "equity",
 	);
 	const [ticker, setTicker] = useState<{ t: string; name?: string }>({ t: "" });
-	const [derivative, setDerivative] = useState<DerivativeDraft | null>(null);
+	const [script, setScript] = useState<ScriptTerms | null>(null);
 	const [rateFx, setRateFx] = useState<RateFxTerms | null>(null);
 	const [nettingSet, setNettingSet] = useState<string | null>(null);
 
@@ -61,16 +61,18 @@ export function InstrumentPicker({
 				contract: false,
 			});
 		const made =
-			kind === "derivative"
-				? derivative && derivativeInstrument(derivative.label, derivative.spec)
+			kind === "script"
+				? script && scriptInstrument(script.label, script.spec)
 				: rateFx && rateFxInstrument(rateFx.label, rateFx.spec);
+		// A contract's price is what it is worth that day, which can be
+		// negative (a swap, a forward).
 		onChange({
 			instrument: made && { ...made, netting_set_id: nettingSet },
 			closeTicker: "",
-			value: kind === "rate_fx" ? rateFx?.value : undefined,
-			contract: kind === "rate_fx",
+			value: kind === "rate_fx" ? rateFx?.value : script?.value,
+			contract: true,
 		});
-	}, [kind, ticker, derivative, rateFx, nettingSet, onChange]);
+	}, [kind, ticker, script, rateFx, nettingSet, onChange]);
 
 	return (
 		<div className="flex flex-col gap-3">
@@ -81,7 +83,7 @@ export function InstrumentPicker({
 				onChange={(e) => setKind(e.target.value as Kind)}
 			>
 				<option value="equity">Stock / index</option>
-				<option value="derivative">Equity derivative</option>
+				<option value="script">Library product (equity or rates)</option>
 				<option value="rate_fx">Rate / FX trade (over the counter)</option>
 			</select>
 			{kind === "equity" && (
@@ -93,11 +95,11 @@ export function InstrumentPicker({
 					/>
 				</div>
 			)}
-			{kind === "derivative" && (
-				<DerivativeFields
+			{kind === "script" && (
+				<ScriptFields
 					tradeDate={tradeDate}
 					initial={initialDerivative}
-					onChange={setDerivative}
+					onChange={setScript}
 				/>
 			)}
 			{kind === "rate_fx" && (

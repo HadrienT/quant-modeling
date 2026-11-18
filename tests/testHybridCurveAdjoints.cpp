@@ -28,6 +28,14 @@ namespace quantModeling
     {
         using aad::Number;
 
+        /// Records on `t` for its lifetime, then restores the thread's tape.
+        struct TapeSwitch
+        {
+            aad::Tape *saved = Number::tape;
+            explicit TapeSwitch(aad::Tape &t) { Number::tape = &t; }
+            ~TapeSwitch() { Number::tape = saved; }
+        };
+
         const Date kToday = Date::from_iso("2024-06-03");
         const double kA = 0.05, kSigma = 0.012;
 
@@ -91,14 +99,12 @@ namespace quantModeling
         AADSimulResults run(const std::string &script, CurveFactors factors = {}, long long paths = 200000)
         {
             aad::Tape tape;
-            Number::tape = &tape;
+            const TapeSwitch guard(tape);
             ScriptedProduct<Number> product(script, ValuationContext{kToday});
             HullWhiteEquitySimModel<Number> model(Number(100.0), Number(0.0), Number(0.2),
                                                   HullWhiteCurveModel(kA, kSigma, curve()), 0.0,
                                                   std::move(factors));
-            AADSimulResults res = simulate_aad(product, model, paths, 7);
-            Number::tape = nullptr;
-            return res;
+            return simulate_aad(product, model, paths, 7);
         }
 
         double risk(const AADSimulResults &r, const std::string &label, double *se = nullptr)

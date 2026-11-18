@@ -11,8 +11,6 @@ import {
 	Uncertainty,
 } from "@/shared/ui";
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
-import { GreekProfileChart, PayoffChart } from "@/shared/viz";
-import { blackScholes } from "@/shared/payoff";
 import { pricingBody } from "./requestBody";
 import { ScriptGreeks } from "./scripting/ScriptGreeks";
 
@@ -25,7 +23,7 @@ const STRIKE_DATE_NOTE =
 /**
  * The panel that carries the screen's credibility (WP 07 §4): price WITH its
  * standard error, greeks with theirs, EngineTag / Provenance / Freshness,
- * diagnostics shown, bond analytics, payoff + greek profiles. MC convergence is
+ * diagnostics shown, bond analytics. MC convergence is
  * in the Diagnostics section below (WP 28, lot U3).
  */
 export function ResultsPanel({
@@ -46,35 +44,6 @@ export function ResultsPanel({
 	const q = usePricing({ endpoint: descriptor.endpoint ?? null, body });
 
 	const isMc = engine === "mc";
-
-	// local BS payoff / greek profiles for the vanilla-family products
-	const profile = useMemo(() => {
-		if (!["vanilla", "american", "asian", "digital"].includes(descriptor.key))
-			return null;
-		const S0 = Number(values.spot) || 100;
-		const spots = Array.from(
-			{ length: 61 },
-			(_, i) => S0 * 0.6 + (S0 * 0.8 * i) / 60,
-		);
-		const base = {
-			strike: Number(values.strike) || S0,
-			rate: (Number(values.rate) || 0) / 100,
-			dividend: (Number(values.dividend) || 0) / 100,
-			vol: (Number(values.vol) || 20) / 100,
-			maturity: Number(values.maturity) || 1,
-			isCall: values.is_call !== false,
-		};
-		const payoff = spots.map((S) =>
-			Math.max(0, base.isCall ? S - base.strike : base.strike - S),
-		);
-		const atT = spots.map((S) => blackScholes({ ...base, spot: S }).price);
-		const greeks = (["delta", "gamma", "vega", "theta"] as const).map((g) => ({
-			name: g[0]!.toUpperCase() + g.slice(1),
-			spot: spots,
-			values: spots.map((S) => blackScholes({ ...base, spot: S })[g]),
-		}));
-		return { spots, payoff, atT, greeks, S0 };
-	}, [descriptor.key, values]);
 
 	if (q.isLoading) return <MetricRowSkeleton />;
 	if (q.error)
@@ -188,25 +157,6 @@ export function ResultsPanel({
 						))}
 					</div>
 				)}
-
-			{profile && (
-				<>
-					<PayoffChart
-						title="Payoff & value at t"
-						data={{
-							spot: profile.spots,
-							atMaturity: profile.payoff,
-							atT: profile.atT,
-							currentSpot: profile.S0,
-							strikes: [Number(values.strike) || profile.S0],
-						}}
-					/>
-					<GreekProfileChart
-						currentSpot={profile.S0}
-						profiles={profile.greeks}
-					/>
-				</>
-			)}
 		</div>
 	);
 }

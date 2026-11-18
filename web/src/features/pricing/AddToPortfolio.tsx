@@ -1,13 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import { BriefcaseBusiness } from "lucide-react";
-import { encodeParams, portfolioDescriptor } from "@/shared/products";
+import { bookableScript, encodeParams } from "@/shared/products";
 import { useNavPages } from "@/shared/session";
 
 /**
  * Carries the product on screen to the portfolio's trade form (WP 28, lot
- * U2), for the products a portfolio can hold. Only the terms travel: the
- * underlying, expiry and price are set there, and every day's mark replaces
- * the market inputs with that day's market.
+ * U2; issue 313, lot b3: the library's products), for those a portfolio
+ * holds. Its terms and its underlying travel; the trade date, and the
+ * script's dates with it, are set there, and every day's mark replaces the
+ * market inputs with that day's market.
  */
 export function AddToPortfolio({
 	productKey,
@@ -17,7 +18,7 @@ export function AddToPortfolio({
 	values: Record<string, unknown>;
 }) {
 	const { isShown } = useNavPages();
-	if (!isShown("/portfolio") || !portfolioDescriptor(productKey)) return null;
+	if (!isShown("/portfolio") || !bookableScript(productKey)) return null;
 	return (
 		<Link
 			to="/portfolio"

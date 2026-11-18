@@ -237,7 +237,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              double mlmc_eps, bool milstein, double mlmc_rel_eps, bool bias_estimate,
                              bool second_order, bool terms_as_parameters,
                              const std::vector<double> &curve_factor_basis,
-                             const std::vector<std::string> &curve_factor_labels)
+                             const std::vector<std::string> &curve_factor_labels,
+                             bool past_rights_unexercised)
 {
     using namespace quantModeling;
 
@@ -259,6 +260,11 @@ static py::dict price_script(const std::string &script, double spot, double rate
     // compiled kernel, so one kernel serves every term sheet (same bits).
     ScriptSettings script_settings{fuzzy, default_eps};
     script_settings.terms_as_parameters = terms_as_parameters;
+    script_settings.past_rights_unexercised = past_rights_unexercised;
+    // The flows a seasoned product already paid (its historical events'
+    // `pays`, undiscounted): not in today's price, but a holder received them.
+    const double historical_payments =
+        fixings.empty() ? 0.0 : ScriptedProduct<Real>(script, ctx, script_settings, fixings).historical_payments();
 
     scripting::ScriptModelSpec spec;
     spec.model = model;
@@ -558,6 +564,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
             else
                 out["diagnostics"] = out["diagnostics"].cast<std::string>() + " | no second-order risks (" + why + ")";
         }
+        out["historical_payments"] = historical_payments;
         return out;
     }
 
@@ -648,6 +655,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.discretisation_bias = mc->discretisation_bias;
     py::dict out = pricing_result_to_dict(res);
     out["warnings"] = advice_to_py(advice);
+    out["historical_payments"] = historical_payments;
     return out;
 }
 
@@ -747,6 +755,7 @@ void register_scripting(py::module_ &m)
           py::arg("terms_as_parameters") = false,
           py::arg("curve_factor_basis") = std::vector<double>{},
           py::arg("curve_factor_labels") = std::vector<std::string>{},
+          py::arg("past_rights_unexercised") = false,
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. terms_as_parameters: the script's numbers "
           "are a product's terms (a library product), read as data by the GPU's "

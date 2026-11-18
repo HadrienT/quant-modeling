@@ -1,6 +1,7 @@
 #ifndef QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP
 #define QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP
 
+#include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/sample.hpp"
 #include <functional>
 #include "quantModeling/core/timegrid.hpp"
@@ -127,6 +128,14 @@ namespace quantModeling
         /// second derivative cannot see. Another smoothing, so another
         /// (equally small) bias on the price: off by default.
         bool smooth_ramp = false;
+        /// A historical event holding exercise() or call() is a right that
+        /// was not used: the holder (or the issuer) would have booked the
+        /// exercise as a closing trade. The whole event is then skipped by
+        /// the replay instead of refused -- its statements only make that
+        /// decision in the scripts this is for (Bermudans, Americans); a
+        /// variable it would have set keeps its earlier value. For a
+        /// position held in a portfolio (issue 313, lot b3).
+        bool past_rights_unexercised = false;
     };
 
     /**
@@ -206,16 +215,20 @@ namespace quantModeling
                 for (const scripting::ExprTree &statement : event.statements)
                     if (statement)
                         detail::collect_exercises(*statement, exercises);
-            for (const scripting::Event &event : historical_events_)
+            const auto holds_right = [](const scripting::Event &event)
+            {
+                std::vector<const scripting::NodeExercise *> past;
                 for (const scripting::ExprTree &statement : event.statements)
                     if (statement)
-                    {
-                        std::vector<const scripting::NodeExercise *> past;
                         detail::collect_exercises(*statement, past);
-                        if (!past.empty())
-                            throw InvalidInput("exercise() / call() on a past date (" + event.date.to_iso() +
-                                               "): the decision was already taken; script its outcome instead");
-                    }
+                return !past.empty();
+            };
+            if (settings.past_rights_unexercised)
+                std::erase_if(historical_events_, holds_right);
+            for (const scripting::Event &event : historical_events_)
+                if (holds_right(event))
+                    throw InvalidInput("exercise() / call() on a past date (" + event.date.to_iso() +
+                                       "): the decision was already taken; script its outcome instead");
             has_exercise_ = !exercises.empty();
             for (const scripting::NodeExercise *e : exercises)
             {
@@ -536,6 +549,9 @@ namespace quantModeling
         /// bounds-checks every spot(i) access rather than trust that they do
         /// (scripting/evaluator.hpp, scripting/fuzzy_evaluator.hpp).
         std::size_t n_underlyings() const override { return n_underlyings_; }
+        /// What the historical events' `pays` added up to, undiscounted: the
+        /// cash flows a seasoned product already paid (not in today's price).
+        double historical_payments() const { return historical_payments_; }
 
         /// Which model dynamics this script's price depends on (see
         /// scripting/visitors/script_analyzer.hpp) -- input to
@@ -1059,11 +1075,12 @@ namespace quantModeling
 
                 fixing_sample[0].spots.assign(it->second.begin(),
                                               it->second.end());
-                fixing_sample[0].numeraire = T(1); // unused: payoff suppressed
+                fixing_sample[0].numeraire = T(1); // the flows are kept undiscounted
                 replay.set_event(fixing_sample, 0);
                 for (const scripting::ExprTree &statement : event.statements)
                     replay.run(*statement);
             }
+            historical_payments_ = to_double(replay.suppressed_payoff());
             return replay.variables();
         }
 
@@ -1080,6 +1097,7 @@ namespace quantModeling
         mutable std::unique_ptr<scripting::Evaluator<T>>
             evaluator_; ///< per-path state (§5.4); hard or fuzzy
         std::vector<T> baseline_;
+        double historical_payments_ = 0.0;
         scripting::Program program_;
         scripting::ir::Script ir_;
         bool compiled_ = false;

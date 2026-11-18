@@ -1,38 +1,30 @@
-import type { Instrument, PositionMark } from "@/shared/api";
-import {
-	catalogKeyOf,
-	encodeParams,
-	formValuesFromRequest,
-	portfolioDescriptor,
-} from "@/shared/products";
-
-const YEAR = 365.25 * 86_400_000;
+import type { Instrument } from "@/shared/api";
+import { bookableScript, encodeParams, scriptedKey } from "@/shared/products";
 
 /**
- * The workbench link of a derivative position (WP 28, lot U2): its contract
- * terms, with the market inputs of its latest mark (same names as the
- * request's: spot, rate, dividend, vol) and the time left to expiry. Null
- * when the product is not in the workbench, the position has expired, or its
- * terms would not come back exactly (see formValuesFromRequest).
+ * The Price page link of a script position (WP 28, lot U2; issue 313, lot
+ * b3): the library product with the position's terms (percent terms in %,
+ * as the page's form takes them) and its underlying or curve. Null for a
+ * position converted from a hand-written pricer (its script is not a
+ * library product), or one that has expired.
  */
 export function workbenchFromPosition(
-	position: PositionMark,
 	instrument: Instrument | undefined,
-	today = Date.now(),
+	today = new Date().toISOString().slice(0, 10),
 ): { product: string; p: string } | null {
 	const spec = instrument?.spec;
-	if (position.kind !== "derivative" || spec?.kind !== "derivative")
-		return null;
-	const key = catalogKeyOf(spec.product);
-	const descriptor = key && portfolioDescriptor(key);
-	if (!key || !descriptor) return null;
-	const maturity = (Date.parse(spec.expiry) - today) / YEAR;
-	if (!(maturity > 0)) return null;
-	const request: Record<string, unknown> = { ...spec.params };
-	for (const i of position.inputs)
-		if (i.name in request && typeof i.value === "number")
-			request[i.name] = i.value;
-	request.maturity = +maturity.toFixed(4);
-	const values = formValuesFromRequest(descriptor, request);
-	return values && { product: key, p: encodeParams(values) };
+	if (spec?.kind !== "script" || spec.expiry <= today) return null;
+	const key = scriptedKey(spec.product);
+	const product = bookableScript(key);
+	if (!product) return null;
+	const values: Record<string, unknown> = {};
+	for (const prm of product.params) {
+		const v = spec.terms?.[prm.name];
+		if (v == null) continue;
+		values[prm.name] = prm.unit === "percent" ? +(v * 100).toFixed(6) : v;
+	}
+	if (spec.underlying) values.tickers = spec.underlying;
+	if (product.market === "rates" && product.curve !== "sofr")
+		values.currency = spec.currency;
+	return { product: key, p: encodeParams(values) };
 }

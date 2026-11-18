@@ -126,6 +126,44 @@ class DerivativeSpec(BaseModel):
     currency: Currency = "USD"
 
 
+class ScriptSpec(BaseModel):
+    """A product of the script library held in a portfolio (issue 313, lot
+    b3): its script, rendered with its terms when it was booked, so that its
+    dates are the contract's (product_templates.render with lead_days = 0:
+    the first date in the week of the trade). Marked each day by
+    portfolio_scripts.py: past fixings replayed from the stored closes, the
+    flows already paid kept in the mark, the rest by the product's closed
+    form where it has one, by Monte-Carlo otherwise.
+
+    `underlying` is the ticker spot() reads (None for a rates product, which
+    reads only its curve: `curve`). `closed_form` is set on a position
+    converted from a hand-written one: the same payoff in the hand-written
+    pricer's terms, which marks it as before."""
+
+    kind: Literal["script"] = "script"
+    product: str = Field(
+        description="The library product's slug, or 'custom' for a position "
+        "converted from a hand-written pricer"
+    )
+    title: str = ""
+    terms: Dict[str, float] = Field(default_factory=dict)
+    script: str
+    underlying: Optional[str] = None
+    currency: Currency = "USD"
+    start: date = Field(description="The script's first date")
+    expiry: date = Field(description="The script's last date")
+    curve: Optional[Literal["government", "sofr"]] = None
+    closed_form: Optional[DerivativeSpec] = None
+
+    @model_validator(mode="after")
+    def _coherent(self) -> "ScriptSpec":
+        if self.expiry < self.start:
+            raise ValueError("the script's last date is before its first")
+        if self.curve is None and not self.underlying and self.closed_form is None:
+            raise ValueError("an equity script needs its underlying ticker")
+        return self
+
+
 def add_years(d: date, years: int) -> date:
     """The same day `years` later (28 February for a 29 February)."""
     try:
@@ -242,7 +280,9 @@ class RateFxSpec(BaseModel):
 class Instrument(BaseModel):
     id: str
     label: str = ""
-    spec: Union[EquitySpec, DerivativeSpec, RateFxSpec] = Field(discriminator="kind")
+    spec: Union[EquitySpec, DerivativeSpec, RateFxSpec, ScriptSpec] = Field(
+        discriminator="kind"
+    )
     #: The netting set an over-the-counter derivative is traded under (one of
     #: the portfolio's counterparties'). None for a listed instrument, and for
     #: a derivative whose counterparty risk is not looked at. Not part of the

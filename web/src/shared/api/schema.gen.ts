@@ -601,6 +601,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio-valuation/script/quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Script Quote
+         * @description The position of a library product booked on the trade date (issue
+         *     313, lot b3): its script rendered with its terms on that date (its dates
+         *     are the contract's from then on) and its mark that day. 422 for a product
+         *     a portfolio cannot hold; 503 when the store has no market for the date.
+         */
+        post: operations["script_quote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/portfolio-valuation/snapshot": {
         parameters: {
             query?: never;
@@ -4927,7 +4950,7 @@ export interface components {
             value: number | null;
         };
         /** Instrument */
-        Instrument: {
+        "Instrument-Input": {
             /** Id */
             id: string;
             /**
@@ -4938,7 +4961,21 @@ export interface components {
             /** Netting Set Id */
             netting_set_id?: string | null;
             /** Spec */
-            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"] | components["schemas"]["RateFxSpec"];
+            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"] | components["schemas"]["RateFxSpec"] | components["schemas"]["ScriptSpec"];
+        };
+        /** Instrument */
+        "Instrument-Output": {
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Netting Set Id */
+            netting_set_id?: string | null;
+            /** Spec */
+            spec: components["schemas"]["EquitySpec"] | components["schemas"]["DerivativeSpec"] | components["schemas"]["RateFxSpec"] | components["schemas"]["ScriptSpec"];
         };
         /**
          * LeverageFit
@@ -5543,7 +5580,7 @@ export interface components {
             /** Id */
             id: string;
             /** Instruments */
-            instruments?: components["schemas"]["Instrument"][];
+            instruments?: components["schemas"]["Instrument-Input"][];
             /**
              * Name
              * @default Untitled Portfolio
@@ -5587,7 +5624,7 @@ export interface components {
             /** Id */
             id: string;
             /** Instruments */
-            instruments?: components["schemas"]["Instrument"][];
+            instruments?: components["schemas"]["Instrument-Output"][];
             /**
              * Name
              * @default Untitled Portfolio
@@ -5871,7 +5908,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "equity" | "derivative" | "rate_fx";
+            kind: "equity" | "derivative" | "rate_fx" | "script";
             /** Label */
             label: string;
             /** Mark */
@@ -6917,6 +6954,45 @@ export interface components {
              */
             t: number;
         };
+        /** ScriptQuote */
+        ScriptQuote: {
+            /** Currency */
+            currency: string;
+            /** Label */
+            label: string;
+            spec: components["schemas"]["ScriptSpec"];
+            /**
+             * Value
+             * @description What one unit is worth on the trade date, in `currency`: the price a trade on it is booked at by default
+             */
+            value: number;
+        };
+        /**
+         * ScriptQuoteRequest
+         * @description A product of the script library to book: its terms (decimals, as the
+         *     Price page sends them), the trade date and, for an equity product, the
+         *     ticker its spot() reads.
+         */
+        ScriptQuoteRequest: {
+            /**
+             * Currency
+             * @description A rates product on a government curve: its currency (USD, EUR or JPY). An equity product is in its listing's currency.
+             */
+            currency?: string | null;
+            /** Product */
+            product: string;
+            /** Terms */
+            terms?: {
+                [key: string]: number;
+            };
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+            /** Underlying */
+            underlying?: string | null;
+        };
         /**
          * ScriptRequest
          * @description Price a payoff described in text.
@@ -7087,6 +7163,67 @@ export interface components {
              * @description Required for model='black_scholes' (and 'auto' without a ticker).
              */
             vol?: number | null;
+        };
+        /**
+         * ScriptSpec
+         * @description A product of the script library held in a portfolio (issue 313, lot
+         *     b3): its script, rendered with its terms when it was booked, so that its
+         *     dates are the contract's (product_templates.render with lead_days = 0:
+         *     the first date in the week of the trade). Marked each day by
+         *     portfolio_scripts.py: past fixings replayed from the stored closes, the
+         *     flows already paid kept in the mark, the rest by the product's closed
+         *     form where it has one, by Monte-Carlo otherwise.
+         *
+         *     `underlying` is the ticker spot() reads (None for a rates product, which
+         *     reads only its curve: `curve`). `closed_form` is set on a position
+         *     converted from a hand-written one: the same payoff in the hand-written
+         *     pricer's terms, which marks it as before.
+         */
+        ScriptSpec: {
+            closed_form?: components["schemas"]["DerivativeSpec"] | null;
+            /**
+             * Currency
+             * @default USD
+             * @enum {string}
+             */
+            currency: "USD" | "EUR" | "GBP" | "JPY" | "CHF";
+            /** Curve */
+            curve?: ("government" | "sofr") | null;
+            /**
+             * Expiry
+             * Format: date
+             * @description The script's last date
+             */
+            expiry: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "script";
+            /**
+             * Product
+             * @description The library product's slug, or 'custom' for a position converted from a hand-written pricer
+             */
+            product: string;
+            /** Script */
+            script: string;
+            /**
+             * Start
+             * Format: date
+             * @description The script's first date
+             */
+            start: string;
+            /** Terms */
+            terms?: {
+                [key: string]: number;
+            };
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Underlying */
+            underlying?: string | null;
         };
         /**
          * ScriptTradeInput
@@ -10432,6 +10569,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateFxQuote"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    script_quote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptQuote"];
                 };
             };
             /** @description Validation Error */

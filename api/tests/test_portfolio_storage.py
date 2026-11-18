@@ -3,6 +3,7 @@ trades and derivative expiries) is written and read back unchanged."""
 
 from datetime import date
 
+from api.app import portfolio_ledger as L
 from api.app import portfolio_storage
 from api.app.portfolio_schemas import (
     DerivativeSpec,
@@ -52,6 +53,8 @@ def test_a_ledger_with_dates_is_saved_and_read_back(tmp_path, monkeypatch):
     )
     portfolio_storage.save_portfolio(pf)
     back = portfolio_storage.get_portfolio("p1", "alice")
-    assert back == pf
+    # read back in the current form: its option a script (issue 313, lot b3)
+    assert back == L.migrate(pf)
+    assert back.instruments[-1].spec.kind == "script"
     [summary] = portfolio_storage.list_portfolios("alice")
     assert summary.n_positions == 2
