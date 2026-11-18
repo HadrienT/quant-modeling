@@ -27,6 +27,7 @@ CATEGORIES = {
     "Volatility",
     "Multi-asset",
     "Choosers and compounds",
+    "Fixed income",
 }
 
 

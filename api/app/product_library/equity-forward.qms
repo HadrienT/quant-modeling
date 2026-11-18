@@ -1,0 +1,18 @@
+# title: Equity forward
+# category: Vanillas and digitals
+# underlyings: 1
+# source: Hull, Options, Futures, and Other Derivatives, 11th ed., Pearson, ch. 5 (forward and futures prices)
+# summary: The obligation to buy the stock at the strike one year later: worth the forward minus the strike, discounted -- linear in the stock, so no volatility enters its price.
+# param: strike = 1.0 | percent | Delivery price, % of the initial level
+# param: notional = 1 | number | Shares delivered
+#
+# The holder pays the strike and receives the stock at expiry. A futures
+# contract settled daily has the same price under a deterministic rate.
+
+2027-01-04
+    strike = 1.0
+    notional = 1
+    s0 = spot()
+
+2028-01-04
+    pays notional * (spot() - strike * s0)

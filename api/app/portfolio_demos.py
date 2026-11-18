@@ -31,7 +31,7 @@ from typing import Dict, List, Optional, Tuple
 
 from . import portfolio_counterparties, portfolio_rates
 from . import portfolio_valuation as pv
-from .portfolio_ledger import equity_instrument_id, validate
+from .portfolio_ledger import equity_instrument_id, migrate, validate
 from .portfolio_schemas import (
     DerivativeSpec,
     EquitySpec,
@@ -513,6 +513,9 @@ def build(demo: Demo, md: pv.MarketData) -> Portfolio:
             else []
         ),
     )
+    # its options as scripts of the library's form (issue 313, lot b3), each
+    # marked by its closed form as before
+    pf = migrate(pf)
     validate(pf)
     return pf
 

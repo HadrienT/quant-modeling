@@ -3,6 +3,7 @@ import type {
 	Portfolio,
 	PortfolioCurrency,
 	RateFxSpec,
+	ScriptSpec,
 	Trade,
 } from "@/shared/api";
 
@@ -47,11 +48,9 @@ export function equityInstrument(ticker: string, name?: string): Instrument {
 	};
 }
 
-export function derivativeInstrument(
-	label: string,
-	spec: Omit<Extract<Instrument["spec"], { kind: "derivative" }>, "kind">,
-): Instrument {
-	return { id: uid(), label, spec: { kind: "derivative", ...spec } };
+/** A product of the script library, as the API booked it (lot b3). */
+export function scriptInstrument(label: string, spec: ScriptSpec): Instrument {
+	return { id: uid(), label, spec };
 }
 
 export type TradeDraft = Omit<Trade, "id" | "created_at">;
@@ -122,6 +121,11 @@ export function underlyingOf(instrument: Instrument | undefined): string {
 	const spec = instrument.spec;
 	if (spec.kind === "equity") return spec.ticker;
 	if (spec.kind === "derivative") return spec.underlying ?? instrument.label;
+	if (spec.kind === "script")
+		return (
+			spec.underlying ??
+			(spec.curve === "sofr" ? "USD rates" : `${spec.currency} rates`)
+		);
 	return spec.product === "fx_forward" || spec.product === "cross_currency_swap"
 		? "EUR/USD"
 		: `${spec.currency} rates`;

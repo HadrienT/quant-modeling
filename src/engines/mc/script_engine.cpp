@@ -1021,6 +1021,8 @@ namespace quantModeling
         std::string vibrato_unsupported(const ScriptedProduct<Real> &product, const DeviceModel &dm)
         {
             const scripting::ir::Script &ir = product.ir();
+            if (ir.empty() && !product.ir_refusal().empty())
+                return product.ir_refusal();
             if (product.has_exercise() || ir.empty())
                 return "early exercise is not covered by Vibrato";
             // Vibrato re-evaluates the final date at X, Z and -Z; the last

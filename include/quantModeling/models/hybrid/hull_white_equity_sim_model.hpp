@@ -41,6 +41,26 @@ namespace quantModeling
     } // namespace detail
 
     /**
+     * @brief The directions in which the curve of a Hull-White hybrid is
+     *        differentiated: the pillar zero rates move as
+     *        z_j += Σ_k basis[j · K + k] θ_k (row-major, pillars × factors),
+     *        and each θ_k, at 0, is a model parameter.
+     *
+     * The basis is the caller's: the identity gives the risks to the zero
+     * rates; the bootstrap's Jacobian dz/dq gives those to the par quotes
+     * the curve was built from (a bucketed DV01), each with a Monte-Carlo
+     * error of its own -- a map applied after the run would need the
+     * covariance of the risks, which the engine does not report. Empty: one
+     * factor, "curve_parallel", moving every zero rate (or the flat rate)
+     * by the same amount.
+     */
+    struct CurveFactors
+    {
+        std::vector<double> basis;
+        std::vector<std::string> labels;
+    };
+
+    /**
      * @brief An equity under stochastic Hull-White rates, for scripts
      *        (issue #86: equity-rates hybrids; blueprint/wp/21-rates.md §6).
      *
@@ -60,23 +80,43 @@ namespace quantModeling
      * swaption written with df() and exercise() (tests/testHybrid.cpp checks
      * it against the Hull-White lattice).
      *
-     * Differentiable parameters: spot, dividend yield, equity vol. The rates
-     * side (curve, a, σ_r, ρ) is double.
+     * Differentiable parameters: spot, dividend yield, equity vol, σ_r
+     * ("rate_vol") and the curve's factors (CurveFactors), the mean
+     * reversion and ρ held. With a fixed, the step's moments scale exactly:
+     * the drifts of x and ∫x and y(t) as σ_r², the rates rows of the
+     * Cholesky factor as σ_r, the equity row not at all -- so they are
+     * computed once at σ_r = 1 and scaled on the path. The curve enters only
+     * through log P(0, ·) at known dates, linear in the pillars' log
+     * discount factors (DiscountCurve::log_discount_weights): log P(0, t) =
+     * c(t) − Σ_k θ_k g_k(t), g_k tabulated at init.
      */
     template <class T = Real>
     class HullWhiteEquitySimModel final : public ISimulationModel<T>
     {
       public:
-        HullWhiteEquitySimModel(T s0, T q, T sigma_s, HullWhiteCurveModel rates, Real rho)
-            : s0_(s0), q_(q), sigma_s_(sigma_s), rates_(std::move(rates)), rho_(rho)
+        HullWhiteEquitySimModel(T s0, T q, T sigma_s, HullWhiteCurveModel rates, Real rho,
+                                CurveFactors factors = {})
+            : s0_(s0), q_(q), sigma_s_(sigma_s), sigma_r_(T(rates.sigma())), rates_(std::move(rates)), rho_(rho)
         {
             if (!(rho_ >= -1.0 && rho_ <= 1.0))
                 throw InvalidInput("hull_white: the equity-rates correlation must lie in [-1, 1]");
+            const std::size_t pillars = rates_.discount().pillar_times().size();
+            if (factors.labels.empty())
+            {
+                factors.labels = {"curve_parallel"};
+                factors.basis.assign(pillars, 1.0);
+            }
+            else if (factors.basis.size() != pillars * factors.labels.size() || pillars == 0)
+                throw InvalidInput("hull_white: the curve factors need one row per pillar and one column per label");
+            factors_ = std::move(factors);
+            theta_.assign(factors_.labels.size(), T(0.0));
+            labels_ = {"spot", "div", "vol", "rate_vol"};
+            labels_.insert(labels_.end(), factors_.labels.begin(), factors_.labels.end());
             set_param_pointers();
         }
 
         HullWhiteEquitySimModel(const HullWhiteEquitySimModel &o)
-            : s0_(o.s0_), q_(o.q_), sigma_s_(o.sigma_s_), rates_(o.rates_), rho_(o.rho_), timeline_(o.timeline_), defline_(o.defline_), steps_(o.steps_), sim_dim_(o.sim_dim_)
+            : s0_(o.s0_), q_(o.q_), sigma_s_(o.sigma_s_), sigma_r_(o.sigma_r_), rates_(o.rates_), rho_(o.rho_), factors_(o.factors_), theta_(o.theta_), labels_(o.labels_), timeline_(o.timeline_), defline_(o.defline_), steps_(o.steps_), sim_dim_(o.sim_dim_)
         {
             set_param_pointers();
         }
@@ -92,12 +132,17 @@ namespace quantModeling
             defline_ = defline;
             steps_.clear();
             sim_dim_ = 0;
-            const Real a = rates_.mean_reversion(), sr = rates_.sigma();
+            const Real a = rates_.mean_reversion();
+            // y(v) at σ_r = 1
+            const auto y_unit = [a](double v)
+            { return (1.0 - std::exp(-2.0 * a * v)) / (2.0 * a); };
             Time s = 0.0;
             for (const Time t : timeline_)
             {
                 Step st;
                 st.t = t;
+                st.at = point(t);
+                st.y_unit = y_unit(t);
                 st.draws = t > TIMELINE_EPS;
                 if (st.draws)
                 {
@@ -108,26 +153,29 @@ namespace quantModeling
                     st.decay = E(s);
                     st.G_step = rates_.G(s, t);
                     st.mean_x = detail::gauss_legendre([&](double v)
-                                                       { return E(v) * rates_.y(v); }, s, t);
+                                                       { return E(v) * y_unit(v); }, s, t);
                     st.mean_I = detail::gauss_legendre([&](double v)
-                                                       { return rates_.y(v) * G(v); }, s, t);
-                    // Covariance of (x(t) − E, ∫x − E, W_S(t) − W_S(s)).
+                                                       { return y_unit(v) * G(v); }, s, t);
+                    // Covariance of (x(t) − E, ∫x − E, W_S(t) − W_S(s)) at σ_r = 1.
                     double C[3][3];
-                    C[0][0] = sr * sr * detail::gauss_legendre([&](double v)
-                                                               { return E(v) * E(v); }, s, t);
-                    C[1][1] = sr * sr * detail::gauss_legendre([&](double v)
-                                                               { return G(v) * G(v); }, s, t);
-                    C[0][1] = C[1][0] = sr * sr * detail::gauss_legendre([&](double v)
-                                                                         { return E(v) * G(v); }, s, t);
-                    C[0][2] = C[2][0] = rho_ * sr * st.G_step;
-                    C[1][2] = C[2][1] = rho_ * sr * detail::gauss_legendre(G, s, t);
+                    C[0][0] = detail::gauss_legendre([&](double v)
+                                                     { return E(v) * E(v); }, s, t);
+                    C[1][1] = detail::gauss_legendre([&](double v)
+                                                     { return G(v) * G(v); }, s, t);
+                    C[0][1] = C[1][0] = detail::gauss_legendre([&](double v)
+                                                               { return E(v) * G(v); }, s, t);
+                    C[0][2] = C[2][0] = rho_ * st.G_step;
+                    C[1][2] = C[2][1] = rho_ * detail::gauss_legendre(G, s, t);
                     C[2][2] = t - s;
                     cholesky(C, st.L);
                     st.dt = t - s;
-                    st.log_df_ratio = std::log(rates_.discount().discount(s) / rates_.discount().discount(t));
                     sim_dim_ += 3;
                 }
-                steps_.push_back(st);
+                for (const Time m : defline[steps_.size()].discount_mats)
+                    st.discounts.push_back({point(m), rates_.G(t, m)});
+                for (const Time m : defline[steps_.size()].forward_mats)
+                    st.forwards.push_back({point(m), rates_.G(t, m)});
+                steps_.push_back(std::move(st));
                 s = t;
             }
         }
@@ -138,38 +186,43 @@ namespace quantModeling
         void generate_path(std::span<const double> gaussians, Scenario<T> &path) const override
         {
             using std::exp;
-            double x = 0.0, I = 0.0;
-            T log_s = T(0.0);
+            const T sr = sigma_r_, sr2 = sigma_r_ * sigma_r_;
+            T x(0.0), I(0.0), log_s(0.0), log_p_prev(0.0);
             std::size_t g = 0;
             for (std::size_t i = 0; i < steps_.size(); ++i)
             {
                 const Step &st = steps_[i];
+                const T log_p = log_discount(st.at);
                 if (st.draws)
                 {
                     const double z0 = gaussians[g], z1 = gaussians[g + 1], z2 = gaussians[g + 2];
                     g += 3;
-                    const double e0 = st.L[0][0] * z0;
-                    const double e1 = st.L[1][0] * z0 + st.L[1][1] * z1;
+                    const T e0 = sr * (st.L[0][0] * z0);
+                    const T e1 = sr * (st.L[1][0] * z0 + st.L[1][1] * z1);
                     const double w = st.L[2][0] * z0 + st.L[2][1] * z1 + st.L[2][2] * z2;
-                    const double I_step = x * st.G_step + st.mean_I + e1;
-                    x = x * st.decay + st.mean_x + e0;
-                    I += I_step;
-                    log_s = log_s + (st.log_df_ratio + I_step) - (q_ + 0.5 * sigma_s_ * sigma_s_) * st.dt +
+                    const T I_step = x * st.G_step + sr2 * st.mean_I + e1;
+                    x = x * st.decay + sr2 * st.mean_x + e0;
+                    I = I + I_step;
+                    log_s = log_s + (log_p_prev - log_p + I_step) - (q_ + 0.5 * sigma_s_ * sigma_s_) * st.dt +
                             sigma_s_ * w;
                 }
+                log_p_prev = log_p;
                 const T S = s0_ * exp(log_s);
                 Sample<T> &smp = path[i];
                 smp.spots.assign(1, S);
-                smp.numeraire = T(std::exp(I) / rates_.discount().discount(st.t));
-                const SampleDef &def = defline_[i];
-                smp.discounts.resize(def.discount_mats.size());
-                for (std::size_t k = 0; k < def.discount_mats.size(); ++k)
-                    smp.discounts[k] = T(rates_.zcb(st.t, def.discount_mats[k], x));
-                smp.forwards.resize(def.forward_mats.size());
-                for (std::size_t k = 0; k < def.forward_mats.size(); ++k)
+                smp.numeraire = exp(I - log_p);
+                const T half_y = 0.5 * sr2 * st.y_unit;
+                // P(t, m | x) = P(0, m) / P(0, t) exp(−G x − ½ G² y(t))
+                const auto zcb = [&](const Maturity &m)
+                { return exp(log_discount(m.at) - log_p - m.G * x - m.G * m.G * half_y); };
+                smp.discounts.resize(st.discounts.size());
+                for (std::size_t k = 0; k < st.discounts.size(); ++k)
+                    smp.discounts[k] = zcb(st.discounts[k]);
+                smp.forwards.resize(st.forwards.size());
+                for (std::size_t k = 0; k < st.forwards.size(); ++k)
                 {
-                    const Time mat = def.forward_mats[k];
-                    smp.forwards[k] = S * exp(-q_ * (mat - st.t)) / rates_.zcb(st.t, mat, x);
+                    const Time mat = defline_[i].forward_mats[k];
+                    smp.forwards[k] = S * exp(-q_ * (mat - st.t)) / zcb(st.forwards[k]);
                 }
             }
         }
@@ -187,20 +240,62 @@ namespace quantModeling
         }
 
         const std::vector<T *> &parameters() const override { return params_; }
-        const std::vector<std::string> &parameter_labels() const override
-        {
-            static const std::vector<std::string> labels{"spot", "div", "vol"};
-            return labels;
-        }
+        const std::vector<std::string> &parameter_labels() const override { return labels_; }
 
       private:
+        /// log P(0, t) = c − Σ_k θ_k g_k.
+        struct Point
+        {
+            double c = 0.0;
+            std::vector<double> g;
+        };
+        struct Maturity
+        {
+            Point at;
+            double G = 0.0; ///< G(t, maturity)
+        };
         struct Step
         {
             Time t = 0.0;
             bool draws = false;
-            double dt = 0.0, decay = 1.0, G_step = 0.0, mean_x = 0.0, mean_I = 0.0, log_df_ratio = 0.0;
+            double dt = 0.0, decay = 1.0, G_step = 0.0, mean_x = 0.0, mean_I = 0.0, y_unit = 0.0;
             double L[3][3] = {};
+            Point at;
+            std::vector<Maturity> discounts, forwards;
         };
+
+        Point point(Time t) const
+        {
+            const DiscountCurve &curve = rates_.discount();
+            Point p;
+            p.c = t > 0.0 ? std::log(curve.discount(t)) : 0.0;
+            const std::size_t K = theta_.size();
+            p.g.assign(K, 0.0);
+            if (t <= 0.0)
+                return p;
+            const std::vector<Time> &pillars = curve.pillar_times();
+            if (pillars.empty()) // a flat rate: the parallel factor moves it
+            {
+                p.g[0] = t;
+                return p;
+            }
+            // log DF_j = −z_j t_j, so ∂ log P(0, t) / ∂ z_j = −w_j t_j
+            std::vector<std::pair<std::size_t, Real>> w;
+            curve.log_discount_weights(t, w);
+            for (const auto &[j, wj] : w)
+                for (std::size_t k = 0; k < K; ++k)
+                    p.g[k] += wj * pillars[j] * factors_.basis[j * K + k];
+            return p;
+        }
+
+        T log_discount(const Point &p) const
+        {
+            T v(p.c);
+            for (std::size_t k = 0; k < p.g.size(); ++k)
+                if (p.g[k] != 0.0)
+                    v = v - theta_[k] * p.g[k];
+            return v;
+        }
 
         /// Lower Cholesky factor of a 3 × 3 covariance, a zero column where a
         /// pivot vanishes (|ρ| = 1, or no equity leg): semidefinite is fine.
@@ -219,11 +314,19 @@ namespace quantModeling
                 }
         }
 
-        void set_param_pointers() { params_ = {&s0_, &q_, &sigma_s_}; }
+        void set_param_pointers()
+        {
+            params_ = {&s0_, &q_, &sigma_s_, &sigma_r_};
+            for (T &t : theta_)
+                params_.push_back(&t);
+        }
 
-        T s0_{}, q_{}, sigma_s_{};
+        T s0_{}, q_{}, sigma_s_{}, sigma_r_{};
         HullWhiteCurveModel rates_;
         Real rho_ = 0.0;
+        CurveFactors factors_;
+        std::vector<T> theta_;
+        std::vector<std::string> labels_;
         TimeLine timeline_;
         std::vector<SampleDef> defline_;
         std::vector<Step> steps_;

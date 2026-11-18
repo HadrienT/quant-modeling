@@ -844,12 +844,116 @@ the API and the tests as oracles. Three lots:
   implied vol of the ticker's smile, equal to the script's Monte-Carlo under
   that flat vol within its error (`api/tests/test_scripted_analytic.py`).
   The site's engines are Analytic and Monte-Carlo only.
-- **b2.** The future, the bonds, the swap and the swaption as scripts under
-  the short-rate script models; their hand-written entries leave the page.
-- **b3.** The portfolio books scripts (existing positions migrated); the
-  hand-written descriptors are deleted from the front end. Until then a
-  portfolio books and marks the hand-written forms (an American on the tree,
-  `markEngine`), and "Add to portfolio" is not offered from a script.
+- **b2a.** The bonds and the future as scripts. A library header
+  `# market: rates` marks a product with no stock: it is priced by Hull-White
+  fitted to the chosen currency's government curve (USD, EUR or JPY, those the
+  database derives), the hybrid model's stock unread -- the request asks for
+  no ticker and refuses one. The zero-coupon and the semiannual fixed-rate
+  bond: Analytic is the script valued with no short-rate volatility (its
+  flows deterministic, each discounted by the curve -- the curve's PV exactly,
+  for any payoff linear in it), Monte-Carlo agrees within its error (USD
+  2026-11-16: 95.7196 against 95.7201 ± 0.0004 for the 4 % five-year bond).
+  The future becomes the library's equity forward, with a forward-start
+  closed form (AAPL: 12.7414 against Monte-Carlo 12.7408 ± 0.0042). Their
+  hand-written entries leave the catalog (the future stays a portfolio form),
+  old links open the scripts.
+- **b2b.** The swap and the swaptions as scripts on the market the rates
+  workbench already priced on: a header `# curve: sofr` puts a rates product
+  on the USD SOFR curve bootstrapped from the swaps DTCC published (one
+  curve: SOFR discounts and projects), with Hull-White `(a, sigma)`
+  calibrated to the ATM normal vols implied from the swaptions traded over
+  the last ten days (`rates_derivatives.sofr_hull_white`, the same quotes and
+  the same calibration as the `usd-sofr` set; 2026-11-17: a = 0.048,
+  sigma = 120bp, 5bp RMSE on 20 points). `hull_white.curve = "sofr"` on the
+  request; mean reversion and sigma are the calibrated ones unless given.
+  Three scripts: a five-year payer swap (annual `fwdRate()` against the
+  fixed rate), a one-year-into-five European swaption (the swap's value at
+  expiry from `df()`, which reads the simulated bond prices) and the
+  co-terminal Bermudan (yearly `exercise()`, Longstaff-Schwartz on the
+  swap's value, in the money only). Their oracles price the same model on
+  the script's own dates (`qm.hull_white_swap_on_dates`): Analytic for the
+  swap is the curve's value of its legs; for the European it is the
+  Hull-White closed form (191,794.5 against Monte-Carlo 191,815.6 ± 33.1 on
+  2026-11-17); the Bermudan's lattice is a test oracle, Longstaff-Schwartz
+  within 1.5 % under it. Analytic gives DV01 (every SOFR par quote +1bp, the
+  curve rebuilt, `(a, sigma)` held), its gamma and the vega to sigma. The
+  hand-written swap and swaption entries leave the catalog (old links open
+  the scripts), along with their quote editor and the illustrative EUR
+  two-curve set. Their results become the Diagnostics of the scripts: the
+  same trade on the rates engines on a regular grid, with the curve, the
+  calibration point by point, the cash flows, the swaption under Bachelier,
+  Black and SABR, and the Bermudan on the lattice. 
+- **b2c. Curve adjoints.** The Hull-White hybrid
+  (`models/hybrid/hull_white_equity_sim_model.hpp`) differentiates the short
+  rate's sigma (`rate_vol`, a held) and its curve on the tape. With a fixed,
+  the step's moments scale exactly: the drifts and y(t) as sigma², the rates
+  rows of the Cholesky factor as sigma. So they are computed once at
+  sigma = 1 and scaled on the path, and the simulation stays exact. The
+  curve enters only through log P(0, ·) at known dates, which is linear in
+  the pillars' log discount factors (`DiscountCurve::log_discount_weights`).
+  The model takes `CurveFactors`, a basis of zero-rate moves, one parameter
+  per column. The API passes the bootstrap's Jacobian dz/dq for the SOFR
+  curve, so each risk is to a par swap rate (a bucketed DV01). For a
+  government curve it passes the identity, so each risk is to a pillar's
+  zero rate. Both get a parallel column, and every risk comes with its own
+  Monte-Carlo error. That is why the map is built into the model, unlike
+  xVA lot X8, which applies its Jacobians batch by batch: the script engine
+  reports no per-batch risks. 2026-11-17, 100,000 paths, against the closed
+  form's bumps: swap DV01 4,369.42 ± 0.02 vs 4,369.43; European swaption
+  DV01 2,075.07 ± 0.44 vs 2,074.96, vega 1,542.76 ± 0.12 vs 1,542.75 per bp
+  of sigma. The Bermudan gets them too, by Longstaff-Schwartz. Rates scripts
+  request `greeks_method = "aad"`. The response drops the hybrid's unread
+  stock; rho and vega are the parallel and sigma risks. Not differentiated:
+  the mean reversion, nor the recalibration of (a, sigma) when the curve or
+  the vols move (xVA does both). DV01 holds (a, sigma) fixed, as the closed
+  form's bump does.
+- **b3. The portfolio books scripts** (decided by the maintainer on
+  2026-11-18: positions converted, closed form where there is one, rates
+  scripts included).
+  - **Booking.** A position (`ScriptSpec`) holds the product's script,
+    rendered with its terms on the trade date (`lead_days = 0`: the first
+    date falls in the week of the trade), so its dates are the contract's
+    from then on. `POST /api/portfolio-valuation/script/quote` books it and
+    values it that day, which is the default price. "Add to portfolio" is
+    offered from every single-underlying script and every rates script.
+    Products on several underlyings and quantos are refused, because no
+    correlated history is stored for them.
+  - **Marks** (`portfolio_scripts.py`, one per day, stored once).
+    - Past fixings are replayed on the stored closes.
+    - A past exercise date is a right not used, a new engine setting
+      `ScriptSettings::past_rights_unexercised`: the event is skipped, where
+      it used to be refused.
+    - The flows already paid stay in the mark, not compounded. The engine
+      now reports them (`ScriptedProduct::historical_payments`), because
+      the ledger has no cash account; this is the convention of the rate
+      trades.
+    - A rates script's past events that read the curve are taken out (its
+      terms kept), and what they paid is valued on the curve of their own
+      date (`season`).
+    - Closed form where there is one. Converted positions use their
+      hand-written pricer (`closed_form`). The European, the digital and the
+      forward use the vanilla on the smile, the digital and cost of carry
+      once their strike is fixed. Bonds and the swap use the day's curve.
+      The European swaption uses Hull-White's closed form on the day's SOFR
+      curve and calibration.
+    - Monte-Carlo otherwise, on the desk policy's model (stochastic-local
+      vol, local vol, Black-Scholes at the realised-vol proxy; Hull-White
+      calibrated to the day's swaptions), with the same draws every day.
+  - **Conversion.** Portfolio version 3: on read (`migrate`), each
+    hand-written derivative becomes the script of its payoff, its terms kept
+    as its closed form, so it marks as before. In production that is 3
+    European vanillas, plus the demo portfolios.
+  - **xVA.** A converted European stays the netting set's equity option. A
+    SOFR script is a scripted trade of the exposure engine, seen from the
+    day: its past events taken out, their terms carried (`for_exposure`).
+    The rest is left out, and the response says so.
+  - **Front end.** The hand-written equity and bond descriptors are deleted
+    (`catalog.ts`, `portfolioProducts.ts`, `DerivativeFields`), and so is
+    the payoff profile that served them. The trade form books library
+    products (`ScriptFields`), and a position links back to its product on
+    the Price page.
+  - Tests: `tests/testScriptSeasoned.cpp`, `api/tests/test_portfolio_scripts.py`,
+    `script-booking.integration.test.tsx`.
 
 ## 8. P4 — Multilevel Monte-Carlo
 

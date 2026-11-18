@@ -13,7 +13,7 @@ import { ErrorState, TableSkeleton } from "@/shared/ui/states";
 import { PnlSummary } from "./PnlSummary";
 import { PortfolioMethodology } from "./PortfolioMethodology";
 import { PortfolioTabs } from "./PortfolioTabs";
-import type { InitialDerivative } from "./DerivativeFields";
+import type { InitialScript } from "./ScriptFields";
 import { TradeForm, type TradePreset } from "./TradeForm";
 
 /**
@@ -31,7 +31,7 @@ export function PortfolioView({
 	/** absent for a read-only portfolio */
 	onSave?: (ledger: Ledger) => void;
 	/** a derivative carried in from the workbench: the trade form opens on it */
-	initialTrade?: InitialDerivative;
+	initialTrade?: InitialScript;
 	/** the carried-in trade was booked or cancelled */
 	onTradeDone?: () => void;
 }) {

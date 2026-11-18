@@ -78,9 +78,13 @@ namespace quantModeling::gpu
         }
 
         /// The same factors as dense rows, for the generated paths (WP 27 lot
-        /// L2): row e = [exp(r t_e), exp(-r (T_i - t_e)) per df() slot].
+        /// L2): row e = [exp(r t_e), exp(-r (T_i - t_e)) per df() slot, then
+        /// exp((r - q) (T_j - t_e)) per fwd() slot from column fwd_col0, q
+        /// spot(0)'s dividend yield -- what ir_path.cpp's path_data writes,
+        /// with the device's exp.
         __global__ void event_rows_kernel(const Time *t, const int *event, int n_steps, double r,
-                                          const int *disc_begin, const Time *disc_mats, int cols, double *rows)
+                                          const int *disc_begin, const Time *disc_mats, int cols, double *rows,
+                                          double carry, const int *fwd_begin, const Time *fwd_mats, int fwd_col0)
         {
             const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
             if (s >= n_steps)
@@ -92,6 +96,9 @@ namespace quantModeling::gpu
             double *row = rows + static_cast<long>(e) * cols;
             for (int i = disc_begin[e]; i < disc_begin[e + 1]; ++i)
                 row[1 + i - disc_begin[e]] = exp(-r * (disc_mats[i] - ts));
+            if (fwd_begin)
+                for (int i = fwd_begin[e]; i < fwd_begin[e + 1]; ++i)
+                    row[fwd_col0 + i - fwd_begin[e]] = exp(carry * (fwd_mats[i] - ts));
             row[0] = exp(r * ts);
         }
 
@@ -378,9 +385,27 @@ namespace quantModeling::gpu
                 // The price's factors, tabulated with the device's exp: the
                 // interpreter's bits (WP 26 P1i).
                 double *rows = mem.alloc<double>(data.event_rows.size());
+                // fwd(): its maturities per event, from the IR
+                const int *fwd_begin = nullptr;
+                const Time *fwd_mats = nullptr;
+                if (req.ir->has_forward)
+                {
+                    std::vector<int> begin{0};
+                    std::vector<Time> mats;
+                    for (const auto &m : req.ir->event_fwd_mats)
+                    {
+                        mats.insert(mats.end(), m.begin(), m.end());
+                        begin.push_back(static_cast<int>(mats.size()));
+                    }
+                    fwd_begin = mem.put(begin);
+                    fwd_mats = mem.put(mats);
+                }
+                const DeviceModel &dm = *req.model;
+                const double carry = dm.r - (dm.n_assets > 1 ? dm.divs[0] : dm.q);
                 const unsigned threads = 256;
                 event_rows_kernel<<<static_cast<unsigned>((v.n_steps + threads - 1) / threads), threads>>>(
-                    v.t, v.event, v.n_steps, v.r, v.disc_begin, v.disc_mats, l.event_cols, rows);
+                    v.t, v.event, v.n_steps, v.r, v.disc_begin, v.disc_mats, l.event_cols, rows, carry, fwd_begin,
+                    fwd_mats, l.fwd_col0);
                 detail::check(cudaGetLastError(), "event rows launch");
                 u.event_rows = rows;
             }
@@ -417,6 +442,9 @@ namespace quantModeling::gpu
                 if (req.program && req.program->has_exercise)
                     throw InvalidInput("GPU: exercise() / call() need the kernels compiled from the IR, and they "
                                        "are not available here (" + why + ")");
+                if (req.program && req.program->has_forward)
+                    throw InvalidInput("GPU: fwd() needs the kernels compiled from the IR, and they are not "
+                                       "available here (" + why + ")");
                 out.note = "interpreted bytecode (" + why + ")";
                 return out;
             };

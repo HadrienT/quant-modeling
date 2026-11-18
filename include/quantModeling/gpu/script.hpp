@@ -61,6 +61,10 @@ namespace quantModeling::gpu
         using L = ScriptLimits;
         if (p.code.empty())
             return "the script is not compiled to bytecode";
+        // the interpreted kernels read no forward: only the kernels compiled
+        // from the IR compute fwd() (WP 16 §15)
+        if (p.has_forward && !script_jit_enabled())
+            return "fwd() runs in the GPU kernels compiled from the IR, and compilation is off (QM_SCRIPT_JIT=0)";
         // the interpreted kernels have no exercise rule: only the kernels
         // compiled from the IR decide (WP 26 §16)
         if (p.has_exercise && !script_jit_enabled())

@@ -20,6 +20,7 @@ import type {
 export const SCRIPTED_PRODUCTS = LIBRARY as ScriptedProduct[];
 
 const FAMILY: Record<string, ProductCategory> = {
+	"Fixed income": "fixed-income",
 	"Vanillas and digitals": "vanilla",
 	"Barriers and touch options": "barrier",
 	"Asians, lookbacks and ladders": "path",
@@ -59,14 +60,35 @@ const DOC_KEYS: Record<string, string> = {
 	"basket-call": "basket",
 	"best-of-call": "rainbow",
 	"worst-of-call": "rainbow",
+	"zero-coupon-bond": "bond",
+	"fixed-rate-bond": "bond",
+	"equity-forward": "future",
+	"interest-rate-swap": "swap",
+	"european-swaption": "swaption",
+	"bermudan-swaption": "swaption",
 };
+
+/** The government curves a rates product can be priced on: those the
+ * database derives (api/app/rates.py; GBP has three par yields only, CHF no
+ * free curve). */
+export const RATES_CURRENCIES = ["USD", "EUR", "JPY"] as const;
 
 /**
  * Products with a closed form (engine 'analytic', api/app/pricing_service.py
  * ANALYTIC_SCRIPTED): Black-Scholes at the ticker's at-the-money implied vol,
  * the strike fixed on the start date (a forward start).
  */
-export const ANALYTIC_SCRIPTED = new Set(["european-call", "digital-call"]);
+export const ANALYTIC_SCRIPTED = new Set([
+	"european-call",
+	"digital-call",
+	"equity-forward",
+	// rates products: the cash flows discounted on the curve
+	"zero-coupon-bond",
+	"fixed-rate-bond",
+	"interest-rate-swap",
+	// Hull-White in closed form, the model its Monte-Carlo simulates
+	"european-swaption",
+]);
 
 /**
  * Library products the database cannot price yet, with the reason the page
@@ -91,6 +113,20 @@ const DEFAULT_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN"];
 
 export const scriptedKey = (slug: string) => `script-${slug}`;
 
+/**
+ * The library products a portfolio holds (api/app/portfolio_scripts.book,
+ * issue 313 lot b3): one underlying and no quanto -- or a rates product,
+ * which reads only its curve. By name.
+ */
+export const BOOKABLE_SCRIPTS: ScriptedProduct[] = SCRIPTED_PRODUCTS.filter(
+	(p) => p.underlyings === 1 && !p.quanto,
+).sort((a, b) => a.title.localeCompare(b.title));
+
+/** The bookable product a catalog key names, if any. */
+export function bookableScript(key: string): ScriptedProduct | undefined {
+	return BOOKABLE_SCRIPTS.find((p) => scriptedKey(p.slug) === key);
+}
+
 const term = (unit: string) =>
 	unit === "percent"
 		? z.coerce.number().min(-100).max(1000)
@@ -111,37 +147,47 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 			step: prm.unit === "percent" ? 0.5 : undefined,
 		};
 	}
-	// A quanto prices on `underlyings` (one, in its listing currency), which
-	// only correlated Black-Scholes simulates.
-	const joint = multi || !!p.quanto;
-	shape.model = z.enum(joint ? MULTI_MODELS : SINGLE_MODELS);
-	shape.tickers = z
-		.string()
-		.min(1, "A ticker per underlying")
-		.regex(/^[A-Za-z.\-^, ]+$/, "Tickers separated by commas");
-	shape.rate = f.ratePct();
+	const rates = p.market === "rates";
+	const sofr = p.curve === "sofr";
+	if (rates && !sofr) {
+		// no stock: the currency's government curve, Hull-White fitted to it
+		shape.currency = z.enum(RATES_CURRENCIES);
+		defaults.currency = "USD";
+		fields.currency = { label: "Government curve", group: "market" };
+	} else if (!rates) {
+		// A quanto prices on `underlyings` (one, in its listing currency),
+		// which only correlated Black-Scholes simulates.
+		const joint = multi || !!p.quanto;
+		shape.model = z.enum(joint ? MULTI_MODELS : SINGLE_MODELS);
+		shape.tickers = z
+			.string()
+			.min(1, "A ticker per underlying")
+			.regex(/^[A-Za-z.\-^, ]+$/, "Tickers separated by commas");
+		shape.rate = f.ratePct();
+	}
 	shape.n_paths = f.paths();
 	shape.seed = f.seed();
-	Object.assign(defaults, {
-		model: "auto",
-		tickers: multi
-			? DEFAULT_TICKERS.slice(0, p.underlyings).join(", ")
-			: p.quanto
-				? "SAP.DE"
-				: "SPY",
-		rate: 4,
-		n_paths: 50_000,
-		seed: 1,
-	});
-	Object.assign(fields, {
-		model: { label: "Dynamics (model)", group: "market" },
-		tickers: {
-			label: multi
-				? `Tickers, spot(0) to spot(${p.underlyings - 1})`
-				: "Ticker",
-			group: "market",
-		},
-	} satisfies Record<string, FieldOverride>);
+	Object.assign(defaults, { n_paths: 50_000, seed: 1 });
+	if (!rates) {
+		Object.assign(defaults, {
+			model: "auto",
+			tickers: multi
+				? DEFAULT_TICKERS.slice(0, p.underlyings).join(", ")
+				: p.quanto
+					? "SAP.DE"
+					: "SPY",
+			rate: 4,
+		});
+		Object.assign(fields, {
+			model: { label: "Dynamics (model)", group: "market" },
+			tickers: {
+				label: multi
+					? `Tickers, spot(0) to spot(${p.underlyings - 1})`
+					: "Ticker",
+				group: "market",
+			},
+		} satisfies Record<string, FieldOverride>);
+	}
 
 	return {
 		key: scriptedKey(p.slug),
@@ -156,13 +202,21 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 				? [
 						{
 							key: "analytic" as EngineKey,
-							label: "Analytic (Black-Scholes)",
+							label: !rates
+								? "Analytic (Black-Scholes)"
+								: p.slug === "european-swaption"
+									? "Analytic (Hull-White closed form)"
+									: "Analytic (the curve)",
 						},
 					]
 				: []),
 			{
 				key: "mc" as EngineKey,
-				label: "Monte-Carlo (payoff script)",
+				label: sofr
+					? "Monte-Carlo (Hull-White on SOFR)"
+					: rates
+						? "Monte-Carlo (Hull-White on the curve)"
+						: "Monte-Carlo (payoff script)",
 				options: ["paths", "seed"],
 			},
 		],
@@ -192,6 +246,21 @@ export function scriptedRequest(
 			prm.unit === "percent" ? pct(v[prm.name]) : Number(v[prm.name]),
 		]),
 	);
+	if (p.market === "rates")
+		// the curve of the currency, or the SOFR market of the traded swaps
+		// and swaptions: no ticker, no model to choose
+		return {
+			product: p.slug,
+			terms,
+			hull_white:
+				p.curve === "sofr"
+					? { curve: "sofr" }
+					: { currency: v.currency ?? "USD" },
+			// the risks to the curve and to the short rate's vol, by the tape
+			greeks_method: "aad",
+			n_paths: Number(v.n_paths),
+			seed: Number(v.seed),
+		};
 	const tickers = String(v.tickers ?? "")
 		.split(/[\s,;]+/)
 		.map((t) => t.trim().toUpperCase())

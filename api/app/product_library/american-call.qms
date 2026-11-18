@@ -1,0 +1,33 @@
+# title: American call
+# category: Vanillas and digitals
+# underlyings: 1
+# source: Longstaff & Schwartz, Valuing American Options by Simulation: A Simple Least-Squares Approach, Review of Financial Studies 14(1), 2001
+# source: Merton, Theory of Rational Option Pricing, Bell Journal of Economics and Management Science 4(1), 1973
+# summary: The right to buy the stock at the strike on any week until expiry: worth more than the European call only on a dividend payer, whose holder may exercise to collect the dividends.
+# param: strike = 1.0 | percent | Strike, % of the initial level
+#
+# Exercise every week, decided by a least-squares regression of the
+# continuation value on the moneyness spot / s0. Exercising is ever worth it
+# only in the money and above the forward held to the expiry: the option is
+# worth at least (fwd(T) - K) df(T), what holding the stock to expiry and
+# paying the strike then is worth now, dividends forgone. Only there is it
+# considered, so that the estimated rule never exercises where holding is
+# certainly better -- without that bound, on a small dividend, it priced
+# under the European. Without dividends it never exercises (Merton 1973).
+# The price is a lower bound: the rule is estimated.
+
+2027-01-04
+    strike = 1.0
+    s0 = spot()
+    done = 0
+
+schedule(2027-01-11, 2027-12-27, 1W, US, F)
+    if spot() > strike * s0 and spot() - strike * s0 > (fwd(2028-01-04) - strike * s0) * df(2028-01-04) and exercise(spot() / s0) then
+        pays spot() - strike * s0
+        done = 1
+    endIf
+
+2028-01-04
+    if done = 0 then
+        pays max(spot() - strike * s0, 0)
+    endIf

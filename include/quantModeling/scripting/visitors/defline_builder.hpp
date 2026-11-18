@@ -19,9 +19,8 @@ namespace quantModeling::scripting
      * cash flow (the amount is deflated by that date's numeraire).
      * `discount_mats` comes from `discount_lookup_resolver.hpp`'s pass over
      * the same, already-resolved event list — the maturities that event's
-     * own `df()` calls need, in slot order (WP 16e). `forward_mats` stays
-     * empty until the language gains `fwd()` (still out of scope: it needs
-     * a real forward curve, not the flat-r convention `df()` reuses).
+     * own `df()` calls need, in slot order (WP 16e); `forward_mats` likewise
+     * from ForwardLookupResolver, for its `fwd()` calls.
      * `barriers` comes from StepMonitorResolver: the levels the event's
      * survivalAbove() / survivalBelow() calls ask the model to monitor
      * since the previous event (WP 26 P2); empty means none.
@@ -29,7 +28,8 @@ namespace quantModeling::scripting
     inline std::vector<SampleDef>
     build_defline(const std::vector<Event> &events,
                   const std::vector<std::vector<Time>> &discount_mats,
-                  const std::vector<std::vector<StepMonitor>> &barriers = {})
+                  const std::vector<std::vector<StepMonitor>> &barriers = {},
+                  const std::vector<std::vector<Time>> &forward_mats = {})
     {
         auto pays_here = [](const Event &event)
         {
@@ -55,6 +55,8 @@ namespace quantModeling::scripting
         {
             defline[i].numeraire = pays_here(events[i]);
             defline[i].discount_mats = discount_mats[i];
+            if (!forward_mats.empty())
+                defline[i].forward_mats = forward_mats[i];
             if (!barriers.empty())
                 defline[i].monitors = barriers[i];
         }

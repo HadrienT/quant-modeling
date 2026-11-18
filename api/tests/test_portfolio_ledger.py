@@ -144,8 +144,12 @@ def test_migration_turns_positions_into_one_trade_each_and_converts_front_percen
         ],
     )
     pf = L.migrate(legacy)
-    assert pf.version == 2
+    assert pf.version == 3  # a ledger, its derivatives as scripts (lot b3)
     by_id = {i.id: i for i in pf.instruments}
+    assert by_id["a"].spec.kind == "script"
+    by_id = {
+        k: v.model_copy(update={"spec": v.spec.closed_form}) for k, v in by_id.items()
+    }
     assert by_id["a"].spec.params["vol"] == pytest.approx(
         0.20
     )  # front form value 20 → 0.20

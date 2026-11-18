@@ -9,6 +9,11 @@ header the site reads:
     # underlyings: 3
     # quanto: USD                      (optional: one underlying listed in
                                        another currency, paid in this one)
+    # market: rates                    (optional: no stock -- priced on the
+                                       government curve, by Hull-White)
+    # curve: sofr                      (optional, rates only: the USD SOFR
+                                       curve of the traded swaps, Hull-White
+                                       calibrated to the traded swaptions)
     # source: ...                      (one line per source, at least one)
     # summary: ...
     # param: coupon = 0.025 | percent | Quarterly coupon, % of notional
@@ -41,7 +46,9 @@ LIBRARY = Path(__file__).with_name("product_library")
 LEAD_DAYS = 7
 UNITS = ("percent", "amount", "number")
 
-_META = re.compile(r"^# (title|category|underlyings|quanto|source|summary): (.+)$")
+_META = re.compile(
+    r"^# (title|category|underlyings|quanto|market|curve|source|summary): (.+)$"
+)
 _PARAM = re.compile(r"^# param: (\w+) = (\S+) \| (\w+) \| (.+)$")
 _ISO = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
@@ -70,6 +77,14 @@ class Template:
     #: Payment currency of a quanto (one underlying listed in another
     #: currency, priced on `underlyings` with `currency`); None otherwise.
     quanto: str | None = None
+    #: "rates": the script reads no stock, only the curve (df(), fwdRate());
+    #: priced by Hull-White fitted to the currency's government curve.
+    market: str = "equity"
+    #: The curve of a rates product: "government" (the currency's, chosen
+    #: on the request) or "sofr" (USD SOFR from the swaps DTCC published,
+    #: Hull-White calibrated to the swaptions traded with them: swaps and
+    #: swaptions, rates_derivatives.sofr_hull_white).
+    curve: str = "government"
 
 
 def parse(slug: str, text: str) -> Template:
@@ -103,7 +118,15 @@ def parse(slug: str, text: str) -> Template:
         text=text,
         script="\n".join(body) + "\n",
         quanto=meta.get("quanto"),
+        market=meta.get("market", "equity"),
+        curve=meta.get("curve", "government"),
     )
+    if t.market not in ("equity", "rates"):
+        raise ValueError(f"{slug}: unknown market '{t.market}'")
+    if t.curve not in ("government", "sofr"):
+        raise ValueError(f"{slug}: unknown curve '{t.curve}'")
+    if t.curve != "government" and t.market != "rates":
+        raise ValueError(f"{slug}: a curve is for a rates product (# market: rates)")
     for prm in t.params:
         if not _assignment(prm.name).search(t.script):
             raise ValueError(f"{slug}: param {prm.name} is never assigned")
@@ -132,13 +155,14 @@ def _fmt(x: float) -> str:
     return repr(float(x)) if not float(x).is_integer() else str(int(x))
 
 
-def align_dates(script: str, valuation_date: date) -> str:
-    """Moves every date by whole weeks so that the first falls LEAD_DAYS to
-    LEAD_DAYS + 6 days after the valuation date."""
+def align_dates(script: str, valuation_date: date, lead_days: int = LEAD_DAYS) -> str:
+    """Moves every date by whole weeks so that the first falls `lead_days`
+    to `lead_days` + 6 days after the valuation date (whole weeks keep every
+    date on its weekday)."""
     dates = [date.fromisoformat(d) for d in _ISO.findall(script)]
     if not dates:
         return script
-    gap = (valuation_date + timedelta(days=LEAD_DAYS) - min(dates)).days
+    gap = (valuation_date + timedelta(days=lead_days) - min(dates)).days
     weeks = -(-gap // 7)  # ceiling
     if weeks == 0:
         return script
@@ -146,9 +170,16 @@ def align_dates(script: str, valuation_date: date) -> str:
     return _ISO.sub(lambda m: (date.fromisoformat(m[0]) + shift).isoformat(), script)
 
 
-def render(slug: str, terms: Mapping[str, float], valuation_date: date) -> str:
+def render(
+    slug: str,
+    terms: Mapping[str, float],
+    valuation_date: date,
+    lead_days: int = LEAD_DAYS,
+) -> str:
     """The product's script with the given terms (the others at their
-    defaults), dated to start a week after `valuation_date`."""
+    defaults), dated to start a week after `valuation_date` -- or, booked in
+    a portfolio (lead_days = 0), within the week that starts on the trade
+    date."""
     t = get(slug)
     names = {p.name for p in t.params}
     unknown = set(terms) - names
@@ -165,7 +196,7 @@ def render(slug: str, terms: Mapping[str, float], valuation_date: date) -> str:
         script = _assignment(p.name).sub(
             lambda m, v=value: m.group(1) + _fmt(v), script, count=1
         )
-    return align_dates(script, valuation_date)
+    return align_dates(script, valuation_date, lead_days)
 
 
 def catalog() -> List[dict]:
@@ -184,6 +215,8 @@ def catalog() -> List[dict]:
             ],
             "script": t.script,
             **({"quanto": t.quanto} if t.quanto else {}),
+            **({"market": t.market} if t.market != "equity" else {}),
+            **({"curve": t.curve} if t.curve != "government" else {}),
         }
         for t in templates().values()
     ]

@@ -189,6 +189,7 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     case Op::PayIn:
                     case Op::Spot:
                     case Op::Df:
+                    case Op::Fwd:
                     case Op::Surv:
                     case Op::Num:
                         throw InvalidInput("script IR: a script-level block reached the CUDA backend unbound");

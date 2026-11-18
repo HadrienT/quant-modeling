@@ -45,13 +45,13 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import quantmodeling as qm
 
-from . import db, fx, portfolio_rates, rates, valuation
+from . import db, fx, portfolio_rates, portfolio_scripts, rates, valuation
 from .portfolio_ledger import Holding, QTY_EPS, sorted_trades
 from . import portfolio_models
 from .portfolio_marks import Input, Mark, ModelInfo, ModelParam
@@ -61,6 +61,7 @@ from .portfolio_schemas import (
     Instrument,
     Portfolio,
     RateFxSpec,
+    ScriptSpec,
 )
 from .storage import get_storage
 
@@ -268,8 +269,13 @@ def _zero_rate(
 
 
 def _mark_derivative(
-    spec: DerivativeSpec, d: date, md: MarketData, today: Optional[date] = None
+    spec: Union[DerivativeSpec, ScriptSpec],
+    d: date,
+    md: MarketData,
+    today: Optional[date] = None,
 ) -> Mark:
+    if isinstance(spec, ScriptSpec):
+        return portfolio_scripts.mark(spec, d, md, today)
     ccy = spec.currency
     if d >= spec.expiry:
         return Mark(
@@ -277,8 +283,10 @@ def _mark_derivative(
             ccy,
             note=f"expired on {spec.expiry}: book its settlement as a closing trade",
         )
+    # "script": a script position's view (portfolio_scripts), marked by
+    # portfolio_models on the market inputs set below.
     product = valuation.PRODUCTS.get(spec.product)
-    if product is None:
+    if product is None and spec.product != "script":
         return Mark(None, ccy, note=f"unknown product {spec.product!r}")
     params = dict(spec.params)
     inputs: List[Input] = []
@@ -511,7 +519,8 @@ def prefetch_marks(pf: Portfolio, days: List[date], md: MarketData) -> None:
         (by_id[iid], d)
         for d in days
         for iid, h in _holdings_at(pf, d).items()
-        if abs(h.quantity) > QTY_EPS and isinstance(by_id[iid].spec, DerivativeSpec)
+        if abs(h.quantity) > QTY_EPS
+        and isinstance(by_id[iid].spec, (DerivativeSpec, ScriptSpec))
     ]
     # Market series are read lazily and cached on md: load them once, here,
     # rather than race to load them from every thread.
@@ -624,7 +633,9 @@ def _ccy(instrument: Instrument, md: MarketData) -> str:
     if isinstance(spec, RateFxSpec):
         return spec.value_currency
     return (
-        spec.currency if isinstance(spec, DerivativeSpec) else md.currency(spec.ticker)
+        spec.currency
+        if isinstance(spec, (DerivativeSpec, ScriptSpec))
+        else md.currency(spec.ticker)
     )
 
 
@@ -883,6 +894,20 @@ METHODOLOGY = [
             "the extremum reached, a barrier already crossed. They are priced by "
             "Monte-Carlo with the same draws every day, so the daily P&L is not noise; "
             "the standard error is shown with the model.",
+            "Products of the script library (the Price page's catalog) are held as "
+            "their script, dated when they are booked: the first date falls in the "
+            "week of the trade, and every later mark replays those dates. Past "
+            "fixings come from the stored closes, a past exercise date is a right "
+            "that was not used (an exercise is booked as a closing trade), and the "
+            "flows already paid stay in the mark, not compounded, as for a swap. A "
+            "product with a closed form is marked by it: the European, the digital "
+            "and the forward once their strike is fixed on their first date, and the "
+            "options booked before the scripts, converted to scripts of the same "
+            "payoff. The others run by Monte-Carlo on the model above, with the same "
+            "draws every day. A rates script is valued on the day's curve: the "
+            "government curve for a bond, the SOFR curve and Hull-White calibrated to "
+            "the day's swaptions for a swap or a swaption, the European swaption in "
+            "closed form, the Bermudan by Longstaff-Schwartz.",
             "What the market cannot supply keeps its trade-time value (status "
             "'default').",
             "An expired derivative is not valued past its expiry: book its settlement as "

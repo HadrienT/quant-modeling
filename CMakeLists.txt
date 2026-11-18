@@ -382,6 +382,8 @@ if(QM_BUILD_TESTS)
     tests/testScriptDomain.cpp
     tests/testScriptFuzzy.cpp
     tests/testScriptParity.cpp
+    tests/testScriptForward.cpp
+    tests/testScriptSeasoned.cpp
     tests/testSimulationEngine.cpp
     tests/testBSAna.cpp
     tests/testQuanto.cpp
@@ -427,6 +429,7 @@ if(QM_BUILD_TESTS)
     tests/testRates.cpp
     tests/testLsm.cpp
     tests/testHybrid.cpp
+    tests/testHybridCurveAdjoints.cpp
     tests/testCurveAwareBSSimModel.cpp
     tests/testRawVolSurface.cpp
     tests/testSVI.cpp
@@ -507,6 +510,7 @@ if(QM_BUILD_TESTS)
       tests/gpu/testGpuVanilla.cpp
       tests/gpu/testGpuPaths.cpp
       tests/gpu/testGpuScripts.cpp
+      tests/gpu/testGpuForward.cpp
       tests/gpu/testGpuScriptJit.cpp
       tests/gpu/testGpuParallelUnits.cpp
       tests/gpu/testGpuRisks.cpp

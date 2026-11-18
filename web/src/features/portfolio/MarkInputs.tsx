@@ -17,7 +17,7 @@ export function MarkInputs({
 }) {
 	const { isShown } = useNavPages();
 	const toWorkbench = isShown("/price")
-		? workbenchFromPosition(p, instrument)
+		? workbenchFromPosition(instrument)
 		: null;
 	return (
 		<div className="flex flex-col gap-2">
@@ -43,7 +43,7 @@ export function MarkInputs({
 					))}
 				</tbody>
 			</table>
-			{p.kind === "derivative" && p.mark != null && (
+			{(p.kind === "derivative" || p.kind === "script") && p.mark != null && (
 				<p className="text-2xs text-ink-muted">
 					Unit mark {p.mark.toFixed(4)} {p.currency}
 					{p.fx_rate != null &&

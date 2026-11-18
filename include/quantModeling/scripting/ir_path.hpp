@@ -89,7 +89,10 @@ namespace quantModeling::scripting::ir
         /// The step row's first survival column: level and "above" (1/0)
         /// of each survival slot of the date the step leads to.
         int surv_col0 = 0;
-        int event_cols = 1; ///< per date: 1 + the most df() slots a date reads
+        int event_cols = 1; ///< per date: 1 + the most df() slots a date reads, + the most fwd() slots
+        /// The date row's first fwd() column: tau = T - t (risk), or
+        /// e^((r - q) tau) (price), q spot(0)'s dividend yield.
+        int fwd_col0 = 1;
     };
 
     /// The layout of a script on a model kind; `max_df` from the script's

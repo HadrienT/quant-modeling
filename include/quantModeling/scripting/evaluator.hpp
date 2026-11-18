@@ -57,6 +57,10 @@ namespace quantModeling::scripting
         /// NodePays's accumulation into payoff_ without disturbing the stack
         /// discipline (the amount is still popped, just discarded).
         void set_suppress_payoff(bool suppress) { suppress_payoff_ = suppress; }
+        /// What the suppressed `pays` added up to since initialize(): the
+        /// cash flows of the historical events (deflated by their sample's
+        /// numeraire, 1 in the replay: undiscounted).
+        const T &suppressed_payoff() const { return suppressed_; }
 
         /// One exercise() / call() the path reached before exercising: the
         /// event and the regressors there (LSMC pilot, see ExerciseMode).
@@ -121,6 +125,7 @@ namespace quantModeling::scripting
             else
                 std::fill(variables_.begin(), variables_.end(), T(0));
             payoff_ = T(0);
+            suppressed_ = T(0);
             stack_.clear();
         }
 
@@ -159,6 +164,22 @@ namespace quantModeling::scripting
                     "lookups -- DiscountLookupResolver must run before this "
                     "product is priced");
             push(discounts[n.slot]);
+        }
+        void visit(const NodeFwd &n) override
+        {
+            const std::vector<T> &forwards = (*scenario_)[event_index_].forwards;
+            if (n.slot >= forwards.size())
+                throw InvalidInput("fwd(" + n.date.to_iso() +
+                                   "): the model did not fill this event's forwards -- ForwardLookupResolver must "
+                                   "run, and the model must fill forwards");
+            push(forwards[n.slot]);
+        }
+        void visit(const NodeYf &n) override
+        {
+            if (!n.resolved)
+                throw InvalidInput("yf(" + n.from.to_iso() + ", " + n.to.to_iso() +
+                                   "): not resolved -- DiscountLookupResolver must run first");
+            push(T(n.value));
         }
         void visit(const NodeStepQuantity &n) override
         {
@@ -328,6 +349,8 @@ namespace quantModeling::scripting
             const T value = pop();
             if (!suppress_payoff_)
                 payoff_ += value / (*scenario_)[event_index_].numeraire;
+            else
+                suppressed_ += value / (*scenario_)[event_index_].numeraire;
         }
         void visit(const NodeControlPays &n) override
         {
@@ -450,6 +473,7 @@ namespace quantModeling::scripting
         std::vector<T> baseline_;
         bool has_baseline_ = false;
         bool suppress_payoff_ = false;
+        T suppressed_ = T(0);
 
         ExerciseMode exercise_mode_ = ExerciseMode::Refuse;
         std::size_t exercise_event_ = 0;

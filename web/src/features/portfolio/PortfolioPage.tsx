@@ -7,7 +7,7 @@ import { Button, Disclaimer, toast } from "@/shared/ui";
 import { EmptyState, ErrorState, TableSkeleton } from "@/shared/ui/states";
 import { useMe } from "@/shared/session";
 import { DemoBanner } from "./DemoBanner";
-import type { InitialDerivative } from "./DerivativeFields";
+import type { InitialScript } from "./ScriptFields";
 import { MigrationBanner } from "./MigrationBanner";
 import { PortfolioSidebar } from "./PortfolioSidebar";
 import { PortfolioToolbar } from "./PortfolioToolbar";
@@ -43,7 +43,7 @@ export default function PortfolioPage() {
 	// A derivative carried in from the workbench (WP 28, lot U2).
 	const { trade } = useSearch({ from: "/portfolio" });
 	const navigate = useNavigate({ from: "/portfolio" });
-	const initialTrade = decodeParams<InitialDerivative | undefined>(
+	const initialTrade = decodeParams<InitialScript | undefined>(
 		trade,
 		undefined,
 	);

@@ -18,12 +18,30 @@ const NAMES: Record<string, [name: string, unit: string]> = {
 	rho: ["Spot / vol correlation ρ", "model parameter, not the rate greek"],
 	eta: ["Rough Bergomi η", "vol of vol"],
 	xi0: ["Rough Bergomi ξ₀", "flat forward variance"],
+	// Hull-White rates (a rates product of the library)
+	rate_vol: ["Hull-White σ", "per 1.00 of short-rate vol (÷10,000 for one bp)"],
+	curve_parallel: [
+		"Curve, every quote together",
+		"per 1.00 of rate (÷10,000 for the DV01)",
+	],
 };
+
+/** A curve factor: a par swap rate the curve was built from, or a pillar's
+ * zero rate, by its tenor in years. */
+const CURVE = /^(swap_rate|zero)\[([\d.]+)\]$/;
 
 /** A local-vol or leverage grid node: one sensitivity per (strike, date). */
 const GRID = /^(lvol|leverage)\[\d+,\d+\]$/;
 
 function describe(label: string): [string, string] {
+	const curve = CURVE.exec(label);
+	if (curve)
+		return [
+			curve[1] === "swap_rate"
+				? `SOFR ${curve[2]}Y par swap rate`
+				: `Zero rate at ${curve[2]}Y`,
+			"per 1.00 of rate (÷10,000 for one bp)",
+		];
 	const indexed = /^(\w+)\[(\d+)\]$/.exec(label);
 	const [name, unit] = NAMES[indexed ? indexed[1]! : label] ?? [label, ""];
 	return indexed

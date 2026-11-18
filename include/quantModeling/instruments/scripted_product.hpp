@@ -1,6 +1,7 @@
 #ifndef QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP
 #define QM_INSTRUMENTS_SCRIPTED_PRODUCT_HPP
 
+#include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/sample.hpp"
 #include <functional>
 #include "quantModeling/core/timegrid.hpp"
@@ -127,6 +128,14 @@ namespace quantModeling
         /// second derivative cannot see. Another smoothing, so another
         /// (equally small) bias on the price: off by default.
         bool smooth_ramp = false;
+        /// A historical event holding exercise() or call() is a right that
+        /// was not used: the holder (or the issuer) would have booked the
+        /// exercise as a closing trade. The whole event is then skipped by
+        /// the replay instead of refused -- its statements only make that
+        /// decision in the scripts this is for (Bermudans, Americans); a
+        /// variable it would have set keeps its earlier value. For a
+        /// position held in a portfolio (issue 313, lot b3).
+        bool past_rights_unexercised = false;
     };
 
     /**
@@ -206,16 +215,20 @@ namespace quantModeling
                 for (const scripting::ExprTree &statement : event.statements)
                     if (statement)
                         detail::collect_exercises(*statement, exercises);
-            for (const scripting::Event &event : historical_events_)
+            const auto holds_right = [](const scripting::Event &event)
+            {
+                std::vector<const scripting::NodeExercise *> past;
                 for (const scripting::ExprTree &statement : event.statements)
                     if (statement)
-                    {
-                        std::vector<const scripting::NodeExercise *> past;
                         detail::collect_exercises(*statement, past);
-                        if (!past.empty())
-                            throw InvalidInput("exercise() / call() on a past date (" + event.date.to_iso() +
-                                               "): the decision was already taken; script its outcome instead");
-                    }
+                return !past.empty();
+            };
+            if (settings.past_rights_unexercised)
+                std::erase_if(historical_events_, holds_right);
+            for (const scripting::Event &event : historical_events_)
+                if (holds_right(event))
+                    throw InvalidInput("exercise() / call() on a past date (" + event.date.to_iso() +
+                                       "): the decision was already taken; script its outcome instead");
             has_exercise_ = !exercises.empty();
             for (const scripting::NodeExercise *e : exercises)
             {
@@ -231,7 +244,9 @@ namespace quantModeling
                 scripting::DiscountLookupResolver(ctx).resolve(events_);
             const std::vector<std::vector<StepMonitor>> barriers =
                 scripting::StepMonitorResolver().resolve(events_);
-            defline_ = scripting::build_defline(events_, discount_mats, barriers);
+            const std::vector<std::vector<Time>> forward_mats =
+                scripting::ForwardLookupResolver(ctx).resolve(events_);
+            defline_ = scripting::build_defline(events_, discount_mats, barriers, forward_mats);
 
             const std::vector<std::vector<Time>> historical_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(historical_events_);
@@ -241,6 +256,13 @@ namespace quantModeling
                         "ScriptedProduct: df() is not supported in a "
                         "historical (pre-valuation) event (" +
                         historical_events_[i].date.to_iso() + ")");
+            const std::vector<std::vector<Time>> historical_forwards =
+                scripting::ForwardLookupResolver(ctx).resolve(historical_events_);
+            for (std::size_t i = 0; i < historical_forwards.size(); ++i)
+                if (!historical_forwards[i].empty())
+                    throw InvalidInput("ScriptedProduct: fwd() is not supported in a historical (pre-valuation) "
+                                       "event (" +
+                                       historical_events_[i].date.to_iso() + ")");
             const std::vector<std::vector<StepMonitor>> historical_barriers =
                 scripting::StepMonitorResolver().resolve(historical_events_);
             for (std::size_t i = 0; i < historical_barriers.size(); ++i)
@@ -280,8 +302,20 @@ namespace quantModeling
                 program_ = scripting::compile_script(events_, indexer.count(), settings.fuzzy, settings.smooth_ramp,
                                                      n_underlyings_);
                 if (!has_exercise_)
-                    ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy,
-                                                      settings.terms_as_parameters, settings.smooth_ramp);
+                {
+                    // What the IR cannot follow (fwd()) leaves it empty, the
+                    // reason kept: the CPU prices it.
+                    try
+                    {
+                        ir_ = scripting::ir::lower_script(events_, indexer.count(), settings.fuzzy,
+                                                          settings.terms_as_parameters, settings.smooth_ramp);
+                    }
+                    catch (const InvalidInput &e)
+                    {
+                        ir_ = {};
+                        ir_refusal_ = e.what();
+                    }
+                }
                 else
                     ir_refusal_ = "early exercise: the IR is lowered once the exercise rule is fitted";
                 ir_settings_ = settings;
@@ -515,6 +549,9 @@ namespace quantModeling
         /// bounds-checks every spot(i) access rather than trust that they do
         /// (scripting/evaluator.hpp, scripting/fuzzy_evaluator.hpp).
         std::size_t n_underlyings() const override { return n_underlyings_; }
+        /// What the historical events' `pays` added up to, undiscounted: the
+        /// cash flows a seasoned product already paid (not in today's price).
+        double historical_payments() const { return historical_payments_; }
 
         /// Which model dynamics this script's price depends on (see
         /// scripting/visitors/script_analyzer.hpp) -- input to
@@ -686,6 +723,7 @@ namespace quantModeling
                 const double *spots[W];
                 const double *discounts[W];
                 const double *survivals[W];
+                const double *forwards[W];
                 double numeraire[W];
                 for (std::size_t i = 0; i < events_.size(); ++i)
                 {
@@ -695,11 +733,12 @@ namespace quantModeling
                         spots[l] = smp.spots.data();
                         discounts[l] = smp.discounts.data();
                         survivals[l] = smp.monitored.data();
+                        forwards[l] = smp.forwards.data();
                         numeraire[l] = smp.numeraire;
                     }
                     check_event_sizes((*paths[0])[i], i);
                     scripting::run_event_batch(view, program_.event_begin[i], program_.event_begin[i + 1], m, spots,
-                                               discounts, numeraire, lanes, survivals);
+                                               discounts, numeraire, lanes, survivals, forwards);
                 }
                 if (m.exercise_twice)
                     throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
@@ -792,7 +831,8 @@ namespace quantModeling
                 const Sample<T> &smp = path[i];
                 check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
-                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data());
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data(),
+                                     smp.forwards.data());
                 if (m.exercise_twice)
                     throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
             };
@@ -948,6 +988,9 @@ namespace quantModeling
             if (max_df >= 0 && static_cast<std::size_t>(max_df) >= smp.discounts.size())
                 throw InvalidInput("df(): not resolved against this event's own discount lookups -- "
                                    "DiscountLookupResolver must run before this product is priced");
+            const std::int32_t max_fwd = program_.event_max_fwd[i];
+            if (max_fwd >= 0 && static_cast<std::size_t>(max_fwd) >= smp.forwards.size())
+                throw InvalidInput("fwd(): the model did not fill this event's forwards");
             const std::int32_t max_surv = program_.event_max_surv[i];
             if (max_surv >= 0 && static_cast<std::size_t>(max_surv) >= smp.monitored.size())
                 throw InvalidInput("survivalAbove/Below(): the model did not fill this event's survival "
@@ -971,7 +1014,8 @@ namespace quantModeling
                 const Sample<T> &smp = path[i];
                 check_event_sizes(smp, i);
                 scripting::run_event(view, program_.event_begin[i], program_.event_begin[i + 1], m,
-                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data());
+                                     smp.spots.data(), smp.discounts.data(), smp.numeraire, smp.monitored.data(),
+                                     smp.forwards.data());
             }
             if (m.exercise_twice)
                 throw InvalidInput("exercise() / call() is reached twice in one event: one decision per date");
@@ -1031,11 +1075,12 @@ namespace quantModeling
 
                 fixing_sample[0].spots.assign(it->second.begin(),
                                               it->second.end());
-                fixing_sample[0].numeraire = T(1); // unused: payoff suppressed
+                fixing_sample[0].numeraire = T(1); // the flows are kept undiscounted
                 replay.set_event(fixing_sample, 0);
                 for (const scripting::ExprTree &statement : event.statements)
                     replay.run(*statement);
             }
+            historical_payments_ = to_double(replay.suppressed_payoff());
             return replay.variables();
         }
 
@@ -1052,6 +1097,7 @@ namespace quantModeling
         mutable std::unique_ptr<scripting::Evaluator<T>>
             evaluator_; ///< per-path state (§5.4); hard or fuzzy
         std::vector<T> baseline_;
+        double historical_payments_ = 0.0;
         scripting::Program program_;
         scripting::ir::Script ir_;
         bool compiled_ = false;

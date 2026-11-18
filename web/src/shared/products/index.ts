@@ -7,8 +7,10 @@ export type {
 	ScriptedProduct,
 } from "./types";
 export {
+	BOOKABLE_SCRIPTS,
 	SCRIPTED_PRODUCTS,
 	SINGLE_MODELS,
+	bookableScript,
 	scriptedKey,
 	scriptedRequest,
 } from "./scripted";
@@ -26,9 +28,3 @@ export { ProductPicker } from "./ProductPicker";
 export { ParamForm } from "./ParamForm";
 export { fieldsFromSchema, type FieldMeta } from "./zodFields";
 export { encodeParams, decodeParams } from "./workbenchLink";
-export {
-	PORTFOLIO_PRODUCTS,
-	catalogKeyOf,
-	formValuesFromRequest,
-	portfolioDescriptor,
-} from "./portfolioProducts";

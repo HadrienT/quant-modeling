@@ -42,6 +42,7 @@ namespace quantModeling::scripting
         Df,    ///< discounts[a] of the current event
         Surv,  ///< survivals[a] of the current event (survivalAbove/Below, WP 26 P2)
         Num,   ///< the current event's numeraire (controlPays, WP 26 P2)
+        Fwd,   ///< forwards[a] of the current event (fwd(DATE)); CPU only: the GPU refuses it
         // arithmetic and functions (pop operands, push result)
         Add,
         Sub,
@@ -331,7 +332,7 @@ namespace quantModeling::scripting
     template <class T, class Rec>
     QM_HOST_DEVICE void run_event_impl(const ProgramView &p, int begin, int end, Machine<T> &m, const T *spots,
                                        const T *discounts, const T &numeraire, Rec &rec,
-                                       const T *survivals = nullptr)
+                                       const T *survivals = nullptr, const T *forwards = nullptr)
     {
         using namespace bytecode_detail;
         int sp = 0; // value stack
@@ -371,6 +372,9 @@ namespace quantModeling::scripting
                     break;
                 case Op::Df:
                     S[sp++] = discounts[in.a];
+                    break;
+                case Op::Fwd:
+                    S[sp++] = forwards[in.a];
                     break;
                 case Op::Surv:
                     S[sp++] = survivals[in.a];
@@ -742,10 +746,11 @@ namespace quantModeling::scripting
 
     template <class T>
     QM_HOST_DEVICE void run_event(const ProgramView &p, int begin, int end, Machine<T> &m, const T *spots,
-                                  const T *discounts, const T &numeraire, const T *survivals = nullptr)
+                                  const T *discounts, const T &numeraire, const T *survivals = nullptr,
+                                  const T *forwards = nullptr)
     {
         NoRecord none;
-        run_event_impl(p, begin, end, m, spots, discounts, numeraire, none, survivals);
+        run_event_impl(p, begin, end, m, spots, discounts, numeraire, none, survivals, forwards);
     }
 
     // ── Batched interpreter (blueprint/wp/26-performance.md §5, P1a) ──────
@@ -798,7 +803,8 @@ namespace quantModeling::scripting
      */
     inline void run_event_batch(const ProgramView &p, int begin, int end, BatchMachine &m,
                                 const double *const *spots, const double *const *discounts, const double *numeraire,
-                                unsigned lanes, const double *const *survivals = nullptr)
+                                unsigned lanes, const double *const *survivals = nullptr,
+                                const double *const *forwards = nullptr)
     {
         constexpr int W = kBatch;
         struct Frame
@@ -854,6 +860,11 @@ namespace quantModeling::scripting
                 case Op::Df:
                     for (int l = 0; l < W; ++l)
                         push[l] = discounts[l][in.a];
+                    ++sp;
+                    break;
+                case Op::Fwd:
+                    for (int l = 0; l < W; ++l)
+                        push[l] = forwards[l][in.a];
                     ++sp;
                     break;
                 case Op::Surv:
@@ -1190,7 +1201,7 @@ namespace quantModeling::scripting
         std::vector<std::int32_t> event_begin;
         /// Highest spot index / discount slot / survival slot event e reads
         /// (-1: none).
-        std::vector<std::int32_t> event_max_spot, event_max_df, event_max_surv;
+        std::vector<std::int32_t> event_max_spot, event_max_df, event_max_surv, event_max_fwd;
         int n_vars = 0;
         int max_stack = 0;
         int max_degrees = 0;
@@ -1201,6 +1212,8 @@ namespace quantModeling::scripting
         /// the model's survival probabilities (the GPU kernels, the per-path
         /// adjoint) must refuse it.
         bool has_monitor = false;
+        /// The script reads fwd(): the CPU runs it, the GPU kernels refuse it.
+        bool has_forward = false;
         /// Of those, a bridge survival (survivalAbove/Below), which no GPU
         /// kernel computes; a last-step expectation alone runs in the kernels
         /// compiled from the IR (WP 27 §14.9), not in the interpreted ones.

@@ -404,12 +404,20 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
             note="a path-dependent product needs its underlying and its start date",
         )
     start = date.fromisoformat(str(start_raw))
-    t = _terms(spec.product, _frozen(params), start, spec.expiry, spec.currency)
+    position = spec.product == "script"  # a script position (portfolio_scripts)
+    if position:
+        from . import portfolio_scripts
+
+        script = str(params["script"])
+        dates = portfolio_scripts.event_dates(script, start)
+    else:
+        t = _terms(spec.product, _frozen(params), start, spec.expiry, spec.currency)
+        script, dates = t.script, t.dates
     closes = md.closes_from(u, start)
     fixings: Dict[str, List[float]] = {}
     done: List[Tuple[date, float]] = []
     stale = 0
-    for fd in t.dates:
+    for fd in dates:
         if fd > d:
             break
         got = closes.at(fd)
@@ -435,12 +443,16 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
             sv_failure = str(exc)
 
     def run(spot: float) -> dict:
+        # a past exercise date: a right not used (it would be a closing trade)
         common = dict(
-            n_paths=SCRIPT_PATHS, seed=SCRIPT_SEED, historical_fixings=fixings
+            n_paths=SCRIPT_PATHS,
+            seed=SCRIPT_SEED,
+            historical_fixings=fixings,
+            past_rights_unexercised=True,
         )
         if sv is not None:
             return qm.price_script(
-                t.script,
+                script,
                 spot,
                 r,
                 q,
@@ -458,7 +470,7 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
             )
         if smile is not None:
             return qm.price_script(
-                t.script,
+                script,
                 spot,
                 r,
                 q,
@@ -471,7 +483,7 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
                 steps_per_year=252,
                 **common,
             )
-        return qm.price_script(t.script, spot, r, q, sigma, d.isoformat(), **common)
+        return qm.price_script(script, spot, r, q, sigma, d.isoformat(), **common)
 
     try:
         res = run(S)
@@ -487,7 +499,14 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
         return Mark(
             None, spec.currency, inputs + [vinput], note=f"script pricing failed: {exc}"
         )
-    state = scripted_payoffs.path_state(spec.product, params, done)
+    # Flows a seasoned product already paid stay in the mark, not compounded:
+    # the ledger has no cash account (portfolio_scripts.py).
+    paid = float(res.get("historical_payments", 0.0))
+    state = (
+        {"flows already paid": paid}
+        if position
+        else scripted_payoffs.path_state(spec.product, params, done)
+    )
     past = [
         ModelParam(
             k,
@@ -496,6 +515,7 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
             source=f"{u} closes {start} → {min(d, spec.expiry)}",
         )
         for k, v in state.items()
+        if not (position and not v)
     ]
     if stale:
         past.append(
@@ -510,9 +530,13 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
         ModelParam("start", text=start.isoformat(), status="contract"),
         ModelParam(
             "observations",
-            float(len(t.dates)),
+            float(len(dates)),
             status="contract",
-            source=f"every {scripted_payoffs.CALENDARS.get(spec.currency, 'weekday')} business day, at the close",
+            source=(
+                f"the dates of the {params.get('title', 'product')}'s script"
+                if position
+                else f"every {scripted_payoffs.CALENDARS.get(spec.currency, 'weekday')} business day, at the close"
+            ),
         ),
     ]
     mc = [
@@ -570,7 +594,7 @@ def _scripted(spec, d, md, params, inputs, today: date) -> Mark:
         else []
     )
     return Mark(
-        float(res["npv"]),
+        float(res["npv"]) + paid,
         spec.currency,
         inputs + [vinput] + fix_inputs,
         greeks,
@@ -604,7 +628,7 @@ def price(
 ) -> Optional[Mark]:
     """The desk model's mark, or None for a product this policy does not
     cover (the caller then prices it with the catalog pricer as before)."""
-    if spec.product in SCRIPTED:
+    if spec.product in SCRIPTED or spec.product == "script":
         return _scripted(spec, d, md, params, inputs, today)
     pricer = POLICY.get(spec.product)
     return pricer(spec, d, md, params, inputs) if pricer else None

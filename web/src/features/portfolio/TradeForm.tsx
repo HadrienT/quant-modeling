@@ -3,7 +3,7 @@ import type { Counterparty, Instrument } from "@/shared/api";
 import { useTickerClose } from "@/shared/api";
 import type { TradeDraft } from "@/shared/portfolio";
 import { Button, Input, Label } from "@/shared/ui";
-import type { InitialDerivative } from "./DerivativeFields";
+import type { InitialScript } from "./ScriptFields";
 import { InstrumentPicker, type Picked } from "./InstrumentPicker";
 
 export type TradePreset = {
@@ -30,7 +30,7 @@ export function TradeForm({
 }: {
 	preset?: TradePreset;
 	/** a derivative's terms carried in from the workbench */
-	initialDerivative?: InitialDerivative;
+	initialDerivative?: InitialScript;
 	counterparties: Counterparty[];
 	onBook: (instrument: Instrument, draft: TradeDraft) => void;
 	onCancel: () => void;
@@ -48,7 +48,11 @@ export function TradeForm({
 	});
 
 	const spec = preset?.instrument.spec;
-	const contract = preset ? spec?.kind === "rate_fx" : picked.contract;
+	// A contract (a rate trade, a library product) is worth what it is
+	// worth that day, which can be negative.
+	const contract = preset
+		? spec?.kind === "rate_fx" || spec?.kind === "script"
+		: picked.contract;
 	const closeTicker = preset
 		? spec?.kind === "equity"
 			? spec.ticker

@@ -48,7 +48,7 @@ namespace quantModeling::scripting
             {
                 ++event_;
                 p_.event_begin.push_back(pc());
-                max_spot_ = max_df_ = max_surv_ = -1;
+                max_spot_ = max_df_ = max_surv_ = max_fwd_ = -1;
                 slot_ = mode_ = 0; // an event\'s ifs reuse the previous event\'s slots
                 for (const ExprTree &statement : event.statements)
                     if (statement)
@@ -56,6 +56,7 @@ namespace quantModeling::scripting
                 p_.event_max_spot.push_back(max_spot_);
                 p_.event_max_df.push_back(max_df_);
                 p_.event_max_surv.push_back(max_surv_);
+                p_.event_max_fwd.push_back(max_fwd_);
             }
             p_.event_begin.push_back(pc());
             return std::move(p_);
@@ -79,6 +80,23 @@ namespace quantModeling::scripting
                                    "): not resolved -- DiscountLookupResolver must run before compiling");
             max_df_ = std::max(max_df_, static_cast<std::int32_t>(n.slot));
             emit(Op::Df, static_cast<std::int32_t>(n.slot)), push();
+        }
+        void visit(const NodeFwd &n) override
+        {
+            if (n.slot == NodeFwd::unindexed)
+                throw InvalidInput("fwd(" + n.date.to_iso() +
+                                   "): not resolved -- ForwardLookupResolver must run before compiling");
+            max_fwd_ = std::max(max_fwd_, static_cast<std::int32_t>(n.slot));
+            p_.has_forward = true;
+            emit(Op::Fwd, static_cast<std::int32_t>(n.slot)), push();
+        }
+        // yf() is a number once resolved
+        void visit(const NodeYf &n) override
+        {
+            if (!n.resolved)
+                throw InvalidInput("yf(" + n.from.to_iso() + ", " + n.to.to_iso() +
+                                   "): not resolved -- DiscountLookupResolver must run before compiling");
+            emit(Op::Const, 0, 0, n.value), push();
         }
         void visit(const NodeStepQuantity &n) override
         {
@@ -308,6 +326,7 @@ namespace quantModeling::scripting
         std::int32_t max_spot_ = -1;
         std::int32_t max_df_ = -1;
         std::int32_t max_surv_ = -1;
+        std::int32_t max_fwd_ = -1;
     };
 
     inline Program compile_script(const std::vector<Event> &events, std::size_t n_vars, bool fuzzy,

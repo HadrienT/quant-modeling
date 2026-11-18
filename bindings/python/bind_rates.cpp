@@ -352,8 +352,59 @@ static py::dict calibrate_hull_white_impl(std::vector<qm_::Time> dt, std::vector
     return out;
 }
 
+// A swap and its swaptions on explicit dates (the script's own, issue 313
+// lot b2b): the single-curve Hull-White model the script simulates
+// (HullWhiteCurveModel on one curve, which both discounts and projects), so
+// that the closed form and the lattice are the oracles of the script.
+static py::dict hull_white_swap_on_dates_impl(std::vector<qm_::Time> times, std::vector<qm_::Real> dfs,
+                                              qm_::Real mean_reversion, qm_::Real sigma,
+                                              const std::vector<std::tuple<qm_::Time, qm_::Time, qm_::Real>> &periods,
+                                              qm_::Real strike, bool payer, qm_::Real notional,
+                                              const std::vector<qm_::Time> &exercises)
+{
+    if (periods.empty())
+        throw std::invalid_argument("hull_white_swap_on_dates: no period");
+    const qm_::DiscountCurve curve = rate_curve(std::move(times), std::move(dfs));
+    qm_::InterestRateSwap swap;
+    swap.fixed_rate = strike;
+    swap.notional = notional;
+    swap.payer = payer;
+    qm_::Real annuity = 0.0;
+    for (const auto &[s, e, accrual] : periods)
+    {
+        swap.fixed_leg.push_back({s, e, e, accrual});
+        swap.floating_leg.push_back({s, e, e, e - s});
+        annuity += accrual * curve.discount(e);
+    }
+    const qm_::Time start = std::get<0>(periods.front()), end = std::get<1>(periods.back());
+    // One curve: the floating leg is worth P(0, start) - P(0, end).
+    const qm_::Real floating = curve.discount(start) - curve.discount(end);
+    py::dict out;
+    out["annuity"] = annuity;
+    out["forward"] = floating / annuity;
+    out["swap"] = (payer ? 1.0 : -1.0) * notional * (floating - strike * annuity);
+    if (!exercises.empty())
+    {
+        const qm_::HullWhiteCurveModel model(mean_reversion, sigma, curve);
+        // The European on the first exercise date, into the periods after it.
+        out["european"] = qm_::hull_white_european_swaption(
+            qm_::Swaption(swap.tail_from(exercises.front()), exercises.front()), model);
+        if (exercises.size() > 1)
+            out["bermudan"] = qm_::hull_white_bermudan_swaption(qm_::BermudanSwaption(swap, exercises), model);
+    }
+    return out;
+}
+
 void register_rates(py::module_ &m)
 {
+    m.def("hull_white_swap_on_dates", &hull_white_swap_on_dates_impl, py::arg("times"),
+          py::arg("discount_factors"), py::arg("mean_reversion"), py::arg("sigma"), py::arg("periods"),
+          py::arg("strike"), py::arg("payer") = true, py::arg("notional") = 1.0,
+          py::arg("exercises") = std::vector<qm_::Time>{},
+          "A swap on explicit periods [(start, end, fixed accrual)] on one curve (it discounts and "
+          "projects): its value 'swap' (payer: floating minus fixed), 'forward' and 'annuity'; with "
+          "exercise times, the Hull-White (a, sigma) 'european' swaption on the first and, with "
+          "several, the 'bermudan' by the lattice.");
     m.def("bootstrap_discount_curve", &bootstrap_discount_curve_impl,
           py::arg("deposits"), py::arg("semiannual_par"),
           "Bootstrap a discount curve from money-market deposits [(maturity, simple rate)] "

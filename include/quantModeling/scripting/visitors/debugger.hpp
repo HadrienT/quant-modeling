@@ -47,6 +47,8 @@ namespace quantModeling::scripting
         // straight from the surface syntax, not from a later pass, so it
         // belongs in the structural dump.
         void visit(const NodeDf &n) override { leaf("Df " + n.date.to_iso()); }
+        void visit(const NodeFwd &n) override { leaf("Fwd " + n.date.to_iso()); }
+        void visit(const NodeYf &n) override { leaf("Yf " + n.from.to_iso() + " " + n.to.to_iso()); }
         void visit(const NodeStepQuantity &n) override
         {
             std::string name = n.function();

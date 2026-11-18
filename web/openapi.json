@@ -6127,6 +6127,16 @@
             "title": "Currency",
             "type": "string"
           },
+          "curve": {
+            "default": "government",
+            "description": "'government': the currency's government curve, with the mean reversion and sigma given here. 'sofr' (USD only): the SOFR curve bootstrapped from the swaps DTCC published, and Hull-White calibrated to the ATM swaption vols of the trades -- mean_reversion and sigma are then the calibrated ones unless given explicitly.",
+            "enum": [
+              "government",
+              "sofr"
+            ],
+            "title": "Curve",
+            "type": "string"
+          },
           "mean_reversion": {
             "default": 0.03,
             "maximum": 1.0,
@@ -6152,6 +6162,84 @@
           }
         },
         "title": "HullWhiteInputs",
+        "type": "object"
+      },
+      "HullWhiteRatesFit": {
+        "description": "Hull-White calibrated to the traded swaptions (hull_white.curve =\n'sofr'): the curve, the parameters and how well they fit.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "calibrated": {
+            "description": "False when the request gave mean_reversion and sigma itself.",
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "converged": {
+            "title": "Converged",
+            "type": "boolean"
+          },
+          "curve": {
+            "description": "The curve, its date and its source.",
+            "title": "Curve",
+            "type": "string"
+          },
+          "mean_reversion": {
+            "title": "Mean Reversion",
+            "type": "number"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/SwaptionVolFit"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "rmse_bp": {
+            "description": "Root-mean-square fit error, bp of normal vol.",
+            "title": "Rmse Bp",
+            "type": "number"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "number"
+          },
+          "sigma": {
+            "title": "Sigma",
+            "type": "number"
+          },
+          "trades_used": {
+            "title": "Trades Used",
+            "type": "integer"
+          },
+          "window_start": {
+            "description": "First day of the swaption trades used.",
+            "format": "date",
+            "title": "Window Start",
+            "type": "string"
+          },
+          "worst_bp": {
+            "title": "Worst Bp",
+            "type": "number"
+          }
+        },
+        "required": [
+          "curve",
+          "as_of",
+          "window_start",
+          "mean_reversion",
+          "sigma",
+          "calibrated",
+          "rmse_bp",
+          "worst_bp",
+          "converged",
+          "points",
+          "trades_used",
+          "seconds"
+        ],
+        "title": "HullWhiteRatesFit",
         "type": "object"
       },
       "InitialMarginOut": {
@@ -6271,7 +6359,7 @@
         "title": "InputView",
         "type": "object"
       },
-      "Instrument": {
+      "Instrument-Input": {
         "properties": {
           "id": {
             "title": "Id",
@@ -6298,7 +6386,8 @@
               "mapping": {
                 "derivative": "#/components/schemas/DerivativeSpec",
                 "equity": "#/components/schemas/EquitySpec",
-                "rate_fx": "#/components/schemas/RateFxSpec"
+                "rate_fx": "#/components/schemas/RateFxSpec",
+                "script": "#/components/schemas/ScriptSpec"
               },
               "propertyName": "kind"
             },
@@ -6311,6 +6400,65 @@
               },
               {
                 "$ref": "#/components/schemas/RateFxSpec"
+              },
+              {
+                "$ref": "#/components/schemas/ScriptSpec"
+              }
+            ],
+            "title": "Spec"
+          }
+        },
+        "required": [
+          "id",
+          "spec"
+        ],
+        "title": "Instrument",
+        "type": "object"
+      },
+      "Instrument-Output": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "netting_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Netting Set Id"
+          },
+          "spec": {
+            "discriminator": {
+              "mapping": {
+                "derivative": "#/components/schemas/DerivativeSpec",
+                "equity": "#/components/schemas/EquitySpec",
+                "rate_fx": "#/components/schemas/RateFxSpec",
+                "script": "#/components/schemas/ScriptSpec"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EquitySpec"
+              },
+              {
+                "$ref": "#/components/schemas/DerivativeSpec"
+              },
+              {
+                "$ref": "#/components/schemas/RateFxSpec"
+              },
+              {
+                "$ref": "#/components/schemas/ScriptSpec"
               }
             ],
             "title": "Spec"
@@ -7211,6 +7359,17 @@
             "title": "Model",
             "type": "string"
           },
+          "rates_calibration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HullWhiteRatesFit"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "hull_white.curve = 'sofr': the SOFR curve and Hull-White calibrated to the traded swaptions."
+          },
           "reason": {
             "title": "Reason",
             "type": "string"
@@ -7752,7 +7911,7 @@
           },
           "instruments": {
             "items": {
-              "$ref": "#/components/schemas/Instrument"
+              "$ref": "#/components/schemas/Instrument-Input"
             },
             "title": "Instruments",
             "type": "array"
@@ -7830,7 +7989,7 @@
           },
           "instruments": {
             "items": {
-              "$ref": "#/components/schemas/Instrument"
+              "$ref": "#/components/schemas/Instrument-Output"
             },
             "title": "Instruments",
             "type": "array"
@@ -8364,7 +8523,8 @@
             "enum": [
               "equity",
               "derivative",
-              "rate_fx"
+              "rate_fx",
+              "script"
             ],
             "title": "Kind",
             "type": "string"
@@ -10733,6 +10893,84 @@
         "title": "ScriptEvent",
         "type": "object"
       },
+      "ScriptQuote": {
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ScriptSpec"
+          },
+          "value": {
+            "description": "What one unit is worth on the trade date, in `currency`: the price a trade on it is booked at by default",
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spec",
+          "label",
+          "value",
+          "currency"
+        ],
+        "title": "ScriptQuote",
+        "type": "object"
+      },
+      "ScriptQuoteRequest": {
+        "description": "A product of the script library to book: its terms (decimals, as the\nPrice page sends them), the trade date and, for an equity product, the\nticker its spot() reads.",
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A rates product on a government curve: its currency (USD, EUR or JPY). An equity product is in its listing's currency.",
+            "title": "Currency"
+          },
+          "product": {
+            "title": "Product",
+            "type": "string"
+          },
+          "terms": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Terms",
+            "type": "object"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "underlying": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlying"
+          }
+        },
+        "required": [
+          "product",
+          "trade_date"
+        ],
+        "title": "ScriptQuoteRequest",
+        "type": "object"
+      },
       "ScriptRequest": {
         "description": "Price a payoff described in text.",
         "properties": {
@@ -10825,7 +11063,7 @@
           },
           "greeks_method": {
             "default": "none",
-            "description": "'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 \u00a76).",
+            "description": "'aad': every model parameter's sensitivity (spot, rate, div, vol; under hull_white also the short rate's sigma and the curve, per quote or pillar) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 \u00a76).",
             "enum": [
               "none",
               "aad"
@@ -11017,6 +11255,106 @@
           "script"
         ],
         "title": "ScriptRequest",
+        "type": "object"
+      },
+      "ScriptSpec": {
+        "description": "A product of the script library held in a portfolio (issue 313, lot\nb3): its script, rendered with its terms when it was booked, so that its\ndates are the contract's (product_templates.render with lead_days = 0:\nthe first date in the week of the trade). Marked each day by\nportfolio_scripts.py: past fixings replayed from the stored closes, the\nflows already paid kept in the mark, the rest by the product's closed\nform where it has one, by Monte-Carlo otherwise.\n\n`underlying` is the ticker spot() reads (None for a rates product, which\nreads only its curve: `curve`). `closed_form` is set on a position\nconverted from a hand-written one: the same payoff in the hand-written\npricer's terms, which marks it as before.",
+        "properties": {
+          "closed_form": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DerivativeSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "default": "USD",
+            "enum": [
+              "USD",
+              "EUR",
+              "GBP",
+              "JPY",
+              "CHF"
+            ],
+            "title": "Currency",
+            "type": "string"
+          },
+          "curve": {
+            "anyOf": [
+              {
+                "enum": [
+                  "government",
+                  "sofr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Curve"
+          },
+          "expiry": {
+            "description": "The script's last date",
+            "format": "date",
+            "title": "Expiry",
+            "type": "string"
+          },
+          "kind": {
+            "const": "script",
+            "default": "script",
+            "title": "Kind",
+            "type": "string"
+          },
+          "product": {
+            "description": "The library product's slug, or 'custom' for a position converted from a hand-written pricer",
+            "title": "Product",
+            "type": "string"
+          },
+          "script": {
+            "title": "Script",
+            "type": "string"
+          },
+          "start": {
+            "description": "The script's first date",
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          },
+          "terms": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Terms",
+            "type": "object"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "underlying": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlying"
+          }
+        },
+        "required": [
+          "product",
+          "script",
+          "start",
+          "expiry"
+        ],
+        "title": "ScriptSpec",
         "type": "object"
       },
       "ScriptTradeInput": {
@@ -11279,7 +11617,7 @@
           },
           "greeks_method": {
             "default": "none",
-            "description": "'aad': every model parameter's sensitivity (spot, rate, div, vol) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 \u00a76).",
+            "description": "'aad': every model parameter's sensitivity (spot, rate, div, vol; under hull_white also the short rate's sigma and the curve, per quote or pillar) from one adjoint Monte-Carlo run (blueprint/wp/17-aad.md), at roughly 3-5x the cost of the price alone rather than a bumped reprice per parameter. 'bump' is not offered for scripted payoffs -- only 'none' or 'aad'. With sampler='sobol' the adjoint engines run Sobol RQMC with the Brownian bridge; 'stratified' falls back to pseudo-random, noted in the response's diagnostics. On the GPU (device 'gpu' or 'auto') the same risks, on the same paths as the CPU tape with rng='philox' (blueprint WP 19 \u00a76).",
             "enum": [
               "none",
               "aad"
@@ -13876,6 +14214,36 @@
           "vega_unit"
         ],
         "title": "SwaptionRisk",
+        "type": "object"
+      },
+      "SwaptionVolFit": {
+        "description": "One ATM swaption vol Hull-White was calibrated to.",
+        "properties": {
+          "expiry": {
+            "title": "Expiry",
+            "type": "number"
+          },
+          "market_vol": {
+            "description": "Median implied normal vol, rate units.",
+            "title": "Market Vol",
+            "type": "number"
+          },
+          "tenor": {
+            "title": "Tenor",
+            "type": "number"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expiry",
+          "tenor",
+          "market_vol",
+          "trades"
+        ],
+        "title": "SwaptionVolFit",
         "type": "object"
       },
       "SwaptionVolInput": {
@@ -18179,6 +18547,48 @@
           }
         },
         "summary": "Rate Fx Quote",
+        "tags": [
+          "portfolios"
+        ]
+      }
+    },
+    "/api/portfolio-valuation/script/quote": {
+      "post": {
+        "description": "The position of a library product booked on the trade date (issue\n313, lot b3): its script rendered with its terms on that date (its dates\nare the contract's from then on) and its mark that day. 422 for a product\na portfolio cannot hold; 503 when the store has no market for the date.",
+        "operationId": "script_quote",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptQuote"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Script Quote",
         "tags": [
           "portfolios"
         ]

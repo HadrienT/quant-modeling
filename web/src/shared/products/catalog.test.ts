@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { paths } from "@/shared/api/schema.gen";
-import { CATALOG, CATALOG_BY_KEY } from "./catalog";
+import { CATALOG, CATALOG_BY_KEY, resolveProductKey } from "./catalog";
 
 /**
  * Catalog exhaustiveness — blueprint WP 12 §3. Every enabled product has a
@@ -35,15 +35,12 @@ describe("product catalog", () => {
 		}
 	});
 
-	it("toRequest produces decimals for vol/rate (converted at the edge)", () => {
-		// the portfolio's form of a vanilla (no longer on the site)
-		const vanilla = CATALOG_BY_KEY.get("vanilla")!;
-		const req = vanilla.toRequest(
-			{ ...vanilla.defaults, vol: 20, rate: 5 },
-			"analytic",
-		) as Record<string, number>;
-		expect(req.vol).toBeCloseTo(0.2);
-		expect(req.rate).toBeCloseTo(0.05);
+	it("has no hand-written equity form left: their keys open the scripts", () => {
+		// issue 313, lot b3: the portfolio books scripts too
+		for (const key of ["vanilla", "american", "barrier", "future", "swap"]) {
+			expect(CATALOG_BY_KEY.has(key)).toBe(false);
+			expect(CATALOG_BY_KEY.has(resolveProductKey(key)!)).toBe(true);
+		}
 	});
 
 	it("a disabled product carries a reason", () => {

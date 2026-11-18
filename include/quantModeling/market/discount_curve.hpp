@@ -3,6 +3,8 @@
 
 #include "quantModeling/core/types.hpp"
 
+#include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace quantModeling
@@ -30,6 +32,13 @@ namespace quantModeling
                       CurveExtrapolation extrapolation = CurveExtrapolation::FlatDiscountFactor);
 
         Real discount(Time t) const;
+
+        /// log discount(t) as a linear combination of the pillars' log
+        /// discount factors: Σ weight · log DF(t_index), interpolation and
+        /// extrapolation included (empty for t ≤ 0 or a flat-rate curve).
+        /// What a differentiable copy of the curve needs (the Hull-White
+        /// hybrid's curve adjoints).
+        void log_discount_weights(Time t, std::vector<std::pair<std::size_t, Real>> &weights) const;
 
         /// The pillars between which discount() interpolates log-linearly
         /// (empty for a flat-rate curve) — where the forward rate may jump.

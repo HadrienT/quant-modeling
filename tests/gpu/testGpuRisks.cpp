@@ -164,7 +164,11 @@ namespace quantModeling
                 EXPECT_EQ(gpu.n_paths, cpu.n_paths) << s.name;
                 const double scale = std::max(1.0, std::abs(cpu.npv()));
                 EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * scale) << s.name << " " << gpu.diagnostics;
-                EXPECT_NEAR(gpu.std_error(), cpu.std_error(), 1e-6 * std::max(1e-12, cpu.std_error()))
+                // A payoff the spot control absorbs entirely (the equity
+                // forward, linear in the spot) leaves an error at the
+                // round-off of the price: compared to the price's own
+                // tolerance there, both are zero.
+                EXPECT_NEAR(gpu.std_error(), cpu.std_error(), std::max(1e-6 * cpu.std_error(), 1e-9 * scale))
                     << s.name << " " << gpu.diagnostics;
             }
     }

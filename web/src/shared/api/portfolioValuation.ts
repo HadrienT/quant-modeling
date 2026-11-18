@@ -14,6 +14,8 @@ import type {
 	PnlWindow,
 	RateFxDraft,
 	RateFxQuote,
+	ScriptQuote,
+	ScriptQuoteRequest,
 	TickerClose,
 } from "./types";
 
@@ -156,6 +158,34 @@ export function useRateFxQuote(draft: RateFxDraft | null, tradeDate: string) {
 				return await unwrap<RateFxQuote>(
 					api.POST("/api/portfolio-valuation/rate-fx/quote", {
 						body: { draft: draft!, trade_date: tradeDate },
+						signal: s,
+					}),
+				);
+			} finally {
+				s.cleanup();
+			}
+		},
+	});
+}
+
+/**
+ * A library product as a position (issue 313, lot b3): its script rendered
+ * with its terms on the trade date, and its value that day -- the default
+ * price of the trade. A 422 says why a portfolio cannot hold it, a 503 that
+ * the store has no market for the date.
+ */
+export function useScriptQuote(request: ScriptQuoteRequest | null) {
+	return useQuery({
+		queryKey: queryKeys.portfolio.scriptQuote(JSON.stringify(request)),
+		enabled: request != null,
+		staleTime: STALE.history,
+		retry: false,
+		queryFn: async ({ signal }) => {
+			const s = signalWithTimeout(signal);
+			try {
+				return await unwrap<ScriptQuote>(
+					api.POST("/api/portfolio-valuation/script/quote", {
+						body: request!,
 						signal: s,
 					}),
 				);

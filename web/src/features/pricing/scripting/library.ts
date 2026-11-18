@@ -18,6 +18,7 @@ export const CATEGORY_ORDER = [
 	"Structured notes",
 	"Volatility",
 	"Multi-asset",
+	"Fixed income",
 ] as const;
 
 const rank = (c: string) =>

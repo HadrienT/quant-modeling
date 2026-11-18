@@ -646,6 +646,56 @@ namespace quantModeling::scripting
                 expect(TokenKind::RParen, "')' to close 'df(...)'");
                 return node;
             }
+            case TokenKind::Fwd:
+            {
+                advance();
+                expect(TokenKind::LParen, "'(' after 'fwd'");
+                const Token &date_tok = expect(TokenKind::DateEvent, "a calendar date (YYYY-MM-DD)");
+                auto node = std::make_unique<NodeFwd>();
+                node->date = to_date(date_tok);
+                expect(TokenKind::RParen, "')' to close 'fwd(...)'");
+                return node;
+            }
+            case TokenKind::Yf:
+            case TokenKind::FwdRate:
+            {
+                const bool rate = tok.kind == TokenKind::FwdRate;
+                advance();
+                expect(TokenKind::LParen, rate ? "'(' after 'fwdRate'" : "'(' after 'yf'");
+                const Token &from_tok = expect(TokenKind::DateEvent, "a calendar date (YYYY-MM-DD)");
+                expect(TokenKind::Comma, "',' between the two dates");
+                const Token &to_tok = expect(TokenKind::DateEvent, "a calendar date (YYYY-MM-DD)");
+                const Token &close = expect(TokenKind::RParen, rate ? "')' to close 'fwdRate(...)'"
+                                                                    : "')' to close 'yf(...)'");
+                const Date from = to_date(from_tok), to = to_date(to_tok);
+                if (!(from < to))
+                    fail(std::string(rate ? "fwdRate" : "yf") + "(START, END): START must be before END", close);
+                auto yf = std::make_unique<NodeYf>();
+                yf->from = from;
+                yf->to = to;
+                if (!rate)
+                    return yf;
+                // fwdRate(S, E) = (df(S) / df(E) - 1) / yf(S, E): the simple
+                // rate the curve implies over [S, E], seen at the event --
+                // written with df() and yf(), so every evaluator, the bytecode,
+                // the IR and the adjoints already have it.
+                auto df_from = std::make_unique<NodeDf>();
+                df_from->date = from;
+                auto df_to = std::make_unique<NodeDf>();
+                df_to->date = to;
+                auto ratio = std::make_unique<NodeDiv>();
+                ratio->arguments.push_back(std::move(df_from));
+                ratio->arguments.push_back(std::move(df_to));
+                auto one = std::make_unique<NodeConst>();
+                one->value = 1.0;
+                auto growth = std::make_unique<NodeSub>();
+                growth->arguments.push_back(std::move(ratio));
+                growth->arguments.push_back(std::move(one));
+                auto out = std::make_unique<NodeDiv>();
+                out->arguments.push_back(std::move(growth));
+                out->arguments.push_back(std::move(yf));
+                return out;
+            }
             case TokenKind::SurvivalAbove:
             case TokenKind::SurvivalBelow:
             case TokenKind::LastStepCall:

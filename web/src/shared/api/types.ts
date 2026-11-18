@@ -120,13 +120,16 @@ export type FxHistoryResponse = Schemas["FxHistoryResponse"];
 export type FxCorrelationResponse = Schemas["FxCorrelationResponse"];
 
 // Portfolio ledger and its valuation (MTM, daily P&L).
-export type Instrument = Schemas["Instrument"];
+export type Instrument = Schemas["Instrument-Output"];
 export type Counterparty = Schemas["Counterparty-Output"];
 export type NettingSet = Schemas["NettingSet"];
 export type CsaTerms = Schemas["CsaInput"];
 export type EquitySpec = Schemas["EquitySpec"];
 export type DerivativeSpec = Schemas["DerivativeSpec"];
 export type RateFxSpec = Schemas["RateFxSpec"];
+export type ScriptSpec = Schemas["ScriptSpec"];
+export type ScriptQuoteRequest = Schemas["ScriptQuoteRequest"];
+export type ScriptQuote = Schemas["ScriptQuote"];
 export type RateFxDraft = Schemas["RateFxDraft"];
 export type RateFxQuote = Schemas["RateFxQuote"];
 export type Trade = Schemas["Trade"];

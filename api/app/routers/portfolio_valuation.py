@@ -27,11 +27,12 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import db, tasks
 from .. import portfolio_counterparties, portfolio_demos, portfolio_rates
+from .. import portfolio_scripts
 from .. import portfolio_risk as risk
 from .. import portfolio_valuation as pv
 from ..logging_utils import get_logger
 from ..portfolio_ledger import migrate, validate
-from ..portfolio_schemas import Counterparty, Portfolio, RateFxSpec
+from ..portfolio_schemas import Counterparty, Portfolio, RateFxSpec, ScriptSpec
 from ..schemas import MethodologySection
 
 router = APIRouter(prefix="/api/portfolio-valuation", tags=["portfolios"])
@@ -74,7 +75,7 @@ class ModelView(BaseModel):
 class PositionMark(BaseModel):
     instrument_id: str
     label: str
-    kind: Literal["equity", "derivative", "rate_fx"]
+    kind: Literal["equity", "derivative", "rate_fx", "script"]
     currency: str
     quantity: float
     average_cost: float
@@ -307,6 +308,65 @@ async def rate_fx_quote(req: RateFxQuoteRequest) -> RateFxQuote:
             label=portfolio_rates.label(spec),
             value=m.value,
             currency=spec.value_currency,
+        )
+
+    try:
+        return await run_in_threadpool(run)
+    except portfolio_rates.NoMark as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+class ScriptQuoteRequest(BaseModel):
+    """A product of the script library to book: its terms (decimals, as the
+    Price page sends them), the trade date and, for an equity product, the
+    ticker its spot() reads."""
+
+    product: str
+    terms: Dict[str, float] = Field(default_factory=dict)
+    trade_date: date
+    underlying: Optional[str] = None
+    currency: Optional[str] = Field(
+        None,
+        description="A rates product on a government curve: its currency (USD, "
+        "EUR or JPY). An equity product is in its listing's currency.",
+    )
+
+
+class ScriptQuote(BaseModel):
+    spec: ScriptSpec
+    label: str
+    value: float = Field(
+        description="What one unit is worth on the trade date, in `currency`: "
+        "the price a trade on it is booked at by default"
+    )
+    currency: str
+
+
+@router.post("/script/quote", response_model=ScriptQuote)
+async def script_quote(req: ScriptQuoteRequest) -> ScriptQuote:
+    """The position of a library product booked on the trade date (issue
+    313, lot b3): its script rendered with its terms on that date (its dates
+    are the contract's from then on) and its mark that day. 422 for a product
+    a portfolio cannot hold; 503 when the store has no market for the date."""
+
+    def run() -> ScriptQuote:
+        md = pv.MarketData(req.trade_date)
+        ccy = req.currency
+        if req.underlying and not ccy:
+            ccy = md.currency(req.underlying.upper()) or "USD"
+        spec = portfolio_scripts.book(
+            req.product, req.terms, req.trade_date, req.underlying, ccy
+        )
+        m = portfolio_scripts.mark(spec, req.trade_date, md)
+        if m.value is None:
+            raise portfolio_rates.NoMark(m.note or "no value")
+        return ScriptQuote(
+            spec=spec,
+            label=portfolio_scripts.label(spec),
+            value=m.value,
+            currency=spec.currency,
         )
 
     try:

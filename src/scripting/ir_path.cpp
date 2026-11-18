@@ -96,13 +96,15 @@ namespace quantModeling::scripting::ir
                     l.th_grid = 8; // the leverage
                 break;
         }
-        int max_df = -1;
+        int max_df = -1, max_fwd = -1;
         for (const Block &b : script.blocks)
         {
             max_df = std::max(max_df, static_cast<int>(b.max_df));
+            max_fwd = std::max(max_fwd, static_cast<int>(b.max_fwd));
             l.n_surv = std::max(l.n_surv, static_cast<int>(survival_slots(b).size()));
         }
-        l.event_cols = 2 + max_df;
+        l.fwd_col0 = 2 + max_df;
+        l.event_cols = 2 + max_df + (max_fwd + 1);
         l.surv_col0 = l.step_cols;
         l.step_cols += 2 * l.n_surv;
         return l;
@@ -172,6 +174,16 @@ namespace quantModeling::scripting::ir
                                           b.mul(b.neg(b.input(Op::Theta, l.th_rate)), b.input(Op::Data, 1 + in.a)))
                                 : b.input(Op::Data, 1 + in.a);
                     break;
+                case Op::Fwd: // spot(0) exp((r - q) (T - t)), as the CPU models fill it
+                {
+                    const std::int32_t S = b.input(Op::State, 0);
+                    const std::int32_t col = b.input(Op::Data, l.fwd_col0 + in.a);
+                    id = l.risk ? b.mul(S, b.value(Op::Exp, b.mul(b.sub(b.input(Op::Theta, l.th_rate),
+                                                                        b.input(Op::Theta, l.th_div)),
+                                                                  col)))
+                                : b.mul(S, col);
+                    break;
+                }
                 case Op::Surv:
                 {
                     const auto slot = static_cast<std::size_t>(in.a);
@@ -495,6 +507,17 @@ namespace quantModeling::scripting::ir
             const std::vector<Time> &mats = discount_mats[e];
             for (std::size_t i = 0; i < mats.size() && 1 + i < ecols; ++i)
                 row[1 + i] = l.risk ? mats[i] - ts : std::exp(-m.r * (mats[i] - ts));
+            if (e < script.event_fwd_mats.size())
+            {
+                const double carry = m.r - (m.n_assets > 1 ? m.divs[0] : m.q);
+                const std::vector<Time> &fwds = script.event_fwd_mats[e];
+                for (std::size_t i = 0; i < fwds.size(); ++i)
+                {
+                    const std::size_t c = static_cast<std::size_t>(l.fwd_col0) + i;
+                    if (c < ecols)
+                        row[c] = l.risk ? fwds[i] - ts : std::exp(carry * (fwds[i] - ts));
+                }
+            }
         }
 
         d.baseline.assign(static_cast<std::size_t>(l.n_vars), 0.0);

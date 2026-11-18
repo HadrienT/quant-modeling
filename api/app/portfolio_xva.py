@@ -20,17 +20,20 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Literal, Optional, Tuple
 
+import quantmodeling as qm
 from pydantic import BaseModel, Field
 
 from . import (
     portfolio_counterparties,
     portfolio_ledger,
     portfolio_rates,
+    portfolio_scripts,
     xva,
     xva_equity,
 )
 from .portfolio_schemas import (
     DerivativeSpec,
+    ScriptSpec,
     Instrument,
     Portfolio,
     RateFxSpec,
@@ -253,6 +256,52 @@ def _equity_option(
     )
 
 
+def _script_trade(
+    inst: Instrument, spec: ScriptSpec, quantity: float, d: date
+) -> Tuple[Optional[xva._Spec], Optional[str], Optional[DerivativeSpec]]:
+    """A script position as the engine takes it: a European converted from a
+    hand-written position is the equity option it was (its closed form); a
+    script on the SOFR curve is a scripted trade, valued on every path by the
+    engine's own regression (seen from `d`: its past events taken out, their
+    terms carried); anything else is left out, and said."""
+    name = inst.label or inst.id
+    cf = spec.closed_form
+    if cf is not None and cf.product == "vanilla":
+        made, note = _equity_option(inst, cf, quantity, d)
+        return made, note, cf if made is not None else None
+    if spec.curve == "sofr":
+        script = portfolio_scripts.for_exposure(spec.script, d)
+        if script is None or d >= spec.expiry:
+            return None, f"{name}: expired, nothing is left to simulate.", None
+        events = qm.validate_script(script, d.isoformat(), "ACT/365F")["events"]
+        return (
+            xva._Spec(
+                name,
+                "script",
+                True,
+                events[-1]["t"],
+                0.0,
+                quantity=quantity,
+                script=script,
+            ),
+            None,
+            None,
+        )
+    if spec.curve:
+        return (
+            None,
+            f"{name}: a script on the {spec.currency} government curve; the engine "
+            "simulates the SOFR curve. Left out of this netting set.",
+            None,
+        )
+    return (
+        None,
+        f"{name}: the engine has a closed form for European options only. This "
+        "script is left out of this netting set.",
+        None,
+    )
+
+
 def trades(
     pf: Portfolio,
     netting_set_id: str,
@@ -274,7 +323,13 @@ def trades(
         h = held.get(inst.id)
         if h is None or abs(h.quantity) < portfolio_ledger.QTY_EPS:
             continue
-        if isinstance(inst.spec, DerivativeSpec):
+        if isinstance(inst.spec, ScriptSpec):
+            spec, note, option = _script_trade(inst, inst.spec, h.quantity, d)
+            if option is not None:
+                options.append((spec, option))
+            elif spec is not None:
+                specs.append(spec)
+        elif isinstance(inst.spec, DerivativeSpec):
             spec, note = _equity_option(inst, inst.spec, h.quantity, d)
             if spec is not None:
                 options.append((spec, inst.spec))

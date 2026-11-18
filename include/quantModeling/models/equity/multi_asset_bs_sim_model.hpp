@@ -173,21 +173,18 @@ namespace quantModeling
                 Sample<T> &smp = path[i];
                 smp.spots = S;
                 smp.numeraire = exp(r_ * st.t);
-                // Forward/discount requests indexed by asset have no script
-                // syntax yet (spot() is still single-asset at the language
-                // level) -- def.discount_mats/forward_mats stay empty for
-                // every multi-asset product today, so there is nothing
-                // asset-ambiguous to resolve here.
-                // resize(), not assign(n, T(0)): the latter would construct
-                // a T(0) leaf on the tape even when n == 0 (a script cannot
-                // request an indexed forward/discount yet, so it always is)
-                // -- exactly the wasted-leaf trap closed in
-                // instruments/equity/simulatable_asian.hpp for the same
-                // reason. resize() default-constructs each T, which for
-                // aad::Number is a zero-initialized non-leaf (no node).
+                // df() at the flat rate, as the GPU computes it (it read 0
+                // here before, the slots resized but never filled); fwd() the
+                // forward of spot(0), as spot() is spot(0). resize(), not
+                // assign(n, T(0)): the latter would put a T(0) leaf on the
+                // tape even for n == 0 (instruments/equity/simulatable_asian.hpp).
                 const SampleDef &def = defline_[i];
                 smp.discounts.resize(def.discount_mats.size());
+                for (std::size_t k = 0; k < def.discount_mats.size(); ++k)
+                    smp.discounts[k] = exp(-r_ * (def.discount_mats[k] - st.t));
                 smp.forwards.resize(def.forward_mats.size());
+                for (std::size_t k = 0; k < def.forward_mats.size(); ++k)
+                    smp.forwards[k] = S[0] * exp((r_ - q_[0]) * (def.forward_mats[k] - st.t));
             }
         }
 

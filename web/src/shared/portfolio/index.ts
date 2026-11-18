@@ -31,7 +31,7 @@ export {
 	netQuantities,
 	equityInstrument,
 	equityInstrumentId,
-	derivativeInstrument,
+	scriptInstrument,
 	rateFxInstrument,
 	bookTrade,
 	deleteTrade,

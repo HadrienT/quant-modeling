@@ -67,9 +67,62 @@ namespace quantModeling::scripting
             }
         }
 
+        /// yf(FROM, TO): the year fraction by the context's day count, a
+        /// constant from here on.
+        void visit(NodeYf &n) override
+        {
+            n.value = ctx_.t(n.to) - ctx_.t(n.from);
+            n.resolved = true;
+        }
+
       private:
         const ValuationContext &ctx_;
         std::vector<Time> *current_ = nullptr;
+    };
+
+    /**
+     * @brief Resolve every `fwd(DATE)` to a Time and a slot in its own event's
+     *        forward lookups -- DiscountLookupResolver's twin, on
+     *        SampleDef::forward_mats / Sample::forwards, which the
+     *        single-asset models fill (S e^((r - q)(T - t)), or
+     *        S e^(-q (T - t)) / P(t, T) under stochastic rates).
+     */
+    class ForwardLookupResolver final : public Visitor
+    {
+      public:
+        explicit ForwardLookupResolver(const ValuationContext &ctx)
+            : ctx_(ctx) {}
+
+        std::vector<std::vector<Time>> resolve(std::vector<Event> &events)
+        {
+            std::vector<std::vector<Time>> mats(events.size());
+            for (std::size_t i = 0; i < events.size(); ++i)
+            {
+                current_ = &mats[i];
+                event_date_ = events[i].date;
+                for (ExprTree &statement : events[i].statements)
+                    statement->accept(*this);
+            }
+            current_ = nullptr;
+            return mats;
+        }
+
+        void visit(NodeFwd &n) override
+        {
+            if (n.date < event_date_)
+                throw InvalidInput("fwd(" + n.date.to_iso() + ") on " + event_date_.to_iso() +
+                                   ": the delivery date must not be before the event date");
+            n.maturity = ctx_.t(n.date);
+            const auto it = std::find(current_->begin(), current_->end(), n.maturity);
+            n.slot = static_cast<std::size_t>(it - current_->begin());
+            if (it == current_->end())
+                current_->push_back(n.maturity);
+        }
+
+      private:
+        const ValuationContext &ctx_;
+        std::vector<Time> *current_ = nullptr;
+        Date event_date_{};
     };
 
 } // namespace quantModeling::scripting

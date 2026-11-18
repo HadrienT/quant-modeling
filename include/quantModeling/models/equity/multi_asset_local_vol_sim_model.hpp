@@ -132,11 +132,15 @@ namespace quantModeling
                 Sample<T> &smp = path[static_cast<std::size_t>(event)];
                 smp.spots = S;
                 smp.numeraire = exp(r_ * t);
-                // Indexed forwards and discounts have no script syntax on
-                // several assets (see MultiAssetBSSimModel): always empty.
+                // df() at the flat rate, as the GPU computes it; fwd() the
+                // forward of spot(0), as spot() is spot(0).
                 const SampleDef &def = defline_[static_cast<std::size_t>(event)];
                 smp.discounts.resize(def.discount_mats.size());
+                for (std::size_t k = 0; k < def.discount_mats.size(); ++k)
+                    smp.discounts[k] = exp(-r_ * (def.discount_mats[k] - t));
                 smp.forwards.resize(def.forward_mats.size());
+                for (std::size_t k = 0; k < def.forward_mats.size(); ++k)
+                    smp.forwards[k] = S[0] * exp((r_ - q_[0]) * (def.forward_mats[k] - t));
             }
         }
 

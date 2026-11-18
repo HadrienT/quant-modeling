@@ -77,6 +77,11 @@ namespace quantModeling::scripting
         double hw_rho = 0.0;
         std::vector<double> curve_times;
         std::vector<double> curve_dfs;
+        /// hull_white: the directions its curve is differentiated in
+        /// (CurveFactors: pillars x factors, row-major, and their labels);
+        /// empty: one parallel factor.
+        std::vector<double> curve_factor_basis;
+        std::vector<std::string> curve_factor_labels;
         /// short_rate (WP 26 P3, the catalogue's rate products; prices only):
         /// "vasicek", "cir" or "hull_white" and their parameters, as the
         /// short-rate adapters read them; Euler steps of at most max_dt.
@@ -209,7 +214,7 @@ namespace quantModeling::scripting
                                       : DiscountCurve(s.curve_times, s.curve_dfs, CurveExtrapolation::FlatForward);
             return std::make_unique<HullWhiteEquitySimModel<T>>(
                 T(s.spot), T(s.dividend), T(s.vol), HullWhiteCurveModel(s.hw_mean_reversion, s.hw_sigma, curve),
-                s.hw_rho);
+                s.hw_rho, CurveFactors{s.curve_factor_basis, s.curve_factor_labels});
         }
         if (s.model == "short_rate")
         {

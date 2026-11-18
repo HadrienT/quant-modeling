@@ -482,9 +482,14 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		],
 		pricingMethods: [
 			{
-				engine: "Analytic (only engine)",
+				engine: "Analytic (Black-Scholes)",
 				detail:
-					"Present value $=N(S_0e^{-qT}-Ke^{-rT})$. Delta is $Ne^{-qT}$, rho is linear in $T$; gamma, vega, theta (ex-carry) are zero.",
+					"The library fixes the delivery price on the start date $t_1$, as a percentage $k$ of the spot then: present value $=N S_0e^{-qt_1}(e^{-q\\tau}-k\\,e^{-r\\tau})$, $\\tau=T-t_1$, the spot and dividend yield read from the database. Delta is $Ne^{-qt_1}(e^{-q\\tau}-ke^{-r\\tau})$; gamma and vega are zero.",
+			},
+			{
+				engine: "Monte-Carlo (payoff script)",
+				detail:
+					"The script under any model: the same price within its error, since no volatility enters a linear payoff.",
 			},
 		],
 		notes: [
@@ -521,8 +526,8 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 		assumptions: [
 			"The swap is collateralised, and the collateral earns the overnight rate: every flow is discounted on the OIS curve, $P(0,T)$.",
 			"The floating flows are projected on the index's own curve: $F_j$ is the forward of the index over period $j$. With an overnight index (a SOFR swap) that curve is the OIS curve itself; with a term index it is a second curve, above the first by the basis.",
-			"Regular schedules: accruals $\\tau$ are period lengths in years, with no calendar or day-count adjustment.",
-			"The quotes are an input: traded USD SOFR swaps (DTCC), or illustrative EUR quotes that can be replaced.",
+			"The script's dates: annual periods from a week after the valuation date, accruals by ACT/365F. The rates engines of the Diagnostics use a regular grid of whole years.",
+			"The quotes: the USD SOFR swaps traded on the latest day and published by DTCC, stored by data-ingest.",
 		],
 		pricingMethods: [
 			{
@@ -531,15 +536,20 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 					"The OIS curve is bootstrapped from deposits and par OIS swaps (the compounded overnight leg of a spot OIS is worth $1-P(0,T)$). Each pillar of the projection curve is then solved so that its FRA or par swap reprices exactly under OIS discounting. Discount factors are interpolated log-linearly.",
 			},
 			{
-				engine: "Analytic (only engine)",
+				engine: "Monte-Carlo (the script)",
 				detail:
-					"Fixed leg: $K\\,\\tau_i\\,N$ discounted on OIS. Floating leg: $F_j\\,\\tau_j\\,N$ with the forward from the projection curve, discounted on OIS. The workbench shows the par rate $S$, the PV01 and each period's forward, discount factor and present value.",
+					"The swap is a script of the library. Each year the floating leg pays $\\text{fwdRate}(T_{j-1},T_j)\\,\\tau_j$, compounded SOFR worth $1/P(T_{j-1},T_j)-1$ at the period's start, against the fixed rate, both discounted by $\\text{df}(T_j)$. It is simulated under Hull-White on the SOFR curve (exact transitions, no time-step bias), with $(a,\\sigma)$ calibrated to the traded swaptions; its value does not depend on them. The tape gives its risk to each par swap rate the curve was built from, and to all of them together (the DV01), each with its Monte-Carlo error.",
+			},
+			{
+				engine: "Analytic (the curve)",
+				detail:
+					"On one curve the floating leg telescopes to $N[P(0,T_0)-P(0,T_n)]$, so the swap is worth $N[P(0,T_0)-P(0,T_n)-K\\sum_i \\tau_i P(0,T_i)]$ on the script's own dates. DV01 comes from moving every SOFR par quote 1bp and rebuilding the curve. The Diagnostics price the same swap period by period on the rates engines' regular grid.",
 			},
 		],
 		notes: [
 			"At $K=S$ the swap is worth zero: that is what a par swap rate means, and the curves are built so that every quoted swap satisfies it.",
 			"Figures are signed for the holder: the leg paid is negative. A payer swap gains when rates rise.",
-			"On the USD SOFR quotes the basis is zero and one curve does everything. The illustrative EUR quotes are the two-curve case: EURIBOR 6M forwards sit above the €STR forwards.",
+			"On the USD SOFR quotes the basis is zero and one curve does everything: SOFR is the overnight rate the collateral earns.",
 			"Discounting a collateralised swap on a government curve would be wrong: a Treasury yield is not the rate the collateral earns.",
 		],
 		references: [
@@ -568,43 +578,38 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 	swaption: {
 		title: "Swaption",
 		summary:
-			"The right to enter a swap at a fixed rate $K$: a payer swaption pays fixed, a receiver receives it. European: one exercise date. Bermudan: any of several dates, here each annual date from the expiry to the last year of the swap.",
+			"The right to enter a swap at a fixed rate $K$: a payer swaption pays fixed, a receiver receives it. European: one exercise date. Here one year into a five-year SOFR swap. Bermudan: any of several dates, here each year from one to five years out, into the swap that ends in six.",
 		payoff: [
 			"V_{\\text{payer}}=N\\,A(0)\\,\\mathbb{E}^{A}\\big[(S_T-K)^+\\big],\\qquad A(t)=\\sum_i \\tau_i\\,P(t,T_i)",
 			"\\text{Bachelier: }V=N\\,A(0)\\Big[(F-K)\\,\\Phi(d)+\\sigma_N\\sqrt{T}\\,\\varphi(d)\\Big],\\quad d=\\frac{F-K}{\\sigma_N\\sqrt{T}}",
 		],
 		assumptions: [
-			"The forward swap rate $F$ and the annuity $A$ come from the same two curves as the swap (OIS discounting, index projection).",
+			"The forward swap rate $F$ and the annuity $A$ come from the same SOFR curve as the swap, which both discounts and projects.",
 			"Under the annuity measure the swap rate has no drift, so a European swaption only needs the distribution of $S_T$: Gaussian (Bachelier), shifted lognormal (Black) or SABR on the shifted rate.",
-			"Hull-White: $dr=(\\theta(t)-a\\,r)\\,dt+\\sigma\\,dW$, one factor, fitted exactly to the OIS curve, the index curve kept at a deterministic spread. $(a,\\sigma)$ are calibrated to the ATM normal vols.",
+			"Hull-White: $dr=(\\theta(t)-a\\,r)\\,dt+\\sigma\\,dW$, one factor, fitted exactly to the SOFR curve. $(a,\\sigma)$ are calibrated to the ATM normal vols.",
 			"The vols are at-the-money quotes: the data carries no smile.",
 		],
 		pricingMethods: [
 			{
-				engine: "Model chosen automatically",
+				engine: "Monte-Carlo (the scripts)",
 				detail:
-					"A European swaption is valued under Bachelier at the nearest quoted ATM normal vol — the market's own quoting convention. A Bermudan is valued under the calibrated Hull-White, because its value depends on how the whole curve moves between exercise dates. The choice and its reason are shown, and any model can be picked by hand.",
-			},
-			{
-				engine: "Bachelier, Black, SABR (closed form)",
-				detail:
-					"All three price $N\\,A(0)\\,\\mathbb{E}[(S_T-K)^+]$ on the same $F$ and $A$. SABR uses Hagan et al. (2002)'s implied-vol expansion on the shifted rate. Each price is shown with the normal vol it implies, so the models can be compared on one scale.",
+					"The European and the Bermudan are scripts of the library. At expiry the swap is worth $1-\\text{df}(T_n)-K\\sum_i \\tau_i\\,\\text{df}(T_i)$ per unit of notional, with $\\text{df}$ the bond prices that the simulated short rate gives that day. Hull-White runs on the SOFR curve with $(a,\\sigma)$ calibrated to the traded ATM normal vols. The Bermudan decides by Longstaff-Schwartz, regressing on the swap's value, and is considered only in the money: a lower bound. The tape gives the risks to each par swap rate, to all of them together (the DV01) and to $\\sigma$, each with its Monte-Carlo error, the Bermudan's included.",
 			},
 			{
 				engine: "Hull-White, European (closed form)",
 				detail:
-					"The exercise value is integrated in closed form over the region where the swap is worth something — Jamshidian's decomposition, generalised to multi-curve cash flows. $(a,\\sigma)$ come from a Levenberg-Marquardt fit of the ATM normal vols; the residuals are shown in bp of normal vol.",
+					"Analytic engine of the European script: the same model integrated over the region where the swap is worth something. This is Jamshidian's decomposition, generalised. It runs on the script's dates and is its Monte-Carlo's oracle. $(a,\\sigma)$ come from a Levenberg-Marquardt fit of the ATM normal vols, and the Diagnostics show the residuals in bp of normal vol. DV01 comes from moving every SOFR par quote 1bp with $(a,\\sigma)$ held, vega from moving $\\sigma$ 1bp.",
 			},
 			{
-				engine: "Hull-White, Bermudan (lattice)",
+				engine: "Diagnostics: the market models and the lattice",
 				detail:
-					"Backward induction on a grid of the Hull-White state under the terminal measure, with exact Gaussian transitions between exercise dates. The switch premium is the Bermudan minus the European on the same swap.",
+					"The rates engines price the same trade on the same quotes: Bachelier at the nearest ATM vol, shifted Black and SABR (Hagan et al. 2002's expansion), each with the normal vol it implies, and the Bermudan by backward induction on a grid of the Hull-White state (exact Gaussian transitions). The lattice is the oracle of the Longstaff-Schwartz price.",
 			},
 		],
 		notes: [
 			"A Bermudan is worth at least its European: it contains it. The difference, the switch premium, is the value of being able to wait.",
 			"A one-factor, two-parameter model cannot match a whole grid of vols: the fit error shown is the model's, not noise.",
-			"Away from the money, an ATM vol ignores the smile: the workbench says so next to the price rather than hiding it.",
+			"Away from the money, an ATM vol ignores the smile, and so does Hull-White calibrated to ATM vols.",
 			"The USD vols are medians of the swaptions actually traded (DTCC), not a dealer's surface: the Market page shows the number of trades behind each.",
 		],
 		references: [
@@ -635,23 +640,28 @@ export const PRODUCT_DOCS: Partial<Record<string, ProductDoc>> = {
 	bond: {
 		title: "Fixed-rate / zero-coupon bond",
 		summary:
-			"A stream of fixed coupons plus principal at maturity (fixed-rate), or a single discounted principal (zero-coupon). Priced by discounting cash flows on a flat or supplied curve.",
+			"A stream of fixed coupons plus principal at maturity (fixed-rate), or a single discounted principal (zero-coupon). Priced by discounting its cash flows on the chosen currency's government curve.",
 		payoff:
-			"P=\\sum_i c\\,N\\,e^{-r t_i}+N e^{-r T}\\quad(\\text{zero-coupon: }c=0)",
+			"P=\\sum_i \\tfrac{c}{2}\\,N\\,P(0,t_i)+N\\,P(0,T)\\quad(\\text{zero-coupon: }c=0)",
 		assumptions: [
-			"Flat continuously-compounded rate $r$ unless explicit discount times/factors are supplied.",
-			"No credit spread, no optionality (not callable/putable).",
+			"The government curve of the currency (USD, EUR or JPY) stored in the database, interpolated log-linearly in the discount factors.",
+			"Semiannual coupons; no credit spread, no optionality (not callable/putable).",
 		],
 		pricingMethods: [
 			{
-				engine: "Analytic (only engine)",
+				engine: "Analytic (the curve)",
 				detail:
-					"Discounts each coupon date and the redemption. The bond-analytics block returns Macaulay & modified duration, convexity and DV01 from the same cash-flow schedule.",
+					"Each payment times its discount factor on the curve: the script valued with no short-rate volatility, so that its flows are deterministic.",
+			},
+			{
+				engine: "Monte-Carlo (Hull-White on the curve)",
+				detail:
+					"The script under Hull-White fitted to the same curve: the same price within its error, since fixed flows do not depend on how the short rate moves.",
 			},
 		],
 		notes: [
 			"At a coupon rate equal to the discount rate a fixed-rate bond prices at par ($P=N$) — a free check.",
-			"DV01 ≈ modified duration × price × 0.0001 — the two analytics fields should be mutually consistent.",
+			"The zero-coupon's price is the curve's discount factor to its maturity: the page's price, divided by the face value, reads the curve.",
 		],
 		references: [
 			{
