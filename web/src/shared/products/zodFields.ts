@@ -17,6 +17,10 @@ export type FieldMeta = {
 	max?: number;
 	step?: number;
 	group: "contract" | "market" | "engine";
+	widget?: "ticker" | "tickers";
+	count?: number;
+	optionLabels?: Record<string, string>;
+	hint?: string;
 };
 
 const LABELS: Record<string, string> = {

@@ -128,6 +128,18 @@ namespace quantModeling
     };
 
     /**
+     * @brief Principal-component construction of a Brownian path (Glasserman
+     *        2004, §3.1.2; WP 26 #226): W(t_s) = Σ_i A[s n + i] z_i with
+     *        A = V Λ^{1/2}, the eigen-decomposition of Cov(W(t_i), W(t_j)) =
+     *        min(t_i, t_j), its components sorted by decreasing variance --
+     *        variate 0 carries the most of the path, as the bridge's terminal
+     *        value does, but optimally for the whole path's variance. Row-major
+     *        n x n; O(n^2) a path where the bridge is O(n). Each component's
+     *        sign is fixed (its last non-zero entry positive).
+     */
+    std::vector<Real> brownian_pca_matrix(std::span<const Time> times);
+
+    /**
      * @brief Turns one quasi-random point into a model's gaussians in time
      *        order, the Brownian ones built by the bridge
      *        (blueprint/wp/19-gpu.md §2.4, Glasserman ch. 3.1 and 5.5).
@@ -151,9 +163,13 @@ namespace quantModeling
     class BridgedGaussians
     {
       public:
-        BridgedGaussians(std::span<const Time> times, std::size_t factors, std::size_t stride)
+        /// `pca`: the principal-component construction (brownian_pca_matrix)
+        /// instead of the bridge, the point consumed in the same order.
+        BridgedGaussians(std::span<const Time> times, std::size_t factors, std::size_t stride, bool pca = false)
             : bridge_(times), n_(times.size()), factors_(factors), stride_(stride), inv_sqrt_dt_(times.size()), z_(times.size()), w_(times.size())
         {
+            if (pca)
+                pca_ = brownian_pca_matrix(times);
             if (factors == 0 || stride < factors)
                 throw InvalidInput("BridgedGaussians: need 0 < factors <= stride");
             Time prev = 0.0;
@@ -168,6 +184,8 @@ namespace quantModeling
         std::size_t factors() const { return factors_; }
         std::size_t stride() const { return stride_; }
         const BrownianBridge &bridge() const { return bridge_; }
+        /// The principal-component matrix (row-major n x n); empty for the bridge.
+        const std::vector<Real> &pca() const { return pca_; }
         const std::vector<Real> &inv_sqrt_dt() const { return inv_sqrt_dt_; }
 
         /// point (dim() coordinates, importance order) → out (time order).
@@ -178,7 +196,16 @@ namespace quantModeling
             {
                 for (std::size_t i = 0; i < n_; ++i)
                     z_[i] = point[i * factors_ + f];
-                bridge_.transform(z_, w_);
+                if (pca_.empty())
+                    bridge_.transform(z_, w_);
+                else
+                    for (std::size_t s = 0; s < n_; ++s)
+                    {
+                        Real w = 0.0;
+                        for (std::size_t i = 0; i < n_; ++i)
+                            w += pca_[s * n_ + i] * z_[i];
+                        w_[s] = w;
+                    }
                 Real prev = 0.0;
                 for (std::size_t s = 0; s < n_; ++s)
                 {
@@ -194,7 +221,7 @@ namespace quantModeling
       private:
         BrownianBridge bridge_;
         std::size_t n_, factors_, stride_;
-        std::vector<Real> inv_sqrt_dt_, z_, w_;
+        std::vector<Real> inv_sqrt_dt_, z_, w_, pca_;
     };
 
 } // namespace quantModeling

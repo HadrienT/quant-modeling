@@ -1,5 +1,6 @@
 import type { DistributionResponse } from "@/shared/api/types";
-import { Button, Field } from "@/shared/ui";
+import { TickerSelect } from "@/shared/market";
+import { Button } from "@/shared/ui";
 import { ErrorState } from "@/shared/ui/states";
 import { DensityChart, SmileFitChart, useChartTheme } from "@/shared/viz";
 import { binCentres, pct, smileSeries } from "./distribution";
@@ -49,11 +50,10 @@ export function ComparePanel({
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="flex flex-wrap items-end gap-3 rounded-md border border-hairline bg-surface p-4">
-				<Field
-					label="Ticker"
-					value={sim.ticker}
-					onChange={(e) => sim.setTicker(e.target.value.toUpperCase())}
-				/>
+				<div className="flex min-w-72 flex-col gap-1 text-sm">
+					<span className="text-2xs text-ink-muted uppercase">Ticker</span>
+					<TickerSelect value={sim.ticker} onChange={sim.setTicker} />
+				</div>
 				<label className="flex flex-col gap-1 text-sm">
 					<span className="text-2xs text-ink-muted uppercase">Against</span>
 					<select

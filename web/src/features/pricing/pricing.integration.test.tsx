@@ -80,8 +80,9 @@ describe("pricing workbench", () => {
 
 	it("offers no diagnostics to a closed form on a CPU-only server", async () => {
 		renderWorkbench("?product=script-european-call&engine=analytic");
-		await screen.findByText(/no GPU on this server/);
-		await screen.findByText("delta");
+		// a closed form runs on no device: the picker is not shown
+		await screen.findByText("Delta");
+		expect(screen.queryByText(/no GPU on this server/)).toBeNull();
 		expect(screen.queryByRole("button", { name: /^Diagnostics/ })).toBeNull();
 	});
 
@@ -126,8 +127,8 @@ describe("pricing workbench", () => {
 
 	it("renders the greeks table from the response", async () => {
 		renderWorkbench();
-		expect(await screen.findByText("delta")).toBeInTheDocument();
-		expect(await screen.findByText("vega")).toBeInTheDocument();
+		expect(await screen.findByText("Delta")).toBeInTheDocument();
+		expect(await screen.findByText("Vega")).toBeInTheDocument();
 	});
 
 	it("shows the adjoint greeks of a scripted product, and why its delta is zero", async () => {
@@ -153,8 +154,8 @@ describe("pricing workbench", () => {
 		expect(
 			within(greeks).getByRole("row", { name: /^Vega/ }),
 		).toHaveTextContent("±");
-		expect(within(greeks).getByText(/Exactly zero/)).toHaveTextContent(
-			/Delta.*levels are set at the initial fixing/,
-		);
+		// a zero risk is named apart (the product starts today: no
+		// forward-start note any more)
+		expect(within(greeks).getByText(/Exactly zero/)).toHaveTextContent(/Delta/);
 	});
 });

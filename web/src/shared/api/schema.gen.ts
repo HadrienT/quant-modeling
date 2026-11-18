@@ -5176,9 +5176,19 @@ export interface components {
             low: number;
             /**
              * Normal Vol
-             * @description Median over the window, rate units
+             * @description Median over the window, every trade, rate units
              */
             normal_vol: number;
+            /**
+             * Quartile Trades
+             * @description The trades the quartiles rest on: those whose premium convention is known (not bilateral), or every trade when fewer than three are (issue 193)
+             */
+            quartile_trades: number;
+            /**
+             * Quartiles Known
+             * @description False when the quartiles fall back on every trade
+             */
+            quartiles_known: boolean;
             /** Tenor */
             tenor: number;
             /** Trades */
@@ -7309,9 +7319,11 @@ export interface components {
         /**
          * ScriptedProductRequest
          * @description Price a product of the script library (api/app/product_library) from
-         *     its term sheet: the terms replace the defaults the script declares, and
-         *     the dates start a week after the valuation date. The response carries the
-         *     script actually priced.
+         *     its term sheet: the terms replace the defaults the script declares. An
+         *     equity product starts on the valuation date, its first fixing today's
+         *     spot (levels in % of the initial level are % of today's spot); a rates
+         *     product a few days later. The response carries the script actually
+         *     priced.
          */
         ScriptedProductRequest: {
             /**
@@ -7362,11 +7374,16 @@ export interface components {
             dividend: number;
             /**
              * Engine
-             * @description 'mc': the script under `model` (Monte-Carlo). 'analytic': the closed form, for the products that have one (european-call, digital-call): Black-Scholes at the at-the-money implied vol of the ticker's stored smile, the strike fixed on the start date (a forward start).
+             * @description 'mc': the script under `model` (Monte-Carlo). 'analytic': the closed form, for the products that have one (the European and digital calls and puts, the forward): Black-Scholes at the at-the-money implied vol of the ticker's stored smile.
              * @default mc
              * @enum {string}
              */
             engine: "mc" | "analytic";
+            /**
+             * Expiry
+             * @description A swaption's (first) exercise, in years. None: one year.
+             */
+            expiry?: number | null;
             /**
              * Fuzzy
              * @default false
@@ -7387,6 +7404,11 @@ export interface components {
              * @default false
              */
             importance_sampling: boolean;
+            /**
+             * Maturity
+             * @description Years from the start to the last date: the script's dates stretched in proportion, a schedule keeping its frequency. For a swap or a swaption, the swap's length in whole years. None: the product's own.
+             */
+            maturity?: number | null;
             /**
              * Milstein
              * @description model='local_vol': the Milstein step instead of log-Euler (strong order 1; with mlmc_eps, the levels' variance decays as h^2 on a smooth surface). CPU only. Not advised on a calibrated market grid: where the local vol's slope is steep at the edge of the quoted strikes, it makes the levels' coupling worse (blueprint WP 26 §9.2).

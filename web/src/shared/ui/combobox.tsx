@@ -54,6 +54,7 @@ export function Combobox({
 							<Command.Item
 								key={o.value}
 								value={o.value}
+								keywords={o.label ? [o.label] : undefined}
 								onSelect={() => {
 									onChange(o.value);
 									setOpen(false);

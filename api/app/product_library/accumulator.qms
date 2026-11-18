@@ -6,6 +6,8 @@
 # param: strike = 0.9 | percent | Purchase price, % of the initial level
 # param: knock_out = 1.05 | percent | Knock-out level, % of the initial level
 # param: gearing = 2 | number | Shares bought below the strike, per share above
+# eps: 0.3
+# greeks: joint
 #
 # Weekly for six months. Each purchase is marked at the close: its value is
 # (spot - strike) per share, paid on the purchase date. The knock-out is

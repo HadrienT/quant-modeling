@@ -8,7 +8,7 @@
 # summary: The right, in one year, to enter a five-year SOFR swap at the strike: worth the swap at expiry when that is positive, under Hull-White calibrated to the swaptions traded on the market.
 # param: strike = 0.046 | percent | Strike (fixed rate of the swap entered)
 # param: notional = 10000000 | amount | Notional
-# param: side = 1 | number | 1 payer (the right to pay the strike), -1 receiver
+# param: side = 1 | side | 1 payer (the right to pay the strike), -1 receiver
 #
 # At expiry the swap starting then is worth, per unit of notional,
 # 1 - P(T0, Tn) - strike * annuity (one curve: SOFR discounts and projects),

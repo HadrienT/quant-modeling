@@ -16,9 +16,43 @@ import { ScriptGreeks } from "./scripting/ScriptGreeks";
 
 const GREEKS = ["delta", "gamma", "vega", "theta", "rho"] as const;
 
-/** Library scripts fix their levels on spot() at their first date. */
-const STRIKE_DATE_NOTE =
-	"Here the levels are set at the initial fixing, a week after the valuation date: a payoff in % of that level does not depend on today's spot, so its delta is zero until then. The risk profile on the Products page takes the levels as already fixed, the delta a desk quotes once the product is struck.";
+/** Each greek's name and unit, as the adjoint table gives them. */
+const GREEK_UNITS: Record<(typeof GREEKS)[number], [string, string]> = {
+	delta: ["Delta", "per 1.00 of spot"],
+	gamma: ["Gamma", "per 1.00 of spot, squared"],
+	vega: ["Vega", "per 1.00 of vol (÷100 for one vol point)"],
+	theta: ["Theta", "per year (÷365 for one day)"],
+	rho: ["Rho", "per 1.00 of rate (÷10,000 for one bp)"],
+};
+
+type Result = NonNullable<ReturnType<typeof usePricing>["data"]> & {
+	model_choice?: {
+		calibration?: unknown;
+		rates_calibration?: unknown;
+		underlyings?: { ticker?: string | null }[] | null;
+	} | null;
+};
+
+/** Whether the price rests on the database's market (a ticker's chain,
+ * close and dividend, or the traded rates) rather than typed inputs. */
+function fromMarket(r: Result): boolean {
+	const c = r.model_choice;
+	return !!(
+		c?.calibration ||
+		c?.rates_calibration ||
+		c?.underlyings?.some((u) => u.ticker)
+	);
+}
+
+/** The underlyings' tickers, spot(0) first, to name their greeks. */
+function underlyingNames(r: Result, values: Record<string, unknown>): string[] {
+	const used = r.model_choice?.underlyings?.map((u) => u.ticker ?? "");
+	if (used?.some(Boolean)) return used as string[];
+	return String(values.tickers ?? "")
+		.split(/[\s,;]+/)
+		.filter(Boolean)
+		.map((t) => t.toUpperCase());
+}
 
 /**
  * The panel that carries the screen's credibility (WP 07 §4): price WITH its
@@ -75,7 +109,11 @@ export function ResultsPanel({
 						{isMc && descriptor.gpu && (
 							<EngineTag engine={`on ${deviceLabel(r)}`} />
 						)}
-						<Provenance source="manual" />
+						<Provenance
+							source={
+								descriptor.scripted || fromMarket(r) ? "market" : "manual"
+							}
+						/>
 						<Freshness at={Date.now()} />
 						<ComputeTime
 							computeMs={r.compute_ms}
@@ -87,16 +125,19 @@ export function ResultsPanel({
 					<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
 				)}
 				{r.diagnostics && (
-					<p className="mt-2 font-mono text-2xs text-ink-muted">
-						{r.diagnostics}
-					</p>
+					<details className="mt-2 text-2xs text-ink-muted">
+						<summary className="cursor-pointer select-none">
+							Engine details
+						</summary>
+						<p className="mt-1 font-mono">{r.diagnostics}</p>
+					</details>
 				)}
 			</div>
 
 			{(r.risks ?? []).length > 0 ? (
 				<ScriptGreeks
 					risks={r.risks ?? []}
-					zeroDeltaNote={descriptor.scripted ? STRIKE_DATE_NOTE : undefined}
+					names={underlyingNames(r, values)}
 				/>
 			) : (
 				GREEKS.some((n) => (g as Record<string, unknown>)[n] != null) && (
@@ -106,6 +147,7 @@ export function ResultsPanel({
 								<th className="p-2 text-left">Greek</th>
 								<th className="p-2 text-right">Value</th>
 								<th className="p-2 text-right">Std error</th>
+								<th className="p-2 text-left">Unit</th>
 							</tr>
 						</thead>
 						<tbody className="font-mono tabular-nums">
@@ -116,7 +158,9 @@ export function ResultsPanel({
 								if (v == null) return null;
 								return (
 									<tr key={name} className="border-t border-hairline">
-										<td className="p-2 text-left text-ink-secondary">{name}</td>
+										<td className="p-2 text-left font-sans text-ink">
+											{GREEK_UNITS[name][0]}
+										</td>
 										<td className="p-2 text-right">
 											<NumberCell value={v} magnitude="greek" />
 										</td>
@@ -126,6 +170,9 @@ export function ResultsPanel({
 											) : (
 												"—"
 											)}
+										</td>
+										<td className="p-2 text-left font-sans text-2xs text-ink-secondary">
+											{GREEK_UNITS[name][1]}
 										</td>
 									</tr>
 								);

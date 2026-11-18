@@ -116,7 +116,10 @@ export function SwapMarketPanel() {
 							<table className="w-full text-sm">
 								<caption className="pb-1 text-left text-xs text-ink-muted">
 									ATM swaption normal vols, from premiums traded since{" "}
-									{trades.window_start}
+									{trades.window_start}. Medians over every trade; quartiles
+									over the trades whose premium convention is known (a bilateral
+									trade may report one leg's premium or both legs'), or over
+									every trade where marked *
 								</caption>
 								<thead>
 									<tr className="text-left text-xs text-ink-muted">
@@ -142,8 +145,12 @@ export function SwapMarketPanel() {
 											<td className="px-2 py-1 text-right">
 												{rateBp(v.normal_vol)}
 											</td>
-											<td className="px-2 py-1 text-right text-ink-secondary">
+											<td
+												className="px-2 py-1 text-right text-ink-secondary"
+												title={`${v.quartile_trades} trades`}
+											>
 												{rateBp(v.low)} to {rateBp(v.high)}
+												{v.quartiles_known ? "" : " *"}
 											</td>
 											<td className="px-2 py-1 text-right">{v.trades}</td>
 										</tr>

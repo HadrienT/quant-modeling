@@ -49,9 +49,11 @@ const DOC_KEYS: Record<string, string> = {
 	"dispersion-swap": "dispersion-swap",
 	// The sheets of the hand-written pricers these scripts replaced (issue 313).
 	"european-call": "option",
+	"european-put": "option",
 	"american-put": "american",
 	"quanto-call": "quanto",
 	"digital-call": "digital",
+	"digital-put": "digital",
 	"asian-call": "asian",
 	"up-and-out-call": "barrier",
 	"down-and-in-put": "barrier",
@@ -76,11 +78,13 @@ export const RATES_CURRENCIES = ["USD", "EUR", "JPY"] as const;
 /**
  * Products with a closed form (engine 'analytic', api/app/pricing_service.py
  * ANALYTIC_SCRIPTED): Black-Scholes at the ticker's at-the-money implied vol,
- * the strike fixed on the start date (a forward start).
+ * the product starting today (its strike in % of today's spot).
  */
 export const ANALYTIC_SCRIPTED = new Set([
 	"european-call",
+	"european-put",
 	"digital-call",
+	"digital-put",
 	"equity-forward",
 	// rates products: the cash flows discounted on the curve
 	"zero-coupon-bond",
@@ -108,6 +112,20 @@ export const SINGLE_MODELS = [
 	"slv",
 ] as const;
 export const MULTI_MODELS = ["auto", "black_scholes"] as const;
+
+/** The dynamics as the page names them. */
+const MODEL_LABELS: Record<string, string> = {
+	auto: "Auto: the simplest model the product needs",
+	black_scholes: "Black-Scholes (the ticker's at-the-money vol)",
+	local_vol: "Local volatility (Dupire, the day's smile)",
+	heston: "Heston (calibrated to the smile)",
+	slv: "Stochastic-local volatility",
+};
+
+/** Swap and swaption products: their dates are their coupons' (the API
+ * writes the script for the asked length), a swaption's expiry its own. */
+const SWAPTIONS = new Set(["european-swaption", "bermudan-swaption"]);
+const SWAPS = new Set(["interest-rate-swap", ...SWAPTIONS]);
 
 const DEFAULT_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN"];
 
@@ -138,6 +156,22 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 	const defaults: Record<string, unknown> = {};
 	const fields: Record<string, FieldOverride> = {};
 	for (const prm of p.params) {
+		if (prm.unit === "side") {
+			// a payer or a receiver, not a number to type
+			shape[prm.name] = z.enum(["1", "-1"]);
+			defaults[prm.name] = String(prm.default);
+			fields[prm.name] = {
+				label: "Side",
+				optionLabels:
+					p.slug === "interest-rate-swap"
+						? {
+								"1": "Payer: pays the fixed rate",
+								"-1": "Receiver: receives it",
+							}
+						: { "1": "Payer: the right to pay the strike", "-1": "Receiver" },
+			};
+			continue;
+		}
 		shape[prm.name] = term(prm.unit);
 		defaults[prm.name] =
 			prm.unit === "percent" ? +(prm.default * 100).toFixed(6) : prm.default;
@@ -145,6 +179,40 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 			label: prm.label,
 			unit: prm.unit === "percent" ? "%" : undefined,
 			step: prm.unit === "percent" ? 0.5 : undefined,
+		};
+	}
+	// The length of the product: its dates stretched from today (the
+	// schedules keep their frequency); a swap's in whole years, a
+	// swaption's expiry apart.
+	const span = Math.max(0.1, +(p.maturity ?? 1).toFixed(2));
+	if (SWAPS.has(p.slug)) {
+		shape.maturity = z.coerce.number().int().min(1).max(30);
+		defaults.maturity = SWAPTIONS.has(p.slug) ? 5 : Math.round(span);
+		fields.maturity = {
+			label: SWAPTIONS.has(p.slug) ? "Swap length" : "Maturity",
+			unit: "years",
+			step: 1,
+		};
+		if (SWAPTIONS.has(p.slug)) {
+			shape.expiry = z.coerce.number().min(0.1).max(30);
+			defaults.expiry = 1;
+			fields.expiry = {
+				label: p.slug === "bermudan-swaption" ? "First exercise" : "Expiry",
+				unit: "years",
+				step: 0.5,
+			};
+		}
+	} else {
+		shape.maturity = z.coerce.number().min(0.05).max(30);
+		defaults.maturity = span;
+		fields.maturity = {
+			label: "Maturity",
+			unit: "years",
+			step: 0.25,
+			hint:
+				p.underlyings > 0 && !p.market
+					? "The product starts today, its levels in % of today's spot; its dates stretch with the maturity."
+					: undefined,
 		};
 	}
 	const rates = p.market === "rates";
@@ -162,12 +230,14 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 		shape.tickers = z
 			.string()
 			.min(1, "A ticker per underlying")
-			.regex(/^[A-Za-z.\-^, ]+$/, "Tickers separated by commas");
+			.regex(/^[A-Za-z0-9.\-^:, ]+$/, "Tickers separated by commas");
 		shape.rate = f.ratePct();
 	}
 	shape.n_paths = f.paths();
 	shape.seed = f.seed();
-	Object.assign(defaults, { n_paths: 50_000, seed: 1 });
+	// Several underlyings under local vol differentiate on the CPU only: fewer
+	// paths by default, so that the adjoint run fits the API's time limit.
+	Object.assign(defaults, { n_paths: multi ? 20_000 : 50_000, seed: 1 });
 	if (!rates) {
 		Object.assign(defaults, {
 			model: "auto",
@@ -179,12 +249,16 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 			rate: 4,
 		});
 		Object.assign(fields, {
-			model: { label: "Dynamics (model)", group: "market" },
-			tickers: {
-				label: multi
-					? `Tickers, spot(0) to spot(${p.underlyings - 1})`
-					: "Ticker",
+			model: {
+				label: "Dynamics (model)",
 				group: "market",
+				optionLabels: MODEL_LABELS,
+			},
+			tickers: {
+				label: multi ? "Underlyings" : "Underlying",
+				group: "market",
+				widget: multi ? "tickers" : "ticker",
+				count: p.underlyings,
 			},
 		} satisfies Record<string, FieldOverride>);
 	}
@@ -246,12 +320,21 @@ export function scriptedRequest(
 			prm.unit === "percent" ? pct(v[prm.name]) : Number(v[prm.name]),
 		]),
 	);
+	const length = {
+		...(v.maturity != null && v.maturity !== ""
+			? { maturity: Number(v.maturity) }
+			: {}),
+		...(v.expiry != null && v.expiry !== ""
+			? { expiry: Number(v.expiry) }
+			: {}),
+	};
 	if (p.market === "rates")
 		// the curve of the currency, or the SOFR market of the traded swaps
 		// and swaptions: no ticker, no model to choose
 		return {
 			product: p.slug,
 			terms,
+			...length,
 			hull_white:
 				p.curve === "sofr"
 					? { curve: "sofr" }
@@ -274,6 +357,7 @@ export function scriptedRequest(
 	return {
 		product: p.slug,
 		terms,
+		...length,
 		model: model ?? v.model,
 		...market,
 		rate: pct(v.rate),

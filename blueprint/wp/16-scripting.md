@@ -256,6 +256,18 @@ Elle en tire, pour chaque condition `expr ⋈ 0` :
 - **`discrete`** — le domaine de `expr` est un ensemble fini de points isolés
   (typiquement un drapeau `ki = 1`). Alors le lissage n'a **aucun sens** : la
   condition reste dure. C'est ce qui évite de lisser des tests logiques.
+  **Departure from the book (2026-11-18, WP 26 §5, #226 follow-up).** In fuzzy
+  mode a discrete condition is no longer hard: it interpolates linearly
+  between the two values of its domain that straddle the boundary
+  (`NodeComparison::discrete_eps`, `discrete_shift`), which gives exactly 0
+  and 1 on those values.
+  - Why: a fuzzy `if` blends the variables it assigns, so a 0/1 flag holds
+    0.97 near a barrier. The hard `alive = 1` then read false and dropped the
+    payoff of every path near the barrier.
+  - Measured effect of the old behaviour: prices biased by tens to hundreds
+    of standard errors (worst-of autocall, phoenix, himalaya), and an adjoint
+    delta of zero on a one-touch under local vol.
+  - Hard mode is unchanged, and so is fuzzy mode wherever a flag is crisp.
 - **`eps`** — sinon, la demi-largeur de lissage, dérivée de la distance entre le
   domaine et zéro et d'un `defaultEps` de configuration.
 - **`alwaysTrue` / `alwaysFalse`** — le domaine est entièrement d'un côté de

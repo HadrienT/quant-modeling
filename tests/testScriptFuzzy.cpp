@@ -133,6 +133,36 @@ namespace quantModeling
         EXPECT_GT(fuzzy, 0.0);
     }
 
+    // A knock-out read through a flag (#226 follow-up): the fuzzy `if` blends
+    // `alive` to a fraction near the barrier, and the discrete test
+    // `alive = 1` interpolates (NodeComparison::discrete_eps) instead of
+    // reading 0.97 as false -- which dropped the payoff of every path near
+    // the barrier. The smoothed price converges to the hard one, and its
+    // bump delta is the hard price's.
+    TEST(ScriptFuzzy, AKnockOutReadThroughAFlagKeepsItsPayoff)
+    {
+        const std::string src = "2024-12-17\n    alive = 1\n"
+                                "schedule(2025-01-16, 2025-11-17, 1M, NONE, F)\n"
+                                "    if spot() >= 130 then alive = 0 endIf\n"
+                                "2025-12-16\n"
+                                "    if spot() >= 130 then alive = 0 endIf\n"
+                                "    if alive = 1 then pays max(spot() - 100, 0) endIf\n";
+        const double hard = price(src, false, 0.0, S0, 7);
+        double gap = 1e300;
+        for (const double eps : {2.0, 0.5, 0.1})
+        {
+            const double fuzzy = price(src, true, eps, S0, 7);
+            const double now = std::abs(fuzzy - hard);
+            EXPECT_LT(now, 0.01 * hard) << "eps " << eps;
+            EXPECT_LE(now, gap + 0.002 * hard) << "eps " << eps; // no worse as eps shrinks
+            gap = now;
+        }
+        const double h = 1.0;
+        const double bump_hard = (price(src, false, 0.0, S0 + h, 7) - price(src, false, 0.0, S0 - h, 7)) / (2 * h);
+        const double bump_fuzzy = (price(src, true, 0.5, S0 + h, 7) - price(src, true, 0.5, S0 - h, 7)) / (2 * h);
+        EXPECT_NEAR(bump_fuzzy, bump_hard, 0.05 * std::abs(bump_hard));
+    }
+
     TEST(ScriptFuzzy, Deterministic)
     {
         EXPECT_EQ(price(kDigital, true, 1.0, S0, 99),

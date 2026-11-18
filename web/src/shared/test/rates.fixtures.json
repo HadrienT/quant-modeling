@@ -485,7 +485,9 @@
 						"normal_vol": 0.01048179410712658,
 						"low": 0.010453806657597181,
 						"high": 0.013103760760035919,
-						"trades": 4
+						"trades": 4,
+						"quartile_trades": 4,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 0.25,
@@ -493,7 +495,9 @@
 						"normal_vol": 0.009725847280664607,
 						"low": 0.008146895963211628,
 						"high": 0.009931095531709972,
-						"trades": 12
+						"trades": 12,
+						"quartile_trades": 12,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 0.5,
@@ -501,7 +505,9 @@
 						"normal_vol": 0.00996270922818433,
 						"low": 0.009961809289242823,
 						"high": 0.010138039908675416,
-						"trades": 36
+						"trades": 36,
+						"quartile_trades": 36,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 1.0,
@@ -509,7 +515,9 @@
 						"normal_vol": 0.012347319976546381,
 						"low": 0.012172266978699577,
 						"high": 0.012521743078651924,
-						"trades": 15
+						"trades": 15,
+						"quartile_trades": 15,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 1.0,
@@ -517,7 +525,9 @@
 						"normal_vol": 0.011723659310896702,
 						"low": 0.011667624423285538,
 						"high": 0.011779590842976542,
-						"trades": 8
+						"trades": 8,
+						"quartile_trades": 8,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 1.0,
@@ -525,7 +535,9 @@
 						"normal_vol": 0.011086408416988217,
 						"low": 0.011086408416988217,
 						"high": 0.01653063028206953,
-						"trades": 19
+						"trades": 19,
+						"quartile_trades": 19,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 1.0,
@@ -533,7 +545,9 @@
 						"normal_vol": 0.010266589630799055,
 						"low": 0.010027397612348193,
 						"high": 0.01039565765936533,
-						"trades": 28
+						"trades": 28,
+						"quartile_trades": 28,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 2.0,
@@ -541,7 +555,9 @@
 						"normal_vol": 0.01244783781789089,
 						"low": 0.012367510259860133,
 						"high": 0.01267056632563419,
-						"trades": 6
+						"trades": 6,
+						"quartile_trades": 6,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 2.0,
@@ -549,7 +565,9 @@
 						"normal_vol": 0.012142790736894744,
 						"low": 0.012142790736894744,
 						"high": 0.012233056229986022,
-						"trades": 6
+						"trades": 6,
+						"quartile_trades": 6,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 2.0,
@@ -557,7 +575,9 @@
 						"normal_vol": 0.011433334969139397,
 						"low": 0.011418820198033159,
 						"high": 0.011447849740245637,
-						"trades": 4
+						"trades": 4,
+						"quartile_trades": 4,
+						"quartiles_known": false
 					},
 					{
 						"expiry": 2.0,
@@ -565,7 +585,9 @@
 						"normal_vol": 0.01071159635144589,
 						"low": 0.006550412446070604,
 						"high": 0.010870118175736222,
-						"trades": 30
+						"trades": 30,
+						"quartile_trades": 30,
+						"quartiles_known": false
 					}
 				],
 				"trades_used": 168,

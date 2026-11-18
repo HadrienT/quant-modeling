@@ -181,6 +181,17 @@ namespace quantModeling::scripting
             n.arguments[1]->accept(*this);
             const T rhs = this->pop();
             const T lhs = this->pop();
+            // A discrete condition interpolates between its domain's values
+            // (NodeComparison::discrete_eps): the ramp centred on
+            // discrete_shift, computed lhs - (rhs + shift) as the bytecode
+            // and the IR do.
+            const bool interpolated = n.discrete && n.discrete_eps > 0.0;
+            if (interpolated)
+            {
+                const T x = n.discrete_shift != 0.0 ? T(lhs - (rhs + T(n.discrete_shift))) : T(lhs - rhs);
+                push_degree(call_spread(x, n.discrete_eps, c));
+                return;
+            }
             const T x = lhs - rhs; // condition is x ⋈ 0
 
             if (n.discrete || n.eps <= 0.0)
