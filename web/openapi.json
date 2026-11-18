@@ -277,7 +277,8 @@
       "AmericanEngineType": {
         "enum": [
           "binomial",
-          "trinomial"
+          "trinomial",
+          "mc"
         ],
         "title": "AmericanEngineType",
         "type": "string"
@@ -292,6 +293,14 @@
             "$ref": "#/components/schemas/AmericanEngineType",
             "default": "binomial"
           },
+          "exercise_per_year": {
+            "default": 50,
+            "description": "engine='mc': Bermudan exercise dates a year standing for continuous exercise.",
+            "maximum": 252.0,
+            "minimum": 1.0,
+            "title": "Exercise Per Year",
+            "type": "integer"
+          },
           "is_call": {
             "title": "Is Call",
             "type": "boolean"
@@ -300,6 +309,14 @@
             "exclusiveMinimum": 0.0,
             "title": "Maturity",
             "type": "number"
+          },
+          "n_paths": {
+            "default": 100000,
+            "description": "engine='mc': pricing paths (the exercise rule's pilot is a quarter of them, 20,000 to 200,000).",
+            "maximum": 2000000.0,
+            "minimum": 1000.0,
+            "title": "N Paths",
+            "type": "integer"
           },
           "pde_space_steps": {
             "default": 100,
@@ -316,6 +333,12 @@
           "rate": {
             "title": "Rate",
             "type": "number"
+          },
+          "seed": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Seed",
+            "type": "integer"
           },
           "spot": {
             "exclusiveMinimum": 0.0,

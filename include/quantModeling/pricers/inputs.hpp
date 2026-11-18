@@ -48,6 +48,13 @@ namespace quantModeling
         int tree_steps = 100;      // For binomial/trinomial trees
         int pde_space_steps = 100; // For PDE
         int pde_time_steps = 100;  // For PDE
+
+        // Monte-Carlo (Longstaff-Schwartz on a script, #313)
+        int n_paths = 100000;
+        int seed = 1;
+        int exercise_per_year = 50; ///< Bermudan dates a year standing for continuous exercise
+        bool compute_greeks = true;
+        int threads = 1; ///< PricingSettings::mc_threads: 0 = the available CPUs, at most 16
     };
 
     struct AsianBSInput

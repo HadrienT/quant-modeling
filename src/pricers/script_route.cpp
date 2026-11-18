@@ -1,5 +1,6 @@
 #include "quantModeling/pricers/script_route.hpp"
 
+#include "quantModeling/engines/mc/lsm.hpp"
 #include "quantModeling/engines/mc/script_engine.hpp"
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
@@ -7,6 +8,7 @@
 #include "quantModeling/market/valuation_context.hpp"
 #include "quantModeling/utils/accumulators.hpp"
 #include "quantModeling/utils/greeks.hpp"
+#include "quantModeling/utils/thread_pool.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -95,14 +97,21 @@ namespace quantModeling
             return s;
         }
 
+        /// `policy`: the early-exercise rule fitted at the route's own
+        /// model (price_by_script), applied unchanged to every run -- the
+        /// bumped ones included, the boundary held fixed (at the optimal
+        /// boundary its own sensitivity vanishes).
         SimulationMCResult run(const ScriptRoute &route, const scripting::ScriptModelSpec &spec, int days,
-                               const PricingSettings &settings)
+                               const PricingSettings &settings, const scripting::ExercisePolicy *policy,
+                               ThreadPool *pool)
         {
             const RouteDays counter = counter_for(route);
-            const ScriptedProduct<Real> product(route.script(spec, days), route_context(route, counter),
-                                                script_settings(route, spec, days));
+            ScriptedProduct<Real> product(route.script(spec, days), route_context(route, counter),
+                                          script_settings(route, spec, days));
+            if (policy)
+                product.set_exercise_policy(*policy);
             auto model = scripting::make_script_model<Real>(spec);
-            return simulate_script(product, *model, settings);
+            return simulate_script(product, *model, settings, pool);
         }
 
         /// A finite difference of runs that share their Sobol points:
@@ -152,20 +161,48 @@ namespace quantModeling
     PricingResult price_by_script(const ScriptRoute &route, const PricingSettings &settings, bool greeks)
     {
         const RouteDays counter = counter_for(route);
+        // The CPU's threads (PricingSettings::mc_threads): the pilot and the
+        // CPU runs, the same bits on any number of them.
+        ThreadPool pool;
+        const int threads = settings.mc_threads > 0
+                                ? settings.mc_threads
+                                : static_cast<int>(std::min<std::size_t>(available_cpus(), 16));
+        if (threads > 1)
+            pool.start(static_cast<std::size_t>(threads - 1));
+        ThreadPool *workers = threads > 1 ? &pool : nullptr;
+        // Early exercise (an American, WP 26 follow-up #313): the rule is
+        // fitted once, by Longstaff & Schwartz on an independent pilot, at
+        // the route's model; every run below prices under it.
+        std::optional<scripting::ExercisePolicy> policy;
+        std::string lsm_note;
+        {
+            ScriptedProduct<Real> probe(route.script(route.model, 0), route_context(route, counter),
+                                        script_settings(route, route.model, 0));
+            if (probe.has_exercise())
+            {
+                auto model = scripting::make_script_model<Real>(route.model);
+                lsm_note = " | " + fit_exercise_policy(probe, *model, settings.mc_paths > 0 ? settings.mc_paths : 100000,
+                                                       static_cast<std::uint64_t>(settings.mc_seed > 0 ? settings.mc_seed : 1),
+                                                       {}, workers)
+                                       .note();
+                policy = probe.exercise_policy();
+            }
+        }
+        const scripting::ExercisePolicy *rule = policy ? &*policy : nullptr;
         // The price with its discretisation bias, as the scripting API
         // returns it (WP 26 §9.4, §10.4): a model that steps on a grid is
         // priced with every step halved and its bias read from the unhalved
         // run; a model exact between the dates has bias 0, at no cost.
         PricingSettings with_bias = settings;
         with_bias.mc_bias_estimate = true;
-        const SimulationMCResult priced = run(route, route.model, 0, with_bias);
+        const SimulationMCResult priced = run(route, route.model, 0, with_bias, rule, workers);
         PricingResult res;
         res.npv = priced.npv();
         res.mc_std_error = priced.std_error();
         res.discretisation_bias = priced.discretisation_bias;
         res.device = priced.device;
         res.gpus = priced.gpus;
-        res.diagnostics = "WP 26 script route (" + route.name + "): " + priced.diagnostics;
+        res.diagnostics = "WP 26 script route (" + route.name + "): " + priced.diagnostics + lsm_note;
         if (!greeks)
         {
             res.diagnostics += " | price only";
@@ -175,7 +212,7 @@ namespace quantModeling
         // centre is the unhalved run (the priced one when nothing was
         // halved).
         const bool halved = priced.discretisation_bias.value_or(0.0) > 0.0;
-        const SimulationMCResult base = halved ? run(route, route.model, 0, settings) : priced;
+        const SimulationMCResult base = halved ? run(route, route.model, 0, settings, rule, workers) : priced;
 
         // Delta, vega, rho: one adjoint run without the control (the adjoint
         // engines have none: unbiased, wider) -- on the GPU when the request
@@ -195,8 +232,10 @@ namespace quantModeling
             std::optional<AADSimulResults> gpu;
             if (settings.mc_device != ComputeDevice::Cpu)
             {
-                const ScriptedProduct<Real> product(route.script(route.model, 0), route_context(route, counter),
-                                                    ScriptSettings{route.fuzzy});
+                ScriptedProduct<Real> product(route.script(route.model, 0), route_context(route, counter),
+                                              ScriptSettings{route.fuzzy});
+                if (rule)
+                    product.set_exercise_policy(*rule);
                 auto model = scripting::make_script_model<Real>(route.model);
                 std::string why;
                 gpu = simulate_script_aad_gpu(product, *model, paths, seed, why, sampler, settings.mc_gpus);
@@ -223,9 +262,10 @@ namespace quantModeling
             }
             else
             {
-                const ScriptedProduct<aad::Number> product(route.script(route.model, 0),
-                                                           route_context(route, counter),
-                                                           ScriptSettings{route.fuzzy});
+                ScriptedProduct<aad::Number> product(route.script(route.model, 0), route_context(route, counter),
+                                                     ScriptSettings{route.fuzzy});
+                if (rule)
+                    product.set_exercise_policy(*rule);
                 auto model = scripting::make_script_model<aad::Number>(route.model);
                 std::vector<std::vector<Real>> batches;
                 const AADSimulResults aad = simulate_aad(product, *model, paths, seed, first_aad_payoff,
@@ -281,7 +321,7 @@ namespace quantModeling
             up.spot += dS;
             down.spot -= dS;
         }
-        const SimulationMCResult su = run(route, up, 0, settings), sd = run(route, down, 0, settings);
+        const SimulationMCResult su = run(route, up, 0, settings, rule, workers), sd = run(route, down, 0, settings, rule, workers);
         const Difference gamma = difference({&su, &base, &sd}, {1.0, -2.0, 1.0}, dS * dS);
         res.greeks.gamma = gamma.value;
         res.greeks.gamma_std_error = gamma.std_error;
@@ -292,8 +332,8 @@ namespace quantModeling
             res.greeks.delta_std_error = delta.std_error;
         }
 
-        const SimulationMCResult later = run(route, route.model, kTicksPerDay, settings),
-                                 sooner = run(route, route.model, -kTicksPerDay, settings);
+        const SimulationMCResult later = run(route, route.model, kTicksPerDay, settings, rule, workers),
+                                 sooner = run(route, route.model, -kTicksPerDay, settings, rule, workers);
         const Difference theta = difference({&later, &sooner}, {-1.0, 1.0}, 2.0 * kTicksPerDay * counter.day());
         res.greeks.theta = theta.value;
         res.greeks.theta_std_error = theta.std_error;
@@ -313,8 +353,8 @@ namespace quantModeling
                         v += dv;
                 return s;
             };
-            const SimulationMCResult vu = run(route, shifted_vol(bumps.vega_bump), 0, settings),
-                                     vd = run(route, shifted_vol(-bumps.vega_bump), 0, settings);
+            const SimulationMCResult vu = run(route, shifted_vol(bumps.vega_bump), 0, settings, rule, workers),
+                                     vd = run(route, shifted_vol(-bumps.vega_bump), 0, settings, rule, workers);
             const Difference vega = difference({&vu, &vd}, {1.0, -1.0}, 2.0 * bumps.vega_bump);
             res.greeks.vega = vega.value;
             res.greeks.vega_std_error = vega.std_error;
@@ -324,7 +364,7 @@ namespace quantModeling
             scripting::ScriptModelSpec ru = route.model, rd = route.model;
             ru.rate += bumps.rho_bump;
             rd.rate -= bumps.rho_bump;
-            const SimulationMCResult rhu = run(route, ru, 0, settings), rhd = run(route, rd, 0, settings);
+            const SimulationMCResult rhu = run(route, ru, 0, settings, rule, workers), rhd = run(route, rd, 0, settings, rule, workers);
             const Difference rho = difference({&rhu, &rhd}, {1.0, -1.0}, 2.0 * bumps.rho_bump);
             res.greeks.rho = rho.value;
             res.greeks.rho_std_error = rho.std_error;

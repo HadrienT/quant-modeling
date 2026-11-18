@@ -2213,17 +2213,29 @@ export interface components {
          * AmericanEngineType
          * @enum {string}
          */
-        AmericanEngineType: "binomial" | "trinomial";
+        AmericanEngineType: "binomial" | "trinomial" | "mc";
         /** AmericanVanillaRequest */
         AmericanVanillaRequest: {
             /** Dividend */
             dividend: number;
             /** @default binomial */
             engine: components["schemas"]["AmericanEngineType"];
+            /**
+             * Exercise Per Year
+             * @description engine='mc': Bermudan exercise dates a year standing for continuous exercise.
+             * @default 50
+             */
+            exercise_per_year: number;
             /** Is Call */
             is_call: boolean;
             /** Maturity */
             maturity: number;
+            /**
+             * N Paths
+             * @description engine='mc': pricing paths (the exercise rule's pilot is a quarter of them, 20,000 to 200,000).
+             * @default 100000
+             */
+            n_paths: number;
             /**
              * Pde Space Steps
              * @default 100
@@ -2236,6 +2248,11 @@ export interface components {
             pde_time_steps: number;
             /** Rate */
             rate: number;
+            /**
+             * Seed
+             * @default 1
+             */
+            seed: number;
             /** Spot */
             spot: number;
             /** Strike */

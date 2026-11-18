@@ -150,7 +150,12 @@ void register_core(py::module_ &m)
         .def_readwrite("is_call", &quantModeling::AmericanVanillaBSInput::is_call)
         .def_readwrite("tree_steps", &quantModeling::AmericanVanillaBSInput::tree_steps)
         .def_readwrite("pde_space_steps", &quantModeling::AmericanVanillaBSInput::pde_space_steps)
-        .def_readwrite("pde_time_steps", &quantModeling::AmericanVanillaBSInput::pde_time_steps);
+        .def_readwrite("pde_time_steps", &quantModeling::AmericanVanillaBSInput::pde_time_steps)
+        .def_readwrite("n_paths", &quantModeling::AmericanVanillaBSInput::n_paths)
+        .def_readwrite("seed", &quantModeling::AmericanVanillaBSInput::seed)
+        .def_readwrite("exercise_per_year", &quantModeling::AmericanVanillaBSInput::exercise_per_year)
+        .def_readwrite("compute_greeks", &quantModeling::AmericanVanillaBSInput::compute_greeks)
+        .def_readwrite("threads", &quantModeling::AmericanVanillaBSInput::threads);
 
     py::class_<quantModeling::AsianBSInput>(m, "AsianBSInput")
         .def(py::init<>())

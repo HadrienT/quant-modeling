@@ -175,7 +175,15 @@ def price_american_vanilla(req: AmericanVanillaRequest) -> PricingResponse:
     input_data.pde_space_steps = req.pde_space_steps
     input_data.pde_time_steps = req.pde_time_steps
 
-    if req.engine == AmericanEngineType.trinomial:
+    if req.engine == AmericanEngineType.mc:
+        input_data.n_paths = req.n_paths
+        input_data.seed = req.seed
+        input_data.exercise_per_year = req.exercise_per_year
+        input_data.threads = (
+            0  # the available CPUs, at most 16: the exercise rule's pilot
+        )
+        result = qm.price_american_vanilla_bs_mc(input_data)
+    elif req.engine == AmericanEngineType.trinomial:
         result = qm.price_american_vanilla_bs_trinomial(input_data)
     else:  # default to binomial
         result = qm.price_american_vanilla_bs_binomial(input_data)
