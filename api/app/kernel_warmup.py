@@ -260,6 +260,22 @@ LIBRARY_MODELS = {1: ("black_scholes", "local_vol", "heston", "slv")}
 LIBRARY_MODELS_MULTI = ("black_scholes",)
 #: The page's requests: greeks by default, without, and with second order.
 LIBRARY_VARIANTS = (("aad", False), ("none", False), ("aad", True))
+#: The models `auto` picks for a product on a ticker with a stored smile
+#: (local vol, stochastic-local vol for a path that carries state): their
+#: kernels are compiled first.
+AUTO_MODELS = ("local_vol", "slv")
+
+
+def _page_variants(t) -> List[Tuple[str, bool, bool]]:
+    """(greeks_method, second_order, fuzzy) of the runs the Price page makes
+    for a product by default (pricing_service._price_library_script): the
+    adjoint run, smoothed at the product's width when it has one, and for
+    a `separate` product the unsmoothed price run too."""
+    if t.eps is None:
+        return [("aad", False, False)]
+    if t.greeks == "joint":
+        return [("aad", False, True)]
+    return [("none", False, False), ("aad", False, True)]
 
 
 def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
@@ -284,16 +300,26 @@ def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
         for t in tenors
     ]
     heston = dict(v0=0.04, kappa=2.0, theta=0.04, xi=0.5, rho=-0.7)
-    out: List[Tuple[str, Callable[[], object]]] = []
+    # (rank, label, pricing): rank 0 the page's default runs under the models
+    # `auto` picks, 1 the same under the others, 2 every other variant.
+    ranked: List[Tuple[int, str, Callable[[], object]]] = []
     for slug, t in sorted(product_templates.templates().items()):
         if t.market == "rates":
             continue  # Hull-White on the curve: the CPU prices it, no kernel
+        if "exercise(" in t.script or "call(" in t.script:
+            continue  # Longstaff-Schwartz runs on the CPU: no kernel
         # as the Price page prices it: started today, fixed on today's spot
         script = product_templates.render(slug, {}, today, start=today)
         n = t.underlyings
         fixings = {today.isoformat(): [spot] * n}
+        page = _page_variants(t)
+        variants = page + [
+            (g, sec, False)
+            for g, sec in LIBRARY_VARIANTS
+            if (g, sec, False) not in page
+        ]
         for model in LIBRARY_MODELS.get(n, LIBRARY_MODELS_MULTI):
-            for greeks, second in LIBRARY_VARIANTS:
+            for greeks, second, fuzzy in variants:
                 # Only for pricing_service's choices (device, multilevel):
                 # never priced, so its ticker reads no market.
                 req = ScriptedProductRequest(
@@ -312,8 +338,8 @@ def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
                     continue  # no kernel: the CPU prices it
                 kw = dict(
                     day_count=req.day_count,
-                    fuzzy=req.fuzzy,
-                    default_eps=req.default_eps,
+                    fuzzy=fuzzy,
+                    default_eps=t.eps if fuzzy else req.default_eps,
                     n_paths=SEED_PATHS,
                     seed=1,
                     sampler=req.sampler,
@@ -350,16 +376,24 @@ def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
                     kw["leverage_flat"] = kw.pop("sigma_loc_flat")
                 if model in ("heston", "slv"):
                     kw["heston"] = heston
-                variant = greeks + (" second order" if second else "")
-                out.append(
+                variant = (
+                    greeks
+                    + (" second order" if second else "")
+                    + (f" smoothed at {t.eps:g}" if fuzzy else "")
+                )
+                default = (greeks, second, fuzzy) in page
+                rank = (0 if model in AUTO_MODELS else 1) if default else 2
+                ranked.append(
                     (
+                        rank,
                         f"library {slug} {model} {variant}",
                         lambda script=script, kw=kw: q.price_script(
                             script, spot, rate, div, vol, today.isoformat(), **kw
                         ),
                     )
                 )
-    return out
+    ranked.sort(key=lambda r: r[0])  # stable: by product within a rank
+    return [(label, price) for _, label, price in ranked]
 
 
 def warm_once() -> dict:

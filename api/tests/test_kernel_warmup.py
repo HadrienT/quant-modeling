@@ -52,11 +52,15 @@ def test_every_library_product_is_seeded_with_its_terms_as_data(monkeypatch):
     assert len(set(labels)) == len(labels)
     for slug, t in product_templates.templates().items():
         mine = [label for label in labels if label.split()[1] == slug]
-        if t.market == "rates":
-            # Hull-White on the curve runs on the CPU: no kernel to build
+        if t.market == "rates" or "exercise(" in t.script:
+            # Hull-White on the curve, and Longstaff-Schwartz, run on the
+            # CPU: no kernel to build
             assert not mine, slug
             continue
         assert mine, slug
+        if t.eps is not None:
+            # the page's adjoint run is smoothed at the product's width
+            assert any(f"smoothed at {t.eps:g}" in label for label in mine), slug
         if t.underlyings == 1:
             # Heston and SLV always run on the GPU
             assert any(" heston " in label for label in mine), slug
@@ -69,6 +73,21 @@ def test_every_library_product_is_seeded_with_its_terms_as_data(monkeypatch):
         price()
     assert all(kw["terms_as_parameters"] for kw in calls)
     assert all(kw["device"] != "cpu" for kw in calls)
+
+
+def test_the_pages_default_runs_come_first():
+    # what the Price page asks first -- the adjoint run (smoothed where the
+    # product has a width) under the models `auto` picks -- is compiled
+    # before any other variant
+    labels = [label for label, _ in kernel_warmup._library_seeds(qm)]
+    first_other = next(
+        i
+        for i, label in enumerate(labels)
+        if "second order" in label or label.split()[2] not in ("local_vol", "slv")
+    )
+    head = labels[:first_other]
+    assert head and all(" aad" in l or " none" in l for l in head)
+    assert "library up-and-out-call slv aad smoothed at 3" in head
 
 
 def test_one_seed_per_model_prices():
