@@ -38,9 +38,7 @@ def _req(product, **kw):
 
 def test_the_widths_are_read_from_the_headers():
     assert pt.get("one-touch").eps == 1.0 and pt.get("one-touch").greeks == "separate"
-    assert (
-        pt.get("digital-call").eps == 3.0 and pt.get("digital-call").greeks == "joint"
-    )
+    assert pt.get("ladder-call").eps == 0.3 and pt.get("ladder-call").greeks == "joint"
     assert pt.get("european-call").eps is None
 
 
@@ -53,9 +51,9 @@ def test_separate_prices_unsmoothed_and_differentiates_smoothed():
 
 
 def test_joint_prices_and_differentiates_one_smoothed_run():
-    r = ps.price_scripted_product(_req("digital-call"))
-    assert "price and greeks smoothed at eps 3" in r.diagnostics
-    hard = ps.price_scripted_product(_req("digital-call", greeks_method="none"))
+    r = ps.price_scripted_product(_req("ladder-call"))
+    assert "price and greeks smoothed at eps 0.3" in r.diagnostics
+    hard = ps.price_scripted_product(_req("ladder-call", greeks_method="none"))
     assert abs(r.npv - hard.npv) < 3 * hard.mc_std_error + 1e-9
 
 

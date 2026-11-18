@@ -661,7 +661,9 @@ P0, since a displayed figure must be defensible.
     greeks from a second, smoothed run.
     - eps 0.3, joint: accumulator, corridor variance swap, range accrual,
       barrier reverse convertible, ladder call.
-    - eps 3, joint: digital call. eps 0.001, joint: reverse convertible.
+    - eps 3, separate: digital call and digital put. They were joint
+      under the forward start; started today, smoothing moves the price by
+      3.7 errors under Black-Scholes. eps 0.001, joint: reverse convertible.
     - eps 1, separate: athena and phoenix autocalls, bonus certificate,
       double no-touch, one-touch, down-and-in put, shark-fin, twin-win.
     - eps 3, separate: up-and-out call, double barrier call.
@@ -675,7 +677,9 @@ P0, since a displayed figure must be defensible.
     say which mode ran.
   - **Limit.** Measured under one local-vol surface at the default terms,
     on the delta: the vega keeps a smoothing bias of a few percent
-    (up-and-out, 11 %).
+    (up-and-out, 11 %). The widths were measured before the products
+    started today (the follow-up below), on the forward-start scripts; the
+    bench is to be rerun on the started ones (#324).
 
 **Decided and done (2026-11-11, measurements in #214).** R stays 16: at
 equal total paths, R = 32 costs 1.4-2.3x in variance on smooth payoffs, and
