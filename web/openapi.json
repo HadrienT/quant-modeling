@@ -1745,6 +1745,45 @@
         "title": "ComputeDevicesResponse",
         "type": "object"
       },
+      "ComputeTimings": {
+        "description": "compute_ms split by phase. The phases are exclusive: market + calibration\n+ engine + other = compute_ms. greeks_ms comes on top of it.",
+        "properties": {
+          "calibration_ms": {
+            "description": "Fitting the model to that data: the implied-vol surface and Dupire grid, Heston / SLV leverage, rough Bergomi, Hull-White to swaptions. Near zero when the in-process cache holds it.",
+            "title": "Calibration Ms",
+            "type": "number"
+          },
+          "engine_ms": {
+            "description": "The numerical method alone: the Monte-Carlo run(s) with their adjoint greeks, the tree, the PDE or the closed form.",
+            "title": "Engine Ms",
+            "type": "number"
+          },
+          "greeks_ms": {
+            "default": 0.0,
+            "description": "The greeks the engine did not give, by bumping and revaluing (bumped_greeks): each revaluation reloads its market. Not in compute_ms.",
+            "title": "Greeks Ms",
+            "type": "number"
+          },
+          "market_ms": {
+            "description": "Reading market data from the database (prices, option chain, dividend, curves) and preparing it.",
+            "title": "Market Ms",
+            "type": "number"
+          },
+          "other_ms": {
+            "description": "What no phase covers: script parsing, model choice, Python glue.",
+            "title": "Other Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "market_ms",
+          "calibration_ms",
+          "engine_ms",
+          "other_ms"
+        ],
+        "title": "ComputeTimings",
+        "type": "object"
+      },
       "Configuration": {
         "properties": {
           "lookback": {
@@ -8846,7 +8885,7 @@
                 "type": "null"
               }
             ],
-            "description": "Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.",
+            "description": "Server-side wall time of the pricing, in milliseconds: market data, calibration and engine (`timings` splits it); excludes network, request parsing and `timings.greeks_ms`.",
             "title": "Compute Ms"
           },
           "device": {
@@ -8940,6 +8979,17 @@
             ],
             "description": "Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.",
             "title": "Second Order Method"
+          },
+          "timings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeTimings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the server time went (compute_timing.py). Null outside the pricing routes."
           },
           "warnings": {
             "items": {
@@ -13600,7 +13650,7 @@
                 "type": "null"
               }
             ],
-            "description": "Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.",
+            "description": "Server-side wall time of the pricing, in milliseconds: market data, calibration and engine (`timings` splits it); excludes network, request parsing and `timings.greeks_ms`.",
             "title": "Compute Ms"
           },
           "device": {
@@ -13697,6 +13747,17 @@
           },
           "swap": {
             "$ref": "#/components/schemas/SwapResult"
+          },
+          "timings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeTimings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the server time went (compute_timing.py). Null outside the pricing routes."
           },
           "warnings": {
             "items": {
@@ -13997,7 +14058,7 @@
                 "type": "null"
               }
             ],
-            "description": "Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.",
+            "description": "Server-side wall time of the pricing, in milliseconds: market data, calibration and engine (`timings` splits it); excludes network, request parsing and `timings.greeks_ms`.",
             "title": "Compute Ms"
           },
           "device": {
@@ -14094,6 +14155,17 @@
           },
           "swaption": {
             "$ref": "#/components/schemas/SwaptionResult"
+          },
+          "timings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComputeTimings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the server time went (compute_timing.py). Null outside the pricing routes."
           },
           "warnings": {
             "items": {

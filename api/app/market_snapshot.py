@@ -26,6 +26,7 @@ import quantmodeling as qm
 
 from . import db
 from .audit.payloads import MarketInputStatus
+from .compute_timing import phase
 from .keyed_cache import KeyedCache
 from .telemetry import tracer
 from .valuation import record_market_input
@@ -154,8 +155,12 @@ def read_store(fn, *args):
 
 def local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVolMarket:
     """Stored chain + close + dividend yield -> calibrated Dupire grid."""
-    with tracer.start_as_current_span(
-        "market_snapshot.load", attributes={"qm.valuation_date": str(valuation_date)}
+    with (
+        phase("market"),
+        tracer.start_as_current_span(
+            "market_snapshot.load",
+            attributes={"qm.valuation_date": str(valuation_date)},
+        ),
     ):
         return _local_vol_market(ticker, rate, valuation_date)
 
@@ -253,20 +258,21 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
             + [_chain_row_key(r) for r in rows]
         ).encode()
     ).hexdigest()
-    result = _surfaces.get(
-        surface_key,
-        lambda: qm.calibrate_vol_surface(
-            quotes,
-            spot,
-            rate,
-            dividend,
-            K_MIN,
-            K_MAX,
-            N_STRIKES,
-            N_MATURITIES,
-            cleaning_params=qm.CleaningParams(),
-        ),
-    )
+    with phase("calibration"):
+        result = _surfaces.get(
+            surface_key,
+            lambda: qm.calibrate_vol_surface(
+                quotes,
+                spot,
+                rate,
+                dividend,
+                K_MIN,
+                K_MAX,
+                N_STRIKES,
+                N_MATURITIES,
+                cleaning_params=qm.CleaningParams(),
+            ),
+        )
 
     warnings: List[Dict[str, str]] = []
     if snap != valuation_date:

@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import platform
+import time
 from typing import Callable, TypeVar
 
 import quantmodeling as qm
@@ -22,6 +23,7 @@ from ..rates_derivatives_schemas import (
 from ..request_context import current_ip_hash
 from ..schemas import (
     ComputeDevicesResponse,
+    ComputeTimings,
     ConvergenceResponse,
     AmericanVanillaRequest,
     AsianRequest,
@@ -121,11 +123,32 @@ async def _price(
         valuation.payload(product_id, req, priced, ip_hash=current_ip_hash()),
     )
     response = priced.response.model_copy(
-        update={"compute_ms": priced.duration_s * 1000}
+        update={
+            "compute_ms": priced.duration_s * 1000,
+            "timings": _timings(priced),
+        }
     )
     if product_id not in _OWN_GREEKS:
+        start = time.perf_counter()
         response = await _with_every_greek(product, req, response)
+        response.timings.greeks_ms = (time.perf_counter() - start) * 1000
     return response
+
+
+def _timings(priced: valuation.Priced) -> ComputeTimings:
+    """The pricing's phases in milliseconds, the remainder as `other`."""
+    ms = {k: v * 1000 for k, v in priced.phases.items()}
+    market, calibration, engine = (
+        ms.get("market", 0.0),
+        ms.get("calibration", 0.0),
+        ms.get("engine", 0.0),
+    )
+    return ComputeTimings(
+        market_ms=market,
+        calibration_ms=calibration,
+        engine_ms=engine,
+        other_ms=max(priced.duration_s * 1000 - market - calibration - engine, 0.0),
+    )
 
 
 #: Products whose sensitivities are not the five greeks of an option, or come
