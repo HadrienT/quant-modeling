@@ -32,7 +32,12 @@ from starlette.background import BackgroundTask
 
 from ..assistant.agent import run_assistant
 from ..assistant import quota
-from ..assistant.llm import ClaudeClient, LLMError, LLMNotConfigured
+from ..assistant.llm import (
+    ClaudeClient,
+    LLMBillingBlocked,
+    LLMError,
+    LLMNotConfigured,
+)
 from ..assistant.schemas import AssistantStatusResponse, ScriptingChatRequest
 from ..audit import emit
 from ..audit.payloads import AssistantChatPayload, AssistantOutcome
@@ -87,6 +92,15 @@ def _probe() -> AssistantStatusResponse:
             model=client.model,
             configured=False,
             detail=str(exc),
+            checked_at=now,
+        )
+    except LLMBillingBlocked as exc:
+        # Says nothing about the owner's account to visitors.
+        return AssistantStatusResponse(
+            state="down",
+            model=client.model,
+            configured=True,
+            detail=f"{exc} Retry later.",
             checked_at=now,
         )
     except LLMError as exc:

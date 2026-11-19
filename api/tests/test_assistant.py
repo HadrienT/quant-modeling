@@ -544,3 +544,83 @@ def test_claude_api_errors_become_sentences_for_the_user(monkeypatch):
         with pytest.raises(LLMError, match=words) as exc:
             list(client.stream("S", [{"role": "user", "content": "x"}]))
         assert "sk-secret" not in str(exc.value)
+
+
+# ── Prepaid credit used up: generic message, status down (issue #337) ────────
+
+
+def _billing_errors():
+    import anthropic
+    import httpx2
+
+    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def resp(code):
+        return httpx2.Response(code, request=req)
+
+    return [
+        anthropic.BadRequestError(
+            "Your credit balance is too low to access the Anthropic API.",
+            response=resp(400),
+            body=None,
+        ),
+        anthropic.PaymentRequiredError(
+            "payment required", response=resp(402), body=None
+        ),
+        # A RateLimitError subclass: must not read as "retry in a minute".
+        anthropic.EnforcedSpendLimitReachedError(
+            "monthly limit", response=resp(429), body=None
+        ),
+    ]
+
+
+@pytest.fixture
+def no_billing_block():
+    from api.app.assistant import llm
+
+    llm.clear_billing_block()
+    yield
+    llm.clear_billing_block()
+
+
+@pytest.mark.parametrize("error", _billing_errors(), ids=["credit", "402", "spend"])
+def test_billing_error_says_unavailable_and_blocks_the_status(
+    monkeypatch, no_billing_block, error
+):
+    from api.app.assistant import llm
+
+    client, _ = _claude(monkeypatch, _FakeStream([], error=error))
+    with pytest.raises(llm.LLMBillingBlocked, match="temporarily unavailable") as exc:
+        list(client.stream("S", [{"role": "user", "content": "x"}]))
+    assert "credit" not in str(exc.value) and "limit" not in str(exc.value)
+    assert llm.billing_blocked()
+    # The free models probe would still answer: the block is what says down.
+    with pytest.raises(llm.LLMBillingBlocked):
+        client.probe()
+
+
+def test_status_is_down_while_billing_blocks_then_comes_back(
+    monkeypatch, no_billing_block
+):
+    from api.app.assistant import llm
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    fake_models = type("M", (), {"retrieve": lambda self, model: None})()
+    fake = type(
+        "C",
+        (),
+        {"models": fake_models, "with_options": lambda self, **kw: self},
+    )()
+    monkeypatch.setattr(llm.anthropic, "Anthropic", lambda **kw: fake)
+
+    def status():
+        monkeypatch.setattr(route, "_STATUS_CACHE", route.TTLCache(1, 15))
+        return TestClient(app).get("/api/assistant/status").json()
+
+    assert status()["state"] == "up"
+    llm._block_for_billing()
+    body = status()
+    assert body["state"] == "down" and body["configured"] is True
+    assert body["detail"] == "The assistant is temporarily unavailable. Retry later."
+    llm.clear_billing_block()
+    assert status()["state"] == "up"

@@ -570,6 +570,13 @@ the `llama-bridge` socket.
   bill; signed-in users are not counted. A monthly spend limit on the
   Anthropic Console is a second fence.
 - Rotate the key from the Console if it may have leaked, then redeploy.
+- The API account is **prepaid** (Console → Settings → Billing): when the
+  credit runs out, a chat fails with a billing error. Visitors only read
+  "The assistant is temporarily unavailable."; the API logs an error
+  (`assistant: Anthropic API billing error ...`) and the status route
+  reports `down` for 10 minutes, then checks again, so `scripts/status.sh`
+  shows it red. Fix: buy credit, then wait for the 10 minutes or restart the
+  container (`dc restart app`).
 
 ## Dépannage
 

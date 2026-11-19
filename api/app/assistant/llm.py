@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from dataclasses import dataclass
 from typing import Iterator, Protocol, Sequence
 
@@ -41,6 +43,41 @@ class LLMNotConfigured(LLMError):
     """No API key: the assistant is switched off on this server."""
 
 
+class LLMBillingBlocked(LLMError):
+    """The API account cannot pay for requests: prepaid credit used up, a
+    spend limit reached, or the organization on hold. Visitors are only told
+    the assistant is unavailable; the cause is logged as an error."""
+
+
+# The API account is prepaid: once the credit is gone every chat fails, while
+# the free GET /v1/models probe keeps answering. A billing error therefore
+# marks the assistant down for this long, so the status route (and the page)
+# say so instead of letting visitors type into a chat that cannot answer.
+BILLING_BLOCK_S = 600.0
+_billing_lock = threading.Lock()
+_billing_blocked_until = 0.0
+
+
+def _block_for_billing() -> None:
+    global _billing_blocked_until
+    with _billing_lock:
+        _billing_blocked_until = time.monotonic() + BILLING_BLOCK_S
+
+
+def billing_blocked() -> bool:
+    with _billing_lock:
+        return time.monotonic() < _billing_blocked_until
+
+
+def clear_billing_block() -> None:
+    global _billing_blocked_until
+    with _billing_lock:
+        _billing_blocked_until = 0.0
+
+
+_UNAVAILABLE = "The assistant is temporarily unavailable."
+
+
 class ChatModel(Protocol):
     model: str
 
@@ -54,9 +91,38 @@ def _api_key() -> str | None:
     return os.getenv("ANTHROPIC_API_KEY") or None
 
 
+def _is_billing(exc: anthropic.APIError) -> bool:
+    """Whether the account cannot pay. Typed classes first; an exhausted
+    prepaid balance has no class of its own (a 400 invalid_request_error whose
+    message names the credit balance), hence the one text match."""
+    if isinstance(
+        exc,
+        (
+            anthropic.PaymentRequiredError,  # 402, linked-org billing included
+            anthropic.EnforcedSpendLimitReachedError,  # 429, before RateLimitError
+            anthropic.ContractSpendLimitReachedError,
+            anthropic.OrganizationOnHoldError,
+        ),
+    ):
+        return True
+    return (
+        isinstance(exc, anthropic.BadRequestError)
+        and "credit balance" in str(exc).lower()
+    )
+
+
 def _translate(exc: anthropic.APIError) -> LLMError:
     """An SDK error as a sentence for the user, the detail kept in the logs.
     Most specific first: the SDK has already retried what can be retried."""
+    if _is_billing(exc):
+        _block_for_billing()
+        log.error(
+            "assistant: Anthropic API billing error (credit used up, spend "
+            "limit or account on hold); assistant marked down for %.0f s: %r",
+            BILLING_BLOCK_S,
+            exc,
+        )
+        return LLMBillingBlocked(_UNAVAILABLE)
     log.warning("assistant: Anthropic API error: %r", exc)
     if isinstance(
         exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)
@@ -113,6 +179,8 @@ class ClaudeClient:
         GET /v1/models/{id}: free, no tokens spent. Short timeout, no retry:
         this is asked for while a page loads."""
         client = self._client(max_retries=0)
+        if billing_blocked():
+            raise LLMBillingBlocked(_UNAVAILABLE)
         try:
             client.with_options(timeout=5.0).models.retrieve(self.model)
         except anthropic.NotFoundError as exc:
