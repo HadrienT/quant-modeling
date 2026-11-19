@@ -125,7 +125,7 @@ def measure(t: product_templates.Template) -> dict:
         for k in GREEKS
         if g.get(k) is not None
     }
-    # Every AAD sensitivity (vega and per-asset deltas live here, not in greeks).
+    # The AAD sensitivities: per-asset deltas and grids live here, not in greeks.
     row["risks"], row["grids"] = _risks(r.risks or [])
     row["bumped"] = list(r.bumped_greeks)
 

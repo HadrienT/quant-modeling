@@ -2340,8 +2340,8 @@ MSFT, GOOGL, AMZN for several underlyings, SAP.DE for a quanto; 4 % rate;
 50 000 paths, 20 000 with several underlyings; seed 1; AAD greeks; device
 `auto` with Philox), through `pricing_service` on the 2026-11-18 snapshot.
 AAD greeks return no bias, so a second, price-only run gives it (halved
-steps, or the multilevel run's bias test). Raw results, with every AAD
-sensitivity: `benchmarks/results/2026-11-19-page-errors.json`.
+steps, or the multilevel run's bias test). Raw results, with every scalar AAD
+sensitivity and each grid's nodes summed: `benchmarks/results/2026-11-19-page-errors.json`.
 
 Columns: SE and bias as a share of the price. "delta / rho / div SE" are the
 relative standard errors of the AAD sensitivities to spot, rate and
