@@ -2327,3 +2327,116 @@ What is left of the digital's 0.44 ms: ~0.19 ms of Python around the engine
 CUDA calls (four copies, four launches, six pooled allocations), and the
 host's preparation of the request, with no single hotspot left. The
 kernels themselves run 21 µs.
+
+## 19. The errors of the page's defaults (#331 step 1, 2026-11-19)
+
+Lot B must not optimise time per path at a fixed path count: the metric is
+the time to reach an error target, discretisation bias included. Before
+choosing targets, this step measures where the page's defaults stand.
+
+`benchmarks/page_errors.py` sends every product of the library the request
+the Price page sends with its default inputs (`model=auto`, SPY, or AAPL,
+MSFT, GOOGL, AMZN for several underlyings, SAP.DE for a quanto; 4 % rate;
+50 000 paths, 20 000 with several underlyings; seed 1; AAD greeks; device
+`auto` with Philox), through `pricing_service` on the 2026-11-18 snapshot.
+AAD greeks return no bias, so a second, price-only run gives it (halved
+steps, or the multilevel run's bias test). Raw results, with every AAD
+sensitivity: `benchmarks/results/2026-11-19-page-errors.json`.
+
+Columns: SE and bias as a share of the price. "delta / rho / div SE" are the
+relative standard errors of the AAD sensitivities to spot, rate and
+dividend; with several underlyings, the worst asset's (a minor asset's small
+delta is relatively noisy by nature). Hull-White products: rho is the
+parallel curve shift. "–" for the bias: not estimated (early exercise,
+several assets, Hull-White).
+
+| product | model | device | paths | price | SE % | bias % | bias / SE | delta SE % | rho SE % | div SE % |
+|---|---|---|---|---|---|---|---|---|---|---|
+| accumulator | slv | gpu | 50,000 | 671.2 | 0.52 | 0.21 | 0.4 | 11.2 | 8.4 | 8.9 |
+| altiplano | local_vol | cpu | 20,000 | 1055 | 0.03 | – | – | 28.5 | 2.7 | 27.3 |
+| american-call | slv | gpu | 50,000 | 57.55 | 0.41 | – | – | 27.5 | 5.3 | 4.8 |
+| american-put | slv | gpu | 50,000 | 34.52 | 0.36 | – | – | 1.3 | 0.7 | 0.7 |
+| asian-call | slv | gpu | 50,000 | 35.65 | 0.22 | 0.56 | **2.5** | 4.7 | 1.1 | 0.9 |
+| asian-in-call | slv | gpu | 50,000 | 51.89 | 0.40 | 0.02 | 0.1 | 3.1 | 0.5 | 0.4 |
+| athena-autocall | slv | gpu | 50,000 | 995.3 | 0.04 | 0.02 | 0.4 | 176.6 | 106.4 | 105.9 |
+| atlas | local_vol | cpu | 20,000 | 95.01 | 0.28 | – | – | 76.4 | 5.6 | 16.0 |
+| barrier-reverse-convertible | slv | gpu | 50,000 | 1032 | 0.02 | 0.00 | 0.1 | 18.1 | 1.7 | 17.8 |
+| basket-call | local_vol | cpu | 20,000 | 94.18 | 0.42 | – | – | 98.4 | 6.9 | 19.7 |
+| bermudan-swaption | hull_white | cpu | 50,000 | 2.712e+05 | 0.06 | – | – | – | 0.1 | – |
+| best-of-call | local_vol | cpu | 20,000 | 274 | 0.40 | – | – | 106.4 | 16.0 | 46.6 |
+| bonus-certificate | slv | gpu | 50,000 | 1103 | 0.04 | 0.03 | 0.6 | 10.9 | 1.4 | 4.3 |
+| call-spread | slv | gpu | 50,000 | 53.81 | 0.23 | 0.01 | 0.1 | 0.5 | 0.4 | 0.3 |
+| capital-protected-note | slv | gpu | 50,000 | 994.5 | 0.03 | 0.02 | 0.5 | 5.0 | 3.3 | 5.2 |
+| chooser | slv | gpu | 50,000 | 81.06 | 0.32 | – | – | 2.1 | 0.9 | 0.7 |
+| cliquet | slv | gpu | 50,000 | 63.21 | 0.09 | 0.43 | **4.6** | 1.1 | 0.2 | 0.2 |
+| compound | slv | gpu | 50,000 | 28.63 | 0.68 | – | – | 1.6 | 0.6 | 0.5 |
+| corridor-variance-swap | slv | gpu | 50,000 | -148.8 | 0.33 | 0.48 | **1.4** | 50.8 | 15.8 | 51.3 |
+| digital-call | slv | gpu | 50,000 | 69.46 | 0.14 | 0.05 | 0.4 | 3.9 | 4.1 | 2.8 |
+| digital-put | slv | gpu | 50,000 | 26.62 | 0.37 | 0.13 | 0.4 | 3.9 | 2.5 | 2.8 |
+| discount-certificate | slv | gpu | 50,000 | 945.3 | 0.03 | 0.03 | **1.0** | 0.9 | 0.3 | 0.5 |
+| dispersion-swap | local_vol | cpu | 20,000 | 384.3 | 0.10 | – | – | 4.5 | 1.4 | 5.9 |
+| double-barrier-call | slv | gpu | 50,000 | 49.91 | 0.24 | 0.07 | 0.3 | 2.4 | 2.8 | 2.5 |
+| double-no-touch | slv | gpu | 50,000 | 73.92 | 0.14 | 0.19 | **1.4** | 31.7 | 8.4 | 16.3 |
+| down-and-in-put | slv | gpu | 50,000 | 25.11 | 0.75 | 0.47 | 0.6 | 4.4 | 3.1 | 4.0 |
+| equity-forward | slv | gpu | 50,000 | 23.08 | 1.21 | 0.02 | 0.0 | 2.7 | 0.3 | 0.3 |
+| european-call | slv | gpu | 50,000 | 57.59 | 0.38 | 0.30 | 0.8 | 3.8 | 0.6 | 0.5 |
+| european-put | slv | gpu | 50,000 | 34.51 | 0.51 | 0.51 | **1.0** | 1.4 | 0.5 | 0.6 |
+| european-swaption | hull_white | cpu | 50,000 | 1.881e+05 | 0.02 | – | – | – | 0.0 | – |
+| everest | local_vol | cpu | 20,000 | 977.8 | 0.02 | – | – | 89.0 | 1.3 | 16.8 |
+| fixed-lookback-call | slv | gpu | 50,000 | 74.51 | 0.25 | 0.03 | 0.1 | 10.5 | 0.5 | 0.5 |
+| fixed-rate-bond | hull_white | cpu | 50,000 | 95.87 | 0.00 | – | – | – | 0.0 | – |
+| floating-lookback-call | slv | gpu | 50,000 | 107.7 | 0.15 | 0.14 | 0.9 | 33.1 | 1.0 | 0.8 |
+| forward-start-call | slv | gpu | 50,000 | 48.62 | 0.19 | 0.22 | **1.2** | 2.9 | 0.7 | 0.7 |
+| globally-floored-cliquet | slv | gpu | 50,000 | 63.58 | 0.15 | 0.91 | **6.2** | 10.6 | 1.0 | 0.9 |
+| himalaya | local_vol | cpu | 20,000 | 120.8 | 0.45 | – | – | 56.5 | 9.6 | 17.5 |
+| interest-rate-swap | hull_white | cpu | 50,000 | 1850 | 3.21 | – | – | – | 0.0 | – |
+| ladder-call | slv | gpu | 50,000 | 63.25 | 0.23 | 0.05 | 0.2 | 5.1 | 2.5 | 2.3 |
+| napoleon | slv | gpu | 50,000 | 976.8 | 0.01 | 0.01 | **1.5** | 18.6 | 0.4 | 10.2 |
+| one-touch | slv | gpu | 50,000 | 18.52 | 0.53 | 0.78 | **1.5** | 8.5 | 6.9 | 9.6 |
+| outperformance-option | local_vol | cpu | 20,000 | 145.2 | 0.18 | – | – | 1.4 | 9.2 | 0.5 |
+| phoenix-autocall | slv | gpu | 50,000 | 1020 | 0.04 | 0.04 | **1.0** | 50.6 | 7.8 | 132.5 |
+| quanto-call | – | – | – | **fails**: MarketDataUnavailable | | | | | | |
+| rainbow-call | local_vol | cpu | 20,000 | 138.1 | 0.44 | – | – | 252.5 | 8.7 | 24.6 |
+| range-accrual | slv | gpu | 50,000 | 1014 | 0.01 | 0.01 | **2.2** | 10.0 | 0.2 | 1.5 |
+| reverse-cliquet | slv | gpu | 50,000 | 1220 | 0.02 | 0.01 | 0.3 | 15.9 | 0.5 | 1.7 |
+| reverse-convertible | slv | gpu | 50,000 | 1010 | 0.02 | 0.02 | **1.0** | 1.4 | 0.2 | 0.6 |
+| shark-fin | slv | gpu | 50,000 | 1029 | 0.02 | 0.00 | 0.0 | 3.8 | 3.5 | 2.8 |
+| twin-win | slv | gpu | 50,000 | 1018 | 0.04 | 0.04 | 0.9 | 7.8 | 3.4 | 1.4 |
+| up-and-out-call | slv | gpu | 50,000 | 51.56 | 0.25 | 0.11 | 0.4 | 2.6 | 3.0 | 2.6 |
+| variance-swap | slv | gpu | 50,000 | 23.65 | 5.10 | 6.72 | **1.3** | 154.6 | 50.9 | 64.3 |
+| volatility-swap | slv | gpu | 50,000 | -3342 | 0.55 | 1.54 | **2.8** | 152.1 | 255.6 | 32.6 |
+| worst-of-autocall | local_vol | cpu | 20,000 | 902 | 0.14 | – | – | 3.7 | 0.8 | 3.0 |
+| worst-of-call | local_vol | cpu | 20,000 | 22.53 | 0.62 | – | – | 8.3 | 2.4 | 7.4 |
+| worst-of-reverse-convertible | local_vol | cpu | 20,000 | 930.5 | 0.05 | – | – | 2.7 | 0.3 | 1.9 |
+| zero-coupon-bond | hull_white | cpu | 50,000 | 78.32 | 0.00 | – | – | – | 0.0 | – |
+
+### What it says
+
+1. **`auto` means SLV on the GPU for every single-asset product** (its
+   state carried across dates or not), local vol on the CPU for several
+   assets, Hull-White for rates. Throughput work on single-asset products is
+   therefore SLV work (#317's QE scheme).
+2. **The price is precise; its bias often is not.** The standard error is
+   below 0.5 % of the price on 49 of 56 products. But on **13 products the
+   bias is at least the standard error** (bias / SE ≥ 1, in bold): the
+   cliquets (4.6 and 6.2×), the Asian call (2.5×), the variance, volatility
+   and corridor swaps, the touches, the forward-start call, the European put.
+   On these, more paths buy nothing: the floor is the time step (stopping
+   rule 3 of #331). Even the SLV European call carries 0.30 % of bias at the
+   default 252 steps a year.
+3. **The greeks are the binding constraint.** At the paths where the price is
+   at 0.02-0.5 %, deltas are at 10-50 % on barriers, touches, lookbacks and
+   the corridor swap, and pure noise on the Athena autocall (177 %), the
+   variance and volatility swaps (150 %) and several multi-asset products.
+   A precision target on the price alone would leave them as they are: they
+   need their own tolerance (#331 step 2).
+4. **Under SLV the page has no aggregate vega.** The adjoint gives one
+   sensitivity per leverage-grid node (12 703 for SPY), each mostly noise,
+   and no parallel vega with its standard error. The market-inferred target
+   (ε ≈ k × |vega| × δσ) needs one: an AAD sensitivity to a single scale of
+   the vol surface, so its standard error comes from the same paths.
+5. **One default fails:** the quanto call's SAP.DE has no row in
+   `prices.dividend_yields` (data-ingest).
+6. Rates products are exact to the curve (bonds' SE 0) except the swap
+   (3.2 %): its Monte-Carlo noise is all on a near-zero value, which a
+   control variate on the closed-form swap would remove.
