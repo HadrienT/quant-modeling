@@ -4,7 +4,6 @@ import { type ComputeDevice, deviceLabel, usePricing } from "@/shared/api";
 import {
 	ComputeBreakdown,
 	ComputeTime,
-	DiscretisationBias,
 	EngineTag,
 	Freshness,
 	NumberCell,
@@ -12,6 +11,7 @@ import {
 	Uncertainty,
 } from "@/shared/ui";
 import { ErrorState, MetricRowSkeleton } from "@/shared/ui/states";
+import { McAccuracy } from "./McAccuracy";
 import { pricingBody } from "./requestBody";
 import { ScriptGreeks } from "./scripting/ScriptGreeks";
 
@@ -138,9 +138,7 @@ export function ResultsPanel({
 					</div>
 				</div>
 				<ComputeBreakdown timings={r.timings} engine={engine} />
-				{isMc && (
-					<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
-				)}
+				{isMc && <McAccuracy r={r} />}
 				{r.diagnostics && (
 					<details className="mt-2 text-2xs text-ink-muted">
 						<summary className="cursor-pointer select-none">

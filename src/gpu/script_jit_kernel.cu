@@ -337,6 +337,21 @@ extern "C" __global__ void __launch_bounds__(quantModeling::mc::LogicalBlocks::k
                                                     samples);
 }
 
+/// The same at four blocks a multiprocessor (64 registers a thread), for
+/// Heston and SLV: their price kernels used 96-106 registers, two blocks a
+/// multiprocessor, and a page launch of 256 blocks ran as 1.6 waves. Capped,
+/// it is one wave: -12 to -14 % under SLV, -9 % under Heston (one V100,
+/// 50 000 Sobol paths, the library's products, 2026-11-19, lot B of #331),
+/// the same bits. Not for local vol, whose 127 registers spill: +44 %.
+extern "C" __global__ void __launch_bounds__(quantModeling::mc::LogicalBlocks::kThreadsPerBlock, 4)
+    qm_script_plain_r64(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, uint64_t n_blocks,
+                        quantModeling::gpu::detail::PathUnit fn, double *samples)
+{
+    const CompiledUnit<false> unit{specialised(fn)};
+    quantModeling::gpu::detail::logical_block_units(first_block, blocks_per_segment, n_units, n_blocks, unit,
+                                                    samples);
+}
+
 /// With spot control variates: each unit's regression sample.
 extern "C" __global__ void __launch_bounds__(quantModeling::mc::LogicalBlocks::kThreadsPerBlock)
     qm_script_controlled(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, uint64_t n_blocks,

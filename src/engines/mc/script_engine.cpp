@@ -476,6 +476,27 @@ namespace quantModeling
                 SimulationMCResult fine = simulate_script(product, *halved, plain, pool);
                 const SimulationMCResult coarse = simulate_script(product, model, plain, pool);
                 fine.discretisation_bias = std::fabs(fine.npv() - coarse.npv());
+                // Its own error: one seed's |fine - coarse| moves by 0.1-0.3 %
+                // of the price from seed to seed on SPY's SLV products, about
+                // the size of the bias itself (WP 26 §20). Sobol replicates
+                // share their points between the two runs, so the spread of
+                // their differences is the difference's error.
+                const std::size_t R = fine.replicates.size();
+                if (R > 1 && coarse.replicates.size() == R)
+                {
+                    double mean = 0.0, m2 = 0.0;
+                    for (std::size_t i = 0; i < R; ++i)
+                        mean += fine.replicates[i] - coarse.replicates[i];
+                    mean /= static_cast<double>(R);
+                    for (std::size_t i = 0; i < R; ++i)
+                    {
+                        const double d = fine.replicates[i] - coarse.replicates[i] - mean;
+                        m2 += d * d;
+                    }
+                    fine.discretisation_bias_std_error = std::sqrt(m2 / static_cast<double>(R - 1) / static_cast<double>(R));
+                }
+                else
+                    fine.discretisation_bias_std_error = std::hypot(fine.std_error(), coarse.std_error());
                 fine.diagnostics += " | steps halved, discretisation bias estimated from the unhalved run";
                 return fine;
             }

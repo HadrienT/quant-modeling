@@ -200,6 +200,7 @@ namespace quantModeling
         res.npv = priced.npv();
         res.mc_std_error = priced.std_error();
         res.discretisation_bias = priced.discretisation_bias;
+        res.discretisation_bias_std_error = priced.discretisation_bias_std_error;
         res.device = priced.device;
         res.gpus = priced.gpus;
         res.diagnostics = "WP 26 script route (" + route.name + "): " + priced.diagnostics + lsm_note;

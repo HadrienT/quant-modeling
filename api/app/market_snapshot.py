@@ -235,6 +235,17 @@ def clear_caches() -> None:
     _surfaces.clear()
 
 
+def chain_quotes(ticker: str, rate: float, valuation_date: date) -> tuple:
+    """The stored chain's quotes (from the cache when the registry names
+    them), with what reading them needs: (quotes, spot, rate, dividend,
+    snapshot date) -- for a precision target inferred from the market's
+    spreads (precision.delta_sigma)."""
+    m = local_vol_market(ticker, rate, valuation_date)
+    ticker = ticker.upper().strip()
+    load = read_store(db.options_chain_load_on_or_before, ticker, valuation_date)
+    return _chain(ticker, load).quotes, m.spot, rate, m.dividend, m.valuation_date
+
+
 def read_store(fn, *args):
     """Call a store reader; an unreachable database is MarketDataUnavailable."""
     try:

@@ -1,11 +1,8 @@
 import { useEffect, useRef } from "react";
 import { deviceLabel, type PricingResult } from "@/shared/api";
-import {
-	ComputeTime,
-	DiscretisationBias,
-	Uncertainty,
-} from "@/shared/ui/density";
+import { ComputeTime, Uncertainty } from "@/shared/ui/density";
 import { ComputeBreakdown } from "@/shared/ui/compute-breakdown";
+import { McAccuracy } from "../McAccuracy";
 import { ScriptGreeks } from "./ScriptGreeks";
 import { SecondOrderRefused } from "./SecondOrderGreeks";
 import { secondOrderRefusal } from "./secondOrderRefusal";
@@ -38,7 +35,7 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 						emphasis
 					/>
 				</div>
-				<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
+				<McAccuracy r={r} />
 				{r.diagnostics && (
 					<p className="mt-2 font-mono text-2xs text-ink-muted">
 						{r.diagnostics}

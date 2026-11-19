@@ -1,7 +1,7 @@
 import math
 import re
 import time
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -53,6 +53,7 @@ from .schemas import (
     VolatilitySwapRequest,
     ZeroCouponBondRequest,
 )
+from . import precision
 from .telemetry import tracer
 
 
@@ -68,6 +69,35 @@ def _multilevel(req, model: str) -> Dict:
         mlmc_rel_eps=req.mlmc_rel_eps if on and req.mlmc_eps == 0.0 else 0.0,
         bias_estimate=req.bias_estimate,
     )
+
+
+#: Steps a year by default (ScriptPricingInputs.steps_per_year = None).
+#: Heston prices by QE, nearly exact in law over a long step: 64 a year
+#: (WP 26 §20). SLV keeps 252 although its variance is QE too: its leverage
+#: is held over each step, and on SPY's 2026-11-19 fit (129 time columns,
+#: dense at the short end) 64 a year put a 1y put 2 % above 504 a year, 128
+#: a year 0.65 %, 252 within its noise. Local vol keeps 252 (WP 26 §9.3).
+DEFAULT_STEPS_PER_YEAR = 252
+HESTON_STEPS_PER_YEAR = 64
+#: ...and at least this many over the product's life: at 64 a year a 0.1y
+#: digital put has 6 steps and sits 0.75 % above 504 a year (WP 26 §20).
+HESTON_MIN_STEPS = 32
+
+_SCRIPT_DATE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\b", re.M)
+
+
+def _steps_per_year(req, model: str, script: str = "", valuation_date=None) -> int:
+    if req.steps_per_year is not None:
+        return req.steps_per_year
+    if model != "heston":
+        return DEFAULT_STEPS_PER_YEAR
+    steps = HESTON_STEPS_PER_YEAR
+    dates = [date.fromisoformat(d) for d in _SCRIPT_DATE.findall(script or "")]
+    if dates and valuation_date is not None:
+        life = (max(dates) - valuation_date).days / 365.0
+        if life > 0:
+            steps = max(steps, math.ceil(HESTON_MIN_STEPS / life))
+    return min(steps, 504)
 
 
 def _device(req, model: str) -> str:
@@ -109,6 +139,7 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
         device=result.get("device", "cpu"),
         gpus=result.get("gpus", 0),
         discretisation_bias=result.get("discretisation_bias"),
+        discretisation_bias_std_error=result.get("discretisation_bias_std_error"),
         second_order_method=result.get("second_order_method"),
         # Only price_script(greeks_method="aad") populates this today
         # (blueprint/wp/17-aad.md §13.1); every other pricer's dict carries
@@ -494,7 +525,7 @@ def _price_multi_asset(
             [],
             [],
             [],
-            req.steps_per_year,
+            _steps_per_year(req, model),
             spots=[u.spot for u in used],
             dividends=[u.dividend + u.drift_adjustment for u in used],
             vols=[u.vol for u in used],
@@ -913,6 +944,10 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     its closed form, engine='analytic')."""
     from . import product_templates
 
+    if req.precision is not None and req.engine != "analytic":
+        return precision.price_to_precision(
+            req, price_scripted_product, _market_quotes(req)
+        )
     template = product_templates.get(req.product)
     if req.engine == "analytic":
         if req.product in SOFR_CLOSED_FORM:
@@ -1040,6 +1075,12 @@ def price_script(
     constants."""
     from . import market_snapshot, stochastic_vol
 
+    if req.precision is not None:
+        return precision.price_to_precision(
+            req,
+            lambda r: price_script(r, library=library, start_today=start_today),
+            _market_quotes(req),
+        )
     if req.underlyings is not None:
         return _price_multi_asset(req, library, start_today)
 
@@ -1160,6 +1201,22 @@ def price_script(
         else:
             choice["calibration"]["rates_curve"] = label
     leverage = list(sv.leverage_flat) if (sv is not None and model == "slv") else []
+    # A precision target's vega bump (precision.py): every vol of the model
+    # scaled by the same factor -- the local-vol grid, the SLV leverage (its
+    # spot vol L sqrt(v)), a flat vol, Heston's v0 and theta by its square and
+    # xi by it (the variance process of the scaled vol).
+    scale = precision.VOL_SCALE.get()
+    if scale != 1.0:
+        sigma = [x * scale for x in sigma]
+        leverage = [x * scale for x in leverage]
+        vol = vol * scale if vol else vol
+        if model == "heston" and heston:
+            heston = {
+                **heston,
+                "v0": heston["v0"] * scale**2,
+                "theta": heston["theta"] * scale**2,
+                "xi": heston["xi"] * scale,
+            }
 
     script, fixings = req.script, {}
     if start_today:
@@ -1195,7 +1252,7 @@ def price_script(
                     else t_grid if model == "local_vol" else []
                 ),
                 sigma,
-                req.steps_per_year,
+                _steps_per_year(req, model, script, valuation_date),
                 heston=heston,
                 leverage_flat=leverage,
                 device=_device(req, model),
@@ -1237,6 +1294,22 @@ def price_script(
             "model_choice": ModelChoice(**choice),
             **({"script": script} if start_today else {}),
         }
+    )
+
+
+def _market_quotes(req):
+    """'market' precision's inputs, read when needed: the stored chain of the
+    request's single ticker. None when there is none to read."""
+    if (
+        req.underlyings is not None
+        or not req.ticker
+        or req.model in ("black_scholes", "hull_white")
+    ):
+        return None
+    from . import market_snapshot
+
+    return lambda: market_snapshot.chain_quotes(
+        req.ticker, req.rate, req.valuation_date
     )
 
 

@@ -237,6 +237,96 @@ function typedInputs(
 	fields.dividend = typed({ label: "Dividend yield", unit: "%", step: 0.25 });
 }
 
+const toPrecision = (v: Record<string, unknown>) => v.accuracy === "precision";
+
+/**
+ * Price to a precision instead of a path count (issue 331): the engine runs
+ * a pilot, picks the paths and says which rule stopped it. 'From the market'
+ * needs one ticker's stored chain (its half bid-ask spread in vol).
+ */
+function precisionInputs(
+	shape: Record<string, z.ZodType>,
+	defaults: Record<string, unknown>,
+	fields: Record<string, FieldOverride>,
+	market: boolean,
+) {
+	shape.accuracy = z.enum(["paths", "precision"]);
+	defaults.accuracy = "paths";
+	fields.accuracy = {
+		label: "Accuracy",
+		group: "engine",
+		optionLabels: {
+			paths: "A number of paths",
+			precision: "A precision (the engine picks the paths)",
+		},
+	};
+	fields.n_paths = { ...fields.n_paths, when: (v) => !toPrecision(v) };
+	const modes = market
+		? (["market", "relative", "absolute"] as const)
+		: (["relative", "absolute"] as const);
+	shape.precision_mode = z.enum(modes);
+	defaults.precision_mode = modes[0];
+	fields.precision_mode = {
+		label: "Target",
+		group: "engine",
+		when: toPrecision,
+		optionLabels: {
+			market: "From the market: k × vega × half bid-ask spread",
+			relative: "A share of the price",
+			absolute: "In the price's units",
+		},
+	};
+	const when = (mode: string) => (v: Record<string, unknown>) =>
+		toPrecision(v) && v.precision_mode === mode;
+	shape.precision_k = z.coerce.number().gt(0).max(10);
+	defaults.precision_k = 0.25;
+	fields.precision_k = {
+		label: "k (share of the spread)",
+		group: "engine",
+		step: 0.05,
+		when: when("market"),
+	};
+	shape.precision_pct = z.coerce.number().gt(0).max(50);
+	defaults.precision_pct = 0.1;
+	fields.precision_pct = {
+		label: "Target error",
+		unit: "%",
+		group: "engine",
+		step: 0.05,
+		when: when("relative"),
+	};
+	shape.precision_abs = z.coerce.number().gt(0);
+	defaults.precision_abs = 0.01;
+	fields.precision_abs = {
+		label: "Target error",
+		group: "engine",
+		step: 0.01,
+		when: when("absolute"),
+	};
+	shape.time_budget = z.coerce.number().gt(0).max(60);
+	defaults.time_budget = 8;
+	fields.time_budget = {
+		label: "Time budget",
+		unit: "s",
+		group: "engine",
+		step: 1,
+		when: toPrecision,
+	};
+}
+
+/** The request's `precision` block, when the form asks for one. */
+export function precisionRequest(v: Record<string, unknown>) {
+	if (!toPrecision(v)) return {};
+	const mode = String(v.precision_mode);
+	const value =
+		mode === "market"
+			? Number(v.precision_k)
+			: mode === "relative"
+				? pct(v.precision_pct)
+				: Number(v.precision_abs);
+	return { precision: { mode, value, time_budget_s: Number(v.time_budget) } };
+}
+
 /** Typed underlyings "spot,vol%,div%;..." as the API takes them. */
 export function typedAssets(s: string, n: number) {
 	return Array.from({ length: n }, (_, i) => {
@@ -332,6 +422,7 @@ function descriptor(p: ScriptedProduct): ProductDescriptor {
 	}
 	shape.n_paths = f.paths();
 	shape.seed = f.seed();
+	precisionInputs(shape, defaults, fields, !multi && !rates && !p.quanto);
 	// Several underlyings under local vol differentiate on the CPU only: fewer
 	// paths by default, so that the adjoint run fits the API's time limit.
 	Object.assign(defaults, { n_paths: multi ? 20_000 : 50_000, seed: 1 });
@@ -449,6 +540,7 @@ export function scriptedRequest(
 			greeks_method: "aad",
 			n_paths: Number(v.n_paths),
 			seed: Number(v.seed),
+			...precisionRequest(v),
 		};
 	if (typed) {
 		// a fictitious underlying: flat Black-Scholes on the typed inputs
@@ -472,6 +564,7 @@ export function scriptedRequest(
 			rate: pct(v.rate),
 			n_paths: Number(v.n_paths),
 			seed: Number(v.seed),
+			...precisionRequest(v),
 		};
 	}
 	const tickers = String(v.tickers ?? "")
@@ -493,6 +586,7 @@ export function scriptedRequest(
 		rate: pct(v.rate),
 		n_paths: Number(v.n_paths),
 		seed: Number(v.seed),
+		...precisionRequest(v),
 	};
 }
 

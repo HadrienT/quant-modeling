@@ -8736,6 +8736,164 @@
         "title": "PositionResult",
         "type": "object"
       },
+      "PrecisionOutcome": {
+        "description": "How a pricing to a precision ended (PrecisionTarget).",
+        "properties": {
+          "achieved_error": {
+            "description": "sqrt(std_error^2 + bias^2), the bias when resolved, else 0.",
+            "title": "Achieved Error",
+            "type": "number"
+          },
+          "atm_vol": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'market': the ATM implied vol at that expiry.",
+            "title": "Atm Vol"
+          },
+          "delta_sigma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'market': the vanillas' half-spread in vol at the horizon.",
+            "title": "Delta Sigma"
+          },
+          "expiry": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'market': the expiry read, in years.",
+            "title": "Expiry"
+          },
+          "mode": {
+            "enum": [
+              "absolute",
+              "relative",
+              "market"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "paths": {
+            "description": "Paths of the run returned.",
+            "title": "Paths",
+            "type": "integer"
+          },
+          "paths_needed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Paths the pilot predicted for the target's half of variance.",
+            "title": "Paths Needed"
+          },
+          "pilot_paths": {
+            "title": "Pilot Paths",
+            "type": "integer"
+          },
+          "seconds": {
+            "description": "Wall time of the pilot and the run.",
+            "title": "Seconds",
+            "type": "number"
+          },
+          "stopped": {
+            "description": "target_reached: sqrt(se^2 + bias^2) within the target. out_of_budget: the pilot predicted more time than the budget; the run used what fits. bias_floor: the time-step bias alone is at least target / sqrt(2) -- more paths cannot help, finer steps or multilevel would. time_budget: the run reached the budget before the target.",
+            "enum": [
+              "target_reached",
+              "out_of_budget",
+              "bias_floor",
+              "time_budget"
+            ],
+            "title": "Stopped",
+            "type": "string"
+          },
+          "target": {
+            "description": "The error aimed at, in the price's units.",
+            "title": "Target",
+            "type": "number"
+          },
+          "vega_scale": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'market': d price / d (relative scale of every vol), by a 1 % bump either way on the same draws.",
+            "title": "Vega Scale"
+          }
+        },
+        "required": [
+          "mode",
+          "target",
+          "stopped",
+          "paths",
+          "achieved_error",
+          "pilot_paths",
+          "seconds"
+        ],
+        "title": "PrecisionOutcome",
+        "type": "object"
+      },
+      "PrecisionTarget": {
+        "description": "Price to a precision instead of a path count (issue 331, steps 2-3):\na pilot run gives the per-path dispersion and the time-step bias, the\npath count follows, and the run stops at the first of four rules,\nwhich the response names (PrecisionOutcome.stopped).",
+        "properties": {
+          "mode": {
+            "default": "market",
+            "description": "'absolute': `value` in the price's units. 'relative': `value` as a share of the price (0.001 = 0.1 %). 'market': k x |vega| x delta_sigma, delta_sigma the vanillas' half bid-ask spread in vol at the product's horizon (the tighter of call and put, median over near-the-money strikes of the stored chain), k = `value`: numerical error kept to a share of what the market itself knows.",
+            "enum": [
+              "absolute",
+              "relative",
+              "market"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "time_budget_s": {
+            "default": 8.0,
+            "description": "Hard budget for the whole pricing: a run predicted beyond it is cut to what fits, and the response says how many paths the target needed.",
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Time Budget S",
+            "type": "number"
+          },
+          "value": {
+            "default": 0.25,
+            "description": "The target (absolute or relative), or k in 'market' mode (0.25 by default: a quarter of the market's half-spread).",
+            "exclusiveMinimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "title": "PrecisionTarget",
+        "type": "object"
+      },
       "PricingExposure": {
         "description": "Risk-neutral scenarios: what the adjustments integrate.",
         "properties": {
@@ -8911,6 +9069,18 @@
             "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
             "title": "Discretisation Bias"
           },
+          "discretisation_bias_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard error of discretisation_bias, when it comes from halving the steps: the spread of the two runs' replicate-wise differences (common random numbers), or the two standard errors combined without replicates. A bias below about twice this is not resolved: the estimate cannot tell it from zero.",
+            "title": "Discretisation Bias Std Error"
+          },
           "gpus": {
             "default": 0,
             "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
@@ -8938,6 +9108,17 @@
           "npv": {
             "title": "Npv",
             "type": "number"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrecisionOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when priced to a precision (the request's `precision`)."
           },
           "risks": {
             "anyOf": [
@@ -11202,6 +11383,17 @@
             "title": "N Paths",
             "type": "integer"
           },
+          "precision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrecisionTarget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Price to this precision instead of n_paths (which is then ignored): pilot, path count, stopping rules (PrecisionTarget)."
+          },
           "rate": {
             "title": "Rate",
             "type": "number"
@@ -11253,12 +11445,18 @@
             "title": "Spot"
           },
           "steps_per_year": {
-            "default": 252,
-            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). 252 by default: on SPY's local-vol grid a one-year ATM call (about 54) is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016 (blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; mlmc_eps controls it.",
-            "maximum": 504.0,
-            "minimum": 12.0,
-            "title": "Steps Per Year",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 504.0,
+                "minimum": 12.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). None, the default: 64 for heston, whose price runs step the variance by QE, nearly exact over a long step (WP 26 \u00a720); 252 for slv, whose leverage is held over each step (on SPY's fit of 2026-11-19, 64 a year put a 1y put 2 % above 504 a year, 252 within its noise), and for local vol (on SPY's grid a one-year ATM call, about 54, is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016, blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; discretisation_bias estimates it, mlmc_eps controls it.",
+            "title": "Steps Per Year"
           },
           "ticker": {
             "anyOf": [
@@ -11784,6 +11982,17 @@
             "title": "N Paths",
             "type": "integer"
           },
+          "precision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrecisionTarget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Price to this precision instead of n_paths (which is then ignored): pilot, path count, stopping rules (PrecisionTarget)."
+          },
           "product": {
             "description": "Library slug, e.g. 'worst-of-autocall'.",
             "minLength": 1,
@@ -11835,12 +12044,18 @@
             "title": "Spot"
           },
           "steps_per_year": {
-            "default": 252,
-            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). 252 by default: on SPY's local-vol grid a one-year ATM call (about 54) is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016 (blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; mlmc_eps controls it.",
-            "maximum": 504.0,
-            "minimum": 12.0,
-            "title": "Steps Per Year",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 504.0,
+                "minimum": 12.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). None, the default: 64 for heston, whose price runs step the variance by QE, nearly exact over a long step (WP 26 \u00a720); 252 for slv, whose leverage is held over each step (on SPY's fit of 2026-11-19, 64 a year put a 1y put 2 % above 504 a year, 252 within its noise), and for local vol (on SPY's grid a one-year ATM call, about 54, is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016, blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; discretisation_bias estimates it, mlmc_eps controls it.",
+            "title": "Steps Per Year"
           },
           "terms": {
             "additionalProperties": {
@@ -13676,6 +13891,18 @@
             "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
             "title": "Discretisation Bias"
           },
+          "discretisation_bias_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard error of discretisation_bias, when it comes from halving the steps: the spread of the two runs' replicate-wise differences (common random numbers), or the two standard errors combined without replicates. A bias below about twice this is not resolved: the estimate cannot tell it from zero.",
+            "title": "Discretisation Bias Std Error"
+          },
           "gpus": {
             "default": 0,
             "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
@@ -13703,6 +13930,17 @@
           "npv": {
             "title": "Npv",
             "type": "number"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrecisionOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when priced to a precision (the request's `precision`)."
           },
           "risks": {
             "anyOf": [
@@ -14084,6 +14322,18 @@
             "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
             "title": "Discretisation Bias"
           },
+          "discretisation_bias_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard error of discretisation_bias, when it comes from halving the steps: the spread of the two runs' replicate-wise differences (common random numbers), or the two standard errors combined without replicates. A bias below about twice this is not resolved: the estimate cannot tell it from zero.",
+            "title": "Discretisation Bias Std Error"
+          },
           "gpus": {
             "default": 0,
             "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
@@ -14111,6 +14361,17 @@
           "npv": {
             "title": "Npv",
             "type": "number"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrecisionOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when priced to a precision (the request's `precision`)."
           },
           "risks": {
             "anyOf": [

@@ -2497,12 +2497,86 @@ steps a year on every product scanned (vanillas, Asian, cliquet, touches,
 autocall, volatility swap) and drifts on the cliquet below that (−0.34 % at
 32, the leverage frozen over a long step); Euler at 64 is 1 to 9 % off.
 
-**Measured on the way, not fixed here.**
-- The `discretisation_bias` shown is |fine − coarse| from one seed: across 8
-  seeds its standard deviation is 0.1–0.3 % of the price, under Euler as
-  under QE, about as large as the values shown on most products. A defensible
-  figure needs its own error (or several seeds).
-- At 50 000 paths the page's time is mostly fixed costs (the chain read until
-  the load registry exists, #332): 252 → 64 steps saves 10–20 % of the wall
-  time there, the engine's 4× only at higher precision. Lowering the default
-  steps under QE is the maintainer's decision.
+**The steps, lowered where it holds (2026-11-19, evening).** The scan above
+ran on the 2026-11-18 snapshot. On the 2026-11-19 one (a new SLV fit, its
+leverage on 129 time columns dense at the short end), a 1y put under SLV at
+64 steps a year was 2 % above 504 a year, at 128 0.65 %, at 252 within its
+noise: QE removed the variance's bias, not the one from holding the
+leverage over a step. So:
+- **Heston: 64 steps a year**, at least 32 over the product's life
+  (`pricing_service._steps_per_year`). Against 504 a year, 400 000 paths:
+  within 0.15 % on vanillas, Asian and digital from 0.25y up; at 0.1y the
+  digital put was 0.75 % off with 6 steps, hence the floor.
+- **SLV and local vol: 252**, unchanged. Since `auto` picks SLV for every
+  single-asset product, the page's step count does not move; stepping SLV on
+  its leverage's own time nodes would be the way to lower it.
+
+**The bias shown, with its error.** The `discretisation_bias` from halving
+the steps is |fine − coarse| from one seed: across 8 seeds its standard
+deviation is 0.1–0.3 % of the price, under Euler as under QE, about as large
+as the values shown. It now carries `discretisation_bias_std_error`: the
+spread of the two runs' replicate-wise differences, the Sobol replicates
+being shared (common random numbers), or the two errors combined without
+replicates (an upper bound). The page shows a bias below twice its error as
+"not resolved, below ≈ 2σ", a bound rather than a number the estimate
+cannot back. The multilevel route's bias test carries no error yet.
+
+**Not done here.** At 50 000 paths the page's time is mostly fixed costs
+(the chain read until the load registry exists, #332).
+
+## 21. Lot B: the page's products, priced to a precision, their kernels classified (#331, 2026-11-19)
+
+**Pricing to a precision** (steps 2-3 of #331, `api/app/precision.py`). A
+request may carry `precision` instead of a path count: an absolute target, a
+share of the price, or one inferred from the market, k × |vega| × δσ. δσ is
+the vanillas' half bid-ask spread in vol at the product's horizon, the
+tighter of call and put per strike, median near the money (0.041 vol pt on
+SPY's 2026-11-19 chain, its one-year expiry); the vega a 1 % scale of every
+vol of the model either way on the same draws. A pilot (8 192 paths, its bias
+estimated with its error, §20) gives the dispersion; two plain runs (8 192,
+32 768 paths) the fixed and per-path cost. The run stops at the first of
+bias_floor (a bias resolved beyond 3σ by the pilot or 2σ by the run, at
+least target/√2), out_of_budget, target_reached, time_budget, and the
+response names it with the paths the target needed. The page offers
+"Accuracy: a number of paths / a precision".
+
+Measured on SPY (SLV, the 2026-11-19 fit): a 0.1 % target is reached on the
+phoenix autocall in 0.2 s; on the vanillas, the digital, the cliquet and the
+variance swap the time-step bias at 252 steps a year (0.2-0.3 %) is the
+floor of any finer target -- the leverage held over a step, the same under
+Euler and QE (1y call, 2M paths: 252 → 504 steps moves it by −0.19 under
+Euler, −0.15 under QE). The market-inferred target (0.01-0.04 % of the price
+on the vanillas) is beyond both the floor and the budget: the market quotes
+SPY more precisely than 252 steps of this SLV price it.
+
+**The kernels, classified** (ncu, one V100, the page's default requests):
+
+| kernel | product | time | registers | occupancy | grid | bound |
+|---|---|---|---|---|---|---|
+| `qm_script_plain` | phoenix (SLV, 2y) | 17.4 ms | 97-100 | 25 % theor. | 256 blocks, 1.6 waves | latency (DRAM 23 %, SM 38 %) |
+| `qm_script_adjoint` | phoenix (SLV) | 52 + 46 ms | 162 | 12.5 % | 31 blocks, then 1 | latency; 39 % of the SMs |
+| `qm_script_plain` | European, local vol multilevel | 2-8 ms a level | 127 | | | |
+
+Two changes, each measured alone, the same bits:
+1. **One adjoint launch when it fits** (`draw_setup`): the 1 GiB scratch cap
+   split SLV's adjoint (a gradient row of 12 908 parameters a thread, 34 MB
+   a block) into 31 blocks and 1, and below one wave a launch takes as long
+   whatever its block count. Now one launch when the whole request fits the
+   budget and 4 GiB. Phoenix with AAD greeks: 314 → 273 ms.
+2. **`qm_script_plain_r64`** for Heston and SLV: the price kernel at four
+   blocks a multiprocessor (64 registers), one wave instead of 1.6. Kernel
+   time −12 to −14 % under SLV (phoenix 17.4 → 15.7 ms, Athena 26.4 →
+   23.1 ms), −9 % under Heston; local vol keeps the uncapped kernel, which
+   spills at 64 registers (+44 %).
+
+The page with AAD greeks, warm (median of 5): phoenix 314 → 249 ms, digital
+188 → 169 ms, European call 145 → 128 ms, Asian 157 → 133 ms.
+
+**What is left.** The adjoint's parallelism is the logical blocks' (32 blocks
+of 256 threads, eight paths each in sequence) because a thread holds a dense
+gradient row over the whole leverage grid; a path touches at most two nodes
+a step. A sparse per-thread trail of (node, adjoint) folded in a fixed order
+would let one thread take one path (65 536 threads), about 8× the adjoint's
+parallelism -- its own lot (the IR's grid accumulation statements, the fold,
+the CPU tape as oracle). And at 50 000 paths the page's fixed costs still
+dominate until the chain cache's registry exists (#332).

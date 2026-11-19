@@ -92,7 +92,9 @@ def market_vega(req: ScriptedProductRequest) -> MarketVegaResponse:
             K_grid=m.K_grid,
             T_grid=m.T_grid,
             sigma_loc_flat=m.sigma_loc_flat,
-            steps_per_year=req.steps_per_year,
+            steps_per_year=(
+                req.steps_per_year if req.steps_per_year is not None else 252
+            ),
             device=device,
             rng=req.rng.value,
             sampler=req.sampler,
