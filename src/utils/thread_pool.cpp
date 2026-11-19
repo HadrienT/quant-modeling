@@ -16,27 +16,34 @@ namespace quantModeling
 
     std::size_t available_cpus()
     {
-        std::size_t n = std::thread::hardware_concurrency();
-#if defined(__linux__)
-        cpu_set_t set;
-        if (sched_getaffinity(0, sizeof(set), &set) == 0)
-            n = static_cast<std::size_t>(CPU_COUNT(&set));
-        // cgroup v2: "max 100000" or "<quota> <period>"; v1: two files.
-        double quota = -1.0, period = -1.0;
-        if (std::ifstream v2("/sys/fs/cgroup/cpu.max"); v2)
+        // Read once: the affinity and the cgroup quota are the container's,
+        // fixed for the process's life, and reading the cgroup files cost
+        // ~2 % of a warm GPU pricing that never used the CPUs (2026-11-19).
+        static const std::size_t count = []
         {
-            std::string q;
-            v2 >> q >> period;
-            if (q != "max")
-                quota = std::stod(q);
-        }
-        else if (std::ifstream q1("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"), p1("/sys/fs/cgroup/cpu/cpu.cfs_period_us");
-                 q1 && p1)
-            q1 >> quota, p1 >> period;
-        if (quota > 0.0 && period > 0.0)
-            n = std::min(n, static_cast<std::size_t>(std::max(1.0, std::ceil(quota / period))));
+            std::size_t n = std::thread::hardware_concurrency();
+#if defined(__linux__)
+            cpu_set_t set;
+            if (sched_getaffinity(0, sizeof(set), &set) == 0)
+                n = static_cast<std::size_t>(CPU_COUNT(&set));
+            // cgroup v2: "max 100000" or "<quota> <period>"; v1: two files.
+            double quota = -1.0, period = -1.0;
+            if (std::ifstream v2("/sys/fs/cgroup/cpu.max"); v2)
+            {
+                std::string q;
+                v2 >> q >> period;
+                if (q != "max")
+                    quota = std::stod(q);
+            }
+            else if (std::ifstream q1("/sys/fs/cgroup/cpu/cpu.cfs_quota_us"), p1("/sys/fs/cgroup/cpu/cpu.cfs_period_us");
+                     q1 && p1)
+                q1 >> quota, p1 >> period;
+            if (quota > 0.0 && period > 0.0)
+                n = std::min(n, static_cast<std::size_t>(std::max(1.0, std::ceil(quota / period))));
 #endif
-        return n > 0 ? n : 1;
+            return n > 0 ? n : std::size_t{1};
+        }();
+        return count;
     }
 
     thread_local std::size_t ThreadPool::tls_num_ = 0;
@@ -65,6 +72,7 @@ namespace quantModeling
 
     void ThreadPool::stop()
     {
+        pending_ = 0;
         if (threads_.empty())
             return;
         queue_.interrupt();

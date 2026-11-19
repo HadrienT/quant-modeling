@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 #include "quantModeling/engines/mc/script_adjoint.hpp"
 #include "quantModeling/engines/mc/sobol_bridge.hpp"
@@ -21,7 +22,17 @@ namespace quantModeling::gpu
         using detail::ScriptUnit;
         using detail::UnitDraws;
 
-        /// Device copies of host arrays, freed together.
+        /**
+         * @brief Device copies of host arrays, freed together.
+         *
+         * put() packs the arrays into one device chunk (each 256-byte
+         * aligned) and returns their device address at once; the bytes are
+         * staged on the host and reach the card on flush(), one copy for
+         * them all. A request's ~26 arrays used to cost 26 allocations and
+         * 26 copies (issue #330). **flush() before any kernel reads them**:
+         * device_view, draw_setup and path_unit -- the only callers of put()
+         * -- flush before their own launches and before returning.
+         */
         struct DeviceArrays
         {
             std::vector<void *> owned;
@@ -31,27 +42,54 @@ namespace quantModeling::gpu
             ~DeviceArrays()
             {
                 for (void *p : owned)
-                    cudaFree(p);
+                    detail::device_free(p);
             }
             template <class T>
             const T *put(const std::vector<T> &h)
             {
                 if (h.empty())
                     return nullptr;
-                T *d = nullptr;
-                detail::check(cudaMalloc(&d, h.size() * sizeof(T)), "cudaMalloc");
-                owned.push_back(d);
-                detail::check(cudaMemcpy(d, h.data(), h.size() * sizeof(T), cudaMemcpyHostToDevice), "cudaMemcpy");
-                return d;
+                const std::size_t bytes = h.size() * sizeof(T);
+                std::size_t at = (used_ + kAlign - 1) / kAlign * kAlign;
+                if (!chunk_ || at + bytes > capacity_)
+                {
+                    flush();
+                    capacity_ = std::max(kChunkBytes, bytes);
+                    chunk_ = detail::device_alloc<unsigned char>(capacity_);
+                    owned.push_back(chunk_);
+                    used_ = flushed_ = at = 0;
+                }
+                staged_.resize(at + bytes - flushed_); // the padding staged as zeros
+                std::memcpy(staged_.data() + (at - flushed_), h.data(), bytes);
+                used_ = at + bytes;
+                return reinterpret_cast<const T *>(chunk_ + at);
+            }
+            /// Copies what put() staged since the last flush to the device.
+            void flush()
+            {
+                if (used_ > flushed_)
+                    detail::check(cudaMemcpy(chunk_ + flushed_, staged_.data(), used_ - flushed_,
+                                             cudaMemcpyHostToDevice),
+                                  "cudaMemcpy");
+                flushed_ = used_;
+                staged_.clear();
             }
             template <class T>
             T *alloc(std::size_t n)
             {
-                T *d = nullptr;
-                detail::check(cudaMalloc(&d, n * sizeof(T)), "cudaMalloc");
+                T *d = detail::device_alloc<T>(n);
                 owned.push_back(d);
                 return d;
             }
+
+          private:
+            static constexpr std::size_t kAlign = 256;
+            /// A chunk holds a request's small arrays; a larger array gets a
+            /// chunk of its own size.
+            static constexpr std::size_t kChunkBytes = std::size_t{1} << 20;
+            unsigned char *chunk_ = nullptr;
+            std::size_t capacity_ = 0, used_ = 0, flushed_ = 0;
+            std::vector<unsigned char> staged_; ///< bytes [flushed_, used_) of the chunk
         };
 
         /**
@@ -160,6 +198,7 @@ namespace quantModeling::gpu
             {
                 double *num = mem.alloc<double>(p.n_events());
                 double *disc = disc_mats.empty() ? nullptr : mem.alloc<double>(disc_mats.size());
+                mem.flush(); // the kernel reads t, event and the discount lists
                 const unsigned threads = 256;
                 event_tables_kernel<<<static_cast<unsigned>((v.n_steps + threads - 1) / threads), threads>>>(
                     v.t, v.event, v.n_steps, v.r, v.disc_begin, v.disc_mats, num, disc);
@@ -167,6 +206,7 @@ namespace quantModeling::gpu
                 v.event_numeraire = num;
                 v.event_disc = disc;
             }
+            mem.flush();
             return v;
         }
 
@@ -234,7 +274,8 @@ namespace quantModeling::gpu
                 // Launch size from the memory a thread needs, never a default:
                 // at most half of what is free (the cards are shared).
                 const uint64_t n_blocks = LB::count(req.n_units) * s.replicates;
-                uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / per_block);
+                const std::size_t budget = detail::launch_budget(device, std::max<uint64_t>(n_blocks, 1) * per_block);
+                uint64_t per_launch = std::max<uint64_t>(1, budget / per_block);
                 // And at most kScratchBytes: one thread per unit (P1g) made a
                 // Sobol launch's scratch 4 096 rows a block (2 048 since 2026-11-16) -- 4.8 GB for the
                 // daily Asian's 1.16 M paths, whose allocation after the last
@@ -254,6 +295,7 @@ namespace quantModeling::gpu
                 s.draws.scratch = mem.alloc<double>(static_cast<std::size_t>(s.draws.rows) * 2u *
                                                     static_cast<std::size_t>(req.sobol->dim));
             }
+            mem.flush();
             return s;
         }
 
@@ -403,6 +445,7 @@ namespace quantModeling::gpu
                 }
                 const DeviceModel &dm = *req.model;
                 const double carry = dm.r - (dm.n_assets > 1 ? dm.divs[0] : dm.q);
+                mem.flush(); // the kernel reads the view's tables and fwd()'s maturities
                 const unsigned threads = 256;
                 event_rows_kernel<<<static_cast<unsigned>((v.n_steps + threads - 1) / threads), threads>>>(
                     v.t, v.event, v.n_steps, v.r, v.disc_begin, v.disc_mats, l.event_cols, rows, carry, fwd_begin,
@@ -410,6 +453,7 @@ namespace quantModeling::gpu
                 detail::check(cudaGetLastError(), "event rows launch");
                 u.event_rows = rows;
             }
+            mem.flush();
             return u;
         }
 

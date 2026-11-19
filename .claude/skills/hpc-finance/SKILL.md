@@ -110,6 +110,8 @@ the changed files (`ninja -t deps <object>`), and say so explicitly.
   the LLM is loaded come from the same stack.
 - Exposure cube to the host (`cube_kernel`): outputs are still path-major for
   the host cube; synchronous pageable `cudaMemcpy`, no overlap with compute.
-- `cudaMalloc`/`cudaFree` per request in every GPU entry point: a pool
-  (`cudaMallocAsync`) or reused buffers for the API's repeated calls.
+- Per-request `cudaMalloc`/`cudaFree`: done for the scripts and the shared
+  reduction (`detail::device_alloc`, CUDA's stream-ordered pool, WP 26 §18,
+  #330); `src/gpu/exposure.cu`, `rng.cu` and `paths.cu` still allocate
+  directly. Use `device_alloc`/`device_free` in new GPU code.
 - `src/gpu/rng.cu`, `src/gpu/paths.cu`: raw `cudaMalloc` without RAII.

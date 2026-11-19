@@ -2277,3 +2277,53 @@ of 12 steps allocates its decisions' vectors) and the regression, now
 0.12 s. Under local vol on two CPUs the rest is the steps themselves: the
 next lever is to simulate the pilot's paths on the GPU and run only the
 script's branches on the host (0.17 s).
+
+## 18. The fixed cost of a GPU call (#330, 2026-11-19)
+
+Every GPU pricing paid ~1.8 ms whatever its path count: on a one-date
+digital at 1 024 paths, nvprof counted **21 µs of kernels** in a 1.8 ms
+call. The rest was administration repeated on every request. Each step
+below was measured on its own (`benchmarks/gpu_call_floor.py`: library
+products priced through `pricing_service` on typed Black-Scholes inputs,
+warm kernel cache, one V100 with nothing else loaded, best of 30), and
+every price and delta of the bench is the same to the bit after each step.
+
+1. **The device's name read once** (`device_name`): `cudaGetDeviceProperties`
+   cost 127 µs a call, only to label the diagnostics.
+2. **CUDA's stream-ordered pool** (`detail::device_alloc` / `device_free`,
+   `cudaMallocAsync` on the legacy default stream): the ~30 `cudaMalloc` and
+   `cudaFree` of a request (430 µs under nvprof) reuse what the previous
+   request freed. The pool keeps at most `QM_GPU_POOL_RETAIN_MB` (256 MiB by
+   default) of idle memory, since the assistant's LLM shares the cards; out of
+   memory, it releases its idle memory and retries once.
+3. **The CPU pool started on demand** (`ThreadPool::start_on_demand`): the
+   binding started and joined 15 threads for every request, GPU ones
+   included -- ~30 % of a warm call (py-spy). They now start when a CPU
+   engine first asks for them (`num_threads()`, `spawn_task`), so an `auto`
+   request that falls back to the CPU keeps its threads. `available_cpus()`
+   reads the cgroup files once.
+4. **One copy for the request's arrays** (`DeviceArrays::put` / `flush`):
+   the ~26 arrays are packed, 256-byte aligned, into one pooled chunk and
+   copied once; the three functions that call `put()` flush before their own
+   launches and before returning.
+5. **No free-memory query for a small request** (`detail::launch_budget`):
+   below 64 MiB in all, half of the free memory could only cap a launch on a
+   card already nearly full; the two `cudaMemGetInfo` cost 44 µs.
+
+Best of 30 (of 5 at 1 M paths), milliseconds:
+
+| case | paths | before | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|---|
+| digital call | 1 024 | 1.84 | 1.87 | 1.31 | 0.62 | 0.49 | **0.44** |
+| digital call | 1 M | 2.38 | 2.48 | 1.52 | 0.78 | 0.64 | **0.59** |
+| digital call, AAD greeks | 1 024 | 3.19 | 3.00 | 2.10 | 1.38 | 1.11 | **1.01** |
+| digital call, AAD greeks | 1 M | 5.53 | 5.20 | 4.24 | 3.01 | 2.61 | **2.56** |
+| phoenix autocall | 1 024 | 2.66 | 2.55 | 2.09 | 1.26 | 1.13 | **1.09** |
+| phoenix autocall | 1 M | 3.30 | 3.29 | 2.78 | 1.69 | 1.50 | **1.48** |
+| phoenix autocall, AAD greeks | 1 M | 8.95 | 8.75 | 7.39 | 6.62 | 6.19 | **6.20** |
+
+What is left of the digital's 0.44 ms: ~0.19 ms of Python around the engine
+(the template's render, pydantic, `start_on`, tracing spans), ~0.15 ms of
+CUDA calls (four copies, four launches, six pooled allocations), and the
+host's preparation of the request, with no single hotspot left. The
+kernels themselves run 21 µs.

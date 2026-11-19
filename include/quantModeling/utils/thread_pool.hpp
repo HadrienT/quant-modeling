@@ -53,17 +53,35 @@ namespace quantModeling
         /// already started; call stop() first to restart with a different n.
         void start(std::size_t n = default_thread_count());
 
+        /// start(n) deferred to the first num_threads() or spawn_task(): a
+        /// request that may run on the CPU gets its threads when a CPU
+        /// engine asks for them, and a GPU run never pays for them. Starting
+        /// and joining 15 threads cost ~30 % of a warm 1.3 ms GPU pricing
+        /// (one V100, py-spy, 2026-11-19; issue #330). A no-op if started.
+        void start_on_demand(std::size_t n)
+        {
+            if (threads_.empty())
+                pending_ = n;
+        }
+
         /// Interrupts and joins every worker thread. Safe to call when not
         /// started. The pool can be start()ed again afterwards.
         void stop();
 
-        std::size_t num_threads() const { return threads_.size(); }
+        /// The workers started, or about to be: a start_on_demand() pool
+        /// starts them here.
+        std::size_t num_threads()
+        {
+            start_pending();
+            return threads_.size();
+        }
 
         static std::size_t thread_num() { return tls_num_; }
 
         template <class F>
         TaskHandle spawn_task(F &&f)
         {
+            start_pending();
             Task task(std::forward<F>(f));
             TaskHandle handle = task.get_future();
             queue_.push(std::move(task));
@@ -83,9 +101,19 @@ namespace quantModeling
       private:
         static std::size_t default_thread_count();
         void worker_loop(std::size_t index);
+        void start_pending()
+        {
+            if (pending_ > 0 && threads_.empty())
+            {
+                const std::size_t n = pending_;
+                pending_ = 0;
+                start(n);
+            }
+        }
 
         ConcurrentQueue<Task> queue_;
         std::vector<std::thread> threads_;
+        std::size_t pending_ = 0; ///< start_on_demand's count, until started
         static thread_local std::size_t tls_num_;
     };
 
