@@ -75,7 +75,9 @@ describe("DiscretisationBias", () => {
 
 	it("shows a resolved bias with its error", () => {
 		render(<DiscretisationBias bias={0.5} error={0.1} value={50} />);
-		expect(screen.getByText(/Time-step bias/)).toHaveTextContent(/0\.5.*± 0\.1.*1\.00 %/);
+		expect(screen.getByText(/Time-step bias/)).toHaveTextContent(
+			/0\.5.*± 0\.1.*1\.00 %/,
+		);
 	});
 
 	it("bounds a bias within twice its error instead of showing it", () => {

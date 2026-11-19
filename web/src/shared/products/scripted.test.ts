@@ -239,3 +239,39 @@ describe("typed market inputs (a fictitious underlying)", () => {
 		});
 	});
 });
+
+describe("pricing to a precision (#331)", () => {
+	const d = () => CATALOG_BY_KEY.get("script-european-call")!;
+	const body = (extra: Record<string, unknown>) =>
+		d().toRequest({ ...d().defaults, ...extra }, "mc") as Record<
+			string,
+			unknown
+		>;
+
+	it("sends a path count by default, no precision", () => {
+		expect(body({})).not.toHaveProperty("precision");
+	});
+
+	it("sends the market target with its k and time budget", () => {
+		expect(body({ accuracy: "precision" }).precision).toEqual({
+			mode: "market",
+			value: 0.25,
+			time_budget_s: 8,
+		});
+	});
+
+	it("sends a relative target as a fraction", () => {
+		const p = body({
+			accuracy: "precision",
+			precision_mode: "relative",
+			precision_pct: 0.2,
+		}).precision;
+		expect(p).toEqual({ mode: "relative", value: 0.002, time_budget_s: 8 });
+	});
+
+	it("offers no market target for several underlyings", () => {
+		const multi = SCRIPTED_PRODUCTS.find((p) => p.underlyings > 1)!;
+		const m = CATALOG_BY_KEY.get(scriptedKey(multi.slug))!;
+		expect(m.defaults.precision_mode).toBe("relative");
+	});
+});

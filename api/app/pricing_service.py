@@ -53,6 +53,7 @@ from .schemas import (
     VolatilitySwapRequest,
     ZeroCouponBondRequest,
 )
+from . import precision
 from .telemetry import tracer
 
 
@@ -943,6 +944,10 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     its closed form, engine='analytic')."""
     from . import product_templates
 
+    if req.precision is not None and req.engine != "analytic":
+        return precision.price_to_precision(
+            req, price_scripted_product, _market_quotes(req)
+        )
     template = product_templates.get(req.product)
     if req.engine == "analytic":
         if req.product in SOFR_CLOSED_FORM:
@@ -1070,6 +1075,12 @@ def price_script(
     constants."""
     from . import market_snapshot, stochastic_vol
 
+    if req.precision is not None:
+        return precision.price_to_precision(
+            req,
+            lambda r: price_script(r, library=library, start_today=start_today),
+            _market_quotes(req),
+        )
     if req.underlyings is not None:
         return _price_multi_asset(req, library, start_today)
 
@@ -1190,6 +1201,22 @@ def price_script(
         else:
             choice["calibration"]["rates_curve"] = label
     leverage = list(sv.leverage_flat) if (sv is not None and model == "slv") else []
+    # A precision target's vega bump (precision.py): every vol of the model
+    # scaled by the same factor -- the local-vol grid, the SLV leverage (its
+    # spot vol L sqrt(v)), a flat vol, Heston's v0 and theta by its square and
+    # xi by it (the variance process of the scaled vol).
+    scale = precision.VOL_SCALE.get()
+    if scale != 1.0:
+        sigma = [x * scale for x in sigma]
+        leverage = [x * scale for x in leverage]
+        vol = vol * scale if vol else vol
+        if model == "heston" and heston:
+            heston = {
+                **heston,
+                "v0": heston["v0"] * scale**2,
+                "theta": heston["theta"] * scale**2,
+                "xi": heston["xi"] * scale,
+            }
 
     script, fixings = req.script, {}
     if start_today:
@@ -1267,6 +1294,22 @@ def price_script(
             "model_choice": ModelChoice(**choice),
             **({"script": script} if start_today else {}),
         }
+    )
+
+
+def _market_quotes(req):
+    """'market' precision's inputs, read when needed: the stored chain of the
+    request's single ticker. None when there is none to read."""
+    if (
+        req.underlyings is not None
+        or not req.ticker
+        or req.model in ("black_scholes", "hull_white")
+    ):
+        return None
+    from . import market_snapshot
+
+    return lambda: market_snapshot.chain_quotes(
+        req.ticker, req.rate, req.valuation_date
     )
 
 

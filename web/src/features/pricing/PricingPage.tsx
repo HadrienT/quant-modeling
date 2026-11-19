@@ -189,6 +189,12 @@ export default function PricingPage() {
 const ENGINE_ONLY: Record<string, readonly string[]> = {
 	n_paths: ["mc"],
 	seed: ["mc"],
+	accuracy: ["mc"],
+	precision_mode: ["mc"],
+	precision_k: ["mc"],
+	precision_pct: ["mc"],
+	precision_abs: ["mc"],
+	time_budget: ["mc"],
 	// a closed form has no dynamics to choose
 	model: ["mc"],
 };

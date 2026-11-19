@@ -6007,6 +6007,103 @@ export interface components {
             unit_price: number;
         };
         /**
+         * PrecisionOutcome
+         * @description How a pricing to a precision ended (PrecisionTarget).
+         */
+        PrecisionOutcome: {
+            /**
+             * Achieved Error
+             * @description sqrt(std_error^2 + bias^2), the bias when resolved, else 0.
+             */
+            achieved_error: number;
+            /**
+             * Atm Vol
+             * @description 'market': the ATM implied vol at that expiry.
+             */
+            atm_vol?: number | null;
+            /**
+             * Delta Sigma
+             * @description 'market': the vanillas' half-spread in vol at the horizon.
+             */
+            delta_sigma?: number | null;
+            /**
+             * Expiry
+             * @description 'market': the expiry read, in years.
+             */
+            expiry?: number | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "absolute" | "relative" | "market";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Paths
+             * @description Paths of the run returned.
+             */
+            paths: number;
+            /**
+             * Paths Needed
+             * @description Paths the pilot predicted for the target's half of variance.
+             */
+            paths_needed?: number | null;
+            /** Pilot Paths */
+            pilot_paths: number;
+            /**
+             * Seconds
+             * @description Wall time of the pilot and the run.
+             */
+            seconds: number;
+            /**
+             * Stopped
+             * @description target_reached: sqrt(se^2 + bias^2) within the target. out_of_budget: the pilot predicted more time than the budget; the run used what fits. bias_floor: the time-step bias alone is at least target / sqrt(2) -- more paths cannot help, finer steps or multilevel would. time_budget: the run reached the budget before the target.
+             * @enum {string}
+             */
+            stopped: "target_reached" | "out_of_budget" | "bias_floor" | "time_budget";
+            /**
+             * Target
+             * @description The error aimed at, in the price's units.
+             */
+            target: number;
+            /**
+             * Vega Scale
+             * @description 'market': d price / d (relative scale of every vol), by a 1 % bump either way on the same draws.
+             */
+            vega_scale?: number | null;
+        };
+        /**
+         * PrecisionTarget
+         * @description Price to a precision instead of a path count (issue #331, steps 2-3):
+         *     a pilot run gives the per-path dispersion and the time-step bias, the
+         *     path count follows, and the run stops at the first of four rules,
+         *     which the response names (PrecisionOutcome.stopped).
+         */
+        PrecisionTarget: {
+            /**
+             * Mode
+             * @description 'absolute': `value` in the price's units. 'relative': `value` as a share of the price (0.001 = 0.1 %). 'market': k x |vega| x delta_sigma, delta_sigma the vanillas' half bid-ask spread in vol at the product's horizon (the tighter of call and put, median over near-the-money strikes of the stored chain), k = `value`: numerical error kept to a share of what the market itself knows.
+             * @default market
+             * @enum {string}
+             */
+            mode: "absolute" | "relative" | "market";
+            /**
+             * Time Budget S
+             * @description Hard budget for the whole pricing: a run predicted beyond it is cut to what fits, and the response says how many paths the target needed.
+             * @default 8
+             */
+            time_budget_s: number;
+            /**
+             * Value
+             * @description The target (absolute or relative), or k in 'market' mode (0.25 by default: a quarter of the market's half-spread).
+             * @default 0.25
+             */
+            value: number;
+        };
+        /**
          * PricingExposure
          * @description Risk-neutral scenarios: what the adjustments integrate.
          */
@@ -6100,6 +6197,8 @@ export interface components {
             model_choice?: components["schemas"]["ModelChoice"] | null;
             /** Npv */
             npv: number;
+            /** @description Set when priced to a precision (the request's `precision`). */
+            precision?: components["schemas"]["PrecisionOutcome"] | null;
             /** Risks */
             risks?: components["schemas"]["RiskEntry"][] | null;
             /**
@@ -7151,6 +7250,8 @@ export interface components {
              * @default 200000
              */
             n_paths: number;
+            /** @description Price to this precision instead of n_paths (which is then ignored): pilot, path count, stopping rules (PrecisionTarget). */
+            precision?: components["schemas"]["PrecisionTarget"] | null;
             /** Rate */
             rate: number;
             /**
@@ -7485,6 +7586,8 @@ export interface components {
              * @default 50000
              */
             n_paths: number;
+            /** @description Price to this precision instead of n_paths (which is then ignored): pilot, path count, stopping rules (PrecisionTarget). */
+            precision?: components["schemas"]["PrecisionTarget"] | null;
             /**
              * Product
              * @description Library slug, e.g. 'worst-of-autocall'.
@@ -8207,6 +8310,8 @@ export interface components {
             model_choice?: components["schemas"]["ModelChoice"] | null;
             /** Npv */
             npv: number;
+            /** @description Set when priced to a precision (the request's `precision`). */
+            precision?: components["schemas"]["PrecisionOutcome"] | null;
             /** Risks */
             risks?: components["schemas"]["RiskEntry"][] | null;
             /**
@@ -8369,6 +8474,8 @@ export interface components {
             model_choice?: components["schemas"]["ModelChoice"] | null;
             /** Npv */
             npv: number;
+            /** @description Set when priced to a precision (the request's `precision`). */
+            precision?: components["schemas"]["PrecisionOutcome"] | null;
             /** Risks */
             risks?: components["schemas"]["RiskEntry"][] | null;
             /**

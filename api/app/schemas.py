@@ -211,6 +211,37 @@ class HullWhiteInputs(BaseModel):
         return self
 
 
+class PrecisionTarget(BaseModel):
+    """Price to a precision instead of a path count (issue #331, steps 2-3):
+    a pilot run gives the per-path dispersion and the time-step bias, the
+    path count follows, and the run stops at the first of four rules,
+    which the response names (PrecisionOutcome.stopped)."""
+
+    mode: Literal["absolute", "relative", "market"] = Field(
+        "market",
+        description="'absolute': `value` in the price's units. 'relative': "
+        "`value` as a share of the price (0.001 = 0.1 %). 'market': k x |vega| "
+        "x delta_sigma, delta_sigma the vanillas' half bid-ask spread in vol "
+        "at the product's horizon (the tighter of call and put, median over "
+        "near-the-money strikes of the stored chain), k = `value`: numerical "
+        "error kept to a share of what the market itself knows.",
+    )
+    value: float = Field(
+        0.25,
+        gt=0.0,
+        description="The target (absolute or relative), or k in 'market' mode "
+        "(0.25 by default: a quarter of the market's half-spread).",
+    )
+    time_budget_s: float = Field(
+        8.0,
+        gt=0.0,
+        le=60.0,
+        description="Hard budget for the whole pricing: a run predicted beyond "
+        "it is cut to what fits, and the response says how many paths the "
+        "target needed.",
+    )
+
+
 class ScriptPricingInputs(BaseModel):
     """How a payoff script is priced (blueprint/wp/16-scripting.md), whatever
     the script: model, market, underlyings, Monte-Carlo settings. The script
@@ -368,6 +399,11 @@ class ScriptPricingInputs(BaseModel):
         "deep out-of-the-money digital). Price only.",
     )
     n_paths: int = Field(200_000, ge=1_000, le=5_000_000)
+    precision: Optional[PrecisionTarget] = Field(
+        None,
+        description="Price to this precision instead of n_paths (which is then "
+        "ignored): pilot, path count, stopping rules (PrecisionTarget).",
+    )
     seed: int = 1
     device: Optional[ComputeDevice] = Field(
         None,
@@ -1027,6 +1063,47 @@ class ComputeTimings(BaseModel):
     )
 
 
+class PrecisionOutcome(BaseModel):
+    """How a pricing to a precision ended (PrecisionTarget)."""
+
+    mode: Literal["absolute", "relative", "market"]
+    target: float = Field(..., description="The error aimed at, in the price's units.")
+    stopped: Literal["target_reached", "out_of_budget", "bias_floor", "time_budget"] = (
+        Field(
+            ...,
+            description="target_reached: sqrt(se^2 + bias^2) within the target. "
+            "out_of_budget: the pilot predicted more time than the budget; the run "
+            "used what fits. bias_floor: the time-step bias alone is at least "
+            "target / sqrt(2) -- more paths cannot help, finer steps or multilevel "
+            "would. time_budget: the run reached the budget before the target.",
+        )
+    )
+    paths: int = Field(..., description="Paths of the run returned.")
+    paths_needed: Optional[int] = Field(
+        None, description="Paths the pilot predicted for the target's half of variance."
+    )
+    achieved_error: float = Field(
+        ..., description="sqrt(std_error^2 + bias^2), the bias when resolved, else 0."
+    )
+    pilot_paths: int
+    seconds: float = Field(..., description="Wall time of the pilot and the run.")
+    delta_sigma: Optional[float] = Field(
+        None, description="'market': the vanillas' half-spread in vol at the horizon."
+    )
+    vega_scale: Optional[float] = Field(
+        None,
+        description="'market': d price / d (relative scale of every vol), by "
+        "a 1 % bump either way on the same draws.",
+    )
+    atm_vol: Optional[float] = Field(
+        None, description="'market': the ATM implied vol at that expiry."
+    )
+    expiry: Optional[float] = Field(
+        None, description="'market': the expiry read, in years."
+    )
+    note: str = ""
+
+
 class PricingResponse(BaseModel):
     npv: float
     greeks: Greeks
@@ -1071,6 +1148,9 @@ class PricingResponse(BaseModel):
         description="Scripts priced with second_order=True: how gamma, vanna "
         "and volga were computed (the bump on the GPU's adjoint, its bumps and "
         "pairing). Null when they were not.",
+    )
+    precision: Optional[PrecisionOutcome] = Field(
+        None, description="Set when priced to a precision (the request's `precision`)."
     )
     discretisation_bias_std_error: Optional[float] = Field(
         None,

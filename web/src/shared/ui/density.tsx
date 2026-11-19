@@ -133,14 +133,21 @@ export function DiscretisationBias({
 		);
 	}
 	const relative = value ? Math.abs(bias / value) : 0;
-	const pct = (x: number) => (value ? ` (${((x / Math.abs(value)) * 100).toFixed(2)} %)` : "");
-	if (error != null && Number.isFinite(error) && error > 0 && bias < 2 * error) {
+	const pct = (x: number) =>
+		value ? ` (${((x / Math.abs(value)) * 100).toFixed(2)} %)` : "";
+	if (
+		error != null &&
+		Number.isFinite(error) &&
+		error > 0 &&
+		bias < 2 * error
+	) {
 		return (
 			<span
 				className="font-mono text-2xs text-ink-muted"
 				title="The halved-step estimate is within twice its own standard error: it cannot tell the bias from zero, only bound it"
 			>
-				Time-step bias: not resolved, below ≈ {formatNumber(2 * error, magnitude)}
+				Time-step bias: not resolved, below ≈{" "}
+				{formatNumber(2 * error, magnitude)}
 				{pct(2 * error)}, not in the ±
 			</span>
 		);
