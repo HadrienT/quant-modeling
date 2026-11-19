@@ -60,6 +60,10 @@ namespace quantModeling
         /// CPU model computed them.
         std::vector<Real> drift, vol_sqrt_dt;
 
+        /// Heston and SLV: how a price run steps the variance (#317). The
+        /// risk kernels (duals, adjoints) always step it by Euler.
+        mc::VarianceScheme variance_scheme = mc::VarianceScheme::Euler;
+
         int factors = 1; ///< Brownian draws per drawing step
         int stride = 1;  ///< draws per drawing step (>= factors)
     };

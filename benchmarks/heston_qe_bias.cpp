@@ -18,6 +18,7 @@
 #include "quantModeling/utils/philox.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -98,10 +99,12 @@ int main(int argc, char **argv)
                                          opts[o].call);
         std::printf("\nFeller %.2f (xi %.4f): COS %s %.6f, %s %.6f\n", F, h.xi, opts[0].name, cos_px[0],
                     opts[1].name, cos_px[1]);
-        std::printf("%6s | %-8s %10s %8s | %10s %8s\n", "steps", "scheme", "call bias%", "se%", "put bias%", "se%");
+        std::printf("%6s | %-8s %10s %8s | %10s %8s | %8s\n", "steps", "scheme", "call bias%", "se%", "put bias%", "se%",
+                    "ms");
         for (int n : steps)
             for (auto scheme : {mc::VarianceScheme::Euler, mc::VarianceScheme::QE})
             {
+                const auto t0 = std::chrono::steady_clock::now();
                 std::vector<Sums> parts(threads);
                 std::vector<std::thread> pool;
                 for (unsigned t = 0; t < threads; ++t)
@@ -110,6 +113,8 @@ int main(int argc, char **argv)
                                                        paths * (t + 1) / threads, 20261119); });
                 for (auto &th : pool)
                     th.join();
+                const double ms =
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
                 double bias[2], se[2];
                 for (int o = 0; o < 2; ++o)
                 {
@@ -121,8 +126,8 @@ int main(int argc, char **argv)
                     bias[o] = 100.0 * (mean - cos_px[o]) / cos_px[o];
                     se[o] = 100.0 * std::sqrt(var / paths) / cos_px[o];
                 }
-                std::printf("%6d | %-8s %+10.3f %8.3f | %+10.3f %8.3f\n", n,
-                            scheme == mc::VarianceScheme::QE ? "QE" : "Euler", bias[0], se[0], bias[1], se[1]);
+                std::printf("%6d | %-8s %+10.3f %8.3f | %+10.3f %8.3f | %8.0f\n", n,
+                            scheme == mc::VarianceScheme::QE ? "QE" : "Euler", bias[0], se[0], bias[1], se[1], ms);
             }
     }
     return 0;

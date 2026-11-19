@@ -54,6 +54,10 @@ namespace quantModeling::scripting::ir
         int n_assets = 1;
         int n_vars = 0;
         bool risk = false;
+        /// Heston and SLV price kernels: the variance by QE, mc::qe_step
+        /// (#317). Never with `risk`: QE's branches make its pathwise
+        /// derivatives discontinuous, so the risks step by Euler.
+        bool qe = false;
         int factors = 1; ///< gaussians a step reads
 
         // state
@@ -118,8 +122,10 @@ namespace quantModeling::scripting::ir
     /// under Black-Scholes or local vol (the CPU models' own scope).
     std::string path_program_unsupported(const Script &script, DeviceModel::Kind kind, int n_assets);
 
+    /// `qe`: Heston and SLV price programs step the variance by QE (#317);
+    /// ignored with `risk` or for another model.
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
-                             bool last_step = false);
+                             bool last_step = false, bool qe = false);
 
     /// A script-level block bound to the path's state and data (VarIn, PayIn
     /// and Spot become State; Num and Df the date's data, or exp of the rate

@@ -62,6 +62,9 @@ namespace quantModeling::scripting
         /// local_vol (one underlying): the Milstein step instead of log-Euler
         /// (WP 26 P4b), CPU only.
         bool milstein = false;
+        /// heston, slv: how a price run (T = Real) steps the variance (#317).
+        /// Euler stays for the adjoint risks and multilevel whatever this says.
+        mc::VarianceScheme variance_scheme = mc::VarianceScheme::Euler;
         /// rough_bergomi: (H, eta, rho) and the forward variance curve
         /// xi0(t), piecewise constant on (xi_times[i-1], xi_times[i]].
         double rb_H = 0.1;
@@ -190,9 +193,13 @@ namespace quantModeling::scripting
             return m;
         }
         if (s.model == "heston")
-            return std::make_unique<BatesSimModel<T>>(
-                T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
-                T(h.theta), T(h.xi), T(h.rho), T(0.0), T(0.0), T(0.0), s.max_dt);
+        {
+            auto m = std::make_unique<BatesSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
+                                                        T(h.theta), T(h.xi), T(h.rho), T(0.0), T(0.0), T(0.0),
+                                                        s.max_dt);
+            m->set_variance_scheme(s.variance_scheme);
+            return m;
+        }
         if (s.model == "rough_bergomi")
         {
             if (s.xi_times.empty() || s.xi_times.size() != s.xi_values.size())
@@ -235,10 +242,13 @@ namespace quantModeling::scripting
             }
         }
         if (s.model == "slv")
-            return std::make_unique<SLVSimModel<T>>(
-                T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
-                T(h.theta), T(h.xi), T(h.rho), s.K_grid, s.T_grid,
-                to_T(s.leverage_flat), s.max_dt);
+        {
+            auto m = std::make_unique<SLVSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend), T(h.v0), T(h.kappa),
+                                                      T(h.theta), T(h.xi), T(h.rho), s.K_grid, s.T_grid,
+                                                      to_T(s.leverage_flat), s.max_dt);
+            m->set_variance_scheme(s.variance_scheme);
+            return m;
+        }
         throw std::invalid_argument(
             "price_script: unknown model '" + s.model +
             "' (expected 'black_scholes', 'local_vol', 'heston', 'slv', 'rough_bergomi' or 'hull_white')");

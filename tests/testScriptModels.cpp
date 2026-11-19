@@ -179,6 +179,26 @@ namespace quantModeling
         EXPECT_NEAR(res.npv(), cos, 4.0 * res.std_error() + 0.05);
     }
 
+    TEST(ScriptModels, HestonByQEPricesFarFromFellerAtCoarseStepsWhereEulerCannot)
+    {
+        // #317: SPY's calibrated fit (2 kappa theta / xi^2 = 0.13) at 16
+        // steps a year. The price run's QE is within its error of COS; the
+        // full-truncation Euler of the same model is several % off.
+        const HestonParams spy{0.0485, 3.314, 0.0374, 1.377, -0.70};
+        ScriptModelSpec s = spec("heston", Grid{});
+        s.heston = spy;
+        s.max_dt = 1.0 / 16.0;
+        const double T = 1.0;
+        const double cos =
+            heston_cos_price(100.0 * std::exp(0.03 * T), 100.0, T, std::exp(-0.03 * T), spy, true);
+        s.variance_scheme = mc::VarianceScheme::QE;
+        const SimulationMCResult qe = run(vanilla, s);
+        s.variance_scheme = mc::VarianceScheme::Euler;
+        const SimulationMCResult euler = run(vanilla, s);
+        EXPECT_NEAR(qe.npv(), cos, 4.0 * qe.std_error() + 0.005 * cos);
+        EXPECT_GT(euler.npv() - cos, 0.03 * cos);
+    }
+
     TEST(ScriptModels, SLVCalibratedToASkewedSurfaceRepricesItsVanillas)
     {
         // Gyongy's promise, through the scripting path: whatever the Heston

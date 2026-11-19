@@ -64,6 +64,10 @@ namespace quantModeling
     };
 
     struct DeviceModel; // models/device_model.hpp
+    namespace mc
+    {
+        enum class VarianceScheme : int; // models/equity/path_steps.hpp
+    }
 
     /// Throws when the defline asks for continuous barrier monitoring
     /// (survivalAbove / survivalBelow, WP 26 P2): a model that does not
@@ -154,6 +158,11 @@ namespace quantModeling
         /// cannot simulate it (another model, a term structure of rates, a
         /// jump, an AAD number type): the caller then stays on the CPU.
         virtual bool describe_device(DeviceModel &) const { return false; }
+
+        /// Heston and SLV: step the variance of a price run (T = Real) by
+        /// `scheme` (#317). False when the model has no such choice. A model
+        /// differentiated (T = aad::Number) always steps by Euler.
+        virtual bool set_variance_scheme(mc::VarianceScheme /*scheme*/) { return false; }
 
         /// E[S_asset(t) / N(t)], the deflated spot's mean, when the model's
         /// discretisation keeps it a martingale -- what the generic control

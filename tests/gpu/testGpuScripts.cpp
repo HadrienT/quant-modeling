@@ -44,7 +44,8 @@ namespace quantModeling
             return s;
         }
 
-        void expect_gpu_equals_cpu(Dyn dyn, bool fuzzy, bool single_asset_only)
+        void expect_gpu_equals_cpu(Dyn dyn, bool fuzzy, bool single_asset_only,
+                                   mc::VarianceScheme scheme = mc::VarianceScheme::Euler)
         {
             for (const auto &s : library())
             {
@@ -55,6 +56,8 @@ namespace quantModeling
                     continue;
                 auto cpu_model = model(dyn, product.n_underlyings());
                 auto gpu_model = model(dyn, product.n_underlyings());
+                cpu_model->set_variance_scheme(scheme);
+                gpu_model->set_variance_scheme(scheme);
                 const SimulationMCResult cpu = simulate_script(product, *cpu_model, settings(ComputeDevice::Cpu));
                 const SimulationMCResult gpu = simulate_script(product, *gpu_model, settings(ComputeDevice::Gpu));
                 ASSERT_EQ(gpu.device, "gpu") << s.name << ": " << gpu.diagnostics;
@@ -98,6 +101,19 @@ namespace quantModeling
     }
 
     // What the GPU does not run: Auto falls back and says why, Gpu refuses.
+    // #317: the price runs step the variance by QE -- the CPU model's
+    // mc::qe_step, the interpreted kernel's and the IR's compiled one give
+    // the same numbers on the same draws (the fit's Feller ratio is 0.42:
+    // both of QE's branches are taken).
+    TEST_F(GpuScriptsTest, LibraryUnderHestonByQE)
+    {
+        expect_gpu_equals_cpu(Dyn::Heston, false, true, mc::VarianceScheme::QE);
+    }
+    TEST_F(GpuScriptsTest, LibraryUnderSlvByQE)
+    {
+        expect_gpu_equals_cpu(Dyn::SLV, true, true, mc::VarianceScheme::QE);
+    }
+
     TEST_F(GpuScriptsTest, UnsupportedRequestsFallBackOrAreRefused)
     {
         const ScriptedProduct<Real> product(library().front().source, kCtx);
@@ -131,17 +147,20 @@ namespace quantModeling
         };
         for (const Dyn dyn : {Dyn::BlackScholes, Dyn::LocalVol, Dyn::Heston, Dyn::SLV})
             for (const std::string &source : scripts)
-            {
-                const ScriptedProduct<Real> product(source, kCtx);
-                auto cpu_model = model(dyn, 1);
-                auto gpu_model = model(dyn, 1);
-                const SimulationMCResult cpu = simulate_script(product, *cpu_model, settings(ComputeDevice::Cpu));
-                const SimulationMCResult gpu = simulate_script(product, *gpu_model, settings(ComputeDevice::Gpu));
-                ASSERT_EQ(gpu.device, "gpu") << source << ": " << gpu.diagnostics;
-                const double scale = std::max(1.0, std::abs(cpu.npv()));
-                EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * scale) << source;
-                EXPECT_NEAR(gpu.std_error(), cpu.std_error(), 1e-7 * std::max(1e-12, cpu.std_error())) << source;
-            }
+                for (const auto scheme : {mc::VarianceScheme::Euler, mc::VarianceScheme::QE})
+                {
+                    const ScriptedProduct<Real> product(source, kCtx);
+                    auto cpu_model = model(dyn, 1);
+                    auto gpu_model = model(dyn, 1);
+                    cpu_model->set_variance_scheme(scheme);
+                    gpu_model->set_variance_scheme(scheme);
+                    const SimulationMCResult cpu = simulate_script(product, *cpu_model, settings(ComputeDevice::Cpu));
+                    const SimulationMCResult gpu = simulate_script(product, *gpu_model, settings(ComputeDevice::Gpu));
+                    ASSERT_EQ(gpu.device, "gpu") << source << ": " << gpu.diagnostics;
+                    const double scale = std::max(1.0, std::abs(cpu.npv()));
+                    EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * scale) << source;
+                    EXPECT_NEAR(gpu.std_error(), cpu.std_error(), 1e-7 * std::max(1e-12, cpu.std_error())) << source;
+                }
     }
 
     // WP 26 P2: the bridge survivals in the kernels compiled from the IR --

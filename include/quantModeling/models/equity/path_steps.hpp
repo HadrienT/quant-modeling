@@ -452,12 +452,13 @@ namespace quantModeling::mc
     {
         using std::erfc;
         using std::exp;
-        using std::expm1;
         using std::log;
         using std::sqrt;
+        // Written in the operations the IR has, in its order (ir_path.cpp's
+        // step block compiles the same expressions for the GPU's kernels).
         const double k = h.kappa, th = h.theta, xi = h.xi, rho = h.rho;
         const double ekt = exp(-k * dt);
-        const double one_m = -expm1(-k * dt); // 1 - e^{-k dt}, exact for a small k dt
+        const double one_m = 1.0 - ekt;
         const double m = th + (v - th) * ekt;
         const double s2 = v * xi * xi * ekt * one_m / k + th * xi * xi * one_m * one_m / (2.0 * k);
         const double psi = s2 / (m * m);
@@ -499,8 +500,19 @@ namespace quantModeling::mc
         }
         const double K0s = corrected ? -log_mgf - (K1 + 0.5 * K3) * v : K0;
         const double var = K3 * v + K4 * v_next;
-        S = S * exp((r - q) * dt + K0s + K1 * v + K2 * v_next + sqrt(var > 0.0 ? var : 0.0) * z_s);
+        S = S * exp((r - q) * dt + K0s + K1 * v + K2 * v_next + sqrt(var < 0.0 ? 0.0 : var) * z_s);
         v = v_next;
+    }
+
+    /// One SLV step by QE (price runs, #317): qe_step with the leverage read
+    /// at the step's start, as slv_step reads it. z_v drives the variance,
+    /// z_s the spot's independent part.
+    QM_HOST_DEVICE inline void slv_qe_step(const GridView<double> &leverage, const HestonParamsT<double> &h, double r,
+                                           double q, double &S, double &v, double t, double dt, double z_v,
+                                           double z_s)
+    {
+        const double L = leverage_staircase(leverage, S, t);
+        qe_step(h, L, r, q, S, v, dt, z_v, z_s);
     }
 
     /// One SLV step: Heston with the spot's vol scaled by the leverage L(S, t).

@@ -56,6 +56,7 @@ namespace quantModeling::mc
             view.n_steps = static_cast<int>(dm.t.size());
             view.factors = dm.factors;
             view.stride = dm.stride;
+            view.variance_scheme = dm.variance_scheme;
             view.disc_begin = disc_begin.data();
             view.disc_mats = disc_mats.empty() ? nullptr : disc_mats.data();
         }

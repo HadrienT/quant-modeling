@@ -178,6 +178,17 @@ namespace quantModeling
 
     namespace
     {
+        /// The device model of a risk run: its variance stepped by Euler
+        /// whatever the price runs use (#317) -- QE's branch switch and its
+        /// atom at 0 make the pathwise derivatives discontinuous.
+        bool describe_for_risks(const ISimulationModel<Real> &model, DeviceModel &dm)
+        {
+            if (!model.describe_device(dm))
+                return false;
+            dm.variance_scheme = mc::VarianceScheme::Euler;
+            return true;
+        }
+
         /// Why multilevel Monte Carlo cannot take this script (WP 26 P4c),
         /// empty if it can.
         std::string mlmc_unsuitable(const ScriptedProduct<Real> &product, const ISimulationModel<Real> &model)
@@ -576,7 +587,7 @@ namespace quantModeling
         }
         model.init(product.timeline(), product.defline());
         DeviceModel dm;
-        if (!model.describe_device(dm))
+        if (!describe_for_risks(model, dm))
         {
             why = "this model's risks run on the CPU only (the GPU differentiates Black-Scholes, Heston, local "
                   "vol and SLV)";
@@ -815,7 +826,7 @@ namespace quantModeling
         DeviceModel dm;
         if (product.has_exercise() || product.ir().empty())
             why = "early exercise: the IR's CPU adjoint does not cover it (the tape and the GPU do)";
-        else if (!model.describe_device(dm))
+        else if (!describe_for_risks(model, dm))
             why = "this model's step is not in the IR";
         else if (dm.kind == DeviceModel::Kind::Heston && dm.jump_k != 0.0)
             why = "jump parameters are set: the IR's Heston step has no jumps";
@@ -1073,7 +1084,7 @@ namespace quantModeling
         std::unique_ptr<ISimulationModel<Real>> model = model_in.clone();
         model->init(product.timeline(), product.defline());
         DeviceModel dm;
-        if (!model->describe_device(dm))
+        if (!describe_for_risks(*model, dm))
         {
             why = "this model's step is not in the IR";
             return std::nullopt;
@@ -1177,7 +1188,7 @@ namespace quantModeling
             std::unique_ptr<ISimulationModel<Real>> m = model.clone();
             m->init(product.timeline(), product.defline());
             DeviceModel dm;
-            if (!m->describe_device(dm))
+            if (!describe_for_risks(*m, dm))
             {
                 why = "this model's step is not in the IR";
                 return std::nullopt;

@@ -74,6 +74,8 @@ namespace quantModeling::mc
         int n_steps = 0;
         int factors = 1;
         int stride = 1;
+        /// Heston and SLV, plain doubles only (prices): QE or Euler (#317).
+        VarianceScheme variance_scheme = VarianceScheme::Euler;
 
         const int *disc_begin = nullptr; ///< event e: disc_mats[disc_begin[e] .. disc_begin[e + 1])
         const Time *disc_mats = nullptr;
@@ -219,13 +221,22 @@ namespace quantModeling::mc
                         {
                             const double z0 = draws.draw(d, 0, sign);
                             const double z1 = draws.draw(d, 1, sign);
-                            slv_step(v.grid, v.heston, v.r, v.q, S[0], var, ts, dt, z0, z1);
+                            if (v.variance_scheme == VarianceScheme::QE)
+                                slv_qe_step(v.grid, v.heston, v.r, v.q, S[0], var, ts, dt, z0, z1);
+                            else
+                                slv_step(v.grid, v.heston, v.r, v.q, S[0], var, ts, dt, z0, z1);
                         }
                         break;
                     case DeviceModel::Kind::Heston:
                     {
                         const double z0 = draws.draw(d, 0, sign);
                         const double z1 = draws.draw(d, 1, sign);
+                        if constexpr (kPlain)
+                            if (v.variance_scheme == VarianceScheme::QE)
+                            {
+                                qe_step(in.heston, 1.0, in.r, in.q, S[0], var, dt, z0, z1);
+                                break;
+                            }
                         const double sqdt = sqrt(dt);
                         const T v_plus = max(var, variance_floor());
                         const T sqrt_v_plus = sqrt(v_plus);

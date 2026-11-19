@@ -79,7 +79,9 @@ namespace quantModeling::scripting
      * product's terms are data. The Tangent kernel's blocks advance the
      * state and its tangents together.
      */
-    CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel);
+    /// `qe`: a Heston or SLV price kernel steps the variance by QE (#317).
+    CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel,
+                                bool qe = false);
 
     /**
      * What one compiled kernel serves: the model and the sampling options of

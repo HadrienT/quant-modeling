@@ -238,7 +238,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                              bool second_order, bool terms_as_parameters,
                              const std::vector<double> &curve_factor_basis,
                              const std::vector<std::string> &curve_factor_labels,
-                             bool past_rights_unexercised)
+                             bool past_rights_unexercised, const std::string &variance_scheme)
 {
     using namespace quantModeling;
 
@@ -286,6 +286,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
     spec.max_dt = max_dt;
     // WP 26 P4b: the Milstein step under local vol (CPU only).
     spec.milstein = milstein;
+    if (variance_scheme != "euler" && variance_scheme != "qe")
+        throw InvalidInput("variance_scheme must be 'euler' or 'qe'");
+    spec.variance_scheme = variance_scheme == "qe" ? mc::VarianceScheme::QE : mc::VarianceScheme::Euler;
     if (model == "rough_bergomi")
     {
         const auto get = [&](const char *k, double fallback)
@@ -360,9 +363,10 @@ static py::dict price_script(const std::string &script, double spot, double rate
         spec.heston = heston_from_py(heston);
         kind = model == "heston" ? scripting::ModelKind::Heston
                                  : scripting::ModelKind::StochasticLocalVol;
+        const std::string scheme = variance_scheme == "qe" ? ", variance by QE" : ", variance by Euler";
         model_note = model == "heston"
-                         ? " | model heston (" + steps + ")"
-                         : " | model slv (" + grid + " leverage, " + steps + ")";
+                         ? " | model heston (" + steps + scheme + ")"
+                         : " | model slv (" + grid + " leverage, " + steps + scheme + ")";
     }
     const bool has_surface = kind == scripting::ModelKind::LocalVolSurface ||
                              kind == scripting::ModelKind::StochasticLocalVol;
@@ -524,6 +528,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
                                    : multilevel_note;
         if (bias_estimate && !multilevel_done)
             res.diagnostics += " | discretisation bias not estimated under AAD";
+        if (spec.variance_scheme == mc::VarianceScheme::QE && (model == "heston" || model == "slv"))
+            res.diagnostics += " | the adjoint run (its price and risks) steps the variance by Euler: QE's "
+                               "branches have no pathwise derivative";
         py::dict out = pricing_result_to_dict(res);
         out["warnings"] = advice_to_py(aad_advice);
         // Second order (WP 27 §14.10): gamma, vanna and volga by the bump on
@@ -755,7 +762,7 @@ void register_scripting(py::module_ &m)
           py::arg("terms_as_parameters") = false,
           py::arg("curve_factor_basis") = std::vector<double>{},
           py::arg("curve_factor_labels") = std::vector<std::string>{},
-          py::arg("past_rights_unexercised") = false,
+          py::arg("past_rights_unexercised") = false, py::arg("variance_scheme") = "euler",
           "Price a payoff script (blueprint/wp/16-scripting.md) via the "
           "timeline simulation engine. terms_as_parameters: the script's numbers "
           "are a product's terms (a library product), read as data by the GPU's "

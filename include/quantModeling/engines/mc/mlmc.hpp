@@ -4,6 +4,7 @@
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/instruments/simulatable.hpp"
+#include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 #include "quantModeling/utils/rng.hpp"
 
@@ -101,6 +102,10 @@ namespace quantModeling
                                                                      const ISimulatableProduct<Real> &product)
         {
             std::unique_ptr<ISimulationModel<Real>> m = base.clone();
+            // Multilevel couples a fine and a coarse grid on summed Brownian
+            // increments: Heston and SLV keep full-truncation Euler there
+            // (#317), QE's inversion does not couple that way.
+            m->set_variance_scheme(mc::VarianceScheme::Euler);
             if (!m->set_refinement(r))
                 throw InvalidInput("multilevel Monte Carlo: the model does not refine its time grid (it has no "
                                    "time-step bias to remove, or does not support it yet)");

@@ -360,6 +360,79 @@ namespace quantModeling::scripting::ir
                     const std::int32_t dt = data(slv ? 1 : 0), sqdt = data(slv ? 2 : 1);
                     // slv_step reads its leverage before anything else
                     const std::int32_t lev = slv ? b.value(Op::GridLev, S, data(0)) : -1;
+                    if (l.qe)
+                    {
+                        // mc::qe_step (slv_qe_step), operation for operation:
+                        // draw 0 sets the variance, draw 1 the spot's
+                        // independent part. Both branches are computed and
+                        // the step's selected, as the price kernels have no
+                        // derivative to keep (risk layouts never take QE).
+                        const int h = l.th_heston;
+                        const std::int32_t L = slv ? lev : b.constant(1.0);
+                        const std::int32_t k = theta(h + 1), th = theta(h + 2), xi = theta(h + 3), rho = theta(h + 4);
+                        const std::int32_t one = b.constant(1.0), two = b.constant(2.0), half = b.constant(0.5);
+                        const std::int32_t zero = b.constant(0.0);
+                        const std::int32_t ekt = exp(b.mul(b.neg(k), dt));
+                        const std::int32_t one_m = b.sub(one, ekt);
+                        const std::int32_t m = b.add(th, b.mul(b.sub(V, th), ekt));
+                        const std::int32_t s2 =
+                            b.add(b.div(b.mul(b.mul(b.mul(b.mul(V, xi), xi), ekt), one_m), k),
+                                  b.div(b.mul(b.mul(b.mul(b.mul(th, xi), xi), one_m), one_m), b.mul(two, k)));
+                        const std::int32_t psi = b.div(s2, b.mul(m, m));
+                        const std::int32_t Lr = b.mul(L, rho);
+                        const std::int32_t K0 = b.div(b.mul(b.mul(b.mul(b.neg(Lr), k), th), dt), xi);
+                        const std::int32_t c = b.mul(b.mul(half, dt), b.sub(b.div(b.mul(k, Lr), xi), b.mul(b.mul(half, L), L)));
+                        const std::int32_t K1 = b.sub(c, b.div(Lr, xi));
+                        const std::int32_t K2 = b.add(c, b.div(Lr, xi));
+                        const std::int32_t K3 = b.mul(b.mul(b.mul(b.mul(half, dt), L), L), b.sub(one, b.mul(rho, rho)));
+                        const std::int32_t K4 = K3;
+                        const std::int32_t A = b.add(K2, b.mul(half, K4));
+                        const std::int32_t zv = draw(0), zs = draw(1);
+                        // quadratic branch
+                        const std::int32_t inv = b.div(one, psi);
+                        const std::int32_t two_inv = b.mul(two, inv);
+                        const std::int32_t b2 = b.add(b.sub(two_inv, one), b.mul(b.value(Op::Sqrt, two_inv),
+                                                                                 b.value(Op::Sqrt, b.sub(two_inv, one))));
+                        const std::int32_t a = b.div(m, b.add(one, b2));
+                        const std::int32_t bb = b.value(Op::Sqrt, b2);
+                        const std::int32_t vq = b.mul(b.mul(a, b.add(bb, zv)), b.add(bb, zv));
+                        const std::int32_t cq = b.value(Op::Lt, A, b.div(one, b.mul(two, a)));
+                        const std::int32_t om = b.sub(one, b.mul(b.mul(two, A), a));
+                        const std::int32_t lq = b.sub(b.div(b.mul(b.mul(A, b2), a), om), b.mul(half, b.value(Op::Log, om)));
+                        // exponential branch
+                        const std::int32_t p = b.div(b.sub(psi, one), b.add(psi, one));
+                        const std::int32_t beta = b.div(b.sub(one, p), m);
+                        const std::int32_t tail = b.value(Op::Ncdf, b.neg(zv)); // 0.5 erfc(zv / sqrt 2)
+                        const std::int32_t ve = b.select(b.value(Op::Le, b.sub(one, tail), p), zero,
+                                                         b.div(b.value(Op::Log, b.div(b.sub(one, p), tail)), beta));
+                        const std::int32_t ce = b.value(Op::Lt, A, beta);
+                        const std::int32_t le =
+                            b.value(Op::Log, b.add(p, b.div(b.mul(beta, b.sub(one, p)), b.sub(beta, A))));
+                        const std::int32_t quad = b.value(Op::Le, psi, b.constant(mc::qe_psi_c()));
+                        const std::int32_t v_next = b.select(quad, vq, ve);
+                        const std::int32_t corrected = b.select(quad, cq, ce);
+                        const std::int32_t log_mgf = b.select(quad, lq, le);
+                        const std::int32_t K0s =
+                            b.select(corrected, b.sub(b.neg(log_mgf), b.mul(b.add(K1, b.mul(half, K3)), V)), K0);
+                        const std::int32_t var = b.add(b.mul(K3, V), b.mul(K4, v_next));
+                        const std::int32_t x =
+                            b.add(b.add(b.add(b.add(b.mul(b.sub(theta(l.th_rate), theta(l.th_div)), dt), K0s),
+                                              b.mul(K1, V)),
+                                        b.mul(K2, v_next)),
+                                  b.mul(b.value(Op::Sqrt, b.value(Op::Max, var, zero)), zs));
+                        out(0, b.mul(S, exp(x)));
+                        if (l.last_step) // as the Euler step leaves them: forward S e^{(r-q)dt}, L^2 v+ dt
+                        {
+                            const std::int32_t v_plus = b.value(Op::Max, V, b.constant(mc::variance_floor()));
+                            const std::int32_t sqrt_v = b.value(Op::Sqrt, v_plus);
+                            const std::int32_t Lv = b.mul(b.mul(L, L), v_plus);
+                            const std::int32_t mm =
+                                b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(half, Lv)), dt);
+                            last(0, S, mm, b.mul(b.mul(L, sqrt_v), sqdt));
+                        }
+                        out(1, v_next);
+                        break;
+                    }
                     const std::int32_t v_plus = b.value(Op::Max, V, b.constant(mc::variance_floor()));
                     const std::int32_t sqrt_v = b.value(Op::Sqrt, v_plus);
                     std::int32_t log_return = -1, m = -1, sz = -1;
@@ -401,13 +474,15 @@ namespace quantModeling::scripting::ir
         }
     } // namespace
 
-    PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk, bool last_step)
+    PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk, bool last_step,
+                             bool qe)
     {
         const std::string why = path_program_unsupported(script, kind, n_assets);
         if (!why.empty())
             throw InvalidInput("script IR: " + why);
         PathProgram p;
         p.layout = path_layout(kind, n_assets, script, risk, last_step);
+        p.layout.qe = qe && !risk && (kind == DeviceModel::Kind::Heston || kind == DeviceModel::Kind::SLV);
         p.init = init_block(p.layout);
         p.step = step_block(p.layout);
         for (const Block &b : script.blocks)
