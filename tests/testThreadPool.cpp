@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <filesystem>
 #include <mutex>
 #include <set>
 #include <stdexcept>
@@ -171,6 +172,56 @@ namespace quantModeling
 
         pool.stop();
     }
+
+#if defined(__linux__)
+    /// Threads of this process (each TEST runs in its own process).
+    static std::size_t process_threads()
+    {
+        std::size_t n = 0;
+        for (const auto &entry : std::filesystem::directory_iterator("/proc/self/task"))
+            n += entry.is_directory() ? 1 : 0;
+        return n;
+    }
+
+    // start_on_demand (issue #330): a GPU request never asks the pool for
+    // threads, so it must not pay for starting and joining them.
+    TEST(ThreadPool, StartOnDemandCreatesNoThreadUntilAWorkerIsNeeded)
+    {
+        const std::size_t before = process_threads();
+        ThreadPool pool;
+        pool.start_on_demand(3);
+        EXPECT_EQ(process_threads(), before);
+        EXPECT_EQ(pool.num_threads(), 3u); // a CPU engine asks: the workers start
+        EXPECT_EQ(process_threads(), before + 3);
+        pool.stop();
+        EXPECT_EQ(process_threads(), before);
+    }
+
+    TEST(ThreadPool, SpawnTaskStartsAnOnDemandPool)
+    {
+        const std::size_t before = process_threads();
+        ThreadPool pool;
+        pool.start_on_demand(2);
+        auto handle = pool.spawn_task([]
+                                      { return true; });
+        EXPECT_TRUE(pool.active_wait(handle));
+        EXPECT_EQ(process_threads(), before + 2);
+    }
+
+    TEST(ThreadPool, AnOnDemandPoolNeverAskedForStartsNothing)
+    {
+        const std::size_t before = process_threads();
+        {
+            ThreadPool pool;
+            pool.start_on_demand(4);
+        }
+        EXPECT_EQ(process_threads(), before);
+        ThreadPool stopped;
+        stopped.start_on_demand(2);
+        stopped.stop(); // forgets the pending start
+        EXPECT_EQ(stopped.num_threads(), 0u);
+    }
+#endif
 
     TEST(ThreadPool, StopThenStartAgainWorks)
     {

@@ -419,7 +419,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                     const std::size_t pilot_workers =
                         threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
                     if (pilot_workers > 0)
-                        pilot_pool.start(pilot_workers);
+                        pilot_pool.start_on_demand(pilot_workers);
                     lsm_note = " | " + fit_exercise_policy(probe, *m, paths, seed_value, {},
                                                            pilot_workers > 0 ? &pilot_pool : nullptr)
                                            .note();
@@ -494,7 +494,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
                 const std::size_t aad_workers =
                     threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
                 if (aad_workers > 0)
-                    aad_pool.start(aad_workers);
+                    aad_pool.start_on_demand(aad_workers);
                 aad_res = simulate_aad(product, *sim_model, static_cast<std::size_t>(paths),
                                        seed_value, first_aad_payoff,
                                        rng == "philox" ? RngKind::Philox : RngKind::Pcg32, aad_sampler,
@@ -634,7 +634,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
         const std::size_t workers =
             threads > 0 ? threads - 1 : std::min<std::size_t>(available_cpus(), 16) - 1;
         if (workers > 0)
-            pool.start(workers);
+            pool.start_on_demand(workers);
         if (product.has_exercise())
             lsm_note = " | " + fit_exercise_policy(product, *sim_model, paths, seed_value, {},
                                                    workers > 0 ? &pool : nullptr)

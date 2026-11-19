@@ -7,9 +7,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <mutex>
 #include <thread>
 #include <type_traits>
 #include <string>
@@ -39,6 +41,101 @@ namespace quantModeling::gpu::detail
     {
         if (err != cudaSuccess)
             throw GpuUnavailable(std::string("CUDA error in ") + what + ": " + cudaGetErrorString(err));
+    }
+
+    /**
+     * @brief Bytes of freed device memory the current device's pool keeps
+     *        for the next request: QM_GPU_POOL_RETAIN_MB, 256 MiB by default.
+     *
+     * The cards are shared with the scripting assistant's LLM: what the pool
+     * keeps is not free for it. 256 MiB holds a small or medium pricing's
+     * every buffer; a large one allocates beyond it and gives the excess back
+     * when it ends.
+     */
+    inline std::size_t pool_retain_bytes()
+    {
+        static const std::size_t bytes = []
+        {
+            std::size_t mb = 256;
+            if (const char *env = std::getenv("QM_GPU_POOL_RETAIN_MB"))
+                mb = static_cast<std::size_t>(std::strtoull(env, nullptr, 10));
+            return mb << 20;
+        }();
+        return bytes;
+    }
+
+    /// The current device's default memory pool, its release threshold set
+    /// on first use.
+    inline cudaMemPool_t current_pool()
+    {
+        int device = 0;
+        check(cudaGetDevice(&device), "cudaGetDevice");
+        static std::once_flag configured[64];
+        cudaMemPool_t pool = nullptr;
+        check(cudaDeviceGetDefaultMemPool(&pool, device), "cudaDeviceGetDefaultMemPool");
+        if (device >= 0 && device < 64)
+            std::call_once(configured[device],
+                           [pool]
+                           {
+                               uint64_t threshold = pool_retain_bytes();
+                               cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &threshold);
+                           });
+        return pool;
+    }
+
+    /**
+     * @brief Device memory from the current device's stream-ordered pool
+     *        (cudaMallocAsync on the legacy default stream, the one every
+     *        kernel and copy here runs on); give it back with device_free.
+     *
+     * A request used to cudaMalloc and cudaFree ~30 buffers: 430 us of a
+     * 1.7 ms call whose kernels ran 21 us (one V100, nvprof, 2026-11-19;
+     * issue #330). The pool reuses what the last request freed. Out of
+     * memory, the pool's idle memory is released and the allocation retried
+     * once before the error reaches the user.
+     */
+    template <class T>
+    T *device_alloc(std::size_t n, const char *what = "cudaMallocAsync")
+    {
+        void *p = nullptr;
+        if (n == 0)
+            return nullptr;
+        const std::size_t bytes = n * sizeof(T);
+        cudaError_t err = cudaMallocAsync(&p, bytes, current_pool(), 0);
+        if (err == cudaErrorMemoryAllocation)
+        {
+            cudaGetLastError();
+            check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+            cudaMemPoolTrimTo(current_pool(), 0);
+            err = cudaMallocAsync(&p, bytes, current_pool(), 0);
+        }
+        check(err, what);
+        return static_cast<T *>(p);
+    }
+
+    /**
+     * @brief The most memory one launch may take on `device`: half of what
+     *        is free (the cards are shared with the assistant's LLM) -- not
+     *        queried for a request needing at most 64 MiB in all.
+     *
+     * Below that, half of the free memory could only cap a launch on a card
+     * already nearly full, where the allocation reaches device_alloc's
+     * out-of-memory path anyway; the two cudaMemGetInfo of a small request
+     * cost 44 us of its 0.41 ms (one V100, nvprof, 2026-11-19; issue #330).
+     * The result never depends on the launch size.
+     */
+    inline std::size_t launch_budget(int device, std::size_t need_bytes)
+    {
+        constexpr std::size_t kSmallRequestBytes = std::size_t{64} << 20;
+        return need_bytes <= kSmallRequestBytes ? need_bytes : free_memory(device) / 2;
+    }
+
+    /// Returns device_alloc's memory to its pool, after the work queued
+    /// before it on the default stream.
+    inline void device_free(void *p) noexcept
+    {
+        if (p)
+            cudaFreeAsync(p, 0);
     }
 
     /**
@@ -247,14 +344,14 @@ namespace quantModeling::gpu::detail
         // Only the partials live on the device; take at most half of what is
         // free (the assistant's LLM shares the card) and cap one launch so a
         // single kernel stays short.
-        uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / sizeof(Stats));
+        const std::size_t budget = launch_budget(device, (last - first) * sizeof(Stats));
+        uint64_t per_launch = std::max<uint64_t>(1, budget / sizeof(Stats));
         per_launch = std::min<uint64_t>(per_launch, uint64_t{1} << 20);
         if (max_blocks_per_launch > 0)
             per_launch = std::min(per_launch, max_blocks_per_launch);
         per_launch = std::min(per_launch, last - first);
 
-        Stats *d_partials = nullptr;
-        check(cudaMalloc(&d_partials, per_launch * sizeof(Stats)), "cudaMalloc");
+        Stats *d_partials = device_alloc<Stats>(per_launch);
         try
         {
             for (uint64_t b = first; b < last; b += per_launch)
@@ -270,10 +367,10 @@ namespace quantModeling::gpu::detail
         }
         catch (...)
         {
-            cudaFree(d_partials);
+            device_free(d_partials);
             throw;
         }
-        check(cudaFree(d_partials), "cudaFree");
+        device_free(d_partials);
         return partials;
     }
 
@@ -311,19 +408,23 @@ namespace quantModeling::gpu::detail
             return partials;
 
         const std::size_t per_block = sizeof(Stats) + static_cast<std::size_t>(L::kUnitsPerBlock) * sizeof(Out);
-        uint64_t per_launch = std::max<uint64_t>(1, free_memory(device) / 2 / per_block);
+        const std::size_t budget = launch_budget(device, (last - first) * per_block);
+        uint64_t per_launch = std::max<uint64_t>(1, budget / per_block);
         per_launch = std::min<uint64_t>(per_launch, uint64_t{1} << 16); // a grid of at most 2^20 CUDA blocks
         if (max_blocks_per_launch > 0)
             per_launch = std::min(per_launch, max_blocks_per_launch);
         per_launch = std::min(per_launch, last - first);
 
-        Stats *d_partials = nullptr;
+        Stats *d_partials = device_alloc<Stats>(per_launch);
         Out *d_samples = nullptr;
-        check(cudaMalloc(&d_partials, per_launch * sizeof(Stats)), "cudaMalloc");
-        if (cudaMalloc(&d_samples, per_launch * L::kUnitsPerBlock * sizeof(Out)) != cudaSuccess)
+        try
         {
-            cudaFree(d_partials);
-            check(cudaErrorMemoryAllocation, "cudaMalloc");
+            d_samples = device_alloc<Out>(per_launch * L::kUnitsPerBlock);
+        }
+        catch (...)
+        {
+            device_free(d_partials);
+            throw;
         }
         try
         {
@@ -341,12 +442,12 @@ namespace quantModeling::gpu::detail
         }
         catch (...)
         {
-            cudaFree(d_samples);
-            cudaFree(d_partials);
+            device_free(d_samples);
+            device_free(d_partials);
             throw;
         }
-        cudaFree(d_samples);
-        check(cudaFree(d_partials), "cudaFree");
+        device_free(d_samples);
+        device_free(d_partials);
         return partials;
     }
 
