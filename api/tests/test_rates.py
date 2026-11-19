@@ -232,7 +232,9 @@ def test_an_incomplete_curve_is_reported_not_spliced(client, store):
 
 
 def test_a_stale_curve_is_flagged(client, store):
-    store["as_of"] = TODAY - timedelta(days=30)
+    # date.today(), not the module's TODAY: that one is fixed at collection, and a
+    # run straddling midnight would see the curve 31 days old.
+    store["as_of"] = date.today() - timedelta(days=30)
     assert any(
         "30 days ago" in w
         for w in client.get("/market/rates/overview?currency=EUR").json()["warnings"]
