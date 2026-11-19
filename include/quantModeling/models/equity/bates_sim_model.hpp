@@ -99,7 +99,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         BatesSimModel(const BatesSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), lambda_(other.lambda_), jump_mean_(other.jump_mean_), jump_vol_(other.jump_vol_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
         {
             set_param_pointers();
         }
@@ -182,17 +182,35 @@ namespace quantModeling
                 const T sqrt_v_plus = sqrt(v_plus);
 
                 const int n_jumps = sample_poisson(u_poisson, to_double(lambda_) * dt);
-                T log_return = mc::heston_log_return(r_, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z_spot);
-                if (n_jumps > 0)
+                bool stepped = false;
+                if constexpr (std::is_same_v<T, Real>)
+                    if (scheme_ == mc::VarianceScheme::QE)
+                    {
+                        // QE for the diffusion (z_spot drives the variance,
+                        // z_vol_indep the spot's independent part), the jump
+                        // compensator in its drift, then the jumps.
+                        mc::qe_step(mc::HestonParamsT<T>{v0_, kappa_, theta_, xi_, rho_}, 1.0, r_ - lambda_ * k, q_,
+                                    S, v, dt, z_spot, z_vol_indep);
+                        if (n_jumps > 0)
+                        {
+                            const double n = static_cast<double>(n_jumps);
+                            S = S * exp(n * jump_mean_ + std::sqrt(n) * jump_vol_ * z_jump);
+                        }
+                        stepped = true;
+                    }
+                if (!stepped)
                 {
-                    const double n = static_cast<double>(n_jumps);
-                    using std::sqrt;
-                    log_return =
-                        log_return + (n * jump_mean_ + sqrt(n) * jump_vol_ * z_jump);
+                    T log_return = mc::heston_log_return(r_, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z_spot);
+                    if (n_jumps > 0)
+                    {
+                        const double n = static_cast<double>(n_jumps);
+                        using std::sqrt;
+                        log_return = log_return + (n * jump_mean_ + sqrt(n) * jump_vol_ * z_jump);
+                    }
+                    S = S * exp(log_return);
+                    mc::heston_variance_step(mc::HestonParamsT<T>{v0_, kappa_, theta_, xi_, rho_}, v, v_plus,
+                                             sqrt_v_plus, sqdt, dt, z_spot, z_vol_indep);
                 }
-                S = S * exp(log_return);
-                mc::heston_variance_step(mc::HestonParamsT<T>{v0_, kappa_, theta_, xi_, rho_}, v, v_plus, sqrt_v_plus,
-                                         sqdt, dt, z_spot, z_vol_indep);
                 t_prev = t;
 
                 const std::ptrdiff_t event = event_index_of_step_[i];
@@ -227,6 +245,12 @@ namespace quantModeling
             return std::make_unique<BatesSimModel<T>>(*this);
         }
 
+        bool set_variance_scheme(mc::VarianceScheme scheme) override
+        {
+            scheme_ = scheme;
+            return true;
+        }
+
         bool describe_device(DeviceModel &d) const override
         {
             if constexpr (!std::is_same_v<T, Real>)
@@ -244,6 +268,7 @@ namespace quantModeling
                 d.jump_k = std::exp(jump_mean_ + 0.5 * jump_vol_ * jump_vol_) - 1.0;
                 d.factors = 2;
                 d.stride = 4; // spot, variance, then the (unused) jump count and size
+                d.variance_scheme = scheme_;
                 d.t = sim_timeline_;
                 d.draws.assign(sim_timeline_.size(), 1);
                 d.event.clear();
@@ -303,7 +328,8 @@ namespace quantModeling
         T s0_{}, r_{}, q_{}, v0_{}, kappa_{}, theta_{}, xi_{}, rho_{}, lambda_{},
             jump_mean_{}, jump_vol_{};
         Time max_dt_;
-        int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
+        int refinement_ = 1;                                    // multilevel Monte Carlo: each max_dt step split in r
+        mc::VarianceScheme scheme_ = mc::VarianceScheme::Euler; // price runs only (#317)
 
         TimeLine timeline_;     // the product's own event dates
         TimeLine sim_timeline_; // timeline_ plus internal Euler steps

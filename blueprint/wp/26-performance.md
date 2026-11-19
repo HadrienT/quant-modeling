@@ -2440,3 +2440,69 @@ several assets, Hull-White).
 6. Rates products are exact to the curve (bonds' SE 0) except the swap
    (3.2 %): its Monte-Carlo noise is all on a near-zero value, which a
    control variate on the closed-form swap would remove.
+
+## 20. Andersen's QE for the price runs of Heston and SLV (#317, 2026-11-19)
+
+§19 showed `auto` prices every single-asset product under SLV, and that on
+13 products the discretisation bias was at least the standard error. SPY's
+calibrated Heston breaks Feller badly (2κθ/ξ² = 0.13): the variance sits near
+0, where full-truncation Euler is most biased.
+
+**What changed.**
+- `mc::qe_step` (`models/equity/path_steps.hpp`, host and device): Andersen's
+  QE-M step (JCF 11(3), 2008), martingale-corrected, for Heston (L = 1) and
+  SLV (L, the leverage at the step's start, scaling ρ and the drift: outside
+  Andersen's derivation). Draw 0 sets the variance, draw 1 the spot's
+  independent part. Written in the IR's operations and order so that the
+  CPU models, the interpreted kernel and the kernel compiled from the IR
+  (`ir_path.cpp`, `PathLayout::qe`) give the same numbers on the same draws.
+- **Price runs only.** `simulate_script` steps by QE when the model asks
+  (`ScriptModelSpec::variance_scheme`, `price_script(variance_scheme=)`,
+  Euler by default in C++). Every risk route (`describe_for_risks`: duals,
+  IR adjoint, Vibrato, second order) and multilevel (`at_refinement`) step by
+  Euler: QE's branch switch and its atom at 0 have no pathwise derivative,
+  and its inversion does not couple on summed increments.
+- **The API** (`pricing_service._qe_price_euler_risks`): Heston and SLV
+  price by QE; with AAD greeks, a QE price run and an Euler adjoint run,
+  merged, the diagnostics naming both (and the adjoint run's own price).
+  The kernel warm-up compiles the QE price kernels.
+- **A fix in the old engine** (`engines/mc/heston_qe.cpp`): the exponential
+  branch's moment generating function lacked the atom's probability p, so
+  its correction blew the forward up once Feller fails; its tests all
+  satisfied Feller.
+
+**Bias against COS** (`benchmarks/heston_qe_bias.cpp`, 1y options, 4M
+paths, 16 CPU threads), SPY's fit (Feller 0.13):
+
+| steps/yr | Euler call / put | QE call / put | ms Euler / QE |
+|---|---|---|---|
+| 16 | +6.74 % / +13.6 % | +0.10 % / −0.29 % | 467 / 800 |
+| 32 | +3.20 % / +6.15 % | +0.01 % / −0.03 % | 888 / 1 376 |
+| 64 | +1.43 % / +3.11 % | +0.06 % / +0.09 % | 1 557 / 2 516 |
+| 252 | +0.32 % / +0.86 % | +0.15 % / −0.17 % | 5 232 / 9 240 |
+
+(noise: 0.05 % call, 0.16 % put). A QE step costs 1.7× an Euler step on
+the CPU. **Time to a 0.1 % bias**: call, Euler ~800 steps (~17 s) against QE
+32 (1.4 s), ~12×; put, Euler ~2 200 steps (~46 s, extrapolated at 1/n)
+against QE 32, ~33×. At Feller 1.5, 0.5 and 0.18 the same picture (the
+bench prints all four).
+
+**On the page's products** (SLV, SPY, 50 000 paths, warm kernels): the price
+moves where Euler was biased (the globally floored cliquet +0.75 %, 11.8
+standard errors; the volatility swap 3.5 %); the price-only run costs +4 %
+(median), the page with AAD greeks +11 % (the extra QE run), American
+options +60 % (their exercise rule is fitted again for the price run).
+Over 400 000 paths, against 504 steps a year, QE is within its noise at 64
+steps a year on every product scanned (vanillas, Asian, cliquet, touches,
+autocall, volatility swap) and drifts on the cliquet below that (−0.34 % at
+32, the leverage frozen over a long step); Euler at 64 is 1 to 9 % off.
+
+**Measured on the way, not fixed here.**
+- The `discretisation_bias` shown is |fine − coarse| from one seed: across 8
+  seeds its standard deviation is 0.1–0.3 % of the price, under Euler as
+  under QE, about as large as the values shown on most products. A defensible
+  figure needs its own error (or several seeds).
+- At 50 000 paths the page's time is mostly fixed costs (the chain read until
+  the load registry exists, #332): 252 → 64 steps saves 10–20 % of the wall
+  time there, the engine's 4× only at higher precision. Lowering the default
+  steps under QE is the maintainer's decision.

@@ -188,6 +188,7 @@ namespace quantModeling::gpu
             v.n_steps = static_cast<int>(dm.t.size());
             v.factors = dm.factors;
             v.stride = dm.stride;
+            v.variance_scheme = dm.variance_scheme;
             v.disc_begin = mem.put(disc_begin);
             v.disc_mats = mem.put(disc_mats);
             v.controls = req.controls;
@@ -502,7 +503,8 @@ namespace quantModeling::gpu
             if (!req.ir || req.ir->empty())
                 return refuse("the request carries no IR");
             const scripting::CudaSource src = scripting::cuda_path_source(
-                *req.ir, static_cast<int>(req.model->kind), req.model->n_assets, kernel);
+                *req.ir, static_cast<int>(req.model->kind), req.model->n_assets, kernel,
+                req.model->variance_scheme == mc::VarianceScheme::QE);
             if (src.source.empty())
                 return refuse(src.why);
             scripting::CudaKernelSpec spec;

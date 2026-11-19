@@ -132,4 +132,27 @@ namespace quantModeling
         EXPECT_LE(r.price, kDiscount * kForward);
     }
 
+    // ── Far from Feller (#317): the exponential branch dominates ──────────────
+    // SPY's calibrated fit (2026-11-18) has 2 kappa theta / xi^2 = 0.13: the
+    // variance hits the exponential branch and its atom at 0 on most steps.
+    // Its martingale correction once omitted the atom's probability p, which
+    // made the forward explode with the number of steps.
+
+    TEST(HestonQE, FarFromFellerAgreesWithCOSAndKeepsTheForward)
+    {
+        const HestonParams p{0.0485, 3.314, 0.0374, 1.377, -0.70};
+        ASSERT_LT(2.0 * p.kappa * p.theta / (p.xi * p.xi), 0.2);
+        auto settings = fast_settings();
+        settings.n_steps = 32;
+        for (const Real strike : {90.0, 100.0, 110.0})
+        {
+            const HestonQEResult call = heston_qe_price(kForward, strike, kTtm, kDiscount, p, true, settings);
+            const HestonQEResult put = heston_qe_price(kForward, strike, kTtm, kDiscount, p, false, settings);
+            const Real analytic = heston_cos_price(kForward, strike, kTtm, kDiscount, p, true);
+            EXPECT_NEAR(call.price, analytic, 4.0 * call.std_error) << "strike=" << strike;
+            // call - put = D (E[F_T] - K): the forward kept on the same paths
+            const Real mean_forward = (call.price - put.price) / kDiscount + strike;
+            EXPECT_NEAR(mean_forward, kForward, 4.0 * call.std_error / kDiscount) << "strike=" << strike;
+        }
+    }
 } // namespace quantModeling

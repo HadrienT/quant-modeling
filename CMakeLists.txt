@@ -317,6 +317,9 @@ if(QM_BUILD_CLI)
   # adjoint differentiation, against one valuation.
   add_executable(qm_xva_aad_bench benchmarks/xva_aad_cost.cpp)
   target_link_libraries(qm_xva_aad_bench PRIVATE quantModeling)
+  # Issue #317: Heston's discretisation bias, Euler against QE, against COS.
+  add_executable(qm_heston_qe_bias benchmarks/heston_qe_bias.cpp)
+  target_link_libraries(qm_heston_qe_bias PRIVATE quantModeling)
   # WP 26 lot P0: hand-written reference paths, the ceiling of the script
   # engine's CPU rows in benchmarks/perf_matrix.py.
   add_executable(qm_reference_bench benchmarks/reference/reference_cpu.cpp)
@@ -447,6 +450,7 @@ if(QM_BUILD_TESTS)
     tests/testHeston.cpp
     tests/testHestonCOS.cpp
     tests/testHestonQE.cpp
+    tests/testHestonQEStep.cpp
     tests/testRoughBergomi.cpp
     tests/testRoughBergomiHybrid.cpp
     tests/testRoughBergomiCalibration.cpp

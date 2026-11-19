@@ -1171,52 +1171,61 @@ def price_script(
             attributes={"qm.product": "script", "qm.model": model, "qm.engine": "mc"},
         ),
     ):
-        result = qm.price_script(
-            script,
-            spot,
-            req.rate,
-            dividend,
-            vol,
-            valuation_date.isoformat(),
-            req.day_count,
-            req.fuzzy,
-            req.default_eps,
-            req.n_paths,
-            req.seed,
-            req.sampler,
-            req.greeks_method,
-            model,
-            k_grid if model in ("local_vol", "slv") else [],
-            (
-                list(sv.leverage_T_grid)
-                if model == "slv" and sv is not None
-                else t_grid if model == "local_vol" else []
-            ),
-            sigma,
-            req.steps_per_year,
-            heston=heston,
-            leverage_flat=leverage,
-            device=_device(req, model),
-            rng=req.rng.value,
-            control_variate=req.control_variate,
-            antithetic=req.antithetic,
-            importance_sampling=req.importance_sampling,
-            rough_bergomi=(
-                {"H": rv.H, "eta": rv.eta, "rho": rv.rho} if rv is not None else {}
-            ),
-            xi_times=list(rv.xi_times) if rv is not None else [],
-            xi_values=list(rv.xi_values) if rv is not None else [],
-            hull_white=hw_params,
-            curve_times=curve_times,
-            curve_dfs=curve_dfs,
-            curve_factor_basis=factor_basis,
-            curve_factor_labels=factor_labels,
-            milstein=req.milstein,
-            second_order=req.second_order and req.greeks_method == "aad",
-            terms_as_parameters=library,
-            historical_fixings=fixings,
-            **_multilevel(req, model),
-        )
+
+        def run(greeks_method: str, second_order: bool, scheme: str, **over):
+            return qm.price_script(
+                script,
+                spot,
+                req.rate,
+                dividend,
+                vol,
+                valuation_date.isoformat(),
+                req.day_count,
+                req.fuzzy,
+                req.default_eps,
+                req.n_paths,
+                req.seed,
+                req.sampler,
+                greeks_method,
+                model,
+                k_grid if model in ("local_vol", "slv") else [],
+                (
+                    list(sv.leverage_T_grid)
+                    if model == "slv" and sv is not None
+                    else t_grid if model == "local_vol" else []
+                ),
+                sigma,
+                req.steps_per_year,
+                heston=heston,
+                leverage_flat=leverage,
+                device=_device(req, model),
+                rng=req.rng.value,
+                control_variate=req.control_variate,
+                antithetic=req.antithetic,
+                importance_sampling=req.importance_sampling,
+                rough_bergomi=(
+                    {"H": rv.H, "eta": rv.eta, "rho": rv.rho} if rv is not None else {}
+                ),
+                xi_times=list(rv.xi_times) if rv is not None else [],
+                xi_values=list(rv.xi_values) if rv is not None else [],
+                hull_white=hw_params,
+                curve_times=curve_times,
+                curve_dfs=curve_dfs,
+                curve_factor_basis=factor_basis,
+                curve_factor_labels=factor_labels,
+                milstein=req.milstein,
+                second_order=second_order,
+                terms_as_parameters=library,
+                historical_fixings=fixings,
+                variance_scheme=scheme,
+                **{**_multilevel(req, model), **over},
+            )
+
+        second = req.second_order and req.greeks_method == "aad"
+        if model in ("heston", "slv"):
+            result = _qe_price_euler_risks(run, req.greeks_method, second)
+        else:
+            result = run(req.greeks_method, second, "euler")
     result["warnings"] = (
         _hard_threshold_greeks(req, valuation_date)
         + market_warnings
@@ -1229,6 +1238,33 @@ def price_script(
             **({"script": script} if start_today else {}),
         }
     )
+
+
+def _qe_price_euler_risks(run, greeks_method: str, second_order: bool) -> Dict:
+    """Heston and SLV (#317): the price run steps the variance by Andersen's
+    QE, nearly unbiased at the page's steps where full-truncation Euler is
+    not (SPY's fit, 2 kappa theta / xi^2 = 0.13: Euler +0.3 % on a 1y ATM
+    call at 252 steps a year, QE within its noise at 32). The adjoint risks
+    keep Euler, QE's branches having no pathwise derivative: with AAD greeks
+    the price comes from a QE run and the greeks from a second, Euler run,
+    and the diagnostics say so."""
+    if greeks_method != "aad":
+        return run(greeks_method, second_order, "qe")
+    priced = run("none", False, "qe")
+    risks = run("aad", second_order, "euler", bias_estimate=False)
+    merged = dict(priced)
+    for key in ("greeks", "risks", "second_order_method"):
+        if key in risks:
+            merged[key] = risks[key]
+    merged["warnings"] = list(priced.get("warnings", [])) + [
+        w for w in risks.get("warnings", []) if w not in priced.get("warnings", [])
+    ]
+    merged["diagnostics"] = (
+        priced.get("diagnostics", "")
+        + " | greeks from a second, adjoint run stepping the variance by Euler"
+        + f" (its price {risks['npv']:.6g}); the price is the QE run's"
+    )
+    return merged
 
 
 def _curve_factors(req, times, dfs) -> tuple:

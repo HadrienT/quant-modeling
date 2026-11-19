@@ -75,7 +75,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         SLVSimModel(const SLVSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
         {
             set_param_pointers();
         }
@@ -146,7 +146,15 @@ namespace quantModeling
                     const T lev = mc::leverage_staircase(leverage_grid(), S, t);
                     var = lev * lev * max(v, mc::variance_floor()) * dt;
                 }
-                mc::slv_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
+                bool stepped = false;
+                if constexpr (std::is_same_v<T, Real>)
+                    if (scheme_ == mc::VarianceScheme::QE) // z_spot drives the variance (#317)
+                    {
+                        mc::slv_qe_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
+                        stepped = true;
+                    }
+                if (!stepped)
+                    mc::slv_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
                 t_prev = t;
 
                 if (event < 0)
@@ -180,6 +188,12 @@ namespace quantModeling
             return std::make_unique<SLVSimModel<T>>(*this);
         }
 
+        bool set_variance_scheme(mc::VarianceScheme scheme) override
+        {
+            scheme_ = scheme;
+            return true;
+        }
+
         bool describe_device(DeviceModel &d) const override
         {
             if constexpr (!std::is_same_v<T, Real>)
@@ -196,6 +210,7 @@ namespace quantModeling
                 d.T_grid = T_grid_;
                 d.grid = leverage_;
                 d.factors = d.stride = 2;
+                d.variance_scheme = scheme_;
                 d.t = sim_timeline_;
                 d.draws.assign(sim_timeline_.size(), 1);
                 d.event.clear();
@@ -266,7 +281,8 @@ namespace quantModeling
         std::vector<Real> K_grid_, T_grid_;
         std::vector<T> leverage_;
         Time max_dt_;
-        int refinement_ = 1; // multilevel Monte Carlo: each max_dt step split in r
+        int refinement_ = 1;                                    // multilevel Monte Carlo: each max_dt step split in r
+        mc::VarianceScheme scheme_ = mc::VarianceScheme::Euler; // price runs only (#317)
 
         TimeLine timeline_;
         TimeLine sim_timeline_;

@@ -376,6 +376,9 @@ def _library_seeds(q, today=None) -> List[Tuple[str, Callable[[], object]]]:
                     kw["leverage_flat"] = kw.pop("sigma_loc_flat")
                 if model in ("heston", "slv"):
                     kw["heston"] = heston
+                    # the page's price runs step the variance by QE, its
+                    # adjoint runs by Euler (pricing_service, #317)
+                    kw["variance_scheme"] = "qe" if greeks == "none" else "euler"
                 variant = (
                     greeks
                     + (" second order" if second else "")

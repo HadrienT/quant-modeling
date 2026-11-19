@@ -109,7 +109,10 @@ namespace quantModeling
                 }
                 else if (!step.used_quadratic && A < step.beta)
                 {
-                    const Real log_m = std::log(step.beta * (1.0 - step.p) / (step.beta - A));
+                    // E[e^{A V'}] = p + beta (1 - p) / (beta - A): the atom at 0
+                    // carries probability p (the p term was missing before #317,
+                    // which made the correction explode once Feller fails).
+                    const Real log_m = std::log(step.p + step.beta * (1.0 - step.p) / (step.beta - A));
                     k0_star = -log_m - (K1 + 0.5 * K3) * v;
                 }
                 // else: Andersen's regularity condition (41)/(43) fails for

@@ -399,6 +399,122 @@ namespace quantModeling::mc
         return (r - q - lambda * k - 0.5 * v_plus) * dt + sqrt_v_plus * (sqdt * z_spot);
     }
 
+    /// How the variance of Heston and SLV is stepped in a price run (#317).
+    /// The adjoint and tangent risks always step it by Euler: QE's switch
+    /// between its two branches and its atom at 0 make its pathwise
+    /// derivatives discontinuous.
+    enum class VarianceScheme : int
+    {
+        Euler = 0, ///< full truncation: heston_variance_step
+        QE = 1     ///< Andersen's quadratic-exponential, martingale-corrected: qe_step
+    };
+
+    /// Andersen's switching level between the quadratic and the exponential
+    /// branch (any value in [1, 2] works; 1.5 is his choice).
+    QM_HOST_DEVICE constexpr double qe_psi_c()
+    {
+        return 1.5;
+    }
+
+    /**
+     * @brief One step of Heston (L = 1) or SLV (L the leverage at the step's
+     *        start) by Andersen's QE-M scheme: L. Andersen, "Simple and
+     *        efficient simulation of the Heston stochastic volatility model",
+     *        Journal of Computational Finance 11(3), 2008, §3.2.4 and §4.
+     *
+     * The variance V' is drawn from a law that matches the exact conditional
+     * mean and variance of the CIR process (a scaled noncentral chi-square):
+     * a(b + z_v)² when ψ = s²/m² <= ψ_c, else 0 with probability p and an
+     * exponential tail otherwise -- so V stays >= 0 without a floor, and the
+     * scheme stays accurate where the Feller condition fails badly, the
+     * variance spending much of its time near 0 (SPY's calibrated fit,
+     * 2026-11-18: 2κθ/ξ² = 0.13), which is where full-truncation Euler is
+     * most biased.
+     *
+     * The log-spot integrates ∫ L √V dW with L frozen over the step, the
+     * correlated part read from the variance's own increment (Andersen's
+     * eq. 33 with ρ → Lρ and the drift's ½V → ½L²V), central weights
+     * γ₁ = γ₂ = ½:
+     *   ln S' = ln S + (r - q)dt + K₀* + K₁ V + K₂ V' + √(K₃ V + K₄ V') z_s,
+     * K₀* being the martingale correction (Andersen's Proposition 9) that
+     * makes E[S' | S, V] = S e^{(r-q)dt} exactly for the drawn law of V';
+     * for SLV it uses L at the step's start, which Andersen's derivation
+     * does not cover. Where the correction's condition fails (A at or
+     * beyond the moment generating function's pole: positive Lρ and a long
+     * step), the uncorrected K₀ is kept, as in engines/mc/heston_qe.cpp.
+     *
+     * Draws: z_v sets V' (the quadratic branch's normal, or U = Φ(z_v) in the
+     * exponential one, its tail 1 - U = Φ(-z_v) computed directly), z_s the
+     * spot's part independent of V. Plain doubles only: price runs.
+     */
+    QM_HOST_DEVICE inline void qe_step(const HestonParamsT<double> &h, double L, double r, double q, double &S,
+                                       double &v, double dt, double z_v, double z_s)
+    {
+        using std::erfc;
+        using std::exp;
+        using std::log;
+        using std::sqrt;
+        // Written in the operations the IR has, in its order (ir_path.cpp's
+        // step block compiles the same expressions for the GPU's kernels).
+        const double k = h.kappa, th = h.theta, xi = h.xi, rho = h.rho;
+        const double ekt = exp(-k * dt);
+        const double one_m = 1.0 - ekt;
+        const double m = th + (v - th) * ekt;
+        const double s2 = v * xi * xi * ekt * one_m / k + th * xi * xi * one_m * one_m / (2.0 * k);
+        const double psi = s2 / (m * m);
+
+        const double Lr = L * rho;
+        const double K0 = -Lr * k * th * dt / xi;
+        const double c = 0.5 * dt * (k * Lr / xi - 0.5 * L * L);
+        const double K1 = c - Lr / xi;
+        const double K2 = c + Lr / xi;
+        const double K3 = 0.5 * dt * L * L * (1.0 - rho * rho);
+        const double K4 = K3;
+        const double A = K2 + 0.5 * K4;
+
+        double v_next, log_mgf = 0.0;
+        bool corrected;
+        if (psi <= qe_psi_c())
+        {
+            const double inv = 1.0 / psi;
+            const double b2 = 2.0 * inv - 1.0 + sqrt(2.0 * inv) * sqrt(2.0 * inv - 1.0);
+            const double a = m / (1.0 + b2);
+            const double b = sqrt(b2);
+            v_next = a * (b + z_v) * (b + z_v);
+            corrected = A < 1.0 / (2.0 * a);
+            if (corrected)
+            {
+                const double one_m2Aa = 1.0 - 2.0 * A * a;
+                log_mgf = A * b2 * a / one_m2Aa - 0.5 * log(one_m2Aa);
+            }
+        }
+        else
+        {
+            const double p = (psi - 1.0) / (psi + 1.0);
+            const double beta = (1.0 - p) / m;                            // 2 / (m (psi + 1))
+            const double tail = 0.5 * erfc(z_v * 0.70710678118654752440); // 1 - U = Phi(-z_v)
+            v_next = (1.0 - tail <= p) ? 0.0 : log((1.0 - p) / tail) / beta;
+            corrected = A < beta;
+            if (corrected) // E[e^{A V'}] = p + beta (1 - p) / (beta - A): the atom at 0 counts
+                log_mgf = log(p + beta * (1.0 - p) / (beta - A));
+        }
+        const double K0s = corrected ? -log_mgf - (K1 + 0.5 * K3) * v : K0;
+        const double var = K3 * v + K4 * v_next;
+        S = S * exp((r - q) * dt + K0s + K1 * v + K2 * v_next + sqrt(var < 0.0 ? 0.0 : var) * z_s);
+        v = v_next;
+    }
+
+    /// One SLV step by QE (price runs, #317): qe_step with the leverage read
+    /// at the step's start, as slv_step reads it. z_v drives the variance,
+    /// z_s the spot's independent part.
+    QM_HOST_DEVICE inline void slv_qe_step(const GridView<double> &leverage, const HestonParamsT<double> &h, double r,
+                                           double q, double &S, double &v, double t, double dt, double z_v,
+                                           double z_s)
+    {
+        const double L = leverage_staircase(leverage, S, t);
+        qe_step(h, L, r, q, S, v, dt, z_v, z_s);
+    }
+
     /// One SLV step: Heston with the spot's vol scaled by the leverage L(S, t).
     template <class T>
     QM_HOST_DEVICE void slv_step(const GridView<T> &leverage, const HestonParamsT<T> &h, const T &r, const T &q,
