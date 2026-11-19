@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { ProductDescriptor } from "@/shared/products";
 import { type ComputeDevice, deviceLabel, usePricing } from "@/shared/api";
 import {
+	ComputeBreakdown,
 	ComputeTime,
 	DiscretisationBias,
 	EngineTag,
@@ -136,6 +137,7 @@ export function ResultsPanel({
 						/>
 					</div>
 				</div>
+				<ComputeBreakdown timings={r.timings} engine={engine} />
 				{isMc && (
 					<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
 				)}

@@ -33,6 +33,7 @@ from typing import Dict, List, Optional, Tuple
 import quantmodeling as qm
 
 from . import db, swaption_market
+from .compute_timing import phase
 from .rates_derivatives_schemas import (
     CalibrationPoint,
     CurvePoint,
@@ -939,23 +940,26 @@ def sofr_hull_white(today: Optional[date] = None) -> SofrHullWhite:
     hit = _sofr_cache.get(today)
     if hit is not None and time.monotonic() - hit[0] < _SOFR_TTL:
         return hit[1]
-    m = market_request(today)
+    with phase("market"):
+        m = market_request(today)
     quotes = tuple((q["tenor"], q["rate"]) for q in m["ois"])
-    times, dfs = sofr_curve(quotes)
+    with phase("calibration"):
+        times, dfs = sofr_curve(quotes)
     vols = tuple(
         (v["expiry"], v["tenor"], v["normal_vol"], v["trades"])
         for v in m["market_vols"]
     )
-    c = _calibrate(
-        tuple(times),
-        tuple(dfs),
-        tuple(times),
-        tuple(dfs),
-        tuple((x, t, v) for x, t, v, _ in vols),
-        1,
-        1,
-        None,
-    )
+    with phase("calibration"):
+        c = _calibrate(
+            tuple(times),
+            tuple(dfs),
+            tuple(times),
+            tuple(dfs),
+            tuple((x, t, v) for x, t, v, _ in vols),
+            1,
+            1,
+            None,
+        )
     out = SofrHullWhite(
         as_of=m["as_of"],
         window_start=m["window_start"],

@@ -5,6 +5,7 @@ import {
 	DiscretisationBias,
 	Uncertainty,
 } from "@/shared/ui/density";
+import { ComputeBreakdown } from "@/shared/ui/compute-breakdown";
 import { ScriptGreeks } from "./ScriptGreeks";
 import { SecondOrderRefused } from "./SecondOrderGreeks";
 import { secondOrderRefusal } from "./secondOrderRefusal";
@@ -28,6 +29,7 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 					</span>
 					<ComputeTime computeMs={r.compute_ms} roundTripMs={r.round_trip_ms} />
 				</div>
+				<ComputeBreakdown timings={r.timings} engine="mc" />
 				<div className="mt-1">
 					<Uncertainty
 						value={r.npv}

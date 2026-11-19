@@ -2979,6 +2979,39 @@ export interface components {
              */
             gpus?: string[];
         };
+        /**
+         * ComputeTimings
+         * @description compute_ms split by phase. The phases are exclusive: market + calibration
+         *     + engine + other = compute_ms. greeks_ms comes on top of it.
+         */
+        ComputeTimings: {
+            /**
+             * Calibration Ms
+             * @description Fitting the model to that data: the implied-vol surface and Dupire grid, Heston / SLV leverage, rough Bergomi, Hull-White to swaptions. Near zero when the in-process cache holds it.
+             */
+            calibration_ms: number;
+            /**
+             * Engine Ms
+             * @description The numerical method alone: the Monte-Carlo run(s) with their adjoint greeks, the tree, the PDE or the closed form.
+             */
+            engine_ms: number;
+            /**
+             * Greeks Ms
+             * @description The greeks the engine did not give, by bumping and revaluing (bumped_greeks): each revaluation reloads its market. Not in compute_ms.
+             * @default 0
+             */
+            greeks_ms: number;
+            /**
+             * Market Ms
+             * @description Reading market data from the database (prices, option chain, dividend, curves) and preparing it.
+             */
+            market_ms: number;
+            /**
+             * Other Ms
+             * @description What no phase covers: script parsing, model choice, Python glue.
+             */
+            other_ms: number;
+        };
         /** Configuration */
         Configuration: {
             /**
@@ -6032,7 +6065,7 @@ export interface components {
             bumped_greeks?: string[];
             /**
              * Compute Ms
-             * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
+             * @description Server-side wall time of the pricing, in milliseconds: market data, calibration and engine (`timings` splits it); excludes network, request parsing and `timings.greeks_ms`.
              */
             compute_ms?: number | null;
             /**
@@ -6074,6 +6107,8 @@ export interface components {
              * @description Scripts priced with second_order=True: how gamma, vanna and volga were computed (the bump on the GPU's adjoint, its bumps and pairing). Null when they were not.
              */
             second_order_method?: string | null;
+            /** @description Where the server time went (compute_timing.py). Null outside the pricing routes. */
+            timings?: components["schemas"]["ComputeTimings"] | null;
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];
         };
@@ -8134,7 +8169,7 @@ export interface components {
             bumped_greeks?: string[];
             /**
              * Compute Ms
-             * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
+             * @description Server-side wall time of the pricing, in milliseconds: market data, calibration and engine (`timings` splits it); excludes network, request parsing and `timings.greeks_ms`.
              */
             compute_ms?: number | null;
             /**
@@ -8177,6 +8212,8 @@ export interface components {
              */
             second_order_method?: string | null;
             swap: components["schemas"]["SwapResult"];
+            /** @description Where the server time went (compute_timing.py). Null outside the pricing routes. */
+            timings?: components["schemas"]["ComputeTimings"] | null;
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];
         };
@@ -8289,7 +8326,7 @@ export interface components {
             bumped_greeks?: string[];
             /**
              * Compute Ms
-             * @description Server-side wall time of the pricing itself (the engine call), in milliseconds; excludes network and request parsing.
+             * @description Server-side wall time of the pricing, in milliseconds: market data, calibration and engine (`timings` splits it); excludes network, request parsing and `timings.greeks_ms`.
              */
             compute_ms?: number | null;
             /**
@@ -8332,6 +8369,8 @@ export interface components {
              */
             second_order_method?: string | null;
             swaption: components["schemas"]["SwaptionResult"];
+            /** @description Where the server time went (compute_timing.py). Null outside the pricing routes. */
+            timings?: components["schemas"]["ComputeTimings"] | null;
             /** Warnings */
             warnings?: components["schemas"]["ModelWarning"][];
         };

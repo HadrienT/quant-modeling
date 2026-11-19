@@ -35,6 +35,7 @@ from . import pricing_service as ps
 from . import rates_derivatives as rd
 from . import rates_derivatives_schemas as rs
 from . import schemas as s
+from .compute_timing import collect, phase
 from .audit.payloads import (
     CodeVersion,
     EngineSpec,
@@ -302,31 +303,40 @@ class Priced:
     response: PricingResponse
     market_inputs: list[MarketInput] = field(default_factory=list)
     duration_s: float = 0.0
+    #: Seconds per phase (compute_timing.py): market, calibration, engine.
+    phases: dict[str, float] = field(default_factory=dict)
 
 
 def price(product_id: str, req: BaseModel) -> Priced:
-    """Runs one pricing, collecting the market inputs it reads. Synchronous:
-    the router runs it in the thread pool, the replay endpoint too."""
+    """Runs one pricing, collecting the market inputs it reads and where its
+    time goes (compute_timing.py). Synchronous: the router runs it in the
+    thread pool, the replay endpoint too."""
     product = PRODUCTS[product_id]
     inputs: list[MarketInput] = []
     token = _market_inputs.set(inputs)
     start = time.perf_counter()
     try:
-        if product.own_spans:
-            response = product.price(req)
-        else:
-            with tracer.start_as_current_span(
-                "engine.price",
-                attributes={
-                    "qm.product": product_id,
-                    "qm.model": product.model(req),
-                    "qm.engine": product.engine(req),
-                },
-            ):
+        with collect() as phases:
+            if product.own_spans:
                 response = product.price(req)
+            else:
+                # The whole call is the engine, less any market read or
+                # calibration it marks itself.
+                with (
+                    phase("engine"),
+                    tracer.start_as_current_span(
+                        "engine.price",
+                        attributes={
+                            "qm.product": product_id,
+                            "qm.model": product.model(req),
+                            "qm.engine": product.engine(req),
+                        },
+                    ),
+                ):
+                    response = product.price(req)
     finally:
         _market_inputs.reset(token)
-    return Priced(response, inputs, time.perf_counter() - start)
+    return Priced(response, inputs, time.perf_counter() - start, dict(phases))
 
 
 def _model_spec(product: Product, req: BaseModel, resp: PricingResponse) -> ModelSpec:

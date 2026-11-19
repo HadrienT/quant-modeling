@@ -989,6 +989,39 @@ class ModelChoice(BaseModel):
     )
 
 
+class ComputeTimings(BaseModel):
+    """compute_ms split by phase. The phases are exclusive: market + calibration
+    + engine + other = compute_ms. greeks_ms comes on top of it."""
+
+    market_ms: float = Field(
+        ...,
+        description="Reading market data from the database (prices, option "
+        "chain, dividend, curves) and preparing it.",
+    )
+    calibration_ms: float = Field(
+        ...,
+        description="Fitting the model to that data: the implied-vol surface "
+        "and Dupire grid, Heston / SLV leverage, rough Bergomi, Hull-White to "
+        "swaptions. Near zero when the in-process cache holds it.",
+    )
+    engine_ms: float = Field(
+        ...,
+        description="The numerical method alone: the Monte-Carlo run(s) with "
+        "their adjoint greeks, the tree, the PDE or the closed form.",
+    )
+    other_ms: float = Field(
+        ...,
+        description="What no phase covers: script parsing, model choice, "
+        "Python glue.",
+    )
+    greeks_ms: float = Field(
+        0.0,
+        description="The greeks the engine did not give, by bumping and "
+        "revaluing (bumped_greeks): each revaluation reloads its market. Not in "
+        "compute_ms.",
+    )
+
+
 class PricingResponse(BaseModel):
     npv: float
     greeks: Greeks
@@ -1005,8 +1038,14 @@ class PricingResponse(BaseModel):
     )
     compute_ms: Optional[float] = Field(
         None,
-        description="Server-side wall time of the pricing itself (the engine "
-        "call), in milliseconds; excludes network and request parsing.",
+        description="Server-side wall time of the pricing, in milliseconds: "
+        "market data, calibration and engine (`timings` splits it); excludes "
+        "network, request parsing and `timings.greeks_ms`.",
+    )
+    timings: Optional[ComputeTimings] = Field(
+        None,
+        description="Where the server time went (compute_timing.py). Null "
+        "outside the pricing routes.",
     )
     bumped_greeks: List[str] = Field(
         default_factory=list,

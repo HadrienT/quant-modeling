@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
+from .compute_timing import phase
 from .schemas import (
     AmericanEngineType,
     AmericanVanillaRequest,
@@ -376,18 +377,23 @@ def _price_multi_asset(
     surfaces, no_surface = None, "the underlyings are typed"
     valuation_date = req.valuation_date
     if req.underlyings[0].spot is None:
-        m = multi_asset_market.multi_asset_market(
-            [
-                u.ticker if u.ticker is not None else multi_asset_market.FxRate(u.fx)
-                for u in req.underlyings
-            ],
-            req.rate,
-            req.valuation_date,
-            horizon,
-            req.currency,
-        )
-        if req.model in ("auto", "local_vol") and n > 1:
-            surfaces, no_surface = _local_vol_markets(req, m)
+        with phase("market"):
+            m = multi_asset_market.multi_asset_market(
+                [
+                    (
+                        u.ticker
+                        if u.ticker is not None
+                        else multi_asset_market.FxRate(u.fx)
+                    )
+                    for u in req.underlyings
+                ],
+                req.rate,
+                req.valuation_date,
+                horizon,
+                req.currency,
+            )
+            if req.model in ("auto", "local_vol") and n > 1:
+                surfaces, no_surface = _local_vol_markets(req, m)
         used = [
             UnderlyingUsed(
                 ticker=a.ticker,
@@ -459,13 +465,16 @@ def _price_multi_asset(
     script, fixings = req.script, {}
     if start_today:
         script, fixings = _start_today(script, valuation_date, [u.spot for u in used])
-    with tracer.start_as_current_span(
-        "engine.price",
-        attributes={
-            "qm.product": "script",
-            "qm.model": model,
-            "qm.engine": "mc",
-        },
+    with (
+        phase("engine"),
+        tracer.start_as_current_span(
+            "engine.price",
+            attributes={
+                "qm.product": "script",
+                "qm.model": model,
+                "qm.engine": "mc",
+            },
+        ),
     ):
         result = qm.price_script(
             script,
@@ -642,11 +651,14 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
             "engine='analytic' reads its market from a `ticker`, or takes `spot` "
             "and `vol` (and `dividend`) typed"
         )
-    market = (
-        None
-        if typed
-        else market_snapshot.local_vol_market(req.ticker, req.rate, req.valuation_date)
-    )
+    with phase("market"):
+        market = (
+            None
+            if typed
+            else market_snapshot.local_vol_market(
+                req.ticker, req.rate, req.valuation_date
+            )
+        )
     val = req.valuation_date if typed else market.valuation_date
     script = product_templates.render(
         req.product, req.terms, val, maturity=req.maturity, start=val
@@ -661,16 +673,21 @@ def _price_scripted_analytic(req: ScriptedProductRequest) -> PricingResponse:
         source = "typed"
     else:
         S, q = market.spot, market.dividend
-        sigma = _atm_implied_vol(
-            SimpleNamespace(script=script, day_count=req.day_count), market, val, True
-        )
+        with phase("calibration"):
+            sigma = _atm_implied_vol(
+                SimpleNamespace(script=script, day_count=req.day_count),
+                market,
+                val,
+                True,
+            )
         source = (
             f"the at-the-money implied vol of the {market.ticker} smile of "
             f"{val.isoformat()}"
         )
     defaults = {p.name: p.default for p in product_templates.get(req.product).params}
     terms = {**defaults, **req.terms}
-    npv, greeks, what = _black_scholes(req.product, terms, S, req.rate, q, sigma, T)
+    with phase("engine"):
+        npv, greeks, what = _black_scholes(req.product, terms, S, req.rate, q, sigma, T)
     diagnostics = (
         f"Analytic {what}, Black-Scholes at vol {sigma:.4f} ({source}; strike "
         f"{float(terms['strike']):.4g} x spot {S:.4f}, expiry T = {T:.4f} y)"
@@ -790,8 +807,9 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
         label, fit, m = f"flat curve at {req.rate:.4%} (typed)", None, None
         a, sigma = hw.mean_reversion, hw.sigma
     else:
-        _, times, dfs, label, fit = _sofr_inputs(hw)
-        m = _sofr_market()
+        with phase("market"):
+            _, times, dfs, label, fit = _sofr_inputs(hw)
+            m = _sofr_market()
         a, sigma = fit.mean_reversion, fit.sigma
 
     def value(curve_times, curve_dfs, s: float) -> dict:
@@ -808,22 +826,26 @@ def _price_sofr_closed_form(req: ScriptedProductRequest) -> PricingResponse:
         )
 
     key = "european" if swaption else "swap"
-    base = value(times, dfs, sigma)
-    npv = base[key]
-    bumped = {}
-    for h in (_BP, -_BP):
-        if flat:
-            t, d = flat_curve(req.rate + h)
-        else:
-            t, d = rates_derivatives.sofr_curve([(x, r + h) for x, r in m.swap_quotes])
-        bumped[h] = value(t, d, sigma)[key]
-    dv01 = (bumped[_BP] - bumped[-_BP]) / 2
-    gamma_bp = bumped[_BP] - 2 * npv + bumped[-_BP]
-    vega = (
-        (value(times, dfs, sigma + _BP)[key] - value(times, dfs, sigma - _BP)[key]) / 2
-        if swaption
-        else 0.0
-    )
+    with phase("engine"):
+        base = value(times, dfs, sigma)
+        npv = base[key]
+        bumped = {}
+        for h in (_BP, -_BP):
+            if flat:
+                t, d = flat_curve(req.rate + h)
+            else:
+                t, d = rates_derivatives.sofr_curve(
+                    [(x, r + h) for x, r in m.swap_quotes]
+                )
+            bumped[h] = value(t, d, sigma)[key]
+        dv01 = (bumped[_BP] - bumped[-_BP]) / 2
+        gamma_bp = bumped[_BP] - 2 * npv + bumped[-_BP]
+        vega = (
+            (value(times, dfs, sigma + _BP)[key] - value(times, dfs, sigma - _BP)[key])
+            / 2
+            if swaption
+            else 0.0
+        )
     what = (
         f"European {'payer' if side > 0 else 'receiver'} swaption under Hull-White in "
         f"closed form (a = {a:.4f}, sigma = {sigma * 1e4:.1f}bp)"
@@ -1030,9 +1052,10 @@ def price_script(
         # Market data comes from the database data-ingest fills, never from a
         # live source. A stored snapshot is a market date, and that date is
         # the valuation date the script is priced on.
-        market = market_snapshot.local_vol_market(
-            req.ticker, req.rate, req.valuation_date
-        )
+        with phase("market"):
+            market = market_snapshot.local_vol_market(
+                req.ticker, req.rate, req.valuation_date
+            )
         valuation_date = market.valuation_date
         market_warnings = list(market.warnings)
 
@@ -1045,7 +1068,8 @@ def price_script(
     sv = None
     if choice["model"] in ("heston", "slv"):
         try:
-            sv = stochastic_vol.calibrate(market)
+            with phase("calibration"):
+                sv = stochastic_vol.calibrate(market)
         except stochastic_vol.CalibrationUnavailable as exc:
             if req.model != "auto":
                 raise ValueError(
@@ -1070,7 +1094,8 @@ def price_script(
         from . import rough_vol
 
         try:
-            rv = rough_vol.calibrate(market)
+            with phase("calibration"):
+                rv = rough_vol.calibrate(market)
         except rough_vol.RoughCalibrationUnavailable as exc:
             raise ValueError(
                 f"model='rough_bergomi' cannot be calibrated: {exc}"
@@ -1097,7 +1122,8 @@ def price_script(
         spot, dividend, vol = market.spot, market.dividend, 0.0
         k_grid, t_grid = market.K_grid, market.T_grid
         if model in ("black_scholes", "hull_white"):
-            vol = _atm_implied_vol(req, market, valuation_date, start_today)
+            with phase("calibration"):
+                vol = _atm_implied_vol(req, market, valuation_date, start_today)
             choice["calibration"]["flat_vol"] = vol
     else:
         spot, dividend, vol = req.spot, req.dividend, req.vol
@@ -1107,7 +1133,10 @@ def price_script(
     hw_params, curve_times, curve_dfs = {}, [], []
     factor_basis, factor_labels = [], []
     if model == "hull_white":
-        hw_params, curve_times, curve_dfs, label, rates_fit = _hull_white_inputs(req)
+        with phase("market"):
+            hw_params, curve_times, curve_dfs, label, rates_fit = _hull_white_inputs(
+                req
+            )
         if req.greeks_method == "aad":
             factor_basis, factor_labels = _curve_factors(req, curve_times, curve_dfs)
         if rates_fit is not None and rates_fit.calibrated:
@@ -1135,9 +1164,12 @@ def price_script(
     script, fixings = req.script, {}
     if start_today:
         script, fixings = _start_today(script, valuation_date, [spot])
-    with tracer.start_as_current_span(
-        "engine.price",
-        attributes={"qm.product": "script", "qm.model": model, "qm.engine": "mc"},
+    with (
+        phase("engine"),
+        tracer.start_as_current_span(
+            "engine.price",
+            attributes={"qm.product": "script", "qm.model": model, "qm.engine": "mc"},
+        ),
     ):
         result = qm.price_script(
             script,
