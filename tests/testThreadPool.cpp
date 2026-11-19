@@ -183,6 +183,22 @@ namespace quantModeling
         return n;
     }
 
+    /// Threads of this process once joined workers are gone. pthread_join
+    /// returns when the kernel clears the thread's tid, which happens before
+    /// the exiting task leaves /proc/self/task: on a loaded machine (ctest -j
+    /// on a CI runner) a joined thread can still be listed for a moment.
+    static std::size_t process_threads_after_join(std::size_t expected)
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        std::size_t n = process_threads();
+        while (n != expected && std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            n = process_threads();
+        }
+        return n;
+    }
+
     // start_on_demand (issue #330): a GPU request never asks the pool for
     // threads, so it must not pay for starting and joining them.
     TEST(ThreadPool, StartOnDemandCreatesNoThreadUntilAWorkerIsNeeded)
@@ -194,7 +210,7 @@ namespace quantModeling
         EXPECT_EQ(pool.num_threads(), 3u); // a CPU engine asks: the workers start
         EXPECT_EQ(process_threads(), before + 3);
         pool.stop();
-        EXPECT_EQ(process_threads(), before);
+        EXPECT_EQ(process_threads_after_join(before), before);
     }
 
     TEST(ThreadPool, SpawnTaskStartsAnOnDemandPool)
