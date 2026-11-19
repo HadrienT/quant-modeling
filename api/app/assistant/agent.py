@@ -174,21 +174,16 @@ def run_assistant(
     checker: Checker = check_script,
 ) -> Iterator[dict]:
     """Yield wire events (see schemas.py): delta / retry / script / error / done."""
-    messages: list[Message] = [
-        {
-            "role": "system",
-            "content": build_system_prompt(
-                valuation_date=valuation_date,
-                current_script=current_script,
-                last_error=last_error,
-            ),
-        },
-        *history,
-    ]
+    system = build_system_prompt(
+        valuation_date=valuation_date,
+        current_script=current_script,
+        last_error=last_error,
+    )
+    messages: list[Message] = list(history)
     try:
         for attempt in range(MAX_REPAIRS + 1):
             reply = ""
-            for delta in model.stream(messages):
+            for delta in model.stream(system, messages):
                 reply += delta
                 yield {"type": "delta", "text": delta}
 

@@ -4,8 +4,13 @@ annotated-doc==0.0.4
     # via fastapi
 annotated-types==0.7.0
     # via pydantic
+anthropic==2.10.0
+    # via -r api/requirements.in
 anyio==4.12.1
-    # via starlette
+    # via
+    #   anthropic
+    #   httpx2
+    #   starlette
 asgiref==3.12.1
     # via opentelemetry-instrumentation-asgi
 bcrypt==5.0.0
@@ -30,6 +35,8 @@ cryptography==46.0.5
     # via python-jose
 curl-cffi==0.13.0
     # via yfinance
+docstring-parser==0.18.0
+    # via anthropic
 ecdsa==0.19.1
     # via python-jose
 fastapi==0.129.0
@@ -39,11 +46,20 @@ frozendict==2.4.7
 googleapis-common-protos==1.75.3
     # via opentelemetry-exporter-otlp-proto-http
 h11==0.16.0
-    # via uvicorn
-idna==3.11
+    # via
+    #   httpcore2
+    #   uvicorn
+httpcore2==2.16.2
+    # via httpx2
+httpx2==2.16.2
+    # via anthropic
+idna==3.20
     # via
     #   anyio
+    #   httpx2
     #   requests
+jiter==0.19.0
+    # via anthropic
 multitasking==0.0.12
     # via yfinance
 numpy==2.4.2
@@ -54,6 +70,7 @@ numpy==2.4.2
     #   yfinance
 opentelemetry-api==1.44.0
     # via
+    #   anthropic
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-asgi
@@ -129,6 +146,7 @@ pycparser==3.0
 pydantic==2.12.5
     # via
     #   -r api/requirements.in
+    #   anthropic
     #   fastapi
 pydantic-core==2.41.5
     # via pydantic
@@ -151,12 +169,19 @@ six==1.17.0
     # via
     #   ecdsa
     #   python-dateutil
+sniffio==1.3.1
+    # via anthropic
 soupsieve==2.8.3
     # via beautifulsoup4
 starlette==0.52.1
     # via fastapi
+truststore==0.10.5
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.15.0
     # via
+    #   anthropic
     #   beautifulsoup4
     #   fastapi
     #   opentelemetry-api

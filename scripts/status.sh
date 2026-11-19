@@ -41,7 +41,7 @@ probe() { # probe LABEL URL — HTTP 2xx within 8 s
 printf '%sServer status%s  %s%s — up since %s%s\n' "$B" "$N" "$D" "$(date '+%F %T')" "$(uptime -s)" "$N"
 
 title "systemd"
-for unit in docker.service quant-modeling.service llama-bridge.socket; do
+for unit in docker.service quant-modeling.service; do
   state="$(systemctl is-active "$unit" 2>/dev/null)"
   if [[ "$state" == active ]]; then
     since="$(systemctl show "$unit" -p ActiveEnterTimestamp --value)"
@@ -50,11 +50,6 @@ for unit in docker.service quant-modeling.service llama-bridge.socket; do
     bad "$unit" "$state — journalctl -b -u $unit"
   fi
 done
-# The ordering cycle that kept the site down at boot on 2026-09-25: a socket
-# ordered both before sockets.target and after docker.service.
-if systemctl show llama-bridge.socket -p Before --value 2>/dev/null | grep -qw sockets.target; then
-  warn "llama-bridge.socket ordering" "boot cycle with docker — reinstall it from ~/AgenticEnv (RUNBOOK §5)"
-fi
 
 title "Docker stacks"
 if ! docker info >/dev/null 2>&1; then
@@ -86,8 +81,14 @@ fi
 title "Endpoints"
 probe "site (local)" "http://127.0.0.1:$(env_value QM_WEB_PORT 8091)/health"
 probe "site (public, via tunnel)" "$(env_value QM_PUBLIC_URL https://quant.tramonihadrien.com)/health"
-probe "llama-server" "http://127.0.0.1:8000/health"
-probe "llama-bridge (from containers)" "http://172.17.0.1:8001/health"
+# The scripting assistant (Claude through the Anthropic API): its own status
+# route says whether a key is set and accepted.
+assistant_url="http://127.0.0.1:$(env_value QM_WEB_PORT 8091)/api/assistant/status"
+if curl -s --max-time 8 "$assistant_url" | grep -q '"state":"up"'; then
+  ok "scripting assistant" "$assistant_url"
+else
+  bad "scripting assistant" "$assistant_url — not up (no ANTHROPIC_API_KEY, or the API refused it)"
+fi
 
 echo
 if ((failures == 0)); then

@@ -9,6 +9,8 @@ pandas
 numpy
 scipy
 requests
+# Scripting assistant: Claude through the official SDK (issue #337).
+anthropic
 # yfinance stays for option chains only (data-ingest doesn't ingest them yet).
 yfinance
 python-jose[cryptography]

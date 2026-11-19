@@ -18,7 +18,7 @@ import ScriptingPreview from "./ScriptingPreview";
 /**
  * The scripting page: a price comes with its greeks (asked for by default,
  * each with its standard error, noise marked as such), and the assistant
- * says whether its model server is up before anyone types to it.
+ * says whether it can answer before anyone types to it.
  */
 
 const RISKS = [
@@ -69,8 +69,8 @@ function mount(status?: Record<string, unknown>) {
 		server.use(
 			http.get("*/api/assistant/status", () =>
 				HttpResponse.json({
-					model: "Qwen3-Coder-30B-A3B-Instruct",
-					serving: [],
+					model: "claude-haiku-5-5",
+					configured: true,
 					checked_at: "2026-10-02T10:00:00Z",
 					...status,
 				}),
@@ -196,29 +196,29 @@ describe("scripting page — assistant status", () => {
 		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 	});
 
-	it("says the model server is down, in words and not only in colour", async () => {
+	it("says the assistant is offline, in words and not only in colour", async () => {
 		mount({
 			state: "down",
-			detail: "The model server does not answer: the assistant is offline.",
+			detail:
+				"The model provider could not be reached. The assistant is offline.",
 		});
 		expect(
 			await screen.findByRole("status", { name: "Assistant status: Offline" }),
 		).toBeInTheDocument();
-		expect(screen.getByRole("alert")).toHaveTextContent("does not answer");
+		expect(screen.getByRole("alert")).toHaveTextContent("could not be reached");
 	});
 
-	it("names the other model when the server was switched to one", async () => {
+	it("says when the server has no API key", async () => {
 		mount({
-			state: "wrong_model",
-			serving: ["plamo-2-translate"],
-			detail:
-				"The model server is running plamo-2-translate, not the assistant's model (Qwen3-Coder-30B-A3B-Instruct): answers would come from that model.",
+			state: "down",
+			configured: false,
+			detail: "The assistant is not configured on this server (no API key).",
 		});
 		expect(
 			await screen.findByRole("status", {
-				name: "Assistant status: Other model loaded",
+				name: "Assistant status: Not configured",
 			}),
 		).toBeInTheDocument();
-		expect(screen.getByRole("alert")).toHaveTextContent("plamo-2-translate");
+		expect(screen.getByRole("alert")).toHaveTextContent("not configured");
 	});
 });

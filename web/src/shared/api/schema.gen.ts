@@ -2372,9 +2372,9 @@ export interface components {
          * AssistantStatusResponse
          * @description Whether the assistant can answer right now.
          *
-         *     `up`: the model server answers and serves the assistant's model.
-         *     `wrong_model`: it answers, but another model is loaded — a chat would be
-         *     answered by that one. `down`: it does not answer.
+         *     `up`: an API key is configured, the Anthropic API accepts it and knows the
+         *     assistant's model. `down`: no key (`configured` is false), or the API
+         *     refused or did not answer.
          */
         AssistantStatusResponse: {
             /**
@@ -2383,25 +2383,25 @@ export interface components {
              */
             checked_at: string;
             /**
+             * Configured
+             * @description Whether an API key is set on this server.
+             */
+            configured: boolean;
+            /**
              * Detail
              * @description One sentence for the page.
              */
             detail: string;
             /**
              * Model
-             * @description The model the assistant is set up for.
+             * @description The Claude model the assistant uses.
              */
             model: string;
-            /**
-             * Serving
-             * @description What the model server reports.
-             */
-            serving?: string[];
             /**
              * State
              * @enum {string}
              */
-            state: "up" | "wrong_model" | "down";
+            state: "up" | "down";
         };
         /** AuthRequest */
         AuthRequest: {

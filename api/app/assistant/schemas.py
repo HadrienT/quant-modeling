@@ -48,7 +48,7 @@ class ScriptingChatEvent(BaseModel):
               follows, the client should discard the text streamed so far
     - script: the script found in the reply, with `valid` telling whether it
               passed the parser (`events` / `variables` when valid)
-    - error:  the model server failed (`message`)
+    - error:  the model failed to answer (`message`)
     - done:   end of stream
     """
 
@@ -67,14 +67,14 @@ class ScriptingChatEvent(BaseModel):
 class AssistantStatusResponse(BaseModel):
     """Whether the assistant can answer right now.
 
-    `up`: the model server answers and serves the assistant's model.
-    `wrong_model`: it answers, but another model is loaded — a chat would be
-    answered by that one. `down`: it does not answer."""
+    `up`: an API key is configured, the Anthropic API accepts it and knows the
+    assistant's model. `down`: no key (`configured` is false), or the API
+    refused or did not answer."""
 
-    state: Literal["up", "wrong_model", "down"]
-    model: str = Field(..., description="The model the assistant is set up for.")
-    serving: list[str] = Field(
-        default_factory=list, description="What the model server reports."
+    state: Literal["up", "down"]
+    model: str = Field(..., description="The Claude model the assistant uses.")
+    configured: bool = Field(
+        ..., description="Whether an API key is set on this server."
     )
     detail: str = Field(..., description="One sentence for the page.")
     checked_at: datetime

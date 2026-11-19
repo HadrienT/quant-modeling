@@ -10,28 +10,28 @@ function look(q: ReturnType<typeof useAssistantStatus>): Look {
 		return {
 			dot: "bg-ink-muted animate-pulse",
 			label: "Checking",
-			detail: "Asking the model server.",
+			detail: "Asking whether the model answers.",
 		};
 	if (!q.data)
 		return {
 			dot: "bg-ink-muted",
 			label: "Unknown",
-			detail: "The API did not answer, so the model server could not be asked.",
+			detail: "The API did not answer, so the model could not be asked.",
 		};
-	const { state, detail, model, serving } = q.data;
+	const { state, detail, model, configured } = q.data;
 	if (state === "up")
 		return {
 			dot: "bg-good",
 			label: "Online",
-			detail: `${detail} Model: ${serving?.[0] ?? model}.`,
+			detail: `${detail} Model: ${model}.`,
 		};
-	if (state === "wrong_model")
-		return { dot: "bg-warning", label: "Other model loaded", detail };
+	if (!configured)
+		return { dot: "bg-ink-muted", label: "Not configured", detail };
 	return { dot: "bg-critical", label: "Offline", detail };
 }
 
 /**
- * Whether the assistant's LLM is up: a dot and a word, with the detail on
+ * Whether the assistant's model answers: a dot and a word, with the detail on
  * hover and, when it is not simply online, written out under the header.
  * `compact` is the dot alone, for the tab that opens the assistant.
  */
@@ -69,15 +69,14 @@ export function AssistantStatus({ compact = false }: { compact?: boolean }) {
 export function AssistantStatusNotice() {
 	const q = useAssistantStatus();
 	if (!q.data || q.data.state === "up") return null;
-	const down = q.data.state === "down";
 	return (
 		<p
 			role="alert"
 			className={cn(
 				"rounded-sm border p-2 text-2xs",
-				down
+				q.data.configured
 					? "border-critical/40 bg-critical/5 text-critical"
-					: "border-warning/40 bg-warning/5 text-warning",
+					: "border-hairline bg-surface-raised text-ink-secondary",
 			)}
 		>
 			{q.data.detail}

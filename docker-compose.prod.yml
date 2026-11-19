@@ -43,10 +43,10 @@ services:
       # warm-up at start rebuilds those a new kernel made stale (WP 27 L1b).
       - QM_KERNEL_CACHE_DIR=/app/data/kernels
       - QM_KERNEL_WARMUP=${QM_KERNEL_WARMUP:-1}
-      # Scripting assistant: the llama-server of ~/AgenticEnv, reached through
-      # the llama-bridge socket on the Docker gateway (127.0.0.1 is the
-      # container itself). Login is required to use it.
-      - QM_LLM_BASE_URL=${QM_LLM_BASE_URL:-http://172.17.0.1:8001/v1}
+      # Scripting assistant: Claude through the Anthropic API (issue #337).
+      # Without a key the assistant reports itself as not configured.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - QM_LLM_MODEL=${QM_LLM_MODEL:-claude-haiku-5-5}
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
       # Sign in with Google (optional — the button only appears when both are set).

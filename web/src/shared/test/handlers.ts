@@ -99,8 +99,8 @@ export const handlers = [
 	http.get("*/api/assistant/status", () =>
 		HttpResponse.json({
 			state: "up",
-			model: "Qwen3-Coder-30B-A3B-Instruct",
-			serving: ["Qwen3-Coder-30B-A3B-Instruct"],
+			model: "claude-haiku-5-5",
+			configured: true,
 			detail: "The assistant is online.",
 			checked_at: "2026-10-02T10:00:00Z",
 		}),

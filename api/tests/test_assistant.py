@@ -1,7 +1,7 @@
 """Scripting assistant: prompt fidelity, the draft/check/repair loop, the route.
 
 Runs against the real C++ parser (the `quantmodeling` wheel) with a scripted
-fake standing in for the LLM — nothing here needs llama-server.
+fake standing in for the LLM — nothing here calls the Anthropic API.
 Run from the repo root:  pytest api/tests
 """
 
@@ -26,7 +26,7 @@ from api.app.assistant.agent import (
     extract_script,
     run_assistant,
 )
-from api.app.assistant.llm import LLMError
+from api.app.assistant.llm import LLMError, LLMNotConfigured
 from api.app.assistant.prompt import EXAMPLES, build_system_prompt
 from api.app.assistant.schemas import ScriptingChatEvent, ScriptingChatRequest
 from api.app.auth import optional_user
@@ -44,11 +44,15 @@ class FakeModel:
     """Replies with the given texts in order, one per `stream` call, in
     small chunks; remembers the messages it was sent."""
 
+    model = "fake"
+
     def __init__(self, *replies: str | Exception):
         self._replies = list(replies)
         self.calls: list[list[dict]] = []
+        self.systems: list[str] = []
 
-    def stream(self, messages):
+    def stream(self, system, messages):
+        self.systems.append(system)
         self.calls.append([dict(m) for m in messages])
         reply = self._replies.pop(0)
         if isinstance(reply, Exception):
@@ -259,9 +263,7 @@ def test_invalid_request_is_a_422_not_a_500():
 
 
 def test_route_streams_sse_and_frees_its_slot(monkeypatch):
-    monkeypatch.setattr(
-        route.LlamaServerClient, "from_env", lambda: FakeModel(fenced(GOOD))
-    )
+    monkeypatch.setattr(route.ClaudeClient, "from_env", lambda: FakeModel(fenced(GOOD)))
     resp = route.scripting_chat_endpoint(_request(valuation_date=VALUATION))
     assert resp.media_type == "text/event-stream"
     events = _drain(resp)
@@ -288,9 +290,7 @@ def test_route_answers_429_when_every_slot_is_busy():
 
 
 def test_slot_is_released_once_even_if_the_stream_never_starts(monkeypatch):
-    monkeypatch.setattr(
-        route.LlamaServerClient, "from_env", lambda: FakeModel(fenced(GOOD))
-    )
+    monkeypatch.setattr(route.ClaudeClient, "from_env", lambda: FakeModel(fenced(GOOD)))
     resp = route.scripting_chat_endpoint(_request(valuation_date=VALUATION))
     # Client vanished before the first byte: only the background task runs,
     # and running it twice (as a stream `finally` would) must not raise.
@@ -308,9 +308,7 @@ def test_slot_is_released_once_even_if_the_stream_never_starts(monkeypatch):
 @pytest.fixture
 def anonymous(monkeypatch):
     """A fresh allowance of three questions, and a model that always answers."""
-    monkeypatch.setattr(
-        route.LlamaServerClient, "from_env", lambda: FakeModel(fenced(GOOD))
-    )
+    monkeypatch.setattr(route.ClaudeClient, "from_env", lambda: FakeModel(fenced(GOOD)))
     allowance = quota.AnonymousQuota(per_visitor=3, total=100)
     monkeypatch.setattr(route, "_anonymous_quota", allowance)
     return allowance
@@ -393,56 +391,236 @@ def test_busy_assistant_does_not_cost_a_visitor_a_question(anonymous):
 # ── Status: is the model server up, and with which model ─────────────────────
 
 
-def _status(monkeypatch, served):
-    """The status the route gives when the model server reports `served`
-    (a list of ids), or does not answer (an exception)."""
+def _status(monkeypatch, probe, key="sk-test"):
+    """The status the route gives when the API probe returns (None) or raises."""
 
-    def served_models(self):
-        if isinstance(served, Exception):
-            raise served
-        return served
+    def fake_probe(self):
+        if self.api_key is None:
+            raise LLMNotConfigured(
+                "The assistant is not configured on this server (no API key)."
+            )
+        if isinstance(probe, Exception):
+            raise probe
 
-    monkeypatch.setattr(route.LlamaServerClient, "served_models", served_models)
-    monkeypatch.setenv("QM_LLM_MODEL", "Qwen3-Coder-30B-A3B-Instruct")
+    monkeypatch.setattr(route.ClaudeClient, "probe", fake_probe)
+    if key is None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    monkeypatch.setenv("QM_LLM_MODEL", "claude-haiku-5-5")
     monkeypatch.setattr(route, "_STATUS_CACHE", route.TTLCache(1, 15))
     r = TestClient(app).get("/api/assistant/status")
     assert r.status_code == 200, r.text
     return r.json()
 
 
-def test_status_is_up_when_the_server_serves_the_assistants_model(monkeypatch):
-    # Listed as a file path, as llama-server does when started with -m.
-    body = _status(monkeypatch, ["/models/qwen3-coder-30b-a3b-instruct.gguf"])
+def test_status_is_up_when_the_api_accepts_the_key(monkeypatch):
+    body = _status(monkeypatch, None)
     assert body["state"] == "up" and body["detail"] == "The assistant is online."
+    assert body["model"] == "claude-haiku-5-5" and body["configured"] is True
 
 
-def test_status_names_another_model_loaded_in_its_place(monkeypatch):
-    body = _status(monkeypatch, ["plamo-2-translate"])
-    assert body["state"] == "wrong_model"
-    assert body["serving"] == ["plamo-2-translate"]
-    assert "plamo-2-translate" in body["detail"] and "Qwen3-Coder" in body["detail"]
+def test_status_says_when_no_key_is_configured(monkeypatch):
+    body = _status(monkeypatch, None, key=None)
+    assert body["state"] == "down" and body["configured"] is False
+    assert "not configured" in body["detail"]
 
 
-def test_status_is_down_without_leaking_the_servers_address(monkeypatch):
-    from api.app.assistant.llm import LLMError
-
-    body = _status(
-        monkeypatch, LLMError("model server unreachable: http://172.17.0.1:8001")
-    )
-    assert body["state"] == "down" and body["serving"] == []
-    assert "172.17" not in json.dumps(body)
+def test_status_is_down_without_leaking_the_key_or_the_cause(monkeypatch):
+    body = _status(monkeypatch, LLMError("The model provider could not be reached."))
+    assert body["state"] == "down" and body["configured"] is True
+    assert "could not be reached" in body["detail"]
+    assert "sk-test" not in json.dumps(body)
 
 
-def test_status_is_public_and_probes_the_server_once_per_cache_window(monkeypatch):
+def test_status_is_public_and_probes_the_api_once_per_cache_window(monkeypatch):
     calls = []
-
-    def served_models(self):
-        calls.append(1)
-        return ["Qwen3-Coder-30B-A3B-Instruct"]
-
-    monkeypatch.setattr(route.LlamaServerClient, "served_models", served_models)
+    monkeypatch.setattr(route.ClaudeClient, "probe", lambda self: calls.append(1))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setattr(route, "_STATUS_CACHE", route.TTLCache(1, 15))
     anonymous = TestClient(app)
     for _ in range(5):
         assert anonymous.get("/api/assistant/status").json()["state"] == "up"
     assert len(calls) == 1
+
+
+# ── The Claude client, against a fake SDK (no network) ───────────────────────
+
+
+class _FakeStream:
+    def __init__(self, chunks, stop_reason="end_turn", error=None):
+        self.text_stream = iter(chunks)
+        self._stop = stop_reason
+        self._error = error
+
+    def __enter__(self):
+        if self._error is not None:
+            raise self._error
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(stop_reason=self._stop, stop_details=None)
+
+
+def _claude(monkeypatch, stream: _FakeStream, key="sk-test"):
+    """A ClaudeClient whose SDK client records the request and replays `stream`."""
+    from types import SimpleNamespace
+
+    from api.app.assistant import llm
+
+    sent = {}
+
+    def fake_stream(**kw):
+        sent.update(kw)
+        return stream
+
+    fake = SimpleNamespace(messages=SimpleNamespace(stream=fake_stream))
+    monkeypatch.setattr(llm.anthropic, "Anthropic", lambda **kw: fake)
+    client = llm.ClaudeClient(
+        model="claude-haiku-5-5",
+        effort="medium",
+        max_tokens=16000,
+        timeout_s=10,
+        api_key=key,
+    )
+    return client, sent
+
+
+def test_claude_streams_text_with_the_system_prompt_apart(monkeypatch):
+    client, sent = _claude(monkeypatch, _FakeStream(["Hel", "lo"]))
+    history = [{"role": "user", "content": "a call"}]
+    assert "".join(client.stream("SYSTEM", history)) == "Hello"
+    assert sent["system"] == "SYSTEM" and sent["messages"] == history
+    assert sent["model"] == "claude-haiku-5-5"
+    # Rejected with a 400 on Haiku 5.5, and nothing about the user is sent.
+    assert "temperature" not in sent and "metadata" not in sent
+    assert sent["output_config"] == {"effort": "medium"}
+
+
+@pytest.mark.parametrize(
+    "stop, words", [("refusal", "declined"), ("max_tokens", "cut off")]
+)
+def test_claude_turns_a_refusal_or_a_truncation_into_an_error(monkeypatch, stop, words):
+    client, _ = _claude(monkeypatch, _FakeStream(["partial"], stop_reason=stop))
+    with pytest.raises(LLMError, match=words):
+        list(client.stream("S", [{"role": "user", "content": "x"}]))
+
+
+def test_claude_without_a_key_is_not_configured(monkeypatch):
+    client, _ = _claude(monkeypatch, _FakeStream([]), key=None)
+    with pytest.raises(LLMNotConfigured):
+        list(client.stream("S", [{"role": "user", "content": "x"}]))
+
+
+def test_claude_api_errors_become_sentences_for_the_user(monkeypatch):
+    import anthropic
+    import httpx2
+
+    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    cases = [
+        (anthropic.APIConnectionError(request=req), "could not be reached"),
+        (
+            anthropic.RateLimitError(
+                "slow down", response=httpx2.Response(429, request=req), body=None
+            ),
+            "limiting requests",
+        ),
+        (
+            anthropic.AuthenticationError(
+                "bad key sk-secret",
+                response=httpx2.Response(401, request=req),
+                body=None,
+            ),
+            "credentials were refused",
+        ),
+    ]
+    for error, words in cases:
+        client, _ = _claude(monkeypatch, _FakeStream([], error=error))
+        with pytest.raises(LLMError, match=words) as exc:
+            list(client.stream("S", [{"role": "user", "content": "x"}]))
+        assert "sk-secret" not in str(exc.value)
+
+
+# ── Prepaid credit used up: generic message, status down (issue #337) ────────
+
+
+def _billing_errors():
+    import anthropic
+    import httpx2
+
+    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+    def resp(code):
+        return httpx2.Response(code, request=req)
+
+    return [
+        anthropic.BadRequestError(
+            "Your credit balance is too low to access the Anthropic API.",
+            response=resp(400),
+            body=None,
+        ),
+        anthropic.PaymentRequiredError(
+            "payment required", response=resp(402), body=None
+        ),
+        # A RateLimitError subclass: must not read as "retry in a minute".
+        anthropic.EnforcedSpendLimitReachedError(
+            "monthly limit", response=resp(429), body=None
+        ),
+    ]
+
+
+@pytest.fixture
+def no_billing_block():
+    from api.app.assistant import llm
+
+    llm.clear_billing_block()
+    yield
+    llm.clear_billing_block()
+
+
+@pytest.mark.parametrize("error", _billing_errors(), ids=["credit", "402", "spend"])
+def test_billing_error_says_unavailable_and_blocks_the_status(
+    monkeypatch, no_billing_block, error
+):
+    from api.app.assistant import llm
+
+    client, _ = _claude(monkeypatch, _FakeStream([], error=error))
+    with pytest.raises(llm.LLMBillingBlocked, match="temporarily unavailable") as exc:
+        list(client.stream("S", [{"role": "user", "content": "x"}]))
+    assert "credit" not in str(exc.value) and "limit" not in str(exc.value)
+    assert llm.billing_blocked()
+    # The free models probe would still answer: the block is what says down.
+    with pytest.raises(llm.LLMBillingBlocked):
+        client.probe()
+
+
+def test_status_is_down_while_billing_blocks_then_comes_back(
+    monkeypatch, no_billing_block
+):
+    from api.app.assistant import llm
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    fake_models = type("M", (), {"retrieve": lambda self, model: None})()
+    fake = type(
+        "C",
+        (),
+        {"models": fake_models, "with_options": lambda self, **kw: self},
+    )()
+    monkeypatch.setattr(llm.anthropic, "Anthropic", lambda **kw: fake)
+
+    def status():
+        monkeypatch.setattr(route, "_STATUS_CACHE", route.TTLCache(1, 15))
+        return TestClient(app).get("/api/assistant/status").json()
+
+    assert status()["state"] == "up"
+    llm._block_for_billing()
+    body = status()
+    assert body["state"] == "down" and body["configured"] is True
+    assert body["detail"] == "The assistant is temporarily unavailable. Retry later."
+    llm.clear_billing_block()
+    assert status()["state"] == "up"
