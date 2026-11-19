@@ -620,6 +620,40 @@ namespace quantModeling
         EXPECT_EQ(r.npv(), fine.npv());
         EXPECT_EQ(*r.discretisation_bias, std::fabs(fine.npv() - coarse.npv()));
         EXPECT_GT(*r.discretisation_bias, 0.0);
+        // Its error (WP 26 §20): Sobol replicates are shared by the two runs,
+        // so it is the spread of their replicate-wise differences -- smaller
+        // than the two errors combined as if independent.
+        ASSERT_TRUE(r.discretisation_bias_std_error.has_value());
+        ASSERT_EQ(fine.replicates.size(), coarse.replicates.size());
+        ASSERT_GT(fine.replicates.size(), 1u);
+        double mean = 0.0, m2 = 0.0;
+        const std::size_t R = fine.replicates.size();
+        const double n = static_cast<double>(R);
+        for (std::size_t i = 0; i < R; ++i)
+            mean += (fine.replicates[i] - coarse.replicates[i]) / n;
+        for (std::size_t i = 0; i < R; ++i)
+            m2 += std::pow(fine.replicates[i] - coarse.replicates[i] - mean, 2);
+        EXPECT_NEAR(*r.discretisation_bias_std_error, std::sqrt(m2 / (n - 1.0) / n), 1e-12);
+        EXPECT_LT(*r.discretisation_bias_std_error, std::hypot(fine.std_error(), coarse.std_error()));
+    }
+
+    TEST(Mlmc, WithoutReplicatesTheBiasErrorCombinesTheTwoErrors)
+    {
+        ScriptedProduct<Real> product(kCall, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        PricingSettings s;
+        s.mc_paths = 1 << 14;
+        s.mc_sampler = SamplerKind::PseudoRandom;
+        s.mc_bias_estimate = true;
+        const SimulationMCResult r = simulate_script(product, *m, s);
+        auto halved = make_script_model<Real>(local_vol(false));
+        ASSERT_TRUE(halved->set_refinement(2));
+        PricingSettings p = s;
+        p.mc_bias_estimate = false;
+        const SimulationMCResult fine = simulate_script(product, *halved, p);
+        const SimulationMCResult coarse = simulate_script(product, *m, p);
+        ASSERT_TRUE(r.discretisation_bias_std_error.has_value());
+        EXPECT_NEAR(*r.discretisation_bias_std_error, std::hypot(fine.std_error(), coarse.std_error()), 1e-12);
     }
 
     TEST(Mlmc, BlackScholesHasNoDiscretisationBiasAndRoughBergomisIsNotEstimated)

@@ -80,6 +80,9 @@ namespace quantModeling
         /// estimated (a model that cannot refine its grid, a non-Monte-Carlo
         /// engine).
         std::optional<Real> discretisation_bias;
+        /// Its standard error, when measured (halved steps): a bias below
+        /// about twice this is not resolved by the estimate.
+        std::optional<Real> discretisation_bias_std_error;
     };
 } // namespace quantModeling
 

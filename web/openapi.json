@@ -8911,6 +8911,18 @@
             "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
             "title": "Discretisation Bias"
           },
+          "discretisation_bias_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard error of discretisation_bias, when it comes from halving the steps: the spread of the two runs' replicate-wise differences (common random numbers), or the two standard errors combined without replicates. A bias below about twice this is not resolved: the estimate cannot tell it from zero.",
+            "title": "Discretisation Bias Std Error"
+          },
           "gpus": {
             "default": 0,
             "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
@@ -11253,12 +11265,18 @@
             "title": "Spot"
           },
           "steps_per_year": {
-            "default": 252,
-            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). 252 by default: on SPY's local-vol grid a one-year ATM call (about 54) is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016 (blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; mlmc_eps controls it.",
-            "maximum": 504.0,
-            "minimum": 12.0,
-            "title": "Steps Per Year",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 504.0,
+                "minimum": 12.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). None, the default: 64 for heston, whose price runs step the variance by QE, nearly exact over a long step (WP 26 \u00a720); 252 for slv, whose leverage is held over each step (on SPY's fit of 2026-11-19, 64 a year put a 1y put 2 % above 504 a year, 252 within its noise), and for local vol (on SPY's grid a one-year ATM call, about 54, is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016, blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; discretisation_bias estimates it, mlmc_eps controls it.",
+            "title": "Steps Per Year"
           },
           "ticker": {
             "anyOf": [
@@ -11835,12 +11853,18 @@
             "title": "Spot"
           },
           "steps_per_year": {
-            "default": 252,
-            "description": "Euler steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). 252 by default: on SPY's local-vol grid a one-year ATM call (about 54) is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016 (blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; mlmc_eps controls it.",
-            "maximum": 504.0,
-            "minimum": 12.0,
-            "title": "Steps Per Year",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 504.0,
+                "minimum": 12.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Time steps per year for local_vol, heston and slv (ignored by black_scholes, which is simulated exactly). None, the default: 64 for heston, whose price runs step the variance by QE, nearly exact over a long step (WP 26 \u00a720); 252 for slv, whose leverage is held over each step (on SPY's fit of 2026-11-19, 64 a year put a 1y put 2 % above 504 a year, 252 within its noise), and for local vol (on SPY's grid a one-year ATM call, about 54, is 0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at 2016, blueprint WP 26 \u00a79.3). The standard error does not include this discretisation bias; discretisation_bias estimates it, mlmc_eps controls it.",
+            "title": "Steps Per Year"
           },
           "terms": {
             "additionalProperties": {
@@ -13676,6 +13700,18 @@
             "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
             "title": "Discretisation Bias"
           },
+          "discretisation_bias_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard error of discretisation_bias, when it comes from halving the steps: the spread of the two runs' replicate-wise differences (common random numbers), or the two standard errors combined without replicates. A bias below about twice this is not resolved: the estimate cannot tell it from zero.",
+            "title": "Discretisation Bias Std Error"
+          },
           "gpus": {
             "default": 0,
             "description": "GPUs the Monte-Carlo shared its paths between (0 on the CPU). The result is the same bits for any count (blueprint WP 19 \u00a77).",
@@ -14083,6 +14119,18 @@
             ],
             "description": "Estimated discretisation (time-step) bias of npv, in its units: what mc_std_error leaves out (blueprint WP 26 \u00a79.4). From the multilevel run's bias test, or from halving a plain run's steps; 0 for a model simulated exactly between the product's dates; null when not estimated (a model that cannot refine its grid, AAD greeks, a non-Monte-Carlo engine).",
             "title": "Discretisation Bias"
+          },
+          "discretisation_bias_std_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard error of discretisation_bias, when it comes from halving the steps: the spread of the two runs' replicate-wise differences (common random numbers), or the two standard errors combined without replicates. A bias below about twice this is not resolved: the estimate cannot tell it from zero.",
+            "title": "Discretisation Bias Std Error"
           },
           "gpus": {
             "default": 0,

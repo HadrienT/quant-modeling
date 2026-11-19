@@ -139,7 +139,11 @@ export function ResultsPanel({
 				</div>
 				<ComputeBreakdown timings={r.timings} engine={engine} />
 				{isMc && (
-					<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
+					<DiscretisationBias
+						bias={r.discretisation_bias}
+						error={r.discretisation_bias_std_error}
+						value={r.npv}
+					/>
 				)}
 				{r.diagnostics && (
 					<details className="mt-2 text-2xs text-ink-muted">

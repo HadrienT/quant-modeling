@@ -72,4 +72,16 @@ describe("DiscretisationBias", () => {
 		const { container } = render(<DiscretisationBias bias={null} value={10} />);
 		expect(container).toBeEmptyDOMElement();
 	});
+
+	it("shows a resolved bias with its error", () => {
+		render(<DiscretisationBias bias={0.5} error={0.1} value={50} />);
+		expect(screen.getByText(/Time-step bias/)).toHaveTextContent(/0\.5.*± 0\.1.*1\.00 %/);
+	});
+
+	it("bounds a bias within twice its error instead of showing it", () => {
+		render(<DiscretisationBias bias={0.15} error={0.1} value={50} />);
+		const el = screen.getByText(/not resolved/);
+		expect(el).toHaveTextContent(/below ≈ 0\.2.*0\.40 %/);
+		expect(el).not.toHaveTextContent(/0\.15/);
+	});
 });

@@ -38,7 +38,11 @@ export function ScriptResult({ result: r }: { result: PricingResult }) {
 						emphasis
 					/>
 				</div>
-				<DiscretisationBias bias={r.discretisation_bias} value={r.npv} />
+				<DiscretisationBias
+						bias={r.discretisation_bias}
+						error={r.discretisation_bias_std_error}
+						value={r.npv}
+					/>
 				{r.diagnostics && (
 					<p className="mt-2 font-mono text-2xs text-ink-muted">
 						{r.diagnostics}

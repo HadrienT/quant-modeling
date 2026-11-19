@@ -660,6 +660,7 @@ static py::dict price_script(const std::string &script, double spot, double rate
     res.device = mc->device;
     res.gpus = mc->gpus;
     res.discretisation_bias = mc->discretisation_bias;
+    res.discretisation_bias_std_error = mc->discretisation_bias_std_error;
     py::dict out = pricing_result_to_dict(res);
     out["warnings"] = advice_to_py(advice);
     out["historical_payments"] = historical_payments;

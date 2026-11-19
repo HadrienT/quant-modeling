@@ -49,3 +49,24 @@ def test_aad_greeks_take_the_qe_price_and_the_euler_risks():
     assert r["greeks"] == {"delta": 0.5} and r["risks"][0]["label"] == "spot"
     assert len(r["warnings"]) == 1  # not repeated
     assert "Euler" in r["diagnostics"] and "QE" in r["diagnostics"]
+
+
+def test_default_steps_per_year_by_model():
+    from datetime import date
+    from types import SimpleNamespace
+
+    req = SimpleNamespace(steps_per_year=None)
+    today = date(2026, 11, 19)
+    one_year = "2027-11-19\n    pays max(spot() - 100, 0)\n"
+    short = "2026-12-25\n    pays max(spot() - 100, 0)\n"  # 36 days
+    assert ps._steps_per_year(req, "heston", one_year, today) == 64
+    # at least 32 steps over a short life
+    assert ps._steps_per_year(req, "heston", short, today) == 325
+    # SLV holds its leverage over a step: 252 (WP 26 §20); local vol too
+    assert ps._steps_per_year(req, "slv", one_year, today) == 252
+    assert ps._steps_per_year(req, "local_vol", one_year, today) == 252
+    # an explicit request wins
+    assert (
+        ps._steps_per_year(SimpleNamespace(steps_per_year=100), "heston", short, today)
+        == 100
+    )

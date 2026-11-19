@@ -302,16 +302,21 @@ class ScriptPricingInputs(BaseModel):
         description="n x n correlation matrix of the typed underlyings "
         "(ignored with tickers, whose correlation is historical).",
     )
-    steps_per_year: int = Field(
-        252,
+    steps_per_year: Optional[int] = Field(
+        None,
         ge=12,
         le=504,
-        description="Euler steps per year for local_vol, heston and slv "
-        "(ignored by black_scholes, which is simulated exactly). 252 by "
-        "default: on SPY's local-vol grid a one-year ATM call (about 54) is "
-        "0.57 above its fine-step limit at 52 steps a year, 0.13 at 252, "
-        "0.02 at 2016 (blueprint WP 26 §9.3). The standard error does not "
-        "include this discretisation bias; mlmc_eps controls it.",
+        description="Time steps per year for local_vol, heston and slv "
+        "(ignored by black_scholes, which is simulated exactly). None, the "
+        "default: 64 for heston, whose price runs step the variance by QE, "
+        "nearly exact over a long step (WP 26 §20); 252 for slv, whose "
+        "leverage is held over each step (on SPY's fit of 2026-11-19, 64 a "
+        "year put a 1y put 2 % above 504 a year, 252 within its noise), and "
+        "for local vol (on SPY's grid a one-year ATM call, about 54, is 0.57 "
+        "above its fine-step limit at 52 steps a year, 0.13 at 252, 0.02 at "
+        "2016, blueprint WP 26 §9.3). The standard error does not include "
+        "this discretisation bias; discretisation_bias estimates it, "
+        "mlmc_eps controls it.",
     )
     spot: Optional[float] = Field(
         None,
@@ -1066,6 +1071,14 @@ class PricingResponse(BaseModel):
         description="Scripts priced with second_order=True: how gamma, vanna "
         "and volga were computed (the bump on the GPU's adjoint, its bumps and "
         "pairing). Null when they were not.",
+    )
+    discretisation_bias_std_error: Optional[float] = Field(
+        None,
+        description="Standard error of discretisation_bias, when it comes "
+        "from halving the steps: the spread of the two runs' replicate-wise "
+        "differences (common random numbers), or the two standard errors "
+        "combined without replicates. A bias below about twice this is not "
+        "resolved: the estimate cannot tell it from zero.",
     )
     discretisation_bias: Optional[float] = Field(
         None,

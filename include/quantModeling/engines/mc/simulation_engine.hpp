@@ -52,6 +52,11 @@ namespace quantModeling
         /// filled by simulate_script when asked (PricingSettings::
         /// mc_bias_estimate) or by its multilevel route; absent otherwise.
         std::optional<Real> discretisation_bias;
+        /// The standard error of that estimate (halved steps only): the
+        /// spread of the fine and coarse runs' replicate-wise differences
+        /// (common random numbers), or sqrt(se_fine^2 + se_coarse^2)
+        /// without replicates -- an upper bound for runs sharing a seed.
+        std::optional<Real> discretisation_bias_std_error;
 
         Real npv() const { return values.empty() ? Real(0) : values.front(); }
         Real std_error() const

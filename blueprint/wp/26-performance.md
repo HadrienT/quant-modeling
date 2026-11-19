@@ -2497,12 +2497,29 @@ steps a year on every product scanned (vanillas, Asian, cliquet, touches,
 autocall, volatility swap) and drifts on the cliquet below that (−0.34 % at
 32, the leverage frozen over a long step); Euler at 64 is 1 to 9 % off.
 
-**Measured on the way, not fixed here.**
-- The `discretisation_bias` shown is |fine − coarse| from one seed: across 8
-  seeds its standard deviation is 0.1–0.3 % of the price, under Euler as
-  under QE, about as large as the values shown on most products. A defensible
-  figure needs its own error (or several seeds).
-- At 50 000 paths the page's time is mostly fixed costs (the chain read until
-  the load registry exists, #332): 252 → 64 steps saves 10–20 % of the wall
-  time there, the engine's 4× only at higher precision. Lowering the default
-  steps under QE is the maintainer's decision.
+**The steps, lowered where it holds (2026-11-19, evening).** The scan above
+ran on the 2026-11-18 snapshot. On the 2026-11-19 one (a new SLV fit, its
+leverage on 129 time columns dense at the short end), a 1y put under SLV at
+64 steps a year was 2 % above 504 a year, at 128 0.65 %, at 252 within its
+noise: QE removed the variance's bias, not the one from holding the
+leverage over a step. So:
+- **Heston: 64 steps a year**, at least 32 over the product's life
+  (`pricing_service._steps_per_year`). Against 504 a year, 400 000 paths:
+  within 0.15 % on vanillas, Asian and digital from 0.25y up; at 0.1y the
+  digital put was 0.75 % off with 6 steps, hence the floor.
+- **SLV and local vol: 252**, unchanged. Since `auto` picks SLV for every
+  single-asset product, the page's step count does not move; stepping SLV on
+  its leverage's own time nodes would be the way to lower it.
+
+**The bias shown, with its error.** The `discretisation_bias` from halving
+the steps is |fine − coarse| from one seed: across 8 seeds its standard
+deviation is 0.1–0.3 % of the price, under Euler as under QE, about as large
+as the values shown. It now carries `discretisation_bias_std_error`: the
+spread of the two runs' replicate-wise differences, the Sobol replicates
+being shared (common random numbers), or the two errors combined without
+replicates (an upper bound). The page shows a bias below twice its error as
+"not resolved, below ≈ 2σ", a bound rather than a number the estimate
+cannot back. The multilevel route's bias test carries no error yet.
+
+**Not done here.** At 50 000 paths the page's time is mostly fixed costs
+(the chain read until the load registry exists, #332).

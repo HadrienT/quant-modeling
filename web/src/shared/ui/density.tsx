@@ -107,13 +107,20 @@ export function Uncertainty({
  * which leaves it out (blueprint WP 26 §9.4): estimated by the multilevel
  * run's bias test or by halving a plain run's steps; 0 for a model simulated
  * exactly between the product's dates. Nothing when not estimated.
+ *
+ * Halving the steps gives the bias with its own standard error (WP 26 §20):
+ * one seed's estimate moves by about as much as the bias on most products,
+ * so a value below twice its error is shown as not resolved -- a bound, not
+ * a number the estimate cannot back.
  */
 export function DiscretisationBias({
 	bias,
+	error,
 	value,
 	magnitude = "price",
 }: {
 	bias: number | null | undefined;
+	error?: number | null;
 	value: number | null | undefined;
 	magnitude?: Magnitude;
 }) {
@@ -126,12 +133,25 @@ export function DiscretisationBias({
 		);
 	}
 	const relative = value ? Math.abs(bias / value) : 0;
+	const pct = (x: number) => (value ? ` (${((x / Math.abs(value)) * 100).toFixed(2)} %)` : "");
+	if (error != null && Number.isFinite(error) && error > 0 && bias < 2 * error) {
+		return (
+			<span
+				className="font-mono text-2xs text-ink-muted"
+				title="The halved-step estimate is within twice its own standard error: it cannot tell the bias from zero, only bound it"
+			>
+				Time-step bias: not resolved, below ≈ {formatNumber(2 * error, magnitude)}
+				{pct(2 * error)}, not in the ±
+			</span>
+		);
+	}
 	return (
 		<span
 			className="font-mono text-2xs text-ink-muted"
 			title="Estimated discretisation (time-step) bias: not included in the ± standard error"
 		>
 			Time-step bias ≈ {formatNumber(bias, magnitude)}
+			{error != null && error > 0 && ` ± ${formatNumber(error, magnitude)}`}
 			{relative > 0 && ` (${(relative * 100).toFixed(2)} %)`}, not in the ±
 		</span>
 	);

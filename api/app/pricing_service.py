@@ -1,7 +1,7 @@
 import math
 import re
 import time
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
@@ -70,6 +70,35 @@ def _multilevel(req, model: str) -> Dict:
     )
 
 
+#: Steps a year by default (ScriptPricingInputs.steps_per_year = None).
+#: Heston prices by QE, nearly exact in law over a long step: 64 a year
+#: (WP 26 §20). SLV keeps 252 although its variance is QE too: its leverage
+#: is held over each step, and on SPY's 2026-11-19 fit (129 time columns,
+#: dense at the short end) 64 a year put a 1y put 2 % above 504 a year, 128
+#: a year 0.65 %, 252 within its noise. Local vol keeps 252 (WP 26 §9.3).
+DEFAULT_STEPS_PER_YEAR = 252
+HESTON_STEPS_PER_YEAR = 64
+#: ...and at least this many over the product's life: at 64 a year a 0.1y
+#: digital put has 6 steps and sits 0.75 % above 504 a year (WP 26 §20).
+HESTON_MIN_STEPS = 32
+
+_SCRIPT_DATE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\b", re.M)
+
+
+def _steps_per_year(req, model: str, script: str = "", valuation_date=None) -> int:
+    if req.steps_per_year is not None:
+        return req.steps_per_year
+    if model != "heston":
+        return DEFAULT_STEPS_PER_YEAR
+    steps = HESTON_STEPS_PER_YEAR
+    dates = [date.fromisoformat(d) for d in _SCRIPT_DATE.findall(script or "")]
+    if dates and valuation_date is not None:
+        life = (max(dates) - valuation_date).days / 365.0
+        if life > 0:
+            steps = max(steps, math.ceil(HESTON_MIN_STEPS / life))
+    return min(steps, 504)
+
+
 def _device(req, model: str) -> str:
     """Where a script request runs when it does not say: the GPU when the
     server has one ("auto") for a multilevel price, which the GPU returns
@@ -109,6 +138,7 @@ def _pricing_response_from_dict(result: Dict) -> PricingResponse:
         device=result.get("device", "cpu"),
         gpus=result.get("gpus", 0),
         discretisation_bias=result.get("discretisation_bias"),
+        discretisation_bias_std_error=result.get("discretisation_bias_std_error"),
         second_order_method=result.get("second_order_method"),
         # Only price_script(greeks_method="aad") populates this today
         # (blueprint/wp/17-aad.md §13.1); every other pricer's dict carries
@@ -494,7 +524,7 @@ def _price_multi_asset(
             [],
             [],
             [],
-            req.steps_per_year,
+            _steps_per_year(req, model),
             spots=[u.spot for u in used],
             dividends=[u.dividend + u.drift_adjustment for u in used],
             vols=[u.vol for u in used],
@@ -1195,7 +1225,7 @@ def price_script(
                     else t_grid if model == "local_vol" else []
                 ),
                 sigma,
-                req.steps_per_year,
+                _steps_per_year(req, model, script, valuation_date),
                 heston=heston,
                 leverage_flat=leverage,
                 device=_device(req, model),
