@@ -30,9 +30,9 @@ def _isolated_store_and_caches(tmp_path, monkeypatch):
         monkeypatch.setattr(
             storage, "_INSTANCE", storage.LocalJsonStorage(tmp_path / "store")
         )
-        market_snapshot._surfaces.clear()
+        market_snapshot.clear_caches()
         stochastic_vol._cache.clear()
     yield
     for _, market_snapshot, stochastic_vol in trees:
-        market_snapshot._surfaces.clear()
+        market_snapshot.clear_caches()
         stochastic_vol._cache.clear()

@@ -780,6 +780,56 @@ def options_snapshot_date_on_or_before(ticker: str, as_of: date) -> Optional[dat
         return row[0] if row and row[0] is not None else None
 
 
+@dataclass(frozen=True)
+class ChainSnapshotLoad:
+    """The latest stored chain of a ticker on or before a date, with its row in
+    data-ingest's load registry (`options.chain_snapshot_loads`, written in
+    the same transaction as the chain). `checksum` is None when the registry
+    has no row for that snapshot (not deployed yet, or a date it never saw):
+    the caller then reads the chain to know what it holds."""
+
+    snapshot_date: date
+    loaded_at: Optional[datetime] = None
+    row_count: Optional[int] = None
+    checksum: Optional[str] = None
+
+
+def options_chain_load_on_or_before(
+    ticker: str, as_of: date
+) -> Optional[ChainSnapshotLoad]:
+    """One indexed read: the latest snapshot date <= as_of (from the chain
+    itself, so a registry lagging behind cannot hide a newer chain) and its
+    registry row, if any. None if the ticker has no snapshot at all."""
+    t = ticker.upper()
+    try:
+        with _cursor() as cur:
+            cur.execute(
+                "SELECT s.d, l.loaded_at, l.row_count, l.checksum FROM "
+                "(SELECT MAX(date) AS d FROM options.chain_snapshot "
+                " WHERE ticker = %s AND date <= %s) s "
+                "LEFT JOIN options.chain_snapshot_loads l "
+                "ON l.ticker = %s AND l.date = s.d",
+                (t, as_of, t),
+            )
+            row = cur.fetchone()
+    except StoreUnavailable as exc:
+        if psycopg is None or not isinstance(
+            exc.__cause__, psycopg.errors.UndefinedTable
+        ):
+            raise
+        # The registry does not exist yet: the snapshot date alone.
+        snap = options_snapshot_date_on_or_before(t, as_of)
+        return ChainSnapshotLoad(snap) if snap is not None else None
+    if not row or row[0] is None:
+        return None
+    return ChainSnapshotLoad(
+        snapshot_date=row[0],
+        loaded_at=row[1],
+        row_count=int(row[2]) if row[2] is not None else None,
+        checksum=row[3],
+    )
+
+
 def price_on_or_before(ticker: str, as_of: date) -> Optional[Tuple[date, float]]:
     """Latest (date, close) with date <= as_of, from the same closes as
     price_history (the international table first, then sp500_daily)."""

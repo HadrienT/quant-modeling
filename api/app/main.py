@@ -172,6 +172,27 @@ def _start_calibration_warmup() -> None:
 
 
 @app.on_event("startup")
+def _warm_chain_cache() -> None:
+    # The Price page's default ticker read into memory before its first
+    # pricing (#332), in the background: a database that is down or a
+    # registry not deployed yet only means the first request reads it.
+    import threading
+    from datetime import date
+
+    from . import market_snapshot
+
+    def warm() -> None:
+        log = logging.getLogger(LOGGER_NAME)
+        try:
+            cached = market_snapshot.warm_chain("SPY", date.today())
+            log.info("option-chain cache warmed for SPY: %s", cached)
+        except Exception as exc:  # noqa: BLE001
+            log.info("option-chain cache not warmed: %s", exc)
+
+    threading.Thread(target=warm, name="chain-cache-warmup", daemon=True).start()
+
+
+@app.on_event("startup")
 def _start_kernel_warmup() -> None:
     # The GPU kernels of the catalogue's shapes and of the scripts priced
     # before, compiled or read from disk before the first request needs them
