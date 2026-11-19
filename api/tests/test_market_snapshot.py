@@ -39,6 +39,8 @@ def fake(monkeypatch):
         ],
         down=False,
         calls=[],
+        checksum=None,  # no registry row: the full read on every call
+        chain_reads=0,
     )
 
     def guard(v):
@@ -46,14 +48,26 @@ def fake(monkeypatch):
             raise db.StoreUnavailable("connection refused")
         return v
 
-    monkeypatch.setattr(
-        db, "options_snapshot_date_on_or_before", lambda t, d: guard(state["snap"])
-    )
+    def load(t, d):
+        snap = guard(state["snap"])
+        if snap is None:
+            return None
+        return db.ChainSnapshotLoad(
+            snap,
+            row_count=len(state["rows"]) if state["checksum"] else None,
+            checksum=state["checksum"],
+        )
+
+    def chain(t, d):
+        state["chain_reads"] += 1
+        return guard(state["rows"])
+
+    monkeypatch.setattr(db, "options_chain_load_on_or_before", load)
     monkeypatch.setattr(db, "price_on_or_before", lambda t, d: guard(state["price"]))
     monkeypatch.setattr(
         db, "dividend_yield_on_or_before", lambda t, d: guard(state["div"])
     )
-    monkeypatch.setattr(db, "options_chain_snapshot", lambda t, d: guard(state["rows"]))
+    monkeypatch.setattr(db, "options_chain_snapshot", chain)
 
     def calibrate(quotes, spot, rate, dividend, *a, **k):
         state["calls"].append((len(quotes), spot, rate, dividend))
@@ -241,3 +255,71 @@ def test_a_revised_quote_changes_the_chain_hash(fake):
     after = _collected(lambda: ms.local_vol_market("SPY", 0.03, SNAP))
     assert before["option_chain:SPY"].value_hash != after["option_chain:SPY"].value_hash
     assert before["spot:SPY"].value_hash == after["spot:SPY"].value_hash
+
+
+# ── The in-memory chain cache, keyed on data-ingest's load registry (#332) ──
+
+
+def test_with_a_registry_row_the_chain_is_read_once(fake):
+    fake["checksum"] = "c1"
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    ms.local_vol_market("SPY", 0.04, SNAP)
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    assert fake["chain_reads"] == 1
+    assert len(fake["calls"]) == 2  # one calibration per rate
+
+
+def test_a_changed_checksum_reloads_and_recalibrates(fake):
+    fake["checksum"] = "c1"
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    fake["rows"][0].bid = 1.05
+    fake["checksum"] = "c2"
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    assert fake["chain_reads"] == 2 and len(fake["calls"]) == 2
+
+
+def test_without_a_registry_row_every_call_reads_the_chain(fake):
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    assert fake["chain_reads"] == 2
+    assert len(fake["calls"]) == 1  # same rows, same calibration
+
+
+def test_a_chain_rewritten_during_its_read_is_not_cached(fake, monkeypatch):
+    fake["checksum"] = "c1"
+    real = db.options_chain_load_on_or_before
+    seen = []
+
+    def moving(t, d):
+        seen.append(d)
+        got = real(t, d)
+        if len(seen) == 2:  # the re-check after the rows: data-ingest wrote
+            return db.ChainSnapshotLoad(got.snapshot_date, checksum="c2")
+        return got
+
+    monkeypatch.setattr(db, "options_chain_load_on_or_before", moving)
+    inputs = _collected(lambda: ms.local_vol_market("SPY", 0.03, SNAP))
+    assert inputs["option_chain:SPY"].source == ms.ROWS_SOURCE
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    assert fake["chain_reads"] == 2  # nothing was cached under "c1"
+
+
+def test_the_audit_records_the_registry_checksum(fake):
+    from app.valuation import value_hash
+
+    fake["checksum"] = "c1"
+    inputs = _collected(lambda: ms.local_vol_market("SPY", 0.03, SNAP))
+    chain = inputs["option_chain:SPY"]
+    assert chain.source == "db:options.chain_snapshot_loads"
+    assert chain.value_hash == value_hash("c1")
+    # A cache hit records the same fingerprint.
+    again = _collected(lambda: ms.local_vol_market("SPY", 0.03, SNAP))
+    assert again["option_chain:SPY"].value_hash == chain.value_hash
+
+
+def test_warm_chain_loads_only_with_a_registry_row(fake):
+    assert ms.warm_chain("spy", SNAP) is False
+    fake["checksum"] = "c1"
+    assert ms.warm_chain("spy", SNAP) is True
+    ms.local_vol_market("SPY", 0.03, SNAP)
+    assert fake["chain_reads"] == 1  # the warm read only: the pricing hit it

@@ -143,6 +143,98 @@ def _chain_row_key(r: "db.OptionChainRow") -> tuple:
     )
 
 
+#: Where the chain's fingerprint comes from: data-ingest's load registry, or
+#: (no registry row) a digest of the rows read.
+REGISTRY_SOURCE = "db:options.chain_snapshot_loads"
+ROWS_SOURCE = "db:options.chain_snapshot"
+
+
+@dataclass(frozen=True)
+class _Chain:
+    """A stored chain made ready for the calibration: its unexpired quotes
+    (native objects, ~30 ms to build for SPY) and what identifies it."""
+
+    quotes: list
+    fingerprint: str
+    source: str
+
+
+#: Parsed chains by (ticker, snapshot date, registry checksum): ~1.2 MB per
+#: loaded SPY market, so a bound well above the 10 tickers data-ingest tracks
+#: still holds tens of megabytes at most. No time to live: the checksum is in
+#: the key, so a rewritten snapshot is a new key, never a stale hit (#332).
+_CHAIN_CACHE_SIZE = 24
+_chains: KeyedCache[_Chain] = KeyedCache(_CHAIN_CACHE_SIZE)
+
+
+def _rows_digest(rows: List["db.OptionChainRow"]) -> str:
+    return hashlib.sha256(
+        json.dumps([_chain_row_key(r) for r in rows]).encode()
+    ).hexdigest()
+
+
+def _read_chain(ticker: str, snap: date) -> tuple[list, list]:
+    rows = read_store(db.options_chain_snapshot, ticker, snap)
+    quotes = []
+    for r in rows:
+        ttm = _ttm(r.expiry, snap)
+        if ttm > 0:
+            quotes.append(_quote(r, ttm))
+    return rows, quotes
+
+
+def _chain(ticker: str, load: "db.ChainSnapshotLoad") -> _Chain:
+    """The chain `load` names. With a registry row, read once per checksum
+    and then served from memory; without one, read in full on every call
+    (the path before the registry), so the cache never depends on it."""
+    snap = load.snapshot_date
+    if load.checksum is None:
+        rows, quotes = _read_chain(ticker, snap)
+        return _Chain(quotes, _rows_digest(rows), ROWS_SOURCE)
+
+    def read() -> _Chain:
+        rows, quotes = _read_chain(ticker, snap)
+        # The registry row was read before the chain: if data-ingest rewrote
+        # the snapshot in between, these rows are not the ones the checksum
+        # names. Re-read it (one row, a miss only) and refuse to cache then.
+        again = read_store(db.options_chain_load_on_or_before, ticker, snap)
+        if (
+            again is None
+            or again.checksum != load.checksum
+            or (load.row_count is not None and load.row_count != len(rows))
+        ):
+            raise _ChainChanged(_Chain(quotes, _rows_digest(rows), ROWS_SOURCE))
+        return _Chain(quotes, load.checksum, REGISTRY_SOURCE)
+
+    try:
+        return _chains.get((ticker, snap, load.checksum), read)
+    except _ChainChanged as changed:
+        return changed.chain
+
+
+class _ChainChanged(Exception):
+    """The snapshot changed while it was read: use the rows read, uncached."""
+
+    def __init__(self, chain: _Chain) -> None:
+        super().__init__("option chain rewritten during the read")
+        self.chain = chain
+
+
+def warm_chain(ticker: str, today: date) -> bool:
+    """Loads a ticker's latest chain into memory before any request asks for
+    it. True if it is now cached (False without a registry row)."""
+    load = read_store(db.options_chain_load_on_or_before, ticker.upper(), today)
+    if load is None or load.checksum is None:
+        return False
+    return _chain(ticker.upper(), load).source == REGISTRY_SOURCE
+
+
+def clear_caches() -> None:
+    """Forget every parsed chain and calibrated surface (tests)."""
+    _chains.clear()
+    _surfaces.clear()
+
+
 def read_store(fn, *args):
     """Call a store reader; an unreachable database is MarketDataUnavailable."""
     try:
@@ -168,14 +260,15 @@ def local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVol
 def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVolMarket:
     ticker = ticker.upper().strip()
 
-    snap = read_store(db.options_snapshot_date_on_or_before, ticker, valuation_date)
-    if snap is None:
+    load = read_store(db.options_chain_load_on_or_before, ticker, valuation_date)
+    if load is None:
         raise MarketDataUnavailable(
             f"no option-chain snapshot for '{ticker}' on or before "
             f"{valuation_date.isoformat()} in the database. data-ingest's "
             "options-chain-snapshot source tracks a fixed universe "
             "(OPTIONS_CHAIN_TICKERS); a ticker outside it has no stored surface."
         )
+    snap = load.snapshot_date
     gap = (valuation_date - snap).days
     if gap > MAX_SNAPSHOT_GAP_DAYS:
         raise MarketDataUnavailable(
@@ -206,13 +299,8 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         )
     dividend = div_row[1]
 
-    rows = read_store(db.options_chain_snapshot, ticker, snap)
-    quotes = []
-    for r in rows:
-        ttm = _ttm(r.expiry, snap)
-        if ttm > 0:
-            quotes.append(_quote(r, ttm))
-    if not quotes:
+    chain = _chain(ticker, load)
+    if not chain.quotes:
         raise MarketDataUnavailable(
             f"the stored snapshot of '{ticker}' on {snap.isoformat()} has no "
             "unexpired quotes"
@@ -241,28 +329,30 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         MarketInputStatus.OBSERVED,
         dividend,
     )
+    # The chain's fingerprint is the registry's checksum when there is one:
+    # a replay compares it with the registry, so a revised chain is detected
+    # without reading its rows.
     record_market_input(
         f"option_chain:{ticker}",
-        "db:options.chain_snapshot",
+        chain.source,
         snap.isoformat(),
         MarketInputStatus.OBSERVED,
-        [_chain_row_key(r) for r in rows],
+        chain.fingerprint,
     )
 
     # The calibration is a function of what was just read: cached on a
-    # digest of it (the reads and their audit records above still happen on
-    # every call, so a revised chain is a new key, not a stale hit).
+    # digest of it (the chain enters by its fingerprint, so a revised chain
+    # is a new key, not a stale hit).
     surface_key = hashlib.sha256(
         json.dumps(
-            [ticker, snap.isoformat(), spot, rate, dividend]
-            + [_chain_row_key(r) for r in rows]
+            [ticker, snap.isoformat(), spot, rate, dividend, chain.fingerprint]
         ).encode()
     ).hexdigest()
     with phase("calibration"):
         result = _surfaces.get(
             surface_key,
             lambda: qm.calibrate_vol_surface(
-                quotes,
+                chain.quotes,
                 spot,
                 rate,
                 dividend,
