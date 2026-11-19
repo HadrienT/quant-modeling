@@ -130,14 +130,20 @@ namespace quantModeling::scripting
                                   "2025-03-01\n    if spot() < 90 then n = 1 endIf\n"
                                   "2025-06-01\n    if spot() < 80 then n = 2 endIf\n"
                                   "2025-09-01\n    if spot() < 70 then n = 3 endIf\n";
-        const NodeComparison &gt = condition_of(analysed(setup + "2025-12-01\n    if n > 2 then x = 1 endIf\n"));
+        // the events kept alive: the comparison is a node inside them
+        const auto gt_events = analysed(setup + "2025-12-01\n    if n > 2 then x = 1 endIf\n");
+        const NodeComparison &gt = condition_of(gt_events);
         EXPECT_TRUE(gt.discrete);
         EXPECT_EQ(gt.discrete_shift, 0.5); // x from 0 to 1
         EXPECT_EQ(gt.discrete_eps, 0.5);
-        const NodeComparison &ge = condition_of(analysed(setup + "2025-12-01\n    if n >= 2 then x = 1 endIf\n"));
+        // the events kept alive: the comparison is a node inside them
+        const auto ge_events = analysed(setup + "2025-12-01\n    if n >= 2 then x = 1 endIf\n");
+        const NodeComparison &ge = condition_of(ge_events);
         EXPECT_EQ(ge.discrete_shift, -0.5); // x from -1 to 0
         EXPECT_EQ(ge.discrete_eps, 0.5);
-        const NodeComparison &lt = condition_of(analysed(setup + "2025-12-01\n    if n < 2 then x = 1 endIf\n"));
+        // the events kept alive: the comparison is a node inside them
+        const auto lt_events = analysed(setup + "2025-12-01\n    if n < 2 then x = 1 endIf\n");
+        const NodeComparison &lt = condition_of(lt_events);
         EXPECT_EQ(lt.discrete_shift, -0.5);
         EXPECT_EQ(lt.discrete_eps, 0.5);
     }
