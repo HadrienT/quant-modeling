@@ -1,8 +1,19 @@
 name: ci
 
+# A branch is tested through its pull request; a push to a branch without one
+# runs nothing (start it by hand with workflow_dispatch if needed). Before,
+# every push to a branch with a PR ran the whole workflow twice.
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A new push to a PR cancels the run it makes obsolete. Never on main: every
+# commit there must reach publish-image.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
 
@@ -33,6 +44,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      # CMake reads these from the environment on the first configure.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: /home/runner/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 2G
 
     steps:
       - name: Checkout
@@ -41,18 +58,53 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ clang-format curl zip unzip tar pkg-config \
+          sudo apt-get install -y cmake ninja-build g++ ccache curl zip unzip tar pkg-config \
             autoconf autoconf-archive automake libtool
 
-      - name: Restore vcpkg cache
+      # Two caches. The vcpkg clone only changes with the baseline. The binary
+      # packages are looked up by an ABI hash vcpkg computes, which follows the
+      # runner's compiler: a single fixed key was hit forever and never saved
+      # again, so once ubuntu-latest moved its compiler every package
+      # (python3, openssl... pulled by pybind11) was rebuilt on every run. A
+      # per-run key with a prefix restore saves the current packages each time.
+      - name: Restore vcpkg clone
         uses: actions/cache@v4
         with:
           path: |
             vcpkg
-            ~/.cache/vcpkg
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
+            !vcpkg/buildtrees
+            !vcpkg/packages
+            !vcpkg/downloads
+          key: vcpkg-clone-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-
+            vcpkg-clone-${{ runner.os }}-
+
+      # GitHub rolls runner images out gradually, so two image versions can
+      # alternate from one run to the next, and vcpkg's ABI hashes differ
+      # between them: each image version keeps its own packages.
+      - name: Runner image version
+        id: image
+        run: echo "version=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.job }}
+          restore-keys: |
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-
+            vcpkg-bin-${{ runner.os }}-
+
+      # Compiler cache: an unchanged translation unit is not compiled again.
+      # Same per-run key scheme as the vcpkg packages above.
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ github.job }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ github.job }}-
 
       - name: Ensure vcpkg is present
         # vcpkg.json pins the port versions (builtin-baseline); vcpkg reads
@@ -72,10 +124,15 @@ jobs:
         run: cmake --preset default
 
       - name: Build
-        run: cmake --build build -j
+        run: |
+          ccache --zero-stats
+          cmake --build build -j
+          ccache --show-stats
 
+      # Each TEST() runs in its own process (gtest_discover_tests), so the
+      # tests share no state and run one per core.
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)"
 
   # blueprint/wp/18-observability.md, lot 18a — was not run in CI until this
   # lot; its own acceptance criteria assume it blocks a PR.
@@ -83,6 +140,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      # CMake reads these from the environment on the first configure.
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_DIR: /home/runner/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 2G
 
     steps:
       - name: Checkout
@@ -91,18 +154,53 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ curl zip unzip tar pkg-config \
+          sudo apt-get install -y cmake ninja-build g++ ccache curl zip unzip tar pkg-config \
             autoconf autoconf-archive automake libtool
 
-      - name: Restore vcpkg cache
+      # Two caches. The vcpkg clone only changes with the baseline. The binary
+      # packages are looked up by an ABI hash vcpkg computes, which follows the
+      # runner's compiler: a single fixed key was hit forever and never saved
+      # again, so once ubuntu-latest moved its compiler every package
+      # (python3, openssl... pulled by pybind11) was rebuilt on every run. A
+      # per-run key with a prefix restore saves the current packages each time.
+      - name: Restore vcpkg clone
         uses: actions/cache@v4
         with:
           path: |
             vcpkg
-            ~/.cache/vcpkg
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}
+            !vcpkg/buildtrees
+            !vcpkg/packages
+            !vcpkg/downloads
+          key: vcpkg-clone-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            vcpkg-${{ runner.os }}-
+            vcpkg-clone-${{ runner.os }}-
+
+      # GitHub rolls runner images out gradually, so two image versions can
+      # alternate from one run to the next, and vcpkg's ABI hashes differ
+      # between them: each image version keeps its own packages.
+      - name: Runner image version
+        id: image
+        run: echo "version=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.job }}
+          restore-keys: |
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-
+            vcpkg-bin-${{ runner.os }}-
+
+      # Compiler cache: an unchanged translation unit is not compiled again.
+      # Same per-run key scheme as the vcpkg packages above.
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ github.job }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ github.job }}-
 
       - name: Ensure vcpkg is present
         # vcpkg.json pins the port versions (builtin-baseline); vcpkg reads
@@ -124,7 +222,10 @@ jobs:
           python-version: "3.12"
 
       - name: Build the quantmodeling wheel
-        run: scripts/build_wheel.sh
+        run: |
+          ccache --zero-stats
+          scripts/build_wheel.sh
+          ccache --show-stats
 
       - name: Install API deps + wheel
         run: |
