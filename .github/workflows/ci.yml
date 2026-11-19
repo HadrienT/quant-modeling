@@ -79,13 +79,21 @@ jobs:
           restore-keys: |
             vcpkg-clone-${{ runner.os }}-
 
+      # GitHub rolls runner images out gradually, so two image versions can
+      # alternate from one run to the next, and vcpkg's ABI hashes differ
+      # between them: each image version keeps its own packages.
+      - name: Runner image version
+        id: image
+        run: echo "version=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary packages
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.job }}
+          key: vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.job }}
           restore-keys: |
-            vcpkg-bin-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-
             vcpkg-bin-${{ runner.os }}-
 
       # Compiler cache: an unchanged translation unit is not compiled again.
@@ -167,13 +175,21 @@ jobs:
           restore-keys: |
             vcpkg-clone-${{ runner.os }}-
 
+      # GitHub rolls runner images out gradually, so two image versions can
+      # alternate from one run to the next, and vcpkg's ABI hashes differ
+      # between them: each image version keeps its own packages.
+      - name: Runner image version
+        id: image
+        run: echo "version=${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
       - name: Restore vcpkg binary packages
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.job }}
+          key: vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.job }}
           restore-keys: |
-            vcpkg-bin-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-bin-${{ runner.os }}-${{ steps.image.outputs.version }}-
             vcpkg-bin-${{ runner.os }}-
 
       # Compiler cache: an unchanged translation unit is not compiled again.
