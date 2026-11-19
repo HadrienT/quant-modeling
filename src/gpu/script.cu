@@ -285,7 +285,16 @@ namespace quantModeling::gpu
                 // 256 dimensions, more than the card holds at once; the
                 // result does not depend on the launch size.
                 constexpr std::size_t kScratchBytes = std::size_t{1} << 30;
-                per_launch = std::min<uint64_t>(per_launch, std::max<uint64_t>(1, kScratchBytes / per_block));
+                // Unless the whole request fits one launch within the budget
+                // and 4 GiB: below one wave a launch takes as long whatever
+                // its block count (each thread's units run in sequence), so
+                // the cap's remainder doubled the time -- SLV's adjoint (a
+                // gradient row of 12 908 parameters per thread, 34 MB a block)
+                // ran 31 blocks, then 1 alone, 52 + 46 ms on one V100 for the
+                // phoenix autocall (lot B of #331, 2026-11-19).
+                const bool one_launch = n_blocks <= per_launch && n_blocks * per_block <= 4 * kScratchBytes;
+                if (!one_launch)
+                    per_launch = std::min<uint64_t>(per_launch, std::max<uint64_t>(1, kScratchBytes / per_block));
                 if (s.blocks_per_launch > 0)
                     per_launch = std::min(per_launch, s.blocks_per_launch);
                 s.blocks_per_launch = std::min<uint64_t>(per_launch, std::max<uint64_t>(n_blocks, 1));
@@ -609,7 +618,12 @@ namespace quantModeling::gpu
             throw InvalidInput("simulate_script: program and model are required");
         const bool controlled = req.controls.n > 0;
         const CompiledKernels k =
-            compiled_kernels(req, PathKernel::Price, controlled ? "qm_script_controlled" : "qm_script_plain");
+            compiled_kernels(req, PathKernel::Price,
+                             controlled                                    ? "qm_script_controlled"
+                             : req.model->kind == DeviceModel::Kind::SLV ||
+                                     req.model->kind == DeviceModel::Kind::Heston
+                                 ? "qm_script_plain_r64"
+                                 : "qm_script_plain");
         out.events_note = k.note;
         out.compiled = k.ok();
         using Sample = MultiControlAccumulator::Sample;
