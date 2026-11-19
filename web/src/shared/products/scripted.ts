@@ -240,7 +240,7 @@ function typedInputs(
 const toPrecision = (v: Record<string, unknown>) => v.accuracy === "precision";
 
 /**
- * Price to a precision instead of a path count (issue #331): the engine runs
+ * Price to a precision instead of a path count (issue 331): the engine runs
  * a pilot, picks the paths and says which rule stopped it. 'From the market'
  * needs one ticker's stored chain (its half bid-ask spread in vol).
  */

@@ -8862,7 +8862,7 @@
         "type": "object"
       },
       "PrecisionTarget": {
-        "description": "Price to a precision instead of a path count (issue #331, steps 2-3):\na pilot run gives the per-path dispersion and the time-step bias, the\npath count follows, and the run stops at the first of four rules,\nwhich the response names (PrecisionOutcome.stopped).",
+        "description": "Price to a precision instead of a path count (issue 331, steps 2-3):\na pilot run gives the per-path dispersion and the time-step bias, the\npath count follows, and the run stops at the first of four rules,\nwhich the response names (PrecisionOutcome.stopped).",
         "properties": {
           "mode": {
             "default": "market",

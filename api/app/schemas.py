@@ -212,7 +212,7 @@ class HullWhiteInputs(BaseModel):
 
 
 class PrecisionTarget(BaseModel):
-    """Price to a precision instead of a path count (issue #331, steps 2-3):
+    """Price to a precision instead of a path count (issue 331, steps 2-3):
     a pilot run gives the per-path dispersion and the time-step bias, the
     path count follows, and the run stops at the first of four rules,
     which the response names (PrecisionOutcome.stopped)."""

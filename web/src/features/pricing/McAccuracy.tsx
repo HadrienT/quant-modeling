@@ -12,7 +12,7 @@ const STOPPED: Record<string, string> = {
 };
 
 /**
- * A Monte-Carlo price's accuracy beyond its ± (issue #331): the time-step
+ * A Monte-Carlo price's accuracy beyond its ± (issue 331): the time-step
  * bias with its own error, and, when priced to a precision, the target, the
  * rule that ended the run and what the target would have needed.
  */
