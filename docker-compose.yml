@@ -44,10 +44,10 @@ services:
       # Telemetry export (WP 18d): off unless set, for the same reason.
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - OTEL_SERVICE_NAME=quant-modeling-api-dev
-      # Scripting assistant: the llama-server of ~/AgenticEnv. It listens on the
-      # host's 127.0.0.1, unreachable from a container; the llama-bridge socket
-      # (AgenticEnv `just render-llama-bridge`) exposes it on the Docker gateway.
-      - QM_LLM_BASE_URL=${QM_LLM_BASE_URL:-http://172.17.0.1:8001/v1}
+      # Scripting assistant: Claude through the Anthropic API (issue #337).
+      # Without a key the assistant reports itself as not configured.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - QM_LLM_MODEL=${QM_LLM_MODEL:-claude-haiku-5-5}
     volumes:
       - ./api:/app/api
       - ./logs/quantmodeling:/app/logs

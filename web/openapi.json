@@ -483,12 +483,17 @@
         "type": "object"
       },
       "AssistantStatusResponse": {
-        "description": "Whether the assistant can answer right now.\n\n`up`: the model server answers and serves the assistant's model.\n`wrong_model`: it answers, but another model is loaded \u2014 a chat would be\nanswered by that one. `down`: it does not answer.",
+        "description": "Whether the assistant can answer right now.\n\n`up`: an API key is configured, the Anthropic API accepts it and knows the\nassistant's model. `down`: no key (`configured` is false), or the API\nrefused or did not answer.",
         "properties": {
           "checked_at": {
             "format": "date-time",
             "title": "Checked At",
             "type": "string"
+          },
+          "configured": {
+            "description": "Whether an API key is set on this server.",
+            "title": "Configured",
+            "type": "boolean"
           },
           "detail": {
             "description": "One sentence for the page.",
@@ -496,22 +501,13 @@
             "type": "string"
           },
           "model": {
-            "description": "The model the assistant is set up for.",
+            "description": "The Claude model the assistant uses.",
             "title": "Model",
             "type": "string"
-          },
-          "serving": {
-            "description": "What the model server reports.",
-            "items": {
-              "type": "string"
-            },
-            "title": "Serving",
-            "type": "array"
           },
           "state": {
             "enum": [
               "up",
-              "wrong_model",
               "down"
             ],
             "title": "State",
@@ -521,6 +517,7 @@
         "required": [
           "state",
           "model",
+          "configured",
           "detail",
           "checked_at"
         ],

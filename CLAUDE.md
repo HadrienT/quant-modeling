@@ -29,7 +29,7 @@ This repository is not alone on the server; four sibling repositories, each with
 |---|---|
 | `~/data-ingest` | **All market data ingestion** (Airflow → Postgres). quant-modeling only reads this database (`PGHOST=data-ingest-postgres` through the Docker network `dataplatform`). Missing data is fixed there, not here |
 | `~/quant-platform` ([GitHub](https://github.com/HadrienT/quant-platform)) | **Destination of logs, audit events and telemetry**: Kafka, append-only audit Postgres, OpenTelemetry Collector → Prometheus / Loki / Tempo, Grafana. Producer ↔ platform contract: `~/quant-platform/docs/contract.md`. On this side, the producer is `api/app/audit/` (`emit()`, `record_fallback()`), design in `blueprint/wp/18-observability.md` |
-| `~/AgenticEnv` | `llama-server` for the scripting assistant (see below) |
+| `~/AgenticEnv` | the local RAG's `llama-server`; no longer used by this repository (the scripting assistant moved to the Anthropic API, see below) |
 | `~/quant-backtest` ([GitHub](https://github.com/HadrienT/quant-backtest)) | **Backtest engine** in C++, shipped as the `quantbacktest` wheel. It consumes the `quantModeling` library at a pinned commit; only the database reads, the router, the audit and the `/backtest` page remain here (`api/app/backtest/`, `web/src/features/backtest/`; strategy tab live, hedging and risk model to do, `blueprint/wp/24-backtest.md`). Boundary: `~/quant-backtest/docs/contract.md`. No backtest computation in this repository |
 
 Connection to `quant-platform` (WP 18, done): in **production**, audit events go to its
@@ -65,18 +65,20 @@ sandbox, out of scope. No more BigQuery: the project is entirely off cloud.
 ## Scripting assistant
 
 **Scripting assistant** (`api/app/assistant/`, route `POST /api/assistant/scripting/chat`,
-chat of the `/scripting` page): it talks to the `llama-server` of `~/AgenticEnv`, whose URL
-is `QM_LLM_BASE_URL` (default `http://127.0.0.1:8000/v1` outside Docker;
-`http://172.17.0.1:8001/v1` in the compose files, through AgenticEnv's `llama-bridge`
-socket). Production is public and the route consumes the GPU: a visitor who is not logged
+chat of the `/scripting` page): it calls **Claude Haiku 5.5** through the Anthropic API with
+the official `anthropic` SDK (`assistant/llm.py`, issue #337). Configuration:
+`ANTHROPIC_API_KEY` in `.env` (a secret, never committed; empty = the assistant says it is
+not configured), `QM_LLM_MODEL` (default `claude-haiku-5-5`), `QM_LLM_EFFORT` (default
+`medium`), `QM_LLM_MAX_TOKENS` (default 16000, thinking included). No `temperature` (400 on
+this model). Only the question, the history, the editor's script and its last error are
+sent. Production is public and every question is billed: a visitor who is not logged
 in gets **10 questions per day** (`assistant/quota.py`, in-memory counter per IP hash, plus
 a global cap; `QM_ASSISTANT_ANON_DAILY` and `QM_ASSISTANT_ANON_DAILY_TOTAL`), after which
 the route answers 429 with the code `anonymous_quota_exhausted` and the page suggests
 logging in. A logged-in user (JWT) is not counted, and one of the two slots is reserved for
 them. Any script written by the model is checked by the real parser before being offered.
-`GET /api/assistant/status` (public, cached 15 s) says whether the server responds and with
-which model: the page shows it, because the `llama-server` is shared and can be stopped or
-loaded with another model. The prompt describes the language: **when the language changes
+`GET /api/assistant/status` (public, cached 15 s) says whether a key is configured and
+accepted (`GET /v1/models/{id}`, free) and with which model; the page shows it. The prompt describes the language: **when the language changes
 (new function, new syntax), update `assistant/prompt.py`**. `pytest` validates its examples
 against the parser and fails if they no longer pass.
 

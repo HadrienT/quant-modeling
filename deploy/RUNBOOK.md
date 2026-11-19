@@ -280,6 +280,7 @@ cp .env.placeholder .env
 | `JWT_SECRET` | `openssl rand -hex 32` (nouveau) — ou recopie celui de `~/quant-modeling/.env` pour garder les sessions existantes |
 | `PGPASSWORD` | **identique** à `~/data-ingest/.env` |
 | `QM_WEB_PORT` | `8091` (port de debug local, lié à 127.0.0.1 uniquement) |
+| `ANTHROPIC_API_KEY` | the scripting assistant's key (Anthropic Console → API keys). Optional: empty, the assistant says it is not configured. See "Scripting assistant" below |
 
 (`CORS_ALLOW_ORIGINS` peut rester vide : le défaut couvre
 `quant.tramonihadrien.com`. Le `COMMIT_SHA` est posé par `deploy.sh`. Si le jeton n'est pas encore
@@ -342,11 +343,6 @@ L'unité n'est qu'une ceinture de sécurité : les conteneurs ont
 l'unité n'a **pas** d'`ExecStop` : un `docker compose down` à l'extinction
 supprimait les conteneurs, et le site ne dépendait plus que de cette unité.
 Elle réessaie toutes les 30 s si docker n'est pas prêt (`Restart=on-failure`).
-
-`llama-bridge.socket` (dans `~/AgenticEnv`, pour l'assistant de scripting) doit
-dater d'**après** le 25/09/2026. L'ancienne version formait une boucle
-d'ordre de démarrage avec docker : systemd supprimait des étapes du boot, et
-cette unité ne démarrait plus. `scripts/status.sh` le signale.
 
 `data-ingest` doit aussi revenir au boot. Si ce n'est pas déjà le cas, crée une
 unit analogue pour `~/data-ingest` (même modèle : `Type=oneshot`,
@@ -519,7 +515,7 @@ Depuis `~/quant-modeling-prod`. `dc` = `docker compose -f docker-compose.prod.ym
 | Tâche | Commande |
 |---|---|
 | **Déployer une mise à jour** | `./scripts/deploy.sh` (fait le `git pull` lui-même) |
-| **Tout voir d'un coup** (site, plateforme, data-ingest, LLM) | `./scripts/status.sh` — en continu : `watch -c -n 10 ./scripts/status.sh` |
+| **Tout voir d'un coup** (site, plateforme, data-ingest, assistant) | `./scripts/status.sh` — en continu : `watch -c -n 10 ./scripts/status.sh` |
 | Voir l'état | `dc ps` |
 | Logs de l'app | `dc logs -f app` |
 | Logs du tunnel | `dc --profile tunnel logs -f cloudflared` |
@@ -555,6 +551,25 @@ request that needs it.
   V100s: some 190 kernels; a minute when they are all on disk).
 - `QM_KERNEL_CACHE=0` turns the disk cache off; `QM_KERNEL_WARMUP=0` the
   warm-up.
+
+## Scripting assistant: the Anthropic API key
+
+The chat on `/scripting` calls Claude (`claude-haiku-5-5`) through the
+Anthropic API (issue #337); it no longer uses AgenticEnv's `llama-server` or
+the `llama-bridge` socket.
+
+- The key is `ANTHROPIC_API_KEY` in `~/quant-modeling-prod/.env`, never in git.
+  After changing it: `./scripts/deploy.sh` (or `dc up -d app`).
+- Check: `curl -s http://127.0.0.1:8091/api/assistant/status`. `"state":"up"`
+  means the key is accepted and the model exists; `"configured":false` means
+  no key; otherwise `detail` names the cause (refused key, provider down),
+  the full error is in `dc logs app`.
+- Cost: about $0.005 per question at worst (≈ 5 000 tokens of system prompt,
+  up to three calls when the parser rejects a draft). The visitor quota
+  (`QM_ASSISTANT_ANON_DAILY`, `QM_ASSISTANT_ANON_DAILY_TOTAL`) bounds the
+  bill; signed-in users are not counted. A monthly spend limit on the
+  Anthropic Console is a second fence.
+- Rotate the key from the Console if it may have leaked, then redeploy.
 
 ## Dépannage
 

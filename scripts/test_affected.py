@@ -298,7 +298,7 @@ def main() -> int:
         else:
             print("CPU: no test depends on the change")
         if has_gpu_build:
-            # In series: the cards are shared (and with the assistant's LLM).
+            # In series: the cards are shared (and with AgenticEnv's llama-server).
             # The CI has no GPU: what is selected here is never run elsewhere.
             gpu_cmd = [
                 "ctest",

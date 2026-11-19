@@ -1,19 +1,21 @@
-"""Router — the payoff-scripting assistant (chat with a local LLM).
+"""Router — the payoff-scripting assistant (chat with Claude).
 
 POST /api/assistant/scripting/chat   (Server-Sent Events)
-GET  /api/assistant/status           is the model server up, and with which model
+GET  /api/assistant/status           is the assistant configured and reachable
 
-The model is the llama-server already running on the host (AgenticEnv); this
-route adds what a raw chat lacks: the DSL prompt, and a check of every script
-the model writes against the real parser before the user sees it
-(assistant/agent.py). One GPU serves everything, so concurrent chats are
-capped and the surplus is told to retry rather than queued.
+The model is Claude through the Anthropic API (assistant/llm.py, issue #337);
+this route adds what a raw chat lacks: the DSL prompt, and a check of every
+script the model writes against the real parser before the user sees it
+(assistant/agent.py). Each check smoke-prices the script on this server, so
+concurrent chats are capped and the surplus is told to retry rather than
+queued.
 
-The production app is public through the tunnel and this route spends the
-owner's GPU, so a visitor who is not signed in only gets a few questions a day
-(assistant/quota.py, issue #175): past them the route answers 429 with the
-code `anonymous_quota_exhausted`, which the page turns into a sign-in prompt.
-Signed-in users are not counted, and one slot is always kept for them.
+The production app is public through the tunnel and every question is billed
+to the owner's API account, so a visitor who is not signed in only gets a few
+questions a day (assistant/quota.py, issue #175): past them the route answers
+429 with the code `anonymous_quota_exhausted`, which the page turns into a
+sign-in prompt. Signed-in users are not counted, and one slot is always kept
+for them.
 """
 
 from __future__ import annotations
@@ -22,7 +24,6 @@ import json
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import PurePosixPath
 from typing import Callable, Iterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -31,7 +32,7 @@ from starlette.background import BackgroundTask
 
 from ..assistant.agent import run_assistant
 from ..assistant import quota
-from ..assistant.llm import LlamaServerClient, LLMError
+from ..assistant.llm import ClaudeClient, LLMError, LLMNotConfigured
 from ..assistant.schemas import AssistantStatusResponse, ScriptingChatRequest
 from ..audit import emit
 from ..audit.payloads import AssistantChatPayload, AssistantOutcome
@@ -70,49 +71,38 @@ class AnonymousQuotaExhausted(HTTPException):
 
 
 # The status is public (the page shows it before anyone signs in) and each
-# probe is a request to the model server: answered from a short cache, so the
+# probe is a request to the Anthropic API: answered from a short cache, so the
 # route cannot be used to hammer it.
 _STATUS_CACHE = TTLCache[str, AssistantStatusResponse](max_size=1, ttl_seconds=15)
 
 
-def _model_key(name: str) -> str:
-    """A model's name whatever form the server lists it in: a bare id, a file
-    name or a path to a .gguf."""
-    return PurePosixPath(name).name.lower().removesuffix(".gguf")
-
-
 def _probe() -> AssistantStatusResponse:
-    client = LlamaServerClient.from_env()
+    client = ClaudeClient.from_env()
     now = datetime.now(timezone.utc)
     try:
-        serving = client.served_models()
-    except LLMError:
-        # The reason (an internal address, a socket error) stays in the logs.
+        client.probe()
+    except LLMNotConfigured as exc:
         return AssistantStatusResponse(
             state="down",
             model=client.model,
-            detail="The model server does not answer: the assistant is offline.",
+            configured=False,
+            detail=str(exc),
             checked_at=now,
         )
-    wanted = _model_key(client.model)
-    # A server that lists nothing cannot be told apart from a right one.
-    if not serving or any(_model_key(m) == wanted for m in serving):
+    except LLMError as exc:
+        # The message is already safe to show; the cause is in the logs.
         return AssistantStatusResponse(
-            state="up",
+            state="down",
             model=client.model,
-            serving=serving,
-            detail="The assistant is online.",
+            configured=True,
+            detail=f"{exc} The assistant is offline.",
             checked_at=now,
         )
     return AssistantStatusResponse(
-        state="wrong_model",
+        state="up",
         model=client.model,
-        serving=serving,
-        detail=(
-            f"The model server is running {', '.join(serving)}, not the "
-            f"assistant's model ({client.model}): answers would come from that "
-            "model."
-        ),
+        configured=True,
+        detail="The assistant is online.",
         checked_at=now,
     )
 
@@ -162,7 +152,7 @@ def _stream(
         if remaining is not None:
             yield _sse({"type": "quota", "remaining": remaining})
         events = run_assistant(
-            model=LlamaServerClient.from_env(),
+            model=ClaudeClient.from_env(),
             history=[m.model_dump() for m in req.messages],
             valuation_date=req.valuation_date.isoformat(),
             day_count=req.day_count,

@@ -6,11 +6,10 @@ import type { components } from "./schema.gen";
 export type AssistantStatus = components["schemas"]["AssistantStatusResponse"];
 
 /**
- * Whether the assistant's model server answers, and with which model. Asked
- * again every half minute while the page is open: the server is shared with
- * other work on the same GPU and can be stopped or switched to another model
- * at any time. A failed request is its own state — the API is unreachable,
- * which says nothing about the model server.
+ * Whether the assistant can answer (an API key is set and the Anthropic API
+ * accepts it), and with which model. Asked again every half minute while the
+ * page is open. A failed request is its own state — our API is unreachable,
+ * which says nothing about the model.
  */
 export function useAssistantStatus() {
 	return useQuery<AssistantStatus, ApiError>({
