@@ -11727,6 +11727,12 @@
             "title": "Script",
             "type": "string"
           },
+          "start_today": {
+            "default": false,
+            "description": "Read the script as the Pricing page prices a library product: its first date moved to the valuation date and fixed there, so levels struck on it are known (a European, not a forward start). The events returned are then the dates still to come.",
+            "title": "Start Today",
+            "type": "boolean"
+          },
           "valuation_date": {
             "description": "Time 0. Defaults to today (UTC) when omitted.",
             "format": "date",

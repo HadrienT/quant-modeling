@@ -39,6 +39,9 @@ export function ScriptedReference({
 					script: p.script,
 					valuation_date: beforeFirstDate(p.script),
 					day_count: "ACT/365F",
+					// as the Pricing page prices it: an equity product starts today,
+					// struck on today's spot
+					start_today: p.market !== "rates",
 				},
 			});
 			if (error !== undefined) throw ApiError.from(error);

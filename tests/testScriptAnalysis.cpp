@@ -6,7 +6,9 @@
 #include "quantModeling/scripting/model_advice.hpp"
 
 #include <algorithm>
+#include <map>
 #include <string>
+#include <vector>
 
 namespace quantModeling
 {
@@ -96,6 +98,54 @@ namespace quantModeling
     TEST(ScriptAnalysis, AReferenceLevelFixedEarlierIsPathDependent)
     {
         EXPECT_TRUE(analyze(forward_start).path_dependent);
+    }
+
+    // ── past events are known fixings, not path state ───────────────────────
+
+    namespace
+    {
+        // The forward start valued once its strike date has passed (on it,
+        // or later): the strike is a known close.
+        ScriptAnalysis analyze_seasoned(const std::string &src, const std::string &valuation,
+                                        const std::map<Date, std::vector<double>> &fixings)
+        {
+            const ValuationContext ctx{Date::from_iso(valuation)};
+            return ScriptedProduct<Real>(src, ctx, {}, fixings).analysis();
+        }
+        const std::map<Date, std::vector<double>> strike_fixed{
+            {Date::from_iso("2024-12-03"), {100.0}}};
+    } // namespace
+
+    TEST(ScriptAnalysis, AReferenceLevelAlreadyFixedIsAConstantNotPathDependence)
+    {
+        // Struck on the valuation date (how the Pricing page starts a library
+        // product) or before it: a European on a known strike.
+        for (const char *valuation : {"2024-12-03", "2025-01-15"})
+        {
+            const ScriptAnalysis a = analyze_seasoned(forward_start, valuation, strike_fixed);
+            EXPECT_FALSE(a.path_dependent) << valuation;
+            EXPECT_TRUE(a.nonlinear_in_spot) << valuation;
+        }
+    }
+
+    TEST(ScriptAnalysis, ARunningQuantityStillAccumulatingStaysPathDependent)
+    {
+        // The average's first fixing is known, but it still accumulates over
+        // two future dates: the joint law of those dates matters.
+        const std::string asian3 = "2024-12-03\n    acc = spot()\n"
+                                   "2025-03-03\n    acc = acc + spot()\n"
+                                   "2025-06-03\n    acc = acc + spot()\n"
+                                   "    pays max(acc / 3 - 100, 0)\n";
+        EXPECT_TRUE(analyze_seasoned(asian3, "2024-12-03", strike_fixed).path_dependent);
+    }
+
+    TEST(ScriptAnalysis, OneFutureDateLeftOnAKnownStateIsNotPathDependent)
+    {
+        // The knock-in observation is past: what remains is a European whose
+        // payoff the known flag selects.
+        const ScriptAnalysis a = analyze_seasoned(knock_in, "2024-12-03", strike_fixed);
+        EXPECT_FALSE(a.path_dependent);
+        EXPECT_TRUE(a.spot_threshold_test);
     }
 
     TEST(ScriptAnalysis, QuantitiesNotDerivedFromSpotAreNotPathDependence)

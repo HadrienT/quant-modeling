@@ -671,9 +671,21 @@ static py::dict price_script(const std::string &script, double spot, double rate
 //    only, no model, no Monte-Carlo. Lets a UI show the resolved timeline and
 //    the detected variables (or the pointed parse error) instantly, before
 //    committing to a full simulation.
+using FixingsByIso = std::map<std::string, std::vector<double>>;
+
+/// Observed spots by ISO date, for the events on or before the valuation date.
+static std::map<quantModeling::Date, std::vector<double>> fixings_by_date(const FixingsByIso &by_iso)
+{
+    std::map<quantModeling::Date, std::vector<double>> out;
+    for (const auto &[iso, spots] : by_iso)
+        out.emplace(quantModeling::Date::from_iso(iso), spots);
+    return out;
+}
+
 static py::dict validate_script(const std::string &script,
                                 const std::string &valuation_date,
-                                const std::string &day_count)
+                                const std::string &day_count,
+                                const FixingsByIso &historical_fixings)
 {
     using namespace quantModeling;
 
@@ -681,7 +693,9 @@ static py::dict validate_script(const std::string &script,
     const DayCounter &basis = day_counter_by_name(day_count);
     const ValuationContext ctx{valuation, &basis, &NullCalendar::instance()};
 
-    const ScriptedProduct<Real> product(script, ctx);
+    // Past events are fixings: replayed, and left out of the analysis (a
+    // strike struck on a known close is a constant, not a path state).
+    const ScriptedProduct<Real> product(script, ctx, {}, fixings_by_date(historical_fixings));
 
     const std::vector<Date> dates = product.event_dates();
     const TimeLine &times = product.timeline();
@@ -804,26 +818,34 @@ void register_scripting(py::module_ &m)
     m.def(
         "recommend_script_model",
         [](const std::string &script, const std::string &valuation_date,
-           const std::string &day_count, bool market_surface, bool stochastic)
+           const std::string &day_count, bool market_surface, bool stochastic,
+           const FixingsByIso &historical_fixings)
         {
             using namespace quantModeling;
             const Date valuation = Date::from_iso(valuation_date);
             const ValuationContext ctx{valuation, &day_counter_by_name(day_count),
                                        &NullCalendar::instance()};
-            const ScriptedProduct<Real> product(script, ctx);
+            const ScriptedProduct<Real> product(script, ctx, {},
+                                                fixings_by_date(historical_fixings));
             return recommendation_to_py(scripting::recommend(
                 product.analysis(),
                 scripting::ModelAvailability{market_surface, stochastic}));
         },
         py::arg("script"), py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
         py::arg("market_surface") = true, py::arg("stochastic") = true,
+        py::arg("historical_fixings") = FixingsByIso{},
         "The simplest model that captures what the script's price depends on "
         "(scripting/model_advice.hpp recommend()), among those available: "
-        "{model, code, reason}.");
+        "{model, code, reason}. Events on or before the valuation date take "
+        "their spots from historical_fixings ({iso date: [spot per asset]}) "
+        "and are left out of the analysis.");
     m.def("validate_script", &validate_script, py::arg("script"),
           py::arg("valuation_date"), py::arg("day_count") = "ACT/365F",
+          py::arg("historical_fixings") = FixingsByIso{},
           "Parse a payoff script and resolve its timeline without pricing "
-          "it. Raises the same way price_script does on a malformed script.");
+          "it. Raises the same way price_script does on a malformed script. "
+          "Events on or before the valuation date take their spots from "
+          "historical_fixings, as in price_script.");
     m.def("simulate_black_scholes_paths", &simulate_black_scholes_paths_impl,
           py::arg("spot"), py::arg("rate"), py::arg("dividend"), py::arg("vol"), py::arg("ttm"),
           py::arg("n_steps") = 100, py::arg("n_paths") = 30, py::arg("seed") = 1,
