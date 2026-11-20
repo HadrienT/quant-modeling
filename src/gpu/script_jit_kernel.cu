@@ -36,7 +36,6 @@ extern "C" __device__ int qm_event_cols();
 extern "C" __device__ int qm_n_risks();
 extern "C" __device__ int qm_surv0();
 extern "C" __device__ int qm_n_surv();
-extern "C" __device__ int qm_vol_grid();
 
 // The request the kernel is linked for (scripting::CudaKernelSpec), defined
 // next to the blocks: constants after link-time optimisation.
@@ -90,19 +89,34 @@ namespace
 } // namespace
 
 // The backward sweep's grid state: the cell of the step being differentiated
-// (the local vol's or the SLV leverage's), and the adjoints not yet added to
-// the thread's gradient row. A row lives in global memory, one parameter
-// every `rows` doubles, and the C¹ grid's step reaches eight nodes: their
-// read-modify-writes were the adjoint's main stall. Consecutive steps mostly
-// fall in the same cell, so its nodes' adjoints are summed per thread and
-// written when the cell changes and at the end of the path
-// (pending_flush) -- a reassociated sum, within the CPU/GPU tolerance
-// (2026-11-16), deterministic run to run.
-struct PendingNodes
+// (the local vol's or the SLV leverage's) and the path's sparse gradient
+// trail.
+//
+// The trail (issue #342): the path's grid adjoints as (parameter, adjoint)
+// pairs in the order the sweep writes them, not a dense row over every
+// parameter. A step reaches two leverage nodes (SLV) or eight local-vol nodes
+// out of the page's 12 900, so the dense row -- 100 KB a thread -- was over
+// 96 % zeros, held the adjoint at 8 paths a thread and 32 blocks on the card
+// (12.5 % occupancy, latency-bound), and its memset and fold cost more than
+// the kernel. The fold (src/gpu/script.cu, fold_trails) sums the pairs into
+// one row per batch in a fixed order.
+struct GridTrail
 {
-    int nodes = 0; ///< 0 or 8
-    long index[8]; ///< their parameters' offsets in the row
-    double sum[8];
+    std::int32_t *index = nullptr; ///< pair e at index[e * stride]
+    double *value = nullptr;
+    long stride = 0;
+    int n = 0;   ///< pairs written (may pass cap: the fold reports it)
+    int cap = 0; ///< pairs the arrays hold
+
+    __device__ __forceinline__ void add(long p, double a)
+    {
+        if (n < cap)
+        {
+            index[n * stride] = static_cast<std::int32_t>(p);
+            value[n * stride] = a;
+        }
+        ++n;
+    }
 };
 
 struct BackwardCell
@@ -112,38 +126,8 @@ struct BackwardCell
         grid::GridCell vol;
         grid::LeverageCell leverage;
     } cell;
-    /// The local vol's pending nodes; null in the other models' kernels,
-    /// whose frames the buffer made larger and slower (SLV +13 %).
-    PendingNodes *pending = nullptr;
+    GridTrail trail;
 };
-
-__device__ inline void pending_flush(PendingNodes &b, const QmFrame *f)
-{
-    for (int k = 0; k < b.nodes; ++k)
-        f->ath[b.index[k] * f->ath_stride] += b.sum[k];
-    b.nodes = 0;
-}
-
-/// Adds the eight nodes' adjoints, summing them per thread while the nodes
-/// stay those of the pending cell.
-__device__ inline void pending_add(PendingNodes &b, const QmFrame *f, const long *index, const double *add)
-{
-    bool same = b.nodes == 8;
-    for (int k = 0; k < 8 && same; ++k)
-        same = b.index[k] == index[k];
-    if (!same)
-    {
-        pending_flush(b, f);
-        b.nodes = 8;
-        for (int k = 0; k < 8; ++k)
-        {
-            b.index[k] = index[k];
-            b.sum[k] = 0.0;
-        }
-    }
-    for (int k = 0; k < 8; ++k)
-        b.sum[k] += add[k];
-}
 
 // The grid's lookups: the models' own functions (path_steps.hpp), so that a
 // generated local-vol step is local_vol_step's, bit for bit.
@@ -169,31 +153,20 @@ extern "C" __device__ double qm_grid_slope(const QmFrame *f, double spot, double
         return grid::grid_slope(grid_of(f), static_cast<const BackwardCell *>(f->cell)->cell.vol);
     return grid::grid_slope(grid_of(f), spot, t);
 }
+// The accumulations run in the adjoint's backward sweep alone (f->cell set).
+// The local vol's eight nodes go straight to the trail, as the leverage's
+// two: every lane writes the same number of pairs a step, so pair e of the
+// warp's 32 paths is one coalesced store. The per-thread buffer that summed
+// a cell's nodes over consecutive steps (2026-11-16, against the dense row's
+// read-modify-writes) desynchronised the lanes -- each flushed when its own
+// cell changed, every store a sector of its own -- and took 75 registers:
+// the phoenix autocall on the page's local-vol grid ran its adjoint in 47 ms
+// with it, 7.1 ms without (65 536 paths, one V100, 2026-11-20).
 extern "C" __device__ void qm_grid_accumulate(const QmFrame *f, double spot, double t, double adjoint)
 {
-    if (f->cell && static_cast<BackwardCell *>(f->cell)->pending)
-    {
-        BackwardCell &b = *static_cast<BackwardCell *>(f->cell);
-        const grid::GridCell &c = b.cell.vol;
-        if (!c.free)
-            return;
-        const long nT = f->nT, g0 = f->grid0;
-        long index[8];
-        double add[8];
-        for (int k = 0; k < 4; ++k)
-        {
-            index[2 * k] = g0 + c.idx[k] * nT + c.j0;
-            index[2 * k + 1] = g0 + c.idx[k] * nT + c.j1;
-            add[2 * k] = adjoint * (c.w[k] * (1.0 - c.wT));
-            add[2 * k + 1] = adjoint * (c.w[k] * c.wT);
-        }
-        pending_add(*b.pending, f, index, add);
-    }
-    else if (f->cell)
-        grid::grid_accumulate(static_cast<const BackwardCell *>(f->cell)->cell.vol, f->nT, adjoint, f->ath,
-                              f->ath_stride, f->grid0);
-    else
-        grid::grid_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
+    BackwardCell &b = *static_cast<BackwardCell *>(f->cell);
+    grid::grid_accumulate_to(b.cell.vol, f->nT, adjoint, f->grid0, [&](long p, double v)
+                             { b.trail.add(p, v); });
 }
 // The SLV leverage the same way: on the backward sweep its cell is looked up
 // once, by the leverage, and kept for its slope and its corners' shares
@@ -217,13 +190,15 @@ extern "C" __device__ double qm_grid_leverage_slope(const QmFrame *f, double spo
 }
 extern "C" __device__ void qm_grid_leverage_accumulate(const QmFrame *f, double spot, double t, double adjoint)
 {
-    // Written straight to the row: two nodes a step, which the buffer made
-    // 6 % slower (2026-11-16).
-    if (f->cell)
-        grid::leverage_accumulate(static_cast<const BackwardCell *>(f->cell)->cell.leverage, f->nT, adjoint, f->ath,
-                                  f->ath_stride, f->grid0);
-    else
-        grid::leverage_accumulate(grid_of(f), spot, t, adjoint, f->ath, f->ath_stride, f->grid0);
+    BackwardCell &b = *static_cast<BackwardCell *>(f->cell);
+    grid::leverage_accumulate_to(b.cell.leverage, f->nT, adjoint, f->grid0,
+                                 [&](long p, double v)
+                                 { b.trail.add(p, v); });
+}
+// A grid parameter's adjoint the generated code writes as a block's output.
+extern "C" __device__ void qm_theta_add(const QmFrame *f, int index, double adjoint)
+{
+    static_cast<BackwardCell *>(f->cell)->trail.add(index, adjoint);
 }
 
 #if QM_JIT_KERNEL == 0
@@ -556,9 +531,9 @@ extern "C" __device__ double qm_path(const void *unit, void *draws);
  * Backward, it puts them back -- `st` is rolled back in place, last in first
  * out -- and runs the block's adjoint on the state the block started from.
  * The draws are not stored: Philox and the Sobol point regenerate them.
- * The scalar parameters' adjoints stay in `lth` for the path and are added
- * to the thread's gradient row at the end; the grid's go to the row as the
- * steps reach its cells.
+ * The grid's adjoints go to the path's sparse trail as the steps reach its
+ * cells; the scalar parameters' stay in `lth` for the path and close the
+ * trail, parameters 0 to n_risks - 1.
  */
 extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *st, double *ast, double *lth)
 {
@@ -608,57 +583,44 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
     ast[qm_pay_slot()] = 1.0;
     for (int p = 0; p < n_risks; ++p)
         lth[p] = 0.0;
-    // the cell of a backward step, and (local vol) the grid adjoints not yet
-    // in the row
+    // the cell of a backward step, and the path's trail
     BackwardCell cell{};
+    cell.trail.index = u.trail_index + row;
+    cell.trail.value = u.trail_value + row;
+    cell.trail.stride = rows;
+    cell.trail.cap = u.trail_cap;
     f.ast = ast;
     f.lth = lth;
-    f.ath = u.gradient + row;
-    f.ath_stride = rows;
     f.cell = &cell;
-    const auto sweep = [&]()
+    for (int s = u.n_steps - 1; s >= 0; --s)
     {
-        for (int s = u.n_steps - 1; s >= 0; --s)
+        const int e = u.step_event[s];
+        if (e >= 0)
         {
-            const int e = u.step_event[s];
-            if (e >= 0)
-            {
-                for (int i = n_state - 1; i >= n_model; --i)
-                    st[i] = ck[(--c) * rows];
-                f.dat = u.event_rows + e * event_cols;
-                f.tm = u.terms + u.term_begin[e];
-                qm_event_adjoint(u.kind[e], &f);
-            }
-            if (u.step_draws[s])
-            {
-                --d;
-                for (int j = n_surv - 1; j >= 0; --j)
-                    st[surv0 + j] = ck[(--c) * rows];
-                for (int k = n_model - 1; k >= 0; --k)
-                    st[k] = ck[(--c) * rows];
-                for (int k = 0; k < factors; ++k)
-                    z[k] = draws.at(d, k);
-                f.dat = u.step_rows + s * step_cols;
-                qm_step_adjoint(&f);
-            }
+            for (int i = n_state - 1; i >= n_model; --i)
+                st[i] = ck[(--c) * rows];
+            f.dat = u.event_rows + e * event_cols;
+            f.tm = u.terms + u.term_begin[e];
+            qm_event_adjoint(u.kind[e], &f);
         }
-    };
-    // qm_vol_grid() is a constant of the generated code: after link-time
-    // optimisation only one branch is left, and the pending nodes' frame
-    // exists in the local-vol kernels alone.
-    if (qm_vol_grid())
-    {
-        PendingNodes pending;
-        cell.pending = &pending;
-        sweep();
-        pending_flush(pending, &f);
+        if (u.step_draws[s])
+        {
+            --d;
+            for (int j = n_surv - 1; j >= 0; --j)
+                st[surv0 + j] = ck[(--c) * rows];
+            for (int k = n_model - 1; k >= 0; --k)
+                st[k] = ck[(--c) * rows];
+            for (int k = 0; k < factors; ++k)
+                z[k] = draws.at(d, k);
+            f.dat = u.step_rows + s * step_cols;
+            qm_step_adjoint(&f);
+        }
     }
-    else
-        sweep();
     f.dat = u.baseline;
     qm_init_adjoint(&f);
     for (int p = 0; p < n_risks; ++p)
-        u.gradient[p * rows + row] += lth[p];
+        cell.trail.add(p, lth[p]);
+    u.trail_count[row] = cell.trail.n;
     return payoff;
 }
 
@@ -677,17 +639,23 @@ namespace
     };
 } // namespace
 
-/// Each thread runs its 8 units in turn and reduces their payoffs (the
-/// library's logical_block_body); its gradient row accumulates over them.
+/// One thread per unit (a path), as the price kernels (lot P1g): thread i
+/// runs unit i % 2 048 of the launch's logical block i / 2 048 and stores its
+/// payoff at samples[i]; the host's logical_reduce_kernel reduces them in the
+/// serial kernel's order. Its gradient is its trail, which fold_trails sums.
+/// With a dense row per thread the adjoint ran 8 units a thread on 32 blocks:
+/// the phoenix autocall under SLV on the page's 100 x 129 grid (65 536 paths)
+/// went from 56.5 ms to 17.3 ms (+ 5.3 ms of fold), the whole call from 122 to
+/// 32 ms (one V100, 2026-11-20, issue #342; WP 26 §22).
 extern "C" __global__ void __launch_bounds__(quantModeling::mc::LogicalBlocks::kThreadsPerBlock)
-    qm_script_adjoint(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units,
-                      quantModeling::gpu::detail::PathUnit fn, quantModeling::WelfordAccumulator *partials)
+    qm_script_adjoint(uint64_t first_block, uint64_t blocks_per_segment, uint64_t n_units, uint64_t n_blocks,
+                      quantModeling::gpu::detail::PathUnit fn, double *samples)
 {
     PathUnit unit = specialised(fn);
     unit.antithetic = false;
     const AdjointUnit paths{unit};
-    quantModeling::gpu::detail::logical_block_body<quantModeling::WelfordAccumulator>(
-        first_block, blocks_per_segment, n_units, paths, partials);
+    quantModeling::gpu::detail::logical_block_units(first_block, blocks_per_segment, n_units, n_blocks, paths,
+                                                    samples);
 }
 
 #endif

@@ -62,7 +62,7 @@ namespace quantModeling::gpu::detail
                 double *pt = scratch + row;
                 double *out = scratch + static_cast<long>(sobol.dim) * rows + row;
                 mc::sobol_bridged_gaussians(sobol, rep, sobol.first_point + static_cast<uint32_t>(u), pt, rows, out,
-                                                rows);
+                                            rows);
                 d.given = out;
                 d.given_stride = rows;
             }
@@ -152,11 +152,19 @@ namespace quantModeling::gpu::detail
 
         mc::SpotControls controls;
 
-        // Adjoint: per launch thread `row`, checkpoint c at
-        // checkpoints[c * rows + row] and parameter p's adjoint at
-        // gradient[p * rows + row] (private rows: no atomics).
+        // Adjoint, one launch thread `row` per path: checkpoint c at
+        // checkpoints[c * rows + row], and the path's gradient as a sparse
+        // trail (issue #342) -- its e-th (parameter, adjoint) pair at
+        // trail_index[e * rows + row], trail_value[e * rows + row], in the
+        // order the backward sweep writes them, and its length at
+        // trail_count[row]. At most trail_cap pairs: the bound the IR's
+        // statements give (CudaSource::grid_writes_*), so a path that would
+        // write more is a bug, reported by the fold (trail_count > cap).
         double *checkpoints = nullptr;
-        double *gradient = nullptr;
+        std::int32_t *trail_index = nullptr;
+        double *trail_value = nullptr;
+        std::int32_t *trail_count = nullptr;
+        std::int32_t trail_cap = 0;
         long rows = 0;
     };
 

@@ -259,7 +259,8 @@ namespace quantModeling::gpu::detail
     {
         logical_block_reduce<Stats>(
             first_block, blocks_per_segment, n_units,
-            [&](uint64_t segment, uint64_t u, unsigned) { return call_unit(fn, segment, u); }, partials);
+            [&](uint64_t segment, uint64_t u, unsigned)
+            { return call_unit(fn, segment, u); }, partials);
     }
 
     /**
@@ -301,7 +302,8 @@ namespace quantModeling::gpu::detail
     {
         const Out *block = samples + static_cast<uint64_t>(blockIdx.x) * mc::LogicalBlocks::kUnitsPerBlock;
         logical_block_reduce<Stats>(
-            first_block, blocks_per_segment, n_units, [&](uint64_t, uint64_t, unsigned l) { return block[l]; },
+            first_block, blocks_per_segment, n_units, [&](uint64_t, uint64_t, unsigned l)
+            { return block[l]; },
             partials);
     }
 
@@ -393,12 +395,14 @@ namespace quantModeling::gpu::detail
      *
      * The launch size comes from free memory (the samples and partials, at
      * most half of what is free) and from `max_blocks_per_launch` (the
-     * caller's per-unit scratch).
+     * caller's per-unit scratch). `after_launch` runs after each launch's
+     * reduction, before the next launch reuses the per-unit scratch.
      */
     template <class Stats, class Out>
     std::vector<Stats> run_block_range_units(int device, uint64_t first, uint64_t last, uint64_t blocks_per_segment,
                                              uint64_t n_units, uint64_t max_blocks_per_launch,
-                                             const LaunchUnits<Out> &launch_units)
+                                             const LaunchUnits<Out> &launch_units,
+                                             const AfterLaunch &after_launch = {})
     {
         using L = mc::LogicalBlocks;
         require_device(device);
@@ -438,6 +442,8 @@ namespace quantModeling::gpu::detail
                 check(cudaMemcpy(&partials[static_cast<size_t>(b - first)], d_partials, count * sizeof(Stats),
                                  cudaMemcpyDeviceToHost),
                       "cudaMemcpy");
+                if (after_launch)
+                    after_launch(b, count);
             }
         }
         catch (...)

@@ -3,12 +3,13 @@
 // paths -- so both columns compute the same numbers, and the largest gap
 // between the two risk vectors is printed beside the times.
 //
-//   build-cuda/qm_gpu_risk_bench [paths=100000]
+//   build-cuda/qm_gpu_risk_bench [paths=100000] [gpu|all] [script/model]
 //
 // Local vol (the superbucket's input: dV/dsigma_loc on a 30 x 12 Dupire
 // grid, the market_vega endpoint's size), by the per-path adjoint; Black-
 // Scholes and Heston by forward-mode duals; SLV (8 parameters and the
-// leverage grid) by the generated adjoint.
+// leverage grid) by the generated adjoint. The `_page` models have the page's
+// 100 x 129 grid (issue #342: the adjoint's per-thread gradient row).
 
 #include <algorithm>
 #include <chrono>
@@ -78,9 +79,40 @@ namespace
         return g;
     }
 
+    // The page's size (issue #342): 100 strikes (40..200) by 129 dates over
+    // two years, the leverage grid of a calibrated SLV -- 12 900 nodes, of
+    // which a path's steps touch a few hundred.
+    std::vector<qm::Real> page_strikes()
+    {
+        std::vector<qm::Real> k;
+        for (int i = 0; i < 100; ++i)
+            k.push_back(40.0 + 160.0 * i / 99.0);
+        return k;
+    }
+    std::vector<qm::Real> page_maturities()
+    {
+        std::vector<qm::Real> t;
+        for (int j = 0; j < 129; ++j)
+            t.push_back(2.0 * (j + 1) / 129.0);
+        return t;
+    }
+
     template <class T>
     std::unique_ptr<qm::ISimulationModel<T>> make(const std::string &model)
     {
+        if (model == "lv_page" || model == "slv_page")
+        {
+            std::vector<T> g;
+            for (qm::Real k : page_strikes())
+                for (qm::Real t : page_maturities())
+                    g.push_back(model == "slv_page" ? T(1.0 + 0.6 * (100.0 - k) / 100.0 + 0.02 * t)
+                                                    : T(0.2 + 0.25 * (100.0 - k) / 100.0 + 0.01 * t));
+            if (model == "lv_page")
+                return std::make_unique<qm::LocalVolSimModel<T>>(T(100.0), T(0.03), T(0.01), page_strikes(),
+                                                                 page_maturities(), g, 1.0 / 252.0);
+            return std::make_unique<qm::SLVSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.04), T(1.5), T(0.05), T(0.6),
+                                                        T(-0.7), page_strikes(), page_maturities(), g, 1.0 / 252.0);
+        }
         if (model == "local_vol")
             return std::make_unique<qm::LocalVolSimModel<T>>(T(100.0), T(0.03), T(0.01), strikes(), maturities(),
                                                              sigma_loc<T>(), 1.0 / 252.0);
@@ -106,6 +138,8 @@ int main(int argc, char **argv)
 {
     const std::size_t paths = argc > 1 ? static_cast<std::size_t>(std::atol(argv[1])) : 100000;
     const bool gpu_only = argc > 2 && std::string(argv[2]) == "gpu"; // skip the CPU tape (minutes at 1M paths)
+    // one case only, "script/model" (to profile it)
+    const std::string only = argc > 3 ? argv[3] : "";
     if (qm::gpu::device_count() == 0)
     {
         std::fprintf(stderr, "no CUDA device\n");
@@ -120,9 +154,11 @@ int main(int argc, char **argv)
     std::printf("%-18s %-10s %7s %11s %11s %9s %12s\n", "script", "model", "risks", "CPU tape ms", "GPU ms",
                 "speed-up", "max |gap|");
     const std::pair<const char *, const char *> cases[] = {
-        {"european-call", "local_vol"}, {"up-and-out-call", "local_vol"}, {"phoenix-autocall", "local_vol"}, {"variance-swap", "local_vol"}, {"phoenix-autocall", "black_scholes"}, {"phoenix-autocall", "heston"}, {"up-and-out-call", "heston"}, {"european-call", "slv"}, {"up-and-out-call", "slv"}};
+        {"european-call", "local_vol"}, {"up-and-out-call", "local_vol"}, {"phoenix-autocall", "local_vol"}, {"variance-swap", "local_vol"}, {"phoenix-autocall", "black_scholes"}, {"phoenix-autocall", "heston"}, {"up-and-out-call", "heston"}, {"european-call", "slv"}, {"up-and-out-call", "slv"}, {"european-call", "lv_page"}, {"phoenix-autocall", "lv_page"}, {"phoenix-autocall", "slv_page"}, {"digital-call", "slv_page"}, {"up-and-out-call", "slv_page"}};
     for (const auto &[name, model] : cases)
     {
+        if (!only.empty() && only != std::string(name) + "/" + model)
+            continue;
         const std::string src = read_script(name);
         const qm::ScriptedProduct<qm::Real> product(src, ctx);
         auto gpu_model = make<qm::Real>(model);

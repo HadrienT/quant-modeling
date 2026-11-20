@@ -1,5 +1,6 @@
 #include "quantModeling/scripting/cuda_codegen.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -78,7 +79,7 @@ struct QmFrame
     double *dst;            // its tangents, [slot x directions + d]
     double *ast;            // its adjoints
     double *lth;            // the scalar parameters' adjoints, this path's
-    double *ath;            // the grid's adjoints, parameter p at ath[p x ath_stride]
+    double *ath;            // unused: the grid's adjoints go to the path's trail (qm_theta_add)
     long ath_stride;
     const double *z;        // the step's gaussians
     const double *dat;      // the step's or the date's data row
@@ -96,6 +97,7 @@ extern "C" __device__ void qm_grid_accumulate(const QmFrame *f, double spot, dou
 extern "C" __device__ double qm_grid_leverage(const QmFrame *f, double spot, double t);
 extern "C" __device__ double qm_grid_leverage_slope(const QmFrame *f, double spot, double t);
 extern "C" __device__ void qm_grid_leverage_accumulate(const QmFrame *f, double spot, double t, double adjoint);
+extern "C" __device__ void qm_theta_add(const QmFrame *f, int index, double adjoint);
 
 static __device__ __forceinline__ double qm_clamp01(double v)
 {
@@ -350,10 +352,22 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     o << "f->lth[" << out.index << "] = __dadd_rn(f->lth[" << out.index << "], " << x(out.value)
                       << ");\n";
                 else if (out.cls == Op::Theta)
-                    o << "f->ath[" << out.index << " * f->ath_stride] += " << x(out.value) << ";\n";
+                    o << "qm_theta_add(f, " << out.index << ", " << x(out.value) << ");\n";
                 else
                     throw InvalidInput("script IR: a script-level block reached the CUDA backend unbound");
             }
+        }
+
+        /// The (parameter, adjoint) pairs one run of `b` can add to the
+        /// adjoint's sparse trail (CudaSource::grid_writes_*).
+        int grid_writes(const ir::Block &b, int local_thetas)
+        {
+            int n = 0;
+            for (const ir::Inst &in : b.code)
+                n += in.op == ir::Op::GridAccum ? 8 : (in.op == ir::Op::GridLevAccum ? 2 : 0);
+            for (const ir::Out &out : b.outs)
+                n += out.cls == ir::Op::Theta && out.index >= local_thetas ? 1 : 0;
+            return n;
         }
 
         void function(std::ostringstream &o, const char *name, const ir::Block &b, const Emit &e)
@@ -421,8 +435,6 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         // and overwrites, which the adjoint checkpoints with the model's.
         constant(src, "qm_surv0", l.surv0());
         constant(src, "qm_n_surv", l.n_surv);
-        // The local-vol grid: its adjoint buffers the nodes of a cell.
-        constant(src, "qm_vol_grid", kind == DeviceModel::Kind::LocalVol ? 1 : 0);
         const int ns = l.n_state();
         src << "\n";
         Emit e;
@@ -475,6 +487,10 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                 function(src, "qm_init_adjoint", adj.init, e);
                 function(src, "qm_step_adjoint", adj.step, e);
                 events(src, "qm_event_adjoint", adj.events, e);
+                out.grid_writes_init = grid_writes(adj.init, l.n_risks);
+                out.grid_writes_step = grid_writes(adj.step, l.n_risks);
+                for (const ir::Block &b : adj.events)
+                    out.grid_writes_event = std::max(out.grid_writes_event, grid_writes(b, l.n_risks));
                 src << "extern \"C\" __device__ double qm_drive(const void *unit, void *draws, double *st, double "
                        "*ast, double *lth);\n"
                     << "extern \"C\" __device__ double qm_path(const void *unit, void *draws)\n{\n"

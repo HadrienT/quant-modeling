@@ -19,6 +19,7 @@
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/models/equity/multi_asset_bs_sim_model.hpp"
+#include "quantModeling/models/equity/slv_sim_model.hpp"
 #include "quantModeling/utils/sobol.hpp"
 
 // Lot G4 of blueprint/wp/19-gpu.md §7: one GPU = two GPUs, bit for bit.
@@ -27,7 +28,7 @@
 // number, not just the estimate, is independent of the card count. Checked on
 // every engine the GPU runs: vanilla (Philox and Sobol), scripts (Philox,
 // controls, stratified, Sobol, importance sampling; four models), dual and
-// adjoint risks.
+// adjoint risks (local vol and SLV).
 
 namespace quantModeling
 {
@@ -67,6 +68,9 @@ namespace quantModeling
             }
             if (kind == "local_vol")
                 return std::make_unique<LocalVolSimModel<Real>>(100.0, 0.03, 0.01, kK, kT, skewed());
+            if (kind == "slv") // Heston times a leverage on the local vol's grid
+                return std::make_unique<SLVSimModel<Real>>(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, kK, kT,
+                                                           std::vector<Real>(kK.size() * kT.size(), 1.1));
             if (kind == "heston")
                 return std::make_unique<BatesSimModel<Real>>(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, 0.0, 0.0,
                                                              0.0);
@@ -174,7 +178,7 @@ namespace quantModeling
     TEST_F(GpuTwoCardsTest, RisksAreTheSameBitsOnOneOrTwoCards)
     {
         for (const SamplerKind sampler : {SamplerKind::PseudoRandom, SamplerKind::Sobol})
-            for (const std::string kind : {"local_vol", "heston", "black_scholes"})
+            for (const std::string kind : {"local_vol", "slv", "heston", "black_scholes"})
             {
                 const ScriptedProduct<Real> product(script("phoenix-autocall"), kCtx);
                 auto m1 = model(kind, 1);
