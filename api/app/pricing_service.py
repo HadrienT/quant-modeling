@@ -271,8 +271,18 @@ def price_dated_asian(req: DatedAsianRequest) -> PricingResponse:
 
 
 def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
+    script, fixings = req.script, {}
+    if req.start_today:
+        # The fixing's level does not enter the analysis: one per asset.
+        n = qm.validate_script(script, req.valuation_date.isoformat(), req.day_count)[
+            "analysis"
+        ]["n_underlyings"]
+        script, fixings = _start_today(script, req.valuation_date, [100.0] * n)
     result = qm.validate_script(
-        req.script, req.valuation_date.isoformat(), req.day_count
+        script,
+        req.valuation_date.isoformat(),
+        req.day_count,
+        historical_fixings=fixings,
     )
     return ScriptValidateResponse(**result)
 
@@ -1102,7 +1112,10 @@ def price_script(
 
     model = req.model
     if model == "auto":
-        choice = {"requested": "auto", **_recommend(req, valuation_date, market, True)}
+        choice = {
+            "requested": "auto",
+            **_recommend(req, valuation_date, market, True, start_today),
+        }
     else:
         choice = _user_choice(model)
 
@@ -1119,7 +1132,7 @@ def price_script(
             # 'auto' falls back to the best model still available, and says so.
             choice = {
                 "requested": "auto",
-                **_recommend(req, valuation_date, market, False),
+                **_recommend(req, valuation_date, market, False, start_today),
             }
             market_warnings.append(
                 {
@@ -1496,13 +1509,28 @@ def _atm_implied_vol(req, market, valuation_date, start_today: bool = False) -> 
     return vol
 
 
-def _recommend(req: ScriptRequest, valuation_date, market, stochastic: bool) -> Dict:
+def _recommend(
+    req: ScriptRequest,
+    valuation_date,
+    market,
+    stochastic: bool,
+    start_today: bool = False,
+) -> Dict:
+    """What 'auto' picks for the script as it is priced: a library product
+    started today is read with its first date on the valuation date, fixed on
+    today's spot (a strike struck there is a constant, so a European stays a
+    European and is not mistaken for a forward start)."""
+    script, fixings = req.script, {}
+    if start_today:
+        spot = market.spot if market is not None else (req.spot or 1.0)
+        script, fixings = _start_today(script, valuation_date, [spot])
     return qm.recommend_script_model(
-        req.script,
+        script,
         valuation_date.isoformat(),
         req.day_count,
         market_surface=market is not None,
         stochastic=stochastic,
+        historical_fixings=fixings,
     )
 
 

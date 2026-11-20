@@ -4,6 +4,7 @@
 #include "quantModeling/scripting/event.hpp"
 #include "quantModeling/scripting/node.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <limits>
 #include <vector>
@@ -183,19 +184,28 @@ namespace quantModeling::scripting
     /// Events must already be in date order (ScriptedProduct sorts them) and
     /// run through VarIndexer, ConstCondProcessor and DomainProcessor, so
     /// variable slots, always-true/false conditions and `discrete` are set.
-    inline ScriptAnalysis analyze_script(const std::vector<Event> &events)
+    ///
+    /// The first `n_historical` events are on or before the valuation date:
+    /// historical fixings, whose spots are known numbers. They are skipped.
+    /// A variable they set is a constant to every future path (a strike
+    /// struck on today's close, `s0 = spot()`, makes a European, not a
+    /// forward start), and a payoff they hold is a sunk cash flow. Only a
+    /// future assignment can carry the path from one date to the next.
+    inline ScriptAnalysis analyze_script(const std::vector<Event> &events,
+                                         std::size_t n_historical = 0)
     {
         detail::Analyzer a;
+        const std::size_t first = std::min(n_historical, events.size());
         do
         {
             a.changed = false;
-            for (std::size_t e = 0; e < events.size(); ++e)
+            for (std::size_t e = first; e < events.size(); ++e)
                 for (const ExprTree &s : events[e].statements)
                     if (s)
                         a.taint(*s, false, e);
         } while (a.changed);
 
-        for (std::size_t e = 0; e < events.size(); ++e)
+        for (std::size_t e = first; e < events.size(); ++e)
             for (const ExprTree &s : events[e].statements)
                 if (s)
                     a.inspect(*s, e);

@@ -198,7 +198,12 @@ namespace quantModeling
             scripting::DomainProcessor(indexer.count(), settings.default_eps)
                 .process(events);
 
-            analysis_ = scripting::analyze_script(events);
+            // Historical events (resolve_timeline's split, below) are known
+            // fixings: the analysis reads only what is still to be simulated.
+            const auto n_historical = static_cast<std::size_t>(
+                std::count_if(events.begin(), events.end(), [&](const scripting::Event &e)
+                              { return ctx.t(e.date) <= TIMELINE_EPS; }));
+            analysis_ = scripting::analyze_script(events, n_historical);
 
             resolve_timeline(std::move(events), ctx);
 

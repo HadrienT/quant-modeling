@@ -7440,6 +7440,12 @@ export interface components {
              */
             script: string;
             /**
+             * Start Today
+             * @description Read the script as the Pricing page prices a library product: its first date moved to the valuation date and fixed there, so levels struck on it are known (a European, not a forward start). The events returned are then the dates still to come.
+             * @default false
+             */
+            start_today: boolean;
+            /**
              * Valuation Date
              * Format: date
              * @description Time 0. Defaults to today (UTC) when omitted.

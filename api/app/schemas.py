@@ -680,6 +680,13 @@ class ScriptValidateRequest(BaseModel):
         description="Time 0. Defaults to today (UTC) when omitted.",
     )
     day_count: Literal["ACT/365F", "ACT/360", "30/360", "ACT/ACT"] = "ACT/365F"
+    start_today: bool = Field(
+        False,
+        description="Read the script as the Pricing page prices a library "
+        "product: its first date moved to the valuation date and fixed there, "
+        "so levels struck on it are known (a European, not a forward start). "
+        "The events returned are then the dates still to come.",
+    )
 
 
 class ScriptEvent(BaseModel):

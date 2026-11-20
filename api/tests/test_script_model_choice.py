@@ -177,3 +177,66 @@ def test_validate_announces_the_recommendation():
     )
     assert out.recommendation.model == "slv"
     assert out.recommendation.code == "path_dependent"
+
+
+# The Pricing page starts a library product on the valuation date, struck on
+# today's spot (pricing_service._start_today). 'auto' reads that script, not
+# the template, whose strike date is in the future: read as written, every
+# European is a forward start and goes to SLV.
+EUROPEANS = [
+    "european-call",
+    "european-put",
+    "digital-call",
+    "digital-put",
+    "call-spread",
+]
+
+
+def _library(slug: str) -> str:
+    from app import product_templates
+
+    return product_templates.get(slug).script
+
+
+@pytest.mark.parametrize("slug", EUROPEANS)
+def test_a_library_european_started_today_gets_local_vol(store, slug):
+    resp = pricing_service.price_script(
+        _req(_library(slug), ticker="TEST"), library=True, start_today=True
+    )
+    assert (resp.model_choice.model, resp.model_choice.code) == (
+        "local_vol",
+        "terminal_smile",
+    )
+    assert store["stochastic"] == 0
+
+
+def test_a_library_asian_stays_on_slv(store):
+    # Its average still accumulates over dates to come once started today.
+    resp = pricing_service.price_script(
+        _req(_library("asian-call"), ticker="TEST"),
+        library=True,
+        start_today=True,
+    )
+    assert (resp.model_choice.model, resp.model_choice.code) == (
+        "slv",
+        "path_dependent",
+    )
+
+
+@pytest.mark.parametrize(
+    "slug, model",
+    [("european-call", "local_vol"), ("one-touch", "slv"), ("asian-call", "slv")],
+)
+def test_validate_started_today_announces_what_the_pricing_page_picks(slug, model):
+    from app.schemas import ScriptValidateRequest
+
+    script = _library(slug)
+    started = pricing_service.validate_script(
+        ScriptValidateRequest(script=script, valuation_date=SNAP, start_today=True)
+    )
+    assert started.recommendation.model == model
+    # As written, every strike date is in the future: a forward start.
+    raw = pricing_service.validate_script(
+        ScriptValidateRequest(script=script, valuation_date=SNAP)
+    )
+    assert raw.recommendation.model == "slv"

@@ -18,7 +18,8 @@ export function useValidateScript() {
 			const s = signalWithTimeout(undefined, LONG_TIMEOUT_MS);
 			try {
 				const { data, error } = await api.POST("/price/scripted/validate", {
-					body,
+					// a script typed here runs on its own dates, not started today
+					body: { ...body, start_today: false },
 					signal: s,
 				});
 				if (error !== undefined) throw ApiError.from(error);
