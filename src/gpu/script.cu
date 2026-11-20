@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 #include "quantModeling/engines/mc/script_adjoint.hpp"
 #include "quantModeling/engines/mc/sobol_bridge.hpp"
@@ -311,7 +312,6 @@ namespace quantModeling::gpu
 
         // ── prices ──────────────────────────────────────────────────────────
 
-
         // ── forward-mode risks ──────────────────────────────────────────────
 
         template <int N>
@@ -332,20 +332,129 @@ namespace quantModeling::gpu
             }
         };
 
-        /// out[p * n_warps + w] = sum over the 32 lanes of warp w of
-        /// grad[p * rows + 32 w + lane], in lane order.
-        __global__ void fold_warps(const double *grad, long rows, int n_params, long n_warps, double *out)
+        /// Where the fold's rows keep each risk: the scalar parameters
+        /// first, as listed, then the grid time-major -- node (i, j) at
+        /// grid0 + j nK + i, where the risks list it at grid0 + i nT + j.
+        struct GridOrder
         {
-            const long idx = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
-            if (idx >= n_warps * n_params)
+            int grid0 = 0, nK = 1, nT = 1; ///< nK = nT = 1: no grid
+
+            __device__ int slot(int p) const
+            {
+                if (p < grid0)
+                    return p;
+                const int g = p - grid0;
+                return grid0 + (g % nT) * nK + g / nT;
+            }
+            __device__ int param(int q) const
+            {
+                if (q < grid0)
+                    return q;
+                const int g = q - grid0;
+                return grid0 + (g % nK) * nT + g / nK;
+            }
+        };
+
+        /**
+         * The adjoint's sparse trails (issue #342), first pass: the 32 trails
+         * of each CUDA warp `c` of the launch -- units 32 c to 32 c + 31 of
+         * the launch, one thread per unit -- summed into the warp's dense
+         * row, warp_rows[c * n_params + p].
+         *
+         * One warp per row, no atomics: lane `lane` reads the trail of
+         * thread 32 c + lane, pair e of the 32 trails at once (coalesced:
+         * pair e of thread t is at e * rows + t). Lanes on the same
+         * parameter are summed in lane order and the lowest of them adds the
+         * sum to the row: a node's sum is taken in the order e, then lane,
+         * fixed by the units
+         * whatever the launch size or the number of devices. `overflow` is
+         * set when a trail is longer than its arrays, which the IR's bound
+         * makes impossible (a bug, not a user error).
+         *
+         * The row holds the grid time-major (GridOrder): at a given step the
+         * warp's 32 paths reach nodes of the same time column, which are then
+         * neighbours in the row. Strike-major, as the risks are listed, they
+         * were nT doubles apart and the 2 048 rows of the phoenix autocall
+         * under SLV missed L2 half the time (fold 27 ms; 65 536 paths on the
+         * page's 100 x 129 grid, one V100, 2026-11-20); time-major, 7.7 ms.
+         *
+         * The lanes' sums take 32 uniform shuffles, every lane adding those
+         * that share its parameter: __match_any_sync's groups, each summed
+         * by a loop of its own, diverged -- the groups ran one after the
+         * other, and paths collide often (7.7 -> 5.0 ms under SLV, 17.1 ->
+         * 7.0 ms a launch under local vol).
+         */
+        __global__ void fold_trails(const std::int32_t *index, const double *value, const std::int32_t *count,
+                                    long rows, int cap, int n_params, GridOrder order, long n_warps,
+                                    double *warp_rows, int *overflow)
+        {
+            constexpr unsigned kAll = 0xffffffffu;
+            const long c = (static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x) / LB::kWarpSize;
+            const int lane = static_cast<int>(threadIdx.x % LB::kWarpSize);
+            if (c >= n_warps) // whole warps: blockDim is a multiple of 32
                 return;
-            const long w = idx % n_warps;
-            const long p = idx / n_warps;
-            const double *g = grad + p * rows + w * 32;
-            double s = 0.0;
-            for (int lane = 0; lane < 32; ++lane)
-                s += g[lane];
-            out[p * n_warps + w] = s;
+            double *row = warp_rows + c * n_params;
+            for (int p = lane; p < n_params; p += LB::kWarpSize)
+                row[p] = 0.0;
+            __syncwarp();
+            const long t = c * LB::kWarpSize + lane;
+            int n = count[t];
+            if (n > cap)
+            {
+                atomicExch(overflow, 1);
+                n = cap;
+            }
+            // pair e + 1 is loaded while pair e is added
+            std::int32_t p = n > 0 ? index[t] : -1;
+            double v = n > 0 ? value[t] : 0.0;
+            for (int e = 0; __any_sync(kAll, e < n); ++e)
+            {
+                const bool next = e + 1 < n;
+                const std::int32_t p1 = next ? index[static_cast<long>(e + 1) * rows + t] : -1;
+                const double v1 = next ? value[static_cast<long>(e + 1) * rows + t] : 0.0;
+                double sum = 0.0;
+                int lead = -1;
+                for (int j = 0; j < LB::kWarpSize; ++j)
+                {
+                    const std::int32_t pj = __shfl_sync(kAll, p, j);
+                    const double vj = __shfl_sync(kAll, v, j);
+                    if (pj == p)
+                    {
+                        sum += vj;
+                        lead = lead < 0 ? j : lead;
+                    }
+                }
+                if (p >= 0 && lane == lead)
+                    row[order.slot(p)] += sum;
+                p = p1;
+                v = v1;
+            }
+        }
+
+        /**
+         * Second pass: the rows of the batches the risks' errors are taken
+         * over -- warp w of logical block b, units w * 32 + lane + 256 k,
+         * k = 0..7, i.e. CUDA warps 8 k + w of the block -- in the order k:
+         * out[(8 b + w) * n_params + p]. With the first pass, a node's sum
+         * is taken in the order k, e, lane. The dense rows summed each
+         * thread's 8 paths first: another order, within the CPU/GPU
+         * tolerance (2026-11-16). Read in the rows' order, written in the
+         * risks'.
+         */
+        __global__ void fold_batches(const double *warp_rows, int n_params, GridOrder order, long n_batches,
+                                     double *out)
+        {
+            const long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
+            if (i >= n_batches * n_params)
+                return;
+            const long batch = i / n_params, q = i % n_params;
+            const long block = batch / LB::kWarpsPerBlock, w = batch % LB::kWarpsPerBlock;
+            const double *first = warp_rows + (block * LB::kThreadsPerBlock * LB::kUnitsPerThread / LB::kWarpSize + w) * n_params +
+                                  q;
+            double sum = 0.0;
+            for (int k = 0; k < LB::kUnitsPerThread; ++k)
+                sum += first[static_cast<long>(k) * LB::kWarpsPerBlock * n_params];
+            out[batch * n_params + order.param(q)] = sum;
         }
 
         /// Units the warp `w` of logical block `block` handled.
@@ -472,6 +581,8 @@ namespace quantModeling::gpu
         {
             std::vector<void *> fns; ///< empty: not compiled, `note` says why
             std::string note;
+            /// The adjoint's bounds on a path's trail (CudaSource::grid_writes_*).
+            int grid_writes_init = 0, grid_writes_step = 0, grid_writes_event = 0;
             bool ok() const { return !fns.empty(); }
             void *on(const ScriptGpuRequest &req, int device) const
             {
@@ -493,13 +604,16 @@ namespace quantModeling::gpu
                 // compiled from the IR compute them (WP 27 §14.9).
                 if (req.program && req.program->has_monitor)
                     throw InvalidInput("GPU: lastStep*() and survivalAbove() / survivalBelow() need the kernels "
-                                       "compiled from the IR, and they are not available here (" + why + ")");
+                                       "compiled from the IR, and they are not available here (" +
+                                       why + ")");
                 if (req.program && req.program->has_exercise)
                     throw InvalidInput("GPU: exercise() / call() need the kernels compiled from the IR, and they "
-                                       "are not available here (" + why + ")");
+                                       "are not available here (" +
+                                       why + ")");
                 if (req.program && req.program->has_forward)
                     throw InvalidInput("GPU: fwd() needs the kernels compiled from the IR, and they are not "
-                                       "available here (" + why + ")");
+                                       "available here (" +
+                                       why + ")");
                 out.note = "interpreted bytecode (" + why + ")";
                 return out;
             };
@@ -551,6 +665,9 @@ namespace quantModeling::gpu
                 std::snprintf(ms, sizeof ms, "compiled in %.0f ms: NVRTC %.0f, link %.0f", built->compile_ms,
                               built->nvrtc_ms, built->link_ms);
             out.note = std::string("compiled script (NVRTC, ") + (cached ? "cached" : ms) + ")";
+            out.grid_writes_init = src.grid_writes_init;
+            out.grid_writes_step = src.grid_writes_step;
+            out.grid_writes_event = src.grid_writes_event;
             return out;
         }
 
@@ -586,11 +703,16 @@ namespace quantModeling::gpu
         }
 
         /// One logical block of the adjoint: its price statistics, and the
-        /// gradient sums of its 8 warps (8 x n_params, warp-major).
+        /// gradient sums of its 8 batches (8 x n_params, batch-major) in its
+        /// device's host buffer -- copied there by the launch, never again:
+        /// copying them into a vector per block cost 15 ms of the phoenix
+        /// autocall's 59 under SLV, the page faults of 26 MB (65 536 paths,
+        /// the page's 100 x 129 grid, 2026-11-20).
         struct AdjointBlock
         {
             WelfordAccumulator price;
-            std::vector<double> warp_sums;
+            std::shared_ptr<const double[]> rows; ///< keeps `warp_sums` alive
+            const double *warp_sums = nullptr;
         };
     } // namespace
 
@@ -619,7 +741,7 @@ namespace quantModeling::gpu
         const bool controlled = req.controls.n > 0;
         const CompiledKernels k =
             compiled_kernels(req, PathKernel::Price,
-                             controlled                                    ? "qm_script_controlled"
+                             controlled ? "qm_script_controlled"
                              : req.model->kind == DeviceModel::Kind::SLV ||
                                      req.model->kind == DeviceModel::Kind::Heston
                                  ? "qm_script_plain_r64"
@@ -751,62 +873,108 @@ namespace quantModeling::gpu
                             static_cast<long>(req.program->n_events()) * (layout.n_state() - layout.n_model);
             }
             trail_len = std::max<long>(trail_len, 1);
+            // and its gradient trail's pairs, at most: every statement of a
+            // block runs at most once a run (the IR has no loops), so the
+            // bound holds by construction (issue #342)
+            long cap = 0;
+            {
+                long drawing = 0;
+                for (int d : req.model->draws)
+                    drawing += d ? 1 : 0;
+                cap = drawing * compiled.grid_writes_step +
+                      static_cast<long>(req.program->n_events()) * compiled.grid_writes_event +
+                      compiled.grid_writes_init + layout.n_risks;
+            }
+            if (cap > INT32_MAX / 2)
+                throw InvalidInput("GPU: the per-path adjoint's gradient trail would be too long");
+            cap = std::max<long>(cap, 1);
 
-            // Launch size from the memory a thread needs (its trail, its
-            // gradient row, a Sobol point), never a default; the warp
-            // partials on top.
-            const std::size_t per_block =
-                static_cast<std::size_t>(LB::kThreadsPerBlock) * static_cast<std::size_t>(trail_len + n_params) *
-                    sizeof(double) +
-                static_cast<std::size_t>(LB::kWarpsPerBlock) * np * sizeof(double);
-            const DrawSetup s = draw_setup(req, v, mem, device, per_block);
+            // Launch size from the memory a unit needs (its checkpoints, its
+            // trail, a Sobol point), never a default; each batch's dense row
+            // on top. Phoenix autocall under SLV on the page's 100 x 129
+            // leverage grid (65 536 paths, 504 steps): ~21 KB a path in a
+            // single launch, where the dense row took 100 KB a thread at 8
+            // paths a thread.
+            const std::size_t per_unit = static_cast<std::size_t>(trail_len) * sizeof(double) +
+                                         static_cast<std::size_t>(cap) * (sizeof(std::int32_t) + sizeof(double)) +
+                                         sizeof(std::int32_t);
+            constexpr std::size_t kUnitWarps = LB::kUnitsPerBlock / LB::kWarpSize; // 64 a logical block
+            const std::size_t per_block = static_cast<std::size_t>(LB::kUnitsPerBlock) * per_unit +
+                                          (kUnitWarps + LB::kWarpsPerBlock) * np * sizeof(double);
+            const DrawSetup s = draw_setup(req, v, mem, device, per_block, true);
             const uint64_t per_launch = std::min<uint64_t>(s.blocks_per_launch, std::max<uint64_t>(last - first, 1));
-            const long rows = static_cast<long>(per_launch) * LB::kThreadsPerBlock;
-            const long max_warps = static_cast<long>(per_launch) * LB::kWarpsPerBlock;
-            double *d_trail = mem.alloc<double>(static_cast<std::size_t>(rows) * static_cast<std::size_t>(trail_len));
-            double *d_grad = mem.alloc<double>(static_cast<std::size_t>(rows) * np);
-            double *d_warps = mem.alloc<double>(static_cast<std::size_t>(max_warps) * np);
-            detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * np * sizeof(double)), "cudaMemset");
+            const long rows = static_cast<long>(per_launch) * LB::kUnitsPerBlock;
+            const long max_batches = static_cast<long>(per_launch) * LB::kWarpsPerBlock;
+            const auto urows = static_cast<std::size_t>(rows);
+            double *d_trail = mem.alloc<double>(urows * static_cast<std::size_t>(trail_len));
+            auto *d_index = mem.alloc<std::int32_t>(urows * static_cast<std::size_t>(cap));
+            double *d_value = mem.alloc<double>(urows * static_cast<std::size_t>(cap));
+            auto *d_count = mem.alloc<std::int32_t>(urows);
+            double *d_warp_rows = mem.alloc<double>(static_cast<std::size_t>(per_launch) * kUnitWarps * np);
+            double *d_rows = mem.alloc<double>(static_cast<std::size_t>(max_batches) * np);
+            int *d_overflow = mem.alloc<int>(1);
+            detail::check(cudaMemset(d_overflow, 0, sizeof(int)), "cudaMemset");
             detail::PathUnit path = path_unit(unmirrored, mem, v, s.draws, true);
             path.checkpoints = d_trail;
-            path.gradient = d_grad;
+            path.trail_index = d_index;
+            path.trail_value = d_value;
+            path.trail_count = d_count;
+            path.trail_cap = static_cast<std::int32_t>(cap);
             path.rows = rows;
+            GridOrder order;
+            if (layout.th_grid >= 0 && !req.model->grid.empty() &&
+                static_cast<long>(path.grid0) + static_cast<long>(path.grid_nK) * path.grid_nT == n_params)
+            {
+                order.grid0 = path.grid0;
+                order.nK = path.grid_nK;
+                order.nT = path.grid_nT;
+            }
 
             std::vector<AdjointBlock> blocks(static_cast<std::size_t>(last - first));
-            std::vector<double> host(static_cast<std::size_t>(max_warps) * np);
+            const std::size_t block_doubles = static_cast<std::size_t>(LB::kWarpsPerBlock) * np;
+            // not value-initialised: the copies below write every element
+            const std::shared_ptr<double[]> host(new double[blocks.size() * block_doubles]);
             auto after = [&](uint64_t b0, uint64_t count)
             {
-                const long n_warps = static_cast<long>(count) * LB::kWarpsPerBlock;
-                const long total = n_warps * n_params;
-                fold_warps<<<static_cast<unsigned>((total + 255) / 256), 256>>>(d_grad, rows, n_params, n_warps,
-                                                                                d_warps);
-                detail::check(cudaGetLastError(), "fold_warps launch");
-                detail::check(cudaMemcpy(host.data(), d_warps, static_cast<std::size_t>(total) * sizeof(double),
+                const long n_batches = static_cast<long>(count) * LB::kWarpsPerBlock;
+                const long n_warps = static_cast<long>(count) * static_cast<long>(kUnitWarps);
+                fold_trails<<<static_cast<unsigned>((n_warps * LB::kWarpSize + 255) / 256), 256>>>(
+                    d_index, d_value, d_count, rows, static_cast<int>(cap), n_params, order, n_warps, d_warp_rows,
+                    d_overflow);
+                detail::check(cudaGetLastError(), "fold_trails launch");
+                const long cells = n_batches * n_params;
+                fold_batches<<<static_cast<unsigned>((cells + 255) / 256), 256>>>(d_warp_rows, n_params, order,
+                                                                                  n_batches, d_rows);
+                detail::check(cudaGetLastError(), "fold_batches launch");
+                // batch 8 c + w is warp w of block c: the rows are already
+                // batch-major per block, in block order
+                double *to = host.get() + static_cast<std::size_t>(b0 - first) * block_doubles;
+                detail::check(cudaMemcpy(to, d_rows, static_cast<std::size_t>(n_batches) * np * sizeof(double),
                                          cudaMemcpyDeviceToHost),
                               "cudaMemcpy");
-                detail::check(cudaMemset(d_grad, 0, static_cast<std::size_t>(rows) * np * sizeof(double)),
-                              "cudaMemset");
                 for (uint64_t c = 0; c < count; ++c)
                 {
-                    std::vector<double> &ws = blocks[static_cast<std::size_t>(b0 + c - first)].warp_sums;
-                    ws.resize(static_cast<std::size_t>(LB::kWarpsPerBlock) * np);
-                    for (int w = 0; w < LB::kWarpsPerBlock; ++w)
-                        for (std::size_t p = 0; p < np; ++p)
-                            ws[static_cast<std::size_t>(w) * np + p] =
-                                host[p * static_cast<std::size_t>(n_warps) +
-                                     static_cast<std::size_t>(c) * LB::kWarpsPerBlock + static_cast<std::size_t>(w)];
+                    AdjointBlock &blk = blocks[static_cast<std::size_t>(b0 + c - first)];
+                    blk.rows = host;
+                    blk.warp_sums = to + c * block_doubles;
                 }
             };
             void *fn = compiled.on(req, device);
             uint64_t n_units = req.n_units, per_segment = bps;
-            const detail::LaunchBlocks<WelfordAccumulator> launch =
-                [&](uint64_t b, uint64_t count, WelfordAccumulator *d_partials)
+            const detail::LaunchUnits<double> launch = [&](uint64_t b, uint64_t count, double *d_samples)
             {
-                void *args[] = {&b, &per_segment, &n_units, &path, &d_partials};
-                jit::launch(fn, static_cast<unsigned>(count), LB::kThreadsPerBlock, args);
+                // a unit past n_units writes no trail: its length must read 0
+                detail::check(cudaMemsetAsync(d_count, 0, urows * sizeof(std::int32_t)), "cudaMemset");
+                void *args[] = {&b, &per_segment, &n_units, &count, &path, &d_samples};
+                jit::launch(fn, detail::unit_grid(count), LB::kThreadsPerBlock, args);
             };
-            const std::vector<WelfordAccumulator> price =
-                detail::run_block_range_with<WelfordAccumulator>(device, first, last, per_launch, launch, after);
+            const std::vector<WelfordAccumulator> price = detail::run_block_range_units<WelfordAccumulator, double>(
+                device, first, last, bps, req.n_units, per_launch, launch, after);
+            int overflow = 0;
+            detail::check(cudaMemcpy(&overflow, d_overflow, sizeof(int), cudaMemcpyDeviceToHost), "cudaMemcpy");
+            if (overflow)
+                throw InvalidInput("GPU: a path's gradient trail passed the bound the script's IR gives (a bug: "
+                                   "please report it)");
             for (std::size_t b = 0; b < blocks.size(); ++b)
                 blocks[b].price = price[b];
             return blocks;
@@ -830,7 +998,7 @@ namespace quantModeling::gpu
                 const long long nb = warp_units(g % bps, w, req.n_units);
                 if (nb == 0)
                     continue;
-                const double *sum = &blocks[static_cast<std::size_t>(g)].warp_sums[static_cast<std::size_t>(w) * np];
+                const double *sum = blocks[static_cast<std::size_t>(g)].warp_sums + static_cast<std::size_t>(w) * np;
                 if (rqmc)
                 {
                     double *r = &rep_sum[static_cast<std::size_t>(g / bps) * np];

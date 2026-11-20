@@ -318,6 +318,117 @@ namespace quantModeling
         }
     }
 
+    // ── the sparse gradient trail (issue #342) ─────────────────────────────
+    namespace
+    {
+        // The page's grid: 100 strikes (40..200) by 129 dates over two years,
+        // 12 900 nodes, of which a path's steps reach a few hundred.
+        std::vector<Real> page_strikes()
+        {
+            std::vector<Real> k;
+            for (int i = 0; i < 100; ++i)
+                k.push_back(40.0 + 160.0 * i / 99.0);
+            return k;
+        }
+        std::vector<Real> page_dates()
+        {
+            std::vector<Real> t;
+            for (int j = 0; j < 129; ++j)
+                t.push_back(2.0 * (j + 1) / 129.0);
+            return t;
+        }
+        /// Local vol, or (slv) Heston times a leverage, on the page's grid.
+        template <class T>
+        std::unique_ptr<ISimulationModel<T>> page_model(bool slv)
+        {
+            std::vector<T> g;
+            for (Real k : page_strikes())
+                for (Real t : page_dates())
+                    g.push_back(slv ? T(1.0 + 0.6 * (100.0 - k) / 100.0 + 0.02 * t)
+                                    : T(0.2 + 0.25 * (100.0 - k) / 100.0 + 0.01 * t));
+            if (!slv)
+                return std::make_unique<LocalVolSimModel<T>>(T(100.0), T(0.03), T(0.01), page_strikes(), page_dates(),
+                                                             g, 1.0 / 252.0);
+            return std::make_unique<SLVSimModel<T>>(T(100.0), T(0.03), T(0.01), T(0.04), T(1.5), T(0.05), T(0.6),
+                                                    T(-0.7), page_strikes(), page_dates(), g, 1.0 / 252.0);
+        }
+        std::string library_source(const std::string &name)
+        {
+            for (const auto &s : library())
+                if (s.name == name)
+                    return s.source;
+            return {};
+        }
+    } // namespace
+
+    // A two-year phoenix autocall stepped daily on the page's grid: each
+    // path's trail holds hundreds of nodes (two a step under SLV, eight under
+    // local vol), and the warps' paths collide on many of them. The fold
+    // gives the tape's risks, every grid node included.
+    TEST_F(GpuRisksTest, PageGridAdjointMatchesTheTape)
+    {
+        const std::string src = library_source("phoenix-autocall");
+        ASSERT_FALSE(src.empty());
+        for (const bool slv : {false, true})
+        {
+            const ScriptedProduct<Real> product(src, kCtx);
+            auto model = page_model<Real>(slv);
+            std::string why;
+            const auto gpu = simulate_script_aad_gpu(product, *model, kPaths, kSeed, why);
+            ASSERT_TRUE(gpu.has_value()) << why;
+            EXPECT_NE(gpu->diagnostics.find("adjoint kernel"), std::string::npos) << gpu->diagnostics;
+            const ScriptedProduct<aad::Number> tape_product(src, kCtx);
+            auto tape_model = page_model<aad::Number>(slv);
+            const AADSimulResults cpu =
+                simulate_aad(tape_product, *tape_model, kPaths, kSeed, first_aad_payoff, RngKind::Philox);
+            ASSERT_GT(cpu.risks.size(), 12900u);
+            expect_same_risks(*gpu, cpu, slv ? "slv" : "local vol", 1e-10);
+            int reached = 0;
+            for (Real r : gpu->risks)
+                reached += r != 0.0 ? 1 : 0;
+            EXPECT_GT(reached, 500) << "nodes with a risk";
+        }
+    }
+
+    // The trail's fold has a fixed order: the same bits whatever the launch
+    // size and on either card, under SLV on the page's grid.
+    TEST_F(GpuRisksTest, PageGridSlvAdjointIsBitReproducible)
+    {
+        const ScriptedProduct<Real> product(library_source("phoenix-autocall"), kCtx);
+        auto model = page_model<Real>(true);
+        model->init(product.timeline(), product.defline());
+        DeviceModel dm;
+        ASSERT_TRUE(model->describe_device(dm));
+        gpu::ScriptGpuRequest req;
+        req.program = &product.program();
+        req.ir = &product.ir();
+        req.model = &dm;
+        req.baseline = product.baseline();
+        for (const SampleDef &d : product.defline())
+            req.discount_mats.push_back(d.discount_mats);
+        req.antithetic = false;
+        req.n_units = 20000; // ten logical blocks, the last one partial
+        req.seed = 3;
+        const auto a = gpu::simulate_script_adjoint(req);
+        req.max_blocks_per_launch = 3;
+        const auto b = gpu::simulate_script_adjoint(req);
+        EXPECT_EQ(a.price.mean, b.price.mean);
+        ASSERT_EQ(a.risks.size(), b.risks.size());
+        for (std::size_t i = 0; i < a.risks.size(); ++i)
+        {
+            ASSERT_EQ(a.risks[i], b.risks[i]) << i;
+            ASSERT_EQ(a.risk_std_errors[i], b.risk_std_errors[i]) << i;
+        }
+        if (gpu::device_count() > 1)
+        {
+            req.device = 1;
+            req.max_blocks_per_launch = 0;
+            const auto c = gpu::simulate_script_adjoint(req);
+            for (std::size_t i = 0; i < a.risks.size(); ++i)
+                ASSERT_EQ(a.risks[i], c.risks[i]) << i;
+        }
+    }
+
     // ── the superbucket from GPU risks ─────────────────────────────────────
     namespace
     {

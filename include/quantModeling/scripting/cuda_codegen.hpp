@@ -44,6 +44,14 @@ namespace quantModeling::scripting
     {
         std::string source; ///< empty when the program cannot be generated
         std::string why;    ///< then: the reason, in words a user can read
+        /// Adjoint: the most (parameter, adjoint) pairs one run of a block
+        /// can add to the path's sparse gradient trail -- 8 per GridAccum,
+        /// 2 per GridLevAccum, 1 per grid parameter's adjoint written as an
+        /// output. Every statement runs at most once a run (a block has no
+        /// loop), so the trail's length is bounded by construction.
+        int grid_writes_init = 0;
+        int grid_writes_step = 0;
+        int grid_writes_event = 0; ///< the largest over the events' blocks
     };
 
     /// What the generated path computes: the price, the price and its

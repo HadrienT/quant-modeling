@@ -2578,5 +2578,109 @@ gradient row over the whole leverage grid; a path touches at most two nodes
 a step. A sparse per-thread trail of (node, adjoint) folded in a fixed order
 would let one thread take one path (65 536 threads), about 8× the adjoint's
 parallelism -- its own lot (the IR's grid accumulation statements, the fold,
-the CPU tape as oracle). And at 50 000 paths the page's fixed costs still
+the CPU tape as oracle). Done in §22 (#342). And at 50 000 paths the page's fixed costs still
 dominate until the chain cache's registry exists (#332).
+
+## 22. The adjoint's sparse gradient trail: one thread a path (#342, 2026-11-20)
+
+**The problem, measured** (§21): the GPU's per-path adjoint gave each thread a
+dense gradient row over every parameter -- under SLV on the page's 100 × 129
+leverage grid, 12 908 doubles, 100 KB a thread. That memory held the kernel
+at eight paths a thread and 32 blocks of 256 threads (39 % of the SMs, 12.5 %
+occupancy, latency-bound), and the rows were over 96 % zeros: a step reaches
+two leverage nodes (SLV) or eight local-vol nodes. Setting them to zero
+(`cudaMemset`, 846 MB a launch for the phoenix) and folding them cost more
+than the kernel.
+
+**The change.**
+
+- **A sparse trail per path** (`GridTrail`, `src/gpu/script_jit_kernel.cu`):
+  the backward sweep appends (parameter, adjoint) pairs in the order it
+  produces them -- the grid's through `grid::grid_accumulate_to` /
+  `leverage_accumulate_to` (`ir_grid.hpp`, the host's dense versions call
+  the same functions), a grid parameter written as a block's output through
+  `qm_theta_add`, and the scalar parameters' `lth` closing the trail.
+  Pair e of thread t lives at `e × rows + t`: the warp's 32 paths write pair
+  e in one coalesced store.
+- **The trail's length bounded by construction**: `cuda_path_source`
+  counts the adjoint's statements -- 8 pairs per `GridAccum`, 2 per
+  `GridLevAccum`, 1 per grid output -- and a block has no loop, so a path
+  writes at most `drawing steps × step + dates × event + init + n_risks`
+  pairs. A longer trail would be a bug: the fold reports it, and nothing is
+  written past the arrays.
+- **One thread a path**, the price kernels' `logical_block_units` (lot P1g):
+  65 536 threads where there were 8 192, the payoffs reduced by
+  `logical_reduce_kernel` in the serial kernel's order (the price's bits are
+  unchanged).
+- **The fold, in a fixed order, no atomics** (`src/gpu/script.cu`):
+  `fold_trails` gives each CUDA warp of the launch a dense row and reads its
+  32 trails pair by pair (coalesced); lanes on the same parameter are summed
+  in lane order -- 32 uniform shuffles, every lane summing those that share
+  its parameter -- and the lowest adds the sum. `fold_batches` then sums the
+  eight warps of each error batch (warp w of a logical block, units
+  `32 w + lane + 256 k`) in the order k. A node's sum is taken in the order
+  k, pair, lane: fixed by the units, whatever the launch size or the number
+  of cards. The dense rows summed each thread's eight paths first: another
+  order, within the CPU/GPU tolerance (2026-11-16).
+- **The rows time-major**: at a given step the warp's paths reach the same
+  time column, so the fold's rows keep the grid as `j × nK + i` (`GridOrder`)
+  and the batches are written back in the risks' order.
+- **The rows stay where the copy put them**: one host buffer per device,
+  which `AdjointBlock` points into, instead of a vector per block.
+
+**Each step alone** (phoenix autocall, 65 536 Philox paths, 504 daily steps
+over two years, the page's 100 × 129 grid, one V100, ncu):
+
+| Step | SLV | Local vol |
+|---|---|---|
+| Before: adjoint kernel (dense rows, 8 paths a thread) | 56.5 ms | 60.9 ms (European call) |
+| Sparse trail, one thread a path: kernel | 17.2 ms | 47.2 ms, 5 launches of 7 blocks |
+| Local vol: the per-thread pending-cell buffer removed | | 7.1 ms (98 registers, 173 before) |
+| Fold, one warp a batch, divergent `__match_any_sync` groups | 16.4 ms | 40.6 ms |
+| Fold, one warp per CUDA warp, then the batches | 27.0 ms | 15.5 ms |
+| ... the rows time-major | 7.7 ms | 17.1 ms |
+| ... 32 uniform shuffles in place of the groups | 5.0 ms | 7.0 ms |
+| Rows into one host buffer: the call | 40.7 → 33.2 ms | |
+
+Two dead ends, measured: the trail contiguous per path (`t × cap + e`) made
+local vol's kernel 18.5 ms but SLV's 48.6 ms; the pending-cell buffer, which
+summed a cell's eight nodes over consecutive steps against the dense rows'
+read-modify-writes, desynchronised the lanes (each flushed when its own cell
+changed, every store a sector of its own) and took 75 registers.
+
+**Results.** Kernels (ncu): phoenix SLV 56.5 ms → 17.3 + 5.3 ms (adjoint +
+fold), 107 registers, 256 blocks, 21.5 % achieved occupancy (register-bound
+at two blocks a multiprocessor); digital SLV 34.8 → 10.1 + 3.4 ms; European
+call under local vol 60.9 → 10.9 + 12.3 ms. The whole call
+(`qm_gpu_risk_bench 65536`, median of 3):
+
+| Script, model | Risks | Before | After |
+|---|---|---|---|
+| phoenix autocall, SLV page grid | 12 908 | 122.4 ms | 31.6 ms |
+| digital call, SLV page grid | 12 908 | 101.0 ms | 23.7 ms |
+| up-and-out call, SLV page grid | 12 908 | 108.8 ms | 30.1 ms |
+| European call, local vol page grid | 12 903 | 125.4 ms | 31.4 ms |
+| phoenix autocall, local vol page grid | 12 903 | 162.6 ms | 76.2 ms |
+| European call, SLV 30 × 12 | 368 | 30.8 ms | 12.0 ms |
+| up-and-out call, SLV 30 × 12 | 368 | 38.6 ms | 15.3 ms |
+| European call, local vol 30 × 12 | 363 | 45.7 ms | 22.9 ms |
+| phoenix autocall, local vol 30 × 12 | 363 | 77.5 ms | 66.3 ms |
+
+The page with AAD greeks (the Price page's default request, SLV calibrated on
+SPY, 50 000 paths, in process, warm, median of 5): phoenix 263 → 187 ms,
+digital 183 → 127 ms, European call 139 → 79 ms, Asian 145 → 85 ms; the
+prices are the same bits.
+
+The risks against the CPU tape (`qm_gpu_risk_bench 65536`) are unchanged to
+the digit: 1e-15 to 2e-13 relative on the page's grids. Two gaps predate this
+lot and did not move: up-and-out call under SLV, 5e-9, and under Heston,
+1.7e-10. New tests: the phoenix on the page's grid under local vol and SLV
+against the tape at 1e-10 (`PageGridAdjointMatchesTheTape`), SLV's bits
+whatever the launch size and card (`PageGridSlvAdjointIsBitReproducible`), and
+SLV in `RisksAreTheSameBitsOnOneOrTwoCards`.
+
+**What is left.** Local vol's trail is eight pairs a step, 49 KB a path for
+the phoenix: within the 1 GiB scratch cap a launch then holds seven logical
+blocks (0.7 of a wave), and the phoenix runs five launches (76 ms). A record
+per step (four strikes, two dates, the weights) would halve it. The adjoint
+itself is register-bound (98 to 107 registers, two blocks a multiprocessor).

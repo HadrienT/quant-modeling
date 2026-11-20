@@ -62,16 +62,26 @@ namespace quantModeling::scripting::ir::detail
         return slope;
     }
 
-    QM_HOST_DEVICE inline void grid_accumulate(const GridCell &c, long nT, double a, double *base, long stride,
-                                               int grid0)
+    /// `a` times each of the eight nodes' shares, handed to add(parameter,
+    /// adjoint) in a fixed order: a dense row adds them in place, the GPU's
+    /// adjoint appends them to the path's sparse trail (issue #342).
+    template <class Add>
+    QM_HOST_DEVICE inline void grid_accumulate_to(const GridCell &c, long nT, double a, int grid0, Add &&add)
     {
         if (!c.free)
             return;
         for (int k = 0; k < 4; ++k)
         {
-            base[(grid0 + c.idx[k] * nT + c.j0) * stride] += a * (c.w[k] * (1.0 - c.wT));
-            base[(grid0 + c.idx[k] * nT + c.j1) * stride] += a * (c.w[k] * c.wT);
+            add(grid0 + c.idx[k] * nT + c.j0, a * (c.w[k] * (1.0 - c.wT)));
+            add(grid0 + c.idx[k] * nT + c.j1, a * (c.w[k] * c.wT));
         }
+    }
+
+    QM_HOST_DEVICE inline void grid_accumulate(const GridCell &c, long nT, double a, double *base, long stride,
+                                               int grid0)
+    {
+        grid_accumulate_to(c, nT, a, grid0, [&](long p, double v)
+                           { base[p * stride] += v; });
     }
 
     /// `a` times each node's weight slope in the spot, added to the nodes'
@@ -161,13 +171,21 @@ namespace quantModeling::scripting::ir::detail
         return (g.at(c.i1, c.j) - g.at(c.i0, c.j)) / c.dK;
     }
 
-    QM_HOST_DEVICE inline void leverage_accumulate(const LeverageCell &c, long nT, double a, double *base, long stride,
-                                                   int grid0)
+    /// `a` times the two corners' shares, handed to add(parameter, adjoint).
+    template <class Add>
+    QM_HOST_DEVICE inline void leverage_accumulate_to(const LeverageCell &c, long nT, double a, int grid0, Add &&add)
     {
         if (!c.free)
             return;
-        base[(grid0 + c.i0 * nT + c.j) * stride] += a * (1.0 - c.wK);
-        base[(grid0 + c.i1 * nT + c.j) * stride] += a * c.wK;
+        add(grid0 + c.i0 * nT + c.j, a * (1.0 - c.wK));
+        add(grid0 + c.i1 * nT + c.j, a * c.wK);
+    }
+
+    QM_HOST_DEVICE inline void leverage_accumulate(const LeverageCell &c, long nT, double a, double *base, long stride,
+                                                   int grid0)
+    {
+        leverage_accumulate_to(c, nT, a, grid0, [&](long p, double v)
+                               { base[p * stride] += v; });
     }
 
     QM_HOST_DEVICE inline double leverage_slope(const mc::GridView<Real> &g, double S, double t)
@@ -181,12 +199,7 @@ namespace quantModeling::scripting::ir::detail
     QM_HOST_DEVICE inline void leverage_accumulate(const mc::GridView<Real> &g, double S, double t, double a,
                                                    double *base, long stride, int grid0)
     {
-        const LeverageCell c = leverage_cell(g, S, t);
-        if (!c.free)
-            return;
-        const long nT = g.nT;
-        base[(grid0 + c.i0 * nT + c.j) * stride] += a * (1.0 - c.wK);
-        base[(grid0 + c.i1 * nT + c.j) * stride] += a * c.wK;
+        leverage_accumulate(leverage_cell(g, S, t), g.nT, a, base, stride, grid0);
     }
 
 } // namespace quantModeling::scripting::ir::detail
