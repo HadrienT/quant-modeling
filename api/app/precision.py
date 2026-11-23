@@ -4,8 +4,9 @@ The request names an error target ε -- absolute, a share of the price, or
 inferred from the market -- and a hard time budget. Then:
 
 1. A pilot run (PILOT_PATHS, price only, its time-step bias estimated) gives
-   the per-path dispersion σ, the bias with its own error, and the cost of a
-   path.
+   the per-path dispersion σ and the bias with its own error. The cost of a
+   path is measured on runs with the request's own settings, grown until
+   their paths outweigh the fixed costs (_path_cost).
 2. ε splits between bias and variance as the multilevel engine already
    splits it (Giles): bias <= ε/√2, standard error <= ε/√2, so
    N = (σ / (ε/√2))².
@@ -54,6 +55,9 @@ PILOT_PATHS = 8192
 MIN_PATHS, MAX_PATHS = 1_000, 5_000_000
 #: The vega bump: every vol scaled by 1 ± BUMP.
 BUMP = 0.01
+#: The least time the paths of the cost-measuring run must add over the
+#: pilot's before the slope is trusted (timer and scheduling noise).
+MIN_SPAN_S = 0.05
 
 #: The relative scale applied to every vol of the model by the pricing in
 #: progress (pricing_service reads it): 1.0 outside a vega bump.
@@ -161,6 +165,39 @@ def _timed(price, req) -> Tuple[PricingResponse, float]:
     return r, time.perf_counter() - t
 
 
+def _path_cost(price, run_req, needed: int, deadline: float) -> Tuple[float, float]:
+    """(fixed, per path) seconds of the run asked for, measured on runs with
+    its own settings (its greeks, its bias estimate): a fixed factor over a
+    price-only run under-stated an adjoint one by far, with 12,903
+    sensitivities under SLV (#347).
+
+    A pricing's fixed costs -- market data, Python, a kernel launch -- dwarf
+    a GPU path's at the pilot's size: two runs of 8,192 and 32,768 paths both
+    take ~0.04 s on the V100s, their difference is noise, and a budget
+    derived from it capped nothing (#347). So the second run grows fourfold
+    until its paths add at least
+    three times the fixed part (and MIN_SPAN_S) -- that part's jitter then
+    moves the slope by about a third at most -- and the slope is measured.
+    It stops growing once it holds the paths needed, or when the next one
+    would take more than half of what is left of the budget: the cost per
+    path is then bounded above by the whole run's time over its paths, which
+    over-states it and so keeps the final run within the budget."""
+    _, t1 = _timed(price, run_req)
+    n = 4 * PILOT_PATHS
+    while True:
+        _, tn = _timed(price, run_req.model_copy(update={"n_paths": n}))
+        span = tn - t1
+        per_path = span / (n - PILOT_PATHS)
+        fixed = t1 - per_path * PILOT_PATHS
+        if span >= max(3.0 * fixed, MIN_SPAN_S):
+            return max(fixed, 0.0), per_path
+        left = deadline - time.perf_counter()
+        if n >= min(needed, MAX_PATHS) or 4 * tn > 0.5 * left:
+            per_path = max(tn / n, 1e-12)
+            return max(t1 - per_path * PILOT_PATHS, 0.0), per_path
+        n = min(4 * n, MAX_PATHS)
+
+
 def price_to_precision(
     req,
     price: Callable[[object], PricingResponse],
@@ -175,9 +212,8 @@ def price_to_precision(
     outcome = dict(mode=target_spec.mode, pilot_paths=PILOT_PATHS)
     plain = dict(greeks_method="none", second_order=False, bias_estimate=False)
 
-    # The pilot: dispersion and bias; then the cost of a run, fixed part and
-    # per path, from two plain runs (a pricing's fixed costs -- market data,
-    # Python, a kernel launch -- dwarf a GPU path's at the pilot's size).
+    # The pilot: dispersion and bias. The cost of a path is measured once the
+    # path count needed is known (_path_cost).
     pilot = price(
         _with_paths(
             req,
@@ -186,15 +222,6 @@ def price_to_precision(
             second_order=False,
             bias_estimate=True,
         )
-    )
-    _, t1 = _timed(price, _with_paths(req, PILOT_PATHS, **plain))
-    _, t4 = _timed(price, _with_paths(req, 4 * PILOT_PATHS, **plain))
-    per_path = max((t4 - t1) / (3 * PILOT_PATHS), 1e-9)
-    fixed = max(t1 - per_path * PILOT_PATHS, 0.0)
-    # The run asked for, against a plain one: the bias estimate runs the
-    # steps twice and halved (about 3x), adjoint greeks about 4x more.
-    weight = (3.0 if req.bias_estimate else 1.0) + (
-        4.0 if req.greeks_method == "aad" else 0.0
     )
 
     if target_spec.mode == "absolute":
@@ -247,10 +274,11 @@ def price_to_precision(
     needed = (
         max(MIN_PATHS, math.ceil((sigma / half) ** 2)) if sigma > 0.0 else MIN_PATHS
     )
-    remaining = budget - (time.perf_counter() - t0)
-    fits = int(
-        max(MIN_PATHS, min(MAX_PATHS, (remaining - fixed) / (weight * per_path)))
+    fixed, per_path = _path_cost(
+        price, _with_paths(req, PILOT_PATHS), needed, t0 + budget
     )
+    remaining = budget - (time.perf_counter() - t0)
+    fits = int(max(MIN_PATHS, min(MAX_PATHS, (remaining - fixed) / per_path)))
     n = min(needed, MAX_PATHS)
     stopped = "out_of_budget" if needed > MAX_PATHS else None
     if n > fits:
@@ -274,7 +302,7 @@ def price_to_precision(
     if stopped is None and err > eps:
         # Sobol: the error need not fall as 1/sqrt(N); one doubling if it fits.
         remaining = budget - (time.perf_counter() - t0)
-        if 2 * n <= MAX_PATHS and fixed + weight * per_path * 2 * n < remaining:
+        if 2 * n <= MAX_PATHS and fixed + per_path * 2 * n < remaining:
             n *= 2
             final = price(_with_paths(req, n))
             err = math.hypot(final.mc_std_error, _resolved_bias(final))
