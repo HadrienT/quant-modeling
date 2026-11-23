@@ -119,6 +119,11 @@ _TOPIC_BY_TYPE = {
     "data.fallback": "qm.dataquality.fallback.v1",
     "http.access": "qm.http.access.v1",
     "assistant.chat": "qm.assistant.chat.v1",
+    # issue #344 (quant-platform's contract §2): an xVA of a netting set, a
+    # backtest run, the admin panel's hidden pages. Keyed like a valuation.
+    "xva.valuation": "qm.audit.xva.v1",
+    "backtest.run": "qm.audit.backtest.v1",
+    "admin.site_pages": "qm.audit.admin.v1",
 }
 _AUTH_TOPIC = "qm.audit.auth.v1"
 
