@@ -223,9 +223,34 @@ def test_a_library_asian_stays_on_slv(store):
     )
 
 
+def test_a_library_forward_start_started_today_stays_a_forward_start(store):
+    # #346: its first date reads no spot, so started today the strike fixing
+    # stays three months ahead -- a forward start, on SLV -- not an ATM
+    # European struck on today's close.
+    resp = pricing_service.price_script(
+        _req(_library("forward-start-call"), ticker="TEST"),
+        library=True,
+        start_today=True,
+    )
+    assert (resp.model_choice.model, resp.model_choice.code) == (
+        "slv",
+        "path_dependent",
+    )
+    from app import product_templates
+
+    started = product_templates.start_on(_library("forward-start-call"), SNAP)
+    fixing = started.split("k = strike * spot()")[0].strip().splitlines()[-1]
+    assert (date.fromisoformat(fixing.strip()) - SNAP).days == 91
+
+
 @pytest.mark.parametrize(
     "slug, model",
-    [("european-call", "local_vol"), ("one-touch", "slv"), ("asian-call", "slv")],
+    [
+        ("european-call", "local_vol"),
+        ("one-touch", "slv"),
+        ("asian-call", "slv"),
+        ("forward-start-call", "slv"),
+    ],
 )
 def test_validate_started_today_announces_what_the_pricing_page_picks(slug, model):
     from app.schemas import ScriptValidateRequest
