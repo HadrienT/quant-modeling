@@ -48,7 +48,7 @@ from datetime import date
 from typing import Callable, Optional, Tuple
 
 from . import cancellation
-from .schemas import PrecisionOutcome, PricingResponse
+from .schemas import ModelWarning, PrecisionOutcome, PricingResponse
 
 #: Paths of the pilot run, and of each side of the vega bump.
 PILOT_PATHS = 8192
@@ -234,11 +234,27 @@ def price_to_precision(
     r = _price_to_precision(req, price, market_quotes, t0, budget)
     if not capped:
         return r
+    warnings = [
+        (
+            w.model_copy(
+                update={
+                    "message": w.message
+                    + f" The time budget was {budget:.0f} s, not the "
+                    f"{target_spec.time_budget_s:g} s asked: what the server's "
+                    "time limit leaves."
+                }
+            )
+            if w.code == "time_limit_precision"
+            else w
+        )
+        for w in r.warnings
+    ]
     return r.model_copy(
         update={
+            "warnings": warnings,
             "diagnostics": r.diagnostics
             + f" | time budget {budget:.1f} s, not the {target_spec.time_budget_s:g} s "
-            "asked: what the server's timeout leaves"
+            "asked: what the server's timeout leaves",
         }
     )
 
@@ -374,10 +390,41 @@ def _done(
         note=note,
         **outcome,
     )
+    warnings = list(r.warnings)
+    if stopped in TIME_LIMITED:
+        warnings.append(_not_converged(r, p))
     return r.model_copy(
         update={
             "precision": p,
+            "warnings": warnings,
             "diagnostics": r.diagnostics
             + f" | priced to a precision: {stopped} ({n} paths, target {p.target:.4g})",
         }
+    )
+
+
+#: The stopping rules that are the time limit, not the target or the bias.
+TIME_LIMITED = ("out_of_budget", "time_budget")
+
+
+def _share(x: float, of: float) -> str:
+    return f" ({100.0 * x / abs(of):.3g} % of the price)" if of else ""
+
+
+def _not_converged(r: PricingResponse, p: PrecisionOutcome) -> ModelWarning:
+    """The value reached, said not to be the one the target asked for."""
+    needed = (
+        f" of the ~{p.paths_needed:,} the target needs"
+        if p.paths_needed and p.paths_needed > p.paths
+        else ""
+    )
+    return ModelWarning(
+        code="time_limit_precision",
+        severity="warning",
+        message=(
+            "Not converged: the time limit was reached before the precision "
+            f"target. Error {p.achieved_error:.4g}{_share(p.achieved_error, r.npv)} "
+            f"against a target of {p.target:.4g}{_share(p.target, r.npv)}, with "
+            f"{p.paths:,} paths{needed}."
+        ),
     )

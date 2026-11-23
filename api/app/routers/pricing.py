@@ -12,7 +12,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from .. import cancellation, convergence, greeks_fallback, telemetry, valuation
+from .. import (
+    cancellation,
+    convergence,
+    greeks_fallback,
+    path_budget,
+    telemetry,
+    valuation,
+)
 from ..audit import emit
 from ..logging_utils import get_logger
 from ..pricing_service import validate_script
@@ -154,8 +161,16 @@ async def _price(
     `qm_pricing_duration_seconds` and `qm_pricing_errors_total`.
 
     `user_errors` are exceptions the pricer raises for a bad input (a
-    malformed script, missing market data): they become a 422."""
+    malformed script, missing market data): they become a 422.
+
+    A path count the same request has shown it cannot price in time is
+    lowered to what fits, and the response says so (path_budget.py): the
+    request priced, and recorded for replay, is the lowered one."""
     product = valuation.PRODUCTS[product_id]
+    asked = getattr(req, "n_paths", None)
+    fits = path_budget.paths_that_fit(product_id, req, _PRICING_TIMEOUT_SECONDS)
+    if fits is not None:
+        req = req.model_copy(update={"n_paths": fits[0]})
     labels = {
         "product": product_id,
         "engine": product.engine(req),
@@ -180,6 +195,11 @@ async def _price(
     except Exception:
         telemetry.pricing_errors.add(1, {"product": product_id, "code": "internal"})
         raise
+    path_budget.record(product_id, req, priced)
+    if fits is not None:
+        priced.response = path_budget.warn(
+            priced.response, asked, fits[0], fits[1], _PRICING_TIMEOUT_SECONDS
+        )
     telemetry.pricing_duration.record(
         priced.duration_s, {**labels, "device": priced.response.device}
     )

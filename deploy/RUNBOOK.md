@@ -592,7 +592,15 @@ pricing routes take a slot before they compute (issue #347):
   target, price then risks, convergence ladder, bumped greeks). It keeps
   its slot until it has stopped, so an abandoned pricing still counts.
 - A precision target plans its runs within what the 20 s leave (90 %), not
-  the `time_budget_s` asked, which may go up to 60 s. Its diagnostics say so.
+  the `time_budget_s` asked, which may go up to 60 s. When the limit stops
+  it before its target, the response is a 200 with the value reached and a
+  `time_limit_precision` warning ("Not converged").
+- A path count that a finished run of the same request (at least 2 s of
+  engine time) shows cannot fit in 15 s of engine time is lowered to what
+  fits, with a `time_limit_paths` warning naming both counts
+  (`api/app/path_budget.py`). It runs no pilot and keeps the cost per request
+  in memory, so a restart forgets it. A request never seen is priced as
+  asked, and may still end in a 408.
 - In Grafana, `qm_pricing_errors_total{code="429"}` and `{code="timeout"}`
   count them. Many 429s with the CPUs idle: raise `QM_PRICING_SLOTS` in
   `.env` and redeploy. A container near its memory limit: lower it.

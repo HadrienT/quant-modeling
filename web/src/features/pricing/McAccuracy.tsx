@@ -1,6 +1,7 @@
 import type { PricingResult } from "@/shared/api";
 import { formatNumber } from "@/shared/format";
 import { DiscretisationBias } from "@/shared/ui/density";
+import { TIME_LIMIT } from "./scripting/ModelWarnings";
 
 /** What stopped a pricing to a precision (PrecisionOutcome.stopped). */
 const STOPPED: Record<string, string> = {
@@ -14,14 +15,28 @@ const STOPPED: Record<string, string> = {
 /**
  * A Monte-Carlo price's accuracy beyond its ± (issue 331): the time-step
  * bias with its own error, and, when priced to a precision, the target, the
- * rule that ended the run and what the target would have needed.
+ * rule that ended the run and what the target would have needed. A run the
+ * time limit cut short (fewer paths than asked, or a precision target not
+ * reached) says so first, as a warning.
  */
 export function McAccuracy({ r }: { r: PricingResult }) {
 	const p = r.precision;
 	const rel = (x: number) =>
 		r.npv ? ` (${((x / Math.abs(r.npv)) * 100).toFixed(3)} %)` : "";
+	const limited = (r.warnings ?? []).filter((w) =>
+		w.code.startsWith(TIME_LIMIT),
+	);
 	return (
 		<>
+			{limited.map((w) => (
+				<p
+					key={w.code}
+					role="alert"
+					className="rounded-md border border-warning/40 bg-warning/5 p-2 text-xs text-warning"
+				>
+					{w.message}
+				</p>
+			))}
 			<DiscretisationBias
 				bias={r.discretisation_bias}
 				error={r.discretisation_bias_std_error}

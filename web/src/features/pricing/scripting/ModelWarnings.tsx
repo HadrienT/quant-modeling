@@ -1,8 +1,21 @@
 type Warning = { code: string; severity: "warning" | "info"; message: string };
 
+/** The code prefix of the warnings that a time limit cut the run short (the
+ * API's time_limit_paths and time_limit_precision), shown by McAccuracy. */
+export const TIME_LIMIT = "time_limit";
+
 /** What the script's price depends on that the chosen model cannot capture
- * (scripting/model_advice.hpp) — shown next to the price it qualifies. */
-export function ModelWarnings({ warnings }: { warnings: Warning[] }) {
+ * (scripting/model_advice.hpp) — shown next to the price it qualifies.
+ * `skip`: a code prefix shown elsewhere on the page (the time-limit
+ * warnings, which McAccuracy shows beside the error they qualify). */
+export function ModelWarnings({
+	warnings: all,
+	skip,
+}: {
+	warnings: Warning[];
+	skip?: string;
+}) {
+	const warnings = skip ? all.filter((w) => !w.code.startsWith(skip)) : all;
 	if (warnings.length === 0) return null;
 	return (
 		<ul className="flex flex-col gap-2">
