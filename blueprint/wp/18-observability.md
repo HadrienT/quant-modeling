@@ -246,6 +246,9 @@ service : c'est le sujet qui a un schéma et une rétention.
 | `qm.dataquality.fallback.v1` | `kind` | 1 | 90 j | un repli ou une donnée périmée / proxifiée |
 | `qm.http.access.v1` | `route` | 3 | 14 j | une requête HTTP (volumineux, faible valeur d'audit) |
 | `qm.assistant.chat.v1` | `username` | 1 | 30 j | latence, script valide ou non ; **pas le contenu** par défaut |
+| `qm.audit.xva.v1` | `username` (or `anon:<ip hash>`) | 3 | 90 d | an xVA of a netting set (`xva.valuation`, #344) |
+| `qm.audit.backtest.v1` | `username` (or `anon:<ip hash>`) | 3 | 90 d | a backtest run (`backtest.run`, WP 24, #344) |
+| `qm.audit.admin.v1` | `username` | 1 | 90 d | an admin panel change (`admin.site_pages`, #344) |
 | `qm.dlq.v1` | `source_topic` | 1 | 30 j | messages rejetés par un consommateur, avec l'erreur en en-tête |
 
 **Pourquoi 3 partitions sur certains et 1 sur d'autres.** Le volume ne les

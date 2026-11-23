@@ -269,3 +269,36 @@ def test_no_authorization_header_does_not_emit_token_invalid(client):
     c, sink = client
     c.get("/health")
     assert not any(e.type == "auth.token_invalid" for e in sink.events)
+
+
+def test_every_event_type_the_api_emits_has_a_topic():
+    """#344: xva.valuation, backtest.run and admin.site_pages had none and
+    waited in the spool forever. Every type passed to emit() -- a literal or
+    a module's EVENT_TYPE -- must route, so a new one cannot go unrouted
+    silently (auth.* share their topic by prefix)."""
+    import re
+    from pathlib import Path
+
+    from pydantic import BaseModel
+
+    from api.app.audit.sinks import UnroutableEvent, route
+
+    class Empty(BaseModel):
+        pass
+
+    app = Path(__file__).resolve().parents[1] / "app"
+    types = set()
+    for f in app.rglob("*.py"):
+        text = f.read_text(encoding="utf-8")
+        types |= set(re.findall(r'\bemit\(\s*"([a-z_]+\.[a-z_.]+)"', text))
+        types |= set(re.findall(r'^EVENT_TYPE\s*=\s*"([a-z_.]+)"', text, re.M))
+    # the auth events build their type from a constant prefix
+    assert {"pricing.valuation", "xva.valuation", "backtest.run"} <= types
+    unrouted = []
+    for t in sorted(types):
+        event = Event.create(t, Empty())
+        try:
+            route(event)
+        except UnroutableEvent:
+            unrouted.append(t)
+    assert unrouted == []
