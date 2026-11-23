@@ -6,6 +6,7 @@
 // host version is what the CPU runs and what the GPU is tested against.
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -64,6 +65,15 @@ namespace quantModeling::gpu::detail
         return bytes;
     }
 
+    /// The devices whose pool this process has used (current_pool): the
+    /// only ones trim_idle_pools touches, so that it never creates a CUDA
+    /// context on a card the process does not use.
+    inline std::atomic<bool> (&pools_in_use())[64]
+    {
+        static std::atomic<bool> used[64] = {};
+        return used;
+    }
+
     /// The current device's default memory pool, its release threshold set
     /// on first use.
     inline cudaMemPool_t current_pool()
@@ -80,6 +90,8 @@ namespace quantModeling::gpu::detail
                                uint64_t threshold = pool_retain_bytes();
                                cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &threshold);
                            });
+        if (device >= 0 && device < 64)
+            pools_in_use()[device].store(true, std::memory_order_relaxed);
         return pool;
     }
 
@@ -114,6 +126,34 @@ namespace quantModeling::gpu::detail
     }
 
     /**
+     * @brief Memory the device's pool holds but no allocation uses: what the
+     *        last request freed, which cudaMallocAsync reuses at no cost.
+     *
+     * It is not "free" to cudaMemGetInfo until the pool trims it at a
+     * synchronisation, so half of the free memory alone shrank the budget
+     * of the request after a large one: the local-vol adjoint (4.7 GB of
+     * trails for the phoenix on the page's grid) ran one launch of 256
+     * blocks when it came first, then five of 56 (issue #350).
+     */
+    inline std::size_t pool_idle_bytes(int device)
+    {
+        cudaMemPool_t pool = nullptr;
+        if (cudaDeviceGetDefaultMemPool(&pool, device) != cudaSuccess)
+        {
+            cudaGetLastError();
+            return 0;
+        }
+        uint64_t reserved = 0, used = 0;
+        if (cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &reserved) != cudaSuccess ||
+            cudaMemPoolGetAttribute(pool, cudaMemPoolAttrUsedMemCurrent, &used) != cudaSuccess)
+        {
+            cudaGetLastError();
+            return 0;
+        }
+        return reserved > used ? static_cast<std::size_t>(reserved - used) : 0;
+    }
+
+    /**
      * @brief The most memory one launch may take on `device`: half of what
      *        is free (the cards are shared with the assistant's LLM) -- not
      *        queried for a request needing at most 64 MiB in all.
@@ -127,7 +167,9 @@ namespace quantModeling::gpu::detail
     inline std::size_t launch_budget(int device, std::size_t need_bytes)
     {
         constexpr std::size_t kSmallRequestBytes = std::size_t{64} << 20;
-        return need_bytes <= kSmallRequestBytes ? need_bytes : free_memory(device) / 2;
+        if (need_bytes <= kSmallRequestBytes)
+            return need_bytes;
+        return (free_memory(device) + pool_idle_bytes(device)) / 2;
     }
 
     /// Returns device_alloc's memory to its pool, after the work queued

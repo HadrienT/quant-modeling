@@ -1,4 +1,5 @@
 #include "quantModeling/gpu/device.hpp"
+#include "logical_blocks.cuh"
 
 #include <cuda_runtime.h>
 
@@ -63,4 +64,51 @@ namespace quantModeling::gpu
         return free_bytes;
     }
 
+} // namespace quantModeling::gpu
+
+namespace quantModeling::gpu
+{
+    std::size_t trim_idle_pools(std::size_t keep_bytes)
+    {
+        std::size_t released = 0;
+        int previous = 0;
+        if (cudaGetDevice(&previous) != cudaSuccess)
+        {
+            cudaGetLastError();
+            return 0;
+        }
+        for (int device = 0; device < device_count() && device < 64; ++device)
+        {
+            if (!detail::pools_in_use()[device].load(std::memory_order_relaxed))
+                continue;
+            cudaMemPool_t pool = nullptr;
+            if (cudaDeviceGetDefaultMemPool(&pool, device) != cudaSuccess)
+            {
+                cudaGetLastError();
+                continue;
+            }
+            uint64_t before = 0, after = 0;
+            cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &before);
+            if (before <= keep_bytes)
+                continue;
+            // Memory given back by cudaFreeAsync is released only once a
+            // synchronisation has seen the free complete: without it the trim
+            // released nothing (4.76 GB stayed reserved after the local-vol
+            // adjoint). Called from the API's idle watcher, never on a
+            // request's path, so the wait costs no pricing anything. Memory
+            // an allocation still holds is never released: a request running
+            // on another thread keeps its memory.
+            if (cudaSetDevice(device) != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)
+            {
+                cudaGetLastError();
+                continue;
+            }
+            cudaMemPoolTrimTo(pool, keep_bytes);
+            cudaMemPoolGetAttribute(pool, cudaMemPoolAttrReservedMemCurrent, &after);
+            released += before > after ? static_cast<std::size_t>(before - after) : 0;
+        }
+        cudaGetLastError();
+        cudaSetDevice(previous);
+        return released;
+    }
 } // namespace quantModeling::gpu

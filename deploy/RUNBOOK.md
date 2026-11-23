@@ -605,6 +605,19 @@ pricing routes take a slot before they compute (issue #347):
   count them. Many 429s with the CPUs idle: raise `QM_PRICING_SLOTS` in
   `.env` and redeploy. A container near its memory limit: lower it.
 
+## GPU memory pools: kept while busy, given back when idle
+
+Each card's memory pool keeps what a request freed, for the next one, up to
+`QM_GPU_POOL_RETAIN_MB` (production 6144, the library's default 256). A large
+request, such as a local-vol adjoint (~4.7 GB of trails), then does not make
+the next request pay for releasing and re-allocating that memory (issue #350).
+After `QM_GPU_POOL_IDLE_S` (default 30) seconds without a pricing, the API
+gives the pools back down to 256 MiB, logging "gpu pools trimmed after ... s
+idle". During a burst of pricings the production API may therefore hold up to
+6 GiB a card. Development tests on the same cards see that memory as taken,
+size their launches smaller and run slower, but they do not fail. A pause of
+30 s gives the memory back.
+
 ## Dépannage
 
 | Symptôme | Piste |

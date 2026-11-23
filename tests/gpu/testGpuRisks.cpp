@@ -465,6 +465,42 @@ namespace quantModeling
         EXPECT_LT(peak_mb() - small, 64.0) << "2M paths against 256k, MB";
     }
 
+    // Issue #350: a pool that keeps what a large request freed (the local-vol
+    // adjoint's trails, ~4.7 GB for the phoenix on the page's grid) gives it
+    // back to the card when the API calls trim_idle_pools once idle.
+    TEST_F(GpuRisksTest, IdlePoolsGiveTheirMemoryBack)
+    {
+        // read once, at the pool's first use: this process's first CUDA call
+        setenv("QM_GPU_POOL_RETAIN_MB", "8192", 1);
+        const ScriptedProduct<Real> product(library_source("phoenix-autocall"), kCtx);
+        auto model = page_model<Real>(false);
+        model->init(product.timeline(), product.defline());
+        DeviceModel dm;
+        ASSERT_TRUE(model->describe_device(dm));
+        gpu::ScriptGpuRequest req;
+        req.program = &product.program();
+        req.ir = &product.ir();
+        req.model = &dm;
+        req.baseline = product.baseline();
+        for (const SampleDef &d : product.defline())
+            req.discount_mats.push_back(d.discount_mats);
+        req.antithetic = false;
+        req.seed = 5;
+        req.n_units = 1u << 16;
+        const auto first = gpu::simulate_script_adjoint(req);
+        const std::size_t free_before = gpu::free_memory(0);
+        const std::size_t keep = std::size_t{256} << 20;
+        const std::size_t released = gpu::trim_idle_pools(keep);
+        EXPECT_GT(released, std::size_t{1} << 30) << "the trails' memory stayed in the pool";
+        EXPECT_GT(gpu::free_memory(0), free_before + released / 2);
+        EXPECT_EQ(gpu::trim_idle_pools(keep), 0u) << "nothing left to give back";
+        // and the next request allocates again, to the same bits
+        const auto again = gpu::simulate_script_adjoint(req);
+        ASSERT_EQ(first.risks.size(), again.risks.size());
+        for (std::size_t i = 0; i < first.risks.size(); ++i)
+            ASSERT_EQ(first.risks[i], again.risks[i]) << i;
+    }
+
     // ── the superbucket from GPU risks ─────────────────────────────────────
     namespace
     {

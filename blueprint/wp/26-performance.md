@@ -2763,3 +2763,40 @@ fails on the previous fold (+706 MB).
 would remove the rows' device-to-host copy (GBs at millions of paths).
 That would be a separate, measured change.
 
+
+## 24. The adjoint's launches: one wave, not five under-filled ones (#350, 2026-11-23)
+
+**The issue's lead did not hold.** #350 read the adjoint kernel as register-bound (98 to 107 registers, two blocks a multiprocessor) and proposed capping the registers. Measured with ncu on one V100, phoenix autocall on the page's grids, 65,536 Philox paths:
+
+| Kernel | Registers | Occupancy (theoretical / achieved) | Kernel time |
+|---|---|---|---|
+| SLV, as built | 107 | 25 % / 21 % | 17.3 ms |
+| SLV, `__launch_bounds__(256, 3)` | 80 | 37.5 % / 35 % | 20.3 ms |
+| SLV, `__launch_bounds__(256, 4)` | 64 | 50 % / 38 % | 21.5 ms |
+| Local vol, as built | 98 | 25 % / **12 %** | 7.1 ms a launch |
+| Local vol, `(256, 4)` | 64 | 50 % / **12 %** | 8.1 ms a launch |
+
+The kernel as built does not spill (no local-memory traffic). Capped at 64 registers it spills 9.8 GB of loads and 6.0 GB of stores, and the cycles per issued instruction go from 8.6 to 17.7. Its stalls are fixed-latency dependencies and the FP64 pipe (45 % active), not memory latency. More warps do not pay for the spills, so the cap was dropped.
+
+**What did hold: the launch size.** Local vol's achieved occupancy stays at 12 % whatever the registers, because each launch had **56 blocks for 80 multiprocessors**. Its trails take 4.7 GB for the phoenix, above the 4 GiB a request could take in one launch, so it fell to the 1 GiB scratch cap: five launches of 7 logical blocks, each under one wave and each as long as a full one. Two changes, both needed:
+
+1. One launch up to **8 GiB** (`kOneLaunchBytes`, `src/gpu/script.cu`), still within half the memory available.
+2. The available memory counts the **pool's idle memory** (`pool_idle_bytes`, `src/gpu/logical_blocks.cuh`). `cudaMemGetInfo` does not see it as free until the pool trims at a synchronisation, so the request after a large one saw half the card and fell back to five launches.
+
+Phoenix, local vol, page grid: five launches of 56 blocks (5 × 7.1 ms) → one of 256 blocks (18.8 ms).
+
+**The pool must keep that memory.** With the default 256 MiB retained, the request after a large one pays for the release of the excess: the SLV phoenix that follows the local-vol one ran +17 %, and isolated it does not move. Trimming at the end of each request was measured worse, +12 to +169 % on every case, since every request then allocates its memory again. The pool now keeps up to `QM_GPU_POOL_RETAIN_MB` (production: 6144) while the API is busy, and `api/app/gpu_pool.py` gives it back down to 256 MiB after 30 s without a pricing (`gpu::trim_idle_pools`, which must synchronise the card first or releases nothing). On a local API, a local-vol adjoint pricing held 4,370 MiB after it ran; 10 s idle later the pools had released 3,808 MiB.
+
+**Numbers.** `qm_gpu_risk_bench 65536 gpu`, median of 5, old and new binaries alternated, pool kept at 8 GiB:
+
+| Case | Before | After |
+|---|---|---|
+| phoenix autocall, local vol 30 × 12 | 63.5 ms | 34.9 ms |
+| up-and-out call, local vol 30 × 12 | 39.9 ms | 27.1 ms |
+| variance swap, local vol 30 × 12 | 45.0 ms | 31.7 ms |
+| phoenix autocall, local vol page grid | 76.1 ms | 45.8 ms |
+| SLV, Heston, Black-Scholes cases | | within noise (isolated: the same to 0.1 ms) |
+
+The risks are the same bits: only the launch size changed, and the result does not depend on it (`PageGridSlvAdjointIsBitReproducible`). The gaps to the CPU tape are unchanged (3.0e-16 local vol, 2.3e-13 SLV, page grids). New test: `GpuRisksTest.IdlePoolsGiveTheirMemoryBack`.
+
+**What is left.** SLV's adjoint on the page (256 blocks for 160 resident: 1.6 waves) is bounded by its FP64 dependency chains, not by memory or registers. Shortening those chains in the generated adjoint is a change to the IR's code generator (WP 27), not to the launches.

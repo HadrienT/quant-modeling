@@ -31,6 +31,11 @@ namespace quantModeling::gpu
         return 0;
     }
 
+    std::size_t trim_idle_pools(std::size_t)
+    {
+        return 0;
+    }
+
     mc::VanillaStats simulate_vanilla_terminal(const VanillaGpuRequest &)
     {
         throw GpuUnavailable("GPU requested, but this server has no usable CUDA device (the pricing library was built without the CUDA backend: QM_ENABLE_CUDA=ON)");

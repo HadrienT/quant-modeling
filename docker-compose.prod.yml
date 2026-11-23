@@ -51,6 +51,11 @@ services:
       # before a 429 (issue #347, deploy/RUNBOOK.md "Pricing slots").
       - QM_PRICING_SLOTS=${QM_PRICING_SLOTS:-3}
       - QM_PRICING_SLOT_WAIT_S=${QM_PRICING_SLOT_WAIT_S:-10}
+      # GPU memory pools: what a request freed kept for the next one, up to
+      # 6 GiB a card while the API is busy, given back to 256 MiB after 30 s
+      # idle (issue #350, api/app/gpu_pool.py, deploy/RUNBOOK.md).
+      - QM_GPU_POOL_RETAIN_MB=${QM_GPU_POOL_RETAIN_MB:-6144}
+      - QM_GPU_POOL_IDLE_S=${QM_GPU_POOL_IDLE_S:-30}
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
       # Sign in with Google (optional — the button only appears when both are set).

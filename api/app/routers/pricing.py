@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import (
     cancellation,
     convergence,
+    gpu_pool,
     greeks_fallback,
     path_budget,
     telemetry,
@@ -114,12 +115,13 @@ async def _run_with_timeout(func: Callable[..., _T], *args, slot: bool = True) -
                 raise cancellation.Cancelled("abandoned before it started")
             # the computing time starts now, not when the request came
             loop.call_soon_threadsafe(_start_the_clock)
-            return cancellation.run_with(
-                flag,
-                func,
-                *args,
-                deadline=time.perf_counter() + _PRICING_TIMEOUT_SECONDS,
-            )
+            with gpu_pool.busy():
+                return cancellation.run_with(
+                    flag,
+                    func,
+                    *args,
+                    deadline=time.perf_counter() + _PRICING_TIMEOUT_SECONDS,
+                )
         finally:
             if slot:
                 _slots.release()

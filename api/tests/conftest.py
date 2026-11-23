@@ -32,6 +32,14 @@ def _isolated_store_and_caches(tmp_path, monkeypatch):
         )
         market_snapshot.clear_caches()
         stochastic_vol._cache.clear()
+    # What a pricing taught path_budget about a request's cost: a slow run in
+    # one test lowered another test's path count (2.2M paths fell to one GPU
+    # in test_the_response_and_the_audit_say_how_many_gpus).
+    for root in ("app", "api.app"):
+        try:
+            importlib.import_module(f"{root}.path_budget").forget()
+        except ImportError:
+            pass
     yield
     for _, market_snapshot, stochastic_vol in trees:
         market_snapshot.clear_caches()
