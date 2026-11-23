@@ -702,18 +702,37 @@ namespace quantModeling::gpu
             return detail::merge_segments(detail::run_on_devices<Stats>(devices, bps * reps, job), reps, bps);
         }
 
-        /// One logical block of the adjoint: its price statistics, and the
-        /// gradient sums of its 8 batches (8 x n_params, batch-major) in its
-        /// device's host buffer -- copied there by the launch, never again:
-        /// copying them into a vector per block cost 15 ms of the phoenix
-        /// autocall's 59 under SLV, the page faults of 26 MB (65 536 paths,
-        /// the page's 100 x 129 grid, 2026-11-20).
-        struct AdjointBlock
+        /// One slice of the adjoint's run, folded as its batches arrive
+        /// (issue #348): the gradient sums of a batch are added to their
+        /// slice's accumulators and dropped, so the host holds O(slices x
+        /// risks), not O(paths x risks) -- 3.7 GB at 5M paths under SLV on
+        /// the page's grid, which killed production (#347).
+        ///
+        /// The slices are fixed by the path count alone (kFoldSlices, never
+        /// across a replicate), the cards share whole slices, and the slices
+        /// merge in their order: the risks do not depend on the number of
+        /// cards, bit for bit (ADR-G5).
+        struct FoldSlice
         {
-            WelfordAccumulator price;
-            std::shared_ptr<const double[]> rows; ///< keeps `warp_sums` alive
-            const double *warp_sums = nullptr;
+            std::vector<WelfordAccumulator> price; ///< per logical block, in order
+            /// Pseudo-random: batch means shifted by the slice's first batch
+            /// mean (against cancellation), sum n y, sum n^2 y, sum n^2 y^2.
+            /// RQMC: s1 alone, the slice's share of its replicate's sum.
+            std::vector<double> shift, s1, s1n, s2;
+            double total_units = 0.0, sum_n2 = 0.0;
+            long long batches = 0;
         };
+
+        /// Slices of the fold: at most this many per run, at least one per
+        /// replicate. 64 x 4 x 12,908 risks: 26 MB, whatever the path count.
+        constexpr uint64_t kFoldSlices = 64;
+        /// ... of at least this many logical blocks (65k paths): the page's
+        /// 50,000 paths fold into one slice, as fast as the single buffer
+        /// was (16 slices cost it 2-3 ms, zeroing their sums).
+        constexpr uint64_t kFoldMinSliceBlocks = 16;
+        /// Host bytes of one launch's batch rows, copied then folded: the
+        /// launch is cut to fit (77 logical blocks, 315k paths, at 12,908 risks).
+        constexpr std::size_t kFoldStagingBytes = std::size_t{64} << 20;
     } // namespace
 
     void forget_compiled_scripts()
@@ -849,9 +868,17 @@ namespace quantModeling::gpu
         const auto np = static_cast<std::size_t>(n_params);
         const uint64_t reps = replicates_of(req);
         const uint64_t bps = LB::count(req.n_units);
+        const bool rqmc = reps > 1;
+        // The fold's slices: per_rep in each replicate, slice c covering the
+        // blocks [slice_begin(c), slice_begin(c + 1)).
+        const uint64_t per_rep =
+            std::clamp<uint64_t>(kFoldSlices / reps, 1, std::max<uint64_t>(bps / kFoldMinSliceBlocks, 1));
+        const uint64_t n_slices = reps * per_rep;
+        const auto slice_begin = [&](uint64_t c)
+        { return (c / per_rep) * bps + bps * (c % per_rep) / per_rep; };
 
-        // Each device: its blocks' price statistics and warp gradient sums.
-        auto job = [&](int device, uint64_t first, uint64_t last)
+        // Each device: its slices, folded as their batches arrive.
+        auto job = [&](int device, uint64_t c0, uint64_t c1)
         {
             DeviceArrays mem;
             const mc::ScriptPathView v = device_view(req, mem, device);
@@ -902,7 +929,11 @@ namespace quantModeling::gpu
             const std::size_t per_block = static_cast<std::size_t>(LB::kUnitsPerBlock) * per_unit +
                                           (kUnitWarps + LB::kWarpsPerBlock) * np * sizeof(double);
             const DrawSetup s = draw_setup(req, v, mem, device, per_block, true);
-            const uint64_t per_launch = std::min<uint64_t>(s.blocks_per_launch, std::max<uint64_t>(last - first, 1));
+            const uint64_t span = slice_begin(c1) - slice_begin(c0);
+            const uint64_t per_launch = std::min<uint64_t>(
+                {s.blocks_per_launch, std::max<uint64_t>(span, 1),
+                 std::max<uint64_t>(1, kFoldStagingBytes / (static_cast<std::size_t>(LB::kWarpsPerBlock) * np *
+                                                            sizeof(double)))});
             const long rows = static_cast<long>(per_launch) * LB::kUnitsPerBlock;
             const long max_batches = static_cast<long>(per_launch) * LB::kWarpsPerBlock;
             const auto urows = static_cast<std::size_t>(rows);
@@ -930,10 +961,24 @@ namespace quantModeling::gpu
                 order.nT = path.grid_nT;
             }
 
-            std::vector<AdjointBlock> blocks(static_cast<std::size_t>(last - first));
+            // The slices [c0, c1) of this card, their blocks [first, last).
+            const uint64_t first = slice_begin(c0), last = slice_begin(c1);
+            std::vector<FoldSlice> slices(static_cast<std::size_t>(c1 - c0));
+            for (FoldSlice &f : slices)
+            {
+                f.s1.assign(np, 0.0);
+                if (!rqmc)
+                {
+                    f.shift.assign(np, 0.0);
+                    f.s1n.assign(np, 0.0);
+                    f.s2.assign(np, 0.0);
+                }
+            }
+            // the slice a block belongs to: blocks arrive in increasing order
+            uint64_t slice = c0;
             const std::size_t block_doubles = static_cast<std::size_t>(LB::kWarpsPerBlock) * np;
-            // not value-initialised: the copies below write every element
-            const std::shared_ptr<double[]> host(new double[blocks.size() * block_doubles]);
+            // not value-initialised: each copy writes what is then read
+            const std::unique_ptr<double[]> staging(new double[static_cast<std::size_t>(per_launch) * block_doubles]);
             auto after = [&](uint64_t b0, uint64_t count)
             {
                 const long n_batches = static_cast<long>(count) * LB::kWarpsPerBlock;
@@ -948,15 +993,43 @@ namespace quantModeling::gpu
                 detail::check(cudaGetLastError(), "fold_batches launch");
                 // batch 8 c + w is warp w of block c: the rows are already
                 // batch-major per block, in block order
-                double *to = host.get() + static_cast<std::size_t>(b0 - first) * block_doubles;
-                detail::check(cudaMemcpy(to, d_rows, static_cast<std::size_t>(n_batches) * np * sizeof(double),
+                detail::check(cudaMemcpy(staging.get(), d_rows,
+                                         static_cast<std::size_t>(n_batches) * np * sizeof(double),
                                          cudaMemcpyDeviceToHost),
                               "cudaMemcpy");
                 for (uint64_t c = 0; c < count; ++c)
                 {
-                    AdjointBlock &blk = blocks[static_cast<std::size_t>(b0 + c - first)];
-                    blk.rows = host;
-                    blk.warp_sums = to + c * block_doubles;
+                    const uint64_t g = b0 + c;
+                    while (g >= slice_begin(slice + 1))
+                        ++slice;
+                    FoldSlice &f = slices[static_cast<std::size_t>(slice - c0)];
+                    for (int w = 0; w < LB::kWarpsPerBlock; ++w)
+                    {
+                        const long long nb = warp_units(g % bps, w, req.n_units);
+                        if (nb == 0)
+                            continue;
+                        const double *sum = staging.get() + c * block_doubles + static_cast<std::size_t>(w) * np;
+                        if (rqmc)
+                        {
+                            for (std::size_t p = 0; p < np; ++p)
+                                f.s1[p] += sum[p];
+                            continue;
+                        }
+                        const double n = static_cast<double>(nb);
+                        if (f.batches == 0)
+                            for (std::size_t p = 0; p < np; ++p)
+                                f.shift[p] = sum[p] / n;
+                        for (std::size_t p = 0; p < np; ++p)
+                        {
+                            const double y = sum[p] / n - f.shift[p];
+                            f.s1[p] += n * y;
+                            f.s1n[p] += n * n * y;
+                            f.s2[p] += n * n * y * y;
+                        }
+                        f.total_units += n;
+                        f.sum_n2 += n * n;
+                        ++f.batches;
+                    }
                 }
             };
             void *fn = compiled.on(req, device);
@@ -975,60 +1048,60 @@ namespace quantModeling::gpu
             if (overflow)
                 throw InvalidInput("GPU: a path's gradient trail passed the bound the script's IR gives (a bug: "
                                    "please report it)");
-            for (std::size_t b = 0; b < blocks.size(); ++b)
-                blocks[b].price = price[b];
-            return blocks;
+            for (uint64_t c = c0; c < c1; ++c)
+                slices[static_cast<std::size_t>(c - c0)].price.assign(
+                    price.begin() + static_cast<std::ptrdiff_t>(slice_begin(c) - first),
+                    price.begin() + static_cast<std::ptrdiff_t>(slice_begin(c + 1) - first));
+            return slices;
         };
-        const std::vector<AdjointBlock> blocks = detail::run_on_devices<AdjointBlock>(devices_of(req), bps * reps, job);
+        // as many cards as the blocks would use, sharing whole slices
+        const std::vector<FoldSlice> slices = detail::run_on_n_devices<FoldSlice>(
+            devices_of(req), devices_used(devices_of(req).size(), bps * reps), n_slices, job);
 
-        // The host folds in global block order -- the same sums whatever the
+        // The slices merge in their order -- the same sums whatever the
         // number of devices. Pseudo-random: batches of one warp (512 paths),
         // the risks' mean the total over the paths, their error the spread
         // of the batch means (ratio estimator: tail batches may be shorter),
-        // sums shifted by the first batch's mean against cancellation.
+        // each slice's sums re-centred on the first slice's shift (exact:
+        // y' = y + d gives sum n y' = sum n y + d sum n, and so on).
         // RQMC: one sum per replicate, the error the replicates' spread.
-        const bool rqmc = reps > 1;
         std::vector<double> shift(np, 0.0), s1(shift), s2(shift), s1n(shift);
         std::vector<double> rep_sum(static_cast<std::size_t>(reps) * np, 0.0);
         double total_units = 0.0, sum_n2 = 0.0;
         long long batches = 0;
-        for (uint64_t g = 0; g < blocks.size(); ++g)
-            for (int w = 0; w < LB::kWarpsPerBlock; ++w)
+        for (uint64_t c = 0; c < slices.size(); ++c)
+        {
+            const FoldSlice &f = slices[static_cast<std::size_t>(c)];
+            if (rqmc)
             {
-                const long long nb = warp_units(g % bps, w, req.n_units);
-                if (nb == 0)
-                    continue;
-                const double *sum = blocks[static_cast<std::size_t>(g)].warp_sums + static_cast<std::size_t>(w) * np;
-                if (rqmc)
-                {
-                    double *r = &rep_sum[static_cast<std::size_t>(g / bps) * np];
-                    for (std::size_t p = 0; p < np; ++p)
-                        r[p] += sum[p];
-                    continue;
-                }
-                const double n = static_cast<double>(nb);
-                if (batches == 0)
-                    for (std::size_t p = 0; p < np; ++p)
-                        shift[p] = sum[p] / n;
+                double *r = &rep_sum[static_cast<std::size_t>(c / per_rep) * np];
                 for (std::size_t p = 0; p < np; ++p)
-                {
-                    const double y = sum[p] / n - shift[p];
-                    s1[p] += n * y;
-                    s1n[p] += n * n * y;
-                    s2[p] += n * n * y * y;
-                }
-                total_units += n;
-                sum_n2 += n * n;
-                ++batches;
+                    r[p] += f.s1[p];
+                continue;
             }
+            if (f.batches == 0)
+                continue;
+            if (batches == 0)
+                shift = f.shift;
+            for (std::size_t p = 0; p < np; ++p)
+            {
+                const double d = f.shift[p] - shift[p];
+                s1[p] += f.s1[p] + d * f.total_units;
+                s2[p] += f.s2[p] + 2.0 * d * f.s1n[p] + d * d * f.sum_n2;
+                s1n[p] += f.s1n[p] + d * f.sum_n2;
+            }
+            total_units += f.total_units;
+            sum_n2 += f.sum_n2;
+            batches += f.batches;
+        }
 
         ScriptAdjointGpuResult res;
         res.note = "adjoint kernel, " + compiled.note;
         res.risks.assign(np, 0.0);
         res.risk_std_errors.assign(np, 0.0);
         std::vector<WelfordAccumulator> block_price;
-        for (const AdjointBlock &b : blocks)
-            block_price.push_back(b.price);
+        for (const FoldSlice &f : slices)
+            block_price.insert(block_price.end(), f.price.begin(), f.price.end());
         const std::vector<WelfordAccumulator> price = detail::merge_segments(block_price, reps, bps);
         if (rqmc)
         {

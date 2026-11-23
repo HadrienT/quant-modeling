@@ -775,6 +775,16 @@ l'autre.
 Mesuré : le même vecteur de risques **au bit près** pour un ou plusieurs
 lancements, sur l'une ou l'autre des deux cartes.
 
+*Update (2026-11-23, #348).* Step 3 no longer keeps every batch's row on the
+host until the end, which made host memory grow as paths × risks (3.7 GB at
+5M paths under SLV). Each launch's rows are now folded as they arrive into
+the accumulators of their **slice**. A run has at most 64 slices, of at least
+16 logical blocks, never across a Sobol replicate, and their bounds depend on
+the path count alone. The cards share whole slices, and the slices merge in
+their order, each slice's sums re-centred on the first one's shift (exact
+algebra). So the risks stay the same bits on one or two cards, and host
+memory no longer depends on the path count (blueprint WP 26 §23).
+
 Ces sommes par warp servent une seconde fois. Un warp, c'est 32 threads × 16
 chemins = 512 chemins : ce sont les **lots** dont la dispersion donne l'erreur
 standard de chaque risque — l'équivalent GPU des lots de 64 chemins de la tape

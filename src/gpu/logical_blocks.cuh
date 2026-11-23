@@ -550,9 +550,22 @@ namespace quantModeling::gpu::detail
      * the number of devices -- bit for bit (ADR-G5).
      */
     template <class Stats, class Job>
+    std::vector<Stats> run_on_n_devices(const std::vector<int> &devices, std::size_t n, uint64_t n_blocks,
+                                        const Job &job);
+
+    template <class Stats, class Job>
     std::vector<Stats> run_on_devices(const std::vector<int> &devices, uint64_t n_blocks, const Job &job)
     {
-        const std::size_t n = devices_used(devices.size(), n_blocks);
+        return run_on_n_devices<Stats>(devices, devices_used(devices.size(), n_blocks), n_blocks, job);
+    }
+
+    /// run_on_devices on the first `n` of `devices`, the n_blocks items (blocks,
+    /// or larger units a caller splits along) shared in contiguous ranges.
+    template <class Stats, class Job>
+    std::vector<Stats> run_on_n_devices(const std::vector<int> &devices, std::size_t n, uint64_t n_blocks,
+                                        const Job &job)
+    {
+        n = std::max<std::size_t>(1, std::min<std::size_t>({n, devices.size(), static_cast<std::size_t>(n_blocks)}));
         if (n == 1)
             return job(devices.front(), 0, n_blocks);
         std::vector<std::vector<Stats>> parts(n);
