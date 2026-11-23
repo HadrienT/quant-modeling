@@ -66,6 +66,23 @@ describe("api client", () => {
 });
 
 describe("ApiError", () => {
+	it("retries a busy server, not an exhausted quota", () => {
+		const busy = new ApiError({
+			kind: "client",
+			status: 429,
+			code: "rate_limited",
+			message: "",
+		});
+		expect(busy.busy && busy.retriable).toBe(true);
+		const quota = new ApiError({
+			kind: "client",
+			status: 429,
+			code: "anonymous_quota_exhausted",
+			message: "",
+		});
+		expect(quota.busy || quota.retriable).toBe(false);
+	});
+
 	it("marks network and 5xx as retriable, 4xx as not", () => {
 		expect(
 			new ApiError({ kind: "server", status: 500, code: "x", message: "" })

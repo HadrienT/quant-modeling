@@ -8795,7 +8795,7 @@
             "type": "string"
           },
           "paths": {
-            "description": "Paths of the run returned.",
+            "description": "Paths the engine simulated in the run returned: under Sobol, the replicates times the power of two nearest the points asked per replicate, not the count the precision engine asked for.",
             "title": "Paths",
             "type": "integer"
           },
@@ -8877,9 +8877,9 @@
           },
           "time_budget_s": {
             "default": 8.0,
-            "description": "Hard budget for the whole pricing: a run predicted beyond it is cut to what fits, and the response says how many paths the target needed.",
+            "description": "Hard budget for the whole pricing: a run predicted beyond it is cut to what fits, and the response says how many paths the target needed. At most 18 s: the pricing routes answer 408 after 20 s of computing, and a precision target plans within 90 % of that.",
             "exclusiveMinimum": 0.0,
-            "maximum": 60.0,
+            "maximum": 18.0,
             "title": "Time Budget S",
             "type": "number"
           },

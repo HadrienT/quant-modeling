@@ -303,7 +303,9 @@ function precisionInputs(
 		step: 0.01,
 		when: when("absolute"),
 	};
-	shape.time_budget = z.coerce.number().gt(0).max(60);
+	// the pricing routes answer 408 after 20 s; a precision target plans
+	// within 90 % of it (api/app/schemas.py PrecisionTarget)
+	shape.time_budget = z.coerce.number().gt(0).max(18);
 	defaults.time_budget = 8;
 	fields.time_budget = {
 		label: "Time budget",

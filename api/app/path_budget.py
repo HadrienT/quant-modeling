@@ -50,13 +50,19 @@ _per_path: "OrderedDict[str, tuple[float, Optional[int]]]" = OrderedDict()
 _SOBOL = re.compile(r"Sobol RQMC \((\d+) batches of (\d+) points")
 
 
-def _ran(priced, asked: int) -> tuple[int, Optional[int]]:
-    """(paths the engine simulated, its Sobol replicates or None)."""
-    m = _SOBOL.search(priced.response.diagnostics or "")
+def paths_run(diagnostics: str, asked: int) -> tuple[int, Optional[int]]:
+    """(paths the engine simulated, its Sobol replicates or None), from a
+    run's diagnostics: under Sobol, not the paths asked (utils/sobol.hpp)."""
+    m = _SOBOL.search(diagnostics or "")
     if m is None:
         return asked, None
     reps, points = int(m.group(1)), int(m.group(2))
     return reps * points, reps
+
+
+def _ran(priced, asked: int) -> tuple[int, Optional[int]]:
+    """(paths the engine simulated, its Sobol replicates or None)."""
+    return paths_run(priced.response.diagnostics, asked)
 
 
 def _key(product_id: str, req: BaseModel) -> Optional[str]:

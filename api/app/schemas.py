@@ -235,10 +235,11 @@ class PrecisionTarget(BaseModel):
     time_budget_s: float = Field(
         8.0,
         gt=0.0,
-        le=60.0,
+        le=18.0,
         description="Hard budget for the whole pricing: a run predicted beyond "
         "it is cut to what fits, and the response says how many paths the "
-        "target needed.",
+        "target needed. At most 18 s: the pricing routes answer 408 after 20 "
+        "s of computing, and a precision target plans within 90 % of that.",
     )
 
 
@@ -1085,7 +1086,12 @@ class PrecisionOutcome(BaseModel):
             "would. time_budget: the run reached the budget before the target.",
         )
     )
-    paths: int = Field(..., description="Paths of the run returned.")
+    paths: int = Field(
+        ...,
+        description="Paths the engine simulated in the run returned: under "
+        "Sobol, the replicates times the power of two nearest the points asked "
+        "per replicate, not the count the precision engine asked for.",
+    )
     paths_needed: Optional[int] = Field(
         None, description="Paths the pilot predicted for the target's half of variance."
     )

@@ -6043,7 +6043,7 @@ export interface components {
             note: string;
             /**
              * Paths
-             * @description Paths of the run returned.
+             * @description Paths the engine simulated in the run returned: under Sobol, the replicates times the power of two nearest the points asked per replicate, not the count the precision engine asked for.
              */
             paths: number;
             /**
@@ -6092,7 +6092,7 @@ export interface components {
             mode: "absolute" | "relative" | "market";
             /**
              * Time Budget S
-             * @description Hard budget for the whole pricing: a run predicted beyond it is cut to what fits, and the response says how many paths the target needed.
+             * @description Hard budget for the whole pricing: a run predicted beyond it is cut to what fits, and the response says how many paths the target needed. At most 18 s: the pricing routes answer 408 after 20 s of computing, and a precision target plans within 90 % of that.
              * @default 8
              */
             time_budget_s: number;

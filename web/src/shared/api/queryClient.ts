@@ -27,6 +27,13 @@ export function makeQueryClient(): QueryClient {
 					if (error instanceof ApiError && !error.retriable) return false;
 					return failureCount < 2;
 				},
+				// A busy server (429: every pricing slot taken) is retried after
+				// a few seconds, while the page shows the request as loading;
+				// the server itself already waited up to 10 s for a slot.
+				retryDelay: (failureCount, error) =>
+					error instanceof ApiError && error.busy
+						? 3_000 * 2 ** failureCount
+						: Math.min(1_000 * 2 ** failureCount, 30_000),
 				staleTime: 60_000,
 			},
 			mutations: {
