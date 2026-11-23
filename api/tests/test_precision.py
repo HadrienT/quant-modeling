@@ -158,3 +158,107 @@ def test_more_paths_than_the_schema_allows_is_out_of_budget():
     r = pr.price_to_precision(req(mode="absolute", value=1e-4), fake_price())
     assert r.precision.stopped == "out_of_budget"
     assert r.precision.paths <= pr.MAX_PATHS < r.precision.paths_needed
+
+
+class _Clock:
+    """A simulated perf_counter, advanced by the fake pricer below."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def perf_counter(self):
+        return self.now
+
+
+def gpu_like_price(clock, fixed, per_path, jitter=(), calls=None, aad=1.0):
+    """A pricer whose run costs `fixed` (plus the next of `jitter`, cycled)
+    and `per_path` a path (3x with the bias estimate, `aad` x with adjoint
+    greeks): on the V100s a path is ~1e-8 s against ~0.04 s
+    of fixed costs, so small runs time nothing but their fixed part."""
+    inner = fake_price()
+    k = [0]
+
+    def price(req):
+        noise = jitter[k[0] % len(jitter)] if jitter else 0.0
+        k[0] += 1
+        # the bias estimate runs the steps twice and halved: ~3x the paths' cost
+        weight = (3.0 if req.bias_estimate else 1.0) * (
+            aad if req.greeks_method == "aad" else 1.0
+        )
+        clock.now += fixed + noise + weight * per_path * req.n_paths
+        if calls is not None:
+            calls.append(req)
+        return inner(req)
+
+    return price
+
+
+# calls: pilot, then the two cost runs; the second slower than the third by
+# its fixed part's noise, as two GPU runs of 8,192 and 32,768 paths can be
+@pytest.mark.parametrize("jitter", [(), (0.0, 0.03, 0.0, 0.01)])
+def test_the_time_budget_holds_when_fixed_costs_dominate_small_runs(
+    monkeypatch, jitter
+):
+    # #347: two pilot-sized runs differing by their fixed costs' noise gave a
+    # per-path cost of ~0, so the budget capped nothing and 5M paths ran.
+    clock = _Clock()
+    monkeypatch.setattr(pr, "time", clock)
+    budget = 2.0
+    r = pr.price_to_precision(
+        req(mode="absolute", value=1e-4, time_budget_s=budget),
+        gpu_like_price(clock, fixed=0.04, per_path=1e-6, jitter=jitter),
+    )
+    p = r.precision
+    assert p.stopped == "out_of_budget"
+    assert p.paths < pr.MAX_PATHS
+    # the whole pricing, calibration runs included, within the budget (and
+    # the fixed part's jitter, 0.03 s at most a run)
+    assert clock.now <= budget * 1.1
+    # and it uses most of it rather than a timid fraction
+    assert clock.now >= 0.6 * budget
+
+
+def test_no_cost_run_grows_past_the_paths_needed(monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(pr, "time", clock)
+    calls = []
+    r = pr.price_to_precision(
+        req(mode="absolute", value=0.05, time_budget_s=10.0),
+        gpu_like_price(clock, fixed=0.04, per_path=1e-9, calls=calls),
+    )
+    p = r.precision
+    assert p.stopped == "target_reached"
+    assert max(c.n_paths for c in calls) < 4 * max(p.paths_needed, 4 * pr.PILOT_PATHS)
+
+
+def test_a_cost_dominated_by_paths_is_measured_from_two_runs(monkeypatch):
+    clock = _Clock()
+    monkeypatch.setattr(pr, "time", clock)
+    calls = []
+    pr.price_to_precision(
+        req(mode="absolute", value=0.01, time_budget_s=60.0),
+        gpu_like_price(clock, fixed=0.01, per_path=1e-5, calls=calls),
+    )
+    # pilot, the two cost runs (with the final run's settings), the final run
+    assert [c.bias_estimate for c in calls] == [True] * 4
+    assert [c.n_paths for c in calls[:3]] == [
+        pr.PILOT_PATHS,
+        pr.PILOT_PATHS,
+        4 * pr.PILOT_PATHS,
+    ]
+    assert len(calls) == 4
+
+
+def test_an_adjoint_run_is_costed_as_itself(monkeypatch):
+    # SLV on SPY: 12,903 sensitivities make an adjoint path far dearer than
+    # the 4x a price-only run the budget used to assume (#347)
+    clock = _Clock()
+    monkeypatch.setattr(pr, "time", clock)
+    budget = 5.0
+    base = req(mode="absolute", value=1e-3, time_budget_s=budget)
+    r = pr.price_to_precision(
+        base.model_copy(update={"greeks_method": "aad"}),
+        gpu_like_price(clock, fixed=0.04, per_path=1e-7, aad=50.0),
+    )
+    assert r.precision.stopped == "out_of_budget"
+    assert 0.6 * budget <= clock.now <= budget * 1.1

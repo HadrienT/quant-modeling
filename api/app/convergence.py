@@ -23,7 +23,7 @@ from typing import List
 
 from pydantic import BaseModel
 
-from . import valuation
+from . import cancellation, valuation
 from .schemas import ConvergencePoint, ConvergenceResponse
 
 #: Halvings below the requested path count: points at N/2, ..., N/32.
@@ -78,6 +78,7 @@ def study(product_id: str, req: BaseModel) -> ConvergenceResponse:
 
     points: List[ConvergencePoint] = []
     for r in ladder(req):
+        cancellation.check()
         priced = valuation.price(product_id, r)
         points.append(
             ConvergencePoint(

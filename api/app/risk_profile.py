@@ -33,7 +33,7 @@ from typing import Dict, List, Optional, Tuple
 
 import quantmodeling as qm
 
-from . import product_templates
+from . import cancellation, product_templates
 
 REFERENCE = dict(spot=100.0, vol=0.25, rate=0.03, dividend=0.01, correlation=0.5)
 BATCHES = 8
@@ -181,7 +181,12 @@ def _profile(slug: str, terms: Tuple[Tuple[str, float], ...]):
     jobs = [(sc, b) for sc in scenarios for b in range(BATCHES)]
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         prices = list(
-            pool.map(lambda j: _price(script, n, first, horizon, j[0], j[1] + 1), jobs)
+            pool.map(
+                cancellation.bind(
+                    lambda j: _price(script, n, first, horizon, j[0], j[1] + 1)
+                ),
+                jobs,
+            )
         )
     values: Dict[Scenario, List[float]] = {sc: [0.0] * BATCHES for sc in scenarios}
     for (sc, b), v in zip(jobs, prices):

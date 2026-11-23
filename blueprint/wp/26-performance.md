@@ -2626,7 +2626,8 @@ than the kernel.
   time column, so the fold's rows keep the grid as `j × nK + i` (`GridOrder`)
   and the batches are written back in the risks' order.
 - **The rows stay where the copy put them**: one host buffer per device,
-  which `AdjointBlock` points into, instead of a vector per block.
+  which `AdjointBlock` points into, instead of a vector per block. (Replaced
+  in §23: the rows are folded as they arrive and not kept.)
 
 **Each step alone** (phoenix autocall, 65 536 Philox paths, 504 daily steps
 over two years, the page's 100 × 129 grid, one V100, ncu):
@@ -2684,3 +2685,81 @@ the phoenix: within the 1 GiB scratch cap a launch then holds seven logical
 blocks (0.7 of a wave), and the phoenix runs five launches (76 ms). A record
 per step (four strikes, two dates, the weights) would halve it. The adjoint
 itself is register-bound (98 to 107 registers, two blocks a multiprocessor).
+
+## 23. The adjoint's host fold as the batches arrive (#348, 2026-11-23)
+
+**Problem.** The GPU sums each batch's gradient (512 paths, or a launch's
+share of a Sobol replicate) and copies one row of `np` doubles per batch to
+the host. The host kept every row until the end of the run, then folded them
+in one pass: host memory grew as paths × risks, ~385 B a path on the page's
+grids (12,908 risks). At 5M adjoint paths under SLV that was 3.7 GB, which
+the kernel OOM-killed in the 2 GB production container (#347).
+
+**Change** (`simulate_script_adjoint`, `src/gpu/script.cu`):
+
+- The `after` callback of each launch folds its rows into accumulators and
+  drops them: the shifted sums `shift`, `s1`, `s1n`, `s2` (pseudo-random) or
+  the replicate's sum (RQMC). One launch's rows go through a staging buffer
+  of at most 64 MB (`kFoldStagingBytes`), the launch cut to fit.
+- **Slices, so the bits do not depend on the cards** (ADR-G5,
+  `RisksAreTheSameBitsOnOneOrTwoCards`). An accumulator per card would make
+  the sums depend on where the cards split. The run is instead cut into at
+  most 64 slices (`kFoldSlices`), of at least 16 logical blocks
+  (`kFoldMinSliceBlocks`), never across a replicate. Their bounds depend on
+  the path count alone, the cards share whole slices
+  (`detail::run_on_n_devices`, as many cards as the blocks would use), and
+  the slices merge in their order. Each slice's sums are re-centred on the
+  first slice's shift: with y' = y + d, Σ n y' = Σ n y + d Σ n,
+  Σ n² y' = Σ n² y + d Σ n², Σ n² y'² = Σ n² y² + 2 d Σ n² y + d² Σ n². This
+  is exact algebra, rounded differently from the single chain.
+- Host memory: at most 64 × 4 × np doubles (26 MB at 12,908 risks) plus the
+  staging, whatever the path count.
+
+**A dead end, measured.** With one slice per block group of any size, the
+page's 65,536 paths (16 blocks, one card) got 16 slices whose sums are
+zeroed: +2 to 3 ms (+3 to +9 %) against the single buffer. The minimum of 16
+blocks a slice gives that run one slice, and the regression is gone.
+
+**Numbers.** The risks agree with the previous fold to 2e-16 relative
+(Philox) and to the bit (Sobol RQMC, one slice a replicate), errors
+included. Against the CPU tape (`qm_gpu_risk_bench 65536`) they are unchanged:
+2.3e-13 (phoenix, SLV page grid) and 3.0e-16 (local vol page grid).
+
+`qm_gpu_risk_bench n gpu`, the old and new binaries alternated, median of 5
+(65,536) or 3 runs, two V100s:
+
+| Paths | Script, model | Before | After |
+|---|---|---|---|
+| 65,536 | phoenix autocall, SLV page grid | 38.9 ms | 37.6 ms |
+| 65,536 | digital call, SLV page grid | 25.8 ms | 25.6 ms |
+| 65,536 | phoenix autocall, local vol page grid | 80.6 ms | 78.8 ms |
+| 1M | phoenix autocall, SLV page grid | 553.7 ms | 314.1 ms |
+| 1M | digital call, SLV page grid | 483.8 ms | 252.6 ms |
+| 1M | phoenix autocall, local vol page grid | 848.9 ms | 581.0 ms |
+| 4M | phoenix autocall, SLV page grid | 2,060 ms | 1,170 ms |
+| 4M | digital call, SLV page grid | 1,768 ms | 976 ms |
+| 4M | phoenix autocall, local vol page grid | 3,144 ms | 2,357 ms |
+
+The large runs gain because each card now folds its own batches while it
+runs, where the host used to fold all of them in one pass at the end, after
+writing and re-reading a buffer of several GB.
+
+Peak RSS, phoenix SLV page grid (`qm_gpu_risk_bench`): 718 → 411 MB at 1M
+paths, 1,873 → 411 MB at 4M. Through the API (Athena autocall on SPY, model
+auto → SLV, 10,503 risks, Sobol RQMC, AAD greeks), with 478 MB for the same
+pricing without greeks:
+
+| Paths | Before | After |
+|---|---|---|
+| 500k | 614 MB | 459 MB |
+| 2M | 1,106 MB | 466 MB |
+| 5M | 1,764 MB | 466 MB |
+
+New test: `GpuRisksTest.AdjointHostMemoryDoesNotGrowWithThePaths`, where
+2M adjoint paths must stay within 64 MB of the peak RSS of 256k paths. It
+fails on the previous fold (+706 MB).
+
+**What is left.** Folding on the GPU and copying back only the accumulators
+would remove the rows' device-to-host copy (GBs at millions of paths).
+That would be a separate, measured change.
+

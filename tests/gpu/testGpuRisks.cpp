@@ -10,6 +10,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <sys/resource.h>
 #include <vector>
 
 #include "../library_exercise.hpp"
@@ -427,6 +428,41 @@ namespace quantModeling
             for (std::size_t i = 0; i < a.risks.size(); ++i)
                 ASSERT_EQ(a.risks[i], c.risks[i]) << i;
         }
+    }
+
+    // Issue #348: the host folds the batches as they arrive, so an adjoint
+    // run's memory does not grow with its paths (it held every batch's row,
+    // ~385 B a path on the page's grid: 3.7 GB at 5M paths killed
+    // production, #347). The peak RSS of 2M paths stays within a few MB of
+    // 256k paths' (each TEST runs in its own process).
+    TEST_F(GpuRisksTest, AdjointHostMemoryDoesNotGrowWithThePaths)
+    {
+        const ScriptedProduct<Real> product(library_source("phoenix-autocall"), kCtx);
+        auto model = page_model<Real>(true);
+        model->init(product.timeline(), product.defline());
+        DeviceModel dm;
+        ASSERT_TRUE(model->describe_device(dm));
+        gpu::ScriptGpuRequest req;
+        req.program = &product.program();
+        req.ir = &product.ir();
+        req.model = &dm;
+        req.baseline = product.baseline();
+        for (const SampleDef &d : product.defline())
+            req.discount_mats.push_back(d.discount_mats);
+        req.antithetic = false;
+        req.seed = 5;
+        const auto peak_mb = []
+        {
+            rusage u{};
+            getrusage(RUSAGE_SELF, &u);
+            return static_cast<double>(u.ru_maxrss) / 1024.0;
+        };
+        req.n_units = 1u << 18;
+        ASSERT_FALSE(gpu::simulate_script_adjoint(req).risks.empty());
+        const double small = peak_mb();
+        req.n_units = 1u << 21;
+        ASSERT_FALSE(gpu::simulate_script_adjoint(req).risks.empty());
+        EXPECT_LT(peak_mb() - small, 64.0) << "2M paths against 256k, MB";
     }
 
     // ── the superbucket from GPU risks ─────────────────────────────────────

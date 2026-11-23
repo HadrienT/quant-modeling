@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { type ComputeDevice, usePricing } from "@/shared/api";
 import type { ProductDescriptor } from "@/shared/products";
 import { ModelDecision } from "./scripting/ModelDecision";
-import { ModelWarnings } from "./scripting/ModelWarnings";
+import { ModelWarnings, TIME_LIMIT } from "./scripting/ModelWarnings";
 import { pricingBody } from "./requestBody";
 
 /**
@@ -33,7 +33,7 @@ export function ScriptedPanel({
 	return (
 		<div className="flex flex-col gap-3">
 			{r?.model_choice && <ModelDecision choice={r.model_choice} />}
-			{r && <ModelWarnings warnings={r.warnings ?? []} />}
+			{r && <ModelWarnings warnings={r.warnings ?? []} skip={TIME_LIMIT} />}
 			{r?.script && (
 				<details className="rounded-md border border-hairline bg-surface p-3 text-2xs">
 					<summary className="cursor-pointer text-ink-muted">

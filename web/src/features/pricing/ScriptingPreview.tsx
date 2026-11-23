@@ -16,7 +16,7 @@ import { parseScriptDiagnostic } from "./scripting/parseScriptDiagnostic";
 import { ValidationSummary } from "./scripting/ValidationSummary";
 import { ModelChoice, type ScriptModel } from "./scripting/ModelChoice";
 import { ModelDecision } from "./scripting/ModelDecision";
-import { ModelWarnings } from "./scripting/ModelWarnings";
+import { ModelWarnings, TIME_LIMIT } from "./scripting/ModelWarnings";
 import { ScriptResult } from "./scripting/ScriptResult";
 import {
 	countUnderlyings,
@@ -223,7 +223,7 @@ export default function ScriptingPreview() {
 			{error && <ScriptRejected error={error} />}
 			{r && <ScriptResult result={r} />}
 			{r?.model_choice && <ModelDecision choice={r.model_choice} />}
-			{r && <ModelWarnings warnings={r.warnings ?? []} />}
+			{r && <ModelWarnings warnings={r.warnings ?? []} skip={TIME_LIMIT} />}
 		</div>
 	);
 }

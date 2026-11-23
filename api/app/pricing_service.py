@@ -53,7 +53,7 @@ from .schemas import (
     VolatilitySwapRequest,
     ZeroCouponBondRequest,
 )
-from . import precision
+from . import cancellation, precision
 from .telemetry import tracer
 
 
@@ -517,6 +517,7 @@ def _price_multi_asset(
             },
         ),
     ):
+        cancellation.check()  # after the market reads and calibrations
         result = qm.price_script(
             script,
             used[0].spot,
@@ -1243,6 +1244,7 @@ def price_script(
     ):
 
         def run(greeks_method: str, second_order: bool, scheme: str, **over):
+            cancellation.check()  # the QE price run, then the Euler risks run
             return qm.price_script(
                 script,
                 spot,
