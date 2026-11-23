@@ -1,12 +1,12 @@
 {
- "measured_at": "2026-11-23T16:34:43+00:00",
+ "measured_at": "2026-11-23T21:14:38+00:00",
  "machine": {
   "cpu": "56 x Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
   "gpus": [
    "Tesla V100-PCIE-16GB",
    "Tesla V100-PCIE-16GB"
   ],
-  "commit": "46365c1"
+  "commit": "5d81e8c"
  },
  "target": {
   "mode": "relative",
@@ -938,24 +938,24 @@
    "eps": null,
    "greeks_smoothing": null,
    "early_exercise": false,
-   "model": "local_vol",
-   "model_reason": "The payoff depends on spot at each date separately (its marginal law), so today's surface prices it exactly and local vol reproduces that surface. A stochastic model would add cost, not accuracy.",
+   "model": "slv",
+   "model_reason": "The payoff carries state across dates (a running quantity, a trigger or a barrier), so its price depends on the forward smile. Stochastic-local vol: Heston dynamics calibrated to the surface give the forward smile, and the leverage function makes every vanilla of today's surface reprice exactly.",
    "device": "gpu",
    "steps_per_year": 252,
-   "variance_scheme": null,
-   "multilevel": true,
-   "diagnostics": "SimulationMCEngine, multilevel QMC (time step, Sobol digital shift, 32 replicates), levels 0..2, points per replicate 1024 1024 1024; alpha 1, beta 0.406083, gamma 1; target RMS error 0.0535798, estimated remaining bias 0.0236171 (GPU: Tesla V100-PCIE-16GB, compiled script (NVRTC, cached)) | scripted, 1 events, hard | model local_vol (100x50 surface, 252 steps/yr)",
-   "npv": 53.57975625644697,
-   "std_error": 0.03414563797769133,
-   "bias": 0.02361713418679856,
-   "wall_seconds": 0.022,
+   "variance_scheme": "qe",
+   "multilevel": false,
+   "diagnostics": "SimulationMCEngine on GPU (2 x Tesla V100-PCIE-16GB) + Sobol RQMC (16 batches of 65536 points, dim=1012) + Brownian bridge + compiled script (NVRTC, cached) | steps halved, discretisation bias estimated from the unhalved run | scripted, 2 events, hard | model slv (100x105 leverage, 252 steps/yr, variance by QE) | priced to a precision: target_reached (820029 paths, target 0.04391)",
+   "npv": 44.15997222356084,
+   "std_error": 0.01540172490434046,
+   "bias": 0.04792844654737394,
+   "wall_seconds": 0.495,
    "precision": {
-    "target": 0.053579756256446974,
-    "stopped": "multilevel_target",
-    "paths": 98304,
-    "paths_needed": null,
-    "achieved_error": 0.04151738937000743,
-    "seconds": 0.022,
+    "target": 0.04391186231878765,
+    "stopped": "target_reached",
+    "paths": 820029,
+    "paths_needed": 820029,
+    "achieved_error": 0.01540172490434046,
+    "seconds": 0.495,
     "note": ""
    }
   },
