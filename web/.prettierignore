@@ -9,3 +9,4 @@ package-lock.json
 openapi.json
 public/config.json
 public/mockServiceWorker.js
+src/shared/products/methods.gen.json

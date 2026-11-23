@@ -10,6 +10,7 @@ import {
 } from "@/shared/products";
 import { useNavPages } from "@/shared/session";
 import { Badge } from "@/shared/ui";
+import { ImplementationPanel } from "./ImplementationPanel";
 import { RiskProfileTable } from "./RiskProfileTable";
 import { ScriptedReference } from "./ScriptedReference";
 
@@ -71,6 +72,8 @@ export function ProductReference({
 			<Section title="Long or short what (risk profile)">
 				<RiskProfileTable descriptor={descriptor} />
 			</Section>
+
+			{scripted && <ImplementationPanel product={scripted} />}
 
 			{scripted && <ScriptedReference product={scripted} withSources={!doc} />}
 
