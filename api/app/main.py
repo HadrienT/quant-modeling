@@ -202,6 +202,21 @@ def _start_kernel_warmup() -> None:
     kernel_warmup.start()
 
 
+@app.on_event("startup")
+def _start_gpu_pool_trim() -> None:
+    # The GPU pools' memory given back once the API is idle (issue #350).
+    from . import gpu_pool
+
+    gpu_pool.start()
+
+
+@app.on_event("shutdown")
+def _stop_gpu_pool_trim() -> None:
+    from . import gpu_pool
+
+    gpu_pool.stop()
+
+
 @app.on_event("shutdown")
 def _stop_kernel_warmup() -> None:
     from . import kernel_warmup

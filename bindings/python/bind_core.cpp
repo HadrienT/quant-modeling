@@ -74,6 +74,10 @@ void register_core(py::module_ &m)
                 names.push_back(quantModeling::gpu::device_name(d));
             return names; },
         "Names of the usable CUDA devices (empty on a CPU-only build or host).");
+    m.def("gpu_trim_idle_pools", &quantModeling::gpu::trim_idle_pools, py::arg("keep_bytes"),
+          py::call_guard<py::gil_scoped_release>(),
+          "Release what the GPU memory pools hold beyond keep_bytes and no "
+          "allocation uses; returns the bytes released (0 without a GPU).");
     m.def("gpu_warm_up", &quantModeling::gpu::warm_up, py::arg("device") = 0,
           py::call_guard<py::gil_scoped_release>(),
           "Create the CUDA context and load the kernels, so that the first "

@@ -41,6 +41,14 @@ namespace quantModeling::gpu
     /// from this, never assumed.
     std::size_t free_memory(int device);
 
+    /// Releases what the memory pools of the devices this process has used
+    /// hold beyond `keep_bytes` and no allocation uses; returns the bytes
+    /// released. A pool keeps the memory freed by a request for the next one
+    /// (QM_GPU_POOL_RETAIN_MB); the API calls this once it has been idle, so
+    /// that memory goes back to the card's other users (issue #350). Memory
+    /// in use is never touched: it is safe while a request runs.
+    std::size_t trim_idle_pools(std::size_t keep_bytes);
+
     /// The devices a run shares its logical blocks between (lot G4): the
     /// first `max_gpus` usable ones, all of them for 0. The result does not
     /// depend on how many (blueprint §7), so more is only faster.

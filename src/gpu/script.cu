@@ -287,13 +287,18 @@ namespace quantModeling::gpu
                 // result does not depend on the launch size.
                 constexpr std::size_t kScratchBytes = std::size_t{1} << 30;
                 // Unless the whole request fits one launch within the budget
-                // and 4 GiB: below one wave a launch takes as long whatever
+                // and 8 GiB: below one wave a launch takes as long whatever
                 // its block count (each thread's units run in sequence), so
                 // the cap's remainder doubled the time -- SLV's adjoint (a
                 // gradient row of 12 908 parameters per thread, 34 MB a block)
                 // ran 31 blocks, then 1 alone, 52 + 46 ms on one V100 for the
-                // phoenix autocall (lot B of #331, 2026-11-19).
-                const bool one_launch = n_blocks <= per_launch && n_blocks * per_block <= 4 * kScratchBytes;
+                // phoenix autocall (lot B of #331, 2026-11-19). 8 GiB, not 4:
+                // the local-vol adjoint's trails take 4.7 GB for the phoenix on
+                // the page's grid (65 536 paths), which ran five launches of
+                // 56 blocks, 7.1 ms each, under 4 GiB and one of 256 blocks in
+                // 18.8 ms above it (one V100, 2026-11-23, issue #350).
+                constexpr std::size_t kOneLaunchBytes = std::size_t{8} << 30;
+                const bool one_launch = n_blocks <= per_launch && n_blocks * per_block <= kOneLaunchBytes;
                 if (!one_launch)
                     per_launch = std::min<uint64_t>(per_launch, std::max<uint64_t>(1, kScratchBytes / per_block));
                 if (s.blocks_per_launch > 0)
