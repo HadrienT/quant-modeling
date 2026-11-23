@@ -28,11 +28,23 @@ export class ApiError extends Error {
 		this.detail = init.detail;
 	}
 
-	/** True for errors where an automatic retry could plausibly help. */
+	/** True for errors where an automatic retry could plausibly help: the
+	 * network, a timeout, a 5xx, and a 429 "busy" (every pricing slot taken,
+	 * issue 347) -- not a 429 that a retry cannot change, such as a visitor's
+	 * exhausted daily quota. */
 	get retriable(): boolean {
 		return (
-			this.kind === "network" || this.kind === "timeout" || this.status >= 500
+			this.kind === "network" ||
+			this.kind === "timeout" ||
+			this.status >= 500 ||
+			this.busy
 		);
+	}
+
+	/** The server had no free slot for the request: worth retrying in a few
+	 * seconds. */
+	get busy(): boolean {
+		return this.status === 429 && this.code !== "anonymous_quota_exhausted";
 	}
 
 	static from(error: unknown): ApiError {

@@ -381,9 +381,14 @@ def _done(
     t0: float,
     note: str = "",
 ) -> PricingResponse:
+    # what the engine ran: under Sobol each replicate's points are rounded
+    # to the nearest power of two, up to ~1.41x the paths asked
+    from .path_budget import paths_run
+
+    ran, _ = paths_run(r.diagnostics, n)
     p = PrecisionOutcome(
         stopped=stopped,
-        paths=n,
+        paths=ran,
         paths_needed=needed,
         achieved_error=math.hypot(r.mc_std_error, bias),
         seconds=time.perf_counter() - t0,
@@ -398,7 +403,7 @@ def _done(
             "precision": p,
             "warnings": warnings,
             "diagnostics": r.diagnostics
-            + f" | priced to a precision: {stopped} ({n} paths, target {p.target:.4g})",
+            + f" | priced to a precision: {stopped} ({ran} paths, target {p.target:.4g})",
         }
     )
 

@@ -145,7 +145,7 @@ def test_a_precision_target_stops_between_its_runs():
 
 
 def test_a_precision_budget_beyond_the_route_timeout_is_capped():
-    # a 60 s budget under a route that answers 408 at 2 s: the runs are
+    # an 18 s budget under a route that answers 408 at 2 s: the runs are
     # planned for what the route leaves, and the diagnostics say so
     def price(req):
         return PricingResponse(
@@ -160,7 +160,7 @@ def test_a_precision_budget_beyond_the_route_timeout_is_capped():
         spot=100.0,
         vol=0.2,
         rate=0.03,
-        precision={"mode": "absolute", "value": 0.01, "time_budget_s": 60.0},
+        precision={"mode": "absolute", "value": 0.01, "time_budget_s": 18.0},
     )
     r = cancellation.run_with(
         threading.Event(),
@@ -169,7 +169,7 @@ def test_a_precision_budget_beyond_the_route_timeout_is_capped():
         price,
         deadline=time.perf_counter() + 2.0,
     )
-    assert "not the 60 s asked" in r.diagnostics
+    assert "not the 18 s asked" in r.diagnostics
     # outside a route, the budget asked holds
     plain = pr.price_to_precision(req, price)
     assert "asked" not in plain.diagnostics

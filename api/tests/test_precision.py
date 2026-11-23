@@ -236,7 +236,7 @@ def test_a_cost_dominated_by_paths_is_measured_from_two_runs(monkeypatch):
     monkeypatch.setattr(pr, "time", clock)
     calls = []
     pr.price_to_precision(
-        req(mode="absolute", value=0.01, time_budget_s=60.0),
+        req(mode="absolute", value=0.01, time_budget_s=18.0),
         gpu_like_price(clock, fixed=0.01, per_path=1e-5, calls=calls),
     )
     # pilot, the two cost runs (with the final run's settings), the final run
@@ -262,3 +262,24 @@ def test_an_adjoint_run_is_costed_as_itself(monkeypatch):
     )
     assert r.precision.stopped == "out_of_budget"
     assert 0.6 * budget <= clock.now <= budget * 1.1
+
+
+def test_the_paths_reported_are_those_the_engine_ran():
+    # Sobol rounds each replicate's points to the nearest power of two: the
+    # outcome reports what ran, not the count asked (utils/sobol.hpp)
+    def sobol_price(req_):
+        r = fake_price()(req_)
+        reps = 16
+        nd = req_.n_paths / reps
+        lower = 2 ** int(math.log2(nd))
+        points = 2 * lower if nd * nd >= 2 * lower * lower else lower
+        return r.model_copy(
+            update={
+                "diagnostics": f"x + Sobol RQMC ({reps} batches of {points} points, dim=3)"
+            }
+        )
+
+    r = pr.price_to_precision(req(mode="absolute", value=0.05), sobol_price)
+    asked = r.precision.paths_needed
+    assert r.precision.paths % 16 == 0 and r.precision.paths != asked
+    assert f"({r.precision.paths} paths" in r.diagnostics
