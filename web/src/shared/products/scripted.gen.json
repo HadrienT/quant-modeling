@@ -950,8 +950,8 @@
 				"label": "Strike, % of the spot on the strike date"
 			}
 		],
-		"script": "# The strike is fixed on 2027-04-05; the option matures on 2028-01-04.\n# Its value depends on the forward smile.\n\n2027-04-05\n    strike = 1.0\n    k = strike * spot()\n\n2028-01-04\n    pays max(spot() - k, 0)\n",
-		"maturity": 0.7502
+		"script": "# The trade starts on 2027-01-04; the strike is fixed three months later, on\n# 2027-04-05, and the option matures on 2028-01-04. The first date reads no\n# spot: the Price page moves it to the valuation date (start_on), so the\n# strike fixing stays three months ahead. Its value depends on the forward\n# smile.\n\n2027-01-04\n    strike = 1.0\n\n2027-04-05\n    k = strike * spot()\n\n2028-01-04\n    pays max(spot() - k, 0)\n",
+		"maturity": 0.9993
 	},
 	{
 		"slug": "globally-floored-cliquet",
