@@ -28,6 +28,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel
 
+from . import cancellation
 from .schemas import PricingResponse
 
 #: Relative move of the spot, absolute moves of the volatility and of the rate,
@@ -95,7 +96,8 @@ def complete(
         return response, []
     # The engines release the GIL: the bumps run side by side.
     with ThreadPoolExecutor(max_workers=len(todo)) as pool:
-        futures = {k: pool.submit(price, r) for k, r in todo.items()}
+        checked = cancellation.bind(price)
+        futures = {k: pool.submit(checked, r) for k, r in todo.items()}
         values: Dict[str, float] = {}
         for k, f in futures.items():
             try:

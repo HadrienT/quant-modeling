@@ -47,6 +47,7 @@ import time
 from datetime import date
 from typing import Callable, Optional, Tuple
 
+from . import cancellation
 from .schemas import PrecisionOutcome, PricingResponse
 
 #: Paths of the pilot run, and of each side of the vega bump.
@@ -55,6 +56,9 @@ PILOT_PATHS = 8192
 MIN_PATHS, MAX_PATHS = 1_000, 5_000_000
 #: The vega bump: every vol scaled by 1 ± BUMP.
 BUMP = 0.01
+#: The share of the route's remaining time a precision target may plan for:
+#: the rest absorbs what the cost estimate gets wrong.
+ROUTE_SHARE = 0.9
 #: The least time the paths of the cost-measuring run must add over the
 #: pilot's before the slope is trusted (timer and scheduling noise).
 MIN_SPAN_S = 0.05
@@ -165,6 +169,17 @@ def _timed(price, req) -> Tuple[PricingResponse, float]:
     return r, time.perf_counter() - t
 
 
+def _stops_when_abandoned(price):
+    """`price`, checking before each run that the route still waits for it:
+    a precision target chains up to a dozen runs (cancellation.py)."""
+
+    def checked(req):
+        cancellation.check()
+        return price(req)
+
+    return checked
+
+
 def _path_cost(price, run_req, needed: int, deadline: float) -> Tuple[float, float]:
     """(fixed, per path) seconds of the run asked for, measured on runs with
     its own settings (its greeks, its bias estimate): a fixed factor over a
@@ -208,7 +223,28 @@ def price_to_precision(
     'market' mode."""
     target_spec = req.precision
     t0 = time.perf_counter()
+    price = _stops_when_abandoned(price)
     budget = target_spec.time_budget_s
+    # Within the route's own timeout (cancellation.py): a final run sized for
+    # a 60 s budget outlived the 408 at 20 s by half a minute (#347).
+    left = cancellation.time_left()
+    capped = left is not None and ROUTE_SHARE * left < budget
+    if capped:
+        budget = max(ROUTE_SHARE * left, 0.1)
+    r = _price_to_precision(req, price, market_quotes, t0, budget)
+    if not capped:
+        return r
+    return r.model_copy(
+        update={
+            "diagnostics": r.diagnostics
+            + f" | time budget {budget:.1f} s, not the {target_spec.time_budget_s:g} s "
+            "asked: what the server's timeout leaves"
+        }
+    )
+
+
+def _price_to_precision(req, price, market_quotes, t0: float, budget: float):
+    target_spec = req.precision
     outcome = dict(mode=target_spec.mode, pilot_paths=PILOT_PATHS)
     plain = dict(greeks_method="none", second_order=False, bias_estimate=False)
 

@@ -1,6 +1,8 @@
 import asyncio
 import functools
+import os
 import platform
+import threading
 import time
 from typing import Callable, TypeVar
 
@@ -10,7 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from .. import convergence, greeks_fallback, telemetry, valuation
+from .. import cancellation, convergence, greeks_fallback, telemetry, valuation
 from ..audit import emit
 from ..logging_utils import get_logger
 from ..pricing_service import validate_script
@@ -59,22 +61,85 @@ from ..schemas import (
 )
 
 router = APIRouter()
+#: A pricing's computing time, from when it has a slot, before a 408.
 _PRICING_TIMEOUT_SECONDS = 20
+#: Pricings computing at once (issue #347). Without a bound every request ran
+#: at once on the container's 2 CPUs and 2 GB, each slower and all their
+#: memory added up. Three: two CPU-heavy pricings side by side, and a third,
+#: usually on the GPU, which needs little CPU.
+_PRICING_SLOTS = int(os.environ.get("QM_PRICING_SLOTS") or 3)
+#: How long a pricing waits for a slot before a 429 (the server is busy).
+_SLOT_WAIT_SECONDS = float(os.environ.get("QM_PRICING_SLOT_WAIT_S") or 10)
+#: Held by the worker thread for as long as it computes -- past a 408 too, so
+#: an abandoned pricing still counts until it has stopped.
+_slots = threading.BoundedSemaphore(_PRICING_SLOTS)
 _T = TypeVar("_T")
 
 
 logger = get_logger()
 
 
-async def _run_with_timeout(func: Callable[..., _T], *args) -> _T:
+class _Busy(Exception):
+    """Every pricing slot stayed taken for _SLOT_WAIT_SECONDS."""
+
+
+async def _run_with_timeout(func: Callable[..., _T], *args, slot: bool = True) -> _T:
+    """`func(*args)` in a worker thread, once it has one of the pricing slots
+    (`slot=False`: a parse, no slot), within _PRICING_TIMEOUT_SECONDS of
+    computing. No slot within _SLOT_WAIT_SECONDS: 429. Past the timeout: 408,
+    and the pricing's cancellation flag is set, so it stops at its next
+    check (cancellation.py) instead of running on with nobody waiting; it
+    keeps its slot until it has stopped."""
+    flag = threading.Event()
+    loop = asyncio.get_running_loop()
+
+    def _start_the_clock() -> None:
+        try:
+            timeout.reschedule(loop.time() + _PRICING_TIMEOUT_SECONDS)
+        except RuntimeError:  # the job already finished and the block exited
+            pass
+
+    def job() -> _T:
+        if slot and not _slots.acquire(timeout=_SLOT_WAIT_SECONDS):
+            raise _Busy()
+        try:
+            if flag.is_set():  # abandoned while it waited
+                raise cancellation.Cancelled("abandoned before it started")
+            # the computing time starts now, not when the request came
+            loop.call_soon_threadsafe(_start_the_clock)
+            return cancellation.run_with(
+                flag,
+                func,
+                *args,
+                deadline=time.perf_counter() + _PRICING_TIMEOUT_SECONDS,
+            )
+        finally:
+            if slot:
+                _slots.release()
+
     try:
-        async with asyncio.timeout(_PRICING_TIMEOUT_SECONDS):
-            return await run_in_threadpool(func, *args)
+        # first the wait for a slot (the job gives up on its own at
+        # _SLOT_WAIT_SECONDS), then the job moves the deadline
+        async with asyncio.timeout(_SLOT_WAIT_SECONDS + 5.0) as timeout:
+            return await run_in_threadpool(job)
+    except _Busy as exc:
+        logger.warning(
+            "pricing refused: every slot busy", extra={"slots": _PRICING_SLOTS}
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=f"The pricing server is busy: every slot ({_PRICING_SLOTS}) is taken. "
+            "Retry in a few seconds.",
+        ) from exc
     except TimeoutError as exc:
+        flag.set()
         raise HTTPException(
             status_code=408,
             detail=f"Pricing timed out after {_PRICING_TIMEOUT_SECONDS} seconds. Reduce paths or grid steps and retry.",
         ) from exc
+    except BaseException:
+        flag.set()  # the request went away: nobody reads the result
+        raise
 
 
 async def _price(
@@ -295,7 +360,7 @@ async def validate_script_endpoint(
     """Parse-only companion to /price/scripted: no market inputs, no
     simulation — an editor's "Validate" action against this is instant."""
     try:
-        return await _run_with_timeout(validate_script, req)
+        return await _run_with_timeout(validate_script, req, slot=False)
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

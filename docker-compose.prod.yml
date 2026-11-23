@@ -47,6 +47,10 @@ services:
       # Without a key the assistant reports itself as not configured.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - QM_LLM_MODEL=${QM_LLM_MODEL:-claude-haiku-5-5}
+      # Pricings computing at once, and how long another waits for a slot
+      # before a 429 (issue #347, deploy/RUNBOOK.md "Pricing slots").
+      - QM_PRICING_SLOTS=${QM_PRICING_SLOTS:-3}
+      - QM_PRICING_SLOT_WAIT_S=${QM_PRICING_SLOT_WAIT_S:-10}
       - JWT_SECRET=${JWT_SECRET:?set a strong random JWT_SECRET in .env}
       - JWT_EXPIRE_HOURS=${JWT_EXPIRE_HOURS:-72}
       # Sign in with Google (optional — the button only appears when both are set).
