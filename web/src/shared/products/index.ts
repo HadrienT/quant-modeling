@@ -28,3 +28,10 @@ export { ProductPicker } from "./ProductPicker";
 export { ParamForm } from "./ParamForm";
 export { fieldsFromSchema, type FieldMeta } from "./zodFields";
 export { encodeParams, decodeParams } from "./workbenchLink";
+export {
+	implementationOf,
+	headlineOf,
+	CITE,
+	type Implementation,
+	type Notice,
+} from "./implementation";
