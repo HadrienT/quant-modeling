@@ -349,7 +349,7 @@ scripts.
   Φ⁻¹'s polynomials as `horner(q, c1, ..., c6) / horner(q, d1, ..., d4, 1.0)`.
   About 20 lines added and 6–8 changed; the interpreter and the compiled
   scripts fuse at the same places, so the bit test stands. Profile first.
-- *P1i, expensive functions* (first part done, AS 241 adopted, see below), after P1g and P1h, one at a time: Φ⁻¹ (Acklam
+- *P1i, expensive functions* (**done**: AS 241 adopted, then CUDA's `normcdfinv` on the device, see below), after P1g and P1h, one at a time: Φ⁻¹ (Acklam
   plus a Halley step with an `erfc` and an `exp` on every draw: probably the
   largest single cost), the `exp` of each log-Euler step, the numeraire and
   discount `exp`s recomputed per event and per path though path-independent
@@ -439,7 +439,7 @@ End to end (`qm_script_jit_bench`, P1g → P1h): compiled 11.7 → 10.2 ms
 28.2 (Asian local vol): **1.07–1.11× the hand-written reference paths**.
 Compiled = interpreted bits on the whole library, as before.
 
-### P1i — Expensive functions on the path (added after P1b; first part done)
+### P1i — Expensive functions on the path (added after P1b; done)
 
 Ablations first, to know what each function weighs (kernel time, `ncu`,
 clocks locked, one V100, on P1h; the ablated code is never committed):
@@ -502,6 +502,25 @@ share Φ⁻¹ and speed up too (`qm_gpu_reference_bench`: 9.3 → 6.0 ms, 11.6 �
 1.14 and 1.29×**, P1's goal still met against a faster ceiling. CPU suite
 1271/1271, GPU suite 61/61. Everything else that calls Φ⁻¹ (IRB capital,
 SIMM, exposure quantiles) moves at the same level, towards the exact value.
+
+**Closed (2026-11-24, #207).** What the list above left, checked against
+the code the GPU runs today (the kernels generated from the IR, WP 27):
+
+- Φ⁻¹: AS 241 on the host; on the device CUDA's `normcdfinv` since §14
+  (12-27 % on the compiled scripts).
+- `sqrt(dt)` and the drift per step: data of the step in the IR's paths
+  (`src/scripting/ir_path.cpp`: Black-Scholes reads `drift` and
+  `vol_sqrt_dt`, local vol, SLV and Heston read `dt` and `sqdt`), computed
+  once per request. Only the bytecode interpreter, the fallback with
+  `QM_SCRIPT_JIT=0`, still takes them per step under local vol, SLV and
+  Heston; it is not the GPU's path, so it is left as is.
+- The `exp` of each log-Euler step, and the `log` / `pow` / `sqrt` a script
+  writes, depend on the path: no table removes them.
+- SLEEF on the CPU: not taken, as the x86-64-v3 build was not (§14); the CPU
+  is the backup since 2026-11-19.
+
+What limits the GPU now is in the adjoint (§22 to §24, the FP64 dependency
+chains of SLV's generated adjoint), a matter for the IR's code generator.
 
 ### P1c — Sobol, the default sampler, as fast and as good as it can be
 
