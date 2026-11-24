@@ -5,6 +5,7 @@
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
 #include "quantModeling/engines/mc/rough_bergomi_surface.hpp"
+#include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/rough_bergomi.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
@@ -139,7 +140,7 @@ namespace quantModeling
         void init(const TimeLine &product_timeline,
                   const std::vector<SampleDef> &defline) override
         {
-            refuse_step_monitors(defline, "RoughBergomiSimModel");
+            refuse_bridge_survivals(defline, "RoughBergomiSimModel"); // lastStep*: write_sample
             timeline_ = canonical_timeline(product_timeline);
             if (timeline_.empty())
                 throw InvalidInput("RoughBergomiSimModel: the product has no event date");
@@ -329,6 +330,13 @@ namespace quantModeling
             smp.spots.assign(1, S);
             smp.numeraire = exp(r_ * t);
             const SampleDef &def = defline_[e];
+            // lastStep*() (WP 27 §8 rung 1): this model has no closed form
+            // over its last step, so the slot is the payoff of the simulated
+            // spot -- an unbiased estimate of that expectation, the hard
+            // payoff the primitive replaces (issue #363: the library's
+            // digital reads lastStepDigital under every model).
+            if (!def.monitors.empty())
+                mc::fill_last_step(def, smp, S, T(0.0));
             smp.discounts.resize(def.discount_mats.size());
             for (std::size_t m = 0; m < def.discount_mats.size(); ++m)
                 smp.discounts[m] = exp(-r_ * (def.discount_mats[m] - t));

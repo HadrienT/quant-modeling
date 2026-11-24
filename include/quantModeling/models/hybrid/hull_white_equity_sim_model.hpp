@@ -3,6 +3,7 @@
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/rates/hull_white_curve.hpp"
 #include "quantModeling/models/simulation_model.hpp"
 
@@ -127,7 +128,7 @@ namespace quantModeling
 
         void init(const TimeLine &product_timeline, const std::vector<SampleDef> &defline) override
         {
-            refuse_step_monitors(defline, "HullWhiteEquitySimModel");
+            refuse_bridge_survivals(defline, "HullWhiteEquitySimModel"); // lastStep*: generate_path
             timeline_ = canonical_timeline(product_timeline);
             defline_ = defline;
             steps_.clear();
@@ -211,6 +212,13 @@ namespace quantModeling
                 Sample<T> &smp = path[i];
                 smp.spots.assign(1, S);
                 smp.numeraire = exp(I - log_p);
+                // lastStep*() (WP 27 §8 rung 1): this model has no closed form
+                // over its last step, so the slot is the payoff of the simulated
+                // spot -- an unbiased estimate of that expectation, the hard
+                // payoff the primitive replaces (issue #363: the library's
+                // digital reads lastStepDigital under every model).
+                if (!defline_[i].monitors.empty())
+                    mc::fill_last_step(defline_[i], smp, S, T(0.0));
                 const T half_y = 0.5 * sr2 * st.y_unit;
                 // P(t, m | x) = P(0, m) / P(0, t) exp(−G x − ½ G² y(t))
                 const auto zcb = [&](const Maturity &m)

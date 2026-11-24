@@ -105,7 +105,11 @@ namespace quantModeling::scripting
             void visit(const NodeYf &n) override { out += "yf(" + n.from.to_iso() + ", " + n.to.to_iso() + ")"; }
             void visit(const NodeStepQuantity &n) override
             {
-                out += std::string(n.function()) + "(" + number(n.level);
+                out += std::string(n.function()) + "(";
+                if (n.computed_strike())
+                    n.arguments[0]->accept(*this);
+                else
+                    out += number(n.level);
                 if (n.asset != 0)
                     out += ", " + std::to_string(n.asset);
                 out += ")";

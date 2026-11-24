@@ -188,6 +188,16 @@ namespace quantModeling::scripting
         /// model computes it into the same slots.
         StepQuantity kind = StepQuantity::Survival;
         std::size_t slot = unindexed;
+        /// A last-step expectation whose strike the script computes
+        /// (`lastStepDigital(strike * s0)`, issue #363): the strike is
+        /// `arguments[0]`, evaluated at the date, `level` is unused, and the
+        /// model fills two slots -- the step's forward in `slot`, its
+        /// log-variance in `var_slot` -- from which the payoff applies
+        /// Black's formula (models/equity/last_step_black.hpp). A literal
+        /// strike keeps the model's own expectation, in `slot` alone.
+        std::size_t var_slot = unindexed;
+
+        bool computed_strike() const { return !arguments.empty(); }
 
         /// The function's name in the language.
         const char *function() const

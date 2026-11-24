@@ -39,7 +39,9 @@ def test_the_closed_form_is_the_scripts_flat_vol_price(chain, product):
         _req(product, model="black_scholes", n_paths=200_000, seed=3)
     )
     assert exact.mc_std_error == 0.0
-    assert abs(exact.npv - mc.npv) < 4 * mc.mc_std_error
+    # A digital reads lastStepDigital (#363): its one step under flat vol is
+    # the whole path, so every path pays the closed form, with no error.
+    assert abs(exact.npv - mc.npv) <= max(4 * mc.mc_std_error, 1e-10 * abs(exact.npv))
     assert exact.diagnostics.startswith("Analytic ")
     assert exact.script == mc.script
 

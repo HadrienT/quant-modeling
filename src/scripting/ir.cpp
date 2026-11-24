@@ -392,6 +392,44 @@ namespace quantModeling::scripting::ir
                 const auto i = static_cast<std::int32_t>(n.slot);
                 b_.block().max_surv = std::max(b_.block().max_surv, i);
                 has_monitor_ = true;
+                if (n.computed_strike())
+                {
+                    // The script's strike (issue #363): the date reads the
+                    // last step's forward and log-variance (bind_event binds
+                    // them to the path's state) and applies Black's formula
+                    // here, in the operations every backend and both
+                    // transformations already know -- ir_path.cpp's
+                    // last_step_expectation with K an operand, and
+                    // mc::last_step_black on the interpreters.
+                    n.arguments[0]->accept(*this);
+                    const std::int32_t K = pop();
+                    const auto iv = static_cast<std::int32_t>(n.var_slot);
+                    b_.block().max_surv = std::max(b_.block().max_surv, iv);
+                    has_last_step_ = true;
+                    if (quantities_.size() <= std::max(n.slot, n.var_slot))
+                        quantities_.resize(std::max(n.slot, n.var_slot) + 1);
+                    quantities_[n.slot] = StepMonitor{0.0, n.asset, true, StepQuantity::LastStepForward};
+                    quantities_[n.var_slot] = StepMonitor{0.0, n.asset, true, StepQuantity::LastStepVariance};
+                    const std::int32_t F = b_.value(Op::Surv, i), v = b_.value(Op::Surv, iv);
+                    const std::int32_t sd = b_.value(Op::Sqrt, b_.value(Op::Max, v, b_.constant(1e-200)));
+                    const std::int32_t d1 =
+                        b_.add(b_.div(b_.value(Op::Log, b_.div(F, K)), sd), b_.mul(b_.constant(0.5), sd));
+                    const std::int32_t d2 = b_.sub(d1, sd);
+                    const auto N = [&](std::int32_t x)
+                    { return b_.value(Op::Ncdf, x); };
+                    switch (n.kind)
+                    {
+                        case StepQuantity::LastStepCall:
+                            push(b_.sub(b_.mul(F, N(d1)), b_.mul(K, N(d2))));
+                            break;
+                        case StepQuantity::LastStepPut:
+                            push(b_.sub(b_.mul(K, N(b_.neg(d2))), b_.mul(F, N(b_.neg(d1)))));
+                            break;
+                        default:
+                            push(N(d2));
+                    }
+                    return;
+                }
                 const bool bridge = n.kind == StepQuantity::Survival;
                 (bridge ? has_bridge_ : has_last_step_) = true;
                 if (quantities_.size() <= n.slot)

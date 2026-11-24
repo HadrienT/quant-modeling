@@ -144,6 +144,7 @@ namespace quantModeling
             mid + "2027-06-01\n    pays lastStepCall(100)\n",
             mid + "2027-06-01\n    pays lastStepPut(95) + 0.5 * lastStepDigital(105) * a / 100\n",
             "2026-12-01\n    pays lastStepCall(100)\n2027-06-01\n    pays lastStepCall(110)\n",
+            mid + "2027-06-01\n    pays lastStepCall(a) + 100 * lastStepDigital(1.05 * a) + lastStepPut(0.95 * a)\n",
         };
         for (const Dyn dyn : {Dyn::BlackScholes, Dyn::LocalVol, Dyn::Heston, Dyn::SLV})
             for (const std::string &source : scripts)

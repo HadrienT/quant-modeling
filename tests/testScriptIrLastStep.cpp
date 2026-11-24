@@ -42,6 +42,8 @@ namespace quantModeling
             kMid + "2027-06-01\n    pays lastStepPut(95) + 0.5 * lastStepDigital(105) * a / 100\n",
             // two strikes on the same slot of two events: two blocks
             "2026-12-01\n    pays lastStepCall(100)\n2027-06-01\n    pays lastStepCall(110)\n",
+            // strikes the script computes from a fixing (issue #363)
+            kMid + "2027-06-01\n    pays lastStepCall(a) + 100 * lastStepDigital(1.05 * a) + lastStepPut(0.95 * a)\n",
         };
 
         void expect_rows_near(const std::vector<double> &a, const std::vector<double> &b, double rel,

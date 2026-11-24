@@ -53,7 +53,10 @@ namespace quantModeling::scripting
         {
             std::string name = n.function();
             name[0] = static_cast<char>(name[0] - 'a' + 'A'); // SurvivalAbove, LastStepCall, ...
-            leaf(name + " " + std::to_string(n.level) + " " + std::to_string(n.asset));
+            if (n.computed_strike())                          // the strike the script computes, as a child
+                node(name + " " + std::to_string(n.asset), n);
+            else
+                leaf(name + " " + std::to_string(n.level) + " " + std::to_string(n.asset));
         }
 
         void visit(const NodeAdd &n) override { node("Add", n); }

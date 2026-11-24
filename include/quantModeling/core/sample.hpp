@@ -31,12 +31,19 @@ namespace quantModeling
     ///    -- Black's formula on the step's lognormal law. Same expectation as
     ///    the payoff itself, but smooth to every order in the parameters
     ///    along a path, so that pathwise second-order risks are exact.
+    ///  - `LastStepForward` / `LastStepVariance` (issue #363): the forward
+    ///    F = E[S'] and the log-variance v of that last step, for a
+    ///    lastStep*() whose strike the script computes (a fixing of the path
+    ///    times a term): the payoff then applies Black's formula itself
+    ///    (models/equity/last_step_black.hpp). `level` is unused.
     enum class StepQuantity : unsigned char
     {
         Survival,
         LastStepCall,
         LastStepPut,
         LastStepDigital,
+        LastStepForward,
+        LastStepVariance,
     };
 
     /// One slot of Sample::monitored: a quantity the model computes over its

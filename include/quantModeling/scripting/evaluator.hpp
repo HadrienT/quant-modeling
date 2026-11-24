@@ -3,6 +3,7 @@
 
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/last_step_black.hpp"
 #include "quantModeling/scripting/exercise.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/visitor.hpp"
@@ -184,6 +185,16 @@ namespace quantModeling::scripting
         void visit(const NodeStepQuantity &n) override
         {
             const std::vector<T> &survivals = (*scenario_)[event_index_].monitored;
+            if (n.computed_strike()) // the step's forward and variance, the script's strike (issue #363)
+            {
+                n.arguments[0]->accept(*this);
+                const T strike = pop();
+                if (n.slot >= survivals.size() || n.var_slot >= survivals.size())
+                    throw InvalidInput(std::string(n.function()) +
+                                       "(): the model did not fill this event's last-step forward and variance");
+                push(mc::last_step_black(n.kind, survivals[n.slot], survivals[n.var_slot], strike));
+                return;
+            }
             if (n.slot >= survivals.size())
                 throw InvalidInput(std::string(n.above ? "survivalAbove" : "survivalBelow") +
                                    "(): the model did not fill this event's survival probabilities -- "

@@ -103,14 +103,27 @@ namespace quantModeling::mc
 
     /// Writes every last-step slot of an event from the step that reached
     /// it: forward F = E[S'] and log-variance v (bridge survival slots are
-    /// left alone).
+    /// left alone). A strike the script computes gets F and v themselves
+    /// (LastStepForward, LastStepVariance: last_step_black.hpp).
     template <class T>
     void fill_last_step(const SampleDef &def, Sample<T> &smp, const T &forward, const T &var)
     {
         smp.monitored.resize(def.monitors.size());
         for (std::size_t b = 0; b < def.monitors.size(); ++b)
-            if (def.monitors[b].kind != StepQuantity::Survival)
-                smp.monitored[b] = last_step_expectation(def.monitors[b].kind, forward, var, def.monitors[b].level);
+            switch (def.monitors[b].kind)
+            {
+                case StepQuantity::Survival:
+                    break;
+                case StepQuantity::LastStepForward:
+                    smp.monitored[b] = forward;
+                    break;
+                case StepQuantity::LastStepVariance:
+                    smp.monitored[b] = var;
+                    break;
+                default:
+                    smp.monitored[b] =
+                        last_step_expectation(def.monitors[b].kind, forward, var, def.monitors[b].level);
+            }
     }
 
 } // namespace quantModeling::mc

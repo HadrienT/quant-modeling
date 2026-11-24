@@ -243,6 +243,14 @@ namespace quantModeling
             const double s = std::sqrt(x.v);
             return dual_detail::chain(x, s, 0.5 / s);
         }
+        /// The standard normal CDF, erfc(-x / sqrt 2) / 2 as the IR's Ncdf
+        /// (lastStep*() with a strike the script computes, issue #363).
+        template <int N>
+        QM_HOST_DEVICE Dual<N> normal_cdf(const Dual<N> &x)
+        {
+            return dual_detail::chain(x, 0.5 * std::erfc(-x.v * 0.70710678118654752440),
+                                      0.39894228040143267794 * std::exp(-0.5 * x.v * x.v));
+        }
         template <int N>
         QM_HOST_DEVICE Dual<N> fabs(const Dual<N> &x)
         {

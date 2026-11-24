@@ -1179,3 +1179,32 @@ operations), and the host route is one thread of an evaluator. The exact
 route is the oracle the bump is now checked against under local vol, as it
 was under Black-Scholes and Heston. A device kernel would be the next step
 if the bump's O(h²) bias (0.05 % measured in §14.10) ever matters.
+
+### 14.17 A strike the script computes (issue #363, 2026-11-24)
+
+Rung 1 took the strike of `lastStepCall(K)` / `lastStepPut(K)` / `lastStepDigital(K)` as a literal, like a barrier level: the model computed the expectation during the simulation. The library's digitals are struck relative to a fixing (`strike * s0`, s0 the spot on the first date, a week ahead on the scripting page), so they could not use it. The maintainer chose to extend the language (2026-11-24).
+
+**The language.** The strike is now any expression known at the date: `pays payout * lastStepDigital(strike * s0)`. A number keeps rung 1's route, every literal script keeps its bits, and a barrier level stays a literal.
+
+**How it runs.** For a computed strike, the model writes the last step's forward F and log-variance v instead of an expectation (`StepQuantity::LastStepForward`, `LastStepVariance`, filled by `mc::fill_last_step`, so every model that computes the expectations computes these). The payoff applies Black's formula with its K:
+- on the tree evaluator, the fuzzy evaluator and the tape: `mc::last_step_black`;
+- on the bytecode: a new operation, `Op::LastStep`, in the scalar and the batched interpreters;
+- in the IR: lowered into `Log`, `Sqrt`, `Max`, `Ncdf`, … on two `Surv` slots that `bind_event` binds to the path's state. That is §14.9's expression with K an operand, so the CPU engine, the CUDA backend, the tangent and the adjoint need nothing new, and they differentiate through the strike.
+
+`Dual<N>` gained `normal_cdf`. The model's choice no longer treats a last step as a barrier (`ScriptAnalysis::last_step`): Heston and SLV have computed the expectations since §14.9, and only a bridge survival still forces local vol.
+
+**Models without a closed form over their last step** (rough Bergomi, Hull-White equity) no longer refuse a last step. They write the payoff of the simulated spot, an unbiased estimate of its expectation, so the script prices as the hard payoff it replaces, to the bit (`LastStep.RoughBergomiReadsThePayoffItself`). They still refuse bridge survivals.
+
+**The library.** `digital-call` pays `payout * lastStepDigital(strike * s0)` and `digital-put` pays `payout * (1 − lastStepDigital(strike * s0))`. Their `# eps: 3` / `# greeks: separate` are gone: there is no threshold left to smooth. Measured (local vol on a skewed 30 × 12 surface, one year, daily steps, 100,000 pseudo-random paths, six seeds, AAD greeks):
+
+| Estimator | Price, sd over seeds | Delta, mean ± sd |
+|---|---|---|
+| hard threshold | 0.131 | 0 (the pathwise derivative of a threshold) |
+| hard threshold, fuzzy ε = 3 (the library before) | 0.116 | 1.8537 ± 0.0136, biased by O(ε²) |
+| `lastStepDigital` | 0.135 | 1.8564 ± 0.0203, unbiased |
+
+With daily steps, the last step smooths over about 1.3 of spot against the fuzzy's 3. So in plain Monte Carlo the delta is unbiased but 1.5 times noisier, and the price's error does not move. The gains are elsewhere:
+- under Black-Scholes the one step is the whole path, so the price is the closed form with no error (`test_the_closed_form_is_the_scripts_flat_vol_price`, `LastStep.AForwardStartDigitalIsTheClosedFormWithNoError`);
+- in multilevel, the corrections are 4.4 times less noisy once the coarse path is conditioned (WP 26 §26.1, #364).
+
+Tests: parsing and writing back a computed strike; a computed constant equals the literal one; the forward-start digital's closed form; tree, bytecode and batch agree to the bit; the IR's CPU engine against the tape (BS, LV, Heston, SLV); the GPU kernels against the CPU (prices) and the tape (risks, tangent and adjoint).

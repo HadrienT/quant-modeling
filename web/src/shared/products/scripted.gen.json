@@ -565,7 +565,7 @@
 				"label": "Cash paid if above the strike"
 			}
 		],
-		"script": "# A hard threshold makes the Monte-Carlo delta noisy: tick Fuzzy to smooth it.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    if spot() > strike * s0 then pays payout endIf\n",
+		"script": "# The payout's probability over the model's last step into the expiry,\n# given the path before it (lastStepDigital): the same price as the\n# threshold, a smaller error, and smooth greeks with no fuzzy smoothing\n# (Giles & Szpruch 2012, section 3.5). Under a model with no closed form over its\n# last step (rough Bergomi) it is the threshold itself.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    pays payout * lastStepDigital(strike * s0)\n",
 		"maturity": 0.9993
 	},
 	{
@@ -592,7 +592,7 @@
 				"label": "Cash paid if below the strike"
 			}
 		],
-		"script": "# The mirror of the digital call: together they pay the payout for sure.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    if spot() < strike * s0 then pays payout endIf\n",
+		"script": "# The mirror of the digital call: together they pay the payout for sure.\n# Written on the call's lastStepDigital, the probability over the model's\n# last step (Giles & Szpruch 2012, section 3.5): the threshold's price, smooth.\n\n2027-01-04\n    strike = 1.0\n    payout = 100\n    s0 = spot()\n\n2028-01-04\n    pays payout * (1 - lastStepDigital(strike * s0))\n",
 		"maturity": 0.9993
 	},
 	{

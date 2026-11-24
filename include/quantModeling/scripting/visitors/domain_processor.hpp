@@ -115,8 +115,8 @@ namespace quantModeling::scripting
                 {
                     case StepQuantity::LastStepCall:
                         return Domain::at_least(0.0);
-                    case StepQuantity::LastStepPut:
-                        return Domain::closed(0.0, s->level);
+                    case StepQuantity::LastStepPut: // below its strike: the script's own, if it computes it
+                        return s->computed_strike() ? Domain::at_least(0.0) : Domain::closed(0.0, s->level);
                     default: // a probability
                         return Domain::closed(0.0, 1.0);
                 }

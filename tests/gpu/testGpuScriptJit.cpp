@@ -57,7 +57,7 @@ namespace quantModeling
                                                 bool terms = false)
         {
             int compared = 0;
-            for (const auto &s : library())
+            for (const auto &s : library_for_the_interpreter())
             {
                 ScriptSettings ss;
                 ss.fuzzy = fuzzy;
@@ -262,7 +262,7 @@ namespace quantModeling
     {
         int compared = 0;
         for (const SamplerKind sampler : {SamplerKind::PseudoRandom, SamplerKind::Stratified})
-            for (const auto &s : library())
+            for (const auto &s : library_for_the_interpreter())
             {
                 const ScriptedProduct<Real> product(s.source, kCtx);
                 auto m1 = model(Dyn::BlackScholes, product.n_underlyings());
