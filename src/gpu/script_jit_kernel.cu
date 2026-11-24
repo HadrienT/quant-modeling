@@ -57,6 +57,15 @@ namespace
         return {f->gK, f->nK, f->gT, f->nT, f->th + f->grid0};
     }
 
+    /// The path's search hints (mc::lower_index_from), which every lookup
+    /// updates. They live outside the frame, as the backward cell does: a
+    /// write through the generated code's `const QmFrame *__restrict__`
+    /// cost the grids' read-only loads (LDG.CONSTANT) and the kernel 6 %.
+    __device__ __forceinline__ mc::GridHint *hint_of(const QmFrame *f)
+    {
+        return static_cast<mc::GridHint *>(f->hint);
+    }
+
     __device__ __forceinline__ QmFrame frame_of(const PathUnit &u)
     {
         QmFrame f{};
@@ -142,10 +151,10 @@ extern "C" __device__ double qm_grid_vol(const QmFrame *f, double spot, double t
     if (f->cell)
     {
         grid::GridCell &c = static_cast<BackwardCell *>(f->cell)->cell.vol;
-        c = grid::grid_cell(grid_of(f), spot, t);
+        c = grid::grid_cell(grid_of(f), spot, t, hint_of(f));
         return c.sigma < 1e-6 ? 1e-6 : c.sigma;
     }
-    return mc::local_vol_bilinear<Real>(grid_of(f), spot, t);
+    return mc::local_vol_bilinear<Real>(grid_of(f), spot, t, hint_of(f));
 }
 extern "C" __device__ double qm_grid_slope(const QmFrame *f, double spot, double t)
 {
@@ -177,10 +186,10 @@ extern "C" __device__ double qm_grid_leverage(const QmFrame *f, double spot, dou
     if (f->cell)
     {
         grid::LeverageCell &c = static_cast<BackwardCell *>(f->cell)->cell.leverage;
-        c = grid::leverage_cell(grid_of(f), spot, t);
+        c = grid::leverage_cell(grid_of(f), spot, t, hint_of(f));
         return grid::leverage_value(grid_of(f), c);
     }
-    return mc::leverage_staircase<Real>(grid_of(f), spot, t);
+    return mc::leverage_staircase<Real>(grid_of(f), spot, t, hint_of(f));
 }
 extern "C" __device__ double qm_grid_leverage_slope(const QmFrame *f, double spot, double t)
 {
@@ -214,6 +223,8 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double si
     mc::PathDraws &draws = *static_cast<mc::PathDraws *>(draws_);
     double z[mc::ScriptLimits::kAssets];
     QmFrame f = frame_of(u);
+    mc::GridHint hint; // the path's search hints, kept across its steps
+    f.hint = &hint;
     f.st = st;
     f.z = z;
     f.dat = u.baseline;
@@ -354,6 +365,8 @@ extern "C" __device__ void qm_drive(const void *unit_, void *draws_, double *out
         dst[i] = 0.0;
     double z[mc::ScriptLimits::kAssets];
     QmFrame f = frame_of(u);
+    mc::GridHint hint; // the path's search hints, kept across its steps
+    f.hint = &hint;
     f.st = st;
     f.dst = dst;
     f.z = z;
@@ -440,6 +453,8 @@ extern "C" __device__ void qm_drive_vibrato(const void *unit_, void *draws_, dou
             s_last = s;
     double z[mc::ScriptLimits::kAssets];
     QmFrame f = frame_of(u);
+    mc::GridHint hint; // the path's search hints, kept across its steps
+    f.hint = &hint;
     f.st = st;
     f.dst = dst;
     f.z = z;
@@ -547,6 +562,8 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
     const long step_cols = qm_step_cols(), event_cols = qm_event_cols();
     double z[mc::ScriptLimits::kAssets];
     QmFrame f = frame_of(u);
+    mc::GridHint hint; // the path's search hints, kept across its steps
+    f.hint = &hint;
     f.st = st;
     f.z = z;
     f.dat = u.baseline;

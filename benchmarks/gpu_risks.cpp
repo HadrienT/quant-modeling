@@ -187,6 +187,18 @@ int main(int argc, char **argv)
             continue;
         }
 
+        // QM_RISK_DUMP=<dir>: the GPU's risks, 17 digits, one file a case --
+        // to compare two builds bit for bit (`cmp`), or within a tolerance.
+        if (const char *dump = std::getenv("QM_RISK_DUMP"); dump && *dump)
+        {
+            std::ofstream out(std::filesystem::path(dump) / (std::string(name) + "_" + model + ".txt"));
+            char line[32];
+            for (const double r : gpu->risks)
+            {
+                std::snprintf(line, sizeof line, "%.17g\n", r);
+                out << line;
+            }
+        }
         if (gpu_only)
         {
             std::printf("%-18s %-10s %7zu %11s %11.1f %9s %12s   (first call %.0f ms; %s)\n", name, model,
