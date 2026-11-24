@@ -457,6 +457,7 @@ if(QM_BUILD_TESTS)
     tests/testPathSimulation.cpp
     tests/testPathDistribution.cpp
     tests/testLocalVol.cpp
+    tests/testGridSearch.cpp
     tests/testUtils.cpp
     tests/testRegistry.cpp
     tests/testAmericanLsm.cpp
