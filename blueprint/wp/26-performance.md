@@ -2950,3 +2950,16 @@ The interpreter cannot do it and refuses (`compiled_kernels`). A first version b
 - The GPU fixed run takes 0.1 to 0.6 s per product, the CPU's 24 to 39 s.
 
 Test: `GpuMlqmcTest.TheConditionedCoarsePathIsTheCpusAndCheaper`, the digital and the up-and-out by the adaptive run: GPU conditioned against the CPU and against the GPU unconditioned, within error.
+
+### 26.3 Lookbacks and Asians on fixed dates need nothing (2026-11-25)
+
+Giles & Szpruch's lookback and Asian estimators (the bridge interpolant's minimum or integral, with the coarse path's midpoint) are for **continuous** monitoring. The library's are monitored on fixed dates: weekly or daily closes for the lookbacks, twelve monthly closes for the Asian. Both levels step through those dates, and the payoff, a maximum or an average of the closes, is a Lipschitz function of them. So their corrections should decay as the vanilla's do. Measured (`qm_mlmc_conditional_bench 200000 6`, the same skewed local vol, fixed levels 0..6, 0..4 for the weekly lookback):
+
+| Product | V_1 | V_L | β |
+|---|---|---|---|
+| vanilla call (§26) | 1.59 | 0.041 | 1.05 |
+| Asian call, 12 monthly fixings | 1.08 | 0.032 | **1.02** |
+| fixed lookback call, weekly closes | 0.34 | 0.040 | **1.03** |
+| up-and-out call, daily closes (§26) | 2.37 | 0.79 | **0.53** |
+
+The fixed-date payoffs that stay at β ≈ 0.5 are those with an indicator at a date: daily-monitored barriers and autocall triggers.
