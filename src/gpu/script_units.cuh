@@ -33,6 +33,7 @@ struct QmFrame
     const double *gT;
     int nK, nT, grid0, reserved;
     void *cell;
+    void *hint; // the path's mc::GridHint: its last grid indices
 };
 
 namespace quantModeling::gpu::detail
