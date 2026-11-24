@@ -89,6 +89,7 @@ struct QmFrame
     const double *gT;
     int nK, nT, grid0, reserved;
     void *cell;             // the adjoint's backward sweep: the grid cell of the step
+    void *hint;             // the path's last grid indices, for the lookups (not read here)
 };
 
 extern "C" __device__ double qm_grid_vol(const QmFrame *f, double spot, double t);

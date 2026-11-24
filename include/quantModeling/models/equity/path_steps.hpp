@@ -54,12 +54,49 @@ namespace quantModeling::mc
         return lo;
     }
 
+    /// lower_index(x, n, v), started from a guess: `hint` is the answer of
+    /// the path's previous lookup, and is set to this one. A path's time
+    /// moves by at most one node a step and its spot by a few (the page's
+    /// strikes are 1.2 % apart in log-moneyness, about a day's move), so
+    /// the answer is a short walk from the hint -- one load a node, where
+    /// the bisection takes log2(n) dependent ones (7 on the page's grids).
+    /// Past kWalk nodes it falls back to the bisection. The answer is
+    /// unique (the first i with x[i] >= v): the walk stops on it, so it is
+    /// lower_index's exactly, NaN included (both give 0).
+    ///
+    /// The GPU's SLV adjoint (phoenix autocall, page grid, 65 536 paths, one
+    /// V100, 2026-11-24): its four bisections a step were 21 % of the
+    /// kernel's stall samples; with the hints the kernel went 17.3 -> 16.4 ms,
+    /// the same bits (WP 26 §25).
+    QM_HOST_DEVICE inline int lower_index_from(const Real *x, int n, double v, int &hint)
+    {
+        constexpr int kWalk = 4;
+        int i = hint;
+        int walked = (i >= 0 && i <= n) ? 0 : kWalk + 1;
+        while (walked <= kWalk && i < n && x[i] < v) // the answer is to the right
+            ++i, ++walked;
+        while (walked <= kWalk && i > 0 && !(x[i - 1] < v)) // to the left
+            --i, ++walked;
+        if (walked > kWalk) // stopped by the bound, not on the answer
+            i = lower_index(x, n, v);
+        hint = i;
+        return i;
+    }
+
+    /// A path's last strike and time indices (lower_index_from's hints) for
+    /// the lookups of one grid: -1 before its first lookup.
+    struct GridHint
+    {
+        int k = -1, t = -1;
+    };
+
     /// The bracketing pair (i0, i1) of v in the grid x[0..n), n >= 2, as the
     /// models always chose it: i1 = lower_index clamped to the last node,
-    /// i0 its left neighbour (i1 bumped to 1 at the left edge).
-    QM_HOST_DEVICE inline void bracket(const Real *x, int n, double v, int &i0, int &i1)
+    /// i0 its left neighbour (i1 bumped to 1 at the left edge). `hint`, when
+    /// given, starts the search there (lower_index_from).
+    QM_HOST_DEVICE inline void bracket(const Real *x, int n, double v, int &i0, int &i1, int *hint = nullptr)
     {
-        i1 = lower_index(x, n, v);
+        i1 = hint ? lower_index_from(x, n, v, *hint) : lower_index(x, n, v);
         if (i1 >= n)
             i1 = n - 1;
         i0 = (i1 > 0) ? i1 - 1 : 0;
@@ -126,13 +163,13 @@ namespace quantModeling::mc
          * (0 outside). A two-node grid, or values linear in the strike, give
          * the linear interpolation.
          */
-        QM_HOST_DEVICE void strike_hermite(const T &S_t, int idx[4], T w[4], T dw[4]) const
+        QM_HOST_DEVICE void strike_hermite(const T &S_t, int idx[4], T w[4], T dw[4], int *hint = nullptr) const
         {
             const double S_raw = value_of(S_t);
             const double Sc = std::clamp(S_raw, K[0], K[nK - 1]);
             const bool inside = Sc == S_raw;
             int i0, i1;
-            bracket(K, nK, Sc, i0, i1);
+            bracket(K, nK, Sc, i0, i1, hint);
             const double h = K[i1] - K[i0];
             idx[0] = i0 > 0 ? i0 - 1 : i0;
             idx[1] = i0;
@@ -203,12 +240,12 @@ namespace quantModeling::mc
         /// Strike weight of S_t in its cell: a function of the spot itself
         /// (T) inside the grid, a constant outside where the surface is flat
         /// in S. Sets the cell (i0, i1).
-        QM_HOST_DEVICE T strike_weight(const T &S_t, int &i0, int &i1) const
+        QM_HOST_DEVICE T strike_weight(const T &S_t, int &i0, int &i1, int *hint = nullptr) const
         {
             const double S_raw = value_of(S_t);
             const double S = std::clamp(S_raw, K[0], K[nK - 1]);
             const bool inside = S == S_raw;
-            bracket(K, nK, S, i0, i1);
+            bracket(K, nK, S, i0, i1, hint);
             const double K0 = K[i0];
             const double dK = K[i1] - K0;
             return dK <= 1e-12 ? T(0.0) : inside ? T((S_t - K0) / dK)
@@ -229,14 +266,14 @@ namespace quantModeling::mc
     /// skewed SPY surface before this was fixed. Outside the grid the vol is
     /// flat in S, so the weights are then constants.
     template <class T>
-    QM_HOST_DEVICE T local_vol_bilinear(const GridView<T> &g, const T &S_t, double t)
+    QM_HOST_DEVICE T local_vol_bilinear(const GridView<T> &g, const T &S_t, double t, GridHint *hint = nullptr)
     {
         using std::max;
         int idx[4], j0, j1;
         T w[4], dw[4];
-        g.strike_hermite(S_t, idx, w, dw);
+        g.strike_hermite(S_t, idx, w, dw, hint ? &hint->k : nullptr);
         t = std::clamp(t, g.T_grid[0], g.T_grid[g.nT - 1]);
-        bracket(g.T_grid, g.nT, t, j0, j1);
+        bracket(g.T_grid, g.nT, t, j0, j1, hint ? &hint->t : nullptr);
         const double T0 = g.T_grid[j0];
         const double dT = g.T_grid[j1] - T0;
         const double wT = (dT > 1e-12) ? (t - T0) / dT : 0.0;
@@ -265,13 +302,13 @@ namespace quantModeling::mc
     /// yet), which column 0 already approximates closely for a short
     /// first interval, and is not otherwise stored anywhere to look up.
     template <class T>
-    QM_HOST_DEVICE T leverage_staircase(const GridView<T> &g, const T &S_t, double t)
+    QM_HOST_DEVICE T leverage_staircase(const GridView<T> &g, const T &S_t, double t, GridHint *hint = nullptr)
     {
         using std::max;
         int i0, i1;
-        const T wK = g.strike_weight(S_t, i0, i1);
+        const T wK = g.strike_weight(S_t, i0, i1, hint ? &hint->k : nullptr);
         const double tc = std::clamp(t, g.T_grid[0], g.T_grid[g.nT - 1]);
-        const int j = lower_index(g.T_grid, g.nT, tc);
+        const int j = hint ? lower_index_from(g.T_grid, g.nT, tc, hint->t) : lower_index(g.T_grid, g.nT, tc);
         const int jcol = (j > 0) ? j - 1 : 0;
         const T lev = (1.0 - wK) * g.at(i0, jcol) + wK * g.at(i1, jcol);
         return max(lev, 1e-4);
