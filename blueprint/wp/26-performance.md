@@ -1750,9 +1750,13 @@ Limits, each said in the diagnostics:
   point; §10.3 removed that.)
 - draws that are not Brownian increments (a jump's) do not nest: refused,
   the CPU runs;
-- what the device cannot step (Milstein, a model without `describe_device`,
-  `survivalAbove()`) stays on the CPU on `device = "auto"` and is refused on
-  `"gpu"`;
+- what the device cannot step (Milstein, a model without `describe_device`)
+  stays on the CPU on `device = "auto"` and is refused on `"gpu"`. (Bridge
+  survivals were in this list until WP 27 §14.12, 2026-11-16: the generated
+  kernels compute them under Black-Scholes and local vol, multilevel
+  included -- checked 2026-11-24, an up-and-out call under local vol priced
+  by multilevel QMC on the GPU at 3.1453 ± 0.0043 against 3.1438 ± 0.0043 on
+  the CPU.)
 - **the API's default** (maintainer, 2026-11-13): a script request that
   names no device (`ScriptPricingInputs.device`, now optional) runs a
   multilevel price on `"auto"` -- the GPU when the server has one -- and
@@ -2825,4 +2829,46 @@ What it says:
 2. **The conditional primitives, evaluated the same way on both levels, do not change the rate.** The digital's V_l falls by about 27 % at every level, with β unchanged. The vanilla on `lastStepCall` is **six times worse** than the hard payoff at every level. The fine path conditions at T − h, the coarse path at T − 2h, and the conditional expectation's own increment over [T − 2h, T − h] is O(h^{1/2}). That is the term the coarse variant removes. So the primitives serve plain Monte Carlo and the pathwise greeks (WP 27 §14.8), not multilevel as they stand.
 3. **The continuous barrier's bridge on each level's own steps stays at β ≈ 0.55.** Giles's coarse midpoint is what lifts it.
 
-Next (#363): the coarse variants in the CPU engine. `LevelSampler` hands the coarse model each step's first-half fine increment z₁, and the local-vol model computes `lastStep*` conditionally on it: forward S e^{μΔt + σ√(Δt/2) z₁ + σ²Δt/4}, log-variance σ²Δt/2. The survival goes through the midpoint S e^{μΔt/2 + σ√(Δt/2) z₁}, with two half-step bridges. Then measure again, and only after that the GPU multilevel run, whose coarse pass would need z₁ in its tables. The daily barrier needs another technique (a product of conditional probabilities along the path is biased), left until the first two are measured.
+### 26.1 The coarse path conditioned on the fine one (CPU, 2026-11-24)
+
+**What changed.**
+- `ISimulationModel::condition_on_fine_half_steps(half, share)`: for each step k of the coarse model, `half[k]` is the part of its normalised draw that the fine level's first sub-step carries, a = √(h₁/Δt) z₁, and `share[k]` = h₁/Δt is that sub-step's share of the step. The coarse draw is then z = a + √(1 − w) z′, with z′ independent.
+- `mlmc_detail::LevelSampler` fills `half` before each coarse path, from the fine draws it already sums. That covers the CPU's two multilevel routes, MLMC and MLQMC (the default for scripts).
+- `LocalVolSimModel` uses it whenever it is set. Given a, the log-Euler step's end is lognormal around log S + drift + σ√Δt a, with log-variance σ²Δt (1 − w), so:
+  - `lastStep*` is Black's formula with forward S e^{drift + σ√Δt a + σ²Δt(1−w)/2} and log-variance σ²Δt(1 − w);
+  - a bridge survival goes through the midpoint S_mid = S e^{drift·w + σ√Δt a}, the Brownian interpolant at the fine path's increment, as two bridges of log-variances σ²Δt·w and σ²Δt(1 − w).
+
+  Both are conditional expectations of the estimator each level computes on its own steps, so every level keeps its mean (tower property). The Milstein step is not lognormal given part of its draw, so the model declines there.
+- `MlmcSettings::coarse_conditioning` and `MlqmcSettings::coarse_conditioning` are on by default, and off only to measure (`simulate_mlmc_fixed(..., coarse_conditioning)`).
+- **Not on the GPU yet.** The GPU multilevel run (§10) prices its fine and coarse grids as two separate kernel runs, so its coarse pass has no z₁. For a script that reads step quantities, the CPU and the GPU multilevel prices now differ within their noise.
+
+**Measured** (the same bench and draws as above; cost = (Σ_l √(V_l C_l))², what an optimal multilevel run spends for a given ε, up to the factor ε⁻²):
+
+| Product | Estimator | V_1 | V_6 | β | Cost |
+|---|---|---|---|---|---|
+| Vanilla call | hard | 1.59 | 0.041 | 1.05 | 8,014 |
+| | `lastStepCall`, each level on its own steps | 8.01 | 0.264 | 0.98 | 22,902 |
+| | `lastStepCall`, **coarse conditioned** | **1.39** | **0.040** | 1.02 | **7,412** |
+| Digital, pays 100 | hard | 249 | 43.5 | 0.51 | 1,235,719 |
+| | `lastStepDigital`, each level on its own steps | 183 | 31.7 | 0.51 | 913,061 |
+| | `lastStepDigital`, **coarse conditioned** | **41.7** | **7.51** | 0.50 | **287,131** |
+| Up-and-out, continuous | `survivalBelow`, each level on its own steps | 5.74 | 0.84 | 0.55 | 25,894 |
+| | `survivalBelow`, **coarse conditioned** | **4.76** | **0.68** | 0.56 | **21,328** |
+
+What it says:
+1. **The vanilla on `lastStepCall`** is no longer worse than the hard payoff: its corrections are 6 times less noisy than before the change and 8 % cheaper than the hard payoff's.
+2. **The digital's corrections are 4.4 times less noisy at every level.** A multilevel run costs 4.3 times less than with the hard payoff, and 3.2 times less than with the primitive alone.
+3. **The rate does not move: β stays at 0.5.** Giles's h^{3/2} for the digital and the barrier needs a scheme of strong order 1 (Milstein). With log-Euler, the fine and coarse spots differ by O(h^{1/2}), and the conditioning removes a constant, not an order. Our Milstein is refused by the last step's closed form (its step is not lognormal) and made the coupling worse on market grids (§9.3). So the gain is a constant factor, the same at every ε.
+4. **The barrier gains least (−18 %).** Its corrections are dominated by the endpoints' own O(h^{1/2}) gap, not by the midpoint the coarse path lacked.
+
+Tests (`tests/testMlmc.cpp`):
+- `CoarseConditioningLeavesHardPayoffsAlone`: the same bits, on or off, with no step quantity;
+- `CoarseConditioningKeepsTheTelescopingSum`: the conditioned levels add up to plain Monte Carlo on the finest grid, for `lastStepCall`, `lastStepDigital` and the bridge;
+- `CoarseConditioningShrinksTheCorrections`: V_l below 0.4 × the unconditioned one, on the same draws, with the same mean;
+- `CoarseConditioningNeedsTheLognormalStep`: the Milstein step declines.
+
+**Left (#363):**
+- the library's digital on `lastStepDigital`, and its barriers on survivals where they mean continuous monitoring (maintainer's decision: the displayed prices move within their noise, the multilevel cost falls by about 4);
+- the same conditioning in the GPU multilevel run: z₁ in the coarse pass's tables, and in the IR's step;
+- the daily-monitored barrier, whose indicator at each date cannot be replaced by a conditional probability without bias (the path goes on from the simulated point). Giles's change of measure is the candidate there;
+- a lognormal Milstein-like step, if the rate rather than a constant is wanted. Measure first.

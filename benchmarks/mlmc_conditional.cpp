@@ -2,7 +2,9 @@
 // for the payoffs Giles & Szpruch (2012, §3.2-3.5) treat with a conditional
 // expectation: a digital, a barrier, a vanilla for reference. Each is written
 // twice, with the hard payoff and with the library's conditional primitive
-// (lastStepDigital, lastStepCall, survivalBelow), and priced on fixed levels
+// (lastStepDigital, lastStepCall, survivalBelow) -- the latter run with each
+// level on its own steps, then with the coarse path conditioned on the fine
+// one (Giles & Szpruch's variants, WP 26 §26) -- and priced on fixed levels
 // 0..L with the same number of paths each, so that every level's V_l and
 // |E Y_l| are measured, not just the adaptive run's regression (issue #363).
 //
@@ -85,20 +87,27 @@ int main(int argc, char **argv)
 
     std::printf("Local vol (skewed 5x3), log-Euler, PCG32, %lld paths a level\n", paths);
     for (const Case &c : cases)
-    {
-        const int L = std::min(finest, c.finest_cap);
-        const qm::ScriptedProduct<qm::Real> product(c.script, ctx);
-        auto model = qm::scripting::make_script_model<qm::Real>(skewed_local_vol());
-        const std::vector<long long> n(static_cast<std::size_t>(L + 1), paths);
-        const qm::MlmcResult r = qm::simulate_mlmc_fixed(product, *model, n, 11);
-        std::vector<double> v, m;
-        for (const qm::MlmcLevel &lv : r.levels)
-            v.push_back(lv.variance()), m.push_back(std::fabs(lv.mean()));
-        std::printf("\n%s -- %s\n  value %.6f +- %.6f   beta %.2f   alpha %.2f\n", c.product, c.estimator, r.value,
-                    r.std_error, -slope(v), -slope(m));
-        std::printf("  %-5s %12s %12s %12s\n", "level", "V_l", "|E Y_l|", "cost/path");
-        for (std::size_t l = 0; l < r.levels.size(); ++l)
-            std::printf("  %-5zu %12.4e %12.4e %12.0f\n", l, v[l], m[l], r.levels[l].cost);
-    }
+        for (const bool conditioned : {false, true})
+        {
+            // The coarse path conditioned on the fine one (WP 26 §26) changes
+            // only the step quantities: the hard payoffs are run once.
+            const bool hard = std::string(c.estimator) == "hard";
+            if (hard && conditioned)
+                continue;
+            const int L = std::min(finest, c.finest_cap);
+            const qm::ScriptedProduct<qm::Real> product(c.script, ctx);
+            auto model = qm::scripting::make_script_model<qm::Real>(skewed_local_vol());
+            const std::vector<long long> n(static_cast<std::size_t>(L + 1), paths);
+            const qm::MlmcResult r = qm::simulate_mlmc_fixed(product, *model, n, 11, conditioned);
+            std::vector<double> v, m;
+            for (const qm::MlmcLevel &lv : r.levels)
+                v.push_back(lv.variance()), m.push_back(std::fabs(lv.mean()));
+            std::printf("\n%s -- %s%s\n  value %.6f +- %.6f   beta %.2f   alpha %.2f\n", c.product, c.estimator,
+                        hard ? "" : (conditioned ? ", coarse conditioned on the fine path" : ", each level on its own steps"), r.value,
+                        r.std_error, -slope(v), -slope(m));
+            std::printf("  %-5s %12s %12s %12s\n", "level", "V_l", "|E Y_l|", "cost/path");
+            for (std::size_t l = 0; l < r.levels.size(); ++l)
+                std::printf("  %-5zu %12.4e %12.4e %12.0f\n", l, v[l], m[l], r.levels[l].cost);
+        }
     return 0;
 }
