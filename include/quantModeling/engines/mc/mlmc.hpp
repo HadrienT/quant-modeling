@@ -64,6 +64,10 @@ namespace quantModeling
         int max_finest_level = 10;
         long long pilot_paths = 2000; ///< first samples of every level
         std::uint64_t seed = 1;
+        /// The coarse path's step quantities conditioned on the fine path
+        /// (Giles & Szpruch 2012; ISimulationModel::condition_on_fine_half_steps,
+        /// WP 26 §26). Off only to measure what it brings.
+        bool coarse_conditioning = true;
     };
 
     struct MlmcResult
@@ -125,7 +129,7 @@ namespace quantModeling
         {
           public:
             LevelSampler(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &base, int level,
-                         std::uint64_t seed)
+                         std::uint64_t seed, bool coarse_conditioning = true)
                 : product_(product), level_(level), rng_(seed, static_cast<std::uint64_t>(level))
             {
                 state_ = product.make_payoff_state();
@@ -171,6 +175,24 @@ namespace quantModeling
                 }
                 for (std::size_t k = 0; k < weight_.size(); ++k)
                     weight_[k] /= std::sqrt(coarse_dt[coarse_of_[k]]);
+
+                // Giles & Szpruch (2012, §3.3-3.5): the coarse model may
+                // condition its step quantities -- bridge survivals,
+                // lastStep* -- on the first fine sub-step of each of its
+                // steps. That sub-step's part of the coarse draw is
+                // weight * z (factor 0), its share of the step weight^2.
+                if (coarse_conditioning && factors_ == 1)
+                {
+                    first_fine_.assign(lc.times.size(), lf.times.size());
+                    for (std::size_t k = lf.times.size(); k-- > 0;)
+                        first_fine_[coarse_of_[k]] = k;
+                    half_.assign(lc.times.size(), 0.0);
+                    share_.assign(lc.times.size(), 1.0);
+                    for (std::size_t cs = 0; cs < lc.times.size(); ++cs)
+                        if (first_fine_[cs] < lf.times.size())
+                            share_[cs] = weight_[first_fine_[cs]] * weight_[first_fine_[cs]];
+                    conditioned_ = coarse_->condition_on_fine_half_steps(half_, share_);
+                }
             }
 
             double cost() const { return cost_; }
@@ -217,6 +239,12 @@ namespace quantModeling
                         for (std::size_t e = factors_; e < stride_; ++e)
                             gauss_coarse_[c + e] = gauss_fine_[fk + e];
                     }
+                    if (conditioned_)
+                        for (std::size_t cs = 0; cs < half_.size(); ++cs)
+                        {
+                            const std::size_t k = first_fine_[cs];
+                            half_[cs] = k < coarse_of_.size() ? weight_[k] * gauss_fine_[k * stride_] : 0.0;
+                        }
                     coarse_->generate_path(gauss_coarse_, coarse_path_);
                     payoffs(coarse_path_);
                     y -= out_.at(0);
@@ -249,6 +277,12 @@ namespace quantModeling
             std::size_t factors_ = 0, stride_ = 0;
             std::vector<std::size_t> coarse_of_;
             std::vector<double> weight_;
+            /// Per coarse step: its first fine step, that step's part of the
+            /// coarse draw and share of the step (the coarse model reads
+            /// half_ and share_ through condition_on_fine_half_steps).
+            std::vector<std::size_t> first_fine_;
+            std::vector<double> half_, share_;
+            bool conditioned_ = false;
             double cost_ = 0.0;
         };
 
@@ -354,7 +388,8 @@ namespace quantModeling
      *        for tests and measurements.
      */
     inline MlmcResult simulate_mlmc_fixed(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model,
-                                          const std::vector<long long> &n, std::uint64_t seed)
+                                          const std::vector<long long> &n, std::uint64_t seed,
+                                          bool coarse_conditioning = true)
     {
         if (n.empty())
             throw InvalidInput("simulate_mlmc_fixed: at least one level");
@@ -362,7 +397,7 @@ namespace quantModeling
         res.levels.resize(n.size());
         for (std::size_t l = 0; l < n.size(); ++l)
         {
-            mlmc_detail::LevelSampler sampler(product, model, static_cast<int>(l), seed);
+            mlmc_detail::LevelSampler sampler(product, model, static_cast<int>(l), seed, coarse_conditioning);
             sampler.run(n[l], res.levels[l]);
         }
         mlmc_detail::finish(res);
@@ -399,7 +434,8 @@ namespace quantModeling
         auto add_level = [&]
         {
             const int l = static_cast<int>(samplers.size());
-            samplers.push_back(std::make_unique<mlmc_detail::LevelSampler>(product, model, l, s.seed));
+            samplers.push_back(
+                std::make_unique<mlmc_detail::LevelSampler>(product, model, l, s.seed, s.coarse_conditioning));
             res.levels.emplace_back();
             res.levels.back().cost = samplers.back()->cost();
             dn.push_back(0);

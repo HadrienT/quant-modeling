@@ -142,6 +142,31 @@ namespace quantModeling
          */
         virtual bool set_refinement(int r) { return r == 1; }
 
+        /**
+         * @brief Multilevel Monte Carlo: condition the coarse path's step
+         *        quantities on the fine path (Giles & Szpruch 2012, §3.3-3.5;
+         *        blueprint/wp/26-performance.md §26).
+         *
+         * For each drawing step k of this (coarse) model, `half[k]` is the
+         * part of its normalised Brownian draw z_k (factor 0) that the fine
+         * level's first sub-step carries, and `share[k]` that sub-step's
+         * share of the step: z_k = half[k] + sqrt(1 - share[k]) z', z' an
+         * independent N(0, 1). A model that returns true computes its bridge
+         * survivals through the midpoint the fine path fixes, and its
+         * lastStep* expectations given half[k], on the next generate_path()
+         * calls -- the conditional expectations of the same estimators, so
+         * every level keeps its mean (tower property) and the corrections
+         * lose the O(h^1/2) terms of conditioning the fine and the coarse
+         * path at different times. Empty spans: unconditional again. The
+         * spans must outlive the calls. Called after init(); the default
+         * declines.
+         */
+        virtual bool condition_on_fine_half_steps(std::span<const double> /*half*/,
+                                                  std::span<const double> /*share*/)
+        {
+            return false;
+        }
+
         /// Whether the model simulates the product's dates exactly, with no
         /// time step between them (Black-Scholes): its discretisation bias
         /// is then 0 (WP 26 §9.4). False by default -- a model that steps on
