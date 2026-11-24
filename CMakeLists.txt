@@ -320,6 +320,10 @@ if(QM_BUILD_CLI)
   # Issue #317: Heston's discretisation bias, Euler against QE, against COS.
   add_executable(qm_heston_qe_bias benchmarks/heston_qe_bias.cpp)
   target_link_libraries(qm_heston_qe_bias PRIVATE quantModeling)
+  # Issue #363: the multilevel corrections' variance decay, hard payoffs
+  # against the conditional primitives (Giles & Szpruch 2012, §3.2-3.5).
+  add_executable(qm_mlmc_conditional_bench benchmarks/mlmc_conditional.cpp)
+  target_link_libraries(qm_mlmc_conditional_bench PRIVATE quantModeling)
   # WP 26 lot P0: hand-written reference paths, the ceiling of the script
   # engine's CPU rows in benchmarks/perf_matrix.py.
   add_executable(qm_reference_bench benchmarks/reference/reference_cpu.cpp)
@@ -572,6 +576,10 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   target_compile_definitions(qm_gpu_vr_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
   # Lot G3: model risks, GPU (duals, per-path adjoint) against the CPU tape.
+  # WP 26 §26.2: the GPU's multilevel corrections of step quantities, the
+  # coarse path conditioned on the fine one and not, on fixed levels.
+  add_executable(qm_gpu_mlqmc_conditional_bench benchmarks/gpu_mlqmc_conditional.cpp)
+  target_link_libraries(qm_gpu_mlqmc_conditional_bench PRIVATE quantModeling)
   add_executable(qm_gpu_risk_bench benchmarks/gpu_risks.cpp)
   target_link_libraries(qm_gpu_risk_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_risk_bench PRIVATE

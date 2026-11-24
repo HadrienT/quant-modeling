@@ -112,6 +112,34 @@ namespace quantModeling
         }
     }
 
+    // WP 26 §26.2: the coarse path conditioned on the fine one on the GPU --
+    // the coarse run reads the fine tables, two draws a step, and the IR's
+    // conditioned step. Its price is the CPU's (whose levels condition the
+    // same way, §26.1) within error, and the unconditioned one's.
+    TEST_F(GpuMlqmcTest, TheConditionedCoarsePathIsTheCpusAndCheaper)
+    {
+        const std::string digital = "2027-01-01\n    pays 100 * lastStepDigital(100)\n";
+        const std::string up_and_out = "2027-01-01\n    s = survivalBelow(130)\n    pays s * max(spot() - 100, 0)\n";
+        for (const std::string &script : {digital, up_and_out})
+        {
+            ScriptedProduct<Real> product(script, kCtx);
+            auto m = make_script_model<Real>(local_vol(false));
+            const double eps = 0.05;
+            PricingSettings on = multilevel(eps, ComputeDevice::Gpu), off = on, cpu = on;
+            off.mc_mlmc_coarse_conditioning = false;
+            cpu.mc_device = ComputeDevice::Cpu;
+            const SimulationMCResult g = simulate_script(product, *m, on);
+            const SimulationMCResult g0 = simulate_script(product, *m, off);
+            const SimulationMCResult c = simulate_script(product, *m, cpu);
+            EXPECT_EQ(g.device, "gpu") << g.diagnostics;
+            EXPECT_NEAR(g.npv(), c.npv(), 3.0 * std::sqrt(2.0) * eps) << g.diagnostics << '\n'
+                                                                      << c.diagnostics;
+            EXPECT_NEAR(g.npv(), g0.npv(), 3.0 * std::sqrt(2.0) * eps) << g.diagnostics << '\n'
+                                                                       << g0.diagnostics;
+            EXPECT_LE(g.std_error(), 1.02 * eps / std::sqrt(2.0)) << g.diagnostics;
+        }
+    }
+
     TEST_F(GpuMlqmcTest, TheSameBitsOnOneOrTwoCards)
     {
         if (gpu::device_count() < 2)

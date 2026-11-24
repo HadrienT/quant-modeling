@@ -93,6 +93,17 @@ namespace quantModeling::scripting::ir
         /// The step row's first survival column: level and "above" (1/0)
         /// of each survival slot of the date the step leads to.
         int surv_col0 = 0;
+        /// Multilevel's coarse path conditioned on the fine one (Giles &
+        /// Szpruch 2012; WP 26 §26.2): the step also reads `draw(factors)`,
+        /// the part a of its draw the fine path's first sub-step carries,
+        /// and the step row's column `half_col`, that sub-step's share w of
+        /// the step. Its last step's forward and variance, and its bridge
+        /// survivals through the midpoint, are then conditional on a --
+        /// LocalVolSimModel::condition_on_fine_half_steps's formulas. Local
+        /// vol only; the kernel's driver builds z = sqrt(w) z1 + sqrt(1 - w)
+        /// z2 and a = sqrt(w) z1 from two fine draws.
+        bool half = false;
+        int half_col = -1;
         int event_cols = 1; ///< per date: 1 + the most df() slots a date reads, + the most fwd() slots
         /// The date row's first fwd() column: tau = T - t (risk), or
         /// e^((r - q) tau) (price), q spot(0)'s dividend yield.
@@ -105,7 +116,7 @@ namespace quantModeling::scripting::ir
     /// even when the script reads no last-step expectation (Vibrato needs
     /// them, WP 27 §14.11).
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk,
-                           bool last_step = false);
+                           bool last_step = false, bool half = false);
 
     /// The whole program.
     struct PathProgram
@@ -124,8 +135,10 @@ namespace quantModeling::scripting::ir
 
     /// `qe`: Heston and SLV price programs step the variance by QE (#317);
     /// ignored with `risk` or for another model.
+    /// `half`: a multilevel coarse path conditioned on the fine one
+    /// (PathLayout::half); local vol only, refused otherwise.
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
-                             bool last_step = false, bool qe = false);
+                             bool last_step = false, bool qe = false, bool half = false);
 
     /// A script-level block bound to the path's state and data (VarIn, PayIn
     /// and Spot become State; Num and Df the date's data, or exp of the rate

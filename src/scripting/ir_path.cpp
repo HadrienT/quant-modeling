@@ -48,7 +48,8 @@ namespace quantModeling::scripting::ir
         }
     } // namespace
 
-    PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk, bool last_step)
+    PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk, bool last_step,
+                           bool half)
     {
         PathLayout l;
         l.kind = kind;
@@ -107,6 +108,13 @@ namespace quantModeling::scripting::ir
         l.event_cols = 2 + max_df + (max_fwd + 1);
         l.surv_col0 = l.step_cols;
         l.step_cols += 2 * l.n_surv;
+        if (half)
+        {
+            if (kind != DeviceModel::Kind::LocalVol)
+                throw InvalidInput("script IR: the coarse path's conditioning on the fine one runs under local vol");
+            l.half = true;
+            l.half_col = l.step_cols++;
+        }
         return l;
     }
 
@@ -288,10 +296,22 @@ namespace quantModeling::scripting::ir
             // with last-step expectations, also F = S exp(m + s^2 / 2) and
             // v = s^2 (extra values only; the primal's operations are not
             // touched, so the prices keep their bits).
+            // Conditioned on the fine path (PathLayout::half): a, the part
+            // of the draw its first sub-step carries, and w, its share.
+            const std::int32_t half_a = l.half ? draw(l.factors) : -1;
+            const std::int32_t half_w = l.half ? data(l.half_col) : -1;
             const auto last = [&](int a, std::int32_t S, std::int32_t m, std::int32_t sz)
             {
                 if (!l.last_step)
                     return;
+                if (l.half) // given a: S' lognormal around S e^{m + sz a}, log-variance sz^2 (1 - w)
+                {
+                    const std::int32_t v = b.mul(b.mul(sz, sz), b.sub(b.constant(1.0), half_w));
+                    out(l.last0() + 2 * a,
+                        b.mul(S, exp(b.add(b.add(m, b.mul(sz, half_a)), b.mul(b.constant(0.5), v)))));
+                    out(l.last0() + 2 * a + 1, v);
+                    return;
+                }
                 const std::int32_t v = b.mul(sz, sz);
                 out(l.last0() + 2 * a, b.mul(S, exp(b.add(m, b.mul(b.constant(0.5), v)))));
                 out(l.last0() + 2 * a + 1, v);
@@ -299,24 +319,38 @@ namespace quantModeling::scripting::ir
             // The bridge factor of every survival slot over this step from
             // a to b with log-variance var: mc::bridge_survival, operation
             // for operation (the level and the side are the step row's).
+            const auto bridge = [&](int j, std::int32_t a, std::int32_t b2, std::int32_t var)
+            {
+                const std::int32_t L = data(l.surv_col0 + 2 * j);
+                const std::int32_t above = data(l.surv_col0 + 2 * j + 1);
+                const std::int32_t unsafe =
+                    b.select(above, b.value(Op::Or, b.value(Op::Le, a, L), b.value(Op::Le, b2, L)),
+                             b.value(Op::Or, b.value(Op::Ge, a, L), b.value(Op::Ge, b2, L)));
+                const std::int32_t exponent =
+                    b.div(b.mul(b.mul(b.constant(-2.0), b.value(Op::Log, b.div(L, a))), b.value(Op::Log, b.div(L, b2))),
+                          var);
+                return b.select(unsafe, b.constant(0.0),
+                                b.select(b.value(Op::Lt, exponent, b.constant(0.0)),
+                                         b.sub(b.constant(1.0), b.value(Op::Exp, exponent)), b.constant(0.0)));
+            };
             const auto survive = [&](std::int32_t a, std::int32_t b2, std::int32_t var)
             {
                 for (int j = 0; j < l.n_surv; ++j)
-                {
-                    const std::int32_t L = data(l.surv_col0 + 2 * j);
-                    const std::int32_t above = data(l.surv_col0 + 2 * j + 1);
-                    const std::int32_t unsafe =
-                        b.select(above, b.value(Op::Or, b.value(Op::Le, a, L), b.value(Op::Le, b2, L)),
-                                 b.value(Op::Or, b.value(Op::Ge, a, L), b.value(Op::Ge, b2, L)));
-                    const std::int32_t exponent =
-                        b.div(b.mul(b.mul(b.constant(-2.0), b.value(Op::Log, b.div(L, a))), b.value(Op::Log, b.div(L, b2))),
-                              var);
-                    const std::int32_t p =
-                        b.select(unsafe, b.constant(0.0),
-                                 b.select(b.value(Op::Lt, exponent, b.constant(0.0)),
-                                          b.sub(b.constant(1.0), b.value(Op::Exp, exponent)), b.constant(0.0)));
-                    out(l.surv0() + j, b.mul(state(l.surv0() + j), p));
-                }
+                    out(l.surv0() + j, b.mul(state(l.surv0() + j), bridge(j, a, b2, var)));
+            };
+            // Conditioned (PathLayout::half): through the midpoint the fine
+            // path fixes, S e^{m w + sz a}, two bridges of log-variances
+            // var w and var (1 - w).
+            const auto survive_through_midpoint = [&](std::int32_t S, std::int32_t S_next, std::int32_t m,
+                                                      std::int32_t sz)
+            {
+                const std::int32_t var = b.mul(sz, sz);
+                const std::int32_t S_mid = b.mul(S, exp(b.add(b.mul(m, half_w), b.mul(sz, half_a))));
+                for (int j = 0; j < l.n_surv; ++j)
+                    out(l.surv0() + j,
+                        b.mul(state(l.surv0() + j),
+                              b.mul(bridge(j, S, S_mid, b.mul(var, half_w)),
+                                    bridge(j, S_mid, S_next, b.mul(var, b.sub(b.constant(1.0), half_w))))));
             };
             const int n = l.n_assets;
             switch (l.kind)
@@ -363,7 +397,12 @@ namespace quantModeling::scripting::ir
                     out(0, S_next);
                     last(0, S, drift, vol_sqrt_dt);
                     if (l.n_surv > 0)
-                        survive(S, S_next, b.mul(vol_sqrt_dt, vol_sqrt_dt));
+                    {
+                        if (l.half)
+                            survive_through_midpoint(S, S_next, drift, vol_sqrt_dt);
+                        else
+                            survive(S, S_next, b.mul(vol_sqrt_dt, vol_sqrt_dt));
+                    }
                     break;
                 }
                 case DeviceModel::Kind::Heston:
@@ -489,13 +528,13 @@ namespace quantModeling::scripting::ir
     } // namespace
 
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk, bool last_step,
-                             bool qe)
+                             bool qe, bool half)
     {
         const std::string why = path_program_unsupported(script, kind, n_assets);
         if (!why.empty())
             throw InvalidInput("script IR: " + why);
         PathProgram p;
-        p.layout = path_layout(kind, n_assets, script, risk, last_step);
+        p.layout = path_layout(kind, n_assets, script, risk, last_step, half);
         p.layout.qe = qe && !risk && (kind == DeviceModel::Kind::Heston || kind == DeviceModel::Kind::SLV);
         p.init = init_block(p.layout);
         p.step = step_block(p.layout);
@@ -554,6 +593,12 @@ namespace quantModeling::scripting::ir
                 row[0] = ts, row[1] = dt, row[2] = std::sqrt(dt);
             else
                 row[0] = dt, row[1] = std::sqrt(dt);
+            if (l.half)
+            {
+                if (m.half_share.size() != n_steps)
+                    throw InvalidInput("script IR: a conditioned coarse path needs each step's fine share");
+                row[l.half_col] = m.half_share[s];
+            }
             t_prev = ts;
             if (m.event[s] >= 0)
                 event_time[static_cast<std::size_t>(m.event[s])] = ts;

@@ -524,7 +524,11 @@ namespace quantModeling::gpu
                                    const UnitDraws &draws, bool risk)
         {
             namespace ir = scripting::ir;
-            const ir::PathLayout l = ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, risk);
+            // The conditioned coarse path's step row has one more column (the
+            // fine sub-step's share, PathLayout::half): the same layout as
+            // the kernel's (cuda_path_source), or the rows are misread.
+            const ir::PathLayout l = ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, risk, false,
+                                                     !req.model->half_share.empty());
             const ir::PathData data = ir::path_data(l, *req.model, *req.ir, req.discount_mats, req.baseline);
             detail::PathUnit u;
             u.draws = draws;
@@ -604,6 +608,13 @@ namespace quantModeling::gpu
             CompiledKernels out;
             const auto refuse = [&](const std::string &why)
             {
+                // A coarse path conditioned on the fine one reads the fine
+                // level's draws two a step (WP 26 §26.2): only the compiled
+                // driver knows how.
+                if (!req.model->half_share.empty())
+                    throw InvalidInput("GPU: multilevel's conditioned coarse path needs the kernels compiled from the "
+                                       "IR, and they are not available here (" +
+                                       why + ")");
                 // The interpreted kernels (and the hand-written adjoint and
                 // duals) read no last-step expectation: only the kernels
                 // compiled from the IR compute them (WP 27 §14.9).
@@ -632,7 +643,7 @@ namespace quantModeling::gpu
                 return refuse("the request carries no IR");
             const scripting::CudaSource src = scripting::cuda_path_source(
                 *req.ir, static_cast<int>(req.model->kind), req.model->n_assets, kernel,
-                req.model->variance_scheme == mc::VarianceScheme::QE);
+                req.model->variance_scheme == mc::VarianceScheme::QE, !req.model->half_share.empty());
             if (src.source.empty())
                 return refuse(src.why);
             scripting::CudaKernelSpec spec;
@@ -866,7 +877,8 @@ namespace quantModeling::gpu
             throw InvalidInput("GPU: the per-path adjoint runs in the kernels compiled from the IR (" + compiled.note +
                                ")");
         const scripting::ir::PathLayout layout =
-            scripting::ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, true);
+            scripting::ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, true, false,
+                                       !req.model->half_share.empty());
         // The risks: the model's scalar parameters, then its grid's points.
         const int n_params =
             layout.n_risks + (layout.th_grid >= 0 ? static_cast<int>(req.model->grid.size()) : 0);
