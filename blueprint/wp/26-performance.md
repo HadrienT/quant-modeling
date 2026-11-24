@@ -2800,3 +2800,29 @@ Phoenix, local vol, page grid: five launches of 56 blocks (5 × 7.1 ms) → one 
 The risks are the same bits: only the launch size changed, and the result does not depend on it (`PageGridSlvAdjointIsBitReproducible`). The gaps to the CPU tape are unchanged (3.0e-16 local vol, 2.3e-13 SLV, page grids). New test: `GpuRisksTest.IdlePoolsGiveTheirMemoryBack`.
 
 **What is left.** SLV's adjoint on the page (256 blocks for 160 resident: 1.6 waves) is bounded by its FP64 dependency chains, not by memory or registers. Shortening those chains in the generated adjoint is a change to the IR's code generator (WP 27), not to the launches.
+
+## 26. The multilevel corrections of discontinuous payoffs (#363, 2026-11-24)
+
+Giles & Szpruch (*Multilevel Monte Carlo methods for applications in finance*, 2012, §3.2–3.5) improve the variance of the corrections, V_l = Var[P_l − P_{l−1}], with **estimators that differ on the fine and the coarse path**. The coarse path conditions on more information, borrowed from the fine path's Brownian increments. E[P^c_{l−1}] = E[P^f_{l−1}] still holds by the tower property, so the telescoping sum is unchanged:
+- for a digital, the conditional expectation over the last step, with the coarse path conditioning also on the fine increment of the first half of its last step (their eq. 20);
+- for a continuous barrier, the bridge survival per step, with the coarse step's midpoint sampled from the fine increments.
+
+Our engine evaluates **the same estimator** on both paths (`LevelSampler::evaluate`), and each level computes `lastStep*` and the bridge survivals on its own steps.
+
+**Measured** (`qm_mlmc_conditional_bench 200000 6`): local vol on `testMlmc`'s skewed 5 × 3 surface, log-Euler, PCG32, fixed levels 0..6 with 200,000 paths each. Level 0 takes monthly steps, or daily ones for the daily barrier (levels 0..4 there). β and α are least-squares slopes over levels 1..L. γ = 1.
+
+| Product | Estimator | V_1 | V_6 (V_4 daily) | β | α |
+|---|---|---|---|---|---|
+| Vanilla call K = 100 | hard | 1.59 | 0.041 | **1.05** | 0.98 |
+| | `lastStepCall`, each level on its own last step | 8.01 | 0.264 | 0.98 | 0.81 |
+| Digital K = 100, pays 100 | hard | 249 | 43.5 | **0.51** | 1.04 |
+| | `lastStepDigital`, each level on its own last step | 183 | 31.7 | **0.51** | 0.94 |
+| Up-and-out call, B = 130, continuous | `survivalBelow` on each level's steps | 5.74 | 0.84 | **0.55** | 0.93 |
+| Up-and-out call, B = 130, daily closes | hard (the library's script) | 2.37 | 0.79 | **0.53** | 1.07 |
+
+What it says:
+1. **The discontinuous payoffs are all at β ≈ 0.5**, as Giles finds for the Euler step: an O(h^{1/2}) share of the paths ends near the discontinuity. With β < γ = 1, a multilevel run costs O(ε^{−2−(γ−β)/α}) ≈ ε^{−2.5} instead of ε^{−2}.
+2. **The conditional primitives, evaluated the same way on both levels, do not change the rate.** The digital's V_l falls by about 27 % at every level, with β unchanged. The vanilla on `lastStepCall` is **six times worse** than the hard payoff at every level. The fine path conditions at T − h, the coarse path at T − 2h, and the conditional expectation's own increment over [T − 2h, T − h] is O(h^{1/2}). That is the term the coarse variant removes. So the primitives serve plain Monte Carlo and the pathwise greeks (WP 27 §14.8), not multilevel as they stand.
+3. **The continuous barrier's bridge on each level's own steps stays at β ≈ 0.55.** Giles's coarse midpoint is what lifts it.
+
+Next (#363): the coarse variants in the CPU engine. `LevelSampler` hands the coarse model each step's first-half fine increment z₁, and the local-vol model computes `lastStep*` conditionally on it: forward S e^{μΔt + σ√(Δt/2) z₁ + σ²Δt/4}, log-variance σ²Δt/2. The survival goes through the midpoint S e^{μΔt/2 + σ√(Δt/2) z₁}, with two half-step bridges. Then measure again, and only after that the GPU multilevel run, whose coarse pass would need z₁ in its tables. The daily barrier needs another technique (a product of conditional probabilities along the path is biased), left until the first two are measured.
