@@ -59,6 +59,12 @@ namespace quantModeling
         /// Black-Scholes coefficients per step and asset (step-major), as the
         /// CPU model computed them.
         std::vector<Real> drift, vol_sqrt_dt;
+        /// Multilevel's coarse path conditioned on the fine one (WP 26 §26.2):
+        /// per step, the fine path's first sub-step's share of it. Empty:
+        /// unconditional. Set by the engine on the coarse level's model; the
+        /// kernel then draws two fine gaussians a step (scripting/ir_path.hpp,
+        /// PathLayout::half).
+        std::vector<Real> half_share;
 
         /// Heston and SLV: how a price run steps the variance (#317). The
         /// risk kernels (duals, adjoints) always step it by Euler.

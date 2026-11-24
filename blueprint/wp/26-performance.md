@@ -2868,7 +2868,31 @@ Tests (`tests/testMlmc.cpp`):
 - `CoarseConditioningNeedsTheLognormalStep`: the Milstein step declines.
 
 **Left (#363):**
-- the library's digital on `lastStepDigital`, and its barriers on survivals where they mean continuous monitoring (maintainer's decision: the displayed prices move within their noise, the multilevel cost falls by about 4);
-- the same conditioning in the GPU multilevel run: z₁ in the coarse pass's tables, and in the IR's step;
+- the library's digital on `lastStepDigital`: done in #365 (WP 27 §14.17); its barriers stay daily-monitored, which is what their term sheets say;
+- the same conditioning in the GPU multilevel run: done, §26.2;
 - the daily-monitored barrier, whose indicator at each date cannot be replaced by a conditional probability without bias (the path goes on from the simulated point). Giles's change of measure is the candidate there;
 - a lognormal Milstein-like step, if the rate rather than a constant is wanted. Measure first.
+
+### 26.2 The same on the GPU (2026-11-24)
+
+**How.** The GPU's multilevel level runs its fine and coarse grids as two separate kernel runs (§10). With conditioning on (`MlqmcSettings::coarse_conditioning`, `PricingSettings::mc_mlmc_coarse_conditioning`), under local vol, for a script that reads step quantities, with compiled kernels:
+- the coarse run reads the **fine** Sobol tables (`mc::coupled_sobol_tables`), so it follows the fine run's Brownian path;
+- its model carries each step's share of the fine level's first sub-step (`DeviceModel::half_share`);
+- the kernel's driver (`step_draws`, `src/gpu/script_jit_kernel.cu`) builds coarse step d from fine draws 2d and 2d + 1: z = √w z₁ + √(1 − w) z₂, and hands a = √w z₁ to the step as one more draw;
+- the IR's local-vol step (`PathLayout::half`, one more step-row column for w) takes `last()` and the bridge survivals conditionally on a. These are §26.1's formulas in IR operations, so the price, tangent and adjoint kernels all have them (multilevel risks too, §10.2).
+
+The interpreter cannot do it and refuses (`compiled_kernels`). A first version built the step rows on the host without the new column (`path_unit`, and the adjoint's layout in `script.cu`): the kernel read past the row, the coarse path left the fine one's Brownian path, and the adaptive run climbed to level 10 with a bias estimate of 20.5. The layout is now built the same way on both sides.
+
+**Measured** (`qm_gpu_mlqmc_conditional_bench 4096 6 cpu`): fixed levels 0..6, 32 replicates × 4,096 Sobol points each, the skewed 5 × 3 local vol of §26. V_l is the variance of the level's mean over the replicates times its points; cost = (Σ √(V_l C_l))².
+
+| Product | GPU, coarse on its own steps | GPU, coarse conditioned | CPU, coarse conditioned |
+|---|---|---|---|
+| Digital on `lastStepDigital` | 11,810 | **2,988** (÷4.0) | 3,523 |
+| Vanilla on `lastStepCall` | 1,310 | **7.3** | 16.5 |
+| Up-and-out on `survivalBelow` | 544 | **416** (−24 %) | 470 |
+
+- The vanilla's 1,310 comes from levels 5 and 6 (V_5 = 0.65 against about 0.004 below): the unconditioned last step's O(h^{1/2}) term with Sobol's heavy replicates. On levels 1 to 4 the conditioning divides V_l by 1.7 to 5.7.
+- The GPU's conditioned levels agree with the CPU's within 1.5 standard errors at every level. Above level 0 they are the same estimator on other draws (the GPU's fine bridge is nested on the coarse one), so they agree within errors, not to the bit.
+- The GPU fixed run takes 0.1 to 0.6 s per product, the CPU's 24 to 39 s.
+
+Test: `GpuMlqmcTest.TheConditionedCoarsePathIsTheCpusAndCheaper`, the digital and the up-and-out by the adaptive run: GPU conditioned against the CPU and against the GPU unconditioned, within error.

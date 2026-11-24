@@ -398,7 +398,8 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         }
     } // namespace
 
-    CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel, bool qe)
+    CudaSource cuda_path_source(const ir::Script &script, int model_kind, int n_assets, PathKernel kernel, bool qe,
+                                bool half)
     {
         CudaSource out;
         if (script.empty())
@@ -417,9 +418,14 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
             out.why = "Vibrato covers one underlying under Black-Scholes or local vol";
             return out;
         }
+        if (half && (kind != DeviceModel::Kind::LocalVol || kernel == PathKernel::Vibrato))
+        {
+            out.why = "the coarse path's conditioning on the fine one runs under local vol, without Vibrato";
+            return out;
+        }
         const ir::PathProgram primal =
             ir::path_program(script, kind, n_assets, kernel != PathKernel::Price, kernel == PathKernel::Vibrato,
-                             kernel == PathKernel::Price && qe);
+                             kernel == PathKernel::Price && qe, half);
         const ir::PathLayout &l = primal.layout;
         std::ostringstream src;
         src << kPrelude;
@@ -435,6 +441,10 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
         // and overwrites, which the adjoint checkpoints with the model's.
         constant(src, "qm_surv0", l.surv0());
         constant(src, "qm_n_surv", l.n_surv);
+        // Multilevel's conditioned coarse path (PathLayout::half): the step
+        // row's column of the fine sub-step's share, -1 without -- the
+        // driver then draws one gaussian a step, as always.
+        constant(src, "qm_half_col", l.half ? l.half_col : -1);
         const int ns = l.n_state();
         src << "\n";
         Emit e;

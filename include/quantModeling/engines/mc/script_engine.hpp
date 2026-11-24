@@ -66,6 +66,30 @@ namespace quantModeling
                                                                  double rel_eps, std::uint64_t seed,
                                                                  std::string &why, int max_gpus = 0);
 
+    struct MlqmcSettings; // engines/mc/mlqmc.hpp
+
+    /// One level of a fixed multilevel QMC run (mlqmc_fixed_levels).
+    struct QmcLevelStats
+    {
+        double mean = 0.0;               ///< E[P_0], or E[P_l - P_{l-1}]
+        double estimator_variance = 0.0; ///< of the mean, over the replicates
+        double cost = 0.0;               ///< model steps per point
+        long long points = 0;            ///< per replicate
+    };
+
+    /**
+     * @brief Levels 0..finest of a script's multilevel QMC with `points` per
+     *        replicate each, on the GPU (`gpu`) or the CPU, for benchmarks
+     *        (qm_gpu_mlqmc_conditional_bench, WP 26 §26.2). The two devices
+     *        draw the same Sobol points (the levels' keys are shared), so
+     *        their levels can be compared one by one. `s` gives the
+     *        replicates, the seed and the coarse conditioning; its targets
+     *        are not read.
+     */
+    std::vector<QmcLevelStats> mlqmc_fixed_levels(const ScriptedProduct<Real> &product,
+                                                  const ISimulationModel<Real> &model, int finest, long long points,
+                                                  const MlqmcSettings &s, bool gpu);
+
     /**
      * @brief A script's model risks on the CPU without the tape
      *        (blueprint/wp/27-ir-ad.md §7, lot L7): the adjoint blocks built

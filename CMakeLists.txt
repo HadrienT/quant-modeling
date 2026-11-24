@@ -575,6 +575,10 @@ if(QM_ENABLE_CUDA AND QM_BUILD_CLI)
   target_compile_definitions(qm_gpu_vr_bench PRIVATE
     QM_PRODUCT_LIBRARY_DIR="${PROJECT_SOURCE_DIR}/api/app/product_library")
   # Lot G3: model risks, GPU (duals, per-path adjoint) against the CPU tape.
+  # WP 26 §26.2: the GPU's multilevel corrections of step quantities, the
+  # coarse path conditioned on the fine one and not, on fixed levels.
+  add_executable(qm_gpu_mlqmc_conditional_bench benchmarks/gpu_mlqmc_conditional.cpp)
+  target_link_libraries(qm_gpu_mlqmc_conditional_bench PRIVATE quantModeling)
   add_executable(qm_gpu_risk_bench benchmarks/gpu_risks.cpp)
   target_link_libraries(qm_gpu_risk_bench PRIVATE quantModeling)
   target_compile_definitions(qm_gpu_risk_bench PRIVATE

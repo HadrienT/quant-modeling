@@ -256,7 +256,26 @@ namespace quantModeling
                 }
                 coarse_ = describe(base, level - 1, dm_coarse_);
                 cost_ += static_cast<double>(coarse_->sim_dim());
-                tables_ = mc::coupled_sobol_tables(fine_->brownian_layout(), coarse_->brownian_layout(), keys, s.owen);
+                const BrownianLayout lf = fine_->brownian_layout(), lc = coarse_->brownian_layout();
+                tables_ = mc::coupled_sobol_tables(lf, lc, keys, s.owen);
+                // Giles & Szpruch (2012): the coarse path's step quantities
+                // conditioned on the fine one, as the CPU levels do
+                // (LevelSampler, WP 26 §26.1). The coarse run then reads the
+                // fine tables -- the same Brownian path, two fine draws a
+                // coarse step -- and its kernel combines them (WP 26 §26.2).
+                // Local vol, compiled kernels, a script with step quantities.
+                if (s.coarse_conditioning && product_.program().has_monitor &&
+                    dm_coarse_.kind == DeviceModel::Kind::LocalVol && gpu::script_jit_enabled() &&
+                    dm_coarse_.t.size() == lc.times.size() && lf.times.size() == 2 * lc.times.size())
+                {
+                    dm_coarse_.half_share.resize(lc.times.size());
+                    for (std::size_t c = 0; c < lc.times.size(); ++c)
+                    {
+                        const Time start = c > 0 ? lc.times[c - 1] : 0.0;
+                        dm_coarse_.half_share[c] = (lf.times[2 * c] - start) / (lc.times[c] - start);
+                    }
+                    coarse_conditioned_ = true;
+                }
             }
 
             /// Points points_ .. points_ + n - 1 of every replicate, folded
@@ -269,8 +288,8 @@ namespace quantModeling
                 std::vector<double> more = run(dm_fine_, tables_.fine, n, rows ? &more_rows : nullptr);
                 if (coarse_)
                 {
-                    const std::vector<double> coarse =
-                        run(dm_coarse_, tables_.coarse, n, rows ? &coarse_rows : nullptr);
+                    const std::vector<double> coarse = run(dm_coarse_, coarse_conditioned_ ? tables_.fine : tables_.coarse,
+                                                           n, rows ? &coarse_rows : nullptr);
                     for (std::size_t r = 0; r < more.size(); ++r)
                         more[r] -= coarse[r];
                     for (std::size_t i = 0; i < coarse_rows.size(); ++i)
@@ -353,6 +372,7 @@ namespace quantModeling
             std::unique_ptr<ISimulationModel<Real>> fine_, coarse_;
             DeviceModel dm_fine_, dm_coarse_;
             mc::CoupledSobolTables tables_;
+            bool coarse_conditioned_ = false; ///< the coarse run reads tables_.fine, two draws a step
             std::vector<double> means_;
             long long points_ = 0;
             double cost_ = 0.0;
@@ -385,6 +405,7 @@ namespace quantModeling
                 q.rel_eps = settings.mc_mlmc_rel_eps;
                 q.seed = seed;
                 q.owen = settings.mc_sobol_owen;
+                q.coarse_conditioning = settings.mc_mlmc_coarse_conditioning;
                 // On the GPU when asked for and the device can take the
                 // script and the model (WP 26 P6); otherwise the CPU, saying
                 // why.
@@ -435,6 +456,7 @@ namespace quantModeling
                 MlmcSettings s;
                 s.eps = settings.mc_mlmc_eps;
                 s.seed = seed;
+                s.coarse_conditioning = settings.mc_mlmc_coarse_conditioning;
                 if (settings.mc_mlmc_rel_eps > 0.0)
                 {
                     // A relative target needs the price's scale: level 0's.
@@ -1225,6 +1247,27 @@ namespace quantModeling
         if (so)
             so->diagnostics += " (on the CPU: " + gpu_why + ")";
         return so;
+    }
+
+    std::vector<QmcLevelStats> mlqmc_fixed_levels(const ScriptedProduct<Real> &product,
+                                                  const ISimulationModel<Real> &model, int finest, long long points,
+                                                  const MlqmcSettings &s, bool gpu)
+    {
+        if (finest < 0 || points < 1 || (points & (points - 1)) != 0)
+            throw InvalidInput("mlqmc_fixed_levels: finest >= 0, points a power of two");
+        std::vector<QmcLevelStats> out;
+        GpuQmcLevel::Note note;
+        for (int l = 0; l <= finest; ++l)
+        {
+            std::unique_ptr<IQmcLevel> level;
+            if (gpu)
+                level = std::make_unique<GpuQmcLevel>(product, model, l, s, 0, note);
+            else
+                level = std::make_unique<mlqmc_detail::QmcLevel>(product, model, l, s, nullptr);
+            level->add(points);
+            out.push_back({level->mean(), level->estimator_variance(), level->cost(), level->points()});
+        }
+        return out;
     }
 
 } // namespace quantModeling
