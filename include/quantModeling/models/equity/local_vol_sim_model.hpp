@@ -110,6 +110,28 @@ namespace quantModeling
         /// refuses it), and the deflated spot is no longer an exact
         /// martingale on the grid (deflated_spot_mean refuses it).
         void set_milstein(bool on) { milstein_ = on; }
+
+        /// Giles & Szpruch's coarse-path conditioning (WP 26 §26): the
+        /// log-Euler step is lognormal given its draw's first part, so the
+        /// last step's expectation and the bridge through the midpoint have
+        /// closed forms. The Milstein step is not lognormal: declined.
+        /// Measured (qm_mlmc_conditional_bench, skewed 5 x 3 surface, levels
+        /// 0..6, 200 000 paths each, 2026-11-24): a digital's corrections
+        /// 4.4 times less noisy at every level (multilevel cost / 3.2), a
+        /// lastStepCall vanilla's 5.8 times, a continuous barrier's -18 %;
+        /// the rate stays log-Euler's, beta ~ 0.5 (WP 26 §26.1).
+        bool condition_on_fine_half_steps(std::span<const double> half, std::span<const double> share) override
+        {
+            if (half.empty() && share.empty())
+            {
+                half_ = {}, share_ = {};
+                return true;
+            }
+            if (milstein_ || half.size() != sim_timeline_.size() || share.size() != half.size())
+                return false;
+            half_ = half, share_ = share;
+            return true;
+        }
         bool milstein() const { return milstein_; }
 
         const TimeLine &sim_timeline() const override { return sim_timeline_; }
@@ -159,21 +181,44 @@ namespace quantModeling
                                         : mc::local_vol_step(grid(), r_, q_, S, t, dt, gaussians[k]);
                 t_prev = t;
 
+                // Conditioned on the fine path (condition_on_fine_half_steps):
+                // the step is S_before e^{drift + sd z}, z = a + sqrt(1 - w) z',
+                // so its first w of the way ends at the midpoint below (the
+                // Brownian interpolant at the fine path's increment), and its
+                // end is lognormal around a with log-variance var (1 - w).
+                const bool conditioned = !half_.empty() && share_[k] < 1.0;
+                const double a = conditioned ? half_[k] : 0.0, w = conditioned ? share_[k] : 0.0;
+                const T drift = (r_ - q_) * dt - 0.5 * var; // local_vol_step's, (r - q - sigma^2 / 2) dt
+
                 if (next < defline_.size())
                 {
                     const std::vector<StepMonitor> &bars = defline_[next].monitors;
                     std::vector<T> &surv = path[next].monitored;
+                    T S_mid = S;
+                    if (conditioned)
+                        S_mid = S_before * exp(drift * w + sqrt(var) * a);
                     for (std::size_t b = 0; b < bars.size(); ++b)
                         if (bars[b].kind == StepQuantity::Survival)
-                            surv[b] *= mc::bridge_survival(S_before, S, bars[b].level, bars[b].above, var);
+                            surv[b] *= conditioned
+                                           ? mc::bridge_survival(S_before, S_mid, bars[b].level, bars[b].above, T(var * w)) *
+                                                 mc::bridge_survival(S_mid, S, bars[b].level, bars[b].above,
+                                                                     T(var * (1.0 - w)))
+                                           : mc::bridge_survival(S_before, S, bars[b].level, bars[b].above, var);
                 }
 
                 const std::ptrdiff_t event = event_index_of_step_[k];
                 if (event < 0)
                     continue;
                 if (has_last_step_) // this step reaches the event: log-Euler, forward S_before e^{(r - q) dt}
-                    mc::fill_last_step(defline_[static_cast<std::size_t>(event)], path[static_cast<std::size_t>(event)],
-                                       T(S_before * exp((r_ - q_) * dt)), var);
+                {
+                    const SampleDef &d = defline_[static_cast<std::size_t>(event)];
+                    Sample<T> &smp = path[static_cast<std::size_t>(event)];
+                    if (conditioned)
+                        mc::fill_last_step(d, smp, T(S_before * exp(drift + sqrt(var) * a + 0.5 * var * (1.0 - w))),
+                                           T(var * (1.0 - w)));
+                    else
+                        mc::fill_last_step(d, smp, T(S_before * exp((r_ - q_) * dt)), var);
+                }
                 next = static_cast<std::size_t>(event) + 1;
                 if (next < defline_.size())
                     start_event(next);
@@ -291,6 +336,11 @@ namespace quantModeling
         std::vector<SampleDef> defline_;
         std::vector<std::ptrdiff_t> event_index_of_step_; // -1, or an index into defline_
         std::size_t sim_dim_ = 0;
+        /// condition_on_fine_half_steps(): per drawing step, the fine level's
+        /// first sub-step's part of the draw and its share of the step
+        /// (empty: unconditional). Not copied by clone(): the engine sets it
+        /// on the coarse model it owns.
+        std::span<const double> half_, share_;
 
         std::vector<T *> params_;
         std::vector<std::string> labels_;

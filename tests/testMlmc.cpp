@@ -317,6 +317,88 @@ namespace quantModeling
         EXPECT_EQ(slope, 0.0);
     }
 
+    // ── The coarse path conditioned on the fine one (WP 26 §26, #363) ──────
+    //
+    // Giles & Szpruch (2012, §3.3-3.5): the coarse model computes its step
+    // quantities given the first fine sub-step of each of its steps. That is
+    // a conditional expectation of the same estimator, so each level keeps
+    // its mean, and the corrections lose the noise of conditioning the two
+    // paths at different times.
+
+    const std::string kLastStepCall = "2027-01-01\n    pays lastStepCall(95)\n";
+    const std::string kLastStepDigital = "2027-01-01\n    pays 100 * lastStepDigital(100)\n";
+    const std::string kUpAndOut = "2027-01-01\n    s = survivalBelow(130)\n    pays s * max(spot() - 100, 0)\n";
+
+    TEST(Mlmc, CoarseConditioningLeavesHardPayoffsAlone)
+    {
+        // No step quantity to condition: the same bits, on or off.
+        ScriptedProduct<Real> product(kPut, ctx());
+        auto m = make_script_model<Real>(local_vol(false));
+        const MlmcResult on = simulate_mlmc_fixed(product, *m, {2000, 2000, 2000}, 5, true);
+        const MlmcResult off = simulate_mlmc_fixed(product, *m, {2000, 2000, 2000}, 5, false);
+        for (int l = 0; l <= 2; ++l)
+        {
+            EXPECT_EQ(on.levels[l].sum, off.levels[l].sum) << l;
+            EXPECT_EQ(on.levels[l].sum2, off.levels[l].sum2) << l;
+        }
+    }
+
+    TEST(Mlmc, CoarseConditioningKeepsTheTelescopingSum)
+    {
+        // The conditioned levels still add up to E[P_3], the price on level
+        // 3's grid, which plain Monte Carlo estimates directly (tower
+        // property): for the last step's expectations and the bridge.
+        for (const std::string *script : {&kLastStepCall, &kLastStepDigital, &kUpAndOut})
+        {
+            ScriptedProduct<Real> product(*script, ctx());
+            auto m = make_script_model<Real>(local_vol(false));
+            const MlmcResult ml = simulate_mlmc_fixed(product, *m, {200000, 40000, 20000, 10000}, 7, true);
+            const SimulationMCResult pl = plain(*script, local_vol(false), 3, 200000);
+            EXPECT_NEAR(ml.value, pl.npv(), 4.0 * std::hypot(ml.std_error, pl.std_error()))
+                << *script << ml.diagnostics;
+        }
+    }
+
+    TEST(Mlmc, CoarseConditioningShrinksTheCorrections)
+    {
+        // Each level on its own last step, the fine path conditions at
+        // T - h and the coarse one at T - 2h: an O(h^1/2) term in every
+        // correction (WP 26 §26 measured the vanilla's six times worse than
+        // the hard payoff). Conditioned, it is gone. Same draws on and off.
+        for (const std::string *script : {&kLastStepCall, &kLastStepDigital})
+        {
+            ScriptedProduct<Real> product(*script, ctx());
+            auto m = make_script_model<Real>(local_vol(false));
+            const MlmcResult on = simulate_mlmc_fixed(product, *m, {100, 20000, 20000, 20000}, 9, true);
+            const MlmcResult off = simulate_mlmc_fixed(product, *m, {100, 20000, 20000, 20000}, 9, false);
+            for (int l = 1; l <= 3; ++l)
+            {
+                EXPECT_LT(on.levels[l].variance(), 0.4 * off.levels[l].variance()) << *script << " level " << l;
+                // The same mean, on the same draws: the difference is the
+                // conditioning's noise only.
+                EXPECT_NEAR(on.levels[l].mean(), off.levels[l].mean(),
+                            4.0 * std::sqrt(off.levels[l].variance() / 20000.0))
+                    << *script << " level " << l;
+            }
+        }
+    }
+
+    TEST(Mlmc, CoarseConditioningNeedsTheLognormalStep)
+    {
+        // Milstein's step is not lognormal given part of its draw: declined.
+        ScriptedProduct<Real> product(kUpAndOut, ctx());
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein = true;
+        auto m = make_script_model<Real>(spec);
+        m->init(product.timeline(), product.defline());
+        const std::vector<double> half(m->sim_timeline().size(), 0.0), share(half.size(), 0.5);
+        EXPECT_FALSE(m->condition_on_fine_half_steps(half, share));
+        auto e = make_script_model<Real>(local_vol(false));
+        e->init(product.timeline(), product.defline());
+        EXPECT_TRUE(e->condition_on_fine_half_steps(half, share));
+        EXPECT_TRUE(e->condition_on_fine_half_steps({}, {}));
+    }
+
     TEST(Mlmc, MilsteinOnAFlatSurfaceIsLogEuler)
     {
         // No slope, no Milstein term: the same bits.

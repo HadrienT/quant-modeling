@@ -49,7 +49,8 @@ namespace quantModeling
         int replicates = 32;           ///< R
         long long initial_points = 16; ///< per replicate, a power of two
         std::uint64_t seed = 1;
-        bool owen = false; ///< Owen's hash-based scrambling instead of the digital shift
+        bool owen = false;               ///< Owen's hash-based scrambling instead of the digital shift
+        bool coarse_conditioning = true; ///< as MlmcSettings::coarse_conditioning (WP 26 §26)
     };
 
     /// One level of a multilevel QMC run, wherever its points are priced:
@@ -100,7 +101,7 @@ namespace quantModeling
             {
                 for (int r = 0; r < s.replicates; ++r)
                 {
-                    auto rep = std::make_unique<Replicate>(product, model, level, s.seed);
+                    auto rep = std::make_unique<Replicate>(product, model, level, s.seed, s.coarse_conditioning);
                     const std::size_t dim = rep->sampler.draws().size();
                     if (dim > static_cast<std::size_t>(sobol_detail::kMaxDimension))
                         throw InvalidInput("multilevel QMC: level " + std::to_string(level) + " needs " +
@@ -164,8 +165,8 @@ namespace quantModeling
             struct Replicate
             {
                 Replicate(const ISimulatableProduct<Real> &product, const ISimulationModel<Real> &model, int level,
-                          std::uint64_t seed)
-                    : sampler(product, model, level, seed)
+                          std::uint64_t seed, bool coarse_conditioning)
+                    : sampler(product, model, level, seed, coarse_conditioning)
                 {
                 }
                 void add(long long n)

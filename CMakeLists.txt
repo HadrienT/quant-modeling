@@ -320,6 +320,10 @@ if(QM_BUILD_CLI)
   # Issue #317: Heston's discretisation bias, Euler against QE, against COS.
   add_executable(qm_heston_qe_bias benchmarks/heston_qe_bias.cpp)
   target_link_libraries(qm_heston_qe_bias PRIVATE quantModeling)
+  # Issue #363: the multilevel corrections' variance decay, hard payoffs
+  # against the conditional primitives (Giles & Szpruch 2012, §3.2-3.5).
+  add_executable(qm_mlmc_conditional_bench benchmarks/mlmc_conditional.cpp)
+  target_link_libraries(qm_mlmc_conditional_bench PRIVATE quantModeling)
   # WP 26 lot P0: hand-written reference paths, the ceiling of the script
   # engine's CPU rows in benchmarks/perf_matrix.py.
   add_executable(qm_reference_bench benchmarks/reference/reference_cpu.cpp)
