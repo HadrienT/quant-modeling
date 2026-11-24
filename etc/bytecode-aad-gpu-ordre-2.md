@@ -378,7 +378,10 @@ AAD fast is an open question of WP 26.
 > the oracle of every derivative. The ideas below are still what the
 > generated kernels do -- forward-mode directions, a per-path adjoint with
 > checkpoints instead of a tape -- written by the transformation instead of
-> by hand. Kept as the explanation of the method.
+> by hand. Kept as the explanation of the method. The interpreter's
+> recorder parameter (`run_event_impl<T, Rec>`, `NoRecord`), which II.3 used
+> to write its trail, had no consumer left and was removed on 2026-11-24
+> (#239): `run_event<T>` is the interpreter alone.
 
 ## II.1 Pourquoi la tape de Savine ne monte pas sur la carte
 
