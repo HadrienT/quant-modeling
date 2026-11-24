@@ -210,6 +210,40 @@ extern "C" __device__ void qm_theta_add(const QmFrame *f, int index, double adjo
     static_cast<BackwardCell *>(f->cell)->trail.add(index, adjoint);
 }
 
+// The step's gaussians, `draw(i, k)` the k-th of drawing step i. On
+// multilevel's coarse path conditioned on the fine one (qm_half_col() >= 0,
+// WP 26 §26.2) the request carries the fine level's draws: coarse step d
+// takes fine steps 2d and 2d + 1, z = sqrt(w) z1 + sqrt(1 - w) z2 with w the
+// first's share of the step (its data row), and z[factors] = sqrt(w) z1, the
+// part of the draw the IR's conditioned step reads -- the coarse increments
+// summed from the fine ones, as mlmc_detail::LevelSampler builds them on the
+// CPU. Otherwise one draw a factor, as always; the generated constant drops
+// the other branch.
+extern "C" __device__ int qm_half_col();
+
+namespace
+{
+    template <class Draw>
+    __device__ __forceinline__ void step_draws(const Draw &draw, int d, const double *dat, double *z, int factors)
+    {
+        const int hc = qm_half_col();
+        if (hc < 0)
+        {
+            for (int k = 0; k < factors; ++k)
+                z[k] = draw(d, k);
+            return;
+        }
+        const double w = dat[hc], wa = sqrt(w), wb = sqrt(1.0 - w);
+        for (int k = 0; k < factors; ++k)
+        {
+            const double z1 = draw(2 * d, k);
+            z[k] = wa * z1 + wb * draw(2 * d + 1, k);
+            if (k == 0)
+                z[factors] = wa * z1;
+        }
+    }
+} // namespace
+
 #if QM_JIT_KERNEL == 0
 // ── prices ──────────────────────────────────────────────────────────────────
 
@@ -221,7 +255,7 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double si
 {
     const PathUnit &u = *static_cast<const PathUnit *>(unit_);
     mc::PathDraws &draws = *static_cast<mc::PathDraws *>(draws_);
-    double z[mc::ScriptLimits::kAssets];
+    double z[mc::ScriptLimits::kAssets + 1]; // + 1: the conditioned coarse path's part a (step_draws)
     QmFrame f = frame_of(u);
     mc::GridHint hint; // the path's search hints, kept across its steps
     f.hint = &hint;
@@ -236,9 +270,8 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double si
     {
         if (u.step_draws[s])
         {
-            for (int k = 0; k < factors; ++k)
-                z[k] = draws.draw(d, k, sign);
             f.dat = u.step_rows + s * step_cols;
+            step_draws([&](int i, int k) { return draws.draw(i, k, sign); }, d, f.dat, z, factors);
             qm_step(&f);
             ++d;
         }
@@ -363,7 +396,7 @@ extern "C" __device__ void qm_drive(const void *unit_, void *draws_, double *out
     const int K = qm_n_risks(), n_state = qm_n_state();
     for (int i = 0; i < n_state * K; ++i)
         dst[i] = 0.0;
-    double z[mc::ScriptLimits::kAssets];
+    double z[mc::ScriptLimits::kAssets + 1]; // + 1: the conditioned coarse path's part a (step_draws)
     QmFrame f = frame_of(u);
     mc::GridHint hint; // the path's search hints, kept across its steps
     f.hint = &hint;
@@ -379,9 +412,8 @@ extern "C" __device__ void qm_drive(const void *unit_, void *draws_, double *out
     {
         if (u.step_draws[s])
         {
-            for (int k = 0; k < factors; ++k)
-                z[k] = draws.draw(d, k, 1.0);
             f.dat = u.step_rows + s * step_cols;
+            step_draws([&](int i, int k) { return draws.draw(i, k, 1.0); }, d, f.dat, z, factors);
             qm_step(&f);
             ++d;
         }
@@ -451,7 +483,7 @@ extern "C" __device__ void qm_drive_vibrato(const void *unit_, void *draws_, dou
     for (int s = 0; s <= s_final; ++s)
         if (u.step_draws[s])
             s_last = s;
-    double z[mc::ScriptLimits::kAssets];
+    double z[mc::ScriptLimits::kAssets + 1]; // + 1: the conditioned coarse path's part a (step_draws)
     QmFrame f = frame_of(u);
     mc::GridHint hint; // the path's search hints, kept across its steps
     f.hint = &hint;
@@ -467,9 +499,8 @@ extern "C" __device__ void qm_drive_vibrato(const void *unit_, void *draws_, dou
     {
         if (u.step_draws[s])
         {
-            for (int k = 0; k < factors; ++k)
-                z[k] = draws.draw(d, k, 1.0);
             f.dat = u.step_rows + s * step_cols;
+            step_draws([&](int i, int k) { return draws.draw(i, k, 1.0); }, d, f.dat, z, factors);
             qm_step(&f);
             ++d;
         }
@@ -560,7 +591,7 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
     const int n_state = qm_n_state(), n_model = qm_n_model(), factors = qm_factors(), n_risks = qm_n_risks();
     const int surv0 = qm_surv0(), n_surv = qm_n_surv();
     const long step_cols = qm_step_cols(), event_cols = qm_event_cols();
-    double z[mc::ScriptLimits::kAssets];
+    double z[mc::ScriptLimits::kAssets + 1]; // + 1: the conditioned coarse path's part a (step_draws)
     QmFrame f = frame_of(u);
     mc::GridHint hint; // the path's search hints, kept across its steps
     f.hint = &hint;
@@ -578,9 +609,8 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
                 ck[(c++) * rows] = st[k];
             for (int j = 0; j < n_surv; ++j)
                 ck[(c++) * rows] = st[surv0 + j];
-            for (int k = 0; k < factors; ++k)
-                z[k] = draws.at(d, k);
             f.dat = u.step_rows + s * step_cols;
+            step_draws([&](int i, int k) { return draws.at(i, k); }, d, f.dat, z, factors);
             qm_step(&f);
             ++d;
         }
@@ -627,9 +657,8 @@ extern "C" __device__ double qm_drive(const void *unit_, void *draws_, double *s
                 st[surv0 + j] = ck[(--c) * rows];
             for (int k = n_model - 1; k >= 0; --k)
                 st[k] = ck[(--c) * rows];
-            for (int k = 0; k < factors; ++k)
-                z[k] = draws.at(d, k);
             f.dat = u.step_rows + s * step_cols;
+            step_draws([&](int i, int k) { return draws.at(i, k); }, d, f.dat, z, factors);
             qm_step_adjoint(&f);
         }
     }

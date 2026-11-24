@@ -146,6 +146,10 @@ namespace quantModeling
         /// aims at max(mc_mlmc_eps, mc_mlmc_rel_eps |price|), mc_mlmc_eps
         /// being then the floor (> 0 required). 0: the absolute target only.
         double mc_mlmc_rel_eps = 0.0;
+        /// Multilevel's coarse path conditioned on the fine one for step
+        /// quantities (Giles & Szpruch 2012; WP 26 §26.1 on the CPU, §26.2 on
+        /// the GPU). Off only to measure what it brings.
+        bool mc_mlmc_coarse_conditioning = true;
         /// Estimate the discretisation bias of a plain run (WP 26 §9.4): a
         /// model that refines its grid is priced with every step halved,
         /// and the bias estimated as the difference from the unhalved run
