@@ -1089,9 +1089,10 @@ reverse sweep) and their tests against the generated kernels are gone. With
 compilation off the GPU's risks fall back to the CPU tape and say why
 (`GpuRisksTest.WithoutCompilationTheRisksStayOnTheCpu`); the tangent is still
 checked against the adjoint and both against the tape. `qm_gpu_table`'s
-superbucket CPU column now times the tape. Left: the bytecode interpreter's
-recording hooks (`Rec`), compiled out when nothing records, have no consumer
-any more.
+superbucket CPU column now times the tape. The bytecode interpreter's
+recording hooks (`Rec`, `NoRecord`), compiled out when nothing recorded and
+left without a consumer, were removed on 2026-11-24 (#239): no change to the
+generated code, so every price keeps its bits.
 
 ### 14.15 The local-vol grid made C¹ in the strike (2026-11-16)
 

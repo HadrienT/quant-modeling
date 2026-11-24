@@ -349,7 +349,7 @@ scripts.
   Φ⁻¹'s polynomials as `horner(q, c1, ..., c6) / horner(q, d1, ..., d4, 1.0)`.
   About 20 lines added and 6–8 changed; the interpreter and the compiled
   scripts fuse at the same places, so the bit test stands. Profile first.
-- *P1i, expensive functions* (first part done, AS 241 adopted, see below), after P1g and P1h, one at a time: Φ⁻¹ (Acklam
+- *P1i, expensive functions* (**done**: AS 241 adopted, then CUDA's `normcdfinv` on the device, see below), after P1g and P1h, one at a time: Φ⁻¹ (Acklam
   plus a Halley step with an `erfc` and an `exp` on every draw: probably the
   largest single cost), the `exp` of each log-Euler step, the numeraire and
   discount `exp`s recomputed per event and per path though path-independent
@@ -439,7 +439,7 @@ End to end (`qm_script_jit_bench`, P1g → P1h): compiled 11.7 → 10.2 ms
 28.2 (Asian local vol): **1.07–1.11× the hand-written reference paths**.
 Compiled = interpreted bits on the whole library, as before.
 
-### P1i — Expensive functions on the path (added after P1b; first part done)
+### P1i — Expensive functions on the path (added after P1b; done)
 
 Ablations first, to know what each function weighs (kernel time, `ncu`,
 clocks locked, one V100, on P1h; the ablated code is never committed):
@@ -502,6 +502,25 @@ share Φ⁻¹ and speed up too (`qm_gpu_reference_bench`: 9.3 → 6.0 ms, 11.6 �
 1.14 and 1.29×**, P1's goal still met against a faster ceiling. CPU suite
 1271/1271, GPU suite 61/61. Everything else that calls Φ⁻¹ (IRB capital,
 SIMM, exposure quantiles) moves at the same level, towards the exact value.
+
+**Closed (2026-11-24, #207).** What the list above left, checked against
+the code the GPU runs today (the kernels generated from the IR, WP 27):
+
+- Φ⁻¹: AS 241 on the host; on the device CUDA's `normcdfinv` since §14
+  (12-27 % on the compiled scripts).
+- `sqrt(dt)` and the drift per step: data of the step in the IR's paths
+  (`src/scripting/ir_path.cpp`: Black-Scholes reads `drift` and
+  `vol_sqrt_dt`, local vol, SLV and Heston read `dt` and `sqdt`), computed
+  once per request. Only the bytecode interpreter, the fallback with
+  `QM_SCRIPT_JIT=0`, still takes them per step under local vol, SLV and
+  Heston; it is not the GPU's path, so it is left as is.
+- The `exp` of each log-Euler step, and the `log` / `pow` / `sqrt` a script
+  writes, depend on the path: no table removes them.
+- SLEEF on the CPU: not taken, as the x86-64-v3 build was not (§14); the CPU
+  is the backup since 2026-11-19.
+
+What limits the GPU now is in the adjoint (§22 to §24, the FP64 dependency
+chains of SLV's generated adjoint), a matter for the IR's code generator.
 
 ### P1c — Sobol, the default sampler, as fast and as good as it can be
 
@@ -2800,3 +2819,38 @@ Phoenix, local vol, page grid: five launches of 56 blocks (5 × 7.1 ms) → one 
 The risks are the same bits: only the launch size changed, and the result does not depend on it (`PageGridSlvAdjointIsBitReproducible`). The gaps to the CPU tape are unchanged (3.0e-16 local vol, 2.3e-13 SLV, page grids). New test: `GpuRisksTest.IdlePoolsGiveTheirMemoryBack`.
 
 **What is left.** SLV's adjoint on the page (256 blocks for 160 resident: 1.6 waves) is bounded by its FP64 dependency chains, not by memory or registers. Shortening those chains in the generated adjoint is a change to the IR's code generator (WP 27), not to the launches.
+
+## 25. The grid searches started from the path's last cell (#361, 2026-11-24)
+
+**§24's reading, checked against the profile.** §24 left SLV's adjoint "bounded by its FP64 dependency chains", and #361 proposed shortening them in the generated code: shared subexpressions, divisions and `sqrt` replaced by inverses. The instruction-level profile does not support that lead (ncu `SourceCounters`, phoenix autocall, page grid, 65,536 Philox paths, one V100). The FP64 divisions and square roots (`MUFU.RCP64H`, `MUFU.RSQ64H` and their Newton steps) take about 1 % of the stall samples each. Where the samples are:
+
+| Where | Stall samples |
+|---|---|
+| The draws, recomputed in the backward sweep: Φ⁻¹ (four calls a step, two factors × two sweeps) | 21 % |
+| The draws: Philox | 12 % |
+| **Four bisections a step** in the leverage grid (strike and time, forward and backward): 7 dependent loads each | **21 %** |
+| The cells' set-up and the model's arithmetic | the rest |
+
+So the dependency chains that cost the most were the grid searches: each iteration loads `x[mid]`, compares it, and only then knows the next address.
+
+**The change.** `mc::lower_index_from(x, n, v, hint)` (`models/equity/path_steps.hpp`) starts the search from the path's previous answer. It walks one node at a time, at most four, and otherwise falls back to the bisection. A path's time moves by at most one node a step. Its spot moves by about one strike: the page's strikes are 1.2 % apart in log-moneyness, about a day's move. With the neighbours only (h, h ± 1), 92 % of the warps still had a lane that fell back to the bisection, and the warp waited for it: hence the walk. The answer is unique (the first i with `x[i] >= v`), so it is `lower_index`'s exactly, NaN included, and every result keeps its bits.
+
+The hints, `mc::GridHint{k, t}`, live in the driver of each GPU kernel, one per path, and the frame points to them (`QmFrame::hint`). A first version held them in the frame itself. Writing through the generated code's `const QmFrame *__restrict__` made the compiler drop the grids' read-only loads (`LDG.E.64.CONSTANT` became `LDG.E.64`), and the kernel was 6 % slower. The CPU calls the same functions without a hint, unchanged.
+
+**Numbers.** Kernel, ncu, phoenix autocall on the SLV page grid, 65,536 paths: 17.30 → 16.4 ms (−5 %). Instructions 2.406 → 2.261 billion; registers 107 → 110; the bisection loops are gone from the hot blocks. Whole call, `qm_gpu_risk_bench`, base and new binaries alternated five times, median, ms:
+
+| Case | 65,536 paths | 1M paths |
+|---|---|---|
+| phoenix autocall, SLV page grid | 32.4 → 36.1 (within noise: runs spread over 31-38 on both binaries) | 554 → 545 |
+| digital call, SLV page grid | 28.5 → 28.0 | 374 → 375 (within noise) |
+| phoenix autocall, local-vol page grid | 51.5 → 50.8 | 1,071 → 1,043 (−2.6 %) |
+| European call, local-vol page grid | 37.3 → 37.2 | |
+| phoenix, local vol 30 × 12; phoenix, Heston | unchanged | |
+
+Every case gives the same bits, compared on the risk vectors' 17 digits (`QM_RISK_DUMP`, new in `qm_gpu_risk_bench`). New tests: `GridSearch.*` (any hint gives `lower_index`'s answer; the hinted lookups keep their bits along a path).
+
+**Where the call's time goes now** (ncu, 1M paths, per call of ~550 ms): the adjoint kernel takes 248 ms in 29 launches, `fold_trails` 78 ms, `fold_batches` 5 ms. The remaining ~220 ms is on the host, between the launches. Inside the kernel, the draws recomputed by the backward sweep are now the largest item (about a third of the samples). In order:
+
+1. **The host's time between launches** (~40 % of the call at 1M paths): overlap the next launch with the previous one's copy and fold.
+2. **The draws**: store the gaussians of the forward sweep in the checkpoint rows (2 doubles a step, coalesced: 8 KB a path on 504 steps), instead of recomputing Philox and Φ⁻¹ backwards. This is a memory-for-compute trade against `etc/bytecode-aad-gpu-ordre-2.md` II.4's choice ("the draws are not stored").
+3. The FP64 arithmetic of the step itself, the lead of #361: small by the profile, last.

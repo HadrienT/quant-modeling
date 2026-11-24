@@ -33,13 +33,16 @@ namespace quantModeling::scripting::ir::detail
         bool inside, free;
     };
 
-    QM_HOST_DEVICE inline GridCell grid_cell(const mc::GridView<Real> &g, double S, double t)
+    /// `hint`, when given, starts the cell's searches from the path's last
+    /// one (mc::lower_index_from): the same cell, found in fewer loads.
+    QM_HOST_DEVICE inline GridCell grid_cell(const mc::GridView<Real> &g, double S, double t,
+                                             mc::GridHint *hint = nullptr)
     {
         GridCell c{};
         c.inside = S >= g.K[0] && S <= g.K[g.nK - 1];
-        g.strike_hermite(S, c.idx, c.w, c.dw);
+        g.strike_hermite(S, c.idx, c.w, c.dw, hint ? &hint->k : nullptr);
         const double tc = t < g.T_grid[0] ? g.T_grid[0] : (t > g.T_grid[g.nT - 1] ? g.T_grid[g.nT - 1] : t);
-        mc::bracket(g.T_grid, g.nT, tc, c.j0, c.j1);
+        mc::bracket(g.T_grid, g.nT, tc, c.j0, c.j1, hint ? &hint->t : nullptr);
         const double T0 = g.T_grid[c.j0];
         const double dT = g.T_grid[c.j1] - T0;
         c.wT = (dT > 1e-12) ? (tc - T0) / dT : 0.0;
@@ -140,17 +143,18 @@ namespace quantModeling::scripting::ir::detail
         bool inside, free;
     };
 
-    QM_HOST_DEVICE inline LeverageCell leverage_cell(const mc::GridView<Real> &g, double S, double t)
+    QM_HOST_DEVICE inline LeverageCell leverage_cell(const mc::GridView<Real> &g, double S, double t,
+                                                     mc::GridHint *hint = nullptr)
     {
         LeverageCell c{};
         const double Sc = S < g.K[0] ? g.K[0] : (S > g.K[g.nK - 1] ? g.K[g.nK - 1] : S);
         c.inside = Sc == S;
-        mc::bracket(g.K, g.nK, Sc, c.i0, c.i1);
+        mc::bracket(g.K, g.nK, Sc, c.i0, c.i1, hint ? &hint->k : nullptr);
         const double K0 = g.K[c.i0];
         c.dK = g.K[c.i1] - K0;
         c.wK = c.dK <= 1e-12 ? 0.0 : (c.inside ? (S - K0) / c.dK : (Sc - K0) / c.dK);
         const double tc = t < g.T_grid[0] ? g.T_grid[0] : (t > g.T_grid[g.nT - 1] ? g.T_grid[g.nT - 1] : t);
-        const int j = mc::lower_index(g.T_grid, g.nT, tc);
+        const int j = hint ? mc::lower_index_from(g.T_grid, g.nT, tc, hint->t) : mc::lower_index(g.T_grid, g.nT, tc);
         c.j = (j > 0) ? j - 1 : 0;
         c.free = (1.0 - c.wK) * g.at(c.i0, c.j) + c.wK * g.at(c.i1, c.j) > 1e-4;
         return c;
