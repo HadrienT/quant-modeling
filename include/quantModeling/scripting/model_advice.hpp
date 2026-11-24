@@ -238,12 +238,10 @@ namespace quantModeling::scripting
 
         if (a.barrier_monitoring)
             return {ModelKind::LocalVolSurface, "barrier_monitoring",
-                    "The script reads a quantity the model computes over "
-                    "its steps (a barrier monitored between dates with "
-                    "survivalAbove / survivalBelow, or a last-step "
-                    "expectation with lastStepCall / lastStepPut / "
-                    "lastStepDigital), which needs the model's volatility on "
-                    "every step: local vol on the market surface provides it "
+                    "The script monitors a barrier between dates with "
+                    "survivalAbove / survivalBelow, which needs the model's "
+                    "volatility on every step: local vol on the market surface "
+                    "provides it "
                     "and reprices today's vanillas exactly. Stochastic-local "
                     "vol does not monitor barriers between dates yet, so the "
                     "forward smile is local vol's, flatter than markets "

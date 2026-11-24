@@ -198,6 +198,20 @@ namespace quantModeling::scripting::ir
                     if (slot >= event.quantities.size())
                         throw InvalidInput("script IR: a monitored quantity out of the date's slots");
                     const StepMonitor &q = event.quantities[slot];
+                    if (q.kind == StepQuantity::LastStepForward || q.kind == StepQuantity::LastStepVariance)
+                    {
+                        // A strike the script computes (issue #363): the
+                        // step's forward or variance itself, the date's
+                        // block applies Black's formula.
+                        if (!l.last_step)
+                            throw InvalidInput("script IR: a last-step forward in a layout without the step's forward");
+                        const int a = static_cast<int>(q.asset);
+                        if (a >= l.n_assets)
+                            throw InvalidInput("script IR: a last-step forward on asset " + std::to_string(a) +
+                                               ", but the model simulates " + std::to_string(l.n_assets));
+                        id = b.input(Op::State, l.last0() + 2 * a + (q.kind == StepQuantity::LastStepVariance ? 1 : 0));
+                        break;
+                    }
                     if (q.kind != StepQuantity::Survival)
                     {
                         id = last_step_expectation(b, l, q);

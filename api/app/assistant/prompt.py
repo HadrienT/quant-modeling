@@ -42,6 +42,12 @@ EXAMPLES: dict[str, str] = {
     "European call, strike 100, smooth for exact gamma (last-step expectation)": (
         "2027-09-10\n" "    pays lastStepCall(100)\n"
     ),
+    "Forward-start digital paying 100 if the stock gains 5 % from 2026-12-10 to 2027-09-10": (
+        "2026-12-10\n"
+        "    s0 = spot()\n"
+        "2027-09-10\n"
+        "    pays 100 * lastStepDigital(1.05 * s0)\n"
+    ),
     "Arithmetic Asian call, monthly fixings, strike 100, maturity 2027-09-20": (
         "2026-10-19\n"
         "    acc = spot()\n"
@@ -230,7 +236,7 @@ number written in the script, not a variable or an expression; spot(i)'s
 barrier is survivalAbove(L, i). Use it whenever the user says "continuous" or
 does not name observation dates for a barrier; keep `if spot() ...` tests for
 barriers observed on given dates (daily closes). It runs under Black-Scholes
-and local vol, on the CPU.
+and local vol, on the CPU and the GPU.
 
 Last-step expectations: lastStepCall(K) is the expectation of
 max(spot() - K, 0) at the current event over the model's last time step,
@@ -238,10 +244,14 @@ given the path before it (Black's formula on that step); lastStepPut(K) the
 same for max(K - spot(), 0), lastStepDigital(K) for the probability that
 spot() > K. Same price as the payoff itself, but smooth, so second-order
 greeks (gamma, vanna, volga) are exact instead of zero or biased. Use them
-only when the user asks for exact or smooth gammas/second-order greeks, as
-`pays lastStepCall(100)`; otherwise write max(spot() - 100, 0). K is a
-number written in the script; spot(i)'s is lastStepCall(K, i). They run under
-Black-Scholes, local vol, Heston and SLV, on the CPU and the GPU.
+when the user asks for exact or smooth gammas/second-order greeks, as
+`pays lastStepCall(100)`, and for a cash-or-nothing digital, as
+`pays 100 * lastStepDigital(100)` (smaller error, smooth delta); otherwise
+write max(spot() - 100, 0). K is a number or any expression known at the
+date, such as a strike relative to an earlier fixing:
+`pays 100 * lastStepDigital(1.05 * s0)`; spot(i)'s is lastStepCall(K, i).
+They run under Black-Scholes, local vol, Heston and SLV, on the CPU and the
+GPU; under rough Bergomi and Hull-White they are the payoff itself.
 
 Generated dates: a date line may be
   schedule(START, END, TENOR, CALENDAR, CONVENTION)

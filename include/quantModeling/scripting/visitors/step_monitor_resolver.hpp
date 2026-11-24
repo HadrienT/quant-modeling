@@ -44,6 +44,16 @@ namespace quantModeling::scripting
 
         void visit(NodeStepQuantity &n) override
         {
+            if (n.computed_strike())
+            {
+                // The strike is the script's: the model hands over the last
+                // step's forward and log-variance (shared by every such call
+                // on the asset), the payoff does the rest.
+                visit_children(n);
+                n.slot = slot_of(StepMonitor{0.0, n.asset, true, StepQuantity::LastStepForward});
+                n.var_slot = slot_of(StepMonitor{0.0, n.asset, true, StepQuantity::LastStepVariance});
+                return;
+            }
             // A last-step expectation has no side: `above` is left at its
             // default so that two calls with the same strike share a slot.
             const bool survival = n.kind == StepQuantity::Survival;
@@ -55,6 +65,15 @@ namespace quantModeling::scripting
         }
 
       private:
+        std::size_t slot_of(const StepMonitor &want)
+        {
+            const auto it = std::find(current_->begin(), current_->end(), want);
+            const auto slot = static_cast<std::size_t>(it - current_->begin());
+            if (it == current_->end())
+                current_->push_back(want);
+            return slot;
+        }
+
         std::vector<StepMonitor> *current_ = nullptr;
     };
 

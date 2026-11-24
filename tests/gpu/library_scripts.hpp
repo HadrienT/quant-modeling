@@ -49,6 +49,19 @@ namespace quantModeling::gpu_test
         return out;
     }
 
+    /// The library's scripts the GPU's interpreter runs: not those that read
+    /// a quantity the model computes over its steps (lastStep*, bridge
+    /// survivals), which only the kernels compiled from the IR compute
+    /// (WP 27 §14.9, §14.12) -- the library's digitals since issue #363.
+    inline std::vector<LibraryScript> library_for_the_interpreter()
+    {
+        std::vector<LibraryScript> out;
+        for (LibraryScript &s : library())
+            if (s.source.find("lastStep") == std::string::npos && s.source.find("survival") == std::string::npos)
+                out.push_back(std::move(s));
+        return out;
+    }
+
     inline const ValuationContext kCtx{Date::from_iso("2026-06-01")};
     inline const std::vector<Real> kK{60, 80, 90, 100, 110, 120, 150};
     inline const std::vector<Real> kT{0.25, 0.5, 1.0, 2.0, 5.0};

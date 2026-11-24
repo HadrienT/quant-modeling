@@ -30,6 +30,7 @@
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/models/equity/merton_jump_diffusion_sim_model.hpp"
+#include "quantModeling/models/equity/rough_bergomi_sim_model.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/scripting/parser.hpp"
 #include "quantModeling/scripting/visitors/script_writer.hpp"
@@ -119,9 +120,21 @@ namespace quantModeling
         EXPECT_EQ(scripting::ScriptWriter::write(scripting::parse_script(text)), text);
     }
 
-    TEST(LastStep, RejectsANonLiteralOrNonPositiveStrike)
+    // A strike the script computes (issue #363): any expression, written
+    // back as it was.
+    TEST(LastStep, AComputedStrikeParsesAndWritesBack)
     {
-        EXPECT_ANY_THROW(scripting::parse_script("2025-06-03\n    x = lastStepCall(k)\n"));
+        const auto events = scripting::parse_script(
+            "2025-06-03\n    x = lastStepDigital(1.05 * s0) + lastStepCall(k, 1) + lastStepPut(100 + k)\n");
+        const std::string text = scripting::ScriptWriter::write(events);
+        EXPECT_NE(text.find("lastStepDigital((1.05 * s0))"), std::string::npos) << text;
+        EXPECT_NE(text.find("lastStepCall(k, 1)"), std::string::npos) << text;
+        EXPECT_NE(text.find("lastStepPut((100.0 + k))"), std::string::npos) << text;
+        EXPECT_EQ(scripting::ScriptWriter::write(scripting::parse_script(text)), text);
+    }
+
+    TEST(LastStep, RejectsANonPositiveStrike)
+    {
         EXPECT_ANY_THROW(scripting::parse_script("2025-06-03\n    x = lastStepPut(0)\n"));
         EXPECT_ANY_THROW(scripting::parse_script("2025-06-03\n    x = lastStepDigital(100, 1.5)\n"));
         EXPECT_ANY_THROW(scripting::parse_script("2025-06-03\n    x = lastStepCall()\n"));
@@ -182,7 +195,8 @@ namespace quantModeling
     TEST(LastStep, TreeBytecodeAndBatchAgreeToTheBit)
     {
         const std::string src = "2024-09-03\n    a = lastStepDigital(105)\n" + kMid +
-                                "2025-06-03\n    pays a * lastStepCall(100) + lastStepPut(90) + survivalAbove(70)\n";
+                                "2025-06-03\n    pays a * lastStepCall(100) + lastStepPut(90) + survivalAbove(70) + "
+                                "lastStepDigital(1.1 * x) + lastStepCall(0.9 * x)\n";
         ScriptSettings tree;
         tree.bytecode = false;
         ScriptedProduct<Real> by_tree(src, kCtx, tree), by_code(src, kCtx);
@@ -215,6 +229,37 @@ namespace quantModeling
             EXPECT_EQ(a[0], b[0]) << "path " << p;
             EXPECT_EQ(b[0], batch[p]) << "path " << p;
         }
+    }
+
+    // A computed strike that happens to be a constant is the literal one:
+    // Black's formula at the payoff (last_step_black.hpp) against the
+    // model's (last_step.hpp), on the same paths.
+    TEST(LastStep, AComputedStrikeIsTheLiteralOne)
+    {
+        for (const char *kind : {"lastStepCall", "lastStepPut", "lastStepDigital"})
+        {
+            const std::string k = std::string(kind);
+            const auto literal = price_lv(kMid + "2025-06-03\n    pays " + k + "(100)\n");
+            const auto computed = price_lv(kMid + "    k = 100\n2025-06-03\n    pays " + k + "(k)\n");
+            EXPECT_NEAR(computed.npv(), literal.npv(), 1e-12 * std::max(1.0, std::abs(literal.npv()))) << kind;
+        }
+    }
+
+    // A forward-start digital under Black-Scholes, strike 105 % of the spot
+    // on the intermediate date: the last step is the whole interval after
+    // that date, so every path pays P(S_T > 1.05 S_t | S_t) = N(d2), which
+    // does not depend on S_t -- the closed form, with no Monte-Carlo error.
+    TEST(LastStep, AForwardStartDigitalIsTheClosedFormWithNoError)
+    {
+        const double tau = (365.0 - 183.0) / 365.0; // 2024-12-03 to 2025-06-03
+        const double d2 = (std::log(1.0 / 1.05) + (r - q - 0.5 * vol * vol) * tau) / (vol * std::sqrt(tau));
+        const double closed = 100.0 * std::exp(-r * T) * norm_cdf(d2);
+        const auto res = price_bs(kMid + "2025-06-03\n    pays 100 * lastStepDigital(1.05 * x)\n", 1000);
+        EXPECT_NEAR(res.npv(), closed, 1e-10 * closed);
+        EXPECT_LT(res.std_error(), 1e-9);
+        // and the hard payoff it replaces, within its error
+        const auto hard = price_bs(kMid + "2025-06-03\n    if spot() > 1.05 * x then pays 100 endIf\n");
+        EXPECT_NEAR(hard.npv(), closed, 4.0 * hard.std_error());
     }
 
     // The engine clones the model for each thread (and each multilevel
@@ -276,6 +321,31 @@ namespace quantModeling
 
         const auto kink = second_order(kMid + "2025-06-03\n    pays max(spot() - 100, 0)\n", kSpot, 2000);
         EXPECT_EQ(kink.second[kSpot], 0.0);
+    }
+
+    // Rough Bergomi has no closed form over its last step: a last-step slot
+    // is then the payoff of the simulated spot (an unbiased estimate of its
+    // expectation), so the script prices as the hard payoff, to the bit --
+    // the library's digital reads lastStepDigital under every model of the
+    // Price page (issue #363). A bridge survival stays refused.
+    TEST(LastStep, RoughBergomiReadsThePayoffItself)
+    {
+        const std::string at = "2025-06-03\n    ";
+        for (const auto &[smooth, hard] :
+             std::vector<std::pair<std::string, std::string>>{
+                 {"pays 100 * lastStepDigital(100)", "if spot() > 100 then pays 100 endIf"},
+                 {"pays 100 * lastStepDigital(1.05 * x)", "if spot() > 1.05 * x then pays 100 endIf"},
+                 {"pays lastStepCall(0.95 * x)", "pays max(spot() - 0.95 * x, 0)"}})
+        {
+            ScriptedProduct<Real> a(kMid + at + smooth + "\n", kCtx), b(kMid + at + hard + "\n", kCtx);
+            const ForwardVarianceCurve xi{{0.25, 1.0}, {0.04, 0.045}}; // the dated form: several dates
+            RoughBergomiSimModel<Real> m1(S0, r, q, xi, 1.5, -0.8, 0.1, 365), m2 = m1;
+            const auto pa = simulate<Real>(a, m1, settings(2000)), pb = simulate<Real>(b, m2, settings(2000));
+            EXPECT_EQ(pa.npv(), pb.npv()) << smooth;
+        }
+        ScriptedProduct<Real> bridge("2025-06-03\n    pays survivalAbove(80)\n", kCtx);
+        RoughBergomiSimModel<Real> m(S0, r, q, ForwardVarianceCurve{{1.0}, {0.04}}, 1.5, -0.8, 0.1, 365);
+        EXPECT_THROW(m.init(bridge.timeline(), bridge.defline()), InvalidInput);
     }
 
     TEST(LastStep, ModelsThatDoNotComputeItRefuseTheScript)

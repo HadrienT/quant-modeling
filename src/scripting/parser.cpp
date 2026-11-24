@@ -733,20 +733,32 @@ namespace quantModeling::scripting
                 advance();
                 const std::string open = std::string("'(' after '") + name + "'";
                 expect(TokenKind::LParen, open.c_str());
-                // The level (or strike) is a literal: the model needs it
-                // before the simulation, as df() needs its date.
-                const Token &level = expect(TokenKind::Number, what);
-                try
+                // A barrier level is a literal: the model needs it before the
+                // simulation, as df() needs its date. So is a strike written
+                // as a number -- the model then computes the expectation --
+                // but a strike may also be an expression (`strike * s0`,
+                // issue #363): the model then hands over the step's forward
+                // and variance, and the payoff applies Black's formula.
+                const bool literal = barrier || (check(TokenKind::Number) && (peek(1).kind == TokenKind::RParen ||
+                                                                              peek(1).kind == TokenKind::Comma));
+                if (!literal)
+                    node->arguments.push_back(parse_expr());
+                else
                 {
-                    node->level = std::stod(level.lexeme);
+                    const Token &level = expect(TokenKind::Number, what);
+                    try
+                    {
+                        node->level = std::stod(level.lexeme);
+                    }
+                    catch (const std::exception &)
+                    {
+                        fail(std::string("invalid ") + (barrier ? "barrier level" : "strike") + ": '" + level.lexeme +
+                                 "'",
+                             level);
+                    }
+                    if (!(node->level > 0.0))
+                        fail(std::string(name) + "(" + letter + "): " + letter + " must be a positive number", level);
                 }
-                catch (const std::exception &)
-                {
-                    fail(std::string("invalid ") + (barrier ? "barrier level" : "strike") + ": '" + level.lexeme + "'",
-                         level);
-                }
-                if (!(node->level > 0.0))
-                    fail(std::string(name) + "(" + letter + "): " + letter + " must be a positive number", level);
                 if (check(TokenKind::Comma))
                 {
                     advance();

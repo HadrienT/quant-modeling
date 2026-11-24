@@ -8,6 +8,7 @@
 
 #include "quantModeling/core/platform.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/last_step_black.hpp"
 
 /**
  * @file bytecode.hpp
@@ -58,6 +59,7 @@ namespace quantModeling::scripting
         Sqrt,
         Abs,
         Smooth,
+        LastStep, ///< pops strike K, forward F, log-variance v; Black's formula, kind a (issue #363)
         // hard logic: values 1 / 0 on the value stack
         Eq,
         Ne,
@@ -443,6 +445,14 @@ namespace quantModeling::scripting
                     using std::fabs;
                     const T a = S[--sp];
                     S[sp++] = fabs(a);
+                    break;
+                }
+                case Op::LastStep: // Evaluator::visit(NodeStepQuantity), a strike the script computes
+                {
+                    const T v = S[--sp];
+                    const T F = S[--sp];
+                    const T K = S[--sp];
+                    S[sp++] = mc::last_step_black(static_cast<StepQuantity>(in.a), F, v, K);
                     break;
                 }
                 case Op::Smooth: // Evaluator::visit(NodeSmooth)
@@ -869,6 +879,14 @@ namespace quantModeling::scripting
                     for (int l = 0; l < W; ++l)
                         b[l] = std::fabs(b[l]);
                     break;
+                case Op::LastStep: // as run_event, on double: K, F, v on the stack
+                {
+                    double *K = S + (sp - 3) * W;
+                    for (int l = 0; l < W; ++l)
+                        K[l] = mc::last_step_black(static_cast<StepQuantity>(in.a), a[l], b[l], K[l]);
+                    sp -= 2;
+                    break;
+                }
                 case Op::Smooth: // as run_event, on double
                     for (int l = 0; l < W; ++l)
                     {

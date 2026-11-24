@@ -54,11 +54,16 @@ namespace quantModeling::scripting
         /// alone.
         bool path_dependent = false;
 
-        /// The script reads survivalAbove / survivalBelow or a lastStep*
-        /// expectation: the model must compute them over its steps
-        /// (Black-Scholes or local vol today,
-        /// ISimulationModel::monitors_barriers).
+        /// The script reads survivalAbove / survivalBelow: the model must
+        /// compute the bridge over its steps (Black-Scholes or local vol
+        /// today, ISimulationModel::monitors_barriers).
         bool barrier_monitoring = false;
+        /// The script reads a lastStep* expectation. Every model of the
+        /// Price page takes it -- Black-Scholes, local vol, Heston and SLV
+        /// by Black's formula over their last step, rough Bergomi and
+        /// Hull-White as the payoff itself (issue #363) -- so it does not
+        /// steer the model's choice.
+        bool last_step = false;
     };
 
     namespace detail
@@ -153,12 +158,16 @@ namespace quantModeling::scripting
                 // model like the survivals.
                 if (const auto *s = dynamic_cast<const NodeStepQuantity *>(&n))
                 {
-                    out.barrier_monitoring = true;
-                    out.nonlinear_in_spot = true;
                     const bool survival = s->kind == StepQuantity::Survival;
+                    (survival ? out.barrier_monitoring : out.last_step) = true;
+                    out.nonlinear_in_spot = true;
                     if (survival || s->kind == StepQuantity::LastStepDigital)
                         out.spot_threshold_test = true;
                     if (survival)
+                        out.path_dependent = true;
+                    // A strike the script computes from a fixing (strike * s0):
+                    // the payoff reads the path at two dates.
+                    if (s->computed_strike() && is_spot_derived(*s->arguments[0], tainted))
                         out.path_dependent = true;
                 }
 

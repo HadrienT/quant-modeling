@@ -81,7 +81,7 @@ namespace quantModeling
         void expect_parallel_equals_serial(Dyn dyn, bool single_asset_only, Estimator est)
         {
             int compared = 0;
-            for (const auto &s : library())
+            for (const auto &s : library_for_the_interpreter())
             {
                 const ScriptedProduct<Real> product(s.source, kCtx);
                 if (single_asset_only && product.n_underlyings() > 1)
