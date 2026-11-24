@@ -3,7 +3,7 @@ it does nothing it should not."""
 
 import quantmodeling as qm
 
-from app import kernel_warmup
+from app import gpu_pool, kernel_warmup
 
 
 def test_every_seed_is_a_valid_request():
@@ -101,3 +101,33 @@ def test_one_seed_per_model_prices():
         result = price()
         assert result["npv"] == result["npv"], label  # not NaN
     assert seen == {"black_scholes", "local_vol", "heston", "slv"}
+
+
+def test_each_seed_is_a_computation_the_idle_trim_follows(monkeypatch):
+    # Unmarked, the warm-up left its seeds' memory in the pools until the
+    # first pricing (issue #357).
+    monkeypatch.setattr(gpu_pool, "_running", 0)
+    monkeypatch.setattr(gpu_pool, "_trimmed", True)
+    monkeypatch.setattr(gpu_pool, "_last_end", 0.0)
+    monkeypatch.setattr(qm, "gpu_devices", lambda: ["a card"])
+    monkeypatch.setattr(qm, "rebuild_script_kernels", lambda: {})
+    running = []
+
+    def seed():
+        running.append(gpu_pool._running)
+        return {"npv": 1.0, "diagnostics": ""}
+
+    monkeypatch.setattr(kernel_warmup, "_seeds", lambda q: [("a", seed), ("b", seed)])
+    monkeypatch.setattr(kernel_warmup, "_library_seeds", lambda q: [])
+    assert kernel_warmup.warm_once()["seeds"] == 2
+    assert running == [1, 1]
+    assert gpu_pool._running == 0
+    assert gpu_pool._trimmed is False  # a quiet period has opened
+    calls = []
+    assert (
+        gpu_pool.trim_if_idle(
+            now=gpu_pool._last_end + 1e3, trim=lambda k: calls.append(k) or 1
+        )
+        == 1
+    )
+    assert calls == [gpu_pool.KEEP_BYTES]
