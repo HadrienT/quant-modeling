@@ -33,6 +33,7 @@ import threading
 import time
 from typing import Callable, List, Optional, Tuple
 
+from . import gpu_pool
 from .logging_utils import LOGGER_NAME
 
 _log = logging.getLogger(LOGGER_NAME)
@@ -413,7 +414,13 @@ def warm_once() -> dict:
         if _stop.is_set():
             break
         try:
-            result = price()
+            # Marked like a pricing route's computation, so that the pools
+            # are trimmed once the warm-up is over: unmarked, its seeds left
+            # 8.2 GB in GPU 0's pool until the first pricing, which the idle
+            # watcher waits for (8,560 MiB held against 306 after a trim,
+            # one V100, 2026-11-24; issue #357).
+            with gpu_pool.busy():
+                result = price()
         except (
             Exception
         ) as exc:  # noqa: BLE001 -- a seed that fails warms nothing, no more
