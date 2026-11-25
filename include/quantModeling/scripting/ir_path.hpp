@@ -115,6 +115,13 @@ namespace quantModeling::scripting::ir
         /// z2 and a = sqrt(w) z1 from two fine draws.
         bool half = false;
         int half_col = -1;
+        /// Local vol, Milstein before the dates (#371): the step row's column
+        /// `mil_col` is 1 on a step that reaches no product date, which then
+        /// adds Milstein's term 1/2 sigma (S dsigma/dS) dt (z^2 - 1), as
+        /// mc::local_vol_milstein_step; the steps into a date stay log-Euler.
+        /// Price programs only.
+        bool milstein = false;
+        int mil_col = -1;
         int event_cols = 1; ///< per date: 1 + the most df() slots a date reads, + the most fwd() slots
         /// The date row's first fwd() column: tau = T - t (risk), or
         /// e^((r - q) tau) (price), q spot(0)'s dividend yield.
@@ -127,7 +134,7 @@ namespace quantModeling::scripting::ir
     /// even when the script reads no last-step expectation (Vibrato needs
     /// them, WP 27 §14.11).
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk,
-                           bool last_step = false, bool half = false);
+                           bool last_step = false, bool half = false, bool milstein = false);
 
     /// The whole program.
     struct PathProgram
@@ -149,7 +156,7 @@ namespace quantModeling::scripting::ir
     /// `half`: a multilevel coarse path conditioned on the fine one
     /// (PathLayout::half); local vol only, refused otherwise.
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk,
-                             bool last_step = false, bool qe = false, bool half = false);
+                             bool last_step = false, bool qe = false, bool half = false, bool milstein = false);
 
     /// A script-level block bound to the path's state and data (VarIn, PayIn
     /// and Spot become State; Num and Df the date's data, or exp of the rate

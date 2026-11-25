@@ -223,4 +223,36 @@ namespace quantModeling
                 }
     }
 
+    // #371 M1: local vol with Milstein on every step that reaches no date,
+    // in the price kernels compiled from the IR -- the CPU model's numbers
+    // on the same draws, with a last-step expectation and knock-outs (their
+    // steps into a date stay log-Euler).
+    TEST_F(GpuScriptsTest, MilsteinBeforeTheDatesGivesTheCpuNumbers)
+    {
+        const std::vector<std::string> scripts = {
+            "2027-06-01\n    pays max(spot() - 100, 0)\n",
+            "2026-12-01\n    a = spot()\n2027-06-01\n    pays 100 * lastStepDigital(105) + a / 100\n",
+            "2026-09-01\n    knockOutAbove(125)\n2026-12-01\n    knockOutAbove(125)\n"
+            "2027-06-01\n    knockOutAbove(125)\n    pays max(spot() - 100, 0)\n",
+        };
+        for (const std::string &source : scripts)
+        {
+            const ScriptedProduct<Real> product(source, kCtx);
+            auto cpu_model = model(Dyn::LocalVol, 1);
+            auto gpu_model = model(Dyn::LocalVol, 1);
+            dynamic_cast<LocalVolSimModel<Real> &>(*cpu_model).set_milstein_before_dates(true);
+            dynamic_cast<LocalVolSimModel<Real> &>(*gpu_model).set_milstein_before_dates(true);
+            const SimulationMCResult cpu = simulate_script(product, *cpu_model, settings(ComputeDevice::Cpu));
+            const SimulationMCResult gpu = simulate_script(product, *gpu_model, settings(ComputeDevice::Gpu));
+            ASSERT_EQ(gpu.device, "gpu") << source << ": " << gpu.diagnostics;
+            EXPECT_GT(cpu.npv(), 0.0) << source;
+            const double scale = std::max(1.0, std::abs(cpu.npv()));
+            EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * scale) << source;
+            // and Milstein moved the price off log-Euler's (the step matters)
+            auto euler = model(Dyn::LocalVol, 1);
+            const SimulationMCResult e = simulate_script(product, *euler, settings(ComputeDevice::Cpu));
+            EXPECT_NE(e.npv(), cpu.npv()) << source;
+        }
+    }
+
 } // namespace quantModeling

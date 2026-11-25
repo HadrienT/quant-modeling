@@ -54,7 +54,7 @@ namespace quantModeling::scripting::ir
     } // namespace
 
     PathLayout path_layout(DeviceModel::Kind kind, int n_assets, const Script &script, bool risk, bool last_step,
-                           bool half)
+                           bool half, bool milstein)
     {
         PathLayout l;
         l.kind = kind;
@@ -125,6 +125,16 @@ namespace quantModeling::scripting::ir
                 throw InvalidInput("script IR: the coarse path's conditioning on the fine one runs under local vol");
             l.half = true;
             l.half_col = l.step_cols++;
+        }
+        if (milstein)
+        {
+            if (kind != DeviceModel::Kind::LocalVol)
+                throw InvalidInput("script IR: Milstein before the dates is local vol's");
+            if (risk)
+                throw InvalidInput("script IR: Milstein's risks run on the CPU's tape (the IR does not differentiate "
+                                   "the vol's slope yet)");
+            l.milstein = true;
+            l.mil_col = l.step_cols++;
         }
         return l;
     }
@@ -485,12 +495,37 @@ namespace quantModeling::scripting::ir
                         b.mul(b.sub(b.sub(theta(l.th_rate), theta(l.th_div)), b.mul(b.mul(b.constant(0.5), sig), sig)),
                               data(1));
                     const std::int32_t vol_sqrt_dt = b.mul(sig, data(2));
+                    // drift + sd z, and with Milstein before the dates (#371),
+                    // on a step that reaches no date, Milstein's term
+                    // 1/2 sigma (S dsigma/dS) dt (z^2 - 1), as
+                    // mc::local_vol_milstein_step: in a region on the step
+                    // row's flag, the same for every path of a step.
+                    const auto log_return = [&](std::int32_t z)
+                    {
+                        const std::int32_t x = b.add(drift, b.mul(vol_sqrt_dt, z));
+                        if (!l.milstein)
+                            return x;
+                        const std::int32_t head = b.raw(Op::If, data(l.mil_col));
+                        b.open_scope();
+                        const std::int32_t slope = b.value(Op::GridSlope, S, data(0));
+                        const std::int32_t correction =
+                            b.mul(b.mul(b.mul(b.mul(b.constant(0.5), sig), b.mul(S, slope)), data(1)),
+                                  b.sub(b.mul(z, z), b.constant(1.0)));
+                        const std::int32_t xm = b.add(x, correction);
+                        b.close_scope();
+                        const std::int32_t mid = b.raw(Op::Else, head);
+                        const std::int32_t end = b.raw(Op::EndIf, head);
+                        b.at(mid).c = end;
+                        b.at(head).b = mid;
+                        b.at(head).c = end;
+                        return b.raw(Op::Phi, xm, x, head);
+                    };
                     std::int32_t S_next = -1;
                     if (!l.knock_out)
-                        S_next = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0)))));
+                        S_next = b.mul(S, exp(log_return(draw(0))));
                     else if (!l.half) // LocalVolSimModel: local_vol_step on the conditioned draw
-                        S_next = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, knock_out(draw(0), [&]
-                                                                                        { return b.value(Op::Log, S); }, drift, vol_sqrt_dt)))));
+                        S_next = b.mul(S, exp(log_return(knock_out(draw(0), [&]
+                                                                   { return b.value(Op::Log, S); }, drift, vol_sqrt_dt))));
                     else
                     {
                         // A coarse path conditioned on the fine one: only the
@@ -499,7 +534,7 @@ namespace quantModeling::scripting::ir
                         // fine path's own last draw (z - a) / sqrt(1 - w).
                         // The CPU model conditions a step whose share w < 1
                         // and takes w = a = 0 otherwise; so does this one.
-                        const std::int32_t S_plain = b.mul(S, exp(b.add(drift, b.mul(vol_sqrt_dt, draw(0)))));
+                        const std::int32_t S_plain = b.mul(S, exp(log_return(draw(0))));
                         const std::vector<std::int32_t> v = on_knock_out_step(
                             [&]
                             {
@@ -668,13 +703,13 @@ namespace quantModeling::scripting::ir
     } // namespace
 
     PathProgram path_program(const Script &script, DeviceModel::Kind kind, int n_assets, bool risk, bool last_step,
-                             bool qe, bool half)
+                             bool qe, bool half, bool milstein)
     {
         const std::string why = path_program_unsupported(script, kind, n_assets);
         if (!why.empty())
             throw InvalidInput("script IR: " + why);
         PathProgram p;
-        p.layout = path_layout(kind, n_assets, script, risk, last_step, half);
+        p.layout = path_layout(kind, n_assets, script, risk, last_step, half, milstein);
         p.layout.qe = qe && !risk && (kind == DeviceModel::Kind::Heston || kind == DeviceModel::Kind::SLV);
         p.init = init_block(p.layout);
         p.step = step_block(p.layout);
@@ -739,6 +774,8 @@ namespace quantModeling::scripting::ir
                     throw InvalidInput("script IR: a conditioned coarse path needs each step's fine share");
                 row[l.half_col] = m.half_share[s];
             }
+            if (l.milstein) // Milstein on a step that reaches no date
+                row[l.mil_col] = m.event[s] < 0 ? 1.0 : 0.0;
             t_prev = ts;
             if (m.event[s] >= 0)
                 event_time[static_cast<std::size_t>(m.event[s])] = ts;

@@ -316,8 +316,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (milstein_ || milstein_before_dates_)
-                    return false; // the device steps log-Euler only
+                if (milstein_)
+                    return false; // the device's step into a date is log-Euler
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::LocalVol;
                 d.r = r_;
@@ -328,6 +328,7 @@ namespace quantModeling
                 d.grid = sigma_loc_;
                 d.t = sim_timeline_;
                 d.draws.assign(sim_timeline_.size(), 1);
+                d.milstein_before_dates = milstein_before_dates_;
                 d.event.clear();
                 for (const std::ptrdiff_t e : event_index_of_step_)
                     d.event.push_back(static_cast<int>(e));

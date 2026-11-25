@@ -3114,7 +3114,23 @@ The conditioned digital and knock-out reach Giles's 1.5. With β > γ = 1, the a
 - **The prices agree** between the schemes within error.
 - **Still short of the theory.** SPY's β stays below the toy surface's (vanilla 1.2 against 2). The vanilla's V_l plateau at level 4 (0.70, 0.71) in both Milstein variants, so the grid still slows the decay. To check: the strike range's edges, where the flat extrapolation drops ∂σ/∂S to 0 (−32 %, +40 % of the spot), and the linear interpolation in maturity.
 
-**Not changed:** the default route. The API's local-vol multilevel runs on the GPU (MLQMC, log-Euler kernels), and the new step is CPU only. Making it the route needs the step in the IR's paths (`local_vol_with_slope` is already host-device). That decision is the maintainer's, after the edges are checked.
+**On the GPU (M1, 2026-11-25).** The step is in the IR's price paths:
+- `DeviceModel::milstein_before_dates`, and `PathLayout::milstein` with a step-row column, 1 on a step that reaches no date.
+- The local-vol step adds Milstein's term inside a region on that column, as `mc::local_vol_milstein_step`: `GridSlope` is the lookup's slope, the same bits.
+- The GPU's prices are the CPU's to 1e-9, and its multilevel with the conditioned coarse path is the CPU's within error.
+- The risk kernels refuse (`path_layout`, `cuda_path_source`), so the risks stay on the CPU's tape. Their lot (M2) needs the slope differentiated in the IR: its derivative in the spot (`GridCurv`, host-only today) and its accumulation into the grid's nodes, both on the device.
+
+Measured on one V100 (`qm_gpu_mlqmc_conditional_bench 4096 5`, `QM_BENCH_SCHEME=before`, `QM_BENCH_GRID` for SPY): multilevel QMC with the coarse path conditioned, levels 0..5, 32 replicates. The table gives the time at unit variance, log-Euler against Milstein before the dates:
+
+| Product | Skewed surface | SPY's grid |
+|---|---|---|
+| digital `lastStepDigital` | 3.5e-7 → 4.4e-8 s (**÷7.8**) | 2.8e-6 → 1.8e-6 s (÷1.6) |
+| vanilla `lastStepCall` | 1.2e-9 → 2.3e-10 s (**÷5.3**) | 3.5e-8 → 3.3e-8 s (≈) |
+| continuous up-and-out `survivalBelow` | 7.4e-8 → 7.1e-9 s (**÷10**) | 1.2e-7 → 1.5e-7 s (×0.8) |
+| daily up-and-out, hard | 1.8e-6 → 1.3e-6 s (÷1.3) | 1.9e-6 → 2.3e-6 s (×0.85) |
+| daily up-and-out, `knockOutAbove` | 3.5e-7 → 2.4e-7 s (÷1.5) | 6.5e-7 → 5.0e-7 s (÷1.3) |
+
+The scheme does what Giles promises on a smooth grid, and SPY's grid holds it back. So the default route is unchanged until that grid is understood: its edges, where the flat extrapolation cuts ∂σ/∂S, and its linear interpolation in maturity. M2 waits for that too.
 
 Tests:
 - `Mlmc.MilsteinBeforeTheDatesKeepsTheClosedFormsAndLiftsBeta`: the conditioned digital's β above 1.2, against below 0.8 for log-Euler; the same price; the coarse conditioning declined with a bridge survival; the device declines.

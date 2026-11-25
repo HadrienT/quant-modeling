@@ -149,6 +149,27 @@ namespace quantModeling
         }
     }
 
+    // #371 M1: Milstein before the dates on the GPU's multilevel levels,
+    // the coarse path conditioned on the fine one: the CPU's price within
+    // error, and the risks left to the CPU's tape, which says why.
+    TEST_F(GpuMlqmcTest, MilsteinBeforeTheDatesIsTheCpusWithinError)
+    {
+        const std::string digital = "2027-01-01\n    pays 100 * lastStepDigital(100)\n";
+        ScriptModelSpec spec = local_vol(false);
+        spec.milstein_before_dates = true;
+        ScriptedProduct<Real> product(digital, kCtx);
+        auto m = make_script_model<Real>(spec);
+        const double eps = 0.05;
+        PricingSettings gpu = multilevel(eps, ComputeDevice::Gpu), cpu = gpu;
+        cpu.mc_device = ComputeDevice::Cpu;
+        const SimulationMCResult g = simulate_script(product, *m, gpu);
+        const SimulationMCResult c = simulate_script(product, *m, cpu);
+        EXPECT_EQ(g.device, "gpu") << g.diagnostics;
+        EXPECT_NEAR(g.npv(), c.npv(), 3.0 * std::sqrt(2.0) * eps) << g.diagnostics << '\n'
+                                                                  << c.diagnostics;
+        EXPECT_LE(g.std_error(), 1.02 * eps / std::sqrt(2.0)) << g.diagnostics;
+    }
+
     TEST_F(GpuMlqmcTest, TheSameBitsOnOneOrTwoCards)
     {
         if (gpu::device_count() < 2)
