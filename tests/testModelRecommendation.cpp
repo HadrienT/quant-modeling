@@ -239,6 +239,12 @@ namespace quantModeling
             scripting::withhold_last_step_digital_greeks(local, digital, below, ModelKind::LocalVolSurface));
         RiskReport smooth = report();
         EXPECT_FALSE(scripting::withhold_last_step_digital_greeks(smooth, call, below, ModelKind::Heston));
+        // A knock-out's weight has the same 1 / (sigma sqrt(h)) (#369).
+        const auto knock_out = analyze("2025-06-03\n    knockOutAbove(120)\n    pays max(spot() - 100, 0)\n");
+        EXPECT_TRUE(knock_out.knock_out);
+        RiskReport ko = report();
+        EXPECT_TRUE(scripting::withhold_last_step_digital_greeks(ko, knock_out, below, ModelKind::StochasticLocalVol));
+        EXPECT_TRUE(ko.labels.empty());
         for (const RiskReport *r : {&healthy, &local, &smooth})
             EXPECT_EQ(r->labels.size(), 3u);
     }

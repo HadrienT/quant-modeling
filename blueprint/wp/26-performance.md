@@ -2983,9 +2983,9 @@ The evaluator, the bytecode and the tape need nothing new. The level must be kno
 - The step into the date is lognormal given the path: ln S′ = ln S + m + s z. The model draws z from the normal truncated to the safe side, z′ = Φ⁻¹(Φ(dl) + u (Φ(du) − Φ(dl))), and writes p = Φ(du) − Φ(dl) into the slot.
 - For the differentiated types, z′'s derivatives come from two Newton steps on Φ(z′) = c, starting from the double inverse: the value stays the double one, and the derivatives are exact to second order.
 - A path whose p falls below 1e-14 is dead: its weight is under 1e-14, and beyond that 1/φ(z′) overflows.
-- Black-Scholes and local vol (log-Euler) condition their step. On multilevel's coarse path conditioned on the fine one (§26.1), only the part of the step after the fine half-step a is conditioned, with the fine path's own last draw (the same uniform). The other models refuse: Heston and SLV are L3.
-- The IR refuses it for now, so the GPU leaves the script to the CPU (L4).
-- Model `auto` sends a knock-out to local vol, like a survival.
+- Black-Scholes and local vol (log-Euler) condition their step. On multilevel's coarse path conditioned on the fine one (§26.1), only the part of the step after the fine half-step a is conditioned, with the fine path's own last draw (the same uniform).
+- Heston and SLV (L3, below) condition their spot draw. Rough Bergomi, Bates with jumps and Hull-White's equity refuse (`refuse_knock_outs`).
+- The IR refuses it for now (`Program::has_knock_out`, `script_gpu_unsupported`), so the GPU leaves the script to the CPU (L4).
 
 **Measured** (`qm_mlmc_conditional_bench 200000 6`: the same skewed local vol, up-and-out call K = 100, B = 130 on daily closes, fixed levels 0..4):
 
@@ -3002,7 +3002,14 @@ The evaluator, the bytecode and the tape need nothing new. The level must be kno
 
 **Greeks.** The weight is smooth in the parameters, so the adjoint delta needs no fuzzy. Under Black-Scholes and local vol it is the bumped price's on common draws, to 2e-4 (the remaining difference is the call's kink crossed within ±h). Under Heston and SLV with Feller broken, it would have #372's defect: ∂p/∂S ~ φ / (S s), with s → 0. That is for L3.
 
-**What changes for the library (L2).** Under `auto`, a hard barrier on dates goes to SLV (path-dependent: the forward smile), and a knock-out goes to local vol. On the test's synthetic surface, the six-month up-and-out call moves from 3.30 (SLV, hard) to 3.03 (local vol, either estimator). Migrating the library's barriers before L3 would therefore move their displayed prices by the model change, not by the estimator. L2 should follow L3, or keep SLV products on the hard script until then.
+**L3: Heston and SLV.** Given the variance, the spot's step is lognormal, so its draw is conditioned:
+- *Euler* (prices and every adjoint): `z_spot` alone drives the spot, ln S′ = ln S + (r − q − ½ L² v⁺) dt + L √v⁺ √dt z_spot. The conditioned z_spot then drives the variance through ρ, as a T: `heston_variance_step` takes it, so the adjoint keeps dv′/dz′.
+- *QE* (price runs, #317): the variance is drawn first (`qe_variance_step`, split out of `qe_step` with the same bits). The spot is lognormal in z_s, with mean (r − q) dt + K₀* + K₁ v + K₂ v′ and variance K₃ v + K₄ v′, and z_s is conditioned.
+- Heston is the Bates model with no jumps; with jumps the step is a mixture, and it refuses.
+
+Measured against the hard script on the same model (corridor up-and-out, monthly, Feller 0.42, skewed leverage for SLV): Euler and QE agree within error. Under stochastic vol the error barely moves, within the noise of 16 replicates. Feller holding (1.78), the Heston adjoint delta is the bumped price's to 2e-4. Below Feller, the weight's slope carries 1/(L √v √dt), as `lastStepDigital`'s (#372), so the greeks are withheld with `last_step_digital_greeks_withheld` (`ScriptAnalysis::knock_out`).
+
+**Model choice.** A knock-out is analysed as the barrier on dates it replaces: path-dependent (`ScriptAnalysis::knock_out`), not a bridge survival. So `auto` gives it the hard script's model, SLV when the market allows a stochastic model, and the two writings agree on it (`test_auto_prices_a_knock_out_on_the_model_of_the_hard_barrier`). That was the condition for migrating the library (L2) without moving its prices by a model change: under L1 alone, a knock-out went to local vol, and the test's six-month up-and-out moved from 3.30 (SLV) to 3.03.
 
 Tests: `tests/testKnockOut.cpp`:
 - one date against the closed form;

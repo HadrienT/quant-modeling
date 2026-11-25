@@ -36,20 +36,21 @@ def _script(conditioned: bool) -> str:
     return "\n".join(lines) + "\n"
 
 
-def test_a_knock_out_prices_on_local_vol_with_a_smooth_delta(store):  # noqa: F811
+def test_a_knock_out_under_local_vol_has_a_smooth_delta(store):  # noqa: F811
     soft = pricing_service.price_script(
-        _req(_script(True), ticker="TEST", greeks_method="aad", n_paths=20000)
+        _req(
+            _script(True),
+            ticker="TEST",
+            model="local_vol",
+            greeks_method="aad",
+            n_paths=20000,
+        )
     )
-    assert soft.model_choice.model == "local_vol"
-    assert soft.model_choice.code == "barrier_monitoring"
     codes = {w.code for w in soft.warnings}
     assert "greeks_hard_threshold" not in codes
     assert soft.greeks.delta is not None
     assert soft.greeks.delta > 3 * soft.greeks.delta_std_error
 
-    # The same model: under 'auto' the hard daily barrier goes to SLV (a
-    # path-dependent payoff, the forward smile), the knock-out to local vol
-    # (the models that condition their steps: Black-Scholes and local vol).
     hard = pricing_service.price_script(
         _req(
             _script(False),
@@ -63,10 +64,18 @@ def test_a_knock_out_prices_on_local_vol_with_a_smooth_delta(store):  # noqa: F8
     assert abs(soft.npv - hard.npv) < 4 * err
 
 
-def test_a_knock_out_under_heston_is_refused_with_the_reason(store):  # noqa: F811
-    import pytest
-
-    with pytest.raises(Exception, match="knockOutAbove"):
-        pricing_service.price_script(
-            _req(_script(True), ticker="TEST", model="heston", device="cpu")
-        )
+def test_auto_prices_a_knock_out_on_the_model_of_the_hard_barrier(store):  # noqa: F811
+    # A barrier on dates is path-dependent: 'auto' picks SLV for both
+    # writings, and they agree on it. The synthetic fit breaks Feller, so
+    # the knock-out's greeks are withheld with the reason (#369, as #372).
+    soft = pricing_service.price_script(
+        _req(_script(True), ticker="TEST", greeks_method="aad", n_paths=20000)
+    )
+    hard = pricing_service.price_script(
+        _req(_script(False), ticker="TEST", greeks_method="none", n_paths=20000)
+    )
+    assert soft.model_choice.model == hard.model_choice.model == "slv"
+    err = (soft.mc_std_error**2 + hard.mc_std_error**2) ** 0.5
+    assert abs(soft.npv - hard.npv) < 4 * err
+    assert "last_step_digital_greeks_withheld" in {w.code for w in soft.warnings}
+    assert not soft.risks and soft.greeks.delta is None

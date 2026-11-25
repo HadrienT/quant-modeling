@@ -4,10 +4,13 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/aad/tangent.hpp"
+#include "quantModeling/core/types.hpp"
 #include "quantModeling/core/sample.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/utils/inverse_normal.hpp"
@@ -83,6 +86,36 @@ namespace quantModeling::mc
             if (m.kind == StepQuantity::KnockOut)
                 return true;
         return false;
+    }
+
+    /// Whether the defline has a knock-out; throws where one shares its date
+    /// with a lastStep*() expectation, whose Black formula assumes the
+    /// unconditioned lognormal step.
+    inline bool check_knock_outs(const std::vector<SampleDef> &defline, const char *model)
+    {
+        bool any = false;
+        for (const SampleDef &d : defline)
+            if (asks_knock_out(d))
+            {
+                any = true;
+                if (asks_last_step(d))
+                    throw InvalidInput(std::string(model) +
+                                       ": knockOutAbove() / knockOutBelow() and lastStepCall() / lastStepPut() / "
+                                       "lastStepDigital() on the same date: the knock-out conditions the step the "
+                                       "last-step expectation integrates over");
+            }
+        return any;
+    }
+
+    /// The survival probability into the corridor's first slot, 1 into the
+    /// other knock-out slots of the event (they multiply the same weight).
+    template <class T>
+    void write_knock_out(const SampleDef &def, Sample<T> &smp, const KnockOutCorridor &c, const T &p)
+    {
+        smp.monitored.resize(def.monitors.size());
+        for (std::size_t k = 0; k < def.monitors.size(); ++k)
+            if (def.monitors[k].kind == StepQuantity::KnockOut)
+                smp.monitored[k] = static_cast<std::ptrdiff_t>(k) == c.slot ? p : T(1.0);
     }
 
     namespace knock_out_detail

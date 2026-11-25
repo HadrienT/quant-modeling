@@ -54,10 +54,9 @@ namespace quantModeling::scripting
         /// alone.
         bool path_dependent = false;
 
-        /// The script reads survivalAbove / survivalBelow, or has a
-        /// knockOutAbove / knockOutBelow (#369): the model must compute the
-        /// bridge over its steps, or condition its step into a date
-        /// (Black-Scholes or local vol today).
+        /// The script reads survivalAbove / survivalBelow: the model must
+        /// compute the bridge over its steps (Black-Scholes or local vol
+        /// today, ISimulationModel::monitors_barriers).
         bool barrier_monitoring = false;
         /// The script reads a lastStep* expectation. Every model of the
         /// Price page takes it -- Black-Scholes, local vol, Heston and SLV
@@ -70,6 +69,11 @@ namespace quantModeling::scripting
         /// the last step's volatility, which a square-root variance that
         /// breaks Feller brings near zero (withhold_last_step_digital_greeks).
         bool last_step_digital = false;
+
+        /// The script has a knockOutAbove / knockOutBelow (#369): its
+        /// weight's pathwise derivative divides by the step's volatility,
+        /// as lastStepDigital's (withhold_last_step_digital_greeks).
+        bool knock_out = false;
     };
 
     namespace detail
@@ -165,10 +169,17 @@ namespace quantModeling::scripting
                 if (const auto *s = dynamic_cast<const NodeStepQuantity *>(&n))
                 {
                     // A knock-out (#369) is a barrier at its date that the
-                    // model conditions its step on: Black-Scholes or local
-                    // vol, path-dependent, like the survivals.
-                    const bool survival =
-                        s->kind == StepQuantity::Survival || s->kind == StepQuantity::KnockOut;
+                    // model conditions its step on: path-dependent like a
+                    // barrier on dates, and taken by Black-Scholes, local
+                    // vol, Heston and SLV -- it steers the model as the hard
+                    // barrier it replaces does.
+                    if (s->kind == StepQuantity::KnockOut)
+                    {
+                        out.knock_out = out.path_dependent = out.nonlinear_in_spot = true;
+                        out.spot_threshold_test = true;
+                        return;
+                    }
+                    const bool survival = s->kind == StepQuantity::Survival;
                     (survival ? out.barrier_monitoring : out.last_step) = true;
                     out.nonlinear_in_spot = true;
                     if (survival || s->kind == StepQuantity::LastStepDigital)

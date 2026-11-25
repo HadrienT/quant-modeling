@@ -4,6 +4,7 @@
 #include "quantModeling/aad/number.hpp"
 #include "quantModeling/core/timegrid.hpp"
 #include "quantModeling/core/types.hpp"
+#include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/last_step.hpp"
 #include "quantModeling/models/equity/path_steps.hpp"
 #include "quantModeling/models/device_model.hpp"
@@ -75,7 +76,7 @@ namespace quantModeling
 
         /// See models/equity/bs_sim_model.hpp for why this exists.
         SLVSimModel(const SLVSimModel &other)
-            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_)
+            : s0_(other.s0_), r_(other.r_), q_(other.q_), v0_(other.v0_), kappa_(other.kappa_), theta_(other.theta_), xi_(other.xi_), rho_(other.rho_), K_grid_(other.K_grid_), T_grid_(other.T_grid_), leverage_(other.leverage_), max_dt_(other.max_dt_), refinement_(other.refinement_), scheme_(other.scheme_), timeline_(other.timeline_), sim_timeline_(other.sim_timeline_), defline_(other.defline_), event_index_of_step_(other.event_index_of_step_), sim_dim_(other.sim_dim_), has_last_step_(other.has_last_step_), has_knock_out_(other.has_knock_out_)
         {
             set_param_pointers();
         }
@@ -87,6 +88,9 @@ namespace quantModeling
         {
             refuse_bridge_survivals(defline, "SLVSimModel");
             has_last_step_ = mc::asks_last_step(defline);
+            // Knock-outs (#369): the spot's step conditioned on survival,
+            // lognormal given the variance and the leverage at its start.
+            has_knock_out_ = mc::check_knock_outs(defline, "SLVSimModel");
             timeline_ = canonical_timeline(product_timeline);
             sim_timeline_ = refine_steps(add_monitoring_steps(timeline_, max_dt_), refinement_);
             defline_ = defline;
@@ -147,8 +151,42 @@ namespace quantModeling
                     var = lev * lev * max(v, mc::variance_floor()) * dt;
                 }
                 bool stepped = false;
+                const mc::KnockOutCorridor ko = has_knock_out_ && event >= 0
+                                                    ? mc::knock_out_corridor(defline_[static_cast<std::size_t>(event)])
+                                                    : mc::KnockOutCorridor{};
+                if (ko.active()) // a knock-out at the date (#369)
+                {
+                    using std::log;
+                    T survival(1.0);
+                    if constexpr (std::is_same_v<T, Real>)
+                        if (scheme_ == mc::VarianceScheme::QE) // the variance first, then the spot's law given it
+                        {
+                            double mean, sd;
+                            const double L = mc::leverage_staircase(leverage_grid(), S, t);
+                            mc::qe_variance_step(heston(), L, r_, q_, v, dt, z_spot, mean, sd);
+                            double z = z_indep;
+                            survival = mc::condition_on_survival(ko, log(S), mean, sd, z);
+                            S = S * exp(mean + sd * z);
+                            stepped = true;
+                        }
+                    if (!stepped) // Euler, as slv_step: z_spot drives the spot, then the variance
+                    {
+                        const T Lp = mc::leverage_staircase(leverage_grid(), S, t);
+                        const T v_plus = max(v, mc::variance_floor());
+                        const T sqrt_v_plus = sqrt(v_plus);
+                        const T mean = (r_ - q_ - 0.5 * Lp * Lp * v_plus) * dt;
+                        const T sd = Lp * sqrt_v_plus * std::sqrt(dt);
+                        T z(z_spot);
+                        survival = mc::condition_on_survival(ko, T(log(S)), mean, sd, z);
+                        S = S * exp(mean + sd * z);
+                        mc::heston_variance_step(heston(), v, v_plus, sqrt_v_plus, std::sqrt(dt), dt, z, z_indep);
+                        stepped = true;
+                    }
+                    mc::write_knock_out(defline_[static_cast<std::size_t>(event)],
+                                        path[static_cast<std::size_t>(event)], ko, survival);
+                }
                 if constexpr (std::is_same_v<T, Real>)
-                    if (scheme_ == mc::VarianceScheme::QE) // z_spot drives the variance (#317)
+                    if (!stepped && scheme_ == mc::VarianceScheme::QE) // z_spot drives the variance (#317)
                     {
                         mc::slv_qe_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z_spot, z_indep);
                         stepped = true;
@@ -290,6 +328,7 @@ namespace quantModeling
         std::vector<std::ptrdiff_t> event_index_of_step_;
         std::size_t sim_dim_ = 0;
         bool has_last_step_ = false; ///< the defline asks for a lastStep*() expectation
+        bool has_knock_out_ = false; ///< the defline has a knock-out (#369)
 
         std::vector<T *> params_;
         std::vector<std::string> labels_;

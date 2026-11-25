@@ -14,6 +14,8 @@
 //  - payments before the first knock-out are not weighted;
 //  - local vol on a skewed surface agrees with the hard script;
 //  - the adjoint delta, with no smoothing, is the bumped price's;
+//  - Heston and SLV, Euler and QE, agree with the hard script; the
+//    Heston adjoint delta (Feller holding) is the bumped price's;
 //  - the models that cannot condition refuse it.
 
 #include <gtest/gtest.h>
@@ -24,9 +26,11 @@
 #include "quantModeling/engines/mc/simulation_engine_aad.hpp"
 #include "quantModeling/instruments/scripted_product.hpp"
 #include "quantModeling/market/valuation_context.hpp"
+#include "quantModeling/models/equity/bates_sim_model.hpp"
 #include "quantModeling/models/equity/bs_sim_model.hpp"
 #include "quantModeling/models/equity/knock_out.hpp"
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
+#include "quantModeling/models/equity/slv_sim_model.hpp"
 #include "quantModeling/pricers/context.hpp"
 #include "quantModeling/scripting/parser.hpp"
 #include "quantModeling/scripting/visitors/script_writer.hpp"
@@ -283,6 +287,70 @@ namespace quantModeling
         EXPECT_GT(std::abs(res.risks[0]), 10.0 * res.risk_std_errors[0]);
     }
 
+    // Heston (Bates with no jumps) and SLV (L3): the spot's step is
+    // lognormal given the variance; conditioned, both variance schemes agree
+    // with the hard script on the same model.
+    TEST(KnockOut, HestonAndSlvAgreeWithTheHardScript)
+    {
+        const double v0 = 0.04, kappa = 1.5, theta = 0.05, xi = 0.6, rho = -0.7; // Feller 0.42
+        for (const auto scheme : {mc::VarianceScheme::Euler, mc::VarianceScheme::QE})
+        {
+            ScriptedProduct<Real> soft(up_and_out(true, 1.2, true), ctx(), {}, kFixing);
+            ScriptedProduct<Real> hard(up_and_out(false, 1.2, true), ctx(), {}, kFixing);
+            BatesSimModel<Real> m1(S0, r, q, v0, kappa, theta, xi, rho, 0.0, 0.0, 0.0, 1.0 / 52.0);
+            BatesSimModel<Real> m2(S0, r, q, v0, kappa, theta, xi, rho, 0.0, 0.0, 0.0, 1.0 / 52.0);
+            m1.set_variance_scheme(scheme);
+            m2.set_variance_scheme(scheme);
+            const auto a = simulate<Real>(soft, m1, settings(100000));
+            const auto b = simulate<Real>(hard, m2, settings(100000, 7));
+            EXPECT_NEAR(a.npv(), b.npv(), 4.0 * std::hypot(a.std_error(), b.std_error()))
+                << "Heston, scheme " << static_cast<int>(scheme);
+            // No error comparison here: the gain in variance is small under
+            // stochastic vol, within the noise of 16 replicates' estimate.
+
+            // SLV: a skewed leverage on the same Heston
+            std::vector<Real> lev;
+            for (Real k : kK)
+                for (std::size_t j = 0; j < kT.size(); ++j)
+                    lev.push_back(1.0 + 0.6 * (100.0 - k) / 100.0);
+            SLVSimModel<Real> s1(S0, r, q, v0, kappa, theta, xi, rho, kK, kT, lev, 1.0 / 52.0);
+            SLVSimModel<Real> s2(S0, r, q, v0, kappa, theta, xi, rho, kK, kT, lev, 1.0 / 52.0);
+            s1.set_variance_scheme(scheme);
+            s2.set_variance_scheme(scheme);
+            const auto c = simulate<Real>(soft, s1, settings(100000));
+            const auto d = simulate<Real>(hard, s2, settings(100000, 7));
+            EXPECT_NEAR(c.npv(), d.npv(), 4.0 * std::hypot(c.std_error(), d.std_error()))
+                << "SLV, scheme " << static_cast<int>(scheme);
+        }
+    }
+
+    // Feller holding (2 kappa theta / xi^2 = 1.78), the Heston adjoint delta
+    // is the bumped price's, with no smoothing.
+    TEST(KnockOut, TheHestonAdjointDeltaIsTheBumpedPrices)
+    {
+        std::string src;
+        for (const char *d : kMonths)
+            src += std::string(d) + "\n    knockOutAbove(140)\n";
+        src += "    pays max(spot() - 100, 0)\n";
+        const auto run = [&](double s)
+        {
+            Tape tape;
+            TapeSwitch guard(tape);
+            ScriptedProduct<Number> prod(src, ctx());
+            BatesSimModel<Number> model{Number(s), Number(r), Number(q), Number(0.04),
+                                        Number(2.0), Number(0.04), Number(0.3), Number(-0.7),
+                                        Number(0.0), Number(0.0), Number(0.0), 1.0 / 52.0};
+            return simulate_aad(prod, model, 20000, 11);
+        };
+        const AADSimulResults res = run(S0);
+        ASSERT_TRUE(std::isfinite(res.price));
+        const double h = 1e-3;
+        const double bumped = (run(S0 + h).price - run(S0 - h).price) / (2.0 * h);
+        EXPECT_NEAR(res.risks[0], bumped, 2e-4 * std::abs(bumped) + 1e-6)
+            << "adjoint " << res.risks[0] << " +- " << res.risk_std_errors[0];
+        EXPECT_GT(std::abs(res.risks[0]), 10.0 * res.risk_std_errors[0]);
+    }
+
     TEST(KnockOut, TheConditionedDrawIsTheTruncatedNormal)
     {
         // The draw stays on the safe side, p is the side's probability, and
@@ -312,10 +380,16 @@ namespace quantModeling
     TEST(KnockOut, ModelsThatCannotConditionRefuseIt)
     {
         ScriptedProduct<Real> prod("2025-06-03\n    knockOutAbove(120)\n    pays 1\n", ctx());
-        EXPECT_THROW(refuse_bridge_survivals(prod.defline(), "HestonSimModel"), InvalidInput);
+        EXPECT_THROW(refuse_knock_outs(prod.defline(), "RoughBergomiSimModel"), InvalidInput);
         EXPECT_THROW(refuse_step_monitors(prod.defline(), "MertonSimModel"), InvalidInput);
-        // and the analysis sends it to local vol
-        EXPECT_TRUE(prod.analysis().barrier_monitoring);
+        EXPECT_NO_THROW(refuse_bridge_survivals(prod.defline(), "SLVSimModel"));
+        // jumps make the step a mixture
+        BatesSimModel<Real> bates(S0, r, q, 0.04, 2.0, 0.04, 0.3, -0.7, 0.5, -0.1, 0.1, 1.0 / 52.0);
+        EXPECT_THROW(bates.init(prod.timeline(), prod.defline()), InvalidInput);
+        // the analysis treats it as the barrier on dates it replaces: path-
+        // dependent, not a bridge survival (no model is forced)
+        EXPECT_TRUE(prod.analysis().knock_out);
+        EXPECT_FALSE(prod.analysis().barrier_monitoring);
         EXPECT_TRUE(prod.analysis().path_dependent);
         EXPECT_FALSE(prod.analysis().spot_comparison);
     }

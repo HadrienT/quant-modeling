@@ -260,9 +260,10 @@ an up-and-out call on daily closes is
 error, and smooth greeks with no Fuzzy. L must be known today: a number, a term,
 or a fixing already taken (`s0` struck on the valuation date). Above and Below
 on the same dates make a corridor. Knock-ins: write the knock-out and subtract
-it from the vanilla in a separate script. It runs under Black-Scholes and local
-vol, on the CPU; not with lastStep*() on the same date, controlPays or
-exercise().
+it from the vanilla in a separate script. It runs under Black-Scholes, local
+vol, Heston and SLV, on the CPU; not with lastStep*() on the same date,
+controlPays or exercise(). Under Heston or SLV whose variance breaks Feller its
+greeks are withheld (the price stays).
 
 Last-step expectations: lastStepCall(K) is the expectation of
 max(spot() - K, 0) at the current event over the model's last time step,
