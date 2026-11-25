@@ -462,6 +462,51 @@ namespace quantModeling::gpu
             out[batch * n_params + order.param(q)] = sum;
         }
 
+        /**
+         * Third pass, the batches folded into their slices' sums on the card
+         * (issue #361): one thread a parameter, walking the launch's batches
+         * in order -- the host's loop, operation for operation, written
+         * without contraction, so the sums keep their bits. `slice[b]` is
+         * batch b's slice (local to the card's range), `n[b]` its units (0:
+         * empty, skipped), `first[b]` whether it opens its slice (its mean
+         * is then the slice's shift). RQMC: s1 alone, the plain sum.
+         *
+         * Before, every launch copied its rows to the host and folded them
+         * there on one thread: at 1M paths on the page's SLV grid (12,908
+         * risks) about 220 ms of a 550 ms call, between the launches, and a
+         * 64 MB staging buffer that cut the call into small launches (WP 26
+         * §25, §27).
+         */
+        __global__ void fold_slices(const double *rows, int n_params, long n_batches, const std::int32_t *slice,
+                                    const double *n, const unsigned char *first, bool rqmc, double *shift, double *s1,
+                                    double *s1n, double *s2)
+        {
+            const long p = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
+            if (p >= n_params)
+                return;
+            for (long b = 0; b < n_batches; ++b)
+            {
+                const double nb = n[b];
+                if (nb == 0.0)
+                    continue;
+                const double sum = rows[b * n_params + p];
+                const long at = static_cast<long>(slice[b]) * n_params + p;
+                if (rqmc)
+                {
+                    s1[at] = __dadd_rn(s1[at], sum);
+                    continue;
+                }
+                const double mean = __ddiv_rn(sum, nb);
+                if (first[b])
+                    shift[at] = mean;
+                const double y = __dsub_rn(mean, shift[at]);
+                const double nn = __dmul_rn(nb, nb);
+                s1[at] = __dadd_rn(s1[at], __dmul_rn(nb, y));
+                s1n[at] = __dadd_rn(s1n[at], __dmul_rn(nn, y));
+                s2[at] = __dadd_rn(s2[at], __dmul_rn(__dmul_rn(nn, y), y));
+            }
+        }
+
         /// Units the warp `w` of logical block `block` handled.
         long long warp_units(uint64_t block, int w, uint64_t n_units)
         {
@@ -746,9 +791,6 @@ namespace quantModeling::gpu
         /// 50,000 paths fold into one slice, as fast as the single buffer
         /// was (16 slices cost it 2-3 ms, zeroing their sums).
         constexpr uint64_t kFoldMinSliceBlocks = 16;
-        /// Host bytes of one launch's batch rows, copied then folded: the
-        /// launch is cut to fit (77 logical blocks, 315k paths, at 12,908 risks).
-        constexpr std::size_t kFoldStagingBytes = std::size_t{64} << 20;
     } // namespace
 
     void forget_compiled_scripts()
@@ -947,10 +989,9 @@ namespace quantModeling::gpu
                                           (kUnitWarps + LB::kWarpsPerBlock) * np * sizeof(double);
             const DrawSetup s = draw_setup(req, v, mem, device, per_block, true);
             const uint64_t span = slice_begin(c1) - slice_begin(c0);
-            const uint64_t per_launch = std::min<uint64_t>(
-                {s.blocks_per_launch, std::max<uint64_t>(span, 1),
-                 std::max<uint64_t>(1, kFoldStagingBytes / (static_cast<std::size_t>(LB::kWarpsPerBlock) * np *
-                                                            sizeof(double)))});
+            // (No host staging cap any more: the rows are folded on the card,
+            // fold_slices, and their memory is in per_block.)
+            const uint64_t per_launch = std::min<uint64_t>(s.blocks_per_launch, std::max<uint64_t>(span, 1));
             const long rows = static_cast<long>(per_launch) * LB::kUnitsPerBlock;
             const long max_batches = static_cast<long>(per_launch) * LB::kWarpsPerBlock;
             const auto urows = static_cast<std::size_t>(rows);
@@ -993,9 +1034,20 @@ namespace quantModeling::gpu
             }
             // the slice a block belongs to: blocks arrive in increasing order
             uint64_t slice = c0;
-            const std::size_t block_doubles = static_cast<std::size_t>(LB::kWarpsPerBlock) * np;
-            // not value-initialised: each copy writes what is then read
-            const std::unique_ptr<double[]> staging(new double[static_cast<std::size_t>(per_launch) * block_doubles]);
+            // The slices' sums on the card (fold_slices), copied back once at
+            // the end; the host keeps what does not depend on the parameter:
+            // each batch's slice, units and whether it opens its slice.
+            const std::size_t n_local = slices.size();
+            double *d_shift = mem.alloc<double>(n_local * np), *d_s1 = mem.alloc<double>(n_local * np);
+            double *d_s1n = mem.alloc<double>(n_local * np), *d_s2 = mem.alloc<double>(n_local * np);
+            for (double *d : {d_shift, d_s1, d_s1n, d_s2})
+                detail::check(cudaMemset(d, 0, n_local * np * sizeof(double)), "cudaMemset");
+            auto *d_slice = mem.alloc<std::int32_t>(static_cast<std::size_t>(max_batches));
+            double *d_n = mem.alloc<double>(static_cast<std::size_t>(max_batches));
+            auto *d_first = mem.alloc<unsigned char>(static_cast<std::size_t>(max_batches));
+            std::vector<std::int32_t> h_slice(static_cast<std::size_t>(max_batches));
+            std::vector<double> h_n(static_cast<std::size_t>(max_batches));
+            std::vector<unsigned char> h_first(static_cast<std::size_t>(max_batches));
             auto after = [&](uint64_t b0, uint64_t count)
             {
                 const long n_batches = static_cast<long>(count) * LB::kWarpsPerBlock;
@@ -1009,11 +1061,8 @@ namespace quantModeling::gpu
                                                                                   n_batches, d_rows);
                 detail::check(cudaGetLastError(), "fold_batches launch");
                 // batch 8 c + w is warp w of block c: the rows are already
-                // batch-major per block, in block order
-                detail::check(cudaMemcpy(staging.get(), d_rows,
-                                         static_cast<std::size_t>(n_batches) * np * sizeof(double),
-                                         cudaMemcpyDeviceToHost),
-                              "cudaMemcpy");
+                // batch-major per block, in block order -- the order the
+                // host's fold walked them
                 for (uint64_t c = 0; c < count; ++c)
                 {
                     const uint64_t g = b0 + c;
@@ -1022,32 +1071,30 @@ namespace quantModeling::gpu
                     FoldSlice &f = slices[static_cast<std::size_t>(slice - c0)];
                     for (int w = 0; w < LB::kWarpsPerBlock; ++w)
                     {
+                        const std::size_t b = c * static_cast<std::size_t>(LB::kWarpsPerBlock) + static_cast<std::size_t>(w);
                         const long long nb = warp_units(g % bps, w, req.n_units);
-                        if (nb == 0)
+                        h_slice[b] = static_cast<std::int32_t>(slice - c0);
+                        h_n[b] = static_cast<double>(nb);
+                        h_first[b] = 0;
+                        if (nb == 0 || rqmc)
                             continue;
-                        const double *sum = staging.get() + c * block_doubles + static_cast<std::size_t>(w) * np;
-                        if (rqmc)
-                        {
-                            for (std::size_t p = 0; p < np; ++p)
-                                f.s1[p] += sum[p];
-                            continue;
-                        }
                         const double n = static_cast<double>(nb);
-                        if (f.batches == 0)
-                            for (std::size_t p = 0; p < np; ++p)
-                                f.shift[p] = sum[p] / n;
-                        for (std::size_t p = 0; p < np; ++p)
-                        {
-                            const double y = sum[p] / n - f.shift[p];
-                            f.s1[p] += n * y;
-                            f.s1n[p] += n * n * y;
-                            f.s2[p] += n * n * y * y;
-                        }
+                        h_first[b] = f.batches == 0 ? 1 : 0;
                         f.total_units += n;
                         f.sum_n2 += n * n;
                         ++f.batches;
                     }
                 }
+                const auto nbatch = static_cast<std::size_t>(n_batches);
+                detail::check(cudaMemcpyAsync(d_slice, h_slice.data(), nbatch * sizeof(std::int32_t),
+                                              cudaMemcpyHostToDevice),
+                              "cudaMemcpy");
+                detail::check(cudaMemcpyAsync(d_n, h_n.data(), nbatch * sizeof(double), cudaMemcpyHostToDevice),
+                              "cudaMemcpy");
+                detail::check(cudaMemcpyAsync(d_first, h_first.data(), nbatch, cudaMemcpyHostToDevice), "cudaMemcpy");
+                fold_slices<<<static_cast<unsigned>((np + 255) / 256), 256>>>(d_rows, n_params, n_batches, d_slice, d_n,
+                                                                            d_first, rqmc, d_shift, d_s1, d_s1n, d_s2);
+                detail::check(cudaGetLastError(), "fold_slices launch");
             };
             void *fn = compiled.on(req, device);
             uint64_t n_units = req.n_units, per_segment = bps;
@@ -1062,6 +1109,29 @@ namespace quantModeling::gpu
                 device, first, last, bps, req.n_units, per_launch, launch, after);
             int overflow = 0;
             detail::check(cudaMemcpy(&overflow, d_overflow, sizeof(int), cudaMemcpyDeviceToHost), "cudaMemcpy");
+            {
+                // the slices' sums, once
+                std::vector<double> h(n_local * np);
+                const auto back = [&](double *d, auto member)
+                {
+                    detail::check(cudaMemcpy(h.data(), d, h.size() * sizeof(double), cudaMemcpyDeviceToHost),
+                                  "cudaMemcpy");
+                    for (std::size_t i = 0; i < n_local; ++i)
+                    {
+                        std::vector<double> &dst = slices[i].*member;
+                        if (!dst.empty())
+                            std::copy(h.begin() + static_cast<std::ptrdiff_t>(i * np),
+                                      h.begin() + static_cast<std::ptrdiff_t>((i + 1) * np), dst.begin());
+                    }
+                };
+                back(d_s1, &FoldSlice::s1);
+                if (!rqmc)
+                {
+                    back(d_shift, &FoldSlice::shift);
+                    back(d_s1n, &FoldSlice::s1n);
+                    back(d_s2, &FoldSlice::s2);
+                }
+            }
             if (overflow)
                 throw InvalidInput("GPU: a path's gradient trail passed the bound the script's IR gives (a bug: "
                                    "please report it)");
