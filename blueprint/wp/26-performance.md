@@ -3031,7 +3031,8 @@ Checked:
 | `knockOutAbove`, coarse conditioned | **364** | 0.9 s | **2.1e-7 s (÷3.4)** |
 
 - QMC gains from the smoother integrand too: level 0's variance falls from 0.37 to 0.14.
-- The knock-out kernel costs 2.2× the hard one per step: the select computes N⁻¹ and three N on *every* step, while only one step in 2^l reaches a date on level l. The flag is the same for every thread of a step, so a real branch would not diverge. It is the next lever (a region of the IR on the step row's flag), worth about another ×2 at the fine levels.
+- With a select, the knock-out kernel cost 2.2× the hard one per step: it computed N⁻¹ and three N on *every* step, while only one step in 2^l reaches a date on level l.
+- **The branch (#380).** The conditioned draw is now computed inside a region of the IR, `If` on the step row's flag, with `Phi`s after it. The flag is the same for every thread of a step, so the threads do not diverge. The values are the same, and so are the bits. The same run takes 0.6 s against 0.9 s, and **the time at unit variance is 1.38e-7 s: ÷5.1 against the hard script** (÷3.4 with the select).
 
 **L2a: the library's knock-out products** (2026-11-25). `up-and-out-call`, `double-barrier-call` and `double-no-touch` are written with `knockOutAbove` / `knockOutBelow` and `# greeks: knock-out`:
 - **Where the model conditions** (Black-Scholes, local vol), one run gives the price and its greeks, with no smoothing.
