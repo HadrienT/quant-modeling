@@ -22,7 +22,10 @@ header the site reads:
                                        lastStepDigital: its own greeks, except
                                        under the models where they fail
                                        (LAST_STEP_FALLBACK_MODELS), which take
-                                       them from the threshold smoothed at eps)
+                                       them from the threshold smoothed at eps;
+                                       or "knock-out", for a script on
+                                       knockOutAbove / Below: the same, the
+                                       thresholds the knock-outs stand for)
     # curve: sofr                      (optional, rates only: the USD SOFR
                                        curve of the traded swaps, Hull-White
                                        calibrated to the traded swaptions)
@@ -142,8 +145,14 @@ def parse(slug: str, text: str) -> Template:
         eps=float(meta["eps"]) if "eps" in meta else None,
         greeks=meta.get("greeks", "joint"),
     )
-    if t.greeks not in ("joint", "separate", "last-step"):
-        raise ValueError(f"{slug}: greeks must be 'joint', 'separate' or 'last-step'")
+    if t.greeks not in ("joint", "separate", "last-step", "knock-out"):
+        raise ValueError(
+            f"{slug}: greeks must be 'joint', 'separate', 'last-step' or 'knock-out'"
+        )
+    if t.greeks == "knock-out" and (t.eps is None or "knockOut" not in t.script):
+        raise ValueError(
+            f"{slug}: greeks 'knock-out' needs eps and knockOutAbove / knockOutBelow"
+        )
     if t.greeks == "last-step" and (t.eps is None or "lastStepDigital" not in t.script):
         raise ValueError(f"{slug}: greeks 'last-step' needs eps and lastStepDigital")
     if t.eps is not None and not t.eps > 0:
@@ -406,6 +415,11 @@ __all__ = [
 #: closed form over a step, the slot is the threshold itself and the delta
 #: reads zero.
 LAST_STEP_FALLBACK_MODELS = ("heston", "slv", "rough_bergomi")
+
+#: The models that cannot condition their step on a knock-out (#369):
+#: their step into a date is not lognormal given the path. A library
+#: product on knockOutAbove / Below is priced on the thresholds there.
+KNOCK_OUT_THRESHOLD_MODELS = ("rough_bergomi", "hull_white")
 
 
 def smoothed_last_step(script: str, eps: float) -> str:

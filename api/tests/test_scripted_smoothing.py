@@ -63,7 +63,7 @@ def test_a_request_that_sets_fuzzy_is_priced_as_it_asks():
     assert any(w.code == "greeks_hard_threshold" for w in r.warnings)
 
 
-@pytest.mark.parametrize("slug", ["one-touch", "up-and-out-call"])
+@pytest.mark.parametrize("slug", ["one-touch"])
 def test_the_smoothed_greeks_see_the_jump(slug):
     # The library's levels are fixed on the first date, so under flat
     # Black-Scholes a spot bump only rescales the path: the delta is the
@@ -83,3 +83,19 @@ def test_the_smoothed_greeks_see_the_jump(slug):
     # few percent, far less than what the unsmoothed adjoint misses
     assert r.greeks.vega == pytest.approx(bump, rel=0.15)
     assert abs(r.greeks.vega - bump) < 0.5 * abs(hard.greeks.vega - bump)
+
+
+def test_a_knock_out_products_conditioned_vega_is_the_bumped_prices():
+    # The up-and-out call on knockOutAbove (#369): under Black-Scholes the
+    # model conditions each close, so the adjoint's vega needs no smoothing.
+    # Against a central bump of the vol by +-0.01 on the same draws (its own
+    # truncation error a few percent: a barrier's vega is curved).
+    r = ps.price_scripted_product(_req("up-and-out-call", n_paths=50_000))
+    up = ps.price_scripted_product(
+        _req("up-and-out-call", vol=0.26, greeks_method="none", n_paths=50_000)
+    )
+    dn = ps.price_scripted_product(
+        _req("up-and-out-call", vol=0.24, greeks_method="none", n_paths=50_000)
+    )
+    assert "smoothed" not in r.diagnostics
+    assert r.greeks.vega == pytest.approx((up.npv - dn.npv) / 0.02, rel=0.1)

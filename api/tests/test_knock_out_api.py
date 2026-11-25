@@ -79,3 +79,88 @@ def test_auto_prices_a_knock_out_on_the_model_of_the_hard_barrier(store):  # noq
     assert abs(soft.npv - hard.npv) < 4 * err
     assert "last_step_digital_greeks_withheld" in {w.code for w in soft.warnings}
     assert not soft.risks and soft.greeks.delta is None
+
+
+# ── the library's knock-out products (#369 L2) ─────────────────────────────
+
+
+def _library(product: str, model: str, **kw):
+    from app.schemas import ScriptedProductRequest
+
+    from test_script_model_choice import SNAP
+
+    base = dict(
+        product=product,
+        model=model,
+        ticker="TEST",
+        rate=0.03,
+        valuation_date=SNAP,
+        n_paths=4000,
+        seed=3,
+        device="cpu",
+        greeks_method="aad",
+        maturity=0.5,
+    )
+    return pricing_service.price_scripted_product(
+        ScriptedProductRequest(**{**base, **kw})
+    )
+
+
+def _hard(response, model: str):
+    """The same product as the hard script it replaces: its thresholds."""
+    from app.schemas import ScriptRequest
+
+    from test_script_model_choice import SNAP
+
+    return pricing_service.price_script(
+        ScriptRequest(
+            script=response.script,
+            model=model,
+            ticker="TEST",
+            rate=0.03,
+            valuation_date=SNAP,
+            n_paths=4000,
+            seed=5,
+            device="cpu",
+            greeks_method="none",
+            knock_outs_as_thresholds=True,
+        ),
+        library=True,
+        start_today=True,
+    )
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "product", ["up-and-out-call", "double-barrier-call", "double-no-touch"]
+)
+def test_a_library_knock_out_under_local_vol_conditions_with_its_own_greeks(
+    store, product
+):  # noqa: F811
+    r = _library(product, "local_vol")
+    assert "smoothed" not in r.diagnostics
+    assert (
+        r.greeks.delta is not None
+        and abs(r.greeks.delta) > 2 * r.greeks.delta_std_error
+    )
+    assert "greeks_hard_threshold" not in {w.code for w in r.warnings}
+    hard = _hard(r, "local_vol")
+    assert abs(r.npv - hard.npv) < 4 * (r.mc_std_error**2 + hard.mc_std_error**2) ** 0.5
+
+
+def test_a_library_knock_out_under_heston_takes_smoothed_greeks(store):  # noqa: F811
+    r = _library("up-and-out-call", "heston")
+    assert "thresholds smoothed at eps 3" in r.diagnostics
+    assert r.greeks.delta is not None and r.risks
+    # the price is the conditioned run's, the hard script's within error
+    hard = _hard(r, "heston")
+    assert abs(r.npv - hard.npv) < 4 * (r.mc_std_error**2 + hard.mc_std_error**2) ** 0.5
+
+
+def test_auto_gives_a_library_knock_out_slv_and_smoothed_greeks(store):  # noqa: F811
+    r = _library("up-and-out-call", "auto")
+    assert r.model_choice.model == "slv"
+    assert "thresholds smoothed" in r.diagnostics
+    assert r.greeks.delta is not None

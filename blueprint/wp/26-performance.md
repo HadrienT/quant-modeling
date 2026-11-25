@@ -3033,6 +3033,19 @@ Checked:
 - QMC gains from the smoother integrand too: level 0's variance falls from 0.37 to 0.14.
 - The knock-out kernel costs 2.2× the hard one per step: the select computes N⁻¹ and three N on *every* step, while only one step in 2^l reaches a date on level l. The flag is the same for every thread of a step, so a real branch would not diverge. It is the next lever (a region of the IR on the step row's flag), worth about another ×2 at the fine levels.
 
+**L2a: the library's knock-out products** (2026-11-25). `up-and-out-call`, `double-barrier-call` and `double-no-touch` are written with `knockOutAbove` / `knockOutBelow` and `# greeks: knock-out`:
+- **Where the model conditions** (Black-Scholes, local vol), one run gives the price and its greeks, with no smoothing.
+- **Heston and SLV** (`auto`'s model for these products on SPY): the price comes from the conditioned run, and the greeks from a second run on the thresholds smoothed at the product's measured eps. Below Feller the conditioned greeks have infinite variance (#372).
+- **Rough Bergomi and Hull-White** cannot condition: the thresholds give the price, then the smoothed thresholds give the greeks, as before.
+
+The model is resolved up front (`pricing_service._resolved_model`, `auto`'s recommendation on the cached market), so no run is wasted.
+
+**Thresholds.** `ScriptSettings::knock_outs_as_thresholds` (`ScriptRequest.knock_outs_as_thresholds`) writes each knock-out as `if spot() >= L then #knockout = 0 endIf`. This is the hard script, smoothed under `fuzzy`, and the payments are weighted the same way. A knock-out whose level is not known today (a forward start: `barrier * s0`, with s0 fixed on a future date; `knock_out_levels_known_today`, a static check by name) makes every knock-out its threshold. The info warning `knock_outs_as_thresholds` says so, so `validate_script` and the scripting page never fail on it.
+
+**What the page shows.** Under SLV, `auto`'s choice, the price agrees with the hard script within error, with a smaller error, and the greeks are those of before (smoothed). Under local vol, the greeks are now unbiased and unsmoothed.
+
+Left for L2b: the knock-ins (one-touch, down-and-in put, barrier reverse convertible, bonus certificate) and the shark-fin's rebate, which need the unconditioned paths: E[1{hit} f] = E[f] − E[1{alive} f]. They will use signed parts priced as separate runs.
+
 Tests: `tests/testKnockOut.cpp`:
 - one date against the closed form;
 - monthly dates and the corridor against the hard script, with a smaller error;

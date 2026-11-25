@@ -119,8 +119,49 @@ namespace quantModeling::scripting
         };
     } // namespace knock_out_detail
 
-    /// See the file comment. Returns whether the script has a knock-out.
-    inline bool prepare_knock_outs(std::vector<Event> &events)
+    namespace knock_out_detail
+    {
+        /// `if spot() >= L then #knockout = 0 endIf` (<= for a knockOutBelow):
+        /// the knock-out as the threshold it stands for.
+        inline ExprTree threshold_statement(const NodeStepQuantity &w)
+        {
+            ExprTree cmp = w.above ? ExprTree(std::make_unique<NodeSupEqual>())
+                                   : ExprTree(std::make_unique<NodeInfEqual>());
+            auto spot = std::make_unique<NodeSpot>();
+            spot->index = w.asset;
+            cmp->arguments.push_back(std::move(spot));
+            if (w.arguments.empty())
+            {
+                auto level = std::make_unique<NodeConst>();
+                level->value = w.level;
+                cmp->arguments.push_back(std::move(level));
+            }
+            else
+                cmp->arguments.push_back(w.arguments[0]->clone());
+            auto zero = std::make_unique<NodeConst>();
+            auto assign = std::make_unique<NodeAssign>();
+            assign->arguments.push_back(weight_variable());
+            assign->arguments.push_back(std::move(zero));
+            auto node = std::make_unique<NodeIf>();
+            node->arguments.push_back(std::move(cmp));
+            node->arguments.push_back(std::move(assign));
+            node->firstElse = node->arguments.size();
+            auto collect = std::make_unique<NodeCollect>();
+            collect->arguments.push_back(std::move(node));
+            return collect;
+        }
+    } // namespace knock_out_detail
+
+    /// See the file comment. Returns whether the script has a knock-out
+    /// for the model to condition on.
+    ///
+    /// `as_thresholds` (ScriptSettings::knock_outs_as_thresholds, #369 L2):
+    /// each knock-out becomes the threshold it stands for, `if spot() >= L
+    /// then #knockout = 0 endIf`, the payments weighted the same way -- the
+    /// hard (or, fuzzy, smoothed) script the knock-out replaces, for the
+    /// models that cannot condition and for greeks smoothed at a width.
+    /// Then no model quantity is left: returns false.
+    inline bool prepare_knock_outs(std::vector<Event> &events, bool as_thresholds = false)
     {
         using namespace knock_out_detail;
         std::size_t first = events.size(), at_top = 0;
@@ -166,7 +207,13 @@ namespace quantModeling::scripting
             for (ExprTree &statement : events[i].statements)
                 if (statement)
                     statement->accept(weigh);
-        return true;
+        if (!as_thresholds)
+            return true;
+        for (Event &event : events)
+            for (ExprTree &statement : event.statements)
+                if (const NodeStepQuantity *w = statement_weight(statement))
+                    statement = threshold_statement(*w);
+        return false;
     }
 
     namespace knock_out_detail
@@ -334,6 +381,112 @@ namespace quantModeling::scripting
             LevelFolder &folder_;
         };
     } // namespace knock_out_detail
+
+    namespace knock_out_detail
+    {
+        /// resolve_knock_out_levels's rules, read off the parsed events by
+        /// name before anything is indexed: whether a level is known today.
+        class KnownToday final : public ConstVisitor
+        {
+          public:
+            struct Assigned
+            {
+                std::size_t future_top = 0, future_other = 0;
+                const Node *rhs = nullptr;
+                std::size_t event = 0;
+            };
+            std::map<std::string, Assigned> assigned;
+            std::size_t event = 0;
+            bool known = true;
+            int depth = 0;
+
+            void visit(const NodeSpot &) override { known = false; }
+            void visit(const NodeDf &) override { known = false; }
+            void visit(const NodeFwd &) override { known = false; }
+            void visit(const NodeStepQuantity &) override { known = false; }
+            void visit(const NodeVar &n) override
+            {
+                const auto it = assigned.find(n.name);
+                if (it == assigned.end())
+                    return; // set on past dates only, or never
+                const Assigned &a = it->second;
+                if (a.future_other > 0 || a.future_top > 1 || a.event > event || ++depth > 64)
+                {
+                    known = false;
+                    return;
+                }
+                a.rhs->accept(*this);
+                --depth;
+            }
+        };
+
+        /// The future events' assignments, by name (see KnownToday).
+        class AssignedByName final : public ConstVisitor
+        {
+          public:
+            std::map<std::string, KnownToday::Assigned> &out;
+            std::size_t event = 0;
+            bool top = true;
+            explicit AssignedByName(std::map<std::string, KnownToday::Assigned> &o)
+                : out(o) {}
+            void visit(const NodeIf &n) override
+            {
+                const bool was = top;
+                top = false;
+                visit_children(n);
+                top = was;
+            }
+            void visit(const NodeAssign &n) override
+            {
+                const auto *v = dynamic_cast<const NodeVar *>(n.arguments[0].get());
+                if (v != nullptr && v->name != NodeStepQuantity::kKnockOutVariable)
+                {
+                    KnownToday::Assigned &a = out[v->name];
+                    if (top)
+                    {
+                        ++a.future_top;
+                        a.rhs = n.arguments[1].get();
+                        a.event = event;
+                    }
+                    else
+                        ++a.future_other;
+                }
+                visit_children(n);
+            }
+        };
+    } // namespace knock_out_detail
+
+    /// Whether every knock-out's level is known today (resolve_knock_out_
+    /// levels's rules), on the parsed events in date order, the first
+    /// `n_historical` on or before the valuation date. When one is not -- a
+    /// forward start, `barrier * s0` with s0 fixed on a future date -- the
+    /// model cannot condition on it, and ScriptedProduct prices the knock-
+    /// outs as their thresholds instead, and says so.
+    inline bool knock_out_levels_known_today(const std::vector<Event> &events, std::size_t n_historical)
+    {
+        using namespace knock_out_detail;
+        std::map<std::string, KnownToday::Assigned> assigned;
+        AssignedByName collect(assigned);
+        for (std::size_t i = n_historical; i < events.size(); ++i)
+        {
+            collect.event = i;
+            for (const ExprTree &statement : events[i].statements)
+                if (statement && statement_weight(statement) == nullptr)
+                    statement->accept(collect);
+        }
+        KnownToday check;
+        check.assigned = std::move(assigned);
+        for (std::size_t i = n_historical; i < events.size(); ++i)
+            for (const ExprTree &statement : events[i].statements)
+                if (const NodeStepQuantity *w = statement_weight(statement); w != nullptr && !w->arguments.empty())
+                {
+                    check.event = i;
+                    w->arguments[0]->accept(check);
+                    if (!check.known)
+                        return false;
+                }
+        return true;
+    }
 
     /// See the file comment. `future`: the events still to simulate, their
     /// variables indexed; `baseline`: the variables after the historical

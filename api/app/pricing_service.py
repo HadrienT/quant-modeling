@@ -288,7 +288,7 @@ def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
 
 
 def _hard_threshold_greeks(
-    req: ScriptRequest, valuation_date, model: str
+    req: ScriptRequest, valuation_date, model: str, script: str, fixings: Dict
 ) -> List[Dict]:
     """A warning when adjoint greeks are asked of a payoff that jumps at a
     level of the spot (a digital, a barrier) without smoothing: path by path
@@ -299,14 +299,19 @@ def _hard_threshold_greeks(
     A crisp comparison always jumps. The bridge survivals and lastStepDigital
     do not: the model computes them as smooth probabilities, except rough
     Bergomi, which has no closed form over a step and writes the threshold
-    itself."""
+    itself. A knock-out is smooth too (#369), unless priced as its threshold.
+
+    `script` and `fixings`: the script as priced (a library product started
+    today, its first date fixed), whose knock-out levels are then known."""
     if req.greeks_method != "aad" or req.fuzzy:
         return []
     analysis = qm.validate_script(
-        req.script, valuation_date.isoformat(), req.day_count
+        script, valuation_date.isoformat(), req.day_count, historical_fixings=fixings
     )["analysis"]
-    jumps = analysis["spot_comparison"] or (
-        model == "rough_bergomi" and analysis["spot_threshold_test"]
+    jumps = (
+        analysis["spot_comparison"]
+        or (model == "rough_bergomi" and analysis["spot_threshold_test"])
+        or (req.knock_outs_as_thresholds and analysis["knock_out"])
     )
     if not jumps:
         return []
@@ -560,11 +565,12 @@ def _price_multi_asset(
             second_order=req.second_order and req.greeks_method == "aad",
             terms_as_parameters=library,
             historical_fixings=fixings,
+            knock_outs_as_thresholds=req.knock_outs_as_thresholds,
             **_multilevel(req, model if n > 1 else "black_scholes"),
             **grids,
         )
     result["warnings"] = (
-        _hard_threshold_greeks(req, valuation_date, model)
+        _hard_threshold_greeks(req, valuation_date, model, script, fixings)
         + warnings
         + list(result.get("warnings", []))
     )
@@ -1016,6 +1022,10 @@ def _price_library_script(
 
     eps = template.eps
     asked = {"fuzzy", "default_eps"} & req.model_fields_set
+    if template.greeks == "knock-out":
+        return _knock_out_library(
+            req, template, script, fields, start_today, bool(asked)
+        )
     if template.greeks == "last-step":
         if (
             req.model in product_templates.LAST_STEP_FALLBACK_MODELS
@@ -1065,6 +1075,93 @@ def _price_library_script(
             "measured for this product: smoothing would move its price by more "
             "than half an error, so the price is the unsmoothed run's",
         }
+    )
+
+
+def _resolved_model(req, script: str, fields: dict, start_today: bool) -> str:
+    """The model a library product is priced under: the request's, or what
+    'auto' picks for its script on its market (price_script's choice, the
+    stored market cached)."""
+    from . import market_snapshot
+
+    if req.model != "auto":
+        return req.model
+    probe = ScriptRequest(script=script, **fields)
+    market, valuation_date = None, probe.valuation_date
+    if probe.ticker:
+        market = market_snapshot.local_vol_market(
+            probe.ticker, probe.rate, probe.valuation_date
+        )
+        valuation_date = market.valuation_date
+    return _recommend(probe, valuation_date, market, True, start_today)["model"]
+
+
+def _with_greeks_of(priced: PricingResponse, risks: PricingResponse, note: str):
+    """`priced`'s price with `risks`'s greeks: two runs of one product."""
+    return priced.model_copy(
+        update={
+            "greeks": risks.greeks,
+            "risks": risks.risks,
+            "bumped_greeks": risks.bumped_greeks,
+            "second_order_method": risks.second_order_method,
+            "compute_ms": (priced.compute_ms or 0.0) + (risks.compute_ms or 0.0),
+            "warnings": priced.warnings
+            + [w for w in risks.warnings if w not in priced.warnings],
+            "diagnostics": priced.diagnostics + " | " + note,
+        }
+    )
+
+
+def _knock_out_library(
+    req, template, script: str, fields: dict, start_today: bool, asked: bool
+) -> PricingResponse:
+    """A library product on knockOutAbove / Below (`# greeks: knock-out`,
+    #369 L2). The model conditions its step into each date on survival:
+    the price and its greeks, unbiased, with no smoothing. Except:
+
+     - a model that cannot condition (KNOCK_OUT_THRESHOLD_MODELS): the hard
+       threshold prices it and the greeks come from a second run smoothed
+       at the product's measured eps -- the library's behaviour before;
+     - Heston and SLV, whose conditioned greeks have infinite variance where
+       Feller fails (#372): the price conditioned, the greeks smoothed."""
+    from . import product_templates as pt
+
+    model = _resolved_model(req, script, fields, start_today)
+    thresholds = model in pt.KNOCK_OUT_THRESHOLD_MODELS
+    smoothed_greeks = thresholds or model in pt.LAST_STEP_FALLBACK_MODELS
+    if asked or req.greeks_method != "aad" or not smoothed_greeks:
+        return price_script(
+            ScriptRequest(script=script, **fields, knock_outs_as_thresholds=thresholds),
+            library=True,
+            start_today=start_today,
+        )
+    plain = {**fields, "greeks_method": "none", "second_order": False}
+    priced = price_script(
+        ScriptRequest(script=script, **plain, knock_outs_as_thresholds=thresholds),
+        library=True,
+        start_today=start_today,
+    )
+    smoothed = {
+        **fields,
+        "fuzzy": True,
+        "default_eps": template.eps,
+        "model": priced.model_choice.model if priced.model_choice else model,
+    }
+    risks = price_script(
+        ScriptRequest(script=script, **smoothed, knock_outs_as_thresholds=True),
+        library=True,
+        start_today=start_today,
+    )
+    return _with_greeks_of(
+        priced,
+        risks,
+        f"greeks from a second run on the thresholds smoothed at eps {template.eps:g}: "
+        + (
+            "this model cannot condition its step on a knock-out"
+            if thresholds
+            else "under this model the conditioned greeks have infinite variance "
+            "where Feller fails"
+        ),
     )
 
 
@@ -1347,6 +1444,7 @@ def price_script(
                 terms_as_parameters=library,
                 historical_fixings=fixings,
                 variance_scheme=scheme,
+                knock_outs_as_thresholds=req.knock_outs_as_thresholds,
                 **{**_multilevel(req, model), **over},
             )
 
@@ -1356,7 +1454,7 @@ def price_script(
         else:
             result = run(req.greeks_method, second, "euler")
     result["warnings"] = (
-        _hard_threshold_greeks(req, valuation_date, model)
+        _hard_threshold_greeks(req, valuation_date, model, script, fixings)
         + market_warnings
         + list(result.get("warnings", []))
     )

@@ -120,6 +120,10 @@ namespace quantModeling
         /// the library writes (pricers/script_builders); a script a user
         /// wrote keeps its numbers as constants. Same bits either way.
         bool terms_as_parameters = false;
+        /// knockOutAbove / Below as the thresholds they stand for (#369 L2):
+        /// the hard script -- smoothed when `fuzzy` -- for a model that
+        /// cannot condition its step, or greeks smoothed at a width.
+        bool knock_outs_as_thresholds = false;
         /// With `fuzzy`: a C1 ramp for the smoothed comparisons -- the
         /// clamped linear ramp u replaced by u^2 (3 - 2 u), whose slope is 0
         /// where it meets 0 and 1 -- so that the smoothed payoff has a second
@@ -187,7 +191,16 @@ namespace quantModeling
                              { return a.date < b.date; });
             // knockOutAbove / Below (issue #369): the weight variable, its
             // start at 1, and every later payment multiplied by it.
-            const bool knock_outs = scripting::prepare_knock_outs(events);
+            // A knock-out whose level is not known today (a forward start)
+            // cannot be conditioned on: then every knock-out is priced as
+            // its threshold, and the analysis says so (#369 L2).
+            const auto n_past = static_cast<std::size_t>(
+                std::count_if(events.begin(), events.end(), [&](const scripting::Event &e)
+                              { return ctx.t(e.date) <= TIMELINE_EPS; }));
+            const bool forced_thresholds = !settings.knock_outs_as_thresholds &&
+                                           !scripting::knock_out_levels_known_today(events, n_past);
+            const bool knock_outs = scripting::prepare_knock_outs(
+                events, settings.knock_outs_as_thresholds || forced_thresholds);
 
             scripting::VarIndexer indexer;
             indexer.index(events);
@@ -208,6 +221,7 @@ namespace quantModeling
                 std::count_if(events.begin(), events.end(), [&](const scripting::Event &e)
                               { return ctx.t(e.date) <= TIMELINE_EPS; }));
             analysis_ = scripting::analyze_script(events, n_historical);
+            analysis_.knock_outs_on_thresholds = forced_thresholds;
 
             resolve_timeline(std::move(events), ctx);
 
