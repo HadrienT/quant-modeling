@@ -111,7 +111,7 @@ def test_rough_bergomi_flags_the_last_step_digital():
         script=LAST_STEP, spot=100.0, vol=0.2, rate=0.03, greeks_method="aad"
     )
     day = date(2026, 10, 2)
-    assert _hard_threshold_greeks(req, day, "rough_bergomi")[0]["code"] == (
-        "greeks_hard_threshold"
-    )
-    assert not _hard_threshold_greeks(req, day, "local_vol")
+    assert _hard_threshold_greeks(req, day, "rough_bergomi", LAST_STEP, {})[0][
+        "code"
+    ] == ("greeks_hard_threshold")
+    assert not _hard_threshold_greeks(req, day, "local_vol", LAST_STEP, {})

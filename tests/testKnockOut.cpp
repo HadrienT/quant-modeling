@@ -5,7 +5,8 @@
 //
 // Properties checked:
 //  - the language: parsing, writing back, the statement only at the top of
-//    a date, the level known today (a number, a term, a fixing taken);
+//    a date; a level known today (a number, a term, a fixing taken) is
+//    conditioned on, one that is not makes every knock-out its threshold;
 //  - unbiased: one date under Black-Scholes reprices the closed form of a
 //    call knocked out at expiry; twelve monthly dates agree with the hard
 //    script (the `alive` flag) within error, with a smaller error;
@@ -32,10 +33,12 @@
 #include "quantModeling/models/equity/local_vol_sim_model.hpp"
 #include "quantModeling/models/equity/slv_sim_model.hpp"
 #include "quantModeling/pricers/context.hpp"
+#include "quantModeling/scripting/model_advice.hpp"
 #include "quantModeling/scripting/parser.hpp"
 #include "quantModeling/scripting/visitors/script_writer.hpp"
 #include "quantModeling/utils/stats.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include <string>
@@ -144,29 +147,50 @@ namespace quantModeling
         EXPECT_THROW(scripting::parse_script("2025-06-03\n    x = knockOutAbove(120)\n"), std::exception);
     }
 
-    TEST(KnockOut, TheLevelMustBeKnownToday)
+    TEST(KnockOut, ALevelNotKnownTodayIsPricedAsTheThreshold)
     {
-        // A term and a fixing already taken: barrier * s0 = 120.
+        // A term and a fixing already taken: barrier * s0 = 120, conditioned.
         ScriptedProduct<Real> ok(up_and_out(true), ctx(), {}, kFixing);
+        EXPECT_FALSE(ok.analysis().knock_outs_on_thresholds);
         for (const SampleDef &d : ok.defline())
             for (const StepMonitor &m : d.monitors)
                 if (m.kind == StepQuantity::KnockOut)
                     EXPECT_DOUBLE_EQ(m.level, 120.0);
+        // A term set on the date itself, after the statement as written.
+        EXPECT_FALSE(ScriptedProduct<Real>("2025-06-03\n    knockOutAbove(b)\n    b = 120\n    pays 1\n", ctx())
+                         .analysis()
+                         .knock_outs_on_thresholds);
 
-        // A spot still to be simulated, a variable set after the date, a
-        // knock-out on a past date.
-        EXPECT_THROW(ScriptedProduct<Real>("2025-01-03\n    s1 = spot()\n2025-06-03\n    knockOutAbove(1.2 * s1)\n"
-                                           "    pays 1\n",
-                                           ctx()),
-                     InvalidInput);
-        EXPECT_THROW(ScriptedProduct<Real>("2025-01-03\n    knockOutAbove(b)\n2025-06-03\n    b = 120\n    pays 1\n",
-                                           ctx()),
-                     InvalidInput);
+        // A spot still to be simulated, a variable set after the date: the
+        // model cannot condition on them -- every knock-out is its
+        // threshold (no model quantity left), the analysis says so, and the
+        // price is the hard script's (the same draws, the same bits).
+        for (const std::string src : {"2025-01-03\n    s1 = spot()\n2025-06-03\n    knockOutAbove(1.2 * s1)\n"
+                                      "    pays max(spot() - s1, 0)\n",
+                                      "2025-01-03\n    knockOutAbove(b)\n2025-06-03\n    b = 120\n    pays 1\n"})
+        {
+            ScriptedProduct<Real> forward(src, ctx());
+            EXPECT_TRUE(forward.analysis().knock_outs_on_thresholds) << src;
+            for (const SampleDef &d : forward.defline())
+                EXPECT_TRUE(d.monitors.empty()) << src;
+            const auto advice = scripting::advise(forward.analysis(), scripting::ModelKind::LocalVolSurface, 1.0, 2.0);
+            EXPECT_TRUE(std::any_of(advice.begin(), advice.end(), [](const scripting::Advice &a)
+                                    { return a.code == "knock_outs_as_thresholds"; }))
+                << src;
+        }
+        ScriptedProduct<Real> forward("2025-01-03\n    s1 = spot()\n2025-06-03\n    knockOutAbove(1.2 * s1)\n"
+                                      "    pays max(spot() - s1, 0)\n",
+                                      ctx());
+        ScriptedProduct<Real> hard("2025-01-03\n    s1 = spot()\n2025-06-03\n"
+                                   "    if spot() < 1.2 * s1 then pays max(spot() - s1, 0) endIf\n",
+                                   ctx());
+        BlackScholesSimModel<Real> m1(S0, r, q, vol), m2(S0, r, q, vol);
+        EXPECT_EQ(simulate<Real>(forward, m1, settings(20000)).npv(), simulate<Real>(hard, m2, settings(20000)).npv());
+
+        // A knock-out on a past date is an error.
         EXPECT_THROW(ScriptedProduct<Real>("2024-06-03\n    knockOutAbove(120)\n2025-06-03\n    pays 1\n", ctx(), {},
                                            kFixing),
                      InvalidInput);
-        // A term set on the date itself, after the statement as written.
-        EXPECT_NO_THROW(ScriptedProduct<Real>("2025-06-03\n    knockOutAbove(b)\n    b = 120\n    pays 1\n", ctx()));
     }
 
     // One date: E[(S - K)+ 1{S < H}] = C(K) - C(H) - (H - K) D(H).

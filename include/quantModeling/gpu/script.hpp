@@ -75,11 +75,6 @@ namespace quantModeling::gpu
         if (p.has_monitor && !script_jit_enabled())
             return "lastStep*() and survivalAbove() / survivalBelow() run in the GPU kernels compiled from the IR, "
                    "and compilation is off (QM_SCRIPT_JIT=0)";
-        // the conditioned step of a knock-out (#369) is the CPU models' (its
-        // lot L4 brings it to the IR)
-        if (p.has_knock_out)
-            return "knockOutAbove() / knockOutBelow() run on the CPU: the step conditioned on survival is not in "
-                   "the GPU's kernels yet";
         if (p.has_bridge && m.n_assets != 1)
             return "survivalAbove() / survivalBelow() cover one underlying";
         if (p.has_bridge && m.kind != DeviceModel::Kind::BlackScholes && m.kind != DeviceModel::Kind::LocalVol)

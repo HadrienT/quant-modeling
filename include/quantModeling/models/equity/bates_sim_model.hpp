@@ -214,7 +214,8 @@ namespace quantModeling
                         const T sd = sqrt_v_plus * sqdt;
                         T z(z_spot);
                         survival = mc::condition_on_survival(ko, T(log(S)), mean, sd, z);
-                        S = S * exp(mean + sd * z);
+                        // heston_log_return's grouping, as the IR's step
+                        S = S * exp(mc::heston_log_return(r_, q_, lambda_, k, v_plus, sqrt_v_plus, sqdt, dt, z));
                         mc::heston_variance_step(hp, v, v_plus, sqrt_v_plus, sqdt, dt, z, z_vol_indep);
                         stepped = true;
                     }

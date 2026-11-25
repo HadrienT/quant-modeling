@@ -317,9 +317,10 @@ namespace quantModeling::mc
     /// Euler step of the log-spot under local vol: S *= exp((r - q - σ²/2)dt + σ√dt z).
     /// Returns the step's variance of the log-spot, σ² dt, for the barrier
     /// monitoring of bridge_survival() (unused, it costs nothing).
-    template <class T>
+    /// `z` may be a T: a knock-out's conditioned draw (#369).
+    template <class T, class Z = double>
     QM_HOST_DEVICE T local_vol_step(const GridView<T> &sigma_loc, const T &r, const T &q, T &S, double t,
-                                    double dt, double z)
+                                    double dt, const Z &z)
     {
         using std::exp;
         using std::sqrt;
@@ -431,9 +432,9 @@ namespace quantModeling::mc
     /// Heston log-return over one step, before jumps, with Bates's jump
     /// compensator λk (λ = 0 for Heston). λ and k come in separately so that
     /// the expression is recorded on an AAD tape in Bates's own order.
-    template <class T>
+    template <class T, class Z = double>
     QM_HOST_DEVICE T heston_log_return(const T &r, const T &q, const T &lambda, const T &k, const T &v_plus,
-                                       const T &sqrt_v_plus, double sqdt, double dt, double z_spot)
+                                       const T &sqrt_v_plus, double sqdt, double dt, const Z &z_spot)
     {
         return (r - q - lambda * k - 0.5 * v_plus) * dt + sqrt_v_plus * (sqdt * z_spot);
     }
@@ -569,9 +570,9 @@ namespace quantModeling::mc
     }
 
     /// One SLV step: Heston with the spot's vol scaled by the leverage L(S, t).
-    template <class T>
+    template <class T, class Z = double>
     QM_HOST_DEVICE void slv_step(const GridView<T> &leverage, const HestonParamsT<T> &h, const T &r, const T &q,
-                                 T &S, T &v, double t, double dt, double z_spot, double z_indep)
+                                 T &S, T &v, double t, double dt, const Z &z_spot, double z_indep)
     {
         using std::exp;
         using std::max;

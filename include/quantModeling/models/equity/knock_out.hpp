@@ -129,6 +129,19 @@ namespace quantModeling::mc
             return kInvSqrt2Pi * exp(-0.5 * x * x);
         }
 
+        /// N, as the script IR's Ncdf computes it on doubles (0.5 erfc(-x /
+        /// sqrt 2) with the constant multiplied, not divided): a path run
+        /// from the IR's blocks is the model's, bit for bit.
+        inline double ncdf(double x)
+        {
+            return 0.5 * std::erfc(-x * 0.70710678118654752440);
+        }
+        template <class T>
+        T ncdf(const T &x)
+        {
+            return T(normal_cdf(x));
+        }
+
         /// N^-1(c) with the derivatives of c. c's value is c0.
         template <class T>
         T inverse_normal_of(const T &c, double c0)
@@ -162,7 +175,7 @@ namespace quantModeling::mc
     T condition_on_survival(const KnockOutCorridor &c, const T &log_start, const T &mean, const T &sd, T &z)
     {
         using knock_out_detail::inverse_normal_of;
-        using last_step_detail::normal_cdf_of;
+        using knock_out_detail::ncdf;
         using std::log;
 
         const bool has_lo = c.lo > 0.0, has_hi = std::isfinite(c.hi);
@@ -171,14 +184,14 @@ namespace quantModeling::mc
         if (has_lo)
         {
             const T dl = (log(c.lo) - log_start - mean) / sd;
-            A = normal_cdf_of(dl);
-            Ac = normal_cdf_of(T(-dl));
+            A = ncdf(dl);
+            Ac = ncdf(T(-dl));
         }
         if (has_hi)
         {
             const T du = (log(c.hi) - log_start - mean) / sd;
-            B = normal_cdf_of(du);
-            Bc = normal_cdf_of(T(-du));
+            B = ncdf(du);
+            Bc = ncdf(T(-du));
         }
         // p = B - A, from the smaller pair (Ac - Bc in the upper tail).
         const T p = to_double(A) < 0.5 ? T(B - A) : T(Ac - Bc);
@@ -191,7 +204,7 @@ namespace quantModeling::mc
             return T(0.0);
 
         const double z_in = to_double(z);
-        const double u = norm_cdf(z_in), uc = norm_cdf(-z_in);
+        const double u = ncdf(z_in), uc = ncdf(-z_in);
         if (u <= 0.5)
         {
             const T cdf = A + u * p; // N(z'), the lower tail

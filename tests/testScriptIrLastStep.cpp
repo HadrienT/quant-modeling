@@ -250,3 +250,64 @@ namespace quantModeling
         EXPECT_THROW(ir::path_program(product.ir(), DeviceModel::Kind::Heston, 1, false), InvalidInput);
     }
 } // namespace quantModeling
+
+// #369 L4: the knock-outs in the IR's paths. The step into a knock-out date
+// draws conditioned on survival -- mc::condition_on_survival, operation for
+// operation, behind a select so the other steps keep their bits -- and
+// leaves the probability in the state, which the date reads: the tape's
+// price and risks, under every model the GPU steps.
+namespace quantModeling
+{
+    namespace
+    {
+        const std::vector<std::string> kKnockOutScripts = {
+            "2027-06-01\n    knockOutAbove(130)\n    pays max(spot() - 100, 0)\n",
+            "2026-09-01\n    knockOutAbove(125)\n    knockOutBelow(75)\n"
+            "2026-12-01\n    knockOutAbove(125)\n    knockOutBelow(75)\n"
+            "2027-03-01\n    knockOutAbove(125)\n    pays 2\n"
+            "2027-06-01\n    knockOutAbove(125)\n    pays max(spot() - 100, 0)\n",
+            "2026-12-01\n    knockOutBelow(80)\n    a = spot()\n2027-06-01\n    pays lastStepCall(100) + a / 1000\n",
+        };
+    } // namespace
+
+    TEST(ScriptIrKnockOut, TheIrsEngineOnTheCpuGivesTheTapesResults)
+    {
+        using namespace ir_test;
+        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::LocalVol, Dyn::Heston, Dyn::SLV})
+            for (const std::string &source : kKnockOutScripts)
+            {
+                const ScriptedProduct<Real> product(source, kCtx);
+                ASSERT_TRUE(product.ir().has_knock_out);
+                auto model = make_model<Real>(dyn, 1);
+                std::string why;
+                const auto got = simulate_script_aad_ir(product, *model, 300, 23, why);
+                ASSERT_TRUE(got.has_value()) << name(dyn) << ": " << why;
+                const ScriptedProduct<aad::Number> tape_product(source, kCtx);
+                auto tape_model = make_model<aad::Number>(dyn, 1);
+                const AADSimulResults tape =
+                    simulate_aad(tape_product, *tape_model, 300, 23, first_aad_payoff, RngKind::Philox);
+                const std::string what = std::string(name(dyn)) + "\n" + source;
+                EXPECT_GT(tape.price, 0.0) << what;
+                EXPECT_EQ(got->risk_labels, tape.risk_labels) << what;
+                EXPECT_NEAR(got->price, tape.price, 1e-12 * std::max(1.0, std::abs(tape.price))) << what;
+                ASSERT_EQ(got->risks.size(), tape.risks.size()) << what;
+                double scale = 1e-12;
+                for (double x : tape.risks)
+                    scale = std::max(scale, std::abs(x));
+                for (std::size_t i = 0; i < tape.risks.size(); ++i)
+                    EXPECT_NEAR(got->risks[i], tape.risks[i], 1e-10 * scale) << what << ", risk " << i;
+            }
+    }
+
+    TEST(ScriptIrKnockOut, SeveralAssetsAreRefusedWithTheReason)
+    {
+        using namespace ir_test;
+        namespace ir = scripting::ir;
+        const ScriptedProduct<Real> product(kKnockOutScripts[0], kCtx);
+        EXPECT_NE(ir::path_program_unsupported(product.ir(), DeviceModel::Kind::BlackScholes, 2).find("one underlying"),
+                  std::string::npos);
+        for (const auto kind : {DeviceModel::Kind::BlackScholes, DeviceModel::Kind::LocalVol,
+                                DeviceModel::Kind::Heston, DeviceModel::Kind::SLV})
+            EXPECT_EQ(ir::path_program_unsupported(product.ir(), kind, 1), "");
+    }
+} // namespace quantModeling

@@ -236,7 +236,10 @@ namespace quantModeling
                     const T mean = step_drift * rest, sd = vol_sqrt_dt * sqrt(rest);
                     T z((gaussians[k] - a) / sqrt(rest));
                     survival = mc::condition_on_survival(ko, T(log(S_start)), mean, sd, z);
-                    S = S_start * exp(mean + sd * z);
+                    if (conditioned)
+                        S = S_start * exp(mean + sd * z);
+                    else // the plain step on the conditioned draw: the IR's step, bit for bit
+                        mc::local_vol_step(grid(), r_, q_, S, t, dt, z);
                 }
                 else
                     var = milstein_ || (milstein_before_dates_ && reached < 0)
@@ -313,8 +316,8 @@ namespace quantModeling
                 return false;
             else
             {
-                if (milstein_ || milstein_before_dates_)
-                    return false; // the device steps log-Euler only
+                if (milstein_)
+                    return false; // the device's step into a date is log-Euler
                 d = DeviceModel{};
                 d.kind = DeviceModel::Kind::LocalVol;
                 d.r = r_;
@@ -325,6 +328,7 @@ namespace quantModeling
                 d.grid = sigma_loc_;
                 d.t = sim_timeline_;
                 d.draws.assign(sim_timeline_.size(), 1);
+                d.milstein_before_dates = milstein_before_dates_;
                 d.event.clear();
                 for (const std::ptrdiff_t e : event_index_of_step_)
                     d.event.push_back(static_cast<int>(e));

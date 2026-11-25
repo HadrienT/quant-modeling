@@ -32,3 +32,37 @@ schedule(2027-01-05, 2027-12-30, 1D, US, F)
     else
         pays notional * (1 + rebate)
     endIf
+
+# The Price page prices it as signed parts (#369 L2b): the paths a knock-out's
+# conditioned step simulates never touch the barrier, so the rebate, paid
+# where it is touched, is a sure payment less its knock-out --
+# E[1{hit} R] = R - E[1{alive} R] -- each part its own run, under the same
+# model. The sure part has no variance: what is left is the knock-out's,
+# smaller than the hard script's (1.8 times under SLV, the same paths). The
+# script above is the product as one hard script.
+
+# part: + the rebate's payment: notional x (1 + rebate)
+2027-01-04
+    notional = 1000
+    participation = 1.0
+    barrier = 1.25
+    rebate = 0.05
+    s0 = spot()
+
+2028-01-04
+    pays notional * (1 + rebate)
+
+# part: + where it is never knocked out, the rise instead of the rebate: a knock-out at every close
+2027-01-04
+    notional = 1000
+    participation = 1.0
+    barrier = 1.25
+    rebate = 0.05
+    s0 = spot()
+
+schedule(2027-01-05, 2027-12-30, 1D, US, F)
+    knockOutAbove(barrier * s0)
+
+2028-01-04
+    knockOutAbove(barrier * s0)
+    pays notional * (participation * max(spot() / s0 - 1, 0) - rebate)

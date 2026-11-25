@@ -1171,7 +1171,7 @@ namespace quantModeling::scripting
         /// kernel computes; a last-step expectation alone runs in the kernels
         /// compiled from the IR (WP 27 §14.9), not in the interpreted ones.
         bool has_bridge = false;
-        bool has_knock_out = false; ///< knockOutAbove / Below (#369): the CPU's conditioned step only, for now
+        bool has_knock_out = false; ///< knockOutAbove / Below (#369): the paths' conditioned step (the IR's kernels)
         /// The script decides an early exercise (exercise() / call()): it
         /// runs under a fitted rule, on the CPU's interpreters (no GPU).
         bool has_exercise = false;

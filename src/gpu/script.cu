@@ -573,7 +573,8 @@ namespace quantModeling::gpu
             // fine sub-step's share, PathLayout::half): the same layout as
             // the kernel's (cuda_path_source), or the rows are misread.
             const ir::PathLayout l = ir::path_layout(req.model->kind, req.model->n_assets, *req.ir, risk, false,
-                                                     !req.model->half_share.empty());
+                                                     !req.model->half_share.empty(),
+                                                     req.model->milstein_before_dates);
             const ir::PathData data = ir::path_data(l, *req.model, *req.ir, req.discount_mats, req.baseline);
             detail::PathUnit u;
             u.draws = draws;
@@ -688,7 +689,8 @@ namespace quantModeling::gpu
                 return refuse("the request carries no IR");
             const scripting::CudaSource src = scripting::cuda_path_source(
                 *req.ir, static_cast<int>(req.model->kind), req.model->n_assets, kernel,
-                req.model->variance_scheme == mc::VarianceScheme::QE, !req.model->half_share.empty());
+                req.model->variance_scheme == mc::VarianceScheme::QE, !req.model->half_share.empty(),
+                req.model->milstein_before_dates);
             if (src.source.empty())
                 return refuse(src.why);
             scripting::CudaKernelSpec spec;

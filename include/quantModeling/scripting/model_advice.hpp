@@ -175,6 +175,13 @@ namespace quantModeling::scripting
             out.push_back({"surface_extrapolated", "warning", buf});
         }
 
+        if (a.knock_outs_on_thresholds)
+            out.push_back({"knock_outs_as_thresholds", "info",
+                           "A knock-out level depends on a fixing still to come (a forward start), so the model "
+                           "cannot condition its steps on it: the knock-outs are priced as the thresholds they "
+                           "stand for, the spot tested at each date. Their greeks are those of a hard threshold: "
+                           "turn on Fuzzy to smooth them."});
+
         return out;
     }
 

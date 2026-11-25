@@ -74,6 +74,10 @@ namespace quantModeling::scripting
         /// weight's pathwise derivative divides by the step's volatility,
         /// as lastStepDigital's (withhold_last_step_digital_greeks).
         bool knock_out = false;
+
+        /// The knock-outs are priced as their thresholds because a level is
+        /// not known today (a forward start; ScriptedProduct, #369 L2).
+        bool knock_outs_on_thresholds = false;
     };
 
     namespace detail

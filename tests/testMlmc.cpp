@@ -454,8 +454,9 @@ namespace quantModeling
         spec.milstein_before_dates = true;
         auto m = make_script_model<Real>(spec);
         m->init(product.timeline(), product.defline());
-        DeviceModel d;
-        EXPECT_FALSE(m->describe_device(d)); // the CPU's
+        DeviceModel d; // the GPU prices it too (#371 M1), the flag set
+        ASSERT_TRUE(m->describe_device(d));
+        EXPECT_TRUE(d.milstein_before_dates);
         const std::vector<double> half(m->sim_timeline().size(), 0.0), share(half.size(), 0.5);
         EXPECT_TRUE(m->condition_on_fine_half_steps(half, share));
         EXPECT_TRUE(m->condition_on_fine_half_steps({}, {}));
