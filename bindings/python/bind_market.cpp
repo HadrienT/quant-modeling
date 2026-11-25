@@ -93,11 +93,18 @@ static py::dict calibrate_vol_surface_impl(
     quantModeling::Real spot, quantModeling::Real rate, quantModeling::Real dividend,
     quantModeling::Real k_min, quantModeling::Real k_max,
     std::size_t n_strikes, std::size_t n_maturities, std::size_t min_quotes_per_slice,
-    const quantModeling::CleaningParams &cleaning_params)
+    const quantModeling::CleaningParams &cleaning_params, const std::string &surface_model,
+    double essvi_forward_smoothing, double essvi_min_forward_vol)
 {
+    quantModeling::ESSVICalibrationSettings essvi;
+    essvi.forward_smoothing = essvi_forward_smoothing;
+    essvi.min_forward_vol = essvi_min_forward_vol;
+    if (surface_model != "svi" && surface_model != "essvi")
+        throw std::invalid_argument("calibrate_vol_surface: surface_model is 'svi' or 'essvi'");
     const auto result = quantModeling::calibrate_vol_surface(
         std::move(quotes), spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
-        min_quotes_per_slice, cleaning_params);
+        min_quotes_per_slice, cleaning_params, {}, {}, {},
+        surface_model == "essvi" ? quantModeling::SurfaceModel::ESSVI : quantModeling::SurfaceModel::SVI, essvi);
 
     py::list slices;
     for (const auto &s : result.slices)
@@ -388,7 +395,8 @@ void register_market(py::module_ &m)
           py::arg("k_min") = -0.6, py::arg("k_max") = 0.6,
           py::arg("n_strikes") = 100, py::arg("n_maturities") = 50,
           py::arg("min_quotes_per_slice") = 6,
-          py::arg("cleaning_params") = quantModeling::CleaningParams{},
+          py::arg("cleaning_params") = quantModeling::CleaningParams{}, py::arg("surface_model") = "svi",
+          py::arg("essvi_forward_smoothing") = 0.1, py::arg("essvi_min_forward_vol") = 0.05,
           "Clean raw option quotes, calibrate one SVI slice per maturity, and build the "
           "Dupire local-vol grid (K_grid/T_grid/sigma_loc_flat) that price_local_vol_mc consumes. "
           "Raises RuntimeError (InvalidInput) if fewer than 2 maturities have enough clean quotes.");

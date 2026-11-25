@@ -1,5 +1,7 @@
 #include "quantModeling/market/vol_surface_pipeline.hpp"
 
+#include "quantModeling/market/essvi.hpp"
+
 #include "quantModeling/market/svi_surface.hpp"
 
 #include <algorithm>
@@ -79,7 +81,9 @@ namespace quantModeling
         const CleaningParams &cleaning_params,
         const calibration::LevenbergMarquardtSettings &lm_settings,
         const DupireFromSVIParams &dupire_params,
-        const SurfaceSliceSelection &selection)
+        const SurfaceSliceSelection &selection,
+        SurfaceModel surface_model,
+        const ESSVICalibrationSettings &essvi)
     {
         RawVolSurface raw_surface(std::move(raw_quotes), spot, rate, dividend, cleaning_params);
 
@@ -147,6 +151,57 @@ namespace quantModeling
         {
             const Real lo = std::max(bands[i].lo, bands[i + 1].lo), hi = std::min(bands[i].hi, bands[i + 1].hi);
             calendar_ok[i] = hi > lo && svi_slices_are_calendar_arbitrage_free(calibrations[i], calibrations[i + 1], lo, hi);
+        }
+
+        if (surface_model == SurfaceModel::ESSVI)
+        {
+            // Every slice past min_ttm, in maturity order (reports are), fitted
+            // under the conditions of the ones before it.
+            std::vector<std::size_t> idx;
+            std::vector<std::vector<SVISliceQuote>> slice_quotes;
+            std::vector<Real> ttms;
+            for (std::size_t i = 0; i < reports.size(); ++i)
+                if (reports[i].ttm >= selection.min_ttm)
+                {
+                    idx.push_back(i);
+                    slice_quotes.push_back(reports[i].quotes);
+                    ttms.push_back(reports[i].ttm);
+                }
+            const std::vector<ESSVISliceFit> fits = calibrate_essvi_slices(slice_quotes, ttms, essvi);
+            Real lo = std::numeric_limits<Real>::infinity(), hi = -std::numeric_limits<Real>::infinity();
+            std::size_t feasible = 0;
+            for (std::size_t s = 0; s < fits.size(); ++s)
+            {
+                if (!fits[s].feasible)
+                    continue;
+                ++feasible;
+                VolSurfaceSliceReport &r = reports[idx[s]];
+                r.in_surface = true;
+                r.params = essvi_to_svi(fits[s].params);
+                r.rmse = fits[s].rmse;
+                r.worst_residual = fits[s].worst_residual;
+                r.converged = true;
+                r.butterfly_arbitrage_free = true;
+                lo = std::min(lo, r.band.lo);
+                hi = std::max(hi, r.band.hi);
+            }
+            if (feasible < 1)
+                throw InvalidInput("calibrate_vol_surface: no maturity admits an arbitrage-free eSSVI slice");
+            if (hi > lo)
+                k_min = lo, k_max = hi;
+            const ESSVISurface surface(fits);
+            GridLocalVol grid =
+                build_local_vol_grid(surface, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities, dupire_params);
+            VolSurfacePipelineResult result;
+            result.cleaning_stats = raw_surface.stats();
+            result.slices = std::move(reports);
+            result.calendar_arbitrage_free = std::move(calendar_ok);
+            result.K_grid = grid.K_grid();
+            result.T_grid = grid.T_grid();
+            result.sigma_loc = grid.sigma_loc();
+            result.k_min = k_min;
+            result.k_max = k_max;
+            return result;
         }
 
         std::vector<std::size_t> n_quotes;
