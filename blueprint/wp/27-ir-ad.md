@@ -1209,3 +1209,24 @@ With daily steps, the last step smooths over about 1.3 of spot against the fuzzy
 - in multilevel, the corrections are 4.4 times less noisy once the coarse path is conditioned (WP 26 §26.1, #364).
 
 Tests: parsing and writing back a computed strike; a computed constant equals the literal one; the forward-start digital's closed form; tree, bytecode and batch agree to the bit; the IR's CPU engine against the tape (BS, LV, Heston, SLV); the GPU kernels against the CPU (prices) and the tape (risks, tangent and adjoint).
+
+### 14.18 Where lastStepDigital's greeks fail: Heston, SLV, rough Bergomi (issue #372, 2026-11-25)
+
+**What production showed.** #365's digitals were checked on the live site (SPY, one year at the money, payout 100, 50,000 paths, AAD greeks, two seeds). The prices agree with the hard threshold within their error under every model, and the local-vol delta agrees with the fuzzy one, with a smaller error. The deltas under the other models do not:
+
+| Model | `lastStepDigital` delta | Threshold, fuzzy ε = 3 |
+|---|---|---|
+| local vol (`auto`) | 0.257 ± 0.013, 0.230 ± 0.019 | 0.302 ± 0.029, 0.238 ± 0.030 |
+| SLV | 0.137 ± 0.014, 0.142 ± 0.004 | 0.210 ± 0.008, 0.227 ± 0.009 |
+| Heston | 0.389 ± 0.231, 0.180 ± 0.019 | 0.248 ± 0.006, 0.267 ± 0.006 |
+| rough Bergomi | 0 ± 0 | 0.338 ± 0.008, 0.323 ± 0.008 |
+
+**Why.**
+- *Heston and SLV.* The probability over the last step is N(d₂) with d₂ ≈ log(F/K) / (σ√h), so its pathwise derivatives carry 1 / (σ√h), with σ = √v (times the leverage in SLV). SPY's fit breaks Feller (2κθ/ξ² = 0.18), so v spends time near zero and these derivatives have infinite variance. This is the same reason Vibrato refuses these models (§14.11). The sample means are then heavy-tailed: usually too low, sometimes far too high, and their error bars mean nothing. The rate risk is hit too (Heston: 218 ± 166).
+- *Rough Bergomi.* There is no closed form over a step, so the slot holds the threshold itself (§14.17), and the delta reads zero. Before #365, the library's `# eps: 3` computed it in a smoothed run.
+
+**What is done.**
+- *A user script* (scripting page) on `lastStepDigital` under Heston or SLV below Feller gets no greeks: every risk is withheld, with the warning `last_step_digital_greeks_withheld` (`scripting::withhold_last_step_digital_greeks`, `ScriptAnalysis::last_step_digital`). The price is unaffected. Under rough Bergomi, the existing `greeks_hard_threshold` warning says the delta reads zero. That warning now reads `spot_comparison`, so it no longer flags `lastStepDigital` under the models that do compute it.
+- *The library's digitals* carry `# eps: 3` and `# greeks: last-step`. Under Heston, SLV and rough Bergomi, the price comes from `lastStepDigital` and the greeks from a second run where each `lastStepDigital(K)` is written as `smooth(spot() − (K), 3)`: the fuzzy threshold the library used before #365 (`product_templates.smoothed_last_step`). Under the other models, nothing changes.
+
+**What should replace it.** Numerical smoothing along the path's *global* Brownian direction (#374, lead 1; Bayer, Ben Hammouda & Tempone). The conditional variance there is the integrated variance over the whole horizon, which stays away from zero, so both the infinite variance and rough Bergomi's zero go away. Smoothing along the last step's increment, the direction #374 measures first, is `lastStepDigital` itself and fails the same way.

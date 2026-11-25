@@ -397,6 +397,9 @@ static py::dict price_script(const std::string &script, double spot, double rate
         // rng = philox. 'auto' falls back to the tape and says why.
         std::optional<AADSimulResults> aad_res;
         std::vector<scripting::Advice> aad_advice;
+        // The script's analysis, for the risks withheld after the run.
+        const scripting::ScriptAnalysis aad_analysis =
+            ScriptedProduct<Real>(script, ctx, script_settings, fixings).analysis();
         std::size_t aad_events = 0;
         std::string aad_device = "cpu", gpu_note, lsm_note;
         // Both adjoint engines take Sobol RQMC with the Brownian bridge
@@ -510,9 +513,19 @@ static py::dict price_script(const std::string &script, double spot, double rate
         }
 
         PricingResult res = to_pricing_result(*aad_res);
+        bool greeks_withheld = false;
         if (res.risks)
-            if (auto withheld = scripting::withhold_variance_parameter_risks(*res.risks, spec.heston, kind))
+        {
+            if (auto withheld = scripting::withhold_last_step_digital_greeks(*res.risks, aad_analysis,
+                                                                             spec.heston, kind))
+            {
+                res.greeks = Greeks{};
+                greeks_withheld = true;
                 aad_advice.push_back(*withheld);
+            }
+            else if (auto withheld = scripting::withhold_variance_parameter_risks(*res.risks, spec.heston, kind))
+                aad_advice.push_back(*withheld);
+        }
         res.diagnostics += gpu_note + " | scripted, " + std::to_string(aad_events) + " events" +
                            (fuzzy ? ", fuzzy" : ", hard") + model_note + lsm_note;
         res.device = aad_device;
@@ -536,7 +549,8 @@ static py::dict price_script(const std::string &script, double spot, double rate
         // Second order (WP 27 §14.10): gamma, vanna and volga by the bump on
         // the GPU's adjoint, the method said next to them. The first-order
         // answer stands when the GPU cannot take it; the diagnostics say why.
-        if (second_order)
+        // None when the first order was withheld: the bump differentiates it.
+        if (second_order && !greeks_withheld)
         {
             // A hard payoff that jumps takes Vibrato (the CPU); the others the
             // bump on the GPU's adjoint.
@@ -719,6 +733,7 @@ static py::dict validate_script(const std::string &script,
     analysis["nonlinear_in_spot"] = a.nonlinear_in_spot;
     analysis["spot_threshold_test"] = a.spot_threshold_test;
     analysis["spot_comparison"] = a.spot_comparison;
+    analysis["last_step_digital"] = a.last_step_digital;
     analysis["path_dependent"] = a.path_dependent;
 
     py::dict out;

@@ -6,10 +6,13 @@
 # summary: Pays a fixed amount if the stock ends below the strike, nothing otherwise.
 # param: strike = 1.0 | percent | Strike, % of the initial level
 # param: payout = 100 | amount | Cash paid if below the strike
+# eps: 3
+# greeks: last-step
 #
 # The mirror of the digital call: together they pay the payout for sure.
 # Written on the call's lastStepDigital, the probability over the model's
 # last step (Giles & Szpruch 2012, section 3.5): the threshold's price, smooth.
+# Its greeks under Heston, SLV and rough Bergomi: as the call's (#372).
 
 2027-01-04
     strike = 1.0

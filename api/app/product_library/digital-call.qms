@@ -6,12 +6,19 @@
 # summary: Pays a fixed amount if the stock ends above the strike, nothing otherwise.
 # param: strike = 1.0 | percent | Strike, % of the initial level
 # param: payout = 100 | amount | Cash paid if above the strike
+# eps: 3
+# greeks: last-step
 #
 # The payout's probability over the model's last step into the expiry,
 # given the path before it (lastStepDigital): the same price as the
 # threshold, a smaller error, and smooth greeks with no fuzzy smoothing
 # (Giles & Szpruch 2012, section 3.5). Under a model with no closed form over its
 # last step (rough Bergomi) it is the threshold itself.
+#
+# Its greeks under Heston, SLV and rough Bergomi come from a second run on
+# the threshold smoothed over the strike +- eps (greeks: last-step, #372):
+# there the last step's volatility comes near zero (Feller broken) or the
+# slot is the threshold, and lastStepDigital's own greeks fail.
 
 2027-01-04
     strike = 1.0

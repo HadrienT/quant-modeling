@@ -251,7 +251,10 @@ write max(spot() - 100, 0). K is a number or any expression known at the
 date, such as a strike relative to an earlier fixing:
 `pays 100 * lastStepDigital(1.05 * s0)`; spot(i)'s is lastStepCall(K, i).
 They run under Black-Scholes, local vol, Heston and SLV, on the CPU and the
-GPU; under rough Bergomi and Hull-White they are the payoff itself.
+GPU; under rough Bergomi and Hull-White they are the payoff itself. Under
+Heston or SLV whose variance breaks Feller, lastStepDigital's greeks have
+infinite variance and are withheld (the price stays): for a digital's greeks
+under those models, write the threshold and suggest Fuzzy.
 
 Generated dates: a date line may be
   schedule(START, END, TENOR, CALENDAR, CONVENTION)
