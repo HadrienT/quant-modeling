@@ -116,6 +116,7 @@ target_sources(quantModeling
         src/market/svi_calibration.cpp
         src/market/svi_surface.cpp
         src/market/essvi.cpp
+        src/market/essvi_superbucket.cpp
         src/market/dupire_from_svi.cpp
         src/market/vol_surface_pipeline.cpp
         src/market/sabr_calibration.cpp
@@ -386,6 +387,7 @@ if(QM_BUILD_TESTS)
     tests/testBarrierMonitoring.cpp
     tests/testLastStep.cpp
     tests/testESSVI.cpp
+    tests/testESSVISuperbucket.cpp
     tests/testAnalyticControls.cpp
     tests/testScriptParser.cpp
     tests/testScriptEval.cpp

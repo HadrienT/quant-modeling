@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | *In progress*. E1 (the eSSVI surface in the C++ core, its Dupire grid, the binding behind `surface_model="essvi"`) done; E2 (the API's local-vol market on eSSVI) and E3 (market vega through the calibration) to do, issue #381 |
+| **Status** | *In progress*. E1 (the eSSVI surface in the C++ core, its Dupire grid, the binding behind `surface_model="essvi"`) and E3 (market vega through the eSSVI calibration) done; E2 (the API's local-vol market on eSSVI) to do, issue #381 |
 | **Depends on** | WP 08 (stored option chains, quote cleaning), WP 16 (the local-vol and SLV script models that read the grid) |
 | **Issue** | #381 |
 
@@ -128,15 +128,60 @@ price, on the out-of-the-money 0.6y call and at the long end, where quotes are
 widest. They barely move with `forward_smoothing` between 0.1 and 1, so they
 come from the slices' shape, not from the smoothing.
 
-## 4. Lots
+## 4. Market vega through the calibration (E3)
+
+The vega by quoted option (`api/app/market_vega.py`) needs dV/d(each quoted
+implied vol). The adjoint Monte Carlo gives dV/dσ_loc on the grid, and
+`essvi_superbucket` (`src/market/essvi_superbucket.cpp`) takes it back through
+the four maps of the calibration, last to first:
+
+| Map | Differentiated by |
+|---|---|
+| Dupire: (θ, ρ, ψ) per slice → σ_loc | the analytic local variance on an AAD tape, with the grid's fills and clamps replayed |
+| Each slice's fit: (its quotes, θ, the slice before) → (ρ, ψ) | the implicit function theorem on its KKT conditions, active set included: butterfly bounds, the ρ bound, and the calendar bounds, which move with the slice before. A slice's risk therefore also flows into the slices before it |
+| The term structure: (θ̂, weight) → θ | the QP's KKT system on its active set, where some forward variances sit at the floor |
+| The at-the-money estimates: quotes → (θ̂, standard error) | linear in w = iv²T; the residual spread by W-orthogonality |
+
+**The implicit function theorem is exact.** It uses the fits' full Hessians
+(analytic second derivatives of the implied vol in θ, ρ and ψ), and adds the
+active bounds' curvature weighted by their Lagrange multipliers.
+
+The SVI superbucket uses the Gauss-Newton Hessian, which drops the
+residual-weighted terms. A slice held on a calendar bound away from its quotes
+has large residuals, and there the Gauss-Newton version was 4–16 % off the
+bump-and-recalibrate value. The exact version agrees with it to 10⁻⁶–1.5·10⁻⁴,
+which is the bump's own noise, in both test scenarios:
+- noise with contradicting slices;
+- the φ bound active, forward variances at the floor, and a slice left out.
+
+The SVI superbucket keeps its Gauss-Newton Hessian, which carries the same
+first-order error on badly fitted slices.
+
+Every quote of every slice that entered the calibration gets a row. A slice
+left out of the surface still moved the term structure. The binding reruns the
+calibration and refuses to differentiate it if it does not give back the
+reported slices, for example when the settings differ.
+
+**On SPY**, for a one-year at-the-money call (200,000 paths, 4.2 s either way):
+
+| | SVI | eSSVI |
+|---|---|---|
+| Total vega per vol point | 2.730 ± 0.002 | 2.690 ± 0.003 |
+| Bucketed on the slices bracketing 1y | 0.85y: 0.34, 1.06y: 2.53 | 0.81y: 0.45, 0.85y: 0.06, 1.06y: 1.50, 1.16y: 0.89 |
+
+The eSSVI vega spreads to the next expiry, 1.16y. Its at-the-money quote moves
+θ at 1.06y through the smoothed term structure. That is the price of the
+smoothing: a quote outvoted by its neighbours also lends them its risk.
+
+## 5. Lots
 
 | Lot | Content | Status |
 |---|---|---|
 | E1 | eSSVI slice, conditions, calibration, term-structure smoothing, surface, Dupire grid; `surface_model` in the binding; `tests/testESSVI.cpp` (slice equals SVI with exact derivatives; noiseless recovery; contradicting quotes still give an arbitrage-free surface whose grid needs no fallback) | Done |
 | E2 | `market_snapshot._local_vol_market` on eSSVI. Local-vol and SLV prices move, so measure the library products before and after, and the maintainer decides. The raw-SVI path stays available | To do |
-| E3 | Market vega (superbucket) through the eSSVI calibration: implicit function theorem on the active constraints | To do |
+| E3 | Market vega (superbucket) through the eSSVI calibration, §4 below: `essvi_superbucket`, the binding's `surface_model`, `api/app/market_vega.py` reading the market's surface; `tests/testESSVISuperbucket.cpp`, `api/tests/test_market_vega.py` on both surfaces | Done |
 
-## 5. Sources
+## 6. Sources
 
 - J. Gatheral, A. Jacquier, *Arbitrage-free SVI volatility surfaces*,
   Quantitative Finance 14(1), 2014.

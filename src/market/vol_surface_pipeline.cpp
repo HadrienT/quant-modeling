@@ -164,6 +164,7 @@ namespace quantModeling
                 if (reports[i].ttm >= selection.min_ttm)
                 {
                     idx.push_back(i);
+                    reports[i].in_calibration = true;
                     slice_quotes.push_back(reports[i].quotes);
                     ttms.push_back(reports[i].ttm);
                 }

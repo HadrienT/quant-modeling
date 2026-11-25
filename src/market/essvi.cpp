@@ -1,4 +1,5 @@
 #include "quantModeling/market/essvi.hpp"
+#include "essvi_detail.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -49,7 +50,7 @@ namespace quantModeling
 
     namespace
     {
-        constexpr Real kStrict = 1.0 - 1e-12; ///< the strict butterfly bound, met with a margin
+        using essvi_detail::kStrict;
 
         /// The largest psi the butterfly bounds allow at (theta, rho).
         Real psi_butterfly_max(Real theta, Real rho) noexcept
@@ -202,17 +203,27 @@ namespace quantModeling
             return {x, fx};
         }
 
-        /// The quotes' at-the-money total variance: a weighted quadratic
-        /// fit of w on k through the quotes nearest k = 0 (seven, or all),
-        /// its value at 0 -- robust to one noisy quote.
-        Real atm_total_variance(const std::vector<SVISliceQuote> &quotes, Real ttm, Real *std_error = nullptr)
+    } // namespace
+
+    namespace essvi_detail
+    {
+        std::vector<std::size_t> atm_quotes(const std::vector<SVISliceQuote> &quotes)
+        {
+            std::vector<std::size_t> idx(quotes.size());
+            for (std::size_t i = 0; i < idx.size(); ++i)
+                idx[i] = i;
+            // stable, so that a tie in |k| is broken the same way every time
+            std::stable_sort(idx.begin(), idx.end(), [&](std::size_t a, std::size_t b)
+                             { return std::fabs(quotes[a].log_moneyness) < std::fabs(quotes[b].log_moneyness); });
+            idx.resize(std::min<std::size_t>(idx.size(), 7));
+            return idx;
+        }
+
+        Real atm_total_variance(const std::vector<SVISliceQuote> &quotes, Real ttm, Real *std_error)
         {
             std::vector<const SVISliceQuote *> near;
-            for (const SVISliceQuote &q : quotes)
-                near.push_back(&q);
-            std::sort(near.begin(), near.end(), [](const SVISliceQuote *a, const SVISliceQuote *b)
-                      { return std::fabs(a->log_moneyness) < std::fabs(b->log_moneyness); });
-            near.resize(std::min<std::size_t>(near.size(), 7));
+            for (const std::size_t i : atm_quotes(quotes))
+                near.push_back(&quotes[i]);
             // normal equations of w = c0 + c1 k + c2 k^2 (c2 dropped with fewer than four points)
             const int n = near.size() >= 4 ? 3 : 2;
             Real A[3][3] = {}, y[3] = {};
@@ -271,6 +282,11 @@ namespace quantModeling
             }
             return c[0] > 0.0 ? c[0] : near.front()->market_iv * near.front()->market_iv * ttm;
         }
+    } // namespace essvi_detail
+
+    namespace
+    {
+        using essvi_detail::atm_total_variance;
 
         /// The best (theta, psi) at `rho` under the bounds: the objective, and
         /// the parameters through `out`. +inf if nothing is feasible.

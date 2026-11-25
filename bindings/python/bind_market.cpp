@@ -123,6 +123,7 @@ static py::dict calibrate_vol_surface_impl(
         sd["converged"] = s.converged;
         sd["butterfly_arbitrage_free"] = s.butterfly_arbitrage_free;
         sd["in_surface"] = s.in_surface;
+        sd["in_calibration"] = s.in_calibration;
         // The band the slice's SVI is trusted on (WP 26 §9.3).
         sd["k_lo"] = static_cast<double>(s.band.lo);
         sd["k_hi"] = static_cast<double>(s.band.hi);
@@ -154,6 +155,10 @@ static py::dict calibrate_vol_surface_impl(
     // from `slices` should reuse this rather than guessing its own range.
     out["k_min"] = static_cast<double>(result.k_min);
     out["k_max"] = static_cast<double>(result.k_max);
+    // What the superbucket needs to rerun the calibration it differentiates.
+    out["surface_model"] = surface_model;
+    out["essvi_forward_smoothing"] = essvi_forward_smoothing;
+    out["essvi_min_forward_vol"] = essvi_min_forward_vol;
     return out;
 }
 
@@ -258,14 +263,44 @@ static py::dict calibrate_slv_leverage_impl(double spot, double rate, double div
 static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, double rate,
                                         double dividend, double k_min, double k_max,
                                         std::size_t n_strikes, std::size_t n_maturities,
-                                        const std::vector<double> &dV_dsigma_loc)
+                                        const std::vector<double> &dV_dsigma_loc,
+                                        const std::string &surface_model, double essvi_forward_smoothing,
+                                        double essvi_min_forward_vol)
 {
     using namespace quantModeling;
+    if (surface_model != "svi" && surface_model != "essvi")
+        throw std::invalid_argument("dupire_superbucket: surface_model is 'svi' or 'essvi'");
     std::vector<SVISliceCalibration> slices;
     std::vector<std::vector<SVISliceQuote>> quotes;
+    std::vector<Real> ttms;
+    std::vector<std::array<Real, 3>> reported; // eSSVI: in_surface slices' (theta, rho, psi), as reported
+    std::vector<std::size_t> reported_at;
     for (const py::handle h : slices_py)
     {
         const py::dict d = py::reinterpret_borrow<py::dict>(h);
+        if (surface_model == "essvi")
+        {
+            // Every slice the eSSVI calibration read, in its order.
+            if (!d.contains("in_calibration") || !d["in_calibration"].cast<bool>())
+                continue;
+            std::vector<SVISliceQuote> q;
+            for (const py::handle t : d["quotes"].cast<py::list>())
+            {
+                const auto [k, iv, w] = t.cast<std::tuple<double, double, double>>();
+                q.push_back({k, iv, w});
+            }
+            if (d["in_surface"].cast<bool>())
+            {
+                // back from raw SVI: psi = 2 b, theta = w(0)
+                const SVIParams p{d["a"].cast<double>(), d["b"].cast<double>(), d["rho"].cast<double>(),
+                                  d["m"].cast<double>(), d["sigma"].cast<double>()};
+                reported.push_back({svi_total_variance(0.0, p), p.rho, 2.0 * p.b});
+                reported_at.push_back(ttms.size());
+            }
+            ttms.push_back(d["ttm"].cast<double>());
+            quotes.push_back(std::move(q));
+            continue;
+        }
         // Only the slices the grid was built from (calibrate_vol_surface's
         // select_surface_slices); a slice left out moves no local vol.
         if (d.contains("in_surface") && !d["in_surface"].cast<bool>())
@@ -285,6 +320,37 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
         quotes.push_back(std::move(q));
     }
     SuperbucketResult r;
+    if (surface_model == "essvi")
+    {
+        ESSVICalibrationSettings settings;
+        settings.forward_smoothing = essvi_forward_smoothing;
+        settings.min_forward_vol = essvi_min_forward_vol;
+        {
+            py::gil_scoped_release release;
+            // The calibration the superbucket reruns must be the one the grid
+            // came from: same slices, same settings, same parameters.
+            const std::vector<ESSVISliceFit> fits = calibrate_essvi_slices(quotes, ttms, settings);
+            std::size_t next = 0;
+            for (std::size_t s = 0; s < fits.size(); ++s)
+            {
+                if (!fits[s].feasible)
+                    continue;
+                if (next >= reported.size() || reported_at[next] != s)
+                    throw InvalidInput("dupire_superbucket: the slices are not the ones this eSSVI calibration keeps");
+                const ESSVIParams &p = fits[s].params;
+                const std::array<Real, 3> want{p.theta, p.rho, p.psi};
+                for (std::size_t j = 0; j < 3; ++j)
+                    if (std::fabs(want[j] - reported[next][j]) > 1e-9 * (1.0 + std::fabs(want[j])))
+                        throw InvalidInput("dupire_superbucket: the eSSVI settings differ from the calibration's");
+                ++next;
+            }
+            if (next != reported.size())
+                throw InvalidInput("dupire_superbucket: the slices are not the ones this eSSVI calibration keeps");
+            r = essvi_superbucket(quotes, ttms, settings, spot, rate, dividend, k_min, k_max, n_strikes, n_maturities,
+                                  dV_dsigma_loc);
+        }
+    }
+    else
     {
         py::gil_scoped_release release;
         r = dupire_superbucket(slices, quotes, spot, rate, dividend, k_min, k_max, n_strikes,
@@ -306,6 +372,7 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
     out["quotes"] = rows;
     out["dV_dsvi"] = r.dV_dsvi;
     out["at_bound"] = r.at_bound;
+    out["dV_dessvi"] = r.dV_dessvi;
     return out;
 }
 
@@ -367,10 +434,16 @@ void register_market(py::module_ &m)
     m.def("dupire_superbucket", &dupire_superbucket_impl, py::arg("slices"), py::arg("spot"),
           py::arg("rate"), py::arg("dividend"), py::arg("k_min"), py::arg("k_max"),
           py::arg("n_strikes"), py::arg("n_maturities"), py::arg("dV_dsigma_loc"),
+          py::arg("surface_model") = "svi", py::arg("essvi_forward_smoothing") = 0.1,
+          py::arg("essvi_min_forward_vol") = 0.05,
           "dV / d(each quoted implied vol) from dV/dsigma_loc (the local-vol AAD "
           "risks, K-major): through Dupire on an AAD tape, then through each SVI "
           "fit by the implicit function theorem (market/superbucket.hpp, lot 17h). "
-          "`slices` are calibrate_vol_surface's, with their `quotes`.");
+          "`slices` are calibrate_vol_surface's, with their `quotes`; "
+          "surface_model and the eSSVI settings are the calibration's (its result "
+          "carries them). With 'essvi', every slice of the eSSVI calibration gets "
+          "rows, and the calibration is checked to give the reported slices back "
+          "(market/superbucket.hpp, essvi_superbucket; WP 30 E3).");
     m.def("calibrate_heston", &calibrate_heston_impl, py::arg("strikes"),
           py::arg("ttms"), py::arg("implied_vols"), py::arg("spot"), py::arg("rate"),
           py::arg("dividend"),

@@ -32,6 +32,10 @@ namespace quantModeling
         /// built from (see select_surface_slices). A slice left out is still
         /// calibrated and reported, for display and for Heston's fit.
         bool in_surface = false;
+        /// eSSVI only: the slice was one of calibrate_essvi_slices' inputs
+        /// (past min_ttm). Its quotes moved the term structure even when it
+        /// is not in the surface, so the superbucket reads them.
+        bool in_calibration = false;
         /// The cleaned quotes the slice was fitted to (log-moneyness, implied
         /// vol, weight): the market the superbucket differentiates against.
         std::vector<SVISliceQuote> quotes;
