@@ -331,6 +331,39 @@ namespace quantModeling::scripting
         return Advice{"variance_parameter_risks_withheld", "info", buf};
     }
 
+    /// lastStepDigital under Heston or SLV whose calibrated variance breaks
+    /// Feller (#372): the digital's probability over the last step is
+    /// N(d2) with d2 ~ log(F/K) / (sigma sqrt(h)), so its pathwise delta
+    /// carries 1 / (sigma sqrt(h)), and sigma = sqrt(v) spends time near
+    /// zero. That delta has infinite variance: on SPY's fit it came out at
+    /// 0.39 +- 0.23, then 0.18 +- 0.02, against 0.25 to 0.27 smoothed. The
+    /// spot, rate and dividend risks are then withheld rather than shown;
+    /// the price is unaffected.
+    inline std::optional<Advice> withhold_last_step_digital_greeks(RiskReport &risks,
+                                                                   const ScriptAnalysis &a,
+                                                                   const HestonParams &h, ModelKind model)
+    {
+        if (!a.last_step_digital)
+            return std::nullopt;
+        if (model != ModelKind::Heston && model != ModelKind::StochasticLocalVol)
+            return std::nullopt;
+        const double feller = h.xi > 0.0 ? 2.0 * h.kappa * h.theta / (h.xi * h.xi) : 1e300;
+        if (feller >= 1.0 || risks.labels.empty())
+            return std::nullopt;
+        risks = RiskReport{};
+        char buf[640];
+        std::snprintf(buf, sizeof buf,
+                      "No greeks: lastStepDigital's pathwise derivatives divide by the volatility "
+                      "of the model's last step, and the calibrated variance breaks the Feller "
+                      "condition (2 kappa theta / xi^2 = %.2f, below 1), so that volatility comes "
+                      "near zero and the greeks have infinite variance: neither their value nor "
+                      "their error could be trusted. The price is unaffected. For greeks, price "
+                      "with model='local_vol', or write the threshold "
+                      "(if spot() > K then ...) and turn on Fuzzy.",
+                      feller);
+        return Advice{"last_step_digital_greeks_withheld", "warning", buf};
+    }
+
 } // namespace quantModeling::scripting
 
 #endif // QM_SCRIPTING_MODEL_ADVICE_HPP

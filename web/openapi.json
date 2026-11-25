@@ -11100,6 +11100,12 @@
             "title": "Path Dependent",
             "type": "boolean"
           },
+          "spot_comparison": {
+            "default": false,
+            "description": "A crisp comparison of a spot-derived value: unless fuzzy, the payoff jumps there along a path. Unlike spot_threshold_test, not set by the bridge survivals or lastStepDigital, whose values are smooth.",
+            "title": "Spot Comparison",
+            "type": "boolean"
+          },
           "spot_threshold_test": {
             "title": "Spot Threshold Test",
             "type": "boolean"

@@ -206,4 +206,41 @@ namespace quantModeling
         EXPECT_EQ(other.labels.size(), 9u);
     }
 
+    // lastStepDigital's pathwise greeks divide by the last step's volatility
+    // (#372): under Heston or SLV below Feller they have infinite variance and
+    // are all withheld; above it, under local vol, or for a script without
+    // lastStepDigital (a call on lastStepCall) they stay.
+    TEST(ModelAdvice, LastStepDigitalGreeksAreWithheldBelowFeller)
+    {
+        const auto report = []
+        { return RiskReport{{"spot", "rate", "div"}, {0.39, 217.0, -280.0}, {0.23, 166.0, 170.0}}; };
+        const HestonParams below{0.0755, 3.09, 0.0886, 1.755, -0.36}; // ratio 0.18
+        const HestonParams above{0.04, 1.5, 0.04, 0.3, -0.6};         // ratio 1.33
+        const auto digital = analyze("2025-06-03\n    pays 100 * lastStepDigital(100)\n");
+        const auto call = analyze("2025-06-03\n    pays lastStepCall(100)\n");
+        EXPECT_TRUE(digital.last_step_digital);
+        EXPECT_FALSE(call.last_step_digital);
+
+        for (const ModelKind m : {ModelKind::Heston, ModelKind::StochasticLocalVol})
+        {
+            RiskReport r = report();
+            const auto why = scripting::withhold_last_step_digital_greeks(r, digital, below, m);
+            ASSERT_TRUE(why.has_value());
+            EXPECT_EQ(why->code, "last_step_digital_greeks_withheld");
+            EXPECT_EQ(why->severity, "warning");
+            EXPECT_NE(why->message.find("0.18"), std::string::npos);
+            EXPECT_TRUE(r.labels.empty() && r.values.empty() && r.std_errors.empty());
+        }
+
+        RiskReport healthy = report();
+        EXPECT_FALSE(scripting::withhold_last_step_digital_greeks(healthy, digital, above, ModelKind::Heston));
+        RiskReport local = report();
+        EXPECT_FALSE(
+            scripting::withhold_last_step_digital_greeks(local, digital, below, ModelKind::LocalVolSurface));
+        RiskReport smooth = report();
+        EXPECT_FALSE(scripting::withhold_last_step_digital_greeks(smooth, call, below, ModelKind::Heston));
+        for (const RiskReport *r : {&healthy, &local, &smooth})
+            EXPECT_EQ(r->labels.size(), 3u);
+    }
+
 } // namespace quantModeling

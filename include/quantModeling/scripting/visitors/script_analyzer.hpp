@@ -64,6 +64,11 @@ namespace quantModeling::scripting
         /// Hull-White as the payoff itself (issue #363) -- so it does not
         /// steer the model's choice.
         bool last_step = false;
+
+        /// The script reads lastStepDigital: its pathwise delta divides by
+        /// the last step's volatility, which a square-root variance that
+        /// breaks Feller brings near zero (withhold_last_step_digital_greeks).
+        bool last_step_digital = false;
     };
 
     namespace detail
@@ -163,6 +168,8 @@ namespace quantModeling::scripting
                     out.nonlinear_in_spot = true;
                     if (survival || s->kind == StepQuantity::LastStepDigital)
                         out.spot_threshold_test = true;
+                    if (s->kind == StepQuantity::LastStepDigital)
+                        out.last_step_digital = true;
                     if (survival)
                         out.path_dependent = true;
                     // A strike the script computes from a fixing (strike * s0):

@@ -17,7 +17,12 @@ header the site reads:
     # greeks: separate                 (with eps: "joint", one smoothed run
                                        for the price and the greeks; or
                                        "separate", the price unsmoothed and the
-                                       greeks from a second, smoothed run)
+                                       greeks from a second, smoothed run; or
+                                       "last-step", for a script on
+                                       lastStepDigital: its own greeks, except
+                                       under the models where they fail
+                                       (LAST_STEP_FALLBACK_MODELS), which take
+                                       them from the threshold smoothed at eps)
     # curve: sofr                      (optional, rates only: the USD SOFR
                                        curve of the traded swaps, Hull-White
                                        calibrated to the traded swaptions)
@@ -96,7 +101,7 @@ class Template:
     #: units of the expressions its conditions compare, and how the price is
     #: taken: "joint" from the smoothed run (its bias measured below half an
     #: error), "separate" from a second, unsmoothed run (WP 26 §5, #226
-    #: follow-up).
+    #: follow-up), or "last-step" (smoothed_last_step).
     eps: float | None = None
     greeks: str = "joint"
 
@@ -137,8 +142,10 @@ def parse(slug: str, text: str) -> Template:
         eps=float(meta["eps"]) if "eps" in meta else None,
         greeks=meta.get("greeks", "joint"),
     )
-    if t.greeks not in ("joint", "separate"):
-        raise ValueError(f"{slug}: greeks must be 'joint' or 'separate'")
+    if t.greeks not in ("joint", "separate", "last-step"):
+        raise ValueError(f"{slug}: greeks must be 'joint', 'separate' or 'last-step'")
+    if t.greeks == "last-step" and (t.eps is None or "lastStepDigital" not in t.script):
+        raise ValueError(f"{slug}: greeks 'last-step' needs eps and lastStepDigital")
     if t.eps is not None and not t.eps > 0:
         raise ValueError(f"{slug}: eps must be positive")
     if t.market not in ("equity", "rates"):
@@ -389,3 +396,47 @@ __all__ = [
     "start_on",
     "stretch",
 ]
+
+
+#: The models under which lastStepDigital's adjoint greeks fail (#372).
+#: Heston and SLV: the probability over the last step divides by that step's
+#: volatility, sqrt(v), which a calibrated variance that breaks Feller brings
+#: near zero, so the greeks have infinite variance (SPY: a delta of 0.39 +-
+#: 0.23 then 0.18 +- 0.02, against 0.25 to 0.27 smoothed). Rough Bergomi: no
+#: closed form over a step, the slot is the threshold itself and the delta
+#: reads zero.
+LAST_STEP_FALLBACK_MODELS = ("heston", "slv", "rough_bergomi")
+
+
+def smoothed_last_step(script: str, eps: float) -> str:
+    """The script with each lastStepDigital(K[, i]) written as the threshold
+    it stands for, smoothed over [K - eps, K + eps] like fuzzy's call spread:
+    smooth(spot([i]) - (K), eps). Its price moves by O(eps^2); its pathwise
+    greeks stay bounded whatever the model's last step. Comments are left
+    as they are."""
+    lines = []
+    for line in script.splitlines(keepends=True):
+        code, hash_, comment = line.partition("#")
+        lines.append(_smooth_digitals(code, eps) + hash_ + comment)
+    return "".join(lines)
+
+
+def _smooth_digitals(code: str, eps: float) -> str:
+    out, pos, name = [], 0, "lastStepDigital("
+    while (start := code.find(name, pos)) >= 0:
+        i, depth, commas = start + len(name), 1, []
+        while depth:
+            if i >= len(code):
+                raise ValueError("lastStepDigital: unbalanced parentheses")
+            c = code[i]
+            depth += (c == "(") - (c == ")")
+            if c == "," and depth == 1:
+                commas.append(i)
+            i += 1
+        first = start + len(name)
+        bounds = [first - 1, *commas, i - 1]
+        parts = [code[a + 1 : b].strip() for a, b in zip(bounds, bounds[1:])]
+        spot = f"spot({parts[1]})" if len(parts) > 1 else "spot()"
+        out.append(code[pos:start] + f"smooth({spot} - ({parts[0]}), {eps:g})")
+        pos = i
+    return "".join(out) + code[pos:]

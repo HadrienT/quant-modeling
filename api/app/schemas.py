@@ -702,6 +702,12 @@ class ScriptAnalysis(BaseModel):
     n_underlyings: int
     nonlinear_in_spot: bool
     spot_threshold_test: bool
+    spot_comparison: bool = Field(
+        False,
+        description="A crisp comparison of a spot-derived value: unless fuzzy, "
+        "the payoff jumps there along a path. Unlike spot_threshold_test, not "
+        "set by the bridge survivals or lastStepDigital, whose values are smooth.",
+    )
     path_dependent: bool
 
 

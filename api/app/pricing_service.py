@@ -287,18 +287,28 @@ def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
     return ScriptValidateResponse(**result)
 
 
-def _hard_threshold_greeks(req: ScriptRequest, valuation_date) -> List[Dict]:
+def _hard_threshold_greeks(
+    req: ScriptRequest, valuation_date, model: str
+) -> List[Dict]:
     """A warning when adjoint greeks are asked of a payoff that jumps at a
     level of the spot (a digital, a barrier) without smoothing: path by path
     the derivative of a step is zero, so the adjoint misses what the jump
-    contributes to delta and vega — it can read exactly zero. Only smoothing
-    (`fuzzy`) gives the adjoint something to differentiate."""
+    contributes to delta and vega -- it can read exactly zero. Only smoothing
+    (`fuzzy`) gives the adjoint something to differentiate.
+
+    A crisp comparison always jumps. The bridge survivals and lastStepDigital
+    do not: the model computes them as smooth probabilities, except rough
+    Bergomi, which has no closed form over a step and writes the threshold
+    itself."""
     if req.greeks_method != "aad" or req.fuzzy:
         return []
     analysis = qm.validate_script(
         req.script, valuation_date.isoformat(), req.day_count
     )["analysis"]
-    if not analysis["spot_threshold_test"]:
+    jumps = analysis["spot_comparison"] or (
+        model == "rough_bergomi" and analysis["spot_threshold_test"]
+    )
+    if not jumps:
         return []
     return [
         {
@@ -554,7 +564,7 @@ def _price_multi_asset(
             **grids,
         )
     result["warnings"] = (
-        _hard_threshold_greeks(req, valuation_date)
+        _hard_threshold_greeks(req, valuation_date, model)
         + warnings
         + list(result.get("warnings", []))
     )
@@ -1002,8 +1012,18 @@ def _price_library_script(
     an error); `separate` takes the price from an unsmoothed run and the
     greeks from a second, smoothed one. A request that sets `fuzzy` or
     `default_eps` itself is priced as it asks."""
+    from . import product_templates
+
     eps = template.eps
     asked = {"fuzzy", "default_eps"} & req.model_fields_set
+    if template.greeks == "last-step":
+        if (
+            req.model in product_templates.LAST_STEP_FALLBACK_MODELS
+            and req.greeks_method == "aad"
+            and not asked
+        ):
+            return _last_step_fallback(req, template, script, fields, start_today)
+        eps = None  # lastStepDigital's own greeks
     if eps is None or req.greeks_method != "aad" or asked:
         return price_script(
             ScriptRequest(script=script, **fields),
@@ -1044,6 +1064,43 @@ def _price_library_script(
             + f" | greeks from a second run smoothed at eps {eps:g}, the width "
             "measured for this product: smoothing would move its price by more "
             "than half an error, so the price is the unsmoothed run's",
+        }
+    )
+
+
+def _last_step_fallback(
+    req, template, script: str, fields: dict, start_today: bool
+) -> PricingResponse:
+    """A library digital on lastStepDigital under a model where its greeks
+    fail (product_templates.LAST_STEP_FALLBACK_MODELS, #372): the price
+    from lastStepDigital, unbiased, and the greeks from a second run on the
+    threshold smoothed at the product's measured eps, as before #365."""
+    from . import product_templates
+
+    eps = template.eps
+    plain = {**fields, "greeks_method": "none", "second_order": False}
+    priced = price_script(
+        ScriptRequest(script=script, **plain), library=True, start_today=start_today
+    )
+    smoothed = product_templates.smoothed_last_step(script, eps)
+    risks = price_script(
+        ScriptRequest(script=smoothed, **fields),
+        library=True,
+        start_today=start_today,
+    )
+    return priced.model_copy(
+        update={
+            "greeks": risks.greeks,
+            "risks": risks.risks,
+            "bumped_greeks": risks.bumped_greeks,
+            "second_order_method": risks.second_order_method,
+            "compute_ms": (priced.compute_ms or 0.0) + (risks.compute_ms or 0.0),
+            "warnings": priced.warnings
+            + [w for w in risks.warnings if w not in priced.warnings],
+            "diagnostics": priced.diagnostics
+            + f" | greeks from a second run on the threshold smoothed at eps {eps:g}: "
+            "under this model lastStepDigital's own greeks have infinite variance "
+            "(Heston, SLV) or read zero (rough Bergomi)",
         }
     )
 
@@ -1299,7 +1356,7 @@ def price_script(
         else:
             result = run(req.greeks_method, second, "euler")
     result["warnings"] = (
-        _hard_threshold_greeks(req, valuation_date)
+        _hard_threshold_greeks(req, valuation_date, model)
         + market_warnings
         + list(result.get("warnings", []))
     )
