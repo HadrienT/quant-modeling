@@ -718,6 +718,7 @@ static py::dict validate_script(const std::string &script,
     analysis["n_underlyings"] = a.n_underlyings;
     analysis["nonlinear_in_spot"] = a.nonlinear_in_spot;
     analysis["spot_threshold_test"] = a.spot_threshold_test;
+    analysis["spot_comparison"] = a.spot_comparison;
     analysis["path_dependent"] = a.path_dependent;
 
     py::dict out;

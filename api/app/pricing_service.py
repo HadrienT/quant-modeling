@@ -287,18 +287,28 @@ def validate_script(req: ScriptValidateRequest) -> ScriptValidateResponse:
     return ScriptValidateResponse(**result)
 
 
-def _hard_threshold_greeks(req: ScriptRequest, valuation_date) -> List[Dict]:
+def _hard_threshold_greeks(
+    req: ScriptRequest, valuation_date, model: str
+) -> List[Dict]:
     """A warning when adjoint greeks are asked of a payoff that jumps at a
     level of the spot (a digital, a barrier) without smoothing: path by path
     the derivative of a step is zero, so the adjoint misses what the jump
-    contributes to delta and vega — it can read exactly zero. Only smoothing
-    (`fuzzy`) gives the adjoint something to differentiate."""
+    contributes to delta and vega -- it can read exactly zero. Only smoothing
+    (`fuzzy`) gives the adjoint something to differentiate.
+
+    A crisp comparison always jumps. The bridge survivals and lastStepDigital
+    do not: the model computes them as smooth probabilities, except rough
+    Bergomi, which has no closed form over a step and writes the threshold
+    itself."""
     if req.greeks_method != "aad" or req.fuzzy:
         return []
     analysis = qm.validate_script(
         req.script, valuation_date.isoformat(), req.day_count
     )["analysis"]
-    if not analysis["spot_threshold_test"]:
+    jumps = analysis["spot_comparison"] or (
+        model == "rough_bergomi" and analysis["spot_threshold_test"]
+    )
+    if not jumps:
         return []
     return [
         {
@@ -554,7 +564,7 @@ def _price_multi_asset(
             **grids,
         )
     result["warnings"] = (
-        _hard_threshold_greeks(req, valuation_date)
+        _hard_threshold_greeks(req, valuation_date, model)
         + warnings
         + list(result.get("warnings", []))
     )
@@ -1299,7 +1309,7 @@ def price_script(
         else:
             result = run(req.greeks_method, second, "euler")
     result["warnings"] = (
-        _hard_threshold_greeks(req, valuation_date)
+        _hard_threshold_greeks(req, valuation_date, model)
         + market_warnings
         + list(result.get("warnings", []))
     )

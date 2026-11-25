@@ -81,3 +81,37 @@ def test_smoothing_gives_the_digital_a_delta_and_lifts_the_flag():
 
 def test_the_flag_is_about_greeks_only():
     assert "greeks_hard_threshold" not in _codes(_price(DIGITAL, greeks_method="none"))
+
+
+LAST_STEP = "2027-10-02\n    pays 10 * lastStepDigital(100)"
+
+
+def test_a_last_step_digital_has_a_delta_and_no_flag():
+    # The model computes the payout's probability over the last step: a
+    # smooth value, whose pathwise delta is the digital's. Under flat vol it
+    # is the closed form: 10 e^{-rT} phi(d2) / (S sigma sqrt(T)), T = 1.
+    priced = _price(LAST_STEP)
+    spot = next(r for r in priced["risks"] if r["label"] == "spot")
+    d2 = (0.03 - 0.5 * 0.2**2) / 0.2
+    phi = math.exp(-0.5 * d2 * d2) / math.sqrt(2.0 * math.pi)
+    delta = 10.0 * math.exp(-0.03) * phi / (100.0 * 0.2)
+    assert abs(spot["value"] - delta) < 1e-6 * delta
+    assert "greeks_hard_threshold" not in _codes(priced)
+
+
+def test_rough_bergomi_flags_the_last_step_digital():
+    # Rough Bergomi has no closed form over a step: it writes the threshold
+    # itself, and the adjoint's delta reads zero again.
+    from datetime import date
+
+    from api.app.pricing_service import _hard_threshold_greeks
+    from api.app.schemas import ScriptRequest
+
+    req = ScriptRequest(
+        script=LAST_STEP, spot=100.0, vol=0.2, rate=0.03, greeks_method="aad"
+    )
+    day = date(2026, 10, 2)
+    assert _hard_threshold_greeks(req, day, "rough_bergomi")[0]["code"] == (
+        "greeks_hard_threshold"
+    )
+    assert not _hard_threshold_greeks(req, day, "local_vol")
