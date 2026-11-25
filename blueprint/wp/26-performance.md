@@ -3022,6 +3022,53 @@ Tests: `tests/testKnockOut.cpp`:
 
 `api/tests/test_knock_out_api.py`: model `auto`, the price against the hard script on the same model, a delta with no warning, the refusal under Heston.
 
+### 26.5 Milstein on every step but the one into a date (#371, 2026-11-25)
+
+**Why β stayed at 0.5.** The conditioned estimators (`lastStep*`, the bridge survivals, the knock-outs of §26.4) remove the indicator, but Giles's h^{3/2} for a digital needs a scheme of strong order 1. Log-Euler leaves an O(h^{1/2}) gap between the fine and the coarse spots, and the weight's slope grows as 1/(σ√h). Milstein is strong order 1 for a scalar SDE (local vol: one Brownian motion, so no Lévy area), but its (z² − 1) term makes the step non-lognormal, and every closed form over the step into a date needs a lognormal step. So the model refused them together.
+
+**The step.** `LocalVolSimModel::set_milstein_before_dates` (`ScriptModelSpec::milstein_before_dates`): Milstein on every step, except the steps that reach a product date, which stay log-Euler.
+- The closed forms, the knock-outs' conditioned draw and multilevel's coarse conditioning still apply. They only read the step into a date.
+- With a bridge survival, which is computed on every step, the coarse path is not conditioned.
+- CPU only, as Milstein: the device steps log-Euler.
+
+**The antithetic estimator (Giles & Szpruch 2014)** is not for local vol. In one dimension, the leading term of the fine-coarse gap, σσ′ ΔW₁ΔW₂, is symmetric in swapping the two fine increments, so the swap does not cancel it. The estimator replaces the Lévy area of a *truncated* Milstein in two or more dimensions: Heston and SLV, once they have a Milstein step.
+
+**Measured** (`qm_mlmc_conditional_bench 200000 6 {euler|milstein|before}`; `QM_BENCH_GRID` reads a market grid, strikes scaled to a spot of 100). Fixed levels 0..6, 0..4 for the daily products. The cost is (Σ √(V_l C_l))² over those levels.
+
+*Skewed 5 × 3 surface (C¹ in strike):*
+
+| Product | β log-Euler | β Milstein (every step) | β Milstein before dates | Cost, Euler / before |
+|---|---|---|---|---|
+| vanilla `lastStepCall`, coarse conditioned | 1.02 | refused | **2.06** | ÷3.1 |
+| digital `lastStepDigital`, coarse conditioned | 0.50 | refused | **1.45** | ÷7.2 |
+| daily up-and-out `knockOutAbove`, coarse conditioned | 0.46 | refused | **1.47** | ÷1.3 (level 0 dominates) |
+| vanilla, Asian, weekly lookback (hard) | 1.05, 1.02, 1.03 | 2.04, 1.98, 2.03 | 2.09, 2.02, 2.04 | |
+| daily up-and-out (hard) | 0.53 | 0.98 | 0.95 | ÷1.2 |
+| continuous up-and-out `survivalBelow` | 0.56 | 0.52 | 0.55 (not conditioned) | |
+
+The conditioned digital and knock-out reach Giles's 1.5. With β > γ = 1, the adaptive cost becomes O(ε⁻²) instead of about ε^{-2.5}, so the gains grow as the target tightens.
+
+*SPY's production grid* (snapshot of 2026-11-24, 100 × 50, C¹ in strike):
+
+| Product | β log-Euler | β Milstein (every step) | β Milstein before dates | Cost, Euler / before |
+|---|---|---|---|---|
+| vanilla (hard) | 0.87 | 1.21 | 1.19 | ÷1.5 |
+| vanilla `lastStepCall`, coarse conditioned | 0.85 | refused | 1.17 | ÷1.5 |
+| digital `lastStepDigital`, coarse conditioned | 0.39 | refused | **0.94** | ÷2.9 |
+| daily up-and-out `knockOutAbove`, coarse conditioned | 0.45 | refused | **1.21** | ÷1.3 |
+| Asian, weekly lookback (hard) | 0.90, 1.03 | 1.46, 1.36 | 1.50, 1.63 | ÷1.4, ÷1.1 |
+| daily up-and-out (hard) | 0.45 | 0.53 | 0.97 | ÷1.2 |
+
+- **§9.3's pathology is gone.** Milstein no longer makes the coupling worse on SPY: the vanilla's β is 1.21 against 0.41 on 2026-11-12, on the bilinear grid. The C¹ grid (WP 27 §14.15) removed the jumps of ∂σ/∂S that broke it.
+- **The prices agree** between the schemes within error.
+- **Still short of the theory.** SPY's β stays below the toy surface's (vanilla 1.2 against 2). The vanilla's V_l plateau at level 4 (0.70, 0.71) in both Milstein variants, so the grid still slows the decay. To check: the strike range's edges, where the flat extrapolation drops ∂σ/∂S to 0 (−32 %, +40 % of the spot), and the linear interpolation in maturity.
+
+**Not changed:** the default route. The API's local-vol multilevel runs on the GPU (MLQMC, log-Euler kernels), and the new step is CPU only. Making it the route needs the step in the IR's paths (`local_vol_with_slope` is already host-device). That decision is the maintainer's, after the edges are checked.
+
+Tests:
+- `Mlmc.MilsteinBeforeTheDatesKeepsTheClosedFormsAndLiftsBeta`: the conditioned digital's β above 1.2, against below 0.8 for log-Euler; the same price; the coarse conditioning declined with a bridge survival; the device declines.
+- The bench's runs above.
+
 ## 27. The adjoint's fold on the card: no host time between the launches (#361, 2026-11-24)
 
 **What §25 found.** At 1M paths on the page's SLV grid, about 220 ms of a 550 ms call went between the adjoint's launches. Each launch:

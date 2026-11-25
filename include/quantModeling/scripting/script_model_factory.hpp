@@ -62,6 +62,8 @@ namespace quantModeling::scripting
         /// local_vol (one underlying): the Milstein step instead of log-Euler
         /// (WP 26 P4b), CPU only.
         bool milstein = false;
+        /// Local vol: Milstein except on the steps that reach a date (#371).
+        bool milstein_before_dates = false;
         /// heston, slv: how a price run (T = Real) steps the variance (#317).
         /// Euler stays for the adjoint risks and multilevel whatever this says.
         mc::VarianceScheme variance_scheme = mc::VarianceScheme::Euler;
@@ -190,6 +192,7 @@ namespace quantModeling::scripting
             auto m = std::make_unique<LocalVolSimModel<T>>(T(s.spot), T(s.rate), T(s.dividend), s.K_grid, s.T_grid,
                                                            to_T(s.sigma_loc_flat), s.max_dt);
             m->set_milstein(s.milstein);
+            m->set_milstein_before_dates(s.milstein_before_dates);
             return m;
         }
         if (s.model == "heston")
