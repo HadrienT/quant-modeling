@@ -3044,7 +3044,22 @@ The model is resolved up front (`pricing_service._resolved_model`, `auto`'s reco
 
 **What the page shows.** Under SLV, `auto`'s choice, the price agrees with the hard script within error, with a smaller error, and the greeks are those of before (smoothed). Under local vol, the greeks are now unbiased and unsmoothed.
 
-Left for L2b: the knock-ins (one-touch, down-and-in put, barrier reverse convertible, bonus certificate) and the shark-fin's rebate, which need the unconditioned paths: E[1{hit} f] = E[f] − E[1{alive} f]. They will use signed parts priced as separate runs.
+**L2b: signed parts, kept for the shark-fin only.** What is paid where the barrier is touched needs the unconditioned paths: E[1{hit} f] = E[f] − E[1{alive} f]. The conditioned paths never touch the barrier, and no weight can bring back paths the conditioned law gives no mass. Hence `Template.parts`: signed "# part: ±" sections after the script, with the same terms and dates. `render_parts` renders them, and `pricing_service._price_parts` prices each as a library script (a knock-out part as L2a does) under the one model the product's script resolves to, on its own seed. `_signed_sum` adds the price, the greeks and the risks with their signs, the errors in quadrature. Every other use of the product (portfolios, their xVA, risk profiles) reads the one hard script.
+
+Measured on the synthetic surface (six months, daily closes, 8,000 paths; local vol's error is its multilevel target's):
+
+| Product | Error, parts / hard script, local vol | Same, SLV |
+|---|---|---|
+| one-touch | 0.120 / 0.018 | 0.183 / 0.162 |
+| down-and-in put | 0.0081 / 0.0011 | 0.028 / 0.024 |
+| barrier reverse convertible | 1.11 / 1.34 | 0.29 / 0.17 |
+| bonus certificate | 1.31 / 1.41 | 0.46 / 0.43 |
+| shark-fin | 0.010 / 1.00 | **0.26 / 0.46** |
+
+The prices agree with the hard script within error.
+- **The knock-ins lose.** A knock-in is one large part less another. Under local vol the multilevel target is relative to each part's price (the one-touch's knock-out part is worth about 83, the product 13), and under SLV the two runs' variances add up. So they stay on their hard script: no displayed number moves for them (the maintainer's decision, 2026-11-25).
+- **The shark-fin wins.** Its unconditioned part is a constant, the rebate, with no variance. At fixed paths (SLV) its error is 1.8 times smaller. Under local vol part of its gain is a tighter target: the knock-out part's price sets it.
+- **A closed form for the knock-ins' European part** (the Black-Scholes formula, the surface for local vol and SLV, Heston's formula) would make a knock-in's error its knock-out's. It is not done: it needs the gap between the closed form and the discretised model measured first.
 
 Tests: `tests/testKnockOut.cpp`:
 - one date against the closed form;

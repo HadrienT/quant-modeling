@@ -1395,7 +1395,7 @@
 				"label": "Rebate if knocked out, % of notional"
 			}
 		],
-		"script": "# Capital protected at maturity; daily closes. Its payoff chart looks like a\n# shark's fin: rising, then a cliff.\n\n2027-01-04\n    notional = 1000\n    participation = 1.0\n    barrier = 1.25\n    rebate = 0.05\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then\n        pays notional * (1 + participation * max(spot() / s0 - 1, 0))\n    else\n        pays notional * (1 + rebate)\n    endIf\n",
+		"script": "# Capital protected at maturity; daily closes. Its payoff chart looks like a\n# shark's fin: rising, then a cliff.\n\n2027-01-04\n    notional = 1000\n    participation = 1.0\n    barrier = 1.25\n    rebate = 0.05\n    s0 = spot()\n    alive = 1\n\nschedule(2027-01-05, 2027-12-30, 1D, US, F)\n    if spot() >= barrier * s0 then alive = 0 endIf\n\n2028-01-04\n    if spot() >= barrier * s0 then alive = 0 endIf\n    if alive = 1 then\n        pays notional * (1 + participation * max(spot() / s0 - 1, 0))\n    else\n        pays notional * (1 + rebate)\n    endIf\n\n# The Price page prices it as signed parts (#369 L2b): the paths a knock-out's\n# conditioned step simulates never touch the barrier, so the rebate, paid\n# where it is touched, is a sure payment less its knock-out --\n# E[1{hit} R] = R - E[1{alive} R] -- each part its own run, under the same\n# model. The sure part has no variance: what is left is the knock-out's,\n# smaller than the hard script's (1.8 times under SLV, the same paths). The\n# script above is the product as one hard script.\n\n",
 		"maturity": 0.9993
 	},
 	{

@@ -18,6 +18,7 @@ from .schemas import (
     BasketRequest,
     ComputeDevice,
     Greeks,
+    RiskEntry,
     HullWhiteInputs,
     HullWhiteRatesFit,
     CommodityForwardRequest,
@@ -999,6 +1000,15 @@ def price_scripted_product(req: ScriptedProductRequest) -> PricingResponse:
     # An equity product starts today, fixed on today's spot; a rates product
     # a few days ahead (its first coupon reads the curve, which a past date
     # cannot).
+    if template.parts and template.market != "rates":
+        parts = product_templates.render_parts(
+            req.product,
+            req.terms,
+            req.valuation_date,
+            maturity=req.maturity,
+            expiry=req.expiry,
+        )
+        return _price_parts(req, template, script, parts, fields)
     response = _price_library_script(
         req, template, script, fields, start_today=template.market != "rates"
     )
@@ -1082,10 +1092,16 @@ def _resolved_model(req, script: str, fields: dict, start_today: bool) -> str:
     """The model a library product is priced under: the request's, or what
     'auto' picks for its script on its market (price_script's choice, the
     stored market cached)."""
+    return _resolved_choice(req, script, fields, start_today)["model"]
+
+
+def _resolved_choice(req, script: str, fields: dict, start_today: bool) -> Dict:
+    """_resolved_model with the reason: 'auto''s recommendation (model, code,
+    reason), or the request's model chosen by hand."""
     from . import market_snapshot
 
     if req.model != "auto":
-        return req.model
+        return _user_choice(req.model)
     probe = ScriptRequest(script=script, **fields)
     market, valuation_date = None, probe.valuation_date
     if probe.ticker:
@@ -1093,7 +1109,10 @@ def _resolved_model(req, script: str, fields: dict, start_today: bool) -> str:
             probe.ticker, probe.rate, probe.valuation_date
         )
         valuation_date = market.valuation_date
-    return _recommend(probe, valuation_date, market, True, start_today)["model"]
+    return {
+        "requested": "auto",
+        **_recommend(probe, valuation_date, market, True, start_today),
+    }
 
 
 def _with_greeks_of(priced: PricingResponse, risks: PricingResponse, note: str):
@@ -1162,6 +1181,104 @@ def _knock_out_library(
             else "under this model the conditioned greeks have infinite variance "
             "where Feller fails"
         ),
+    )
+
+
+def _price_parts(req, template, script: str, parts, fields: dict) -> PricingResponse:
+    """A library product of signed parts (Template.parts, #369 L2b): each
+    part priced by Monte-Carlo as a library script -- a part on knock-outs
+    as _knock_out_library prices one -- under the one model the product's
+    script resolves to, on its own seed, and the price, the greeks and the
+    risks summed with their signs, the errors in quadrature (the runs are
+    independent)."""
+    choice = _resolved_choice(req, script, fields, True)
+    model = choice["model"]
+    runs = []
+    for k, (sign, part) in enumerate(parts):
+        f = {**fields, "model": model, "seed": fields.get("seed", 1) + k}
+        r = (
+            _knock_out_library(
+                req.model_copy(update={"model": model}), template, part, f, True, False
+            )
+            if "knockOut" in part
+            else price_script(
+                ScriptRequest(script=part, **f), library=True, start_today=True
+            )
+        )
+        runs.append((sign, part, r))
+    return _signed_sum(runs, choice if req.model == "auto" else None)
+
+
+def _signed_sum(runs, choice) -> PricingResponse:
+    """The signed sum of independent runs of one product's parts."""
+    import math
+
+    first = runs[0][2]
+    npv = sum(s * r.npv for s, _, r in runs)
+    err = math.sqrt(sum(r.mc_std_error**2 for _, _, r in runs))
+    names = ("delta", "gamma", "vega", "theta", "rho", "vanna", "volga")
+    g = {}
+    for n in names:
+        values = [getattr(r.greeks, n) for _, _, r in runs]
+        g[n] = (
+            None
+            if any(v is None for v in values)
+            else sum(s * v for (s, _, _), v in zip(runs, values))
+        )
+        ses = [getattr(r.greeks, n + "_std_error") for _, _, r in runs]
+        g[n + "_std_error"] = (
+            None
+            if g[n] is None or any(e is None for e in ses)
+            else math.sqrt(sum(e * e for e in ses))
+        )
+    risks = None
+    if all(r.risks for _, _, r in runs):
+        labels = [e.label for e in first.risks]
+        if all([e.label for e in r.risks] == labels for _, _, r in runs):
+            risks = [
+                RiskEntry(
+                    label=lab,
+                    value=sum(s * r.risks[i].value for s, _, r in runs),
+                    std_error=math.sqrt(
+                        sum(r.risks[i].std_error ** 2 for _, _, r in runs)
+                    ),
+                )
+                for i, lab in enumerate(labels)
+            ]
+    biases = [r.discretisation_bias for _, _, r in runs]
+    warnings = []
+    for _, _, r in runs:
+        warnings += [w for w in r.warnings if w not in warnings]
+    model_choice = first.model_choice
+    knock_out_run = next((r for _, p, r in runs if "knockOut" in p), first)
+    if knock_out_run.model_choice is not None:
+        model_choice = knock_out_run.model_choice
+        if choice is not None:  # 'auto': the product's choice, not "chosen by hand"
+            model_choice = model_choice.model_copy(
+                update={
+                    k: choice[k] for k in ("requested", "code", "reason") if k in choice
+                }
+            )
+    sign = lambda s: "+" if s > 0 else "-"  # noqa: E731
+    return first.model_copy(
+        update={
+            "npv": npv,
+            "mc_std_error": err,
+            "greeks": Greeks(**g),
+            "risks": risks,
+            "bumped_greeks": [],
+            "second_order_method": None,
+            "warnings": warnings,
+            "model_choice": model_choice,
+            "compute_ms": sum((r.compute_ms or 0.0) for _, _, r in runs),
+            "discretisation_bias": (
+                None if any(b is None for b in biases) else sum(abs(b) for b in biases)
+            ),
+            "discretisation_bias_std_error": None,
+            "script": "\n".join(f"# part: {sign(s)}\n{p}" for s, p, _ in runs),
+            "diagnostics": f"signed parts ({len(runs)} runs, one model, the errors in quadrature) || "
+            + " || ".join(f"part {sign(s)}: {r.diagnostics}" for s, _, r in runs),
+        }
     )
 
 

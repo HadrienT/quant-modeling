@@ -164,3 +164,69 @@ def test_auto_gives_a_library_knock_out_slv_and_smoothed_greeks(store):  # noqa:
     assert r.model_choice.model == "slv"
     assert "thresholds smoothed" in r.diagnostics
     assert r.greeks.delta is not None
+
+
+# ── the shark-fin's rebate as signed parts (#369 L2b) ───────────────────────
+
+# Only the shark-fin: its unconditioned part is a constant (the rebate). For
+# the knock-ins, measured, the two runs' variances add up to more than the
+# hard script's -- they stay on it (WP 26 §26.4, L2b).
+PART_PRODUCTS = ["shark-fin"]
+
+
+def _main_script(product: str, model: str, n_paths: int = 8000):
+    """The product as its one hard script, as every other use reads it."""
+    from app import product_templates as pt
+    from app.schemas import ScriptRequest
+
+    from test_script_model_choice import SNAP
+
+    return pricing_service.price_script(
+        ScriptRequest(
+            script=pt.render(product, {}, SNAP, maturity=0.5),
+            model=model,
+            ticker="TEST",
+            rate=0.03,
+            valuation_date=SNAP,
+            n_paths=n_paths,
+            seed=11,
+            device="cpu",
+            greeks_method="none",
+        ),
+        library=True,
+        start_today=True,
+    )
+
+
+@pytest.mark.parametrize("product", PART_PRODUCTS)
+@pytest.mark.parametrize("model", ["local_vol", "slv"])
+def test_signed_parts_price_the_hard_script(store, product, model):  # noqa: F811
+    r = _library(product, model, n_paths=8000)
+    assert r.diagnostics.startswith("signed parts")
+    assert r.model_choice.model == model
+    assert r.script.count("# part: ") == 2
+    hard = _main_script(product, model)
+    err = (r.mc_std_error**2 + hard.mc_std_error**2) ** 0.5
+    assert abs(r.npv - hard.npv) < 4 * err, (r.npv, hard.npv, err)
+    assert r.greeks.delta is not None
+
+
+def test_auto_prices_every_part_under_the_products_model(store):  # noqa: F811
+    r = _library("shark-fin", "auto")
+    assert r.model_choice.model == "slv" and r.model_choice.requested == "auto"
+    assert r.model_choice.code != "user"
+    assert r.diagnostics.count("model slv") >= 2
+
+
+def test_parts_are_read_with_their_signs_and_must_span_the_scripts_dates():
+    from app import product_templates as pt
+
+    t = pt.get("shark-fin")
+    assert [s for s, _ in t.parts] == [1, 1]
+    assert "knockOutAbove" in t.parts[1][1] and "knockOut" not in t.script
+    bad = t.text.replace(
+        "2028-01-04\n    pays notional * (1 + rebate)",
+        "2027-12-29\n    pays notional * (1 + rebate)",
+    )
+    with pytest.raises(ValueError, match="first and last dates"):
+        pt.parse("shark-fin", bad)
