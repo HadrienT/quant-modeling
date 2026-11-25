@@ -288,10 +288,13 @@ namespace quantModeling::scripting
             node->arguments.push_back(parse_expr());
             inner = std::move(node);
         }
+        else if (check(TokenKind::KnockOutAbove) || check(TokenKind::KnockOutBelow))
+            inner = parse_knock_out();
         else if (check(TokenKind::Identifier))
             inner = parse_assignment();
         else
-            fail("expected a statement: an assignment, 'pays', 'controlPays', or 'if'",
+            fail("expected a statement: an assignment, 'pays', 'controlPays', 'knockOutAbove', "
+                 "'knockOutBelow', or 'if'",
                  current());
 
         if (!check(TokenKind::Newline) && !check(TokenKind::Else) &&
@@ -313,6 +316,39 @@ namespace quantModeling::scripting
         auto node = std::make_unique<NodeAssign>();
         node->arguments.push_back(std::move(var));
         node->arguments.push_back(parse_expr());
+        return node;
+    }
+
+    // knockOutAbove(L) / knockOutBelow(L) (issue #369): the path is knocked
+    // out if the spot reaches L (above) or falls to L (below) at this date.
+    // Parsed to `#knockout = #knockout * w`, w the survival probability the
+    // model computes while it draws the step into the date conditioned on
+    // survival (Glasserman & Staum 2001); every payment from this date on is
+    // multiplied by the weight (visitors/knock_outs.hpp). L is any
+    // expression known today: ScriptedProduct resolves it.
+    ExprTree Parser::parse_knock_out()
+    {
+        const Token &tok = current();
+        const bool above = tok.kind == TokenKind::KnockOutAbove;
+        const char *name = above ? "knockOutAbove" : "knockOutBelow";
+        advance();
+        expect(TokenKind::LParen, (std::string("'(' after '") + name + "'").c_str());
+        auto weight = std::make_unique<NodeStepQuantity>();
+        weight->kind = StepQuantity::KnockOut;
+        weight->above = above;
+        weight->arguments.push_back(parse_expr());
+        expect(TokenKind::RParen, (std::string("')' to close '") + name + "(...)'").c_str());
+
+        auto target = std::make_unique<NodeVar>();
+        target->name = NodeStepQuantity::kKnockOutVariable;
+        auto read = std::make_unique<NodeVar>();
+        read->name = NodeStepQuantity::kKnockOutVariable;
+        auto product = std::make_unique<NodeMult>();
+        product->arguments.push_back(std::move(read));
+        product->arguments.push_back(std::move(weight));
+        auto node = std::make_unique<NodeAssign>();
+        node->arguments.push_back(std::move(target));
+        node->arguments.push_back(std::move(product));
         return node;
     }
 

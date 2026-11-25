@@ -39,6 +39,15 @@ EXAMPLES: dict[str, str] = {
     "Up-and-in call, continuously monitored barrier at 130, strike 100": (
         "2027-09-10\n" "    pays (1 - survivalBelow(130)) * max(spot() - 100, 0)\n"
     ),
+    "Up-and-out call, strike 100, barrier 130 on monthly closes": (
+        "2027-01-10\n"
+        "    knockOutAbove(130)\n"
+        "2027-02-10\n"
+        "    knockOutAbove(130)\n"
+        "2027-03-10\n"
+        "    knockOutAbove(130)\n"
+        "    pays max(spot() - 100, 0)\n"
+    ),
     "European call, strike 100, smooth for exact gamma (last-step expectation)": (
         "2027-09-10\n" "    pays lastStepCall(100)\n"
     ),
@@ -215,6 +224,8 @@ Statements (nothing else exists):
   pays expr                         record a cash flow at the CURRENT event date
   if cond then ... [else ...] endIf conditional; blocks are delimited by
                                     the keywords, not by indentation
+  knockOutAbove(L)                  the path is knocked out if spot() >= L at
+  knockOutBelow(L)                  this date (<= L for Below); see below
 
 Expressions: numbers, variables, spot(), df(DATE), fwd(DATE), yf(DATE, DATE),
 fwdRate(DATE, DATE), survivalAbove(L),
@@ -237,6 +248,21 @@ barrier is survivalAbove(L, i). Use it whenever the user says "continuous" or
 does not name observation dates for a barrier; keep `if spot() ...` tests for
 barriers observed on given dates (daily closes). It runs under Black-Scholes
 and local vol, on the CPU and the GPU.
+
+Knock-outs on dates: knockOutAbove(L) / knockOutBelow(L) is a statement of its
+own on a date (not inside an if): the path is knocked out if the spot reaches L
+(Above) or falls to L (Below) at that date. The model draws the step into the
+date conditioned on survival and weights every later `pays` by the survival
+probability, so write the payments as if the path were alive, with no flag:
+an up-and-out call on daily closes is
+`schedule(...)` + `knockOutAbove(1.3 * s0)` on each close, then
+`pays max(spot() - s0, 0)` at expiry. Same price as the `alive` flag, a smaller
+error, and smooth greeks with no Fuzzy. L must be known today: a number, a term,
+or a fixing already taken (`s0` struck on the valuation date). Above and Below
+on the same dates make a corridor. Knock-ins: write the knock-out and subtract
+it from the vanilla in a separate script. It runs under Black-Scholes and local
+vol, on the CPU; not with lastStep*() on the same date, controlPays or
+exercise().
 
 Last-step expectations: lastStepCall(K) is the expectation of
 max(spot() - K, 0) at the current event over the model's last time step,

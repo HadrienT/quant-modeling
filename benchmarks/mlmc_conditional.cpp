@@ -2,7 +2,7 @@
 // for the payoffs Giles & Szpruch (2012, §3.2-3.5) treat with a conditional
 // expectation: a digital, a barrier, a vanilla for reference. Each is written
 // twice, with the hard payoff and with the library's conditional primitive
-// (lastStepDigital, lastStepCall, survivalBelow) -- the latter run with each
+// (lastStepDigital, lastStepCall, survivalBelow, knockOutAbove) -- the latter run with each
 // level on its own steps, then with the coarse path conditioned on the fine
 // one (Giles & Szpruch's variants, WP 26 §26) -- and priced on fixed levels
 // 0..L with the same number of paths each, so that every level's V_l and
@@ -92,6 +92,11 @@ int main(int argc, char **argv)
          "2026-01-01\n    alive = 1\nschedule(2026-01-02, 2026-12-31, 1D, US, F)\n"
          "    if spot() >= 130 then alive = 0 endIf\n2027-01-01\n"
          "    if spot() >= 130 then alive = 0 endIf\n    if alive = 1 then pays max(spot() - 100, 0) endIf\n",
+         4},
+        // the step into each close conditioned on survival (issue #369)
+        {"up-and-out call K=100 B=130, daily closes", "knockOutAbove",
+         "2026-01-01\n    k = 100\nschedule(2026-01-02, 2026-12-31, 1D, US, F)\n    knockOutAbove(130)\n"
+         "2027-01-01\n    knockOutAbove(130)\n    pays max(spot() - k, 0)\n",
          4},
     };
 

@@ -79,21 +79,29 @@ namespace quantModeling
             if (!def.monitors.empty())
                 throw InvalidInput(std::string(model) +
                                    " does not compute quantities over its steps: survivalAbove() / survivalBelow() "
-                                   "need Black-Scholes or local vol, lastStepCall() / lastStepPut() / "
-                                   "lastStepDigital() Black-Scholes, local vol, Heston or SLV");
+                                   "and knockOutAbove() / knockOutBelow() need Black-Scholes or local vol, "
+                                   "lastStepCall() / lastStepPut() / lastStepDigital() Black-Scholes, local vol, "
+                                   "Heston or SLV");
     }
 
     /// Throws when the defline asks for a bridge survival (survivalAbove /
-    /// survivalBelow): for a model that computes the last-step expectations
-    /// but not the survivals (Heston, SLV).
+    /// survivalBelow) or a conditioned knock-out (knockOutAbove /
+    /// knockOutBelow, issue #369): for a model that computes the last-step
+    /// expectations but neither of those (Heston, SLV, rough Bergomi...).
     inline void refuse_bridge_survivals(const std::vector<SampleDef> &defline, const char *model)
     {
         for (const SampleDef &def : defline)
             for (const StepMonitor &b : def.monitors)
+            {
                 if (b.kind == StepQuantity::Survival)
                     throw InvalidInput(std::string(model) +
                                        " does not monitor barriers between dates: survivalAbove() / survivalBelow() "
                                        "need Black-Scholes or local vol");
+                if (b.kind == StepQuantity::KnockOut)
+                    throw InvalidInput(std::string(model) +
+                                       " does not condition its steps on a knock-out: knockOutAbove() / "
+                                       "knockOutBelow() need Black-Scholes or local vol");
+            }
     }
 
     /// Checks the barriers a model that monitors them is asked for: each one

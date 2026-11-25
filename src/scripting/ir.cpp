@@ -430,6 +430,12 @@ namespace quantModeling::scripting::ir
                     }
                     return;
                 }
+                // The knock-out's conditioned step (#369) is the CPU models'
+                // for now: the script prices on the CPU, the IR's refusal
+                // said (its lot L4 brings it to the paths of the IR).
+                if (n.kind == StepQuantity::KnockOut)
+                    throw InvalidInput("knockOutAbove() / knockOutBelow(): the conditioned step is not in the IR "
+                                       "yet (GPU), the CPU prices it");
                 const bool bridge = n.kind == StepQuantity::Survival;
                 (bridge ? has_bridge_ : has_last_step_) = true;
                 if (quantities_.size() <= n.slot)

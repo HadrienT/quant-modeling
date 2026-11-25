@@ -17,6 +17,7 @@
 #include "quantModeling/scripting/fuzzy_evaluator.hpp"
 #include "quantModeling/scripting/node.hpp"
 #include "quantModeling/scripting/parser.hpp"
+#include "quantModeling/scripting/visitors/knock_outs.hpp"
 #include "quantModeling/scripting/visitors/step_monitor_resolver.hpp"
 #include "quantModeling/scripting/visitors/const_cond.hpp"
 #include "quantModeling/scripting/visitors/defline_builder.hpp"
@@ -184,6 +185,9 @@ namespace quantModeling
                              [](const scripting::Event &a,
                                 const scripting::Event &b)
                              { return a.date < b.date; });
+            // knockOutAbove / Below (issue #369): the weight variable, its
+            // start at 1, and every later payment multiplied by it.
+            const bool knock_outs = scripting::prepare_knock_outs(events);
 
             scripting::VarIndexer indexer;
             indexer.index(events);
@@ -245,14 +249,9 @@ namespace quantModeling
             }
             policy_.issuer = has_exercise_ && exercises.front()->issuer;
 
-            const std::vector<std::vector<Time>> discount_mats =
-                scripting::DiscountLookupResolver(ctx).resolve(events_);
-            const std::vector<std::vector<StepMonitor>> barriers =
-                scripting::StepMonitorResolver().resolve(events_);
-            const std::vector<std::vector<Time>> forward_mats =
-                scripting::ForwardLookupResolver(ctx).resolve(events_);
-            defline_ = scripting::build_defline(events_, discount_mats, barriers, forward_mats);
-
+            if (knock_outs && scripting::has_knock_out(historical_events_))
+                throw InvalidInput("knockOutAbove() / knockOutBelow() on a past date: the path up to the "
+                                   "valuation date is known; script the barrier on the fixings instead");
             const std::vector<std::vector<Time>> historical_mats =
                 scripting::DiscountLookupResolver(ctx).resolve(historical_events_);
             for (std::size_t i = 0; i < historical_mats.size(); ++i)
@@ -277,6 +276,26 @@ namespace quantModeling
                                        "): the path between past fixings is not known; script the barrier "
                                        "on the fixings instead");
 
+            // The historical fixings first: a knock-out's level may read
+            // them (`barrier * s0`, s0 struck on a past date).
+            if (!historical_events_.empty())
+                baseline_ = replay_historical(indexer.count(), historical_fixings);
+            if (knock_outs)
+            {
+                std::vector<double> known(baseline_.size());
+                for (std::size_t v = 0; v < known.size(); ++v)
+                    known[v] = to_double(baseline_[v]);
+                scripting::resolve_knock_out_levels(events_, known, indexer.count());
+            }
+
+            const std::vector<std::vector<Time>> discount_mats =
+                scripting::DiscountLookupResolver(ctx).resolve(events_);
+            const std::vector<std::vector<StepMonitor>> barriers =
+                scripting::StepMonitorResolver().resolve(events_);
+            const std::vector<std::vector<Time>> forward_mats =
+                scripting::ForwardLookupResolver(ctx).resolve(events_);
+            defline_ = scripting::build_defline(events_, discount_mats, barriers, forward_mats);
+
             if (settings.fuzzy)
             {
                 auto fuzzy = std::make_unique<scripting::FuzzyEvaluator<T>>();
@@ -288,10 +307,7 @@ namespace quantModeling
             evaluator_->set_variable_count(indexer.count());
 
             if (!historical_events_.empty())
-            {
-                baseline_ = replay_historical(indexer.count(), historical_fixings);
                 evaluator_->set_baseline(baseline_);
-            }
 
             // Early exercise compiles too (WP 26 §15): the bytecode decides
             // with the fitted rule, the pilot stays on the tree evaluator. It

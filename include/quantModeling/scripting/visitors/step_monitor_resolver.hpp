@@ -56,8 +56,9 @@ namespace quantModeling::scripting
             }
             // A last-step expectation has no side: `above` is left at its
             // default so that two calls with the same strike share a slot.
-            const bool survival = n.kind == StepQuantity::Survival;
-            const StepMonitor want{n.level, n.asset, survival ? n.above : true, n.kind};
+            // A survival and a knock-out (#369) keep their side.
+            const bool sided = n.kind == StepQuantity::Survival || n.kind == StepQuantity::KnockOut;
+            const StepMonitor want{n.level, n.asset, sided ? n.above : true, n.kind};
             const auto it = std::find(current_->begin(), current_->end(), want);
             n.slot = static_cast<std::size_t>(it - current_->begin());
             if (it == current_->end())

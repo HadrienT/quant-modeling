@@ -2964,6 +2964,57 @@ Giles & Szpruch's lookback and Asian estimators (the bridge interpolant's minimu
 
 The fixed-date payoffs that stay at β ≈ 0.5 are those with an indicator at a date: daily-monitored barriers and autocall triggers.
 
+### 26.4 Knock-outs on dates: the step conditioned on survival (#369, L1, 2026-11-25)
+
+**Why this method.** The barriers on daily closes stay at β ≈ 0.5 (§26.3), and their pathwise delta is zero without fuzzy. Two methods remove the indicator. The comparison is written on #369:
+- Glasserman & Staum (2001), conditioning on one-step survival: one Φ and one Φ⁻¹ a date, and no bias.
+- Numerical smoothing (#374, lead 1): 10 to 20 path evaluations a path.
+
+The maintainer chose Glasserman & Staum for the daily barriers and the autocall triggers (#370). Numerical smoothing stays for what it does not cover: multi-asset triggers, and Heston/SLV with Feller broken.
+
+**The language.** `knockOutAbove(L)` / `knockOutBelow(L)` is a statement of its own on a date. The parser writes it as `#knockout = #knockout * w`, w a `NodeStepQuantity` of the new kind `StepQuantity::KnockOut`. A pass (`scripting/visitors/knock_outs.hpp`) then:
+- starts the weight at 1;
+- moves each date's knock-outs to the front of that date;
+- multiplies every `pays` from the first knock-out's date on by the weight.
+
+The evaluator, the bytecode and the tape need nothing new. The level must be known today, as the maintainer decided: a number, a term, or a fixing already taken (`barrier * s0`). It is folded once the historical fixings are replayed. Several knock-outs at one date make a corridor.
+
+**The models** (`models/equity/knock_out.hpp`, `condition_on_survival`):
+- The step into the date is lognormal given the path: ln S′ = ln S + m + s z. The model draws z from the normal truncated to the safe side, z′ = Φ⁻¹(Φ(dl) + u (Φ(du) − Φ(dl))), and writes p = Φ(du) − Φ(dl) into the slot.
+- For the differentiated types, z′'s derivatives come from two Newton steps on Φ(z′) = c, starting from the double inverse: the value stays the double one, and the derivatives are exact to second order.
+- A path whose p falls below 1e-14 is dead: its weight is under 1e-14, and beyond that 1/φ(z′) overflows.
+- Black-Scholes and local vol (log-Euler) condition their step. On multilevel's coarse path conditioned on the fine one (§26.1), only the part of the step after the fine half-step a is conditioned, with the fine path's own last draw (the same uniform). The other models refuse: Heston and SLV are L3.
+- The IR refuses it for now, so the GPU leaves the script to the CPU (L4).
+- Model `auto` sends a knock-out to local vol, like a survival.
+
+**Measured** (`qm_mlmc_conditional_bench 200000 6`: the same skewed local vol, up-and-out call K = 100, B = 130 on daily closes, fixed levels 0..4):
+
+| Estimator | Price | V_1 | V_4 | β |
+|---|---|---|---|---|
+| hard (`alive` flag) | 5.4495 ± 0.0183 | 2.37 | 0.79 | 0.53 |
+| `knockOutAbove`, each level on its own steps | 5.4480 ± 0.0168 | 1.16 | 0.59 | 0.33 |
+| `knockOutAbove`, coarse conditioned on the fine path | 5.4477 ± 0.0164 | **0.31** | **0.12** | 0.46 |
+
+- The prices agree.
+- The corrections are 6 to 8 times less noisy, but **β stays near 0.5**, not the β ≈ 1 #369 hoped for. The reason is Euler's strong order 1/2. The fine and coarse states before the step differ by O(√h), and the weight's slope, ∂p/∂S ~ 1/(σ√h_last), grows as the last sub-step shrinks with the level. So the gain is a constant factor: the multilevel cost (Σ √(V_l C_l))² over these levels falls from about 120,000 to 39,500 (÷3).
+- Level 0's variance falls by 13 % (60.9 → 52.9).
+- Lifting β needs a strong-order-1 step that stays lognormal: #371.
+
+**Greeks.** The weight is smooth in the parameters, so the adjoint delta needs no fuzzy. Under Black-Scholes and local vol it is the bumped price's on common draws, to 2e-4 (the remaining difference is the call's kink crossed within ±h). Under Heston and SLV with Feller broken, it would have #372's defect: ∂p/∂S ~ φ / (S s), with s → 0. That is for L3.
+
+**What changes for the library (L2).** Under `auto`, a hard barrier on dates goes to SLV (path-dependent: the forward smile), and a knock-out goes to local vol. On the test's synthetic surface, the six-month up-and-out call moves from 3.30 (SLV, hard) to 3.03 (local vol, either estimator). Migrating the library's barriers before L3 would therefore move their displayed prices by the model change, not by the estimator. L2 should follow L3, or keep SLV products on the hard script until then.
+
+Tests: `tests/testKnockOut.cpp`:
+- one date against the closed form;
+- monthly dates and the corridor against the hard script, with a smaller error;
+- local vol against the hard script;
+- the adjoint delta against the bump (Black-Scholes and local vol);
+- the truncated draw;
+- the level's rules;
+- the refusals.
+
+`api/tests/test_knock_out_api.py`: model `auto`, the price against the hard script on the same model, a delta with no warning, the refusal under Heston.
+
 ## 27. The adjoint's fold on the card: no host time between the launches (#361, 2026-11-24)
 
 **What §25 found.** At 1M paths on the page's SLV grid, about 220 ms of a 550 ms call went between the adjoint's launches. Each launch:
