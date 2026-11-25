@@ -742,6 +742,54 @@ namespace quantModeling
         }
     }
 
+    // #369 L4: a knock-out's risks from the generated kernels -- the
+    // conditioned draw's derivatives through N^-1 -- against the tape, whose
+    // models condition their own way (mc::condition_on_survival).
+    TEST_F(GpuRisksTest, KnockOutRisksMatchTheTape)
+    {
+        const std::string source = "2026-09-01\n    knockOutAbove(125)\n    knockOutBelow(75)\n"
+                                   "2026-12-01\n    knockOutAbove(125)\n    a = spot()\n"
+                                   "2027-06-01\n    knockOutAbove(125)\n    pays max(spot() - 100, 0) + a / 100\n";
+        const ScriptedProduct<Real> product(source, kCtx);
+        const ScriptedProduct<aad::Number> tape_product(source, kCtx);
+        const auto compare = [&](ISimulationModel<Real> &m, ISimulationModel<aad::Number> &tape_m, const char *what)
+        {
+            std::string why;
+            const auto gpu = simulate_script_aad_gpu(product, m, kPaths, kSeed, why);
+            ASSERT_TRUE(gpu.has_value()) << what << ": " << why;
+            const AADSimulResults cpu =
+                simulate_aad(tape_product, tape_m, kPaths, kSeed, first_aad_payoff, RngKind::Philox);
+            EXPECT_GT(cpu.price, 0.0) << what;
+            EXPECT_NEAR(gpu->price, cpu.price, 1e-9 * std::max(1.0, std::abs(cpu.price))) << what;
+            expect_same_risks(*gpu, cpu, 1e-8, what);
+        };
+        {
+            BlackScholesSimModel<Real> m(100.0, 0.03, 0.01, 0.25);
+            BlackScholesSimModel<aad::Number> t(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01),
+                                                aad::Number(0.25));
+            compare(m, t, "Black-Scholes");
+        }
+        {
+            auto m = local_vol<Real>();
+            auto t = local_vol<aad::Number>();
+            compare(*m, *t, "local vol");
+        }
+        {
+            BatesSimModel<Real> m(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, 0.0, 0.0, 0.0);
+            BatesSimModel<aad::Number> t(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01), aad::Number(0.04),
+                                         aad::Number(1.5), aad::Number(0.05), aad::Number(0.6), aad::Number(-0.7),
+                                         aad::Number(0.0), aad::Number(0.0), aad::Number(0.0));
+            compare(m, t, "Heston");
+        }
+        {
+            SLVSimModel<Real> m(100.0, 0.03, 0.01, 0.04, 1.5, 0.05, 0.6, -0.7, kK, kT, skewed<Real>());
+            SLVSimModel<aad::Number> t(aad::Number(100.0), aad::Number(0.03), aad::Number(0.01), aad::Number(0.04),
+                                       aad::Number(1.5), aad::Number(0.05), aad::Number(0.6), aad::Number(-0.7), kK,
+                                       kT, skewed<aad::Number>());
+            compare(m, t, "SLV");
+        }
+    }
+
     // WP 26 P2: the risks of a bridge survival from the generated tangent
     // (Black-Scholes) and adjoint (local vol) kernels, against the tape.
     TEST_F(GpuRisksTest, BridgeSurvivalRisksMatchTheTape)

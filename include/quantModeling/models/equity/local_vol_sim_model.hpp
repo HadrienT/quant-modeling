@@ -222,7 +222,10 @@ namespace quantModeling
                     const T mean = step_drift * rest, sd = vol_sqrt_dt * sqrt(rest);
                     T z((gaussians[k] - a) / sqrt(rest));
                     survival = mc::condition_on_survival(ko, T(log(S_start)), mean, sd, z);
-                    S = S_start * exp(mean + sd * z);
+                    if (conditioned)
+                        S = S_start * exp(mean + sd * z);
+                    else // the plain step on the conditioned draw: the IR's step, bit for bit
+                        mc::local_vol_step(grid(), r_, q_, S, t, dt, z);
                 }
                 else
                     var = milstein_ ? mc::local_vol_milstein_step(grid(), r_, q_, S, t, dt, gaussians[k])

@@ -189,4 +189,38 @@ namespace quantModeling
             }
     }
 
+    // #369 L4: the knock-outs in the kernels compiled from the IR -- the
+    // CPU models' numbers on the same draws, under every model the GPU
+    // steps, the variance by Euler and by QE.
+    TEST_F(GpuScriptsTest, KnockOutsGiveTheCpuNumbers)
+    {
+        const std::vector<std::string> scripts = {
+            "2027-06-01\n    knockOutAbove(130)\n    pays max(spot() - 100, 0)\n",
+            "2026-09-01\n    knockOutAbove(125)\n    knockOutBelow(75)\n"
+            "2026-12-01\n    knockOutAbove(125)\n    knockOutBelow(75)\n"
+            "2027-03-01\n    knockOutAbove(125)\n    pays 2\n"
+            "2027-06-01\n    knockOutAbove(125)\n    pays max(spot() - 100, 0)\n",
+            "2026-12-01\n    knockOutBelow(80)\n    a = spot()\n2027-06-01\n    pays lastStepCall(100) + a / 1000\n",
+        };
+        for (const Dyn dyn : {Dyn::BlackScholes, Dyn::LocalVol, Dyn::Heston, Dyn::SLV})
+            for (const std::string &source : scripts)
+                for (const auto scheme : {mc::VarianceScheme::Euler, mc::VarianceScheme::QE})
+                {
+                    const ScriptedProduct<Real> product(source, kCtx);
+                    auto cpu_model = model(dyn, 1);
+                    auto gpu_model = model(dyn, 1);
+                    cpu_model->set_variance_scheme(scheme);
+                    gpu_model->set_variance_scheme(scheme);
+                    const SimulationMCResult cpu = simulate_script(product, *cpu_model, settings(ComputeDevice::Cpu));
+                    const SimulationMCResult gpu = simulate_script(product, *gpu_model, settings(ComputeDevice::Gpu));
+                    ASSERT_EQ(gpu.device, "gpu") << source << ": " << gpu.diagnostics;
+                    EXPECT_GT(cpu.npv(), 0.0) << source;
+                    const double scale = std::max(1.0, std::abs(cpu.npv()));
+                    EXPECT_NEAR(gpu.npv(), cpu.npv(), 1e-9 * scale) << static_cast<int>(dyn) << " " << static_cast<int>(scheme)
+                                                                    << "\n"
+                                                                    << source;
+                    EXPECT_NEAR(gpu.std_error(), cpu.std_error(), 1e-7 * std::max(1e-12, cpu.std_error())) << source;
+                }
+    }
+
 } // namespace quantModeling

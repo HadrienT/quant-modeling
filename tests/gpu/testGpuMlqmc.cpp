@@ -120,7 +120,16 @@ namespace quantModeling
     {
         const std::string digital = "2027-01-01\n    pays 100 * lastStepDigital(100)\n";
         const std::string up_and_out = "2027-01-01\n    s = survivalBelow(130)\n    pays s * max(spot() - 100, 0)\n";
-        for (const std::string &script : {digital, up_and_out})
+        // #369 L4: monthly knock-outs, each step into a date conditioned --
+        // on the coarse path, the part after the fine half-step
+        const std::string knock_out = []
+        {
+            std::string s;
+            for (int m = 2; m <= 12; ++m)
+                s += std::string("2026-") + (m < 10 ? "0" : "") + std::to_string(m) + "-01\n    knockOutAbove(130)\n";
+            return s + "2027-01-01\n    knockOutAbove(130)\n    pays max(spot() - 100, 0)\n";
+        }();
+        for (const std::string &script : {digital, up_and_out, knock_out})
         {
             ScriptedProduct<Real> product(script, kCtx);
             auto m = make_script_model<Real>(local_vol(false));

@@ -178,8 +178,8 @@ namespace quantModeling
                         const T sd = Lp * sqrt_v_plus * std::sqrt(dt);
                         T z(z_spot);
                         survival = mc::condition_on_survival(ko, T(log(S)), mean, sd, z);
-                        S = S * exp(mean + sd * z);
-                        mc::heston_variance_step(heston(), v, v_plus, sqrt_v_plus, std::sqrt(dt), dt, z, z_indep);
+                        // slv_step on the conditioned draw: the IR's step
+                        mc::slv_step(leverage_grid(), heston(), r_, q_, S, v, t, dt, z, z_indep);
                         stepped = true;
                     }
                     mc::write_knock_out(defline_[static_cast<std::size_t>(event)],

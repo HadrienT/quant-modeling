@@ -175,6 +175,10 @@ namespace quantModeling::scripting::ir
                         if (ta >= 0)
                             t = times(normal_density(b, A), ta);
                         break;
+                    case Op::InvNcdf: // (N^-1)'(a) = 1 / N'(N^-1(a)), the value being N^-1(a)
+                        if (ta >= 0)
+                            t = times(b.div(b.constant(1.0), normal_density(b, id)), ta);
+                        break;
                     case Op::Pow:
                         t = sum(ta < 0 ? -1 : times(b.div(b.mul(B, id), A), ta),
                                 tb < 0 ? -1 : times(b.mul(id, b.value(Op::Log, A)), tb));
@@ -545,6 +549,9 @@ namespace quantModeling::scripting::ir
                             break;
                         case Op::Ncdf:
                             accumulate(in.a, b_.mul(a, normal_density(b_, A)));
+                            break;
+                        case Op::InvNcdf: // guarded: a branch a select did not take may sit at N^-1(0)
+                            accumulate(in.a, guarded(a, b_.div(a, normal_density(b_, V))));
                             break;
                         case Op::Pow:
                             if (wants(in.a))

@@ -2985,7 +2985,7 @@ The evaluator, the bytecode and the tape need nothing new. The level must be kno
 - A path whose p falls below 1e-14 is dead: its weight is under 1e-14, and beyond that 1/φ(z′) overflows.
 - Black-Scholes and local vol (log-Euler) condition their step. On multilevel's coarse path conditioned on the fine one (§26.1), only the part of the step after the fine half-step a is conditioned, with the fine path's own last draw (the same uniform).
 - Heston and SLV (L3, below) condition their spot draw. Rough Bergomi, Bates with jumps and Hull-White's equity refuse (`refuse_knock_outs`).
-- The IR refuses it for now (`Program::has_knock_out`, `script_gpu_unsupported`), so the GPU leaves the script to the CPU (L4).
+- The IR's paths compute it too (L4, below), so it runs on the GPU like the other step quantities.
 
 **Measured** (`qm_mlmc_conditional_bench 200000 6`: the same skewed local vol, up-and-out call K = 100, B = 130 on daily closes, fixed levels 0..4):
 
@@ -3010,6 +3010,28 @@ The evaluator, the bytecode and the tape need nothing new. The level must be kno
 Measured against the hard script on the same model (corridor up-and-out, monthly, Feller 0.42, skewed leverage for SLV): Euler and QE agree within error. Under stochastic vol the error barely moves, within the noise of 16 replicates. Feller holding (1.78), the Heston adjoint delta is the bumped price's to 2e-4. Below Feller, the weight's slope carries 1/(L √v √dt), as `lastStepDigital`'s (#372), so the greeks are withheld with `last_step_digital_greeks_withheld` (`ScriptAnalysis::knock_out`).
 
 **Model choice.** A knock-out is analysed as the barrier on dates it replaces: path-dependent (`ScriptAnalysis::knock_out`), not a bridge survival. So `auto` gives it the hard script's model, SLV when the market allows a stochastic model, and the two writings agree on it (`test_auto_prices_a_knock_out_on_the_model_of_the_hard_barrier`). That was the condition for migrating the library (L2) without moving its prices by a model change: under L1 alone, a knock-out went to local vol, and the test's six-month up-and-out moved from 3.30 (SLV) to 3.03.
+
+**L4: the GPU** (2026-11-25). The knock-outs run in the IR's paths, so every kernel compiled from them takes them: price, tangent, adjoint, and multilevel's conditioned coarse path.
+- **The operation.** `Op::InvNcdf`: on the host `inverse_normal_cdf`, on the device `normcdfinv`, as the draws. Its tangent and adjoint are 1/φ(z′), the adjoint guarded against 0 · ∞.
+- **The layout.** `PathLayout::knock_out`: one state slot for the weight, `ko()`. Five step-row columns: the flag of a step that reaches a knock-out date, then has_lo, ln lo, has_hi, ln hi. They are finite even where absent.
+- **The step block.** It computes `mc::condition_on_survival` operation for operation, then `select`s the step's draw. A step that reaches no knock-out date keeps its draw, its bits, and leaves 1. The branch a select does not take reads 0.5 for N⁻¹, so it stays finite. The block covers Black-Scholes, local vol (the coarse path conditioned after the fine half-step too), Heston and SLV by Euler, where the conditioned draw also drives the variance, and by QE, where the spot's draw given V′ is conditioned.
+- **CPU and IR agree to the bit.** The CPU models now condition with the IR's N (`knock_out_detail::ncdf`) and pass the conditioned draw to their own step functions (`local_vol_step`, `heston_log_return`, `slv_step`, generic in the draw's type).
+
+Checked:
+- the IR's engine on the CPU against the tape, under all four models: price to 1e-12, risks to 1e-10;
+- the GPU's prices against the CPU's, Euler and QE: 1e-9;
+- the GPU's risks against the tape: 1e-8;
+- the GPU's multilevel with the conditioned coarse path against the CPU's.
+
+**Measured on one V100** (`qm_gpu_mlqmc_conditional_bench 4096 4`; `QM_BENCH_ONLY=daily`): multilevel QMC, 32 replicates × 4,096 points a level, daily up-and-out under the skewed local vol, levels 0..4.
+
+| Estimator | Optimal cost | Time of the run | Time at unit variance |
+|---|---|---|---|
+| hard | 2,810 | 0.4 s | 7.0e-7 s |
+| `knockOutAbove`, coarse conditioned | **364** | 0.9 s | **2.1e-7 s (÷3.4)** |
+
+- QMC gains from the smoother integrand too: level 0's variance falls from 0.37 to 0.14.
+- The knock-out kernel costs 2.2× the hard one per step: the select computes N⁻¹ and three N on *every* step, while only one step in 2^l reaches a date on level l. The flag is the same for every thread of a step, so a real branch would not diverge. It is the next lever (a region of the IR on the step row's flag), worth about another ×2 at the fine levels.
 
 Tests: `tests/testKnockOut.cpp`:
 - one date against the closed form;

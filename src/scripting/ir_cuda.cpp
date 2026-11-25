@@ -235,6 +235,9 @@ static __device__ __forceinline__ double qm_up(double x, double eps, double two_
                     case Op::Ncdf: // the host's formula (ir.hpp), not CUDA's normcdf
                         o << x(k) << " = 0.5 * erfc(-" << a << " * 0.70710678118654752440);";
                         break;
+                    case Op::InvNcdf: // as the device's draws: libdevice's inverse (utils/inverse_normal.hpp)
+                        o << x(k) << " = normcdfinv(" << a << ");";
+                        break;
                     case Op::Smooth:
                         o << "if (" << c << " <= 0.0) " << x(k) << " = " << a << " > 0.0 ? 1.0 : 0.0; else " << x(k)
                           << " = qm_clamp01((" << a << " + " << c << ") / (" << c << " + " << c << "));";
