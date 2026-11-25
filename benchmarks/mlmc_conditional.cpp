@@ -78,6 +78,16 @@ int main(int argc, char **argv)
         {"digital call K=100, pays 100", "lastStepDigital", "2027-01-01\n    pays 100 * lastStepDigital(100)\n", 99},
         {"up-and-out call K=100 B=130, continuous", "survivalBelow (per step)",
          "2027-01-01\n    s = survivalBelow(130)\n    pays s * max(spot() - 100, 0)\n", 99},
+        // fixed dates, as the library's (issue #363): a Lipschitz function
+        // of the dates' spots, which both levels share
+        {"Asian call K=100, 12 monthly fixings", "hard",
+         "2026-01-30\n    acc = spot()\nschedule(2026-02-27, 2026-11-30, 1M, US, F)\n    acc = acc + spot()\n"
+         "2027-01-01\n    acc = acc + spot()\n    pays max(acc / 12 - 100, 0)\n",
+         99},
+        {"fixed lookback call K=100, weekly closes", "hard",
+         "2026-01-02\n    hi = spot()\nschedule(2026-01-09, 2026-12-25, 1W, US, F)\n    hi = max(hi, spot())\n"
+         "2027-01-01\n    hi = max(hi, spot())\n    pays max(hi - 100, 0)\n",
+         4},
         {"up-and-out call K=100 B=130, daily closes", "hard",
          "2026-01-01\n    alive = 1\nschedule(2026-01-02, 2026-12-31, 1D, US, F)\n"
          "    if spot() >= 130 then alive = 0 endIf\n2027-01-01\n"
