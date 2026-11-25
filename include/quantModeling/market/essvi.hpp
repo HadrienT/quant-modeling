@@ -29,13 +29,27 @@
  *
  *     psi (1 + |rho|) < 4,    psi^2 (1 + |rho|) <= 4 theta.
  *
- * No calendar arbitrage between slices i < j (Hendriks & Martini, restated
- * by Corbetta, Cohort, Laachir & Martini 2019, §2.2 and §5.1):
+ * No calendar arbitrage between slices i < j (Hendriks & Martini 2019, in
+ * the corrected statement of Pasquazzi 2023, Proposition 4.14): with
+ * theta_j > theta_i, the slices do not cross if and only if
  *
- *     theta_j >= theta_i,   psi_j >= psi_i,   |rho_j psi_j - rho_i psi_i| <= psi_j - psi_i,
+ *     |rho_j psi_j - rho_i psi_i| <= psi_j - psi_i                      (necessary)
  *
- * the last equivalent to psi_j >= max(psi_i (1 - rho_i) / (1 - rho_j),
- * psi_i (1 + rho_i) / (1 + rho_j)) (which implies psi_j >= psi_i).
+ * -- equivalently psi_j >= max(psi_i (1 - rho_i) / (1 - rho_j),
+ * psi_i (1 + rho_i) / (1 + rho_j)) -- and moreover either
+ *
+ *     phi_j <= phi_i, phi = psi / theta,   or   (rho_j psi_j / psi_i - rho_i)^2
+ *                                              <= (Theta - 1)(psi_j^2 / (psi_i^2 Theta) - 1),
+ *
+ * Theta = theta_j / theta_i. Corbetta, Cohort, Laachir & Martini (2019, §2.2)
+ * state the necessary condition alone as sufficient; it is not (testESSVI
+ * has two slices that meet it and cross by 93 % of theta at k = -0.58).
+ * The calibration keeps the first branch, phi non-increasing: it is the
+ * branch under which the interpolation below provably stays free of
+ * calendar arbitrage (phi = psi / theta of two linear functions of T is
+ * monotone between its ends), it never empties the feasible set (psi_j =
+ * psi_i, rho_j = rho_i is always in it), and an equity skew's phi decays in
+ * T like a power.
  *
  * The calibration (calibrate_essvi_slices) fits the slices in maturity
  * order, each under the butterfly bounds and the calendar bounds of the
@@ -48,7 +62,8 @@
  * out and reported.
  *
  * The surface between slices (ESSVISurface) interpolates theta, psi and
- * rho psi linearly in T, which keeps both conditions (Corbetta et al., §5.1);
+ * rho psi linearly in T, which keeps both conditions (Corbetta et al., §5.1,
+ * and phi monotone as above);
  * before the first slice theta and psi scale with T / T_1 at rho_1 (§5.2);
  * past the last, theta grows on at the last segment's slope, psi and rho
  * held (§5.3). Its local variance is Dupire's on the analytic derivatives,
@@ -75,7 +90,8 @@ namespace quantModeling
 
     /// Gatheral & Jacquier's butterfly bounds hold.
     bool essvi_butterfly_free(const ESSVIParams &p) noexcept;
-    /// Hendriks & Martini's calendar conditions hold from `before` to `after`.
+    /// The calendar conditions above hold from `before` to `after`, on the
+    /// phi-non-increasing branch the calibration keeps.
     bool essvi_calendar_free(const ESSVIParams &before, const ESSVIParams &after) noexcept;
 
     struct ESSVISliceFit

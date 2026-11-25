@@ -9,7 +9,8 @@
 //    slice whose at-the-money vol breaks the term structure, a short one
 //    whose curvature sits on a point) give slices that meet Gatheral &
 //    Jacquier's butterfly bounds and Hendriks & Martini's calendar
-//    conditions, and between them a surface whose total variance never
+//    conditions (Pasquazzi's corrected statement: the necessary condition
+//    alone lets two slices cross, a test shows it), and between them a surface whose total variance never
 //    falls in T, whose density g stays positive, whose local variance is
 //    positive and finite at every grid point -- no hole to fill;
 //  - its local-vol grid needs no fallback cell.
@@ -20,6 +21,7 @@
 #include "quantModeling/market/essvi.hpp"
 #include "quantModeling/market/svi.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <random>
 #include <vector>
@@ -72,6 +74,12 @@ namespace quantModeling
                     EXPECT_TRUE(essvi_calendar_free(s.slices()[i - 1].params, s.slices()[i].params))
                         << what << ", slices " << i - 1 << ", " << i;
             }
+            // Calendar far into the wings too, on w itself: the slices'
+            // asymptotes are where a necessary-only condition lets them cross.
+            for (Real T = 0.02; T + 0.01 <= 1.3 * s.ttm_max(); T += 0.01)
+                for (Real k = -6.0; k <= 6.0; k += 0.02)
+                    EXPECT_GE(s.total_variance(k, T + 0.01) - s.total_variance(k, T), -1e-14)
+                        << what << ", calendar at k " << k << ", T " << T;
             for (Real T = 0.02; T <= 1.3 * s.ttm_max(); T += 0.01)
             {
                 const ESSVIParams p = s.params(T);
@@ -106,6 +114,49 @@ namespace quantModeling
                             (essvi_total_variance_dk(k + h, p) - essvi_total_variance_dk(k - h, p)) / (2 * h), 1e-6);
             }
         }
+    }
+
+    TEST(ESSVI, TheNecessaryCalendarConditionAloneLetsSlicesCross)
+    {
+        // Two slices that meet |rho_2 psi_2 - rho_1 psi_1| <= psi_2 - psi_1,
+        // theta and psi increasing, and the butterfly bounds -- Corbetta et
+        // al.'s "necessary and sufficient" conditions -- yet cross: phi
+        // jumps from 0.16 to 4.6 (Pasquazzi 2023, Proposition 4.14).
+        const ESSVIParams a{0.0367, -0.5237, 0.00569}, b{0.0383, 0.9462, 0.1753};
+        ASSERT_TRUE(essvi_butterfly_free(a));
+        ASSERT_TRUE(essvi_butterfly_free(b));
+        ASSERT_GT(b.theta, a.theta);
+        ASSERT_LE(std::fabs(b.rho * b.psi - a.rho * a.psi), b.psi - a.psi);
+        Real worst = 0.0;
+        for (Real k = -3.0; k <= 3.0; k += 0.01)
+            worst = std::min(worst, essvi_total_variance(k, b) - essvi_total_variance(k, a));
+        EXPECT_LT(worst, -0.5 * a.theta);
+        EXPECT_FALSE(essvi_calendar_free(a, b));
+
+        // On the branch kept (phi non-increasing), every pair passing the
+        // check is free of calendar arbitrage: a random sweep on w itself.
+        std::mt19937 rng(3);
+        std::uniform_real_distribution<Real> u(0.0, 1.0);
+        int passed = 0;
+        for (int trial = 0; trial < 20000; ++trial)
+        {
+            const Real t1 = 0.01 + 0.2 * u(rng), r1 = -0.95 + 1.9 * u(rng), r2 = -0.95 + 1.9 * u(rng);
+            const Real s1 = 1.0 + std::fabs(r1), s2 = 1.0 + std::fabs(r2);
+            const Real p1 = u(rng) * std::min(4.0 / s1, 2.0 * std::sqrt(t1 / s1));
+            const Real t2 = t1 * (1.0 + 0.3 * u(rng));
+            const Real lo = std::max(p1 * (1.0 - r1) / (1.0 - r2), p1 * (1.0 + r1) / (1.0 + r2));
+            const Real hi = std::min({4.0 / s2 * 0.999999, 2.0 * std::sqrt(t2 / s2), p1 * t2 / t1});
+            if (!(hi > lo))
+                continue;
+            const ESSVIParams x{t1, r1, p1}, y{t2, r2, lo + (hi - lo) * u(rng)};
+            if (!essvi_butterfly_free(x) || !essvi_butterfly_free(y) || !essvi_calendar_free(x, y))
+                continue;
+            ++passed;
+            for (Real k = -10.0; k <= 10.0; k += 0.05)
+                ASSERT_GE(essvi_total_variance(k, y) - essvi_total_variance(k, x), -1e-13 * t1)
+                    << trial << " k " << k;
+        }
+        EXPECT_GT(passed, 1000);
     }
 
     TEST(ESSVI, NoiselessQuotesGiveTheSurfaceBack)

@@ -58,6 +58,14 @@ namespace quantModeling
             return std::min(4.0 / s * kStrict, 2.0 * std::sqrt(theta / s));
         }
 
+        /// The largest psi the calendar conditions allow after `before` at
+        /// theta: phi = psi / theta non-increasing (Pasquazzi's sufficient
+        /// branch, see the header).
+        Real psi_calendar_max(const ESSVIParams &before, Real theta) noexcept
+        {
+            return before.psi * theta / before.theta;
+        }
+
         /// The smallest psi the calendar conditions allow after `before`.
         Real psi_calendar_min(const ESSVIParams &before, Real rho) noexcept
         {
@@ -76,7 +84,8 @@ namespace quantModeling
     {
         const Real tol = 1e-12 * std::max(Real(1.0), after.psi);
         return after.theta >= before.theta && after.psi + tol >= before.psi &&
-               std::fabs(after.rho * after.psi - before.rho * before.psi) <= after.psi - before.psi + tol;
+               std::fabs(after.rho * after.psi - before.rho * before.psi) <= after.psi - before.psi + tol &&
+               after.psi * before.theta <= before.psi * after.theta * (1.0 + 1e-12);
     }
 
     // ── Calibration ─────────────────────────────────────────────────────────
@@ -276,14 +285,20 @@ namespace quantModeling
             if (psi_lo >= 4.0 / s1 * kStrict)
                 return inf;
             const bool fixed = theta_hi == theta_lo;
+            // Both upper bounds on psi grow with theta: the butterfly's as
+            // sqrt(theta), phi's linearly. Below the theta where either meets
+            // psi_lo, nothing is feasible.
+            Real theta_min = psi_lo * psi_lo * s1 / 4.0;
+            if (before)
+                theta_min = std::max(theta_min, psi_lo * before->theta / before->psi);
             if (fixed)
             {
-                if (psi_lo * psi_lo * s1 > 4.0 * theta_lo)
+                if (theta_min > theta_lo * (1.0 + 1e-12))
                     return inf;
             }
             else
             {
-                theta_lo = std::max(theta_lo, psi_lo * psi_lo * s1 / 4.0);
+                theta_lo = std::max(theta_lo, theta_min);
                 if (!(theta_hi > theta_lo))
                     return inf;
             }
@@ -291,9 +306,11 @@ namespace quantModeling
             Real best_f = inf;
             const auto at_theta = [&](Real theta)
             {
-                const Real psi_hi = psi_butterfly_max(theta, rho);
-                if (!(psi_hi >= psi_lo))
+                Real psi_hi = before ? std::min(psi_butterfly_max(theta, rho), psi_calendar_max(*before, theta))
+                                     : psi_butterfly_max(theta, rho);
+                if (!(psi_hi >= psi_lo * (1.0 - 1e-12)))
                     return inf;
+                psi_hi = std::max(psi_hi, psi_lo);
                 const auto [psi, f] = brent([&](Real x)
                                             { return s.objective({theta, rho, x}); }, psi_lo, psi_hi,
                                             st.inner_iterations);

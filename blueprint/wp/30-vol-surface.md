@@ -19,7 +19,7 @@ not Dupire. Each maturity is fitted on its own by raw SVI, and
 | 1.562y, 2.06y | `b` = 5 and `rho` = −0.989, both at their bounds |
 
 Repriced against the cleaned quotes it was calibrated on, the production surface
-misses by up to **+21.5 vol %** (1.56y, 105 % moneyness), +11.7 % at 1.06y and
+misses by up to **+21.5 % of the call price** (1.56y, 105 % moneyness), +11.7 % at 1.06y and
 +13 % at 2.06y. Patching the slice selection would hide this. The fix is a surface
 that cannot produce such a slice: one free of static arbitrage by construction,
 whose parameters cannot run off to their bounds.
@@ -39,10 +39,30 @@ at-the-money skew and `k = ln(K/F)`. It is an SVI slice with `b = psi/2`,
 **No butterfly arbitrage** (Gatheral & Jacquier, Theorem 4.2):
 `psi (1+|rho|) < 4` and `psi^2 (1+|rho|) <= 4 theta`.
 
-**No calendar arbitrage** between slices `i < j` (Hendriks & Martini; Corbetta,
-Cohort, Laachir & Martini 2019, §2.2 and §5.1): `theta_j >= theta_i` and
-`|rho_j psi_j - rho_i psi_i| <= psi_j - psi_i`, that is
-`psi_j >= max(psi_i (1-rho_i)/(1-rho_j), psi_i (1+rho_i)/(1+rho_j))`.
+**No calendar arbitrage** between slices `i < j` (Hendriks & Martini 2019, in
+the corrected statement of Pasquazzi 2023, Proposition 4.14). With
+`theta_j > theta_i`, the slices do not cross if and only if two things hold:
+
+- the necessary condition `|rho_j psi_j - rho_i psi_i| <= psi_j - psi_i`, that is
+  `psi_j >= max(psi_i (1-rho_i)/(1-rho_j), psi_i (1+rho_i)/(1+rho_j))`;
+- and either `phi_j <= phi_i` with `phi = psi/theta`, or a quadratic condition.
+
+Corbetta, Cohort, Laachir & Martini (2019, §2.2) state the necessary condition
+alone as sufficient, and it is not. `testESSVI` has two slices that meet it and
+the butterfly bounds, yet cross by 93 % of `theta` at `k = -0.58`. The first
+version of this lot followed Corbetta et al. and had the same gap.
+
+The calibration keeps the `phi`-non-increasing branch, `psi_j <= psi_i theta_j/theta_i`,
+for three reasons:
+
+- Under this branch, the interpolation below provably stays arbitrage-free:
+  `psi/theta` of two linear functions of `T` is monotone between its ends.
+- It never empties the feasible set: `rho_j = rho_i` with `psi_j = psi_i` is
+  always in it.
+- An equity skew's `phi` decays in `T` like a power anyway.
+
+A random sweep in the test checks the slice pairs it admits on `w` itself, out
+to `|k| = 10`.
 
 **Calibration, slice by slice in maturity order** (Corbetta et al.'s robust
 search). `rho` is sampled on a grid, then refined by golden section. For each
@@ -87,18 +107,26 @@ shared with `SVISurface` (`dupire_from_svi.cpp`);
 
 ## 3. Measured on SPY
 
-The stored chain has 20 slices. The surface is repriced against the cleaned
-quotes it was fitted on.
+The stored chain has 20 slices. The local-vol grid of each surface is used to
+reprice calls on 15 points (0.35y to 2.06y, strikes at 95 %, 100 % and 105 % of
+spot), against the Black price of the cleaned quotes each surface was fitted
+on. The error is relative, in % of the call price.
 
-| | Production SVI | eSSVI, smoothed `theta` |
-|---|---|---|
-| Worst error, ≤ 1.06y | +11.7 vol % | within ±1 % |
-| Worst error, 1.56–2.06y | +21.5 % | −2.4 to −4.3 % (about the bid-ask) |
-| Local-vol roughness | 263 | 63–67 |
-| Grid cells filled from a neighbour | yes | none |
+| | Production SVI (7 slices kept) | eSSVI, necessary calendar condition only (first draft) | eSSVI, `phi` non-increasing (this lot) |
+|---|---|---|---|
+| Slice fit, mean rmse | 2.26 vol points | 2.08 | 2.06 |
+| Worst repricing error, ≤ 1.06y | +11.7 % (1.06y, 105 %) | −3.5 % (0.60y, 105 %) | −3.9 % (0.60y, 105 %) |
+| Worst repricing error, 1.56–2.06y | +21.5 % (1.56y, 105 %) | −4.3 % | −3.6 % |
+| Other points | | within ±1 % up to 1.06y | within ±1 % up to 1.06y |
+| Local vol, smallest (92–108 %, T > 0.1) | 0.061 | 0.068 | 0.078 |
+| Local-vol roughness, max \|S² ∂²σ/∂S²\| | 263 | 65 | 57 |
+| Grid cells filled from a neighbour | yes | none | none |
 
-The long-end error barely moves with `forward_smoothing` between 0.03 and 1. It
-comes from the slices' shape, not from the smoothing.
+On SPY, the `phi` bound is active on 5 of the 20 slices (0.26y, 0.81y, 0.85y,
+1.56y, 2.06y), and it costs nothing in fit. The errors left are 3–4 % of a call
+price, on the out-of-the-money 0.6y call and at the long end, where quotes are
+widest. They barely move with `forward_smoothing` between 0.1 and 1, so they
+come from the slices' shape, not from the smoothing.
 
 ## 4. Lots
 
@@ -116,4 +144,10 @@ comes from the slices' shape, not from the smoothing.
   Computational Finance 22(5), 2019.
 - J. Corbetta, P. Cohort, I. Laachir, C. Martini, *Robust calibration and
   arbitrage-free interpolation of SSVI slices*, Decisions in Economics and
-  Finance 42, 2019.
+  Finance 42, 2019 (arXiv:1804.04924).
+- L. Pasquazzi, *eSSVI surface calibration*, 2023 (arXiv:2304.02106): the
+  corrected calendar proposition, Appendix, Proposition 4.14.
+- A. Mingone, *No arbitrage global parametrization for the eSSVI volatility
+  surface*, 2022 (arXiv:2204.00312).
+
+All but Hendriks & Martini are in the knowledge base.
