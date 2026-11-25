@@ -2950,3 +2950,27 @@ The interpreter cannot do it and refuses (`compiled_kernels`). A first version b
 - The GPU fixed run takes 0.1 to 0.6 s per product, the CPU's 24 to 39 s.
 
 Test: `GpuMlqmcTest.TheConditionedCoarsePathIsTheCpusAndCheaper`, the digital and the up-and-out by the adaptive run: GPU conditioned against the CPU and against the GPU unconditioned, within error.
+
+## 27. The adjoint's fold on the card: no host time between the launches (#361, 2026-11-24)
+
+**What §25 found.** At 1M paths on the page's SLV grid, about 220 ms of a 550 ms call went between the adjoint's launches. Each launch:
+1. ran `fold_trails` and `fold_batches`;
+2. copied **every batch's dense row** to the host, synchronously: 8 batches a logical block × 12,908 risks, about 400 MB for the call;
+3. folded those rows into the slices' sums on one host thread: the batch mean shifted by the slice's first, Σ n y, Σ n² y and Σ n² y², for the risks' errors.
+
+The 64 MB host staging buffer also cut the call into small launches.
+
+**The change.** `fold_slices` (`src/gpu/script.cu`) runs that fold on the card, one thread a parameter. Each thread walks the launch's batches in the host's order, with the host's operations written without contraction (`__ddiv_rn`, `__dmul_rn`, `__dadd_rn`), so **every risk keeps its bits**. The host still computes, per batch, what does not depend on the parameter: its slice, its units, and whether it opens its slice. It uploads those (a few bytes a batch) and copies the slices' sums back once at the end. The staging cap is gone: a launch is sized by the card's memory alone (`draw_setup`).
+
+**Numbers.** `qm_gpu_risk_bench`, base and new binaries alternated three times, one V100, ms:
+
+| Case | 65,536 paths | 1M paths |
+|---|---|---|
+| phoenix autocall, SLV page grid | 38.2 → **21.5** | 566 → **316** |
+| digital call, SLV page grid | 30.7 → **14.3** | 387–748 → **252** |
+| phoenix autocall, local-vol page grid | 46.7 → **36.8** | 1,200 → **908** |
+| European call, local vol 30 × 12 (368 risks) | 21.1 → 20.9 | |
+
+Every case gives the same bits, on the risk vectors' 17 digits. The call is now bound by the card: at 1M paths the adjoint kernel and its first two folds take about 330 ms.
+
+**Next on the adjoint (§25):** the draws the backward sweep recomputes (Philox and Φ⁻¹, about a third of the kernel).
