@@ -5,6 +5,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <utility>
 #include <vector>
 
 namespace quantModeling
@@ -28,6 +30,12 @@ namespace quantModeling
         std::int64_t open_interest = 0;
         Real implied_vol = 0.0; ///< meaningless unless has_iv is true
         bool has_iv = false;    ///< false when the source had no usable implied vol
+        /// The expiry's forward and discount factor as data-ingest stored them
+        /// with the quote (options.chain_iv, WP 31): from parity on a European
+        /// chain, from carry on an American one. 0 when the source has none;
+        /// the surface then uses S exp((r - q) T) and exp(-r T).
+        Real forward = 0.0;
+        Real discount = 0.0;
 
         /// (bid+ask)/2 when both quoted; falls back to the last trade otherwise.
         Real mid() const noexcept;
@@ -66,6 +74,25 @@ namespace quantModeling
         /// so it is checked separately from the liquidity filter.
         Real min_plausible_iv = 0.02;
         Real max_plausible_iv = 3.00;
+        /// The quotes were cleaned at ingestion (data-ingest's options.chain_iv,
+        /// WP 31 §6.1): our own implied vols, OTM side only, every quote with
+        /// its expiry's forward and discount, data-quality flags already
+        /// applied by the reader. What is left here is what is not data
+        /// quality:
+        /// - liquidity: no open-interest, volume or min_bid filter (the reader
+        ///   applied the two-tick floor and the zero bids); the IV range and
+        ///   max_spread_ratio still hold;
+        /// - moneyness: |ln(K / F)| <= max_abs_log_moneyness instead of K / S;
+        /// - calendar: no per-quote check (it holds at fixed forward
+        ///   moneyness, and the fitted slices are checked for it);
+        /// - butterfly: on the European call equivalents of every quote (calls
+        ///   and puts), a violation counted only beyond the three quotes'
+        ///   half-spreads, with unequal strike spacing.
+        /// The slice fit then weights each quote by its spread
+        /// (svi_quotes_from_raw_surface). Every quote must carry forward and
+        /// discount.
+        bool ingestion_cleaned = false;
+        Real max_abs_log_moneyness = 0.6;
     };
 
     /**
@@ -91,9 +118,15 @@ namespace quantModeling
         Real spot() const noexcept { return spot_; }
         Real rate() const noexcept { return rate_; }
         Real dividend() const noexcept { return dividend_; }
+        bool ingestion_cleaned() const noexcept { return ingestion_cleaned_; }
 
-        /// Forward price F_T = S * exp((r - q) * T).
+        /// The forward of the maturity: the one its quotes carry when they
+        /// carry one (RawOptionQuote::forward, kept even if every quote of the
+        /// maturity was cleaned out), else F_T = S * exp((r - q) * T).
         Real forward(Real ttm) const noexcept;
+
+        /// The discount factor, by the same rule: stored, else exp(-r * T).
+        Real discount(Real ttm) const noexcept;
 
         /// Log-moneyness y = ln(K / F_T), the coordinate SVI fits in.
         Real log_moneyness(Real strike, Real ttm) const noexcept;
@@ -104,6 +137,9 @@ namespace quantModeling
         Real spot_;
         Real rate_;
         Real dividend_;
+        bool ingestion_cleaned_ = false;
+        /// ttm -> (forward, discount), from the raw quotes that carry them.
+        std::map<Real, std::pair<Real, Real>> stored_;
     };
 
 } // namespace quantModeling
