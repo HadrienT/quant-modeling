@@ -17,6 +17,7 @@ GET  /local-vol/delta-surface
 from __future__ import annotations
 
 from datetime import date
+from typing import Optional
 
 import quantmodeling as qm
 from fastapi import APIRouter, HTTPException, Query
@@ -46,11 +47,17 @@ def _cleaning_summary(stats: dict) -> str:
     )
 
 
-def _calibrate(ticker: str, rate: float) -> tuple:
+#: The rate the local-vol routes used when none is given, kept under legacy.
+LEGACY_DEFAULT_RATE = 0.05
+
+
+def _calibrate(ticker: str, rate: Optional[float]) -> tuple:
     """The stored surface of `ticker` (market_snapshot: the database only,
     no live source; the option data QM_OPTION_DATA names). Returns (ticker,
     spot, dividend, result) with result shaped as calibrate_vol_surface's."""
     ticker = ticker.upper().strip()
+    if rate is None and market_snapshot.option_data() == "legacy":
+        rate = LEGACY_DEFAULT_RATE
     try:
         m = market_snapshot.local_vol_market(ticker, rate, date.today())
     except market_snapshot.MarketDataUnavailable as exc:
@@ -65,6 +72,7 @@ def _calibrate(ticker: str, rate: float) -> tuple:
         "k_min": m.k_min,
         "k_max": m.k_max,
         "cleaning_stats": m.cleaning_stats,
+        "rate": m.rate,  # the rate given, or the market's (chain_iv)
     }
     return ticker, m.spot, m.dividend, result
 
@@ -75,7 +83,11 @@ def price_local_vol(
     strike: float = Query(..., gt=0, description="Option strike price"),
     maturity: float = Query(..., gt=0, description="Time to maturity in years"),
     is_call: bool = Query(True, description="True for call, False for put"),
-    rate: float = Query(0.05, description="Continuously compounded risk-free rate"),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate (continuously "
+        "compounded). Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
     n_paths: int = Query(
         50_000, ge=1000, le=500_000, description="MC simulation paths"
     ),
@@ -96,7 +108,7 @@ def price_local_vol(
     mc_input.spot = spot
     mc_input.strike = strike
     mc_input.maturity = maturity
-    mc_input.rate = rate
+    mc_input.rate = result["rate"]
     mc_input.dividend = dividend
     mc_input.is_call = is_call
     mc_input.K_grid = result["K_grid"]
@@ -186,7 +198,11 @@ def raw_iv_surface(
 @router.get("/delta-surface", response_model=DeltaSurfaceResponse)
 def delta_surface(
     ticker: str = Query(..., description="Stock ticker"),
-    rate: float = Query(0.05, description="Risk-free rate"),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate. Empty: the market's "
+        "(QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
 ) -> DeltaSurfaceResponse:
     """Every calibrated SVI slice, reduced to its desk-standard delta
     buckets (vol_surface.delta_bucket_row) -- reuses the same calibration
@@ -217,7 +233,11 @@ def delta_surface(
 @router.get("/iv-surface", response_model=CleanedIVSurfaceResponse)
 def cleaned_iv_surface(
     ticker: str = Query(..., description="Stock ticker"),
-    rate: float = Query(0.05, description="Risk-free rate"),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate. Empty: the market's "
+        "(QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
 ) -> CleanedIVSurfaceResponse:
     """
     The SVI-fitted implied-volatility surface, one calibrated slice per
@@ -238,7 +258,7 @@ def cleaned_iv_surface(
     strikes, maturities, values = vol_surface.svi_implied_vol_grid(
         result["slices"],
         spot,
-        rate,
+        result["rate"],
         dividend,
         k_min=result["k_min"],
         k_max=result["k_max"],
@@ -263,7 +283,11 @@ def cleaned_iv_surface(
 @router.get("/surface", response_model=LocalVolSurfaceResponse)
 def local_vol_surface(
     ticker: str = Query(..., description="Stock ticker"),
-    rate: float = Query(0.05, description="Risk-free rate"),
+    rate: Optional[float] = Query(
+        None,
+        description="Override of the market's discount rate. Empty: the market's "
+        "(QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+    ),
 ) -> LocalVolSurfaceResponse:
     """The Dupire local-volatility surface, computed analytically from the
     calibrated SVI slices (market/dupire_from_svi.hpp) -- no finite

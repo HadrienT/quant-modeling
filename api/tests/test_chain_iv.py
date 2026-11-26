@@ -223,7 +223,7 @@ def test_spy_is_priced_on_the_spx_surface_of_the_same_day(store):
     assert sorted(round(q.strike, 9) for q in quotes) == [45.0, 55.0]
     assert all(q.forward == pytest.approx(50.5) for q in quotes)
     assert "european_proxy_surface" in codes(m)
-    assert "surface_on_market_forwards" in codes(m)
+    assert "market_carry" in codes(m)
 
 
 def test_without_an_spx_chain_that_day_spy_takes_its_own_and_says_so(store):
