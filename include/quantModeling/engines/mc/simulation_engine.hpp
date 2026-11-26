@@ -57,6 +57,9 @@ namespace quantModeling
         /// (common random numbers), or sqrt(se_fine^2 + se_coarse^2)
         /// without replicates -- an upper bound for runs sharing a seed.
         std::optional<Real> discretisation_bias_std_error;
+        /// Set when a multilevel run stopped short of its bias target
+        /// (issue #383): what the user is told, empty otherwise.
+        std::string discretisation_bias_warning;
 
         Real npv() const { return values.empty() ? Real(0) : values.front(); }
         Real std_error() const

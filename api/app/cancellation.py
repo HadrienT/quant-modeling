@@ -10,7 +10,9 @@ between the runs a pricing chains (a precision target's pilot, cost and
 final runs; a price run and a risks run; a convergence ladder; the bumps of
 the greeks and of a risk profile). A run already inside the C++ finishes;
 no further one starts. So a pricing that plans its own runs also learns when
-the route gives up (time_left), and sizes them to end before it.
+the route gives up (time_left), and sizes them to end before it; a multilevel
+run, which plans its own levels inside the C++, gets that time as its
+time_limit and stops there (engine_time_limit, issue #383).
 """
 
 from __future__ import annotations
@@ -52,6 +54,14 @@ def time_left() -> Optional[float]:
     already in the C++."""
     deadline = _DEADLINE.get()
     return None if deadline is None else deadline - time.perf_counter()
+
+
+def engine_time_limit() -> float:
+    """time_left() as the C++ engines take it (price_script's time_limit):
+    seconds, 0 outside a route (no limit), a millisecond once the route has
+    already given up."""
+    left = time_left()
+    return 0.0 if left is None else max(left, 1e-3)
 
 
 def run_with(

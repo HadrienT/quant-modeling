@@ -9,9 +9,11 @@
 #include "quantModeling/utils/rng.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -38,6 +40,32 @@
  */
 namespace quantModeling
 {
+
+    /// A level the device cannot run: more draws per path than its Sobol
+    /// dimensions (issue #383). Past the run's first levels, the multilevel
+    /// loops stop at the finest level they could build instead of failing.
+    struct LevelBeyondCapacity : InvalidInput
+    {
+        using InvalidInput::InvalidInput;
+    };
+
+    /// When a multilevel run gives up: the route's own timeout (issue #383,
+    /// api/app/cancellation.py). Unset: no limit.
+    using MlmcDeadline = std::optional<std::chrono::steady_clock::time_point>;
+
+    inline bool past(const MlmcDeadline &d)
+    {
+        return d && std::chrono::steady_clock::now() >= *d;
+    }
+
+    /// Where an adaptive multilevel run stopped.
+    enum class MlmcStop
+    {
+        BiasTarget,     ///< the bias test passed
+        FinestAllowed,  ///< at max_finest_level
+        DeviceCapacity, ///< the next level needs more than the device runs (LevelBeyondCapacity)
+        TimeLimit,      ///< at its deadline
+    };
 
     /// One level's running sums.
     struct MlmcLevel
@@ -68,15 +96,22 @@ namespace quantModeling
         /// (Giles & Szpruch 2012; ISimulationModel::condition_on_fine_half_steps,
         /// WP 26 §26). Off only to measure what it brings.
         bool coarse_conditioning = true;
+        /// Stop there, the bias test unpassed (issue #383).
+        MlmcDeadline deadline;
     };
 
     struct MlmcResult
     {
         double value = 0.0;
-        double std_error = 0.0; ///< sqrt(sum V_l / N_l)
-        double bias = 0.0;      ///< the estimate of |E[P - P_L]| the bias test used (adaptive runs)
-        double eps = 0.0;       ///< the target RMS error the run stopped at (adaptive runs)
+        double std_error = 0.0;      ///< sqrt(sum V_l / N_l)
+        double bias = 0.0;           ///< the estimate of |E[P - P_L]| the bias test used (adaptive runs)
+        double eps = 0.0;            ///< the target RMS error the run stopped at (adaptive runs)
+        double bias_std_error = 0.0; ///< of `bias`, when the run measures it (multilevel QMC)
         bool bias_converged = true;
+        MlmcStop stop = MlmcStop::BiasTarget;
+        /// Why the run stopped short of its bias target (bias_converged
+        /// false), in words for the diagnostics.
+        std::string stop_reason;
         double alpha = 0.0, beta = 0.0, gamma = 0.0; ///< |E Y_l| ~ 2^-alpha l, V_l ~ 2^-beta l, C_l ~ 2^gamma l
         std::vector<MlmcLevel> levels;
         /// Each level's V_l / N_l, the variance of its estimate (filled by
@@ -307,26 +342,64 @@ namespace quantModeling
         }
 
         /**
+         * alpha from the levels from 1 with mean m_l and standard error s_l:
+         * the slope of log2 |m_l| against l, each level weighted by the
+         * inverse variance of log2 |m_l|, (m_l ln 2 / s_l)^2, over the
+         * resolved levels (|m_l| > 2 s_l; issue #383). An unweighted fit
+         * gave a level known to 30 % the weight of one known to 7 %, and
+         * errors of similar size on every level -- what the variance step
+         * leaves -- flattened the slope towards the floor, where the bias
+         * test multiplies by 2.4. `fallback` with fewer than two resolved
+         * levels.
+         */
+        inline double weighted_alpha(const std::vector<double> &mean, const std::vector<double> &se, double fallback)
+        {
+            double w = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+            int n = 0;
+            for (std::size_t l = 1; l < mean.size(); ++l)
+            {
+                const double m = std::fabs(mean[l]);
+                if (!(m > 2.0 * se[l]) || !(se[l] > 0.0))
+                    continue;
+                const double x = static_cast<double>(l), y = std::log2(m);
+                const double k = m * std::log(2.0) / se[l], wl = k * k;
+                ++n;
+                w += wl;
+                sx += wl * x;
+                sy += wl * y;
+                sxx += wl * x * x;
+                sxy += wl * x * y;
+            }
+            if (n < 2)
+                return fallback;
+            return -(w * sxy - sx * sy) / (w * sxx - sx * sx);
+        }
+
+        /**
          * alpha by regression over the levels from 1 whose sample mean is
-         * resolved, |mean| > 2 standard errors (WP 26 P4b). A mean lost in
+         * resolved, |mean| > 2 standard errors (WP 26 P4b), weighted by
+         * their precision (weighted_alpha). A mean lost in
          * its noise says nothing of the decay, and regressing on it swung
          * the estimate from 0.66 to 2.2 between runs (P4a), which the bias
          * test divides by. Fewer than two resolved levels: 1, the weak order
-         * of both Euler and Milstein. At least 0.5, as Giles.
+         * of both Euler and Milstein. At least 0.5, as Giles, and at most 1,
+         * that weak order (issue #383): a faster decay is the noise of two
+         * or three resolved levels, and on SPY's one-touch an alpha of 1.18
+         * from levels 1 and 2 passed the bias test at level 2 while levels
+         * 3-5 still corrected by 0.02-0.04 each.
          */
         inline double alpha_estimate(const std::vector<MlmcLevel> &levels)
         {
-            std::vector<double> m(levels.size(), 0.0);
+            std::vector<double> m(levels.size(), 0.0), se(levels.size(), 0.0);
             for (std::size_t l = 1; l < levels.size(); ++l)
             {
                 const MlmcLevel &v = levels[l];
                 if (v.n < 2)
                     continue;
-                const double se = std::sqrt(v.variance() / static_cast<double>(v.n));
-                if (std::fabs(v.mean()) > 2.0 * se)
-                    m[l] = std::fabs(v.mean());
+                m[l] = v.mean();
+                se[l] = std::sqrt(v.variance() / static_cast<double>(v.n));
             }
-            return std::max(0.5, -log2_slope(m, -1.0));
+            return std::clamp(weighted_alpha(m, se, 1.0), 0.5, 1.0);
         }
 
         /**
@@ -377,7 +450,7 @@ namespace quantModeling
                 os << ' ' << l.n;
             os << "; alpha " << res.alpha << ", beta " << res.beta << ", gamma " << res.gamma;
             if (!res.bias_converged)
-                os << "; bias test failed at the finest level allowed (" << res.bias << ")";
+                os << "; bias test failed (" << res.bias << "): " << res.stop_reason;
             res.diagnostics = os.str();
         }
     } // namespace mlmc_detail
@@ -451,6 +524,22 @@ namespace quantModeling
             for (std::size_t l = 0; l < samplers.size(); ++l)
                 if (dn[l] > 0)
                     samplers[l]->run(dn[l], res.levels[l]);
+            if (past(s.deadline))
+            {
+                res.bias = mlmc_detail::remaining_bias(
+                    [&]
+                    {
+                        std::vector<double> m;
+                        for (const MlmcLevel &l : res.levels)
+                            m.push_back(std::fabs(l.mean()));
+                        return m;
+                    }(),
+                    mlmc_detail::alpha_estimate(res.levels));
+                res.bias_converged = false;
+                res.stop = MlmcStop::TimeLimit;
+                res.stop_reason = "stopped at its time limit";
+                break;
+            }
 
             const std::size_t L = res.levels.size() - 1;
             std::vector<double> m(L + 1), v(L + 1), c(L + 1);
@@ -495,6 +584,8 @@ namespace quantModeling
             if (static_cast<int>(L) >= s.max_finest_level)
             {
                 res.bias_converged = false;
+                res.stop = MlmcStop::FinestAllowed;
+                res.stop_reason = "at the finest level allowed (" + std::to_string(L) + ")";
                 break;
             }
             add_level();

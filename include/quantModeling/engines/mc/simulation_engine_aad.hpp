@@ -47,6 +47,8 @@ namespace quantModeling
         /// A multilevel run's estimate of its remaining discretisation
         /// bias on the price (WP 26 §10.2); unset for a plain run.
         std::optional<Real> discretisation_bias;
+        std::optional<Real> discretisation_bias_std_error;
+        std::string discretisation_bias_warning; ///< as SimulationMCResult's
         /// Sobol RQMC on the GPU only: each replicate's risks (replicates x
         /// risks, replicate-major). Two runs on the same tables are paired
         /// replicate by replicate (the bump on the adjoint, WP 27 §14.10).
@@ -546,6 +548,8 @@ namespace quantModeling
         out.risks = RiskReport{r.risk_labels, r.risks, r.risk_std_errors};
         out.gpus = r.gpus;
         out.discretisation_bias = r.discretisation_bias;
+        out.discretisation_bias_std_error = r.discretisation_bias_std_error;
+        out.discretisation_bias_warning = r.discretisation_bias_warning;
 
         for (std::size_t i = 0; i < r.risk_labels.size(); ++i)
         {
