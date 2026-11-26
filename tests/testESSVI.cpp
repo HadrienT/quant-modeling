@@ -20,6 +20,7 @@
 #include "quantModeling/market/dupire_from_svi.hpp"
 #include "quantModeling/market/essvi.hpp"
 #include "quantModeling/market/svi.hpp"
+#include "quantModeling/market/vol_surface_pipeline.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -232,6 +233,87 @@ namespace quantModeling
             EXPECT_GT(v, 0.02);
             EXPECT_LT(v, 1.5);
         }
+    }
+
+    // ── The surface's pillars (WP 30 E4) ────────────────────────────────────
+
+    TEST(ESSVIPillars, ConsecutivePillarsAreSpacedAndTheEndsAreKept)
+    {
+        // SPX's short end: an expiry every few days, then monthlies.
+        const std::vector<Real> T = {0.052, 0.055, 0.058, 0.063, 0.071, 0.079, 0.093, 0.121, 0.139,
+                                     0.235, 0.236, 0.311, 0.427, 0.558, 0.846, 0.983, 1.06, 2.06};
+        std::vector<ESSVISliceFit> fits(T.size());
+        for (std::size_t i = 0; i < T.size(); ++i)
+            fits[i].ttm = T[i], fits[i].feasible = i != 3; // one infeasible
+        const std::vector<bool> pillar = essvi_surface_pillars(fits, 0.25);
+        std::vector<Real> kept;
+        for (std::size_t i = 0; i < T.size(); ++i)
+        {
+            if (!fits[i].feasible)
+                EXPECT_FALSE(pillar[i]) << T[i];
+            if (pillar[i])
+                kept.push_back(T[i]);
+        }
+        ASSERT_GE(kept.size(), 2u);
+        EXPECT_EQ(kept.front(), T.front());
+        EXPECT_EQ(kept.back(), T.back());
+        for (std::size_t i = 1; i < kept.size(); ++i)
+            EXPECT_GE(kept[i], 1.25 * kept[i - 1] - 1e-15) << kept[i - 1] << " -> " << kept[i];
+        // 0.052, 0.071, 0.093, 0.121, 0.235, 0.311, 0.427, 0.558, 0.846, 1.06, 2.06
+        EXPECT_EQ(kept.size(), 11u);
+    }
+
+    TEST(ESSVIPillars, TheLongestReplacesALastPillarTooCloseToIt)
+    {
+        std::vector<ESSVISliceFit> fits(3);
+        const Real T[] = {0.5, 1.0, 1.1};
+        for (std::size_t i = 0; i < 3; ++i)
+            fits[i].ttm = T[i], fits[i].feasible = true;
+        EXPECT_EQ(essvi_surface_pillars(fits, 0.25), (std::vector<bool>{true, false, true}));
+        // A single feasible fit is its own pillar.
+        fits[0].feasible = fits[2].feasible = false;
+        EXPECT_EQ(essvi_surface_pillars(fits, 0.25), (std::vector<bool>{false, true, false}));
+    }
+
+    TEST(ESSVIPillars, ADenseChainStillGivesAGridAlignedOnItsPillars)
+    {
+        // Forty maturities, the short ones days apart: before E4 the grid
+        // fell back to equal steps from 0.08 y, past the first month.
+        std::vector<Real> T;
+        for (Real t = 0.05; t < 0.12; t += 0.004)
+            T.push_back(t);
+        for (Real t = 0.15; t < 2.1; t += 0.1)
+            T.push_back(t);
+        const std::vector<ESSVIParams> ref = reference(T);
+        std::vector<RawOptionQuote> raw;
+        for (std::size_t i = 0; i < T.size(); ++i)
+            for (const SVISliceQuote &q : quotes_of(ref[i], T[i]))
+            {
+                RawOptionQuote r;
+                r.ttm = T[i];
+                r.forward = 100.0;
+                r.discount = 1.0;
+                r.strike = 100.0 * std::exp(q.log_moneyness);
+                r.is_call = r.strike >= 100.0;
+                r.implied_vol = q.market_iv;
+                r.has_iv = true;
+                r.bid = 1.0, r.ask = 1.02, r.last = 1.01;
+                raw.push_back(r);
+            }
+        CleaningParams cleaning;
+        cleaning.ingestion_cleaned = true;
+        const VolSurfacePipelineResult r = calibrate_vol_surface(raw, 100.0, 0.0, 0.0, -0.6, 0.6, 40, 50, 6, cleaning,
+                                                                 {}, {}, {}, SurfaceModel::ESSVI);
+        std::vector<Real> pillars;
+        for (const auto &s : r.slices)
+            if (s.in_surface)
+                pillars.push_back(s.ttm);
+        ASSERT_GE(pillars.size(), 2u);
+        EXPECT_LT(r.T_grid.front(), pillars.front()); // the first segment has its own columns
+        for (const Real t : pillars)
+            EXPECT_TRUE(std::any_of(r.T_grid.begin(), r.T_grid.end(), [&](Real g)
+                                    { return std::fabs(g - t) < 1e-12; }))
+                << "no column at the pillar " << t;
     }
 
 } // namespace quantModeling

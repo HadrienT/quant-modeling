@@ -510,6 +510,34 @@ namespace quantModeling
         return out;
     }
 
+    std::vector<bool> essvi_surface_pillars(const std::vector<ESSVISliceFit> &fits, Real min_relative_gap)
+    {
+        std::vector<bool> pillar(fits.size(), false);
+        std::vector<std::size_t> kept;
+        std::size_t longest = fits.size();
+        for (std::size_t s = 0; s < fits.size(); ++s)
+        {
+            if (!fits[s].feasible)
+                continue;
+            if (longest == fits.size() || fits[s].ttm > fits[longest].ttm)
+                longest = s;
+            if (kept.empty() || fits[s].ttm >= (1.0 + min_relative_gap) * fits[kept.back()].ttm)
+                kept.push_back(s);
+        }
+        if (kept.empty())
+            return pillar;
+        if (kept.back() != longest)
+        {
+            if (kept.size() > 1)
+                kept.back() = longest;
+            else
+                kept.push_back(longest);
+        }
+        for (const std::size_t s : kept)
+            pillar[s] = true;
+        return pillar;
+    }
+
     // ── The surface ─────────────────────────────────────────────────────────
 
     ESSVISurface::ESSVISurface(std::vector<ESSVISliceFit> fits)

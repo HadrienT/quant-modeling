@@ -330,10 +330,11 @@ static py::dict dupire_superbucket_impl(const py::list &slices_py, double spot, 
             // The calibration the superbucket reruns must be the one the grid
             // came from: same slices, same settings, same parameters.
             const std::vector<ESSVISliceFit> fits = calibrate_essvi_slices(quotes, ttms, settings);
+            const std::vector<bool> pillar = essvi_surface_pillars(fits, settings.surface_min_relative_gap);
             std::size_t next = 0;
             for (std::size_t s = 0; s < fits.size(); ++s)
             {
-                if (!fits[s].feasible)
+                if (!fits[s].feasible || !pillar[s])
                     continue;
                 if (next >= reported.size() || reported_at[next] != s)
                     throw InvalidInput("dupire_superbucket: the slices are not the ones this eSSVI calibration keeps");
