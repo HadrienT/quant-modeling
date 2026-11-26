@@ -11407,8 +11407,16 @@
             "description": "Price to this precision instead of n_paths (which is then ignored): pilot, path count, stopping rules (PrecisionTarget)."
           },
           "rate": {
-            "title": "Rate",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuously compounded rate, decimal. With a `ticker` under QM_OPTION_DATA=chain_iv it is an override: left empty, the product is discounted on the market's rate and drifts at the market's forward (options.chain_iv); a typed rate replaces the discount only and is reported as a departure from the market. Required otherwise.",
+            "title": "Rate"
           },
           "rng": {
             "$ref": "#/components/schemas/McRng",
@@ -11521,7 +11529,6 @@
           }
         },
         "required": [
-          "rate",
           "script"
         ],
         "title": "ScriptRequest",
@@ -12018,8 +12025,16 @@
             "type": "string"
           },
           "rate": {
-            "title": "Rate",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuously compounded rate, decimal. With a `ticker` under QM_OPTION_DATA=chain_iv it is an override: left empty, the product is discounted on the market's rate and drifts at the market's forward (options.chain_iv); a typed rate replaces the discount only and is reported as a departure from the market. Required otherwise.",
+            "title": "Rate"
           },
           "rng": {
             "$ref": "#/components/schemas/McRng",
@@ -12134,7 +12149,6 @@
           }
         },
         "required": [
-          "rate",
           "product"
         ],
         "title": "ScriptedProductRequest",
@@ -18142,15 +18156,21 @@
             }
           },
           {
-            "description": "Risk-free rate",
+            "description": "Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
             "in": "query",
             "name": "rate",
             "required": false,
             "schema": {
-              "default": 0.05,
-              "description": "Risk-free rate",
-              "title": "Rate",
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+              "title": "Rate"
             }
           }
         ],
@@ -18199,15 +18219,21 @@
             }
           },
           {
-            "description": "Risk-free rate",
+            "description": "Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
             "in": "query",
             "name": "rate",
             "required": false,
             "schema": {
-              "default": 0.05,
-              "description": "Risk-free rate",
-              "title": "Rate",
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+              "title": "Rate"
             }
           }
         ],
@@ -18292,15 +18318,21 @@
             }
           },
           {
-            "description": "Continuously compounded risk-free rate",
+            "description": "Override of the market's discount rate (continuously compounded). Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
             "in": "query",
             "name": "rate",
             "required": false,
             "schema": {
-              "default": 0.05,
-              "description": "Continuously compounded risk-free rate",
-              "title": "Rate",
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override of the market's discount rate (continuously compounded). Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+              "title": "Rate"
             }
           },
           {
@@ -18446,15 +18478,21 @@
             }
           },
           {
-            "description": "Risk-free rate",
+            "description": "Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
             "in": "query",
             "name": "rate",
             "required": false,
             "schema": {
-              "default": 0.05,
-              "description": "Risk-free rate",
-              "title": "Rate",
-              "type": "number"
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy.",
+              "title": "Rate"
             }
           }
         ],

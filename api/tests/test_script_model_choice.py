@@ -50,7 +50,7 @@ def store(monkeypatch):
     stochastic_vol._cache.clear()
     calls = {"market": 0, "stochastic": 0}
 
-    def local_vol_market(ticker, rate, valuation_date):
+    def local_vol_market(ticker, rate, valuation_date, horizon=None):
         calls["market"] += 1
         return _market()
 

@@ -7263,8 +7263,11 @@ export interface components {
             n_paths: number;
             /** @description Price to this precision instead of n_paths (which is then ignored): pilot, path count, stopping rules (PrecisionTarget). */
             precision?: components["schemas"]["PrecisionTarget"] | null;
-            /** Rate */
-            rate: number;
+            /**
+             * Rate
+             * @description Continuously compounded rate, decimal. With a `ticker` under QM_OPTION_DATA=chain_iv it is an override: left empty, the product is discounted on the market's rate and drifts at the market's forward (options.chain_iv); a typed rate replaces the discount only and is reported as a departure from the market. Required otherwise.
+             */
+            rate?: number | null;
             /**
              * @description CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price.
              * @default pcg32
@@ -7610,8 +7613,11 @@ export interface components {
              * @description Library slug, e.g. 'worst-of-autocall'.
              */
             product: string;
-            /** Rate */
-            rate: number;
+            /**
+             * Rate
+             * @description Continuously compounded rate, decimal. With a `ticker` under QM_OPTION_DATA=chain_iv it is an override: left empty, the product is discounted on the market's rate and drifts at the market's forward (options.chain_iv); a typed rate replaces the discount only and is reported as a departure from the market. Required otherwise.
+             */
+            rate?: number | null;
             /**
              * @description CPU runs only; a GPU run always uses Philox, the generator with which a CPU run gives the GPU's price.
              * @default pcg32
@@ -10412,8 +10418,8 @@ export interface operations {
             query: {
                 /** @description Stock ticker */
                 ticker: string;
-                /** @description Risk-free rate */
-                rate?: number;
+                /** @description Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy. */
+                rate?: number | null;
             };
             header?: never;
             path?: never;
@@ -10446,8 +10452,8 @@ export interface operations {
             query: {
                 /** @description Stock ticker */
                 ticker: string;
-                /** @description Risk-free rate */
-                rate?: number;
+                /** @description Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy. */
+                rate?: number | null;
             };
             header?: never;
             path?: never;
@@ -10486,8 +10492,8 @@ export interface operations {
                 maturity: number;
                 /** @description True for call, False for put */
                 is_call?: boolean;
-                /** @description Continuously compounded risk-free rate */
-                rate?: number;
+                /** @description Override of the market's discount rate (continuously compounded). Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy. */
+                rate?: number | null;
                 /** @description MC simulation paths */
                 n_paths?: number;
                 /** @description Euler steps per year */
@@ -10560,8 +10566,8 @@ export interface operations {
             query: {
                 /** @description Stock ticker */
                 ticker: string;
-                /** @description Risk-free rate */
-                rate?: number;
+                /** @description Override of the market's discount rate. Empty: the market's (QM_OPTION_DATA=chain_iv), or 5 % under legacy. */
+                rate?: number | null;
             };
             header?: never;
             path?: never;

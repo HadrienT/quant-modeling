@@ -82,7 +82,7 @@ def test_the_warm_up_calibrates_the_new_snapshot_at_the_remembered_rates(
     # A new snapshot lands: a different surface for the same ticker.
     monkeypatch.setattr(db, "options_chain_tickers", lambda since: ["TEST", "NEW"])
 
-    def local_vol_market(ticker, rate, today):
+    def local_vol_market(ticker, rate, today, horizon=None):
         if ticker == "NEW":
             raise market_snapshot.MarketDataUnavailable("no close")
         return _market(ticker, rate, level=0.22)

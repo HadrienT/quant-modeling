@@ -110,7 +110,7 @@ export default function ScriptingPreview() {
 							script,
 							model,
 							...(n > 1 ? underlyingsRequest(n, market, underlyings) : single),
-							rate: Number(ratePct) / 100,
+							...(ratePct.trim() === "" ? {} : { rate: Number(ratePct) / 100 }),
 							valuation_date: valuationDate,
 							day_count: dayCount,
 							fuzzy,

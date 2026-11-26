@@ -355,7 +355,17 @@ class ScriptPricingInputs(BaseModel):
         gt=0.0,
         description="Required for model='black_scholes' (and 'auto' without a ticker).",
     )
-    rate: float
+    rate: Optional[float] = Field(
+        None,
+        description=(
+            "Continuously compounded rate, decimal. With a `ticker` under "
+            "QM_OPTION_DATA=chain_iv it is an override: left empty, the product "
+            "is discounted on the market's rate and drifts at the market's "
+            "forward (options.chain_iv); a typed rate replaces the discount "
+            "only and is reported as a departure from the market. Required "
+            "otherwise."
+        ),
+    )
     dividend: float = 0.0
     vol: Optional[float] = Field(
         None,

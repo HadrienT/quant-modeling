@@ -48,7 +48,13 @@ export function ScriptingMarketFields(props: {
 				/>
 			)}
 			<Field
-				label="Rate %"
+				label={props.marketDriven ? "Rate % (override)" : "Rate %"}
+				title={
+					props.marketDriven
+						? "Empty: discounted on the market's rate (when the server reads the cleaned option data). A typed rate replaces the discount only; the forward stays the market's."
+						: undefined
+				}
+				placeholder={props.marketDriven ? "market" : undefined}
 				inputMode="decimal"
 				value={props.ratePct}
 				onChange={(e) => props.onRatePct(e.target.value)}

@@ -178,3 +178,60 @@ def carried_onto(
         f = target.forward(r.ttm)
         out.append(quote(r, f / r.forward, f))
     return out
+
+
+@dataclass(frozen=True)
+class ZeroCurve:
+    """A ticker's market discount as a zero rate z(T) = -ln DF(T) / T,
+    linear in T between its expiries and flat beyond them."""
+
+    ttms: Tuple[float, ...]
+    zeros: Tuple[float, ...]
+
+    @staticmethod
+    def of(expiries: Sequence["db.ChainIvExpiry"]) -> "ZeroCurve":
+        points: Dict[float, float] = {}
+        for e in expiries:
+            points.setdefault(e.ttm, -math.log(e.discount) / e.ttm)
+        ttms = tuple(sorted(points))
+        if not ttms:
+            raise ValueError("no accepted expiry to read the discounts from")
+        return ZeroCurve(ttms, tuple(points[t] for t in ttms))
+
+    def zero(self, ttm: float) -> float:
+        i = bisect.bisect_left(self.ttms, ttm)
+        if i == 0:
+            return self.zeros[0]
+        if i == len(self.ttms):
+            return self.zeros[-1]
+        t0, t1 = self.ttms[i - 1], self.ttms[i]
+        z0, z1 = self.zeros[i - 1], self.zeros[i]
+        return z0 + (z1 - z0) * (ttm - t0) / (t1 - t0)
+
+
+@dataclass(frozen=True)
+class MarketCarry:
+    """The flat (rate, dividend yield) a product is priced at (WP 31 L6, D1):
+    fitted to the market's discount and forward at its horizon T, so that a
+    vanilla expiring at T reprices on the surface's forward under every
+    model. A typed rate replaces the discount only: the forward stays the
+    market's, so the yield becomes rate - carry."""
+
+    horizon: float
+    market_rate: float  # -ln DF(T) / T
+    carry: float  # ln(F(T) / S) / T
+    rate: float
+    dividend: float
+    typed: bool
+
+    @staticmethod
+    def at(
+        expiries: Sequence["db.ChainIvExpiry"],
+        spot: float,
+        horizon: float,
+        typed_rate: Optional[float],
+    ) -> "MarketCarry":
+        c = CarryCurve.of(expiries, spot).carry(horizon)
+        z = ZeroCurve.of(expiries).zero(horizon)
+        r = z if typed_rate is None else float(typed_rate)
+        return MarketCarry(horizon, z, c, r, r - c, typed_rate is not None)
