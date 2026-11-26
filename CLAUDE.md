@@ -59,9 +59,11 @@ absent or too old there is an explicit error (script pricing paths go through
 the older endpoints had (`vol_surface.py`, `routers/local_vol_pricing.py`, `routers/simulation.py`)
 were **removed by the maintainer on 2026-11-26** (WP 31: Yahoo's data is not trusted); the API
 no longer depends on `yfinance` and a test checks that importing it never loads it. Option
-surfaces come from `market_snapshot`, whose source `QM_OPTION_DATA` chooses: `legacy`
-(`options.chain_snapshot`, Yahoo's IVs, the default until the maintainer switches) or
-`chain_iv` (`options.chain_iv`, the quotes `data-ingest` cleans at ingestion). The `notebooks/` directory is a personal
+surfaces come from `market_snapshot`, whose source `QM_OPTION_DATA` chooses: `chain_iv`
+(`options.chain_iv`, the quotes `data-ingest` cleans at ingestion; production's default since
+2026-11-26, set in `docker-compose.prod.yml`) or `legacy` (`options.chain_snapshot`, Yahoo's IVs;
+the code's default, for dev and tests, and the rollback). Under `chain_iv` a product is priced on
+the market's carry at its maturity and an empty `rate` means the market's (WP 31 L6). The `notebooks/` directory is a personal
 sandbox, out of scope. No more BigQuery: the project is entirely off cloud.
 
 ## Scripting assistant

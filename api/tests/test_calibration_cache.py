@@ -100,7 +100,7 @@ def test_the_warm_up_reports_a_ticker_it_cannot_calibrate(fits, monkeypatch):
     stochastic_vol.calibrate(_market(rate=0.03))
     monkeypatch.setattr(db, "options_chain_tickers", lambda since: ["TEST"])
 
-    def unavailable(ticker, rate, today):
+    def unavailable(ticker, rate, today, horizon=None):
         raise market_snapshot.MarketDataUnavailable("the snapshot is too old")
 
     monkeypatch.setattr(market_snapshot, "local_vol_market", unavailable)
@@ -113,3 +113,22 @@ def test_the_warm_up_is_off_unless_asked(monkeypatch):
     assert not calibration_warmup.enabled()
     monkeypatch.setenv("QM_CALIBRATION_WARMUP", "1")
     assert calibration_warmup.enabled()
+
+
+def test_under_chain_iv_the_warm_up_calibrates_the_pages_market(fits, monkeypatch):
+    # The pages leave the rate empty (the market's carry, WP 31 L6) and price
+    # the library's one-year products: that is the market to warm.
+    from app import product_templates
+
+    monkeypatch.setenv(market_snapshot.OPTION_DATA_ENV, "chain_iv")
+    monkeypatch.setattr(db, "options_chain_tickers", lambda since: ["TEST"])
+    asked = []
+
+    def local_vol_market(ticker, rate, today, horizon=None):
+        asked.append((rate, horizon))
+        return _market(ticker, 0.05, level=0.21)
+
+    monkeypatch.setattr(market_snapshot, "local_vol_market", local_vol_market)
+    done = calibration_warmup.warm_once(SNAP)
+    assert asked == [(None, product_templates.span_years("european-call"))]
+    assert done == [("TEST", 0.05, f"ready for {SNAP.isoformat()}")]
