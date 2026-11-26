@@ -18152,62 +18152,6 @@
               "title": "Rate",
               "type": "number"
             }
-          },
-          {
-            "in": "query",
-            "name": "min_open_interest",
-            "required": false,
-            "schema": {
-              "default": 10,
-              "minimum": 1,
-              "title": "Min Open Interest",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_bid",
-            "required": false,
-            "schema": {
-              "default": 0.05,
-              "minimum": 0.0,
-              "title": "Min Bid",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_spread_ratio",
-            "required": false,
-            "schema": {
-              "default": 0.5,
-              "exclusiveMinimum": 0.0,
-              "maximum": 1.0,
-              "title": "Max Spread Ratio",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_moneyness",
-            "required": false,
-            "schema": {
-              "default": 0.7,
-              "exclusiveMinimum": 0.0,
-              "title": "Min Moneyness",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_moneyness",
-            "required": false,
-            "schema": {
-              "default": 1.4,
-              "exclusiveMinimum": 0.0,
-              "title": "Max Moneyness",
-              "type": "number"
-            }
           }
         ],
         "responses": {
@@ -18263,62 +18207,6 @@
               "default": 0.05,
               "description": "Risk-free rate",
               "title": "Rate",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_open_interest",
-            "required": false,
-            "schema": {
-              "default": 10,
-              "minimum": 1,
-              "title": "Min Open Interest",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_bid",
-            "required": false,
-            "schema": {
-              "default": 0.05,
-              "minimum": 0.0,
-              "title": "Min Bid",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_spread_ratio",
-            "required": false,
-            "schema": {
-              "default": 0.5,
-              "exclusiveMinimum": 0.0,
-              "maximum": 1.0,
-              "title": "Max Spread Ratio",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_moneyness",
-            "required": false,
-            "schema": {
-              "default": 0.7,
-              "exclusiveMinimum": 0.0,
-              "title": "Min Moneyness",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_moneyness",
-            "required": false,
-            "schema": {
-              "default": 1.4,
-              "exclusiveMinimum": 0.0,
-              "title": "Max Moneyness",
               "type": "number"
             }
           }
@@ -18466,62 +18354,6 @@
               "title": "Compute Greeks",
               "type": "boolean"
             }
-          },
-          {
-            "in": "query",
-            "name": "min_open_interest",
-            "required": false,
-            "schema": {
-              "default": 10,
-              "minimum": 1,
-              "title": "Min Open Interest",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_bid",
-            "required": false,
-            "schema": {
-              "default": 0.05,
-              "minimum": 0.0,
-              "title": "Min Bid",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_spread_ratio",
-            "required": false,
-            "schema": {
-              "default": 0.5,
-              "exclusiveMinimum": 0.0,
-              "maximum": 1.0,
-              "title": "Max Spread Ratio",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_moneyness",
-            "required": false,
-            "schema": {
-              "default": 0.7,
-              "exclusiveMinimum": 0.0,
-              "title": "Min Moneyness",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_moneyness",
-            "required": false,
-            "schema": {
-              "default": 1.4,
-              "exclusiveMinimum": 0.0,
-              "title": "Max Moneyness",
-              "type": "number"
-            }
           }
         ],
         "responses": {
@@ -18622,62 +18454,6 @@
               "default": 0.05,
               "description": "Risk-free rate",
               "title": "Rate",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_open_interest",
-            "required": false,
-            "schema": {
-              "default": 10,
-              "minimum": 1,
-              "title": "Min Open Interest",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_bid",
-            "required": false,
-            "schema": {
-              "default": 0.05,
-              "minimum": 0.0,
-              "title": "Min Bid",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_spread_ratio",
-            "required": false,
-            "schema": {
-              "default": 0.5,
-              "exclusiveMinimum": 0.0,
-              "maximum": 1.0,
-              "title": "Max Spread Ratio",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "min_moneyness",
-            "required": false,
-            "schema": {
-              "default": 0.7,
-              "exclusiveMinimum": 0.0,
-              "title": "Min Moneyness",
-              "type": "number"
-            }
-          },
-          {
-            "in": "query",
-            "name": "max_moneyness",
-            "required": false,
-            "schema": {
-              "default": 1.4,
-              "exclusiveMinimum": 0.0,
-              "title": "Max Moneyness",
               "type": "number"
             }
           }
@@ -19973,7 +19749,7 @@
     },
     "/api/simulation/calibrate": {
       "post": {
-        "description": "Black-Scholes and SABR: fetch the ticker's chain (DB-first, live\nyfinance fallback -- kept on purpose for these two, see CLAUDE.md), run\nthe existing SVI vol-surface pipeline, pick the calibrated slice closest\nto the requested maturity, and either read its ATM vol off\n(Black-Scholes) or fit SABR to it (see\nvol_surface.sabr_quotes_from_svi_slice). Local vol, Heston and SLV are\ncalibrated on the stored chain only (_calibrate_surface_model).",
+        "description": "Black-Scholes and SABR: the ticker's stored surface (the database\nonly, as every model here), pick the calibrated slice closest\nto the requested maturity, and either read its ATM vol off\n(Black-Scholes) or fit SABR to it (see\nvol_surface.sabr_quotes_from_svi_slice). Local vol, Heston and SLV are\ncalibrated on the stored chain only (_calibrate_surface_model).",
         "operationId": "calibrate",
         "requestBody": {
           "content": {

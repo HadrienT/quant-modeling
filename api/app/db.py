@@ -2,10 +2,9 @@
 
 Market data no longer comes from live yfinance / FRED calls: `data-ingest`
 (a separate self-hosted service) writes it to a local Postgres on a schedule.
-This module is read-only, with one narrow, explicit exception (see
-`cache_option_chain_snapshot` at the bottom): it never creates tables, and
-callers should prefer reading over writing wherever the daily-scheduled
-tables already cover what they need.
+This module is read-only: it never writes and never creates tables (the
+one write path, caching a live yfinance chain, went with the live fallback
+on 2026-11-26, WP 31).
 
 Tables it reads:
   prices.sp500_daily          (date, ticker, open, high, low, close, volume)
@@ -681,7 +680,7 @@ def options_chain_snapshot(
     omitted). Empty list if data-ingest has never captured this ticker —
     options-chain-snapshot tracks a small fixed universe
     (OPTIONS_CHAIN_TICKERS), not every ticker sp500-prices does, so an empty
-    result here is routine, not an error; callers fall back to a live fetch.
+    result here is routine, not an error, and there is no live fallback.
     """
     snapshot_date = as_of or latest_options_snapshot_date(ticker)
     if snapshot_date is None:
@@ -1107,73 +1106,3 @@ def french_first_vintage(
             (dataset, start, end),
         )
         return [(d, f, float(v)) for d, f, v in cur.fetchall()]
-
-
-# ── The one write path: caching a live option-chain fetch ──────────────────
-
-
-def cache_option_chain_snapshot(
-    ticker: str, snapshot_date: date, rows: Sequence[dict]
-) -> int:
-    """Upsert quotes just fetched live from yfinance into
-    options.chain_snapshot -- this module's one deliberate exception to
-    read-only.
-
-    Why this table and not the others: an option chain is the one fetch in
-    this pipeline that is both expensive (one call per expiration, on top of
-    the list call) and rate-limited (an unofficial endpoint), so a second
-    request for the same ticker on the same day hitting yfinance again is a
-    real, avoidable cost. A spot price or a dividend yield is a single cheap
-    call, and its tracked universe (sp500-prices, dividend-yields) already
-    covers what the vol-surface pipeline needs daily, so there is nothing
-    worth caching there beyond what those two sources already provide on
-    schedule.
-
-    Same schema, same upsert semantics data-ingest's own scheduled run would
-    use (ON CONFLICT on the declared primary key): if options-chain-snapshot
-    is ever pointed at this ticker too, its next run simply overwrites these
-    rows, harmlessly. If the table does not exist yet (a fresh deployment
-    where data-ingest has never run), this raises StoreUnavailable like any
-    other unreachable-store case, and the caller treats caching as best-effort.
-    """
-    if not rows:
-        return 0
-
-    payload = [
-        {
-            "date": snapshot_date,
-            "ticker": ticker.upper(),
-            "expiry": r["expiry"],
-            "option_type": r["option_type"],
-            "strike": r["strike"],
-            "bid": r.get("bid"),
-            "ask": r.get("ask"),
-            "last_price": r.get("last_price"),
-            "volume": r.get("volume", 0),
-            "open_interest": r.get("open_interest", 0),
-            "implied_volatility": r.get("implied_volatility"),
-        }
-        for r in rows
-    ]
-
-    with _cursor() as cur:
-        cur.executemany(
-            """
-            INSERT INTO options.chain_snapshot
-                (date, ticker, expiry, option_type, strike, bid, ask,
-                 last_price, volume, open_interest, implied_volatility)
-            VALUES
-                (%(date)s, %(ticker)s, %(expiry)s, %(option_type)s, %(strike)s,
-                 %(bid)s, %(ask)s, %(last_price)s, %(volume)s, %(open_interest)s,
-                 %(implied_volatility)s)
-            ON CONFLICT (date, ticker, expiry, option_type, strike) DO UPDATE SET
-                bid = EXCLUDED.bid,
-                ask = EXCLUDED.ask,
-                last_price = EXCLUDED.last_price,
-                volume = EXCLUDED.volume,
-                open_interest = EXCLUDED.open_interest,
-                implied_volatility = EXCLUDED.implied_volatility
-            """,
-            payload,
-        )
-    return len(payload)

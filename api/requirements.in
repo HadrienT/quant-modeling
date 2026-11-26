@@ -11,8 +11,6 @@ scipy
 requests
 # Scripting assistant: Claude through the official SDK (issue #337).
 anthropic
-# yfinance stays for option chains only (data-ingest doesn't ingest them yet).
-yfinance
 python-jose[cryptography]
 # Audit trail → quant-platform (blueprint WP 18b): the Kafka producer
 # (librdkafka, Apache 2.0), and the audit database read by the replay endpoint.

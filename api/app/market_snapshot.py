@@ -110,6 +110,8 @@ class LocalVolMarket:
     essvi_min_forward_vol: float = 0.05
     #: The option data the surface came from (QM_OPTION_DATA).
     option_data: str = "legacy"
+    #: The native cleaning's counts per stage (raw_count ... final_count).
+    cleaning_stats: Dict[str, int] = field(default_factory=dict)
 
     def surface_slices(self) -> List[Dict[str, float]]:
         """The SVI slices every mark reads: see surface_slices()."""
@@ -573,7 +575,29 @@ def _local_vol_market(ticker: str, rate: float, valuation_date: date) -> LocalVo
         essvi_forward_smoothing=float(result.get("essvi_forward_smoothing", 0.1)),
         essvi_min_forward_vol=float(result.get("essvi_min_forward_vol", 0.05)),
         option_data=data,
+        cleaning_stats=dict(result.get("cleaning_stats", {})),
     )
+
+
+def stored_chain(ticker: str, valuation_date: date) -> tuple:
+    """The stored chain's quotes as the surface would read them, with no
+    calibration (the raw view), and the close they sit against: (quotes,
+    spot, snapshot date). Same sources and refusals as local_vol_market."""
+    ticker = ticker.upper().strip()
+    data = option_data()
+    load = _load(ticker, valuation_date, data)
+    snap = load.snapshot_date
+    spot_row = read_store(db.price_on_or_before, ticker, snap)
+    if spot_row is None or (snap - spot_row[0]).days > MAX_SPOT_GAP_DAYS:
+        raise MarketDataUnavailable(
+            f"no close for '{ticker}' within {MAX_SPOT_GAP_DAYS} days of the "
+            f"snapshot {snap.isoformat()} in prices.sp500_daily."
+        )
+    spot = spot_row[1]
+    chain = (
+        _iv_chain(ticker, load, spot) if data == "chain_iv" else _chain(ticker, load)
+    )
+    return chain.quotes, spot, snap
 
 
 def _load(ticker: str, valuation_date: date, data: str):
